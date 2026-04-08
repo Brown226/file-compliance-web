@@ -1,5 +1,5 @@
 # Tasks
-- [ ] Task 1: 初始化 Web 框架与基础布局：搭建 Vue 3 + TypeScript + Vite 项目，配置企业级 UI 组件库（推荐 Element Plus 或 Ant Design Vue），完成经典的左侧导航栏（工作台、新建任务、任务历史、标准库）和顶部通栏布局。
+- [ ] Task 1: 初始化 Web 框架与基础布局：搭建 Vue 3 + TypeScript + Vite 项目，配置企业级 UI 组件库（推荐 Element Plus 或 Ant Design Vue），完成经典的左侧导航栏（Dashboard、工作台、新建任务、任务历史、标准库、系统管理）和顶部通栏布局。
   - [ ] SubTask 1.1: 创建项目基础脚手架，配置路由（vue-router）和状态管理（Pinia/Pinia-Plugin-Persistedstate）。
   - [ ] SubTask 1.2: 设计并实现 `Layout` 组件，包含侧边栏（`Sidebar`）、顶部栏（`Header`）和主内容区（`Main`）。
 - [ ] Task 2: 实现“新建审查任务”页面：开发一个独立的页面用于大文件/批量 DWG 图纸的上传，以及审查参数的配置。
@@ -17,9 +17,27 @@
   - [ ] SubTask 5.1: 渲染带有分页的数据表格（Table），展示标准号、规范内容、版本等字段。
   - [ ] SubTask 5.2: 提供“新增”、“编辑”、“删除”按钮及其对应的表单弹窗（Dialog/Modal）。
   - [ ] SubTask 5.3: 顶部操作栏提供“Excel 批量导入”按钮（结合 Upload 组件模拟导入）和“导出模板”按钮。
+- [ ] Task 6: 实现登录与个人中心模块：提供企业级基础身份认证。
+  - [ ] SubTask 6.1: 渲染登录页面（仅包含账号/密码输入，无注册入口）。
+  - [ ] SubTask 6.2: 在顶部通栏右侧增加用户信息下拉菜单，提供“修改密码”和“退出登录”功能。
+- [ ] Task 7: 实现“部门与账号管理”模块：供管理员维护组织架构和分配员工账号。
+  - [ ] SubTask 7.1: 开发左侧组织架构树（Tree 组件），支持部门节点的增删改。
+  - [ ] SubTask 7.2: 开发右侧员工列表表格，支持按部门筛选人员，提供“新建账号”、“分配角色”（管理员/部门主管/普通员工）的表单弹窗。
+- [ ] Task 8: 实现“业务质量数据看板（Dashboard）”页面：作为系统登录后的默认首屏。
+  - [ ] SubTask 8.1: 集成 ECharts 基础环境。
+  - [ ] SubTask 8.2: 实现“最高频错别字 Top 10”、“最常被违反的标准规范 Top 10”柱状图。
+  - [ ] SubTask 8.3: 实现“各部门平均出错率对比”折线图/饼图，并使用 Mock 数据展示。
+- [ ] Task 9: 实现“系统操作审计日志”页面：用于合规审查。
+  - [ ] SubTask 9.1: 开发日志统计表格，包含操作人、所属部门、操作类型（登录/上传任务/修改标准库）、IP地址、操作时间。
+  - [ ] SubTask 9.2: 增加顶部搜索过滤条件（按日期范围、按操作类型过滤）。
 
 # Task Dependencies
 - [Task 2] depends on [Task 1]
 - [Task 3] depends on [Task 1]
 - [Task 4] depends on [Task 3]
 - [Task 5] depends on [Task 1]
+- [Task 6] depends on [Task 1]
+- [Task 7] depends on [Task 1]
+- [Task 7] depends on [Task 6]
+- [Task 8] depends on [Task 1]
+- [Task 9] depends on [Task 1]
