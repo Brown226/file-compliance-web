@@ -16,6 +16,7 @@
             end-placeholder="结束日期"
             value-format="YYYY-MM-DD"
             @change="fetchLogs"
+            style="width: 340px"
           />
         </el-form-item>
         <el-form-item label="操作类型">
@@ -24,17 +25,23 @@
             placeholder="请选择操作类型"
             clearable
             @change="fetchLogs"
-            style="width: 200px"
+            style="width: 180px"
           >
+            <el-option label="全部" value="" />
             <el-option label="POST (创建)" value="POST" />
             <el-option label="PUT (修改)" value="PUT" />
+            <el-option label="PATCH (部分更新)" value="PATCH" />
             <el-option label="DELETE (删除)" value="DELETE" />
           </el-select>
         </el-form-item>
-        <el-form-item>
-          <el-button type="primary" @click="fetchLogs">查询</el-button>
-          <el-button @click="resetFilter">重置</el-button>
-          <el-button type="success" plain @click="handleExportCsv" :loading="exporting">导出CSV</el-button>
+        <el-form-item class="action-buttons">
+          <el-button type="primary" @click="fetchLogs" :icon="Search">查询</el-button>
+          <el-button @click="resetFilter" :icon="Refresh">重置</el-button>
+        </el-form-item>
+        <el-form-item class="export-button">
+          <el-button type="success" plain @click="handleExportCsv" :loading="exporting" :icon="Download">
+            导出CSV
+          </el-button>
         </el-form-item>
       </el-form>
     </div>
@@ -62,7 +69,9 @@
       </el-table-column>
       <el-table-column prop="details" label="操作详情" min-width="250" show-overflow-tooltip>
         <template #default="{ row }">
-          {{ formatDetails(row.details) }}
+          <el-tooltip :content="formatDetails(row.details)" placement="top" :disabled="!row.details">
+            <span>{{ formatDetails(row.details) }}</span>
+          </el-tooltip>
         </template>
       </el-table-column>
     </el-table>
@@ -85,6 +94,7 @@
 <script setup lang="ts">
 import { ref, reactive, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
+import { Search, Refresh, Download } from '@element-plus/icons-vue'
 import { getAuditLogsApi, exportAuditLogsApi } from '@/api/audit'
 import { useFormatTime } from '@/composables/useFormatTime'
 
@@ -254,12 +264,22 @@ onMounted(() => {
 
 .filter-form {
   display: flex;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: 12px;
+}
+
+.filter-form .action-buttons {
+  margin-left: auto;
+}
+
+.filter-form .export-button {
+  margin-right: 0;
 }
 
 ::deep(.el-form--inline .el-form-item) {
   margin-bottom: 0;
-  margin-right: 24px;
+  margin-right: 0;
 }
 
 .pagination-container {
