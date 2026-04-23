@@ -74,7 +74,7 @@ router.post('/', requireRole('ADMIN', 'MANAGER'), async (req: Request, res: Resp
  */
 router.put('/:id', requireRole('ADMIN', 'MANAGER'), async (req: Request, res: Response) => {
   try {
-    const { id } = req.params;
+    const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
     const { term, category, aliases } = req.body;
     const entry = await TerminologyService.updateTerm(id, { term, category, aliases });
     res.json(entry);
@@ -97,7 +97,7 @@ router.put('/:id', requireRole('ADMIN', 'MANAGER'), async (req: Request, res: Re
  */
 router.delete('/:id', requireRole('ADMIN'), async (req: Request, res: Response) => {
   try {
-    const { id } = req.params;
+    const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
     await TerminologyService.deleteTerm(id);
     res.json({ message: '删除成功' });
   } catch (error: any) {

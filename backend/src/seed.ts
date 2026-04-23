@@ -82,14 +82,14 @@ async function seed() {
 
   // 4. 创建测试标准数据
   const standards = [
-    { id: 'std-GB500162014', title: '建筑设计防火规范', standardNo: 'GB 50016-2014', standardName: '建筑设计防火规范', version: '2018年版', standardStatus: 'CURRENT', isActive: true },
-    { id: 'std-GB500092012', title: '建筑结构荷载规范', standardNo: 'GB 50009-2012', standardName: '建筑结构荷载规范', version: '2012年版', standardStatus: 'CURRENT', isActive: true },
-    { id: 'std-GB500112010', title: '建筑抗震设计规范', standardNo: 'GB 50011-2010', standardName: '建筑抗震设计规范', version: '2016年版', standardStatus: 'CURRENT', isActive: true },
-    { id: 'std-GBT500012017', title: '房屋建筑制图统一标准', standardNo: 'GB/T 50001-2017', standardName: '房屋建筑制图统一标准', version: '2017年版', standardStatus: 'CURRENT', isActive: true },
-    { id: 'std-GB503002013', title: '建筑工程施工质量验收统一标准', standardNo: 'GB 50300-2013', standardName: '建筑工程施工质量验收统一标准', version: '2013年版', standardStatus: 'CURRENT', isActive: true },
-    { id: 'std-GB500152019', title: '建筑给水排水设计标准', standardNo: 'GB 50015-2019', standardName: '建筑给水排水设计标准', version: '2019年版', standardStatus: 'CURRENT', isActive: true },
-    { id: 'std-JGJ162008', title: '民用建筑电气设计规范', standardNo: 'JGJ 16-2008', standardName: '民用建筑电气设计规范', version: '2008年版', standardStatus: 'CURRENT', isActive: false },
-    { id: 'std-naming-001', title: '工程文件命名规范', standardNo: '内部规范', standardName: '工程文件命名规范', version: 'V1.0', standardStatus: 'CURRENT', isActive: true },
+    { id: 'std-GB500162014', title: '建筑设计防火规范', standardNo: 'GB 50016-2014', standardName: '建筑设计防火规范', version: '2018年版', standardStatus: 'CURRENT' as const, isActive: true },
+    { id: 'std-GB500092012', title: '建筑结构荷载规范', standardNo: 'GB 50009-2012', standardName: '建筑结构荷载规范', version: '2012年版', standardStatus: 'CURRENT' as const, isActive: true },
+    { id: 'std-GB500112010', title: '建筑抗震设计规范', standardNo: 'GB 50011-2010', standardName: '建筑抗震设计规范', version: '2016年版', standardStatus: 'CURRENT' as const, isActive: true },
+    { id: 'std-GBT500012017', title: '房屋建筑制图统一标准', standardNo: 'GB/T 50001-2017', standardName: '房屋建筑制图统一标准', version: '2017年版', standardStatus: 'CURRENT' as const, isActive: true },
+    { id: 'std-GB503002013', title: '建筑工程施工质量验收统一标准', standardNo: 'GB 50300-2013', standardName: '建筑工程施工质量验收统一标准', version: '2013年版', standardStatus: 'CURRENT' as const, isActive: true },
+    { id: 'std-GB500152019', title: '建筑给水排水设计标准', standardNo: 'GB 50015-2019', standardName: '建筑给水排水设计标准', version: '2019年版', standardStatus: 'CURRENT' as const, isActive: true },
+    { id: 'std-JGJ162008', title: '民用建筑电气设计规范', standardNo: 'JGJ 16-2008', standardName: '民用建筑电气设计规范', version: '2008年版', standardStatus: 'CURRENT' as const, isActive: false },
+    { id: 'std-naming-001', title: '工程文件命名规范', standardNo: '内部规范', standardName: '工程文件命名规范', version: 'V1.0', standardStatus: 'CURRENT' as const, isActive: true },
   ];
 
   for (const std of standards) {

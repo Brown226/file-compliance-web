@@ -91,7 +91,7 @@ export async function saveModeCapabilitiesConfig(config: Record<string, any>): P
 
   await prisma.systemConfig.upsert({
     where: { key: CONFIG_KEY },
-    update: { value: toSave },
-    create: { key: CONFIG_KEY, value: toSave },
+    update: { value: JSON.stringify(toSave) },
+    create: { key: CONFIG_KEY, value: JSON.stringify(toSave) },
   });
 }

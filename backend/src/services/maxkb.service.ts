@@ -389,6 +389,34 @@ export class MaxKBService {
   }
 
   /**
+   * 删除标准关联文档（按 standardId）
+   */
+  static async deleteStandardDocument(standardId: string): Promise<void> {
+    // 先查找对应的知识库和文档
+    const standard = await prisma.standard.findUnique({
+      where: { id: standardId },
+      select: { maxkbDocId: true },
+    });
+    
+    if (!standard?.maxkbDocId) return;
+    
+    try {
+      // 从 MaxKB 中删除文档
+      const workspaceId = process.env.MAXKB_WORKSPACE_ID || 'default';
+      const knowledgeId = process.env.MAXKB_KNOWLEDGE_ID || '';
+      await this.deleteDocument(workspaceId, knowledgeId, standard.maxkbDocId);
+      
+      // 清除数据库中的引用
+      await prisma.standard.update({
+        where: { id: standardId },
+        data: { maxkbDocId: null },
+      });
+    } catch (e) {
+      console.warn(`[MaxKB] 删除文档失败: ${standardId}`, e);
+    }
+  }
+
+  /**
    * 删除文档
    */
   static async deleteDocument(

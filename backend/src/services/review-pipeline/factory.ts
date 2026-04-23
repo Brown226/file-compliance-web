@@ -39,7 +39,7 @@ async function getRuntimeCapabilities(): Promise<Record<ReviewModeType, ModeCapa
   try {
     // 从 DB 读取运行时配置
     const dbConfig = await getModeCapabilitiesConfig();
-    cachedRuntimeCapabilities = dbConfig as Record<ReviewModeType, ModeCapabilities>;
+    cachedRuntimeCapabilities = dbConfig as any;
     cacheTime = now;
     return cachedRuntimeCapabilities;
   } catch (e) {
@@ -90,7 +90,7 @@ export async function getAvailableModes(): Promise<Array<{
     .filter(([mode]) => {
       // 过滤被禁用的模式
       const cfg = runtimeCaps[mode as ReviewModeType];
-      return !cfg || cfg.enabled !== false;
+      return !cfg || (cfg as any).enabled !== false;
     })
     .map(([mode, factory]) => {
       const pipeline = factory(runtimeCaps[mode as ReviewModeType]);

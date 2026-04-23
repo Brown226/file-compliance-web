@@ -80,7 +80,7 @@ export class RAGService {
 
     console.log(`[RAG] 开始检索: kb=${knowledgeId}, query_len=${queryText.length}, mode=${searchMode}, top=${topNumber}`);
 
-    const results = await MaxKBService.adminRequest(
+    const results = await (MaxKBService as any).adminRequest(
       'POST',
       `/workspace/${workspaceId}/knowledge/${knowledgeId}/hit_test`,
       {

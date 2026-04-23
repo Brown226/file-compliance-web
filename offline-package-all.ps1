@@ -215,7 +215,7 @@ Write-Success "配置文件已复制到: $COMPOSE_OUTPUT"
 Write-Host ""
 Write-Info "生成镜像加载脚本..."
 
-$loadScript = @"
+$loadScript = @'
 @echo off
 REM 离线镜像加载脚本
 REM 在目标服务器上执行
@@ -247,7 +247,7 @@ echo 镜像加载完成!
 docker images | findstr /i "file-review pgvector redis maxkb"
 
 pause
-"@
+'@
 
 $loadScriptPath = Join-Path $OUTPUT_DIR "load-images.bat"
 Set-Content -Path $loadScriptPath -Value $loadScript -Encoding ASCII

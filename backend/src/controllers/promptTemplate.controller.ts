@@ -36,9 +36,10 @@ export class PromptTemplateController {
   /** GET /api/prompt-templates/:key — 获取单个模板 */
   static async getByKey(req: Request, res: Response) {
     try {
-      const template = await PromptTemplateService.getByKey(req.params.key);
+      const key = Array.isArray(req.params.key) ? req.params.key[0] : req.params.key;
+      const template = await PromptTemplateService.getByKey(key);
       if (!template) {
-        return res.status(404).json({ code: 404, message: `模板不存在: ${req.params.key}` });
+        return res.status(404).json({ code: 404, message: `模板不存在: ${key}` });
       }
       res.json({ code: 200, data: template });
     } catch (e: any) {
@@ -53,7 +54,8 @@ export class PromptTemplateController {
       if (content === undefined || content === null) {
         return res.status(400).json({ code: 400, message: 'content 字段必填' });
       }
-      const template = await PromptTemplateService.updateContent(req.params.key, content);
+      const key = Array.isArray(req.params.key) ? req.params.key[0] : req.params.key;
+      const template = await PromptTemplateService.updateContent(key, content);
       res.json({ code: 200, data: template });
     } catch (e: any) {
       res.status(500).json({ code: 500, message: e.message });
@@ -63,7 +65,8 @@ export class PromptTemplateController {
   /** POST /api/prompt-templates/:key/reset — 重置为默认值 */
   static async reset(req: Request, res: Response) {
     try {
-      const template = await PromptTemplateService.resetToDefault(req.params.key);
+      const key = Array.isArray(req.params.key) ? req.params.key[0] : req.params.key;
+      const template = await PromptTemplateService.resetToDefault(key);
       res.json({ code: 200, data: template });
     } catch (e: any) {
       res.status(500).json({ code: 500, message: e.message });
@@ -87,7 +90,8 @@ export class PromptTemplateController {
       if (typeof enabled !== 'boolean') {
         return res.status(400).json({ code: 400, message: 'enabled 字段必须为布尔值' });
       }
-      const template = await PromptTemplateService.toggleEnabled(req.params.key, enabled);
+      const key = Array.isArray(req.params.key) ? req.params.key[0] : req.params.key;
+      const template = await PromptTemplateService.toggleEnabled(key, enabled);
       res.json({ code: 200, data: template });
     } catch (e: any) {
       res.status(500).json({ code: 500, message: e.message });

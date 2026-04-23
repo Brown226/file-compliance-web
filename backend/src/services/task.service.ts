@@ -593,7 +593,7 @@ export class TaskService {
           try {
             for (const range of diffRanges.original) {
               if (range.start >= 0 && range.length > 0) {
-                const char = originalCell.characters?.(range.start + 1, range.length);
+                const char = (originalCell as any).characters?.(range.start + 1, range.length);
                 if (char?.font) char.font = { color: { argb: 'FFFF0000' } }; // 红色
               }
             }
@@ -608,7 +608,7 @@ export class TaskService {
           try {
             for (const range of diffRanges.correct) {
               if (range.start >= 0 && range.length > 0) {
-                const char = suggestedCell.characters?.(range.start + 1, range.length);
+                const char = (suggestedCell as any).characters?.(range.start + 1, range.length);
                 if (char?.font) char.font = { color: { argb: 'FF00B050' } }; // 绿色
               }
             }

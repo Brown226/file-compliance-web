@@ -8,7 +8,7 @@ import { success, error } from '../utils/response';
  */
 export const getSystemConfig = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
-    const key = req.params.key;
+    const key = Array.isArray(req.params.key) ? req.params.key[0] : req.params.key;
     const config = await prisma.systemConfig.findUnique({
       where: { key },
     });
@@ -25,7 +25,7 @@ export const getSystemConfig = async (req: AuthRequest, res: Response): Promise<
  */
 export const saveSystemConfig = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
-    const key = req.params.key;
+    const key = Array.isArray(req.params.key) ? req.params.key[0] : req.params.key;
     const { value } = req.body;
 
     if (!key) {
@@ -40,8 +40,8 @@ export const saveSystemConfig = async (req: AuthRequest, res: Response): Promise
 
     const config = await prisma.systemConfig.upsert({
       where: { key },
-      update: { value },
-      create: { key, value },
+      update: { value: String(value) },
+      create: { key, value: String(value) },
     });
 
     success(res, config, '配置保存成功');

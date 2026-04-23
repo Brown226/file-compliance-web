@@ -828,7 +828,7 @@ export class ReviewService {
                 ? LlmService.findTextPosition(ctx.extractedText, issue.originalText)
                 : null),
           }));
-          await prisma.taskDetail.createMany({ data: aiData });
+          await prisma.taskDetail.createMany({ data: aiData as any });
           console.log(`[Review] 兜底写入 ${aiData.length} 条`);
         }
       } catch (e) {
@@ -928,7 +928,7 @@ export class ReviewService {
     // 加载配置
     try {
       const cfg = await prisma.systemConfig.findUnique({ where: { key: 'pipeline_review_config' } });
-      if (cfg?.value) ctx.pipelineConfig = cfg.value;
+      if (cfg?.value) ctx.pipelineConfig = cfg.value as any;
     } catch (e) { /* ignore */ }
 
     // 加载参照文件
@@ -973,11 +973,11 @@ export class ReviewService {
             description: issue.description || null,
             cadHandleId: issue.cadHandleId || null,
             standardRef: issue.standardRef || null,
-            sourceReferences: issue.sourceReferences || null,
+            sourceReferences: issue.sourceReferences ? JSON.stringify(issue.sourceReferences) : null,
             matchLevel: (issue as any).matchLevel || null,
             similarity: (issue as any).similarity || null,
-            diffRanges: issue.diffRanges || null,
-          })),
+            diffRanges: issue.diffRanges ? JSON.stringify(issue.diffRanges) : null,
+          })) as any,
         });
       }
 

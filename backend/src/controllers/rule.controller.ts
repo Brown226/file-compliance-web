@@ -155,7 +155,7 @@ export async function getRules(_req: Request, res: Response): Promise<void> {
  */
 export async function getRuleByCode(req: Request, res: Response): Promise<void> {
   try {
-    const { code } = req.params;
+    const code = Array.isArray(req.params.code) ? req.params.code[0] : req.params.code;
     const rule = await prisma.reviewRule.findUnique({
       where: { ruleCode: code },
     });
@@ -174,12 +174,12 @@ export async function getRuleByCode(req: Request, res: Response): Promise<void> 
  */
 export async function updateRule(req: Request, res: Response): Promise<void> {
   try {
-    const { code } = req.params;
+    const code = Array.isArray(req.params.code) ? req.params.code[0] : req.params.code;
     const { name, description, severity, enabled, config } = req.body;
 
     // 支持 code 为 ruleCode 或 uuid
     const existing = await prisma.reviewRule.findFirst({
-      where: { OR: [{ ruleCode: code }, { id: code }] },
+      where: { OR: [{ ruleCode: code as string }, { id: code as string }] },
     });
     if (!existing) {
       error(res, '规则不存在', 404);
@@ -216,10 +216,10 @@ export async function updateRule(req: Request, res: Response): Promise<void> {
  */
 export async function toggleRule(req: Request, res: Response): Promise<void> {
   try {
-    const { code } = req.params;
+    const code = Array.isArray(req.params.code) ? req.params.code[0] : req.params.code;
 
     const existing = await prisma.reviewRule.findFirst({
-      where: { OR: [{ ruleCode: code }, { id: code }] },
+      where: { OR: [{ ruleCode: code as string }, { id: code as string }] },
     });
     if (!existing) {
       error(res, '规则不存在', 404);
@@ -377,10 +377,10 @@ export async function createRule(req: Request, res: Response): Promise<void> {
  */
 export async function deleteRule(req: Request, res: Response): Promise<void> {
   try {
-    const { code } = req.params;
+    const code = Array.isArray(req.params.code) ? req.params.code[0] : req.params.code;
 
     const existing = await prisma.reviewRule.findFirst({
-      where: { OR: [{ ruleCode: code }, { id: code }] },
+      where: { OR: [{ ruleCode: code as string }, { id: code as string }] },
     });
     if (!existing) {
       error(res, '规则不存在', 404);
@@ -418,7 +418,7 @@ export async function testRuleMatch(req: Request, res: Response): Promise<void> 
     }
 
     // 根据规则类型进行简单的匹配测试
-    const config = rule.config || {};
+    const config = (rule.config as any) || {};
     let matched = false;
     let matchedContent = '';
     let matchDetails = '';
@@ -426,7 +426,7 @@ export async function testRuleMatch(req: Request, res: Response): Promise<void> 
     // 支持正则匹配
     if (config.pattern) {
       try {
-        const regex = new RegExp(config.pattern, 'gi');
+        const regex = new RegExp(config.pattern as string, 'gi');
         const matches = testText.match(regex);
         if (matches && matches.length > 0) {
           matched = true;
@@ -440,7 +440,7 @@ export async function testRuleMatch(req: Request, res: Response): Promise<void> 
 
     // 支持关键词匹配
     if (config.keywords && Array.isArray(config.keywords)) {
-      const foundKeywords = config.keywords.filter((kw: string) => 
+      const foundKeywords = (config.keywords as string[]).filter((kw: string) => 
         testText.toLowerCase().includes(kw.toLowerCase())
       );
       if (foundKeywords.length > 0) {

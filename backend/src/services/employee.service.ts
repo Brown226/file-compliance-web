@@ -52,7 +52,7 @@ export class EmployeeService {
       ];
     }
     if (role && role !== 'ALL') {
-      where.role = role;
+      where.role = role as any;
     }
 
     const [total, users] = await Promise.all([
@@ -182,7 +182,7 @@ export class EmployeeService {
             username: emp.username,
             passwordHash,
             name: emp.name,
-            role: emp.role || 'USER',
+            role: (emp.role || 'USER') as any,
             departmentId: emp.departmentId,
             email: emp.email,
           },
@@ -204,7 +204,7 @@ export class EmployeeService {
   async batchUpdateStatus(ids: string[], enabled: boolean) {
     await prisma.user.updateMany({
       where: { id: { in: ids } },
-      data: { enabled },
+      data: { enabled } as any,
     });
 
     return { count: ids.length };

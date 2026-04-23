@@ -2,7 +2,8 @@ import path from 'path';
 import fs from 'fs';
 import mammoth from 'mammoth';
 import * as XLSX from 'xlsx';
-import pdfParse from 'pdf-parse';
+import pdfParseLib from 'pdf-parse';
+const pdfParse = (pdfParseLib as any).default || pdfParseLib;
 import { PythonParserService, ParseResult } from './python-parser.service';
 
 /**

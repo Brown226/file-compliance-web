@@ -39,7 +39,7 @@ export const createFolder = async (req: Request, res: Response): Promise<void> =
 
 export const updateFolder = async (req: Request, res: Response): Promise<void> => {
   try {
-    const id = req.params.id;
+    const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
     const { name, parentId } = req.body;
     const folder = await StandardFolderService.updateFolder(id, { name, parentId });
     success(res, folder, '文件夹更新成功');
@@ -51,7 +51,7 @@ export const updateFolder = async (req: Request, res: Response): Promise<void> =
 
 export const deleteFolder = async (req: Request, res: Response): Promise<void> => {
   try {
-    const id = req.params.id;
+    const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
     await StandardFolderService.deleteFolder(id);
     success(res, null, '文件夹删除成功');
   } catch (err: any) {

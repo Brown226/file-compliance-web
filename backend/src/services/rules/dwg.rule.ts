@@ -229,7 +229,7 @@ function checkStandardRefs(ctx: FileContext, config?: any): RuleIssue[] {
   if (!dwg) return issues;
 
   const standardRefs = dwg.structure?.standardRefs || [];
-  const refCount = dwg.metadata?.standard_ref_count ?? standardRefs.length;
+  const refCount = (dwg.metadata as any)?.standard_ref_count ?? standardRefs.length;
 
   // 如果图纸有内容但无标准引用
   const textCount = dwg.metadata?.dwg_text_count ?? 0;
