@@ -5,6 +5,9 @@ backend/markitdown-service/.venv/
 # Binary libraries (should use package manager instead)
 Normative/Lib/
 
+# WASM files (large binary assets, should be downloaded separately)
+*.wasm
+
 # Build output
 backend/dist/
 frontend/dist/
