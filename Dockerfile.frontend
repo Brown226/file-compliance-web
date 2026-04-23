@@ -1,0 +1,26 @@
+# ============================================
+# 文件智能审查系统 - 前端服务 Dockerfile
+# Vue 3 + Vite + Element Plus + Nginx
+# ============================================
+
+FROM nginx:alpine
+
+# 复制构建产物（本地已编译）
+COPY frontend/dist/ /usr/share/nginx/html/
+
+# 复制 Nginx 配置
+COPY nginx.conf /etc/nginx/conf.d/default.conf
+
+# 创建非 root 用户（www-data）
+RUN chown -R nginx:nginx /usr/share/nginx/html && \
+    chmod -R 755 /usr/share/nginx/html
+
+# 暴露端口
+EXPOSE 80
+
+# 健康检查
+HEALTHCHECK --interval=30s --timeout=3s --retries=3 \
+    CMD wget --no-verbose --tries=1 --spider http://127.0.0.1/health || exit 1
+
+# 启动 Nginx
+CMD ["nginx", "-g", "daemon off;"]

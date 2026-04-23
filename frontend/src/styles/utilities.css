@@ -1,0 +1,87 @@
+/* ===== 工具类 ===== */
+
+/* 文字色 */
+.text-primary   { color: #111827; }
+.text-regular   { color: #374151; }
+.text-secondary { color: #64748b; }
+.text-muted     { color: #94a3b8; }
+.text-success   { color: var(--corp-success); }
+.text-warning   { color: var(--corp-warning); }
+.text-danger    { color: var(--corp-danger); }
+.text-link      { color: var(--corp-primary); }
+
+/* 背景色 */
+.bg-surface { background-color: #ffffff; }
+.bg-page    { background-color: #f8fafc; }
+.bg-sidebar { background-color: #0f172a; }
+
+/* 间距辅助 (基于 8px 网格) */
+.gap-xs  { gap: 4px; }
+.gap-sm  { gap: 8px; }
+.gap-md  { gap: 12px; }
+.gap-lg  { gap: 16px; }
+.gap-xl  { gap: 24px; }
+
+.mt-sm { margin-top: 8px; }
+.mt-md { margin-top: 16px; }
+.mb-sm { margin-bottom: 8px; }
+.mb-md { margin-bottom: 16px; }
+
+.p-md  { padding: 16px; }
+.p-lg  { padding: 24px; }
+
+/* Flex 常用布局 */
+.flex-center   { display: flex; align-items: center; justify-content: center; }
+.flex-between  { display: flex; align-items: center; justify-content: space-between; }
+.flex-start    { display: flex; align-items: center; justify-content: flex-start; }
+.flex-col      { display: flex; flex-direction: column; }
+.flex-1        { flex: 1; }
+
+/* 文本截断 */
+.truncate { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.line-clamp-2 { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.line-clamp-3 { display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+
+/* 分隔线 */
+.divider-h {
+  width: 100%;
+  height: 1px;
+  background-color: #e2e8f0;
+  margin: 12px 0;
+}
+
+/* 状态指示点 */
+.status-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  margin-right: 6px;
+}
+.status-dot.success { background-color: var(--corp-success); }
+.status-dot.warning { background-color: var(--corp-warning); }
+.status-dot.danger  { background-color: var(--corp-danger); }
+.status-dot.info    { background-color: var(--corp-primary); }
+.status-dot.muted   { background-color: #94a3b8; }
+
+/* ===== 滚动条 ===== */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8;
+}
+
+/* Firefox scrollbar */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: #cbd5e1 transparent;
+}

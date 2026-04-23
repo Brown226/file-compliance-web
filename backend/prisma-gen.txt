@@ -1,0 +1,39 @@
+﻿npx : 
+所在位置 行:1 字符: 202
++ ... file-compliance-web\backend; npx prisma generate --force 2>&1 | Out-F ...
++                                  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+! unknown or unexpected option: --force
+
+Generate artifacts (e.g. Prisma Client)
+
+Usage
+
+  $ prisma generate [options]
+
+Options
+          -h, --help   Display this help message
+            --schema   Custom path to your Prisma schema
+             --watch   Watch the Prisma schema and rerun after a change
+         --generator   Generator to use (may be provided multiple times)
+         --no-engine   Generate a client for use with Accelerate only
+         --no-hints    Hides the hint messages but still outputs errors and warnings
+   --allow-no-models   Allow generating a client without models
+   --sql               Generate typed sql module
+
+Examples
+
+  With an existing Prisma schema
+    $ prisma generate
+
+  Or specify a schema
+    $ prisma generate --schema=./schema.prisma
+
+  Run the command with multiple specific generators
+    $ prisma generate --generator client1 --generator client2
+
+  Watch Prisma schema file and rerun after each change
+    $ prisma generate --watch
+

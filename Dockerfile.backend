@@ -1,0 +1,88 @@
+# ============================================
+# 文件智能审查系统 - 后端服务 Dockerfile
+# 完全离线友好的版本 (v2 - 修复 entrypoint)
+# ============================================
+
+# 阶段1: 在 Docker 中重新安装依赖+生成 Prisma Client（生成 glibc 版本引擎）
+FROM node:20-bullseye AS prisma-builder
+
+WORKDIR /app
+
+# 安装 libssl1.1（Prisma 引擎需要）
+COPY offline-packages/libs/libssl1.1.deb /tmp/libssl1.1.deb
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    openssl \
+    ca-certificates \
+    wget \
+    && dpkg -x /tmp/libssl1.1.deb /tmp/libssl1.1 \
+    && cp -f /tmp/libssl1.1/usr/lib/x86_64-linux-gnu/libssl.so.1.1 /usr/lib/ \
+    && cp -f /tmp/libssl1.1/usr/lib/x86_64-linux-gnu/libcrypto.so.1.1 /usr/lib/ \
+    && ldconfig \
+    && rm -rf /tmp/libssl1.1.deb /tmp/libssl1.1 /var/lib/apt/lists/*
+
+# 复制 package 文件
+COPY backend/package*.json ./
+
+# 安装依赖
+RUN npm ci
+
+# 复制 Prisma Schema（db push 需要此文件）
+COPY backend/prisma/ ./prisma/
+
+# 在正确的平台（glibc）上重新生成 Prisma Client
+# npx 会优先使用 node_modules 中已安装的版本
+RUN npx -p prisma@5.22.0 prisma generate
+
+# ============================================
+# 阶段2: 运行阶段
+# ============================================
+FROM node:20-bullseye
+
+WORKDIR /app
+
+# 安装基础运行时库
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    openssl \
+    ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+# 复制 libssl1.1（确保运行时可用）
+COPY offline-packages/libs/libssl1.1.deb /tmp/libssl1.1.deb
+RUN dpkg -x /tmp/libssl1.1.deb /tmp/libssl1.1 \
+    && cp -f /tmp/libssl1.1/usr/lib/x86_64-linux-gnu/libssl.so.1.1 /usr/lib/ \
+    && cp -f /tmp/libssl1.1/usr/lib/x86_64-linux-gnu/libcrypto.so.1.1 /usr/lib/ \
+    && ldconfig \
+    && rm -rf /tmp/libssl1.1.deb /tmp/libssl1.1
+
+# 复制 node_modules（使用 prisma-builder 阶段生成的 Prisma Client）
+COPY --from=prisma-builder /app/node_modules ./node_modules
+
+# 复制编译产物
+COPY backend/dist ./dist
+
+# 复制 Prisma Schema 和迁移文件（运行时 prisma migrate deploy 需要）
+COPY backend/prisma ./prisma
+
+# 复制入口脚本
+COPY backend/docker-entrypoint.sh /app/docker-entrypoint.sh
+RUN chmod +x /app/docker-entrypoint.sh
+
+# 复制环境变量文件
+COPY .env.production .env
+
+# 创建上传目录
+RUN mkdir -p /app/uploads
+
+# 设置环境变量
+ENV NODE_ENV=production
+ENV PORT=3000
+
+# 暴露端口
+EXPOSE 3000
+
+# 健康检查
+HEALTHCHECK --interval=30s --timeout=5s --retries=3 \
+    CMD wget --no-verbose --tries=1 --spider http://localhost:3000/health || exit 1
+
+# 启动命令（通过 entrypoint 执行数据库迁移+seed+服务启动）
+ENTRYPOINT ["/app/docker-entrypoint.sh"]

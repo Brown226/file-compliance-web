@@ -1,0 +1,13 @@
+﻿Environment variables loaded from .env
+Prisma schema loaded from prisma\schema.prisma
+npx : Error: 
+所在位置 行:1 字符: 202
++ ... d e:\工作\file-compliance-web\backend; npx prisma generate 2>&1 | Out-F ...
++                                          ~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (Error: :String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+EPERM: operation not permitted, rename 'E:\工作\file-compliance-web\backend\node_modules\.prisma\client\query_engine-wind
+ows.dll.node.tmp24988' -> 'E:\工作\file-compliance-web\backend\node_modules\.prisma\client\query_engine-windows.dll.node'
+
+

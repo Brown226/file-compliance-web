@@ -1,0 +1,98 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="15.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <Import Project="$(MSBuildExtensionsPath)\$(MSBuildToolsVersion)\Microsoft.Common.props" Condition="Exists('$(MSBuildExtensionsPath)\$(MSBuildToolsVersion)\Microsoft.Common.props')" />
+  <PropertyGroup>
+    <Configuration Condition=" '$(Configuration)' == '' ">Debug</Configuration>
+    <Platform Condition=" '$(Platform)' == '' ">AnyCPU</Platform>
+    <ProjectGuid>{6F37D06C-F989-4EF9-961A-C653B1C5A82F}</ProjectGuid>
+    <OutputType>Library</OutputType>
+    <AppDesignerFolder>Properties</AppDesignerFolder>
+    <RootNamespace>Normative.Core</RootNamespace>
+    <AssemblyName>Normative.Core</AssemblyName>
+    <TargetFrameworkVersion>v4.5.2</TargetFrameworkVersion>
+    <FileAlignment>512</FileAlignment>
+    <Deterministic>true</Deterministic>
+  </PropertyGroup>
+  <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Debug|AnyCPU' ">
+    <DebugSymbols>true</DebugSymbols>
+    <DebugType>full</DebugType>
+    <Optimize>false</Optimize>
+    <OutputPath>bin\Debug\</OutputPath>
+    <DefineConstants>DEBUG;TRACE</DefineConstants>
+    <ErrorReport>prompt</ErrorReport>
+    <WarningLevel>4</WarningLevel>
+  </PropertyGroup>
+  <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Release|AnyCPU' ">
+    <DebugType>pdbonly</DebugType>
+    <Optimize>true</Optimize>
+    <OutputPath>bin\Release\</OutputPath>
+    <DefineConstants>TRACE</DefineConstants>
+    <ErrorReport>prompt</ErrorReport>
+    <WarningLevel>4</WarningLevel>
+  </PropertyGroup>
+  <ItemGroup>
+    <Reference Include="Aspose.CAD">
+      <HintPath>..\Lib\Aspose\Aspose.CAD.dll</HintPath>
+    </Reference>
+    <Reference Include="Aspose.Cells">
+      <HintPath>..\Lib\Aspose\Aspose.Cells.dll</HintPath>
+    </Reference>
+    <Reference Include="Aspose.Words">
+      <HintPath>..\Lib\Aspose\Aspose.Words.dll</HintPath>
+    </Reference>
+    <Reference Include="Autofac">
+      <HintPath>..\Lib\Autofac.dll</HintPath>
+    </Reference>
+    <Reference Include="Newtonsoft.Json">
+      <HintPath>..\Lib\Newtonsoft.Json.dll</HintPath>
+    </Reference>
+    <Reference Include="PaddleOCRSharp">
+      <HintPath>..\Lib\PaddleOCR\PaddleOCRSharp.dll</HintPath>
+    </Reference>
+    <Reference Include="Spire.Pdf">
+      <HintPath>..\Lib\Spire\Spire.Pdf.dll</HintPath>
+    </Reference>
+    <Reference Include="System" />
+    <Reference Include="System.Core" />
+    <Reference Include="System.Drawing" />
+    <Reference Include="System.Windows.Forms" />
+    <Reference Include="System.Xml.Linq" />
+    <Reference Include="System.Data.DataSetExtensions" />
+    <Reference Include="Microsoft.CSharp" />
+    <Reference Include="System.Data" />
+    <Reference Include="System.Net.Http" />
+    <Reference Include="System.Xml" />
+  </ItemGroup>
+  <ItemGroup>
+    <Compile Include="Attribute\DocTypeAttribute.cs" />
+    <Compile Include="AutoFacContext.cs" />
+    <Compile Include="CheckDocStandardHelper.cs" />
+    <Compile Include="CheckStandardHelper.cs" />
+    <Compile Include="CommHelper.cs" />
+    <Compile Include="DocTypeHandle\DocHandleBase.cs" />
+    <Compile Include="DocTypeHandle\DwgHandle.cs" />
+    <Compile Include="DocTypeHandle\PdfHandle.cs" />
+    <Compile Include="DocTypeHandle\ExcelHandle.cs" />
+    <Compile Include="DocTypeHandle\WordHandle.cs" />
+    <Compile Include="FileHelper.cs" />
+    <Compile Include="NormativeDataHelper.cs" />
+    <Compile Include="NormativeHelper.cs" />
+    <Compile Include="Properties\AssemblyInfo.cs" />
+  </ItemGroup>
+  <ItemGroup />
+  <ItemGroup>
+    <ProjectReference Include="..\Normative.Client\Normative.Client.csproj">
+      <Project>{25936cc2-a5c3-4a73-8b8c-0dd8a8a1c56a}</Project>
+      <Name>Normative.Client</Name>
+    </ProjectReference>
+    <ProjectReference Include="..\Normative.Context\Normative.Context.csproj">
+      <Project>{a088782f-a320-4524-a642-758d1c646748}</Project>
+      <Name>Normative.Context</Name>
+    </ProjectReference>
+    <ProjectReference Include="..\Normative.Model\Normative.Model.csproj">
+      <Project>{45162edb-ca71-43cc-98ff-66ede7609725}</Project>
+      <Name>Normative.Model</Name>
+    </ProjectReference>
+  </ItemGroup>
+  <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
+</Project>

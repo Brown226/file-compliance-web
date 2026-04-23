@@ -1,0 +1,80 @@
+# Dependencies
+node_modules/
+
+# Build output
+backend/dist/
+frontend/dist/
+
+# Environment
+backend/.env
+
+# Uploads
+backend/uploads/
+
+# IDE / Editor
+.vscode/
+.idea/
+
+# CodeBuddy / WorkBuddy
+.codebuddy/
+.workbuddy/
+
+# OS files
+Thumbs.db
+.DS_Store
+
+# Test / temp files
+test-compile2.js
+test-error.mjs
+test-result.txt
+
+# Auto-generated type declarations (by unplugin-vue-components / unplugin-auto-import)
+frontend/src/auto-imports.d.ts
+frontend/src/components.d.ts
+
+# Docker images & offline packages (too large for git)
+offline-packages/*.tar
+offline-packages/maxkb-images/
+offline-packages.zip
+offline-packages/DocGenerator/obj/
+offline-packages/.tmp-*
+maxkb-v2.8.0-x86_64-offline-installer/
+maxkb-temp.tar
+MaxKB-2.8.0/
+
+# Log files
+*.log
+backend-error.log
+backend-start.log
+backend/backend.log
+
+# Build output & cache
+frontend/.vite/
+frontend/build-*.txt
+frontend/build-result.txt
+frontend/fe-start.txt
+
+# Project documents (not source code)
+*.docx
+*.xlsx
+*.pdf
+*.dwg
+*.dxf
+*.png
+*.jpg
+*.jpeg
+*.gif
+*.bmp
+*.svg
+*.ico
+*.woff
+*.woff2
+*.ttf
+*.eot
+docs/参考网站的页面设计/
+docs/当前项目的页面设计/
+docs/文档校审资料和源码/
+docs/法律法规/
+
+# Backend startup scripts
+backend/startup-*.sh

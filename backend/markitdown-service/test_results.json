@@ -1,0 +1,317 @@
+[
+  {
+    "name": "Health Check",
+    "success": true,
+    "duration_ms": 12,
+    "error": null,
+    "checks": [
+      {
+        "name": "状态 OK",
+        "passed": true,
+        "detail": "status=ok"
+      },
+      {
+        "name": "版本号",
+        "passed": true,
+        "detail": "version=2.0.0"
+      },
+      {
+        "name": "格式列表",
+        "passed": true,
+        "detail": "formats=['.docx', '.pdf', '.pptx', '.xlsx']"
+      }
+    ]
+  },
+  {
+    "name": "DOCX - Word 文档解析",
+    "success": true,
+    "duration_ms": 300,
+    "error": null,
+    "checks": [
+      {
+        "name": "返回字段完整",
+        "passed": true,
+        "detail": "字段: text, pages, metadata, structure, markdown"
+      },
+      {
+        "name": "文本内容非空",
+        "passed": true,
+        "detail": "文本长度: 645 字符"
+      },
+      {
+        "name": "Markdown 非空",
+        "passed": true,
+        "detail": "Markdown 长度: 691 字符"
+      },
+      {
+        "name": "标题提取",
+        "passed": true,
+        "detail": "提取到 5 个标题: ['测试文档 - 文件合规审查系统', '1. 系统架构', '1.1 核心模块', '2. 支持的文件格式', '3. 审查流程']"
+      },
+      {
+        "name": "表格检测",
+        "passed": true,
+        "detail": "metadata.has_tables=True, structure.tables=1"
+      },
+      {
+        "name": "页面数据",
+        "passed": true,
+        "detail": "页数: 1"
+      },
+      {
+        "name": "无解析错误",
+        "passed": true,
+        "detail": "parse_error=None"
+      },
+      {
+        "name": "Markdown 标题标记",
+        "passed": true,
+        "detail": "Markdown 中包含 # 标题标记"
+      },
+      {
+        "name": "Markdown 表格标记",
+        "passed": true,
+        "detail": "Markdown 中包含表格标记"
+      }
+    ]
+  },
+  {
+    "name": "Convert API - .DOCX",
+    "success": true,
+    "duration_ms": 254,
+    "error": null,
+    "checks": [
+      {
+        "name": "成功",
+        "passed": true,
+        "detail": "success=True"
+      },
+      {
+        "name": "Markdown 非空",
+        "passed": true,
+        "detail": "长度: 691 字符"
+      },
+      {
+        "name": "扩展名正确",
+        "passed": true,
+        "detail": "extension=.docx"
+      }
+    ]
+  },
+  {
+    "name": "XLSX - Excel 电子表格解析",
+    "success": true,
+    "duration_ms": 46,
+    "error": null,
+    "checks": [
+      {
+        "name": "返回字段完整",
+        "passed": true,
+        "detail": "字段: text, pages, metadata, structure, markdown"
+      },
+      {
+        "name": "文本内容非空",
+        "passed": true,
+        "detail": "文本长度: 742 字符"
+      },
+      {
+        "name": "Markdown 非空",
+        "passed": true,
+        "detail": "Markdown 长度: 838 字符"
+      },
+      {
+        "name": "表格数据",
+        "passed": true,
+        "detail": "检测到 3 个表格"
+      },
+      {
+        "name": "标准编号内容",
+        "passed": true,
+        "detail": "文本中包含 GB/T 或 GB 或 NB/T 标准编号"
+      },
+      {
+        "name": "无解析错误",
+        "passed": true,
+        "detail": "parse_error=None"
+      },
+      {
+        "name": "Markdown 表格标记",
+        "passed": true,
+        "detail": "Markdown 中包含 | 表格标记"
+      },
+      {
+        "name": "多 Sheet 内容",
+        "passed": true,
+        "detail": "Markdown 中包含多 Sheet 标记"
+      }
+    ]
+  },
+  {
+    "name": "Convert API - .XLSX",
+    "success": true,
+    "duration_ms": 56,
+    "error": null,
+    "checks": [
+      {
+        "name": "成功",
+        "passed": true,
+        "detail": "success=True"
+      },
+      {
+        "name": "Markdown 非空",
+        "passed": true,
+        "detail": "长度: 838 字符"
+      },
+      {
+        "name": "扩展名正确",
+        "passed": true,
+        "detail": "extension=.xlsx"
+      }
+    ]
+  },
+  {
+    "name": "PDF - PDF 文档解析",
+    "success": true,
+    "duration_ms": 3808,
+    "error": null,
+    "checks": [
+      {
+        "name": "返回字段完整",
+        "passed": true,
+        "detail": "字段: text, pages, metadata, structure, markdown"
+      },
+      {
+        "name": "文本内容非空",
+        "passed": true,
+        "detail": "文本长度: 3639 字符"
+      },
+      {
+        "name": "逐页数据",
+        "passed": true,
+        "detail": "页数: 7, pages 数组长度: 7"
+      },
+      {
+        "name": "Markdown 非空",
+        "passed": true,
+        "detail": "Markdown 长度: 5617 字符"
+      },
+      {
+        "name": "无解析错误",
+        "passed": true,
+        "detail": "parse_error=None"
+      },
+      {
+        "name": "结构化段落",
+        "passed": true,
+        "detail": "段落数量: 63"
+      }
+    ]
+  },
+  {
+    "name": "Convert API - .PDF",
+    "success": true,
+    "duration_ms": 1232,
+    "error": null,
+    "checks": [
+      {
+        "name": "成功",
+        "passed": true,
+        "detail": "success=True"
+      },
+      {
+        "name": "Markdown 非空",
+        "passed": true,
+        "detail": "长度: 5617 字符"
+      },
+      {
+        "name": "扩展名正确",
+        "passed": true,
+        "detail": "extension=.pdf"
+      }
+    ]
+  },
+  {
+    "name": "PPTX - PowerPoint 演示文稿解析",
+    "success": true,
+    "duration_ms": 36,
+    "error": null,
+    "checks": [
+      {
+        "name": "返回字段完整",
+        "passed": true,
+        "detail": "字段: text, pages, metadata, structure, markdown"
+      },
+      {
+        "name": "文本内容非空",
+        "passed": true,
+        "detail": "文本长度: 377 字符"
+      },
+      {
+        "name": "Markdown 非空",
+        "passed": true,
+        "detail": "Markdown 长度: 502 字符"
+      },
+      {
+        "name": "幻灯片内容",
+        "passed": true,
+        "detail": "文本中包含幻灯片关键词"
+      },
+      {
+        "name": "Markdown 表格标记",
+        "passed": true,
+        "detail": "Markdown 中包含 | 表格标记"
+      },
+      {
+        "name": "无解析错误",
+        "passed": true,
+        "detail": "parse_error=None"
+      },
+      {
+        "name": "结构化段落",
+        "passed": true,
+        "detail": "段落数量: 16"
+      }
+    ]
+  },
+  {
+    "name": "Convert API - .PPTX",
+    "success": true,
+    "duration_ms": 49,
+    "error": null,
+    "checks": [
+      {
+        "name": "成功",
+        "passed": true,
+        "detail": "success=True"
+      },
+      {
+        "name": "Markdown 非空",
+        "passed": true,
+        "detail": "长度: 502 字符"
+      },
+      {
+        "name": "扩展名正确",
+        "passed": true,
+        "detail": "extension=.pptx"
+      }
+    ]
+  },
+  {
+    "name": "DWG - 不支持格式降级",
+    "success": true,
+    "duration_ms": 0,
+    "error": null,
+    "checks": [
+      {
+        "name": "返回空结果",
+        "passed": true,
+        "detail": "text 长度: 0"
+      },
+      {
+        "name": "标记不支持",
+        "passed": true,
+        "detail": "parse_error=DWG format not supported by markitdown"
+      }
+    ]
+  }
+]

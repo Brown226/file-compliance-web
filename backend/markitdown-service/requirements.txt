@@ -1,0 +1,39 @@
+# ============================================
+# MarkItDown 文档转换服务 - 精简依赖
+# 支持 DOCX / XLSX / PDF / PPTX
+# DWG 已改为前端 WASM 解析（@mlightcad/libredwg-web），后端不再处理
+# ============================================
+
+# --- Web 框架 ---
+fastapi==0.115.12
+uvicorn[standard]==0.34.2
+python-multipart==0.0.20
+
+# --- markitdown 核心（从本地 vendor/markitdown 源码安装） ---
+# pip install -e vendor/markitdown[docx,xlsx,pdf,pptx]
+
+# --- 格式依赖（显式声明，确保安装） ---
+# DOCX
+mammoth~=1.11.0
+lxml~=5.4.0
+
+# XLSX - pandas 是 markitdown XlsxConverter 的必需依赖（pd.read_excel + DataFrame.to_html）
+pandas~=2.2.0
+openpyxl~=3.1.5
+
+# PDF - pdfplumber 自带 pdfminer.six
+pdfplumber~=0.11.9
+
+# PPTX
+python-pptx~=1.0.2
+
+# --- markitdown 核心运行时依赖 ---
+beautifulsoup4~=4.13.4
+markdownify~=0.14.1
+defusedxml~=0.7.1
+magika~=0.6.1
+charset-normalizer~=3.4.2
+requests~=2.32.4
+
+# --- 生产部署 ---
+gunicorn~=23.0.0

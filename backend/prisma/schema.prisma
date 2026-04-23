@@ -1,0 +1,342 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Department {
+  id        String       @id @default(uuid())
+  name      String
+  parentId  String?
+  parent    Department?  @relation("DepartmentToDepartment", fields: [parentId], references: [id])
+  children  Department[] @relation("DepartmentToDepartment")
+  users     User[]
+  createdAt DateTime     @default(now())
+  updatedAt DateTime     @updatedAt
+
+  @@map("departments")
+}
+
+model User {
+  id           String      @id @default(uuid())
+  username     String      @unique
+  passwordHash String
+  name         String
+  email        String?
+  role         Role        @default(USER)
+  departmentId String?
+  department   Department? @relation(fields: [departmentId], references: [id])
+  tasks        Task[]
+  auditLogs    AuditLog[]
+  createdAt    DateTime    @default(now())
+  updatedAt    DateTime    @updatedAt
+
+  @@map("users")
+}
+
+enum Role {
+  ADMIN
+  MANAGER
+  USER
+}
+
+enum StandardStatus {
+  CURRENT       // 现行
+  UPCOMING      // 即将实施
+  ABOLISHED     // 已废止
+}
+
+model StandardFolder {
+  id        String           @id @default(uuid())
+  name      String
+  parentId  String?
+  parent    StandardFolder?  @relation("FolderToFolder", fields: [parentId], references: [id])
+  children  StandardFolder[] @relation("FolderToFolder")
+  standards Standard[]
+  createdAt DateTime         @default(now())
+  updatedAt DateTime         @updatedAt
+
+  @@map("standard_folders")
+}
+
+model Standard {
+  id                String           @id @default(uuid())
+  title             String
+  version           String
+  isActive          Boolean          @default(true)
+  standardNo        String?          // 标准编号，如 "GB/T 50001-2017"
+  standardName      String?          // 标准名称，如 "房屋建筑制图统一标准"
+  standardIdent     String?          // 标识符，如 "GB/T"，由代码自动提取
+  standardStatus    StandardStatus   @default(CURRENT)  // 细粒度状态：现行/即将实施/已废止
+  publishDate       DateTime?        // 发布日期
+  implementDate     DateTime?        // 实施日期
+  abolishDate       DateTime?        // 废止日期
+  folderId          String?          // 所属文件夹
+  folder            StandardFolder?  @relation(fields: [folderId], references: [id])
+  maxkbDocId        String?          // MaxKB 文档 ID
+  source            String?          // 来源：manual/import/normative_import/maxkb/temp_archive
+  importedBy        String?          // 导入人（用户ID）
+  createdAt         DateTime         @default(now())
+  updatedAt         DateTime         @updatedAt
+  tasks             Task[]
+  taskStandards     TaskStandard[]
+
+  @@map("standards")
+}
+
+model Task {
+  id                 String         @id @default(uuid())
+  title              String
+  description        String?
+  status             TaskStatus     @default(PENDING)
+  reviewMode         ReviewMode     @default(FULL_REVIEW)  // 审查模式
+  creatorId          String
+  creator            User           @relation(fields: [creatorId], references: [id])
+  standardId         String?
+  standard           Standard?      @relation(fields: [standardId], references: [id])
+  maxkbKnowledgeId   String?        // 用户选择的知识库 ID（审查时使用特定知识库）
+  files              TaskFile[]
+  details            TaskDetail[]
+  taskStandards      TaskStandard[]
+  refFileGroups      RefFileGroup[]
+  createdAt          DateTime       @default(now())
+  updatedAt          DateTime       @updatedAt
+
+  @@map("tasks")
+}
+
+enum TaskStatus {
+  PENDING
+  PROCESSING
+  COMPLETED
+  FAILED
+}
+
+enum ReviewMode {
+  LIBRARY_REVIEW    // 以库审文 — 使用标准库+规则引擎+MaxKB/LLM
+  DOC_REVIEW        // 以文审文 — 上游参照文件比对
+  CONSISTENCY       // 全文一致性 — 跨文件参数/语义比对
+  TYPO_GRAMMAR      // 错别字/语法 — 轻量LLM直接调用
+  MULTIMODAL        // 多模态识别 — 表格/公式/图纸
+  CUSTOM_RULE       // 自定义规则审查 — 用户自定义规则
+  FULL_REVIEW       // 全量审查 — 所有规则+AI（向后兼容默认模式）
+}
+
+model TaskFile {
+  id              String        @id @default(uuid())
+  taskId          String
+  task            Task          @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  fileName        String
+  filePath        String
+  fileSize        Int           @default(0)
+  fileType        String        // dwg, doc, docx, xls, xlsx, pdf
+  status          FileStatus    @default(PENDING)
+  textLength      Int           @default(0)    // 提取的文本总字符数
+  processedLength Int           @default(0)    // 已审查的字符数
+  errorCount      Int           @default(0)
+  extractedText      String?       @db.Text  // 解析后的纯文本（规则引擎用，缓存）
+  extractedMarkdown  String?       @db.Text  // 解析后的 Markdown（LLM 审查+前端预览用，缓存）
+  dwgMetadata      Json?    @map("dwg_metadata")  // DWG 文件级元数据（图层列表、图元统计等）
+  details         TaskDetail[]
+  createdAt       DateTime      @default(now())
+
+  @@map("task_files")
+}
+
+enum FileStatus {
+  PENDING
+  PROCESSING
+  COMPLETED
+  FAILED
+}
+
+model TaskDetail {
+  id            String    @id @default(uuid())
+  taskId        String
+  task          Task      @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  fileId        String?
+  file          TaskFile? @relation(fields: [fileId], references: [id])
+  issueType     String    // TYPO, VIOLATION, NAMING, ENCODING, ATTRIBUTE, HEADER, PAGE, SCAN, TEMPLATE
+  ruleCode      String?   // 规则错误代码: NAME_001, CODE_001, UNIT_001, ATTR_001, HEADER_001, PAGE_001, SCAN_001 等
+  severity      String    @default("warning") // error, warning, info
+  originalText  String
+  suggestedText String?
+  description   String?
+  cadHandleId   String?   // CAD 图元 Handle ID，用于在 CAD 中定位
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  diffRanges      Json?     // 字符级差异区间: { original: [{start,length}], correct: [{start,length}] }
+  matchLevel      Int?      // 标准引用匹配级别 (1-8)
+  similarity      Float?    // Levenshtein 相似度 (0-1)
+  standardRefId   String?   // 关联的标准库记录ID（用于跳转到标准详情）
+  standardRef     String?   // 标准条文引用（如 "GB/T 50265-2010 第5.2.1条"）
+  isFalsePositive  Boolean   @default(false)   // 是否为误报
+  fpMarkedBy       String?                     // 标记误报的用户ID
+  fpMarkedAt       DateTime?                    // 标记误报的时间
+  fpReason         String?                      // 误报原因
+  sourceReferences Json?                        // MaxKB RAG 溯源：[{content, document_name, similarity}]
+  textPosition     Json?                        // 文本位置信息：{chunkIndex, charOffset, totalChunks} 用于前端定位
+  dwgMetadata      Json?    @map("dwg_metadata") // DWG 解析元数据（图层、图元、标注等）
+
+  @@map("task_details")
+}
+
+model AuditLog {
+  id        String   @id @default(uuid())
+  action    String
+  resource  String
+  details   Json?
+  userId    String?
+  user      User?    @relation(fields: [userId], references: [id])
+  ipAddress String?
+  createdAt DateTime @default(now())
+
+  @@map("audit_logs")
+}
+
+model SystemConfig {
+  id        String   @id @default(uuid())
+  key       String   @unique
+  value     Json
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("system_configs")
+}
+
+model ReviewRule {
+  id          String   @id @default(uuid())
+  ruleCode    String   @unique  // NAME_001, CODE_001, UNIT_001, ATTR_001, HEADER_001, PAGE_001, SCAN_001
+  name        String             // 规则名称
+  category    String             // NAMING, ENCODING, ATTRIBUTE, HEADER, PAGE, SCAN, TEMPLATE
+  description String             // 规则描述
+  severity    String   @default("warning") // error, warning, info
+  enabled     Boolean  @default(true)      // 是否启用
+  config      Json?              // 规则配置参数（正则、阈值等，支持高级定制）
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@map("review_rules")
+}
+
+model TaskStandard {
+  id          String   @id @default(uuid())
+  taskId      String
+  task        Task     @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  standardId  String
+  standard    Standard @relation(fields: [standardId], references: [id], onDelete: Cascade)
+  createdAt   DateTime @default(now())
+
+  @@unique([taskId, standardId])
+  @@map("task_standards")
+}
+
+// ===== 以文审文：参照文件组 =====
+
+model RefFileGroup {
+  id          String     @id @default(uuid())
+  taskId      String
+  task        Task       @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  groupName   String     @default("默认参照组")  // 参照文件组名称
+  description String?    // 组描述
+  refFiles    RefFile[]
+  createdAt   DateTime   @default(now())
+
+  @@map("ref_file_groups")
+}
+
+model RefFile {
+  id           String       @id @default(uuid())
+  groupId      String
+  group        RefFileGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  fileName     String       // 原始文件名
+  filePath     String       // 存储路径
+  fileSize     Int          @default(0)
+  fileType     String       // dwg, doc, docx, xls, xlsx, pdf
+  extractedText String?     @db.Text  // 解析后的文本（缓存，避免重复解析）
+  createdAt    DateTime     @default(now())
+
+  @@map("ref_files")
+}
+
+// ===== 专业术语白名单 =====
+
+model TerminologyWhitelist {
+  id          String   @id @default(uuid())
+  term        String             // 术语名称
+  category    String             // 分类：核安全术语、设备术语、工艺术语、建筑术语、电气术语、自定义
+  aliases     String?            // 别名列表，逗号分隔
+  isBuiltin   Boolean  @default(false)  // 是否为内置术语（不可删除）
+  createdBy   String?            // 创建者
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@unique([term, category])
+  @@map("terminology_whitelist")
+}
+
+// ===== 提示词模板管理 =====
+
+model PromptTemplate {
+  id          String   @id @default(uuid())
+  key         String   @unique   // 唯一标识: library_review_system, typo_grammar_system, ...
+  module      String             // 审查场景: library_review, consistency, typo_grammar, doc_review, multimodal, ocr
+  role        String             // 角色: system, user
+  variant     String   @default("default")  // 用户提示词变体: default, with_context, no_context, comparison, structural, instruction
+  name        String             // 显示名称: "合规审查-系统提示词"
+  description String?            @db.Text  // 用途说明
+  content     String             @db.Text  // 提示词模板内容（支持 ${text}, ${ragContext}, ${standardContext}, ${refTexts} 等占位符）
+  placeholders String?           // 可用占位符说明，JSON 数组: ["${text}", "${ragContext}"]
+  defaultValue String?           @db.Text  // 默认值（用于重置）
+  isBuiltin   Boolean  @default(true)   // 是否为内置模板（内置模板不可删除）
+  enabled     Boolean  @default(true)   // 是否启用
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@map("prompt_templates")
+}
+
+// ===== 误报标记库 =====
+
+model FalsePositiveLibrary {
+  id            String   @id @default(uuid())
+  originalText  String             @db.Text  // 被标记为误报的原文
+  fpReason      String?            @db.Text  // 误报原因
+  issueType     String?            // 问题分类
+  ruleCode      String?            // 规则代码
+  severity      String?            // 严重度
+  markedById    String?            // 标记人用户ID
+  markedByName  String?            // 标记人姓名（冗余存储便于显示）
+  taskId        String?            // 关联的任务ID
+  taskTitle     String?            // 关联的任务标题（冗余存储）
+  count         Int      @default(1)  // 被标记次数（同一文本可能被多次标记）
+  lastMarkedAt  DateTime @default(now())  // 最后标记时间
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@index([originalText])
+  @@index([issueType])
+  @@index([lastMarkedAt])
+  @@map("false_positive_library")
+}
+
+// ===== 临时标准库（持久化） =====
+
+model TempStandardEntry {
+  id             String   @id @default(uuid())
+  userId         String             // 所属用户ID（按用户隔离）
+  standardNo     String             // 标准编号
+  standardName   String?            // 标准名称
+  standardIdent  String?            // 标识符，如 "GB/T"
+  rawText        String?            @db.Text  // 原始文本（Excel 行内容）
+  sourceFile     String?            // 来源文件名
+  importType     String   @default("excel")  // 导入方式：excel | manual
+  createdAt      DateTime @default(now())
+
+  @@index([userId])
+  @@map("temp_standard_entries")
+}

@@ -1,0 +1,637 @@
+﻿
+> backend@1.0.0 dev
+> ts-node-dev --respawn --transpile-only src/index.ts
+
+[INFO] 11:34:44 ts-node-dev ver. 2.0.0 (using ts-node ver. 10.9.2, typescript ver. 6.0.2)
+◇ injected env (0) from .env // tip: ⌘ override existing { override: true }
+Server is running in development mode on port 3000
+Redis Client Connected
+[0mGET /api/standards [33m401[0m 2.400 ms - 33[0m
+npm : Login Error: PrismaClientInitializationError: 
+所在位置 行:1 字符: 202
++ ... :UTF8; cd e:\工作\file-compliance-web\backend; npm run dev 2>&1 | Out-F ...
++                                                  ~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (Login Error: Pr...lizationError: :String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+Invalid `prisma.user.findUnique()` invocation in
+E:\工作\file-compliance-web\backend\src\controllers\auth.controller.ts:17:36
+
+  14 }
+  15 
+  16 // 查找用户
+→ 17 const user = await prisma.user.findUnique(
+Can't reach database server at `localhost:5432`
+
+Please make sure your database server is running at `localhost:5432`.
+    at $n.handleRequestError (E:\工作\file-compliance-web\backend\node_modules\@prisma\client\runtime\library.js:121:7615
+)
+    at $n.handleAndLogRequestError (E:\工作\file-compliance-web\backend\node_modules\@prisma\client\runtime\library.js:12
+1:6623)
+    at $n.request (E:\工作\file-compliance-web\backend\node_modules\@prisma\client\runtime\library.js:121:6307)
+    at l (E:\工作\file-compliance-web\backend\node_modules\@prisma\client\runtime\library.js:130:9633)
+    at login (E:\工作\file-compliance-web\backend\src\controllers\auth.controller.ts:17:18) {
+  clientVersion: '5.22.0',
+  errorCode: undefined
+}
+[0mPOST /api/auth/login [31m500[0m 4105.910 ms - 33[0m
+Failed to create audit log PrismaClientInitializationError: 
+Invalid `prisma.auditLog.create()` invocation in
+E:\工作\file-compliance-web\backend\src\services\audit.service.ts:75:28
+
+  72   userId?: string;
+  73   ipAddress?: string;
+  74 }) {
+→ 75   return prisma.auditLog.create(
+Can't reach database server at `localhost:5432`
+
+Please make sure your database server is running at `localhost:5432`.
+    at $n.handleRequestError (E:\工作\file-compliance-web\backend\node_modules\@prisma\client\runtime\library.js:121:7615
+)
+    at $n.handleAndLogRequestError (E:\工作\file-compliance-web\backend\node_modules\@prisma\client\runtime\library.js:12
+1:6623)
+    at $n.request (E:\工作\file-compliance-web\backend\node_modules\@prisma\client\runtime\library.js:121:6307)
+    at l (E:\工作\file-compliance-web\backend\node_modules\@prisma\client\runtime\library.js:130:9633) {
+  clientVersion: '5.22.0',
+  errorCode: undefined
+}
+[0mPOST /api/auth/login [32m200[0m 121.329 ms - 419[0m
+[0mGET /api/standards?take=5 [32m200[0m 27.396 ms - 1218[0m
+[0mGET /api/standards/std-naming-001/detail [32m200[0m 14.126 ms - 1471[0m
+[0mGET /api/departments [32m200[0m 11.585 ms - 806[0m
+[0mGET /api/employees?page=1&limit=10 [32m200[0m 42.721 ms - 865[0m
+[0mGET /api/dashboard/stats [32m200[0m 239.899 ms - 484[0m
+[0mGET /api/standards?take=2 [32m200[0m 34.031 ms - 501[0m
+[0mGET /api/tasks?take=5&mine=true [32m200[0m 8.741 ms - 22[0m
+[0mGET /api/tasks?take=9999&mine=true [36m304[0m 5.946 ms - -[0m
+[0mGET /api/standards?take=100 [32m200[0m 9.838 ms - 1932[0m
+[0mGET /api/tasks?skip=0&take=10 [32m200[0m 7.323 ms - 22[0m
+[0mGET /api/standards?skip=0&take=10 [32m200[0m 8.441 ms - 1932[0m
+[0mPOST /api/standards/vectorize/all [32m200[0m 2.848 ms - 92[0m
+[Embedding] 标准 "GB 50016-2014" 已分为 1 个块
+[Embedding] 批量向量化 1 条文本, 模型: Doubao-embedding-256-0628
+[Embedding] ✗ "GB 50016-2014": Embedding API 错误 (401): {"error":{"code":"AuthenticationError","message":"the API key or
+ AK/SK in the request is missing or invalid. request id: 02177579379807926e2e5c55e4a2de9d9b5763dcdefc18b76f31f","param"
+:"","type":"Unauthorized"}}
+[Embedding] 标准 "GB 50009-2012" 已分为 1 个块
+[Embedding] 批量向量化 1 条文本, 模型: Doubao-embedding-256-0628
+[Embedding] ✗ "GB 50009-2012": Embedding API 错误 (401): {"error":{"code":"AuthenticationError","message":"the API key or
+ AK/SK in the request is missing or invalid. request id: 02177579379886593b7aa1f5db1b5422a93dcfb04dc280f6a109e","param"
+:"","type":"Unauthorized"}}
+[Embedding] 标准 "GB 50011-2010" 已分为 1 个块
+[Embedding] 批量向量化 1 条文本, 模型: Doubao-embedding-256-0628
+[0mGET /api/standards?skip=0&take=10 [32m200[0m 8.701 ms - 1934[0m
+[Embedding] ✗ "GB 50011-2010": Embedding API 错误 (401): {"error":{"code":"AuthenticationError","message":"the API key or
+ AK/SK in the request is missing or invalid. request id: 021775793799574990e95037dc0613d8d2aeb1d80253bec2e576c","param"
+:"","type":"Unauthorized"}}
+[Embedding] 标准 "GB/T 50001-2017" 已分为 1 个块
+[Embedding] 批量向量化 1 条文本, 模型: Doubao-embedding-256-0628
+[Embedding] ✗ "GB/T 50001-2017": Embedding API 错误 (401): {"error":{"code":"AuthenticationError","message":"the API key 
+or AK/SK in the request is missing or invalid. request id: 02177579380036493d48a1e66202f00c169609005fb20c83e790c","para
+m":"","type":"Unauthorized"}}
+[Embedding] 标准 "GB 50300-2013" 已分为 1 个块
+[Embedding] 批量向量化 1 条文本, 模型: Doubao-embedding-256-0628
+[Embedding] ✗ "GB 50300-2013": Embedding API 错误 (401): {"error":{"code":"AuthenticationError","message":"the API key or
+ AK/SK in the request is missing or invalid. request id: 0217757938010991ed0cb3bb69e6925ee006b24386bd194c73dfb","param"
+:"","type":"Unauthorized"}}
+[Embedding] 标准 "GB 50015-2019" 已分为 1 个块
+[Embedding] 批量向量化 1 条文本, 模型: Doubao-embedding-256-0628
+[Embedding] ✗ "GB 50015-2019": Embedding API 错误 (401): {"error":{"code":"AuthenticationError","message":"the API key or
+ AK/SK in the request is missing or invalid. request id: 021775793801954f819a70ccfcb34f701bfee049253c600a0057c","param"
+:"","type":"Unauthorized"}}
+[Embedding] 标准 "工程文件命名规范" 已分为 8 个块
+[Embedding] 批量向量化 8 条文本, 模型: Doubao-embedding-256-0628
+[Embedding] ✗ "工程文件命名规范": Embedding API 错误 (401): {"error":{"code":"AuthenticationError","message":"the API key or AK/S
+K in the request is missing or invalid. request id: 021775793802778f6e9b285f158539e2f6f32ec2f66a158ac8385","param":"","
+type":"Unauthorized"}}
+[Embedding] 标准 "JGJ 16-2008" 已分为 1 个块
+[Embedding] 批量向量化 1 条文本, 模型: Doubao-embedding-256-0628
+[Embedding] ✗ "JGJ 16-2008": Embedding API 错误 (401): {"error":{"code":"AuthenticationError","message":"the API key or A
+K/SK in the request is missing or invalid. request id: 021775793803862f6e9b285f158539e2f6f32ec2f66a158607dbc","param":"
+","type":"Unauthorized"}}
+[Standard] 批量向量化完成: {
+  total: 8,
+  succeeded: 0,
+  failed: 8,
+  skipped: 0,
+  errors: [
+    {
+      standardId: 'std-GB500162014',
+      title: 'GB 50016-2014',
+      error: 'Embedding API 错误 (401): {"error":{"code":"AuthenticationError","message":"the API key or AK/SK in the request is missing or invalid. request id: 02177579379807926e2e5c55e4a2de9d9b5763dcdefc18b76f31f","param":"","type":"Unauthorized"}}'
+    },
+    {
+      standardId: 'std-GB500092012',
+      title: 'GB 50009-2012',
+      error: 'Embedding API 错误 (401): {"error":{"code":"AuthenticationError","message":"the API key or AK/SK in the request is missing or invalid. request id: 02177579379886593b7aa1f5db1b5422a93dcfb04dc280f6a109e","param":"","type":"Unauthorized"}}'
+    },
+    {
+      standardId: 'std-GB500112010',
+      title: 'GB 50011-2010',
+      error: 'Embedding API 错误 (401): {"error":{"code":"AuthenticationError","message":"the API key or AK/SK in the request is missing or invalid. request id: 021775793799574990e95037dc0613d8d2aeb1d80253bec2e576c","param":"","type":"Unauthorized"}}'
+    },
+    {
+      standardId: 'std-GBT500012017',
+      title: 'GB/T 50001-2017',
+      error: 'Embedding API 错误 (401): {"error":{"code":"AuthenticationError","message":"the API key or AK/SK in the request is missing or invalid. request id: 02177579380036493d48a1e66202f00c169609005fb20c83e790c","param":"","type":"Unauthorized"}}'
+    },
+    {
+      standardId: 'std-GB503002013',
+      title: 'GB 50300-2013',
+      error: 'Embedding API 错误 (401): {"error":{"code":"AuthenticationError","message":"the API key or AK/SK in the request is missing or invalid. request id: 0217757938010991ed0cb3bb69e6925ee006b24386bd194c73dfb","param":"","type":"Unauthorized"}}'
+    },
+    {
+      standardId: 'std-GB500152019',
+      title: 'GB 50015-2019',
+      error: 'Embedding API 错误 (401): {"error":{"code":"AuthenticationError","message":"the API key or AK/SK in the request is missing or invalid. request id: 021775793801954f819a70ccfcb34f701bfee049253c600a0057c","param":"","type":"Unauthorized"}}'
+    },
+    {
+      standardId: 'std-naming-001',
+      title: '工程文件命名规范',
+      error: 'Embedding API 错误 (401): {"error":{"code":"AuthenticationError","message":"the API key or AK/SK in the request is missing or invalid. request id: 021775793802778f6e9b285f158539e2f6f32ec2f66a158ac8385","param":"","type":"Unauthorized"}}'
+    },
+    {
+      standardId: 'std-JGJ162008',
+      title: 'JGJ 16-2008',
+      error: 'Embedding API 错误 (401): {"error":{"code":"AuthenticationError","message":"the API key or AK/SK in the request is missing or invalid. request id: 021775793803862f6e9b285f158539e2f6f32ec2f66a158607dbc","param":"","type":"Unauthorized"}}'
+    }
+  ]
+}
+[0mGET /api/dashboard/stats [32m200[0m 26.091 ms - 484[0m
+[0mGET /api/departments [32m200[0m 8.550 ms - 806[0m
+[0mGET /api/employees?page=1&limit=10 [32m200[0m 39.498 ms - 865[0m
+[0mGET /api/standards?skip=0&take=10 [32m200[0m 11.086 ms - 1924[0m
+[0mGET /api/system-config/llm_chat_model [36m304[0m 16.531 ms - -[0m
+[0mGET /api/system-config/llm_ocr_model [36m304[0m 14.930 ms - -[0m
+[0mGET /api/rules [36m304[0m 12.817 ms - -[0m
+[0mGET /api/audit-logs?page=1&limit=10 [32m200[0m 28.298 ms - 4295[0m
+[0mGET /api/system-config/llm_chat_model [36m304[0m 11.350 ms - -[0m
+[0mGET /api/system-config/llm_ocr_model [36m304[0m 6.057 ms - -[0m
+[0mGET /api/departments [36m304[0m 8.168 ms - -[0m
+[0mGET /api/employees?page=1&limit=10 [36m304[0m 13.883 ms - -[0m
+[0mGET /api/standards?skip=0&take=10 [36m304[0m 10.660 ms - -[0m
+[0mPOST /api/standards/std-naming-001/vectorize [32m200[0m 7.475 ms - 92[0m
+[Embedding] 标准 "工程文件命名规范" 已分为 8 个块
+[Embedding] 批量向量化 8 条文本, 模型: Doubao-embedding-256-0628
+[Standard] 向量化失败 "工程文件命名规范": Embedding API 错误 (401): {"error":{"code":"AuthenticationError","message":"the API key or A
+K/SK in the request is missing or invalid. request id: 021775793842342bae19a301e839859fb73b38a483a80f2d6bec4","param":"
+","type":"Unauthorized"}}
+[0mGET /api/standards?skip=0&take=10 [32m200[0m 4.628 ms - 1924[0m
+[0mPOST /api/standards/std-naming-001/vectorize [32m200[0m 4.412 ms - 92[0m
+[Embedding] 标准 "工程文件命名规范" 已分为 8 个块
+[Embedding] 批量向量化 8 条文本, 模型: Doubao-embedding-256-0628
+[Standard] 向量化失败 "工程文件命名规范": Embedding API 错误 (401): {"error":{"code":"AuthenticationError","message":"the API key or A
+K/SK in the request is missing or invalid. request id: 02177579384637743cc1cf6ced7e437334ae832707c2826703f9e","param":"
+","type":"Unauthorized"}}
+[0mGET /api/standards/std-naming-001/detail [32m200[0m 9.228 ms - 1470[0m
+[0mGET /api/standards?skip=0&take=10 [32m200[0m 5.291 ms - 1924[0m
+[0mGET /api/departments [36m304[0m 6.328 ms - -[0m
+[0mGET /api/employees?page=1&limit=10 [36m304[0m 6.999 ms - -[0m
+[0mGET /api/system-config/llm_chat_model [32m200[0m 7.096 ms - 267[0m
+[0mGET /api/system-config/llm_ocr_model [32m200[0m 7.187 ms - 266[0m
+[0mGET /api/standards?skip=0&take=10 [32m200[0m 10.564 ms - 1924[0m
+[0mGET /api/departments [36m304[0m 5.354 ms - -[0m
+[0mGET /api/employees?page=1&limit=10 [36m304[0m 36.450 ms - -[0m
+[0mGET /api/system-config/llm_chat_model [36m304[0m 10.814 ms - -[0m
+[0mGET /api/system-config/llm_ocr_model [36m304[0m 12.742 ms - -[0m
+[0mGET /api/departments [36m304[0m 320.737 ms - -[0m
+[0mGET /api/employees?page=1&limit=10 [36m304[0m 371.102 ms - -[0m
+[0mGET /api/system-config/llm_chat_model [36m304[0m 87.920 ms - -[0m
+[0mGET /api/system-config/llm_ocr_model [36m304[0m 87.109 ms - -[0m
+[0mGET /api/standards?skip=0&take=10 [36m304[0m 41.794 ms - -[0m
+[0mGET /api/system-config/llm_embedding_model [32m200[0m 267.714 ms - 14[0m
+[0mGET /api/system-config/llm_rerank_model [32m200[0m 267.251 ms - 14[0m
+[0mGET /api/system-config/llm_chat_model [36m304[0m 270.642 ms - -[0m
+[0mGET /api/system-config/llm_ocr_model [36m304[0m 270.446 ms - -[0m
+[0mGET /api/rules [32m200[0m 628.727 ms - 12725[0m
+[0mGET /api/audit-logs?page=1&limit=10 [32m200[0m 909.015 ms - 4281[0m
+[0mGET /api/rules [36m304[0m 392.766 ms - -[0m
+[0mGET /api/audit-logs?page=1&limit=10 [36m304[0m 189.889 ms - -[0m
+[0mGET /api/system-config/llm_chat_model [36m304[0m 25.238 ms - -[0m
+[0mGET /api/system-config/llm_embedding_model [36m304[0m 26.357 ms - -[0m
+[0mGET /api/system-config/llm_ocr_model [36m304[0m 39.525 ms - -[0m
+[0mGET /api/system-config/llm_rerank_model [36m304[0m 38.886 ms - -[0m
+[0mGET /api/departments [36m304[0m 124.618 ms - -[0m
+[0mGET /api/employees?page=1&limit=10 [36m304[0m 58.854 ms - -[0m
+[0mGET /api/standards?skip=0&take=10 [36m304[0m 85.267 ms - -[0m
+[0mPOST /api/standards/std-naming-001/vectorize [32m200[0m 10.134 ms - 92[0m
+[Embedding] 标准 "工程文件命名规范" 已分为 8 个块
+[Embedding] 批量向量化 8 条文本, 模型: Doubao-embedding-256-0628
+[Standard] 向量化失败 "工程文件命名规范": Embedding API 错误 (401): {"error":{"code":"AuthenticationError","message":"the API key or A
+K/SK in the request is missing or invalid. request id: 021775794786551377b40f86b525a5b2b80b969e4540b3f8e9953","param":"
+","type":"Unauthorized"}}
+[0mGET /api/standards?skip=0&take=10 [32m200[0m 12.214 ms - 1924[0m
+[0mGET /api/tasks?skip=0&take=10 [36m304[0m 22.299 ms - -[0m
+[0mGET /api/standards?take=100 [32m200[0m 8.294 ms - 1924[0m
+[0mGET /api/tasks?take=5&mine=true [36m304[0m 13.228 ms - -[0m
+[0mGET /api/tasks?take=9999&mine=true [36m304[0m 24.907 ms - -[0m
+[0mGET /api/system-config/llm_chat_model [33m401[0m 115.024 ms - 36[0m
+[0mGET /api/system-config/llm_ocr_model [33m401[0m 94.972 ms - 36[0m
+[0mGET /api/system-config/llm_embedding_model [33m401[0m 64.087 ms - 36[0m
+[0mGET /api/system-config/llm_rerank_model [33m401[0m 87.130 ms - 36[0m
+[0mPOST /api/auth/login [32m200[0m 215.602 ms - 419[0m
+[0mGET /api/dashboard/stats [36m304[0m 79.891 ms - -[0m
+[0mGET /api/system-config/llm_chat_model [36m304[0m 9.609 ms - -[0m
+[0mGET /api/system-config/llm_ocr_model [36m304[0m 30.172 ms - -[0m
+[0mGET /api/system-config/llm_embedding_model [36m304[0m 5.388 ms - -[0m
+[0mGET /api/system-config/llm_rerank_model [36m304[0m 5.734 ms - -[0m
+[0mPUT /api/system-config/llm_chat_model [32m200[0m 18.755 ms - 454[0m
+[0mPUT /api/system-config/llm_ocr_model [32m200[0m 9.756 ms - 452[0m
+[0mPUT /api/system-config/llm_embedding_model [32m200[0m 9.061 ms - 438[0m
+[0mPOST /api/system-config/test-llm [32m200[0m 418.939 ms - 221[0m
+[0mPUT /api/system-config/llm_chat_model [32m200[0m 7.037 ms - 454[0m
+[0mPUT /api/system-config/llm_ocr_model [32m200[0m 7.051 ms - 452[0m
+[0mPUT /api/system-config/llm_embedding_model [32m200[0m 7.000 ms - 438[0m
+[0mPOST /api/system-config/test-llm [32m200[0m 419.368 ms - 221[0m
+[0mPOST /api/system-config/test-llm [32m200[0m 418.435 ms - 146[0m
+[0mPUT /api/system-config/llm_chat_model [32m200[0m 6.660 ms - 454[0m
+[0mPUT /api/system-config/llm_ocr_model [32m200[0m 7.842 ms - 452[0m
+[0mPUT /api/system-config/llm_embedding_model [32m200[0m 7.628 ms - 449[0m
+[0mPOST /api/system-config/test-llm [32m200[0m 546.819 ms - 146[0m
+[0mPOST /api/system-config/test-llm [32m200[0m 463.739 ms - 146[0m
+[0mGET /api/system-config/llm_ocr_model [32m200[0m 84.976 ms - 266[0m
+[0mGET /api/system-config/llm_chat_model [32m200[0m 89.923 ms - 267[0m
+[0mGET /api/system-config/llm_embedding_model [32m200[0m 29.752 ms - 257[0m
+[0mGET /api/system-config/llm_rerank_model [36m304[0m 29.227 ms - -[0m
+[0mGET /api/system-config/llm_chat_model [36m304[0m 26.876 ms - -[0m
+[0mGET /api/system-config/llm_ocr_model [36m304[0m 26.525 ms - -[0m
+[0mGET /api/system-config/llm_embedding_model [36m304[0m 5.540 ms - -[0m
+[0mGET /api/system-config/llm_rerank_model [36m304[0m 6.315 ms - -[0m
+[0mPUT /api/system-config/llm_chat_model [32m200[0m 14.315 ms - 454[0m
+[0mPUT /api/system-config/llm_ocr_model [32m200[0m 7.037 ms - 452[0m
+[0mPUT /api/system-config/llm_embedding_model [32m200[0m 5.967 ms - 438[0m
+[0mPOST /api/system-config/test-llm [32m200[0m 443.621 ms - 221[0m
+[0mGET /api/system-config/llm_chat_model [32m200[0m 8.144 ms - 267[0m
+[0mGET /api/system-config/llm_ocr_model [32m200[0m 8.668 ms - 266[0m
+[0mGET /api/system-config/llm_embedding_model [32m200[0m 6.047 ms - 246[0m
+[0mGET /api/system-config/llm_rerank_model [36m304[0m 7.175 ms - -[0m
+[0mGET /api/system-config/llm_chat_model [36m304[0m 9.169 ms - -[0m
+[0mGET /api/system-config/llm_ocr_model [36m304[0m 9.474 ms - -[0m
+[0mGET /api/system-config/llm_embedding_model [36m304[0m 7.100 ms - -[0m
+[0mGET /api/system-config/llm_rerank_model [36m304[0m 7.611 ms - -[0m
+[0mGET /api/system-config/llm_chat_model [33m401[0m 3.398 ms - 36[0m
+[0mGET /api/system-config/llm_embedding_model [33m401[0m 4.691 ms - 36[0m
+[0mGET /api/system-config/llm_ocr_model [33m401[0m 5.796 ms - 36[0m
+[0mGET /api/system-config/llm_rerank_model [33m401[0m 2.299 ms - 36[0m
+[0mGET /api/system-config/llm_chat_model [33m401[0m 1.168 ms - 33[0m
+[0mGET /api/system-config/llm_ocr_model [33m401[0m 0.425 ms - 33[0m
+[0mGET /api/system-config/llm_embedding_model [33m401[0m 0.323 ms - 33[0m
+[0mGET /api/system-config/llm_rerank_model [33m401[0m 0.348 ms - 33[0m
+[0mGET /api/system-config/llm_rerank_model [36m304[0m 13.719 ms - -[0m
+[0mGET /api/system-config/llm_chat_model [36m304[0m 18.042 ms - -[0m
+[0mGET /api/system-config/llm_ocr_model [36m304[0m 17.516 ms - -[0m
+[0mGET /api/system-config/llm_embedding_model [36m304[0m 17.137 ms - -[0m
+[0mPUT /api/system-config/llm_chat_model [33m401[0m 0.698 ms - 33[0m
+[0mPOST /api/auth/logout [33m401[0m 0.416 ms - 33[0m
+[0mPOST /api/auth/login [32m200[0m 77.608 ms - 419[0m
+[0mGET /api/dashboard/stats [36m304[0m 29.832 ms - -[0m
+[0mGET /api/system-config/llm_chat_model [32m200[0m 11.288 ms - 267[0m
+[0mGET /api/system-config/llm_ocr_model [36m304[0m 10.880 ms - -[0m
+[0mGET /api/system-config/llm_embedding_model [36m304[0m 7.622 ms - -[0m
+[0mGET /api/system-config/llm_rerank_model [36m304[0m 26.919 ms - -[0m
+[0mPOST /api/system-config/test-llm [32m200[0m 14792.557 ms - 306[0m
+[0mPOST /api/system-config/test-llm [32m200[0m 601.312 ms - 209[0m
+[0mPOST /api/system-config/test-llm [32m200[0m 275.400 ms - 221[0m
+[0mPOST /api/system-config/test-llm [32m200[0m 384.706 ms - 220[0m
+[0mPUT /api/system-config/llm_chat_model [32m200[0m 8.451 ms - 454[0m
+[0mPUT /api/system-config/llm_ocr_model [32m200[0m 7.543 ms - 452[0m
+[0mPUT /api/system-config/llm_embedding_model [32m200[0m 6.324 ms - 437[0m
+[0mPUT /api/system-config/llm_rerank_model [32m200[0m 7.054 ms - 411[0m
+[0mPOST /api/system-config/test-llm [32m200[0m 567.343 ms - 220[0m
+[0mPOST /api/system-config/test-llm [32m200[0m 455.035 ms - 221[0m
+[0mPOST /api/system-config/test-llm [32m200[0m 774.791 ms - 216[0m
+[0mPOST /api/system-config/test-llm [32m200[0m 403.560 ms - 221[0m
+[0mPUT /api/system-config/llm_chat_model [32m200[0m 8.077 ms - 454[0m
+[0mPUT /api/system-config/llm_ocr_model [32m200[0m 6.575 ms - 452[0m
+[0mPUT /api/system-config/llm_embedding_model [32m200[0m 7.264 ms - 438[0m
+[0mPUT /api/system-config/llm_rerank_model [32m200[0m 6.109 ms - 411[0m
+[0mPOST /api/system-config/test-llm [32m200[0m 263.809 ms - 221[0m
+[INFO] 15:24:29 Restarting: E:\工作\file-compliance-web\backend\src\controllers\systemConfig.controller.ts has been modified
+◇ injected env (0) from .env // tip: ⌘ override existing { override: true }
+Server is running in development mode on port 3000
+Redis Client Connected
+[0mPOST /api/system-config/test-llm [32m200[0m 730.103 ms - 221[0m
+[0mPOST /api/system-config/test-llm [32m200[0m 96.607 ms - 221[0m
+[0mGET /api/system-config/llm_chat_model [32m200[0m 13.583 ms - 267[0m
+[0mGET /api/system-config/llm_ocr_model [32m200[0m 12.611 ms - 266[0m
+[0mGET /api/system-config/llm_embedding_model [32m200[0m 12.060 ms - 246[0m
+[0mGET /api/system-config/llm_rerank_model [32m200[0m 30.727 ms - 222[0m
+[0mGET /api/system-config/llm_chat_model [36m304[0m 13.555 ms - -[0m
+[0mGET /api/system-config/llm_ocr_model [36m304[0m 13.251 ms - -[0m
+[0mGET /api/system-config/llm_embedding_model [36m304[0m 8.992 ms - -[0m
+[0mGET /api/system-config/llm_rerank_model [36m304[0m 10.275 ms - -[0m
+[0mGET /api/system-config/llm_chat_model [36m304[0m 27.985 ms - -[0m
+[0mGET /api/system-config/llm_ocr_model [36m304[0m 52.181 ms - -[0m
+[0mGET /api/system-config/llm_embedding_model [36m304[0m 67.188 ms - -[0m
+[0mGET /api/system-config/llm_rerank_model [36m304[0m 67.485 ms - -[0m
+[0mPOST /api/system-config/test-llm [32m200[0m 779.135 ms - 202[0m
+[0mGET /api/system-config/llm_chat_model [36m304[0m 48.446 ms - -[0m
+[0mGET /api/system-config/llm_ocr_model [36m304[0m 47.157 ms - -[0m
+[0mGET /api/system-config/llm_embedding_model [36m304[0m 47.133 ms - -[0m
+[0mGET /api/system-config/llm_rerank_model [36m304[0m 46.237 ms - -[0m
+[0mGET /api/system-config/llm_chat_model [36m304[0m 9.386 ms - -[0m
+[0mGET /api/system-config/llm_ocr_model [36m304[0m 11.181 ms - -[0m
+[0mGET /api/system-config/llm_embedding_model [36m304[0m 19.703 ms - -[0m
+[0mGET /api/system-config/llm_rerank_model [36m304[0m 19.491 ms - -[0m
+[0mPOST /api/system-config/test-llm [32m200[0m 663.183 ms - 209[0m
+[0mPOST /api/system-config/test-llm [32m200[0m 902.071 ms - 202[0m
+[0mGET /api/system-config/llm_chat_model [36m304[0m 41.588 ms - -[0m
+[0mGET /api/system-config/llm_ocr_model [36m304[0m 40.151 ms - -[0m
+[0mGET /api/system-config/llm_embedding_model [36m304[0m 38.955 ms - -[0m
+[0mGET /api/system-config/llm_chat_model [36m304[0m 71.023 ms - -[0m
+[0mGET /api/system-config/llm_ocr_model [36m304[0m 70.643 ms - -[0m
+[0mGET /api/system-config/llm_rerank_model [36m304[0m 133.600 ms - -[0m
+[0mGET /api/system-config/llm_embedding_model [36m304[0m 5.528 ms - -[0m
+[0mGET /api/system-config/llm_rerank_model [36m304[0m 4.191 ms - -[0m
+[INFO] 15:37:42 Restarting: E:\工作\file-compliance-web\backend\src\controllers\systemConfig.controller.ts has been modified
+◇ injected env (0) from .env // tip: ⌘ override existing { override: true }
+Server is running in development mode on port 3000
+Redis Client Connected
+[0mGET /api/system-config/llm_chat_model [36m304[0m 156.325 ms - -[0m
+[0mGET /api/system-config/llm_ocr_model [36m304[0m 173.350 ms - -[0m
+[0mGET /api/system-config/llm_embedding_model [36m304[0m 171.937 ms - -[0m
+[0mGET /api/system-config/llm_rerank_model [36m304[0m 170.625 ms - -[0m
+[0mGET /api/system-config/llm_chat_model [36m304[0m 6.309 ms - -[0m
+[0mGET /api/system-config/llm_ocr_model [36m304[0m 11.626 ms - -[0m
+[0mGET /api/system-config/llm_embedding_model [36m304[0m 11.913 ms - -[0m
+[0mGET /api/system-config/llm_rerank_model [36m304[0m 13.218 ms - -[0m
+[0mGET /api/system-config/llm_chat_model [36m304[0m 64.298 ms - -[0m
+[0mGET /api/system-config/llm_ocr_model [36m304[0m 64.584 ms - -[0m
+[0mGET /api/system-config/llm_embedding_model [32m200[0m 64.855 ms - 246[0m
+[0mGET /api/system-config/llm_rerank_model [32m200[0m 68.598 ms - 222[0m
+[0mPOST /api/auth/logout [32m200[0m 10.755 ms - 26[0m
+[0mPOST /api/auth/login [32m200[0m 95.980 ms - 419[0m
+[0mGET /api/dashboard/stats [36m304[0m 56.708 ms - -[0m
+[0mGET /api/standards?take=100 [32m200[0m 21.028 ms - 1924[0m
+[0mGET /api/tasks?skip=0&take=10 [32m200[0m 8.097 ms - 22[0m
+[0mGET /api/standards?skip=0&take=10 [32m200[0m 6.096 ms - 1924[0m
+[0mGET /api/system-config/llm_ocr_model [36m304[0m 4.543 ms - -[0m
+[0mGET /api/system-config/llm_chat_model [36m304[0m 5.750 ms - -[0m
+[0mGET /api/system-config/llm_embedding_model [36m304[0m 4.238 ms - -[0m
+[0mGET /api/system-config/llm_rerank_model [36m304[0m 4.853 ms - -[0m
+[0mGET /api/standards?skip=0&take=10 [36m304[0m 8.614 ms - -[0m
+[0mPOST /api/standards/std-naming-001/vectorize [32m200[0m 6.032 ms - 92[0m
+[Embedding] 标准 "工程文件命名规范" 已分为 8 个块
+[Embedding] 批量向量化 8 条文本, 模型: Qwen/Qwen3-Embedding-8B
+[Standard] 向量化失败 "工程文件命名规范": This operation was aborted
+[0mGET /api/standards?skip=0&take=10 [32m200[0m 8.248 ms - 1924[0m
+[0mGET /api/standards/std-naming-001/detail [32m200[0m 9.154 ms - 1470[0m
+[0mGET /api/standards/std-naming-001/detail [36m304[0m 5.933 ms - -[0m
+[0mGET /api/system-config/llm_chat_model [36m304[0m 8.107 ms - -[0m
+[0mGET /api/system-config/llm_ocr_model [36m304[0m 7.981 ms - -[0m
+[0mGET /api/system-config/llm_embedding_model [36m304[0m 12.205 ms - -[0m
+[0mGET /api/system-config/llm_rerank_model [36m304[0m 12.251 ms - -[0m
+[0mGET /api/rules [36m304[0m 12.900 ms - -[0m
+[0mGET /api/system-config/llm_chat_model [36m304[0m 5.521 ms - -[0m
+[0mGET /api/system-config/llm_ocr_model [36m304[0m 5.193 ms - -[0m
+[0mGET /api/system-config/llm_embedding_model [36m304[0m 6.644 ms - -[0m
+[0mGET /api/system-config/llm_rerank_model [36m304[0m 6.481 ms - -[0m
+[0mGET /api/rules [36m304[0m 8.004 ms - -[0m
+[0mGET /api/audit-logs?page=1&limit=10 [32m200[0m 32.243 ms - 5150[0m
+[0mGET /api/tasks?skip=0&take=10 [36m304[0m 5.524 ms - -[0m
+[0mGET /api/standards?take=100 [32m200[0m 5.887 ms - 1924[0m
+[0mGET /api/dashboard/stats [36m304[0m 36.218 ms - -[0m
+[0mGET /api/tasks?take=5&mine=true [32m200[0m 20.777 ms - 22[0m
+[0mGET /api/tasks?take=9999&mine=true [32m200[0m 31.815 ms - 22[0m
+[0mGET /api/standards?take=100 [36m304[0m 9.395 ms - -[0m
+[0mGET /api/tasks?skip=0&take=10 [36m304[0m 5.914 ms - -[0m
+[0mGET /api/standards?skip=0&take=10 [36m304[0m 32.210 ms - -[0m
+[0mGET /api/rules [36m304[0m 7.990 ms - -[0m
+[0mGET /api/departments [36m304[0m 8.040 ms - -[0m
+[0mGET /api/employees?page=1&limit=10 [36m304[0m 9.481 ms - -[0m
+[0mGET /api/standards?skip=0&take=10 [36m304[0m 4.409 ms - -[0m
+[0mGET /api/system-config/llm_chat_model [36m304[0m 7.970 ms - -[0m
+[0mGET /api/system-config/llm_ocr_model [36m304[0m 8.709 ms - -[0m
+[0mGET /api/system-config/llm_embedding_model [36m304[0m 8.926 ms - -[0m
+[0mGET /api/system-config/llm_rerank_model [36m304[0m 8.717 ms - -[0m
+[0mGET /api/rules [36m304[0m 4.708 ms - -[0m
+[0mGET /api/audit-logs?page=1&limit=10 [36m304[0m 16.251 ms - -[0m
+[0mGET /api/rules [36m304[0m 6.645 ms - -[0m
+[0mGET /api/system-config/llm_chat_model [36m304[0m 5.175 ms - -[0m
+[0mGET /api/system-config/llm_ocr_model [36m304[0m 4.546 ms - -[0m
+[0mGET /api/system-config/llm_embedding_model [36m304[0m 7.226 ms - -[0m
+[0mGET /api/system-config/llm_rerank_model [36m304[0m 7.493 ms - -[0m
+[0mGET /api/departments [36m304[0m 7.582 ms - -[0m
+[0mGET /api/employees?page=1&limit=10 [36m304[0m 42.337 ms - -[0m
+[0mGET /api/standards?skip=0&take=10 [36m304[0m 12.884 ms - -[0m
+[0mGET /api/tasks?skip=0&take=10 [36m304[0m 5.237 ms - -[0m
+[0mPOST /api/system-config/test-llm [32m200[0m 416.478 ms - 148[0m
+[0mPOST /api/system-config/test-llm [32m200[0m 850.074 ms - 202[0m
+[0mGET /api/standards?skip=0&take=10 [32m200[0m 7.533 ms - 1924[0m
+[0mPOST /api/standards/upload [32m201[0m 221.528 ms - 14630[0m
+[0mDELETE /api/standards/std-GB500162014 [32m200[0m 37.710 ms - 32[0m
+[0mGET /api/standards?skip=0&take=10 [32m200[0m 128.803 ms - 1943[0m
+[0mDELETE /api/standards/std-GB500092012 [32m200[0m 19.015 ms - 32[0m
+[0mGET /api/standards?skip=0&take=10 [32m200[0m 10.349 ms - 1706[0m
+[0mDELETE /api/standards/std-GB500112010 [32m200[0m 9.132 ms - 32[0m
+[0mGET /api/standards?skip=0&take=10 [32m200[0m 8.580 ms - 1469[0m
+[0mDELETE /api/standards/std-naming-001 [32m200[0m 14.218 ms - 32[0m
+[0mGET /api/standards?skip=0&take=10 [32m200[0m 8.249 ms - 1228[0m
+[0mPOST /api/standards/dbb8f3bd-f46e-48cb-a5e4-dc5c4bbf4ed4/vectorize [32m200[0m 5.034 ms - 83[0m
+[Embedding] 标准 "发展规划法" 已分为 5 个块
+[Embedding] 批量向量化 5 条文本, 模型: Qwen/Qwen3-Embedding-8B
+[Standard] 向量化失败 "发展规划法": This operation was aborted
+[0mGET /api/standards?skip=0&take=10 [32m200[0m 12.032 ms - 1227[0m
+[0mGET /api/audit-logs?page=1&limit=10 [32m200[0m 24.053 ms - 4379[0m
+[0mGET /api/rules [36m304[0m 66.085 ms - -[0m
+[0mGET /api/system-config/llm_chat_model [36m304[0m 8.137 ms - -[0m
+[0mGET /api/system-config/llm_ocr_model [36m304[0m 14.612 ms - -[0m
+[0mGET /api/system-config/llm_embedding_model [36m304[0m 14.398 ms - -[0m
+[0mGET /api/system-config/llm_rerank_model [36m304[0m 14.076 ms - -[0m
+[0mGET /api/departments [36m304[0m 11.783 ms - -[0m
+[0mGET /api/employees?page=1&limit=10 [36m304[0m 9.670 ms - -[0m
+[0mGET /api/tasks?skip=0&take=10 [36m304[0m 13.949 ms - -[0m
+[0mGET /api/standards?skip=0&take=10 [36m304[0m 80.032 ms - -[0m
+[0mGET /api/standards?take=100 [32m200[0m 274.130 ms - 1227[0m
+[0mGET /api/tasks?skip=0&take=10 [36m304[0m 328.724 ms - -[0m
+[0mGET /api/standards?skip=0&take=10 [36m304[0m 576.198 ms - -[0m
+[0mPOST /api/standards/dbb8f3bd-f46e-48cb-a5e4-dc5c4bbf4ed4/vectorize [32m200[0m 529.815 ms - 83[0m
+[Embedding] 标准 "发展规划法" 已分为 5 个块
+[Embedding] 批量向量化 5 条文本, 模型: Qwen/Qwen3-Embedding-8B
+[Standard] 向量化失败 "发展规划法": This operation was aborted
+[0mGET /api/standards?skip=0&take=10 [32m200[0m 276.594 ms - 1227[0m
+[0mPOST /api/standards/vectorize/all [32m200[0m 34.845 ms - 92[0m
+[Embedding] 标准 "JGJ 16-2008" 已分为 1 个块
+[Embedding] 批量向量化 1 条文本, 模型: Qwen/Qwen3-Embedding-8B
+[Embedding] ✗ "JGJ 16-2008": This operation was aborted
+[0mGET /api/standards?skip=0&take=10 [32m200[0m 244.866 ms - 1227[0m
+[Embedding] 标准 "GB 50300-2013" 已分为 1 个块
+[Embedding] 批量向量化 1 条文本, 模型: Qwen/Qwen3-Embedding-8B
+[Embedding] ✗ "GB 50300-2013": This operation was aborted
+[Embedding] 标准 "GB 50015-2019" 已分为 1 个块
+[Embedding] 批量向量化 1 条文本, 模型: Qwen/Qwen3-Embedding-8B
+[Embedding] ✗ "GB 50015-2019": This operation was aborted
+[Embedding] 标准 "GB/T 50001-2017" 已分为 1 个块
+[Embedding] 批量向量化 1 条文本, 模型: Qwen/Qwen3-Embedding-8B
+[0mGET /api/tasks?skip=0&take=10 [36m304[0m 2754.077 ms - -[0m
+[Embedding] ✗ "GB/T 50001-2017": This operation was aborted
+[Standard] 批量向量化完成: {
+  total: 4,
+  succeeded: 0,
+  failed: 4,
+  skipped: 0,
+  errors: [
+    {
+      standardId: 'std-JGJ162008',
+      title: 'JGJ 16-2008',
+      error: 'This operation was aborted'
+    },
+    {
+      standardId: 'std-GB503002013',
+      title: 'GB 50300-2013',
+      error: 'This operation was aborted'
+    },
+    {
+      standardId: 'std-GB500152019',
+      title: 'GB 50015-2019',
+      error: 'This operation was aborted'
+    },
+    {
+      standardId: 'std-GBT500012017',
+      title: 'GB/T 50001-2017',
+      error: 'This operation was aborted'
+    }
+  ]
+}
+[0mGET /api/tasks?skip=0&take=10 [36m304[0m 871.866 ms - -[0m
+[0mGET /api/system-config/llm_chat_model [36m304[0m 2673.399 ms - -[0m
+[0mGET /api/system-config/llm_ocr_model [36m304[0m 2673.132 ms - -[0m
+[0mGET /api/system-config/llm_embedding_model [36m304[0m 2673.071 ms - -[0m
+[0mGET /api/system-config/llm_rerank_model [36m304[0m 2672.597 ms - -[0m
+[0mGET /api/standards?take=100 [32m200[0m 1008.749 ms - 1227[0m
+[0mGET /api/tasks?take=5&mine=true [36m304[0m 92.624 ms - -[0m
+[0mGET /api/tasks?take=9999&mine=true [36m304[0m 72.516 ms - -[0m
+[0mGET /api/tasks?skip=0&take=10 [36m304[0m 312.280 ms - -[0m
+[0mGET /api/standards?skip=0&take=10 [32m200[0m 99.535 ms - 1227[0m
+[0mGET /api/system-config/llm_chat_model [36m304[0m 64.592 ms - -[0m
+[0mGET /api/system-config/llm_ocr_model [36m304[0m 27.758 ms - -[0m
+[0mGET /api/system-config/llm_embedding_model [36m304[0m 6.021 ms - -[0m
+[0mGET /api/system-config/llm_rerank_model [36m304[0m 5.004 ms - -[0m
+[0mPUT /api/system-config/llm_chat_model [32m200[0m 33.335 ms - 454[0m
+[0mPUT /api/system-config/llm_ocr_model [32m200[0m 19.491 ms - 452[0m
+[0mPUT /api/system-config/llm_embedding_model [32m200[0m 9.069 ms - 438[0m
+[0mPUT /api/system-config/llm_rerank_model [32m200[0m 7.707 ms - 411[0m
+[0mGET /api/standards?take=100 [32m200[0m 16.535 ms - 1232[0m
+[0mGET /api/tasks?skip=0&take=10 [36m304[0m 19.458 ms - -[0m
+[0mGET /api/standards?skip=0&take=10 [32m200[0m 6.731 ms - 1232[0m
+[INFO] 16:01:51 Restarting: E:\工作\file-compliance-web\backend\src\services\embedding.service.ts has been modified
+◇ injected env (0) from .env // tip: ⌘ multiple files { path: ['.env.local', '.env'] }
+Server is running in development mode on port 3000
+Redis Client Connected
+[0mGET /api/standards/dbb8f3bd-f46e-48cb-a5e4-dc5c4bbf4ed4/detail [32m200[0m 46.435 ms - 14612[0m
+[INFO] 16:02:12 Restarting: E:\工作\file-compliance-web\backend\src\services\embedding.service.ts has been modified
+◇ injected env (0) from .env // tip: ⌁ auth for agents [www.vestauth.com]
+Server is running in development mode on port 3000
+Redis Client Connected
+[0mGET /api/standards/export/excel [32m200[0m 121.670 ms - 11921[0m
+[0mPOST /api/standards/dbb8f3bd-f46e-48cb-a5e4-dc5c4bbf4ed4/vectorize [32m200[0m 13.761 ms - 83[0m
+[Embedding] 标准 "发展规划法" 已分为 5 个块
+[Embedding] 批量向量化 5 条文本, 模型: Qwen/Qwen3-Embedding-8B
+[Standard] 向量化失败 "发展规划法": This operation was aborted
+[0mGET /api/standards?skip=0&take=10 [32m200[0m 8.010 ms - 1231[0m
+[0mPOST /api/standards/dbb8f3bd-f46e-48cb-a5e4-dc5c4bbf4ed4/vectorize [32m200[0m 6.141 ms - 83[0m
+[Embedding] 标准 "发展规划法" 已分为 5 个块
+[Embedding] 批量向量化 5 条文本, 模型: Qwen/Qwen3-Embedding-8B
+[Standard] 向量化失败 "发展规划法": This operation was aborted
+[0mGET /api/standards?skip=0&take=10 [32m200[0m 4.716 ms - 1231[0m
+[0mGET /api/standards?skip=0&take=10 [36m304[0m 6.719 ms - -[0m
+[0mDELETE /api/standards/std-JGJ162008 [32m200[0m 10.820 ms - 32[0m
+[0mGET /api/standards?skip=0&take=10 [32m200[0m 4.479 ms - 997[0m
+[0mDELETE /api/standards/std-GB500152019 [32m200[0m 11.148 ms - 32[0m
+[0mGET /api/standards?skip=0&take=10 [32m200[0m 6.045 ms - 759[0m
+[0mDELETE /api/standards/std-GB503002013 [32m200[0m 7.284 ms - 32[0m
+[0mGET /api/standards?skip=0&take=10 [32m200[0m 4.284 ms - 521[0m
+[0mDELETE /api/standards/std-GBT500012017 [32m200[0m 8.798 ms - 32[0m
+[0mGET /api/standards?skip=0&take=10 [32m200[0m 6.497 ms - 280[0m
+[0mPOST /api/standards/dbb8f3bd-f46e-48cb-a5e4-dc5c4bbf4ed4/vectorize [32m200[0m 7.840 ms - 83[0m
+[Embedding] 标准 "发展规划法" 已分为 5 个块
+[Embedding] 批量向量化 5 条文本, 模型: Qwen/Qwen3-Embedding-8B
+[Standard] 向量化失败 "发展规划法": This operation was aborted
+[0mGET /api/standards?skip=0&take=10 [32m200[0m 5.163 ms - 280[0m
+[0mPOST /api/standards/vectorize/all [32m200[0m 2.971 ms - 92[0m
+[Standard] 批量向量化完成: { total: 0, succeeded: 0, failed: 0, skipped: 0, errors: [] }
+[0mGET /api/standards?skip=0&take=10 [36m304[0m 4.945 ms - -[0m
+[0mPOST /api/standards/upload [32m201[0m 151.904 ms - 33612[0m
+[0mGET /api/tasks?skip=0&take=10 [36m304[0m 8.741 ms - -[0m
+[0mGET /api/standards?skip=0&take=10 [32m200[0m 7.476 ms - 532[0m
+[0mPOST /api/standards/vectorize/all [32m200[0m 2.497 ms - 92[0m
+[Standard] 批量向量化完成: { total: 0, succeeded: 0, failed: 0, skipped: 0, errors: [] }
+[0mGET /api/standards?skip=0&take=10 [36m304[0m 6.354 ms - -[0m
+[0mPOST /api/standards/ae0b56c6-07ef-4c91-951d-6207f6827e5a/vectorize [32m200[0m 5.388 ms - 79[0m
+[Embedding] 标准 "dvsdbvsdvsd" 已分为 12 个块
+[Embedding] 批量向量化 12 条文本, 模型: Qwen/Qwen3-Embedding-8B
+[Standard] 向量化失败 "dvsdbvsdvsd": This operation was aborted
+[0mGET /api/standards?skip=0&take=10 [32m200[0m 6.636 ms - 531[0m
+[0mGET /api/system-config/llm_chat_model [32m200[0m 6.240 ms - 267[0m
+[0mGET /api/system-config/llm_ocr_model [32m200[0m 3.995 ms - 266[0m
+[0mGET /api/system-config/llm_embedding_model [32m200[0m 4.286 ms - 246[0m
+[0mGET /api/system-config/llm_rerank_model [32m200[0m 4.174 ms - 222[0m
+[0mPUT /api/system-config/llm_chat_model [32m200[0m 24.274 ms - 454[0m
+[0mPUT /api/system-config/llm_ocr_model [32m200[0m 5.638 ms - 452[0m
+[0mPUT /api/system-config/llm_embedding_model [32m200[0m 5.405 ms - 438[0m
+[0mPUT /api/system-config/llm_rerank_model [32m200[0m 6.207 ms - 411[0m
+[0mGET /api/standards?skip=0&take=10 [32m200[0m 29.944 ms - 533[0m
+[0mPOST /api/standards/vectorize/all [32m200[0m 2.321 ms - 92[0m
+[Standard] 批量向量化完成: { total: 0, succeeded: 0, failed: 0, skipped: 0, errors: [] }
+[0mGET /api/standards?skip=0&take=10 [36m304[0m 6.111 ms - -[0m
+[0mPOST /api/standards/ae0b56c6-07ef-4c91-951d-6207f6827e5a/vectorize [32m200[0m 11.759 ms - 79[0m
+[Embedding] 标准 "dvsdbvsdvsd" 已分为 12 个块
+[Embedding] 批量向量化 12 条文本, 模型: Qwen/Qwen3-Embedding-8B
+[Standard] 向量化失败 "dvsdbvsdvsd": This operation was aborted
+[0mGET /api/standards?skip=0&take=10 [32m200[0m 5.217 ms - 532[0m
+[0mPOST /api/standards/dbb8f3bd-f46e-48cb-a5e4-dc5c4bbf4ed4/vectorize [32m200[0m 7.158 ms - 83[0m
+[Embedding] 标准 "发展规划法" 已分为 5 个块
+[Embedding] 批量向量化 5 条文本, 模型: Qwen/Qwen3-Embedding-8B
+[Standard] 向量化失败 "发展规划法": This operation was aborted
+[0mGET /api/standards?skip=0&take=10 [32m200[0m 6.032 ms - 531[0m
+[0mGET /api/departments [36m304[0m 9.597 ms - -[0m
+[0mGET /api/employees?page=1&limit=10 [36m304[0m 11.271 ms - -[0m
+[0mGET /api/system-config/llm_chat_model [32m200[0m 4.332 ms - 267[0m
+[0mGET /api/system-config/llm_ocr_model [32m200[0m 7.502 ms - 266[0m
+[0mGET /api/system-config/llm_embedding_model [32m200[0m 9.310 ms - 246[0m
+[0mGET /api/system-config/llm_rerank_model [32m200[0m 8.965 ms - 222[0m
+[0mPUT /api/system-config/llm_chat_model [32m200[0m 7.579 ms - 454[0m
+[0mPUT /api/system-config/llm_ocr_model [32m200[0m 6.478 ms - 452[0m
+[0mPUT /api/system-config/llm_embedding_model [32m200[0m 5.673 ms - 438[0m
+[0mPUT /api/system-config/llm_rerank_model [32m200[0m 5.652 ms - 411[0m
+[0mPOST /api/system-config/test-llm [32m200[0m 578.466 ms - 202[0m
+[0mGET /api/standards?skip=0&take=10 [32m200[0m 34.223 ms - 533[0m
+[0mGET /api/departments [36m304[0m 5.452 ms - -[0m
+[0mGET /api/employees?page=1&limit=10 [36m304[0m 13.815 ms - -[0m
+[0mGET /api/standards?skip=0&take=10 [36m304[0m 4.469 ms - -[0m
+[0mPOST /api/standards/ae0b56c6-07ef-4c91-951d-6207f6827e5a/vectorize [32m200[0m 11.492 ms - 79[0m
+[Embedding] 标准 "dvsdbvsdvsd" 已分为 12 个块
+[Embedding] 批量向量化 12 条文本, 模型: Qwen/Qwen3-Embedding-8B
+[Standard] 向量化失败 "dvsdbvsdvsd": This operation was aborted
+[0mGET /api/standards?skip=0&take=10 [32m200[0m 6.074 ms - 532[0m
+[0mGET /api/standards?skip=0&take=10 [36m304[0m 11.847 ms - -[0m
+[0mGET /api/standards?skip=0&take=10 [36m304[0m 16.954 ms - -[0m
+[0mPOST /api/auth/logout [32m200[0m 4.933 ms - 26[0m
+[0mPOST /api/auth/login [32m200[0m 101.712 ms - 419[0m
+[0mGET /api/dashboard/stats [36m304[0m 81.243 ms - -[0m
+[0mGET /api/standards?skip=0&take=10 [36m304[0m 5.507 ms - -[0m
+[0mPOST /api/standards/ae0b56c6-07ef-4c91-951d-6207f6827e5a/vectorize [32m200[0m 66.264 ms - 79[0m
+[Embedding] 标准 "dvsdbvsdvsd" 已分为 12 个块
+[Embedding] 批量向量化 12 条文本, 模型: Qwen/Qwen3-Embedding-8B
+[Standard] 向量化失败 "dvsdbvsdvsd": This operation was aborted
+[0mGET /api/standards?skip=0&take=10 [32m200[0m 32.287 ms - 532[0m
+[0mGET /api/departments [36m304[0m 7.376 ms - -[0m
+[0mGET /api/employees?page=1&limit=10 [36m304[0m 47.927 ms - -[0m
+[0mGET /api/system-config/llm_chat_model [32m200[0m 8.395 ms - 267[0m
+[0mGET /api/system-config/llm_ocr_model [32m200[0m 7.976 ms - 266[0m
+[0mGET /api/system-config/llm_embedding_model [32m200[0m 7.695 ms - 246[0m
+[0mGET /api/system-config/llm_rerank_model [32m200[0m 4.211 ms - 222[0m
+[0mGET /api/system-config/llm_chat_model [36m304[0m 36.740 ms - -[0m
+[0mGET /api/system-config/llm_ocr_model [36m304[0m 36.983 ms - -[0m
+[0mGET /api/system-config/llm_embedding_model [36m304[0m 36.590 ms - -[0m
+[0mGET /api/system-config/llm_rerank_model [36m304[0m 42.469 ms - -[0m
+[0mGET /api/tasks?skip=0&take=10 [36m304[0m 6.890 ms - -[0m
+[0mGET /api/standards?skip=0&take=10 [36m304[0m 8.023 ms - -[0m
+[0mGET /api/departments [36m304[0m 5.479 ms - -[0m
+[0mGET /api/employees?page=1&limit=10 [36m304[0m 7.976 ms - -[0m
+[0mGET /api/standards?skip=0&take=10 [36m304[0m 4.460 ms - -[0m
+[0mPOST /api/standards/ae0b56c6-07ef-4c91-951d-6207f6827e5a/vectorize [32m200[0m 6.168 ms - 79[0m
+[Embedding] 标准 "dvsdbvsdvsd" 已分为 12 个块
+[Embedding] 批量向量化 12 条文本, 模型: Qwen/Qwen3-Embedding-8B
+[Standard] 向量化失败 "dvsdbvsdvsd": This operation was aborted
+[0mGET /api/standards?skip=0&take=10 [32m200[0m 5.979 ms - 532[0m

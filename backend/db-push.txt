@@ -1,0 +1,13 @@
+﻿Environment variables loaded from .env
+Prisma schema loaded from prisma\schema.prisma
+Datasource "db": PostgreSQL database "file_review_db", schema "public" at "localhost:5432"
+
+npx : Error: P1001: Can't reach database server at `localhost:5432`
+所在位置 行:1 字符: 202
++ ... iance-web\backend; npx prisma db push --accept-data-loss 2>&1 | Out-F ...
++                        ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (Error: P1001: C...localhost:5432`:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+
+Please make sure your database server is running at `localhost:5432`.

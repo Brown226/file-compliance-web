@@ -1,0 +1,78 @@
+services:
+  maxkb:
+    image: registry.fit2cloud.com/maxkb/maxkb:v2.8.0
+    container_name: file_review_maxkb
+    hostname: maxkb
+    ports:
+      - "8080:8080"
+    volumes:
+      - maxkb-logs:/opt/maxkb/logs
+      - maxkb-local:/opt/maxkb/local
+    env_file:
+      - maxkb-runtime/maxkb/conf/maxkb.env
+    depends_on:
+      pgsql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "localhost:8080"]
+      interval: 30s
+      timeout: 10s
+      retries: 120
+      start_period: 120s
+    command: ['/usr/bin/start-maxkb.sh']
+    networks:
+      - maxkb-network
+
+  pgsql:
+    image: registry.fit2cloud.com/maxkb/maxkb:v2.8.0
+    container_name: file_review_maxkb_pgsql
+    hostname: pgsql
+    ports:
+      - "127.0.0.1:15432:5432"
+    volumes:
+      - maxkb-pgsql-data:/opt/maxkb/data
+    env_file:
+      - maxkb-runtime/maxkb/conf/pgsql.env
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "pg_isready", "-q", "-d", "postgres", "-U", "root"]
+      interval: 10s
+      timeout: 10s
+      retries: 30
+    command: ["/usr/bin/start-postgres.sh"]
+    networks:
+      - maxkb-network
+
+  redis:
+    image: registry.fit2cloud.com/maxkb/maxkb:v2.8.0
+    container_name: file_review_maxkb_redis
+    hostname: redis
+    ports:
+      - "127.0.0.1:16379:6379"
+    volumes:
+      - maxkb-redis-data:/opt/maxkb/data
+      - ./maxkb-runtime/maxkb/conf:/opt/maxkb/conf
+    env_file:
+      - maxkb-runtime/maxkb/conf/redis.env
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "Password123@redis", "ping"]
+      interval: 10s
+      timeout: 10s
+      retries: 30
+    command: ["/usr/bin/start-redis.sh"]
+    networks:
+      - maxkb-network
+
+volumes:
+  maxkb-logs:
+  maxkb-local:
+  maxkb-pgsql-data:
+  maxkb-redis-data:
+
+networks:
+  maxkb-network:
+    driver: bridge
