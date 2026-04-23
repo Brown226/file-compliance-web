@@ -1,5 +1,9 @@
 # Dependencies
 node_modules/
+backend/markitdown-service/.venv/
+
+# Binary libraries (should use package manager instead)
+Normative/Lib/
 
 # Build output
 backend/dist/
