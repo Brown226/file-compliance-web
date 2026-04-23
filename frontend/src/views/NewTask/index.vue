@@ -93,11 +93,13 @@ import { ElMessage } from 'element-plus';
 import type { UploadFile } from 'element-plus';
 import { createTaskApi, getReviewModesApi, uploadRefFilesApi } from '@/api/task';
 import { getKnowledgeBasesApi, getMaxKBStatusApi } from '@/api/maxkb';
+import { useUserStore } from '@/stores/user';
 import StepBasicInfo from './StepBasicInfo.vue';
 import StepFileUpload from './StepFileUpload.vue';
 import StepConfirm from './StepConfirm.vue';
 
 const router = useRouter();
+const userStore = useUserStore();
 const stepFileUploadRef = ref<InstanceType<typeof StepFileUpload> | null>(null);
 
 const step = ref(1);
@@ -162,6 +164,13 @@ const goToKnowledgeStep = async () => {
 
 /** 步骤3确认提交 */
 const submitTask = async () => {
+  // 检查用户是否已登录
+  if (!userStore.token) {
+    ElMessage.error('请先登录后再创建任务');
+    router.push('/login');
+    return;
+  }
+
   submitting.value = true;
   try {
     const fd = new FormData();

@@ -12,7 +12,15 @@ export const createTask = async (req: AuthRequest, res: Response): Promise<void>
     const files = req.files as Express.Multer.File[];
 
     if (!title) { error(res, '标题为必填项', 400); return; }
-    if (!creatorId) { error(res, '未认证用户', 401); return; }
+    if (!creatorId) { 
+      console.error('[Create Task] 未认证用户尝试创建任务:', {
+        ip: req.ip,
+        userAgent: req.headers['user-agent'],
+        hasAuthHeader: !!req.headers.authorization,
+      });
+      error(res, '未认证用户，请先登录', 401); 
+      return; 
+    }
 
     // 解析 standardIds（前端通过 FormData 传 JSON 字符串）
     let parsedStandardIds: string[] | undefined;
