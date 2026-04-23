@@ -8,17 +8,13 @@ FROM node:20-bullseye AS prisma-builder
 
 WORKDIR /app
 
-# 安装 libssl1.1（Prisma 引擎需要）
-COPY offline-packages/libs/libssl1.1.deb /tmp/libssl1.1.deb
+# 安装 libssl1.1（Prisma 引擎需要）- 在线构建时跳过
+# COPY offline-packages/libs/libssl1.1.deb /tmp/libssl1.1.deb
 RUN apt-get update && apt-get install -y --no-install-recommends \
     openssl \
     ca-certificates \
     wget \
-    && dpkg -x /tmp/libssl1.1.deb /tmp/libssl1.1 \
-    && cp -f /tmp/libssl1.1/usr/lib/x86_64-linux-gnu/libssl.so.1.1 /usr/lib/ \
-    && cp -f /tmp/libssl1.1/usr/lib/x86_64-linux-gnu/libcrypto.so.1.1 /usr/lib/ \
-    && ldconfig \
-    && rm -rf /tmp/libssl1.1.deb /tmp/libssl1.1 /var/lib/apt/lists/*
+    && rm -rf /var/lib/apt/lists/*
 
 # 复制 package 文件
 COPY backend/package*.json ./
@@ -46,13 +42,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
-# 复制 libssl1.1（确保运行时可用）
-COPY offline-packages/libs/libssl1.1.deb /tmp/libssl1.1.deb
-RUN dpkg -x /tmp/libssl1.1.deb /tmp/libssl1.1 \
-    && cp -f /tmp/libssl1.1/usr/lib/x86_64-linux-gnu/libssl.so.1.1 /usr/lib/ \
-    && cp -f /tmp/libssl1.1/usr/lib/x86_64-linux-gnu/libcrypto.so.1.1 /usr/lib/ \
-    && ldconfig \
-    && rm -rf /tmp/libssl1.1.deb /tmp/libssl1.1
+# 复制 libssl1.1（确保运行时可用）- 在线构建时跳过
+# COPY offline-packages/libs/libssl1.1.deb /tmp/libssl1.1.deb
+# RUN dpkg -x /tmp/libssl1.1.deb /tmp/libssl1.1 \
+#     && cp -f /tmp/libssl1.1/usr/lib/x86_64-linux-gnu/libssl.so.1.1 /usr/lib/ \
+#     && cp -f /tmp/libssl1.1/usr/lib/x86_64-linux-gnu/libcrypto.so.1.1 /usr/lib/ \
+#     && ldconfig \
+#     && rm -rf /tmp/libssl1.1.deb /tmp/libssl1.1
 
 # 复制 node_modules（使用 prisma-builder 阶段生成的 Prisma Client）
 COPY --from=prisma-builder /app/node_modules ./node_modules
