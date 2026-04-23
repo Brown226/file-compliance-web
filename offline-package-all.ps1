@@ -209,6 +209,41 @@ foreach ($file in $configFiles) {
     }
 }
 
+# 复制 Prisma 迁移目录
+$migrationsSrc = "backend\prisma\migrations"
+$migrationsDest = Join-Path $COMPOSE_OUTPUT "backend\prisma\migrations"
+if (Test-Path $migrationsSrc) {
+    if (Test-Path $migrationsDest) { Remove-Item $migrationsDest -Recurse -Force }
+    Copy-Item $migrationsSrc -Destination $migrationsDest -Recurse -Force
+    Write-Info "复制: $migrationsSrc -> $migrationsDest"
+}
+
+# 复制部署脚本和文档
+$deployScripts = @(
+    "offline-packages\deploy-offline.bat",
+    "offline-packages\deploy-offline.sh",
+    "offline-packages\load-images.bat",
+    "offline-packages\load-images.sh",
+    "offline-packages\DEPLOYMENT.md",
+    "offline-packages\QUICK-REFERENCE.md",
+    "offline-packages\CHECKLIST.txt"
+)
+
+foreach ($file in $deployScripts) {
+    if (Test-Path $file) {
+        $dest = Join-Path $OUTPUT_DIR (Split-Path $file -Leaf)
+        Copy-Item $file -Destination $dest -Force
+    }
+}
+
+# 复制 MaxKB 运行时配置
+$maxkbRuntimeDest = Join-Path $OUTPUT_DIR "maxkb-runtime"
+if (Test-Path "maxkb-runtime") {
+    if (Test-Path $maxkbRuntimeDest) { Remove-Item $maxkbRuntimeDest -Recurse -Force }
+    Copy-Item "maxkb-runtime" -Destination $maxkbRuntimeDest -Recurse -Force
+    Write-Info "复制: maxkb-runtime -> $maxkbRuntimeDest"
+}
+
 Write-Success "配置文件已复制到: $COMPOSE_OUTPUT"
 
 # 生成镜像加载脚本

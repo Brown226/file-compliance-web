@@ -92,7 +92,7 @@ sleep 30
 
 # 检查各个服务状态
 CHECK_PASSED=0
-CHECK_TOTAL=5
+CHECK_TOTAL=6
 
 check_service() {
     local service_name=$1
@@ -120,6 +120,9 @@ check_service "backend" "后端服务"
 
 echo "      检查前端 Web 服务..."
 check_service "frontend" "前端服务"
+
+echo "      检查 MaxKB 知识库..."
+check_service "maxkb" "MaxKB"
 
 echo ""
 echo "========================================"

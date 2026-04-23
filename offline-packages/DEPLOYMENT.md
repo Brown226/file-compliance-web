@@ -76,7 +76,20 @@ sudo ./deploy-offline.sh
 scp -r offline-packages user@target-server:/opt/
 ```
 
-### 步骤 2: 检查前置条件
+### 步骤 2: 配置环境变量
+
+> ⚠️ **重要**: 如果需要使用 MaxKB 知识库功能，必须修改 `MAXKB_PUBLIC_URL` 为服务器实际 IP。
+
+编辑 `compose-files/.env.production`，找到以下配置并修改：
+
+```bash
+# 将 localhost 改为服务器实际 IP（如 192.168.1.100）
+MAXKB_PUBLIC_URL=http://192.168.1.100:8080
+```
+
+如果不修改，MaxKB 知识库功能仅限本机浏览器访问，其他机器无法打开 MaxKB 页面。
+
+### 步骤 3: 检查前置条件
 
 确保目标服务器已安装：
 - ✅ Docker Engine 20.10+ 或 Docker Desktop
@@ -98,7 +111,7 @@ df -h          # 磁盘空间
 free -h        # 内存
 ```
 
-### 步骤 3: 执行一键部署
+### 步骤 4: 执行一键部署
 
 **Windows:**
 ```batch
@@ -287,6 +300,15 @@ docker compose -f docker-compose.offline.yml logs maxkb
 
 # 重启 MaxKB
 docker compose -f docker-compose.offline.yml restart maxkb
+```
+
+**重要提示**: MaxKB 为**可选服务**，核心文件审查功能不依赖 MaxKB。如果 MaxKB 持续启动失败，可以暂时禁用：
+```bash
+# 停止 MaxKB
+docker compose -f docker-compose.offline.yml stop maxkb maxkb-pgsql maxkb-redis
+
+# 其他服务仍可正常使用
+docker compose -f docker-compose.offline.yml ps
 ```
 
 ---

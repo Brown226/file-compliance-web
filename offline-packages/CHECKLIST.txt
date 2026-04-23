@@ -19,11 +19,13 @@
 ✅ load-images.sh                - Linux 镜像加载脚本
 
 【配置文件】
-✅ compose-files/docker-compose.offline.yml  - Docker Compose 配置
-✅ compose-files/.env.offline                - 环境变量模板
+✅ compose-files/docker-compose.offline.yml  - Docker Compose 配置（离线部署用）
+✅ compose-files/docker-compose.complete.yml - Docker Compose 配置（在线构建用）
+✅ compose-files/.env.offline                - 环境变量模板（离线部署）
 ✅ compose-files/.env.production             - 生产环境配置
-✅ compose-files/nginx.conf                  - Nginx 反向代理
-✅ compose-files/backend/prisma/init-db.sql  - 数据库初始化
+✅ compose-files/nginx.conf                  - Nginx 反向代理（含 /uploads/ 代理）
+✅ compose-files/backend/prisma/init-db.sql  - 数据库初始化（pgvector 扩展）
+✅ compose-files/backend/prisma/migrations/  - Prisma 迁移文件（含基线迁移）
 
 【MaxKB 配置】
 ✅ maxkb-runtime/maxkb/conf/maxkb.env   - MaxKB 主配置
@@ -46,14 +48,17 @@
 □ 至少 8GB 可用内存
 □ 至少 20GB 可用磁盘空间
 □ 端口 80, 3000, 5432, 6379, 8080 未被占用
+□ 已修改 MAXKB_PUBLIC_URL 为服务器实际 IP（可选，默认 localhost）
 
 【部署步骤】
 1. 复制整个 offline-packages 目录到目标服务器
-2. Windows: 右键以管理员身份运行 deploy-offline.bat
+2. ⚠️ 编辑 compose-files/.env.production 中的 MAXKB_PUBLIC_URL 为服务器实际 IP
+   （不修改则 MaxKB 知识库功能仅限本机访问）
+3. Windows: 右键以管理员身份运行 deploy-offline.bat
    Linux: chmod +x deploy-offline.sh && sudo ./deploy-offline.sh
-3. 等待 5-10 分钟，直到显示"部署完成"
-4. 打开浏览器访问 http://localhost
-5. 使用 admin/admin123 登录
+4. 等待 5-10 分钟，直到显示"部署完成"
+5. 打开浏览器访问 http://localhost
+6. 使用 admin/admin123 登录
 
 【验证清单】
 □ 前端页面可访问 (http://localhost)
@@ -62,6 +67,7 @@
 □ 可以查看标准库数据
 □ 可以创建审查任务
 □ 数据看板显示统计信息
+□ MaxKB 知识库可访问 (http://<服务器IP>:8080)
 
 【技术支持】
 如遇问题，请提供:

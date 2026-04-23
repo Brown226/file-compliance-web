@@ -101,7 +101,7 @@ timeout /t 30 /nobreak >nul
 
 :: 检查各个服务状态
 set CHECK_PASSED=0
-set CHECK_TOTAL=5
+set CHECK_TOTAL=6
 
 echo       检查 PostgreSQL 数据库...
 %COMPOSE_CMD% -f docker-compose.offline.yml ps postgres | findstr "Up" >nul
@@ -146,6 +146,15 @@ if !errorlevel! equ 0 (
     set /a CHECK_PASSED+=1
 ) else (
     echo         ✗ 前端服务启动异常
+)
+
+echo       检查 MaxKB 知识库...
+%COMPOSE_CMD% -f docker-compose.offline.yml ps maxkb | findstr "Up" >nul
+if !errorlevel! equ 0 (
+    echo         ✓ MaxKB 运行正常
+    set /a CHECK_PASSED+=1
+) else (
+    echo         ✗ MaxKB 启动异常（可能仍在初始化，MaxKB 首次启动需 2-3 分钟）
 )
 
 echo.

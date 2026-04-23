@@ -17,7 +17,7 @@ chmod +x deploy-offline.sh && sudo ./deploy-offline.sh
 | 前端界面 | http://localhost | 主界面 |
 | 后端API | http://localhost:3000/api | REST API |
 | 健康检查 | http://localhost:3000/health | 服务状态 |
-| MaxKB | http://localhost:8080 | 知识库管理 |
+| MaxKB | http://localhost:8080 | 知识库管理（可选） |
 | MarkItDown | http://localhost:8000 | 文档解析 |
 
 ## 🔑 默认账号
