@@ -1,42 +1,16 @@
 <template>
   <div class="chat-model-tab">
-    <!-- 供应商选择 -->
-    <div class="provider-section">
-      <div class="section-title">选择 LLM 供应商</div>
-      <div class="provider-cards">
-        <div
-          v-for="provider in providers"
-          :key="provider.value"
-          class="provider-card"
-          :class="{ active: chatModelConfig.serviceType === provider.value }"
-          @click="selectProvider(provider)"
-        >
-          <div class="provider-icon">{{ provider.icon }}</div>
-          <div class="provider-info">
-            <div class="provider-name">{{ provider.name }}</div>
-            <div class="provider-desc">{{ provider.desc }}</div>
-          </div>
-          <div class="check-icon" v-if="chatModelConfig.serviceType === provider.value">
-            <el-icon><Check /></el-icon>
-          </div>
-        </div>
-      </div>
-    </div>
-
     <!-- 配置表单 -->
     <div class="config-section">
-      <div class="section-title">
-        <span>配置参数</span>
-        <el-tag size="small" type="info" effect="plain">{{ currentProviderName }}</el-tag>
-      </div>
+      <div class="section-title">Chat 模型配置</div>
       
       <div class="config-card">
-        <el-form :model="chatModelConfig" label-width="110px" label-position="left">
+        <el-form :model="chatModelConfig" label-width="120px" label-position="left">
           <el-form-item label="API 密钥" required>
             <el-input 
               v-model="chatModelConfig.apiKey" 
               type="password" 
-              placeholder="请输入 API 密钥" 
+              placeholder="sk-..." 
               show-password 
               clearable
             />
@@ -45,33 +19,29 @@
           <el-form-item label="API 基础 URL" required>
             <el-input 
               v-model="chatModelConfig.apiBaseUrl" 
-              placeholder="API 接口地址"
+              placeholder="https://api.openai.com/v1"
               clearable
-            >
-              <template #append>
-                <el-button @click="resetToDefaultUrl" class="reset-btn">恢复默认</el-button>
-              </template>
-            </el-input>
-            <div class="form-tip">{{ currentProviderTip }}</div>
+            />
+            <div class="form-tip">OpenAI 兼容接口地址，例如：硅基流动、火山引擎、本地 VLLM/Ollama 等</div>
           </el-form-item>
 
           <el-form-item label="模型名称" required>
             <el-select 
               v-model="chatModelConfig.modelName" 
-              placeholder="请选择或输入模型"
+              placeholder="输入模型名称"
               filterable
               allow-create
               default-first-option
               style="width: 100%"
             >
               <el-option
-                v-for="model in currentProviderModels"
-                :key="model.value"
-                :label="model.label"
-                :value="model.value"
+                v-for="model in commonModels"
+                :key="model"
+                :label="model"
+                :value="model"
               />
             </el-select>
-            <div class="form-tip">{{ currentProviderModelTip }}</div>
+            <div class="form-tip">支持常见模型：Qwen、DeepSeek、Kimi、GLM、doubao 等</div>
           </el-form-item>
 
           <div class="param-row">
@@ -129,7 +99,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, computed, onMounted } from 'vue'
+import { ref, reactive, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Check, Connection } from '@element-plus/icons-vue'
 import {
@@ -149,84 +119,24 @@ interface ChatModelConfig {
   enabled: boolean
 }
 
-interface Provider {
-  value: string
-  name: string
-  desc: string
-  icon: string
-  defaultUrl: string
-  tip: string
-  models: { label: string; value: string }[]
-  modelTip: string
-}
-
 const saveLoading = ref(false)
 const testLoading = ref(false)
 
-// 只保留4个供应商
-const providers: Provider[] = [
-  {
-    value: 'volcengine',
-    name: '火山引擎',
-    desc: '豆包 / Kimi / 智谱 / DeepSeek',
-    icon: '🔥',
-    defaultUrl: 'https://ark.cn-beijing.volces.com/api/coding/v3',
-    tip: '火山引擎 Ark Coding 服务地址，支持豆包、Kimi 等模型',
-    models: [
-      { label: 'doubao-seed-2.0-code', value: 'doubao-seed-2.0-code' },
-      { label: 'doubao-seed-2.0-pro', value: 'doubao-seed-2.0-pro' },
-      { label: 'doubao-seed-2.0-lite', value: 'doubao-seed-2.0-lite' },
-      { label: 'doubao-seed-code', value: 'doubao-seed-code' },
-      { label: 'minimax-m2.5', value: 'minimax-m2.5' },
-      { label: 'glm-4.7', value: 'glm-4.7' },
-      { label: 'deepseek-v3.2', value: 'deepseek-v3.2' },
-      { label: 'kimi-k2.5', value: 'kimi-k2.5' },
-    ],
-    modelTip: '推荐 doubao-seed-2.0-code 或 kimi-k2.5',
-  },
-  {
-    value: 'siliconflow',
-    name: '硅基流动',
-    desc: '免费开源大模型',
-    icon: '💧',
-    defaultUrl: 'https://api.siliconflow.cn/v1',
-    tip: '硅基流动 API 地址，免费开源模型',
-    models: [
-      { label: 'Qwen2.5-72B-Instruct', value: 'Qwen/Qwen2.5-72B-Instruct' },
-      { label: 'DeepSeek-V3', value: 'deepseek-ai/DeepSeek-V3' },
-      { label: 'DeepSeek-R1', value: 'deepseek-ai/DeepSeek-R1' },
-      { label: 'Yi-1.5-34B', value: '01-ai/Yi-1.5-34B-Chat' },
-    ],
-    modelTip: '免费推荐 Qwen2.5-72B / DeepSeek-V3',
-  },
-  {
-    value: 'ollama',
-    name: '本地 Ollama',
-    desc: '本地部署开源模型',
-    icon: '🏠',
-    defaultUrl: 'http://localhost:11434/v1',
-    tip: '本地 Ollama 服务地址，默认 http://localhost:11434/v1',
-    models: [
-      { label: 'qwen2.5:7b', value: 'qwen2.5:7b' },
-      { label: 'qwen2.5:14b', value: 'qwen2.5:14b' },
-      { label: 'qwen2.5:32b', value: 'qwen2.5:32b' },
-      { label: 'llama3:8b', value: 'llama3:8b' },
-      { label: 'mistral:7b', value: 'mistral:7b' },
-    ],
-    modelTip: '确保 Ollama 服务已启动，模型需提前下载',
-  },
-  {
-    value: 'vllm',
-    name: 'VLLM Studio',
-    desc: '高性能推理框架',
-    icon: '⚡',
-    defaultUrl: 'http://localhost:8000/v1',
-    tip: 'VLLM Studio 服务地址，高性能本地推理',
-    models: [
-      { label: '默认模型', value: 'default' },
-    ],
-    modelTip: '填写 VLLM 服务部署的模型名称',
-  },
+// 常用模型列表
+const commonModels = [
+  'Qwen/Qwen2.5-72B-Instruct',
+  'Qwen/Qwen2.5-32B-Instruct',
+  'Qwen/Qwen2.5-14B-Instruct',
+  'Qwen/Qwen2.5-7B-Instruct',
+  'deepseek-ai/DeepSeek-V3',
+  'deepseek-ai/DeepSeek-R1',
+  'deepseek-ai/DeepSeek-V2.5',
+  'THUDM/glm-4-9b-chat',
+  'THUDM/glm-4-plus',
+  'moonshot-v1-8k',
+  'moonshot-v1-32k',
+  'doubao-seed-2.0-code',
+  'doubao-seed-2.0-pro',
 ]
 
 const tempMarks = {
@@ -236,7 +146,7 @@ const tempMarks = {
 }
 
 const chatModelConfig = reactive<ChatModelConfig>({
-  serviceType: 'siliconflow',
+  serviceType: 'custom',
   apiKey: '',
   apiBaseUrl: 'https://api.siliconflow.cn/v1',
   modelName: 'Qwen/Qwen2.5-72B-Instruct',
@@ -245,32 +155,6 @@ const chatModelConfig = reactive<ChatModelConfig>({
   timeout: 120,
   enabled: true,
 })
-
-const currentProvider = computed(() => 
-  providers.find(p => p.value === chatModelConfig.serviceType) || providers[1]
-)
-
-const currentProviderName = computed(() => currentProvider.value.name)
-
-const currentProviderTip = computed(() => currentProvider.value.tip)
-
-const currentProviderModelTip = computed(() => currentProvider.value.modelTip)
-
-const currentProviderModels = computed(() => currentProvider.value.models)
-
-const selectProvider = (provider: Provider) => {
-  chatModelConfig.serviceType = provider.value
-  chatModelConfig.apiBaseUrl = provider.defaultUrl
-  chatModelConfig.modelName = provider.models[0]?.value || ''
-}
-
-const resetToDefaultUrl = () => {
-  const provider = providers.find(p => p.value === chatModelConfig.serviceType)
-  if (provider) {
-    chatModelConfig.apiBaseUrl = provider.defaultUrl
-    ElMessage.success(`已恢复 ${provider.name} 默认地址`)
-  }
-}
 
 const handleTestConnection = async () => {
   if (!chatModelConfig.apiKey) {
@@ -372,92 +256,11 @@ onMounted(async () => {
   padding: 8px 0;
 }
 
-/* 供应商选择区 */
-.provider-section {
-  background: var(--bg-surface);
-  border-radius: var(--corp-radius-lg);
-  border: 1px solid var(--corp-border-light);
-  padding: 20px;
-}
-
 .section-title {
   font-size: 15px;
   font-weight: 600;
   color: var(--corp-text-primary);
   margin-bottom: 16px;
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-
-.provider-cards {
-  display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: 14px;
-}
-
-.provider-card {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 16px;
-  background: #fff;
-  border: 2px solid var(--corp-border-light);
-  border-radius: 12px;
-  cursor: pointer;
-  transition: all 0.2s ease;
-  position: relative;
-}
-
-.provider-card:hover {
-  border-color: var(--corp-primary);
-  box-shadow: 0 4px 12px rgba(37, 99, 235, 0.12);
-  transform: translateY(-2px);
-}
-
-.provider-card.active {
-  border-color: var(--corp-primary);
-  background: linear-gradient(135deg, rgba(37, 99, 235, 0.04) 0%, rgba(37, 99, 235, 0.08) 100%);
-}
-
-.provider-icon {
-  font-size: 32px;
-  flex-shrink: 0;
-}
-
-.provider-info {
-  flex: 1;
-  min-width: 0;
-}
-
-.provider-name {
-  font-size: 14px;
-  font-weight: 600;
-  color: var(--corp-text-primary);
-  margin-bottom: 4px;
-}
-
-.provider-desc {
-  font-size: 12px;
-  color: var(--corp-text-secondary);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.check-icon {
-  position: absolute;
-  top: 8px;
-  right: 8px;
-  width: 20px;
-  height: 20px;
-  background: var(--corp-primary);
-  border-radius: 50%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: #fff;
-  font-size: 12px;
 }
 
 /* 配置区 */
@@ -514,10 +317,6 @@ onMounted(async () => {
   line-height: 1.4;
 }
 
-.reset-btn {
-  font-size: 12px;
-}
-
 /* 操作栏 */
 .action-bar {
   display: flex;
@@ -541,17 +340,7 @@ onMounted(async () => {
   min-width: 120px;
 }
 
-@media (max-width: 900px) {
-  .provider-cards {
-    grid-template-columns: repeat(2, 1fr);
-  }
-}
-
 @media (max-width: 600px) {
-  .provider-cards {
-    grid-template-columns: 1fr;
-  }
-  
   .param-row {
     flex-direction: column;
     gap: 0;

@@ -819,6 +819,76 @@ const getDepartmentIdByName = (deptName: string): string | undefined => {
   return undefined
 }
 
+// 多级部门路径查找（精确匹配）
+const findDeptByPath = (depts: any[], path: string[]): any | undefined => {
+  if (path.length === 0) return undefined
+  const [current, ...rest] = path
+  const found = depts.find(d => d.name === current)
+  if (!found) return undefined
+  if (rest.length === 0) return found
+  return findDeptByPath(found.children || [], rest)
+}
+
+// 根据多级部门字段解析部门ID
+// 规则：按层级查找，最终部门存放到最末级
+const resolveDepartmentId = async (level1: string, level2: string, level3: string): Promise<{ departmentId: string | undefined; createdDepts: string[] }> => {
+  const createdDepts: string[] = []
+  
+  // 1. 收集非空层级
+  const levels = [level1, level2, level3].filter(l => l && l.trim())
+  if (levels.length === 0) {
+    return { departmentId: undefined, createdDepts: [] }
+  }
+  
+  // 2. 先尝试精确匹配完整路径
+  const matchedDept = findDeptByPath(orgData.value, levels)
+  if (matchedDept) {
+    return { departmentId: matchedDept.id, createdDepts: [] }
+  }
+  
+  // 3. 逐级查找或创建
+  let parentId: string | undefined = undefined
+  let lastFoundDept: any = undefined
+  
+  for (let i = 0; i < levels.length; i++) {
+    const levelName = levels[i].trim()
+    const levelDepts = i === 0 ? orgData.value : (lastFoundDept?.children || [])
+    
+    // 查找当前层级中是否有匹配的部门
+    const existing = levelDepts.find((d: any) => d.name === levelName)
+    
+    if (existing) {
+      lastFoundDept = existing
+      parentId = existing.id
+    } else {
+      // 需要创建新部门
+      try {
+        // 找到父级部门的信息用于显示
+        const parentPath = levels.slice(0, i).join(' -> ') || '根级'
+        console.log(`创建部门 "${levelName}"（父级: ${parentPath}）`)
+        
+        const { data: newDept } = await createDepartmentApi({
+          name: levelName,
+          parentId: parentId || undefined
+        })
+        
+        createdDepts.push(levelName)
+        lastFoundDept = newDept
+        parentId = newDept.id
+        
+        // 刷新部门树
+        await fetchDepartments()
+      } catch (e) {
+        console.error(`创建部门 "${levelName}" 失败:`, e)
+        // 如果创建失败，返回已找到的父级部门
+        break
+      }
+    }
+  }
+  
+  return { departmentId: parentId, createdDepts }
+}
+
 // 获取全局全量员工数据（用于部门树计数）
 const fetchGlobalEmployeesForCount = async () => {
   try {
@@ -1115,10 +1185,10 @@ const previewData = ref<any[]>([])
 const uploadedFile = ref<File | null>(null)
 
 const downloadTemplate = () => {
-  // 创建模板数据（含密码列）
+  // 创建模板数据（支持多级部门）
   const templateData = [
-    { '登录账号': 'zhangsan', '真实姓名': '张三', '密码': '123456', '角色': 'USER', '部门': '技术部', '邮箱': 'zhangsan@example.com' },
-    { '登录账号': 'lisi', '真实姓名': '李四', '密码': '123456', '角色': 'MANAGER', '部门': '安全部', '邮箱': 'lisi@example.com' },
+    { '登录账号': 'zhangsan', '真实姓名': '张三', '密码': '123456', '角色': 'USER', '一级部门': '总公司', '二级部门': '研发部', '三级部门': '', '邮箱': 'zhangsan@example.com' },
+    { '登录账号': 'lisi', '真实姓名': '李四', '密码': '123456', '角色': 'MANAGER', '一级部门': '总公司', '二级部门': '结构设计部', '三级部门': '', '邮箱': 'lisi@example.com' },
   ]
   const ws = XLSX.utils.json_to_sheet(templateData)
   const wb = XLSX.utils.book_new()
@@ -1156,12 +1226,17 @@ const parseExcel = (file: File) => {
       const firstSheet = workbook.Sheets[workbook.SheetNames[0]]
       const jsonData = XLSX.utils.sheet_to_json(firstSheet)
       
-      // 标准化数据
+      // 标准化数据（支持多级部门字段）
       previewData.value = jsonData.map((row: any) => ({
         username: row['登录账号'] || row['username'] || '',
         name: row['真实姓名'] || row['name'] || '',
         password: row['密码'] || row['password'] || '',
         role: row['角色'] || row['role'] || 'USER',
+        // 新版多级部门字段
+        deptLevel1: row['一级部门'] || row['deptLevel1'] || '',
+        deptLevel2: row['二级部门'] || row['deptLevel2'] || '',
+        deptLevel3: row['三级部门'] || row['deptLevel3'] || '',
+        // 兼容旧版单部门字段
         department: row['部门'] || row['department'] || '',
         email: row['邮箱'] || row['email'] || '',
       })).filter((r: any) => r.username && r.name)
@@ -1188,15 +1263,68 @@ const handleBatchImport = async () => {
 
   batchImportLoading.value = true
   try {
+    // 先收集所有需要创建的部门（去重）
+    const deptToCreate = new Set<string>()
+    const deptPathMap = new Map<string, { level1: string; level2: string; level3: string }>()
+    
+    validData.forEach(r => {
+      const levels = [r.deptLevel1, r.deptLevel2, r.deptLevel3].filter(l => l && l.trim())
+      if (levels.length > 0) {
+        const pathKey = levels.join('|')
+        deptPathMap.set(pathKey, { level1: r.deptLevel1, level2: r.deptLevel2, level3: r.deptLevel3 })
+        
+        // 检查是否需要创建部门
+        const matched = findDeptByPath(orgData.value, levels)
+        if (!matched) {
+          levels.forEach(l => deptToCreate.add(l.trim()))
+        }
+      } else if (r.department) {
+        // 兼容旧版单部门字段
+        const deptId = getDepartmentIdByName(r.department)
+        if (!deptId) {
+          deptToCreate.add(r.department.trim())
+        }
+      }
+    })
+    
+    // 预创建不存在的部门
+    if (deptToCreate.size > 0) {
+      ElMessage.info(`正在创建 ${deptToCreate.size} 个新部门...`)
+      // 按层级排序创建（一级 -> 二级 -> 三级）
+      const sortedDepts = Array.from(deptToCreate).sort((a, b) => {
+        const levelA = [...deptPathMap.entries()].find(([_, v]) => [v.level1, v.level2, v.level3].includes(a))?.[1]
+        const levelB = [...deptPathMap.entries()].find(([_, v]) => [v.level1, v.level2, v.level3].includes(b))?.[1]
+        const indexA = levelA ? [levelA.level1, levelA.level2, levelA.level3].indexOf(a) : 99
+        const indexB = levelB ? [levelB.level1, levelB.level2, levelB.level3].indexOf(b) : 99
+        return indexA - indexB
+      })
+      
+      // 逐级创建
+      for (const pathKey of deptPathMap.keys()) {
+        const { level1, level2, level3 } = deptPathMap.get(pathKey)!
+        const result = await resolveDepartmentId(level1, level2, level3)
+        if (result.createdDepts.length > 0) {
+          console.log(`为 "${pathKey}" 创建了部门:`, result.createdDepts)
+        }
+      }
+    }
+    
+    // 刷新部门树
+    await fetchDepartments()
+    
     // 角色标准化 + 部门名称转ID
     const employees = validData.map(r => {
-      // 将部门名称转换为部门ID
+      // 将多级部门字段转换为部门ID
       let departmentId: string | undefined = undefined
-      if (r.department) {
+      const levels = [r.deptLevel1, r.deptLevel2, r.deptLevel3].filter(l => l && l.trim())
+      
+      if (levels.length > 0) {
+        // 使用新的多级部门匹配
+        const matched = findDeptByPath(orgData.value, levels)
+        departmentId = matched?.id
+      } else if (r.department) {
+        // 兼容旧版单部门字段
         departmentId = getDepartmentIdByName(r.department)
-        if (!departmentId) {
-          console.warn(`用户 "${r.username}" 的部门 "${r.department}" 未找到，将不分配部门`)
-        }
       }
       
       return {
@@ -1204,7 +1332,7 @@ const handleBatchImport = async () => {
         name: r.name,
         password: r.password || undefined,
         role: r.role?.toUpperCase() || 'USER',
-        departmentId, // 添加部门ID
+        departmentId,
         email: r.email || undefined,
       }
     })
@@ -1223,18 +1351,6 @@ const handleBatchImport = async () => {
       messages.push(errorList)
       if (result.data.errors.length > 10) {
         messages.push(`... 还有 ${result.data.errors.length - 10} 条错误`)
-      }
-    }
-    
-    // 检查是否有部门未匹配的情况
-    const deptWarnings = validData.filter(r => r.department && !getDepartmentIdByName(r.department))
-    if (deptWarnings.length > 0) {
-      messages.push(`\n⚠️ 以下用户的部门未找到，将不分配部门：`)
-      deptWarnings.slice(0, 5).forEach(r => {
-        messages.push(`  - ${r.username}: "${r.department}"`)
-      })
-      if (deptWarnings.length > 5) {
-        messages.push(`  ... 还有 ${deptWarnings.length - 5} 个用户`)
       }
     }
     

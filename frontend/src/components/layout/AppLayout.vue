@@ -3,13 +3,10 @@
     <el-aside :width="sidebarCollapsed ? '64px' : 'var(--corp-sidebar-width)'" class="aside" :class="{ collapsed: sidebarCollapsed, 'sidebar-open': sidebarOpen }">
       <div class="logo" :class="{ 'logo-collapsed': sidebarCollapsed }">
         <div class="logo-icon-wrap">
-          <svg class="logo-svg" viewBox="0 0 32 32" fill="none">
-            <rect x="2" y="2" width="28" height="28" rx="8" fill="var(--color-primary-500)" />
-            <path d="M10 16L14 20L22 12" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
-          </svg>
+          <img src="/logo.jpg" alt="Logo" class="logo-img" />
         </div>
         <div class="logo-text" v-show="!sidebarCollapsed">
-          <h2>智能审查系统</h2>
+          <h2>核审通</h2>
         </div>
       </div>
 
@@ -422,9 +419,11 @@ const submitPasswordChange = async () => {
   justify-content: center;
 }
 
-.logo-svg {
+.logo-img {
   width: 32px;
   height: 32px;
+  object-fit: contain;
+  border-radius: 8px;
 }
 
 .logo-text {

@@ -11,7 +11,7 @@
 
         <!-- 中间：系统名称 + 副标题 -->
         <div class="brand-center">
-          <h1 class="brand-title">文件智能审查系统</h1>
+          <h1 class="brand-title">核审通</h1>
           <p class="brand-subtitle">智能识别 · 精准审查 · 高效管理</p>
         </div>
       </div>
@@ -25,6 +25,7 @@
           <div class="logo-icon-wrap">
             <img src="/logo.jpg" alt="Logo" class="logo-img" />
           </div>
+          <h2 class="brand-name">核审通</h2>
           <h2>欢迎登录</h2>
           <p class="login-subtitle">请输入您的账号信息</p>
         </div>
@@ -295,6 +296,14 @@ const handleForgotPassword = () => {
   border-radius: 12px;
   filter: drop-shadow(0 4px 8px rgba(37, 99, 235, 0.3));
   object-fit: cover;
+}
+
+.login-header .brand-name {
+  margin: 0 0 4px;
+  font-size: 22px;
+  font-weight: 700;
+  color: var(--color-primary-600);
+  letter-spacing: 1px;
 }
 
 .login-header h2 {

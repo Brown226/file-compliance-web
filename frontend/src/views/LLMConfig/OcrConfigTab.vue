@@ -5,7 +5,7 @@
       <div class="banner-icon">📄</div>
       <div class="banner-content">
         <div class="banner-title">OCR 文字识别配置</div>
-        <div class="banner-desc">用于识别扫描件 PDF、图片中的文字内容，支持 PaddleOCR、GPT-4o 等模型</div>
+        <div class="banner-desc">用于识别扫描件 PDF、图片中的文字内容，支持视觉模型（Qwen-VL、DeepSeek-VL 等）</div>
       </div>
     </div>
 
@@ -16,20 +16,12 @@
       </div>
       
       <div class="card-body">
-        <el-form :model="ocrModelConfig" label-width="110px" label-position="left">
-          <el-form-item label="服务类型">
-            <el-select v-model="ocrModelConfig.serviceType" style="width: 100%" @change="handleOcrServiceChange">
-              <el-option label="硅基流动 (PaddleOCR)" value="siliconflow" />
-              <el-option label="火山引擎 (Volcengine)" value="volcengine" />
-              <el-option label="本地 Ollama" value="ollama" />
-            </el-select>
-          </el-form-item>
-
+        <el-form :model="ocrModelConfig" label-width="120px" label-position="left">
           <el-form-item label="API 密钥" required>
             <el-input 
               v-model="ocrModelConfig.apiKey" 
               type="password" 
-              placeholder="请输入 API 密钥" 
+              placeholder="sk-..." 
               show-password 
               clearable
             />
@@ -38,33 +30,29 @@
           <el-form-item label="API 基础 URL" required>
             <el-input 
               v-model="ocrModelConfig.apiBaseUrl" 
-              placeholder="API 接口地址"
+              placeholder="https://api.openai.com/v1"
               clearable
-            >
-              <template #append>
-                <el-button @click="resetToDefaultUrl" class="reset-btn">恢复默认</el-button>
-              </template>
-            </el-input>
-            <div class="form-tip">{{ currentProviderTip }}</div>
+            />
+            <div class="form-tip">OpenAI 兼容接口地址，需使用支持视觉识别的模型</div>
           </el-form-item>
 
           <el-form-item label="模型名称" required>
             <el-select 
               v-model="ocrModelConfig.modelName" 
-              placeholder="请选择模型"
+              placeholder="输入模型名称"
               filterable
               allow-create
               default-first-option
               style="width: 100%"
             >
               <el-option
-                v-for="model in currentProviderModels"
-                :key="model.value"
-                :label="model.label"
-                :value="model.value"
+                v-for="model in commonOcrModels"
+                :key="model"
+                :label="model"
+                :value="model"
               />
             </el-select>
-            <div class="form-tip">{{ currentProviderModelTip }}</div>
+            <div class="form-tip">推荐：Qwen-VL2、DeepSeek-VL2、PaddleOCR-VL 等视觉模型</div>
           </el-form-item>
 
           <el-form-item label="超时时间">
@@ -96,7 +84,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, computed, onMounted } from 'vue'
+import { ref, reactive, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Check, Connection } from '@element-plus/icons-vue'
 import {
@@ -114,88 +102,31 @@ interface OCRModelConfig {
   enabled: boolean
 }
 
-interface OCRProvider {
-  value: string
-  name: string
-  defaultUrl: string
-  tip: string
-  models: { label: string; value: string }[]
-  modelTip: string
-}
-
 const saveLoading = ref(false)
 const testLoading = ref(false)
 
-const ocrProviders: OCRProvider[] = [
-  {
-    value: 'siliconflow',
-    name: '硅基流动',
-    defaultUrl: 'https://api.siliconflow.cn/v1',
-    tip: '硅基流动 API 地址，免费 PaddleOCR 模型',
-    models: [
-      { label: 'PaddleOCR-VL-1.5 (免费)', value: 'PaddlePaddle/PaddleOCR-VL-1.5' },
-      { label: 'DeepSeek-OCR (免费)', value: 'deepseek-ai/DeepSeek-OCR' },
-      { label: 'Qwen-VL2 (免费)', value: 'Qwen/Qwen2-VL-72B-Instruct' },
-    ],
-    modelTip: '推荐使用 PaddleOCR-VL-1.5，免费且识别效果好',
-  },
-  {
-    value: 'volcengine',
-    name: '火山引擎',
-    defaultUrl: 'https://ark.cn-beijing.volces.com/api/coding/v3',
-    tip: '火山引擎 Ark 服务地址',
-    models: [
-      { label: 'doubao-vision-pro', value: 'doubao-vision-pro' },
-      { label: 'kimi-vision', value: 'kimi-vision' },
-    ],
-    modelTip: '使用视觉模型进行 OCR 识别',
-  },
-  {
-    value: 'ollama',
-    name: '本地 Ollama',
-    defaultUrl: 'http://localhost:11434/v1',
-    tip: '本地 Ollama 服务地址，需部署视觉模型',
-    models: [
-      { label: 'llava', value: 'llava' },
-      { label: 'llava:13b', value: 'llava:13b' },
-      { label: 'moondream', value: 'moondream' },
-    ],
-    modelTip: '确保 Ollama 已安装视觉模型',
-  },
+// 常用 OCR 视觉模型
+const commonOcrModels = [
+  'Qwen/Qwen2-VL-72B-Instruct',
+  'Qwen/Qwen2-VL-7B-Instruct',
+  'Qwen/Qwen2.5-VL-72B-Instruct',
+  'Qwen/Qwen2.5-VL-7B-Instruct',
+  'deepseek-ai/DeepSeek-VL2-72B',
+  'deepseek-ai/DeepSeek-VL2-27B',
+  'deepseek-ai/DeepSeek-VL2-7B',
+  'PaddlePaddle/PaddleOCR-VL-1.5',
+  'THUDM/glm-4v-9b',
+  'moonshot-v1-8k', // 支持图片输入
 ]
 
 const ocrModelConfig = reactive<OCRModelConfig>({
-  serviceType: 'siliconflow',
+  serviceType: 'custom',
   apiKey: '',
   apiBaseUrl: 'https://api.siliconflow.cn/v1',
-  modelName: 'PaddlePaddle/PaddleOCR-VL-1.5',
+  modelName: 'Qwen/Qwen2-VL-72B-Instruct',
   timeout: 180,
   enabled: true,
 })
-
-const currentProvider = computed(() => 
-  ocrProviders.find(p => p.value === ocrModelConfig.serviceType) || ocrProviders[0]
-)
-
-const currentProviderTip = computed(() => currentProvider.value.tip)
-const currentProviderModelTip = computed(() => currentProvider.value.modelTip)
-const currentProviderModels = computed(() => currentProvider.value.models)
-
-const handleOcrServiceChange = (val: string) => {
-  const provider = ocrProviders.find(p => p.value === val)
-  if (provider) {
-    ocrModelConfig.apiBaseUrl = provider.defaultUrl
-    ocrModelConfig.modelName = provider.models[0]?.value || ''
-  }
-}
-
-const resetToDefaultUrl = () => {
-  const provider = ocrProviders.find(p => p.value === ocrModelConfig.serviceType)
-  if (provider) {
-    ocrModelConfig.apiBaseUrl = provider.defaultUrl
-    ElMessage.success(`已恢复 ${provider.name} 默认地址`)
-  }
-}
 
 const handleTestConnection = async () => {
   if (!ocrModelConfig.apiKey) {
