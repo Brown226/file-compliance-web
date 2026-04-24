@@ -773,6 +773,52 @@ const getDeptMemberCount = (deptId: string) => {
 // 全局所有员工数据（用于部门树计数，不受部门筛选影响）
 const globalEmployeesData = ref<any[]>([])
 
+// 构建部门名称到ID的映射表
+const buildDeptNameToIdMap = (depts: any[], parentPath = ''): Map<string, string> => {
+  const map = new Map<string, string>()
+  for (const dept of depts) {
+    const fullPath = parentPath ? `${parentPath}/${dept.name}` : dept.name
+    map.set(dept.name, dept.id) // 支持直接使用部门名称
+    map.set(fullPath, dept.id) // 支持使用完整路径（如"技术部/前端组"）
+    if (dept.children && dept.children.length > 0) {
+      const childMap = buildDeptNameToIdMap(dept.children, fullPath)
+      childMap.forEach((value, key) => map.set(key, value))
+    }
+  }
+  return map
+}
+
+// 获取部门名称对应的ID
+const getDepartmentIdByName = (deptName: string): string | undefined => {
+  if (!deptName || !orgData.value || orgData.value.length === 0) {
+    return undefined
+  }
+  
+  const nameToIdMap = buildDeptNameToIdMap(orgData.value)
+  
+  // 尝试精确匹配
+  if (nameToIdMap.has(deptName)) {
+    return nameToIdMap.get(deptName)
+  }
+  
+  // 尝试模糊匹配（去除空格）
+  const trimmedName = deptName.trim()
+  if (nameToIdMap.has(trimmedName)) {
+    return nameToIdMap.get(trimmedName)
+  }
+  
+  // 尝试部分匹配
+  for (const [name, id] of nameToIdMap.entries()) {
+    if (name.includes(trimmedName) || trimmedName.includes(name)) {
+      console.warn(`部门名称 "${deptName}" 模糊匹配到 "${name}"`)
+      return id
+    }
+  }
+  
+  console.warn(`未找到部门: "${deptName}"`)
+  return undefined
+}
+
 // 获取全局全量员工数据（用于部门树计数）
 const fetchGlobalEmployeesForCount = async () => {
   try {
@@ -1081,6 +1127,22 @@ const downloadTemplate = () => {
 }
 
 const handleFileChange = (file: any) => {
+  // 验证文件大小（最大 10MB）
+  const maxSize = 10 * 1024 * 1024
+  if (file.size > maxSize) {
+    ElMessage.error(`文件大小超过限制（最大 10MB），当前大小：${(file.size / 1024 / 1024).toFixed(2)}MB`)
+    uploadRef.value?.clearFiles()
+    return
+  }
+  
+  // 验证文件类型
+  const fileName = file.name.toLowerCase()
+  if (!fileName.endsWith('.xlsx') && !fileName.endsWith('.xls') && !fileName.endsWith('.csv')) {
+    ElMessage.error('仅支持 .xlsx、.xls、.csv 格式的文件')
+    uploadRef.value?.clearFiles()
+    return
+  }
+  
   uploadedFile.value = file.raw
   parseExcel(file.raw)
 }
@@ -1126,22 +1188,68 @@ const handleBatchImport = async () => {
 
   batchImportLoading.value = true
   try {
-    // 角色标准化
-    const employees = validData.map(r => ({
-      username: r.username,
-      name: r.name,
-      password: r.password || undefined,
-      role: r.role?.toUpperCase() || 'USER',
-      email: r.email || undefined,
-    }))
+    // 角色标准化 + 部门名称转ID
+    const employees = validData.map(r => {
+      // 将部门名称转换为部门ID
+      let departmentId: string | undefined = undefined
+      if (r.department) {
+        departmentId = getDepartmentIdByName(r.department)
+        if (!departmentId) {
+          console.warn(`用户 "${r.username}" 的部门 "${r.department}" 未找到，将不分配部门`)
+        }
+      }
+      
+      return {
+        username: r.username,
+        name: r.name,
+        password: r.password || undefined,
+        role: r.role?.toUpperCase() || 'USER',
+        departmentId, // 添加部门ID
+        email: r.email || undefined,
+      }
+    })
     
     const result = await batchCreateEmployeesApi(employees)
     
+    // 构建详细的结果消息
+    const messages: string[] = []
     if (result.data.successCount > 0) {
-      ElMessage.success(`成功创建 ${result.data.successCount} 个账号`)
+      messages.push(`✅ 成功创建 ${result.data.successCount} 个账号`)
     }
     if (result.data.failCount > 0) {
-      ElMessage.warning(`有 ${result.data.failCount} 个账号创建失败:\n${result.data.errors.join('\n')}`)
+      messages.push(`❌ 有 ${result.data.failCount} 个账号创建失败:`)
+      // 显示前10条错误信息
+      const errorList = result.data.errors.slice(0, 10).join('\n')
+      messages.push(errorList)
+      if (result.data.errors.length > 10) {
+        messages.push(`... 还有 ${result.data.errors.length - 10} 条错误`)
+      }
+    }
+    
+    // 检查是否有部门未匹配的情况
+    const deptWarnings = validData.filter(r => r.department && !getDepartmentIdByName(r.department))
+    if (deptWarnings.length > 0) {
+      messages.push(`\n⚠️ 以下用户的部门未找到，将不分配部门：`)
+      deptWarnings.slice(0, 5).forEach(r => {
+        messages.push(`  - ${r.username}: "${r.department}"`)
+      })
+      if (deptWarnings.length > 5) {
+        messages.push(`  ... 还有 ${deptWarnings.length - 5} 个用户`)
+      }
+    }
+    
+    // 根据结果显示不同的消息类型
+    if (result.data.failCount > 0) {
+      ElMessageBox.alert(
+        messages.join('\n\n'),
+        '导入结果',
+        {
+          confirmButtonText: '确定',
+          type: result.data.successCount > 0 ? 'warning' : 'error',
+        }
+      )
+    } else {
+      ElMessage.success(messages.join('\n'))
     }
     
     showBatchImportDialog.value = false
@@ -1149,7 +1257,9 @@ const handleBatchImport = async () => {
     uploadedFile.value = null
     fetchEmployees()
   } catch (e: any) {
-    ElMessage.error(e.response?.data?.message || '批量导入失败')
+    console.error('批量导入失败:', e)
+    const errorMsg = e.response?.data?.message || e.response?.data?.error || '批量导入失败'
+    ElMessage.error(errorMsg)
   } finally {
     batchImportLoading.value = false
   }

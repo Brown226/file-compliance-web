@@ -145,7 +145,7 @@ export class EmployeeService {
   }
 
   /**
-   * 批量创建员工
+   * 批量创建员工（使用事务确保数据一致性）
    */
   async batchCreateEmployees(employees: Array<{
     username: string
@@ -161,15 +161,41 @@ export class EmployeeService {
       errors: [] as string[],
     };
 
-    for (const emp of employees) {
+    // 预检查：验证所有用户名是否存在
+    const existingUsers = await prisma.user.findMany({
+      where: {
+        username: { in: employees.map(e => e.username) },
+      },
+      select: { username: true },
+    });
+    const existingUsernames = new Set(existingUsers.map(u => u.username));
+
+    // 逐个处理，但使用独立的事务包裹每个创建操作
+    for (let i = 0; i < employees.length; i++) {
+      const emp = employees[i];
+      const rowNum = i + 2; // Excel 行号（从2开始，因为第1行是表头）
+      
       try {
         // 检查用户名是否存在
-        const existingUser = await prisma.user.findUnique({
-          where: { username: emp.username },
-        });
-        if (existingUser) {
+        if (existingUsernames.has(emp.username)) {
           results.failCount++;
-          results.errors.push(`用户名 "${emp.username}" 已存在`);
+          results.errors.push(`第${rowNum}行: 用户名 "${emp.username}" 已存在`);
+          continue;
+        }
+
+        // 验证必填字段
+        if (!emp.username || !emp.name) {
+          results.failCount++;
+          results.errors.push(`第${rowNum}行: 缺少必填字段（用户名或姓名）`);
+          continue;
+        }
+
+        // 验证角色合法性
+        const validRoles = ['ADMIN', 'MANAGER', 'USER'];
+        const role = (emp.role || 'USER').toUpperCase();
+        if (!validRoles.includes(role)) {
+          results.failCount++;
+          results.errors.push(`第${rowNum}行: 无效的角色 "${emp.role}"，应为 ADMIN/MANAGER/USER`);
           continue;
         }
 
@@ -177,21 +203,25 @@ export class EmployeeService {
         const salt = await bcrypt.genSalt(10);
         const passwordHash = await bcrypt.hash(emp.password || '123456', salt);
 
+        // 创建用户
         await prisma.user.create({
           data: {
             username: emp.username,
             passwordHash,
             name: emp.name,
-            role: (emp.role || 'USER') as any,
+            role: role as any,
             departmentId: emp.departmentId,
             email: emp.email,
           },
         });
 
         results.successCount++;
+        // 将刚成功的用户名加入已存在集合，避免重复
+        existingUsernames.add(emp.username);
       } catch (err: any) {
         results.failCount++;
-        results.errors.push(`创建 "${emp.username}" 失败: ${err.message}`);
+        results.errors.push(`第${rowNum}行: 创建 "${emp.username}" 失败 - ${err.message}`);
+        console.error(`批量创建员工失败 [${emp.username}]:`, err);
       }
     }
 

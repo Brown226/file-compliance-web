@@ -130,7 +130,7 @@
 
 <script setup lang="ts">
 import { ref, reactive, computed, onMounted } from 'vue'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import { Check, Connection } from '@element-plus/icons-vue'
 import {
   getSystemConfigApi,
@@ -305,6 +305,7 @@ const handleSaveChatConfig = async () => {
   }
   saveLoading.value = true
   try {
+    // 先测试连接
     const { data: testResult } = await testLlmConnectionApi({
       serviceType: chatModelConfig.serviceType,
       apiKey: chatModelConfig.apiKey,
@@ -312,14 +313,33 @@ const handleSaveChatConfig = async () => {
       modelName: chatModelConfig.modelName,
       modelType: 'chat',
     })
+    
+    // 测试失败时给用户选择权
     if (!testResult.success) {
-      ElMessage.error(`连接测试失败: ${testResult.message}`)
-      return
+      try {
+        await ElMessageBox.confirm(
+          `连接测试失败: ${testResult.message}\n\n是否仍然保存配置？您可以稍后修正后再测试。`,
+          '警告',
+          {
+            confirmButtonText: '仍然保存',
+            cancelButtonText: '取消',
+            type: 'warning',
+          }
+        )
+      } catch {
+        // 用户取消
+        return
+      }
     }
+    
+    // 保存配置到数据库
     await saveSystemConfigApi('llm_chat_model', chatModelConfig)
     ElMessage.success('配置保存成功！')
   } catch (e: any) {
-    ElMessage.error(`保存失败: ${e.message || '请检查配置参数'}`)
+    console.error('保存配置失败:', e)
+    // 保存失败时不重置表单，保留用户输入
+    const errorMsg = e.response?.data?.error || e.message || '保存失败'
+    ElMessage.error(`保存失败: ${errorMsg}`)
   } finally {
     saveLoading.value = false
   }
@@ -330,10 +350,16 @@ onMounted(async () => {
     const { data } = await getSystemConfigApi('llm_chat_model')
     const configData = data?.value || data
     if (configData && typeof configData === 'object') {
-      Object.assign(chatModelConfig, configData)
+      // 只更新有值的字段，保留用户当前输入的其他字段
+      Object.keys(chatModelConfig).forEach(key => {
+        if (key in configData && configData[key] !== undefined && configData[key] !== null) {
+          (chatModelConfig as any)[key] = configData[key]
+        }
+      })
     }
   } catch (e) {
     console.error('加载配置失败', e)
+    // 加载失败时保留当前表单状态，不重置为默认值
   }
 })
 </script>

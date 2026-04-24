@@ -38,16 +38,36 @@ export const saveSystemConfig = async (req: AuthRequest, res: Response): Promise
       return;
     }
 
+    // 验证 JSON 格式（如果是对象）
+    let stringValue: string;
+    if (typeof value === 'object') {
+      try {
+        stringValue = JSON.stringify(value);
+      } catch (e) {
+        error(res, '配置值格式错误，无法序列化为 JSON', 400);
+        return;
+      }
+    } else {
+      stringValue = String(value);
+    }
+
     const config = await prisma.systemConfig.upsert({
       where: { key },
-      update: { value: String(value) },
-      create: { key, value: String(value) },
+      update: { value: stringValue },
+      create: { key, value: stringValue },
     });
 
     success(res, config, '配置保存成功');
-  } catch (err) {
+  } catch (err: any) {
     console.error('Save System Config Error:', err);
-    error(res, '服务器内部错误', 500);
+    // 提供更详细的错误信息
+    if (err.code === 'P2002') {
+      error(res, '配置项已存在，请刷新后重试', 409);
+    } else if (err.code === 'P2025') {
+      error(res, '配置项不存在', 404);
+    } else {
+      error(res, `服务器内部错误: ${err.message || '未知错误'}`, 500);
+    }
   }
 };
 

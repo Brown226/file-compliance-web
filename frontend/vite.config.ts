@@ -70,4 +70,8 @@ export default defineConfig({
       },
     },
   },
+  // 开发时跳过类型检查（加速构建）
+  esbuild: {
+    logOverride: { 'this-is-undefined-in-esm': 'silent' },
+  },
 })
