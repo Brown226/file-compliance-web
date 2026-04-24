@@ -1,0 +1,259 @@
+# ============================================
+# 文件智能审查系统 - 完整离线部署配置
+# 包含: PostgreSQL + Redis + MarkItDown + 后端 + 前端 + MaxKB
+# 支持内网无公网环境运行
+#
+# ⚠️ 部署前请修改 .env 中的 MAXKB_PUBLIC_URL 为服务器实际 IP
+# ============================================
+
+services:
+  # ==========================================
+  # PostgreSQL 15 数据库（含 pgvector 向量扩展）
+  # ==========================================
+  postgres:
+    image: pgvector/pgvector:pg15
+    container_name: file_review_postgres
+    environment:
+      POSTGRES_USER: file_review_user
+      POSTGRES_PASSWORD: file_review_password
+      POSTGRES_DB: file_review_db
+    ports:
+      - "${PG_PORT:-5432}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./backend/prisma/init-db.sql:/docker-entrypoint-initdb.d/init-db.sql:ro
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U file_review_user -d file_review_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - file-review-network
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+        reservations:
+          memory: 512M
+
+  # ==========================================
+  # Redis 7 缓存服务
+  # ==========================================
+  redis:
+    image: redis:7-alpine
+    container_name: file_review_redis
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    volumes:
+      - redis_data:/data
+    restart: unless-stopped
+    command: redis-server --appendonly yes
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - file-review-network
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+        reservations:
+          memory: 128M
+
+  # ==========================================
+  # MarkItDown 文档解析服务（Python FastAPI）
+  # 支持: DOCX / XLSX / PDF / PPTX
+  # ==========================================
+  markitdown:
+    image: file-review-markitdown:v1.0
+    container_name: markitdown_service
+    ports:
+      - "${PARSER_PORT:-8000}:8000"
+    environment:
+      - TZ=Asia/Shanghai
+      - PORT=8000
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    networks:
+      - file-review-network
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+        reservations:
+          memory: 256M
+
+  # ==========================================
+  # MaxKB 知识库服务 - PostgreSQL 实例
+  # ==========================================
+  maxkb-pgsql:
+    image: registry.fit2cloud.com/maxkb/maxkb:v2.8.0
+    container_name: maxkb-pgsql
+    hostname: maxkb-pgsql
+    ports:
+      - "127.0.0.1:${MAXKB_PG_PORT:-15432}:5432"
+    volumes:
+      - maxkb-pgsql-data:/opt/maxkb/data
+    env_file:
+      - maxkb-runtime/maxkb/conf/pgsql.env
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "pg_isready", "-q", "-d", "postgres", "-U", "root"]
+      interval: 10s
+      timeout: 10s
+      retries: 30
+    command: ["/usr/bin/start-postgres.sh"]
+    networks:
+      - file-review-network
+
+  # ==========================================
+  # MaxKB 知识库服务 - Redis 实例
+  # ==========================================
+  maxkb-redis:
+    image: registry.fit2cloud.com/maxkb/maxkb:v2.8.0
+    container_name: file_review_maxkb_redis
+    hostname: maxkb-redis
+    ports:
+      - "127.0.0.1:${MAXKB_REDIS_PORT:-16379}:6379"
+    volumes:
+      - maxkb-redis-data:/opt/maxkb/data
+      - maxkb-runtime/maxkb/conf:/opt/maxkb/conf
+    env_file:
+      - maxkb-runtime/maxkb/conf/redis.env
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "Password123@redis", "ping"]
+      interval: 10s
+      timeout: 10s
+      retries: 30
+    command: ["/usr/bin/start-redis.sh"]
+    networks:
+      - file-review-network
+
+  # ==========================================
+  # MaxKB 知识库服务 - 主服务
+  # ==========================================
+  maxkb:
+    image: registry.fit2cloud.com/maxkb/maxkb:v2.8.0
+    container_name: file_review_maxkb
+    hostname: maxkb
+    ports:
+      - "${MAXKB_PORT:-8080}:8080"
+    volumes:
+      - maxkb-logs:/opt/maxkb/logs
+      - maxkb-local:/opt/maxkb/local
+    env_file:
+      - maxkb-runtime/maxkb/conf/maxkb.env
+    depends_on:
+      maxkb-pgsql:
+        condition: service_healthy
+      maxkb-redis:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "localhost:8080"]
+      interval: 30s
+      timeout: 10s
+      retries: 120
+      start_period: 120s
+    command: ['/usr/bin/start-maxkb.sh']
+    networks:
+      - file-review-network
+
+  # ==========================================
+  # 后端 API 服务
+  # ==========================================
+  backend:
+    image: file-review-backend:v1.0
+    container_name: file_review_backend
+    ports:
+      - "${BACKEND_PORT:-3000}:3000"
+    environment:
+      - NODE_ENV=production
+      - PORT=3000
+      - DATABASE_URL=postgresql://file_review_user:file_review_password@postgres:5432/file_review_db
+      - REDIS_URL=redis://redis:6379
+      - JWT_SECRET=${JWT_SECRET:-enterprise-review-system-jwt-secret-2026}
+      - JWT_EXPIRES_IN=${JWT_EXPIRES_IN:-1d}
+      - PARSER_SERVICE_URL=http://markitdown:8000
+      - MAXKB_BASE_URL=http://maxkb:8080
+      - MAXKB_PUBLIC_URL=${MAXKB_PUBLIC_URL:-http://localhost:8080}
+      - TZ=Asia/Shanghai
+    volumes:
+      - uploads:/app/uploads
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      markitdown:
+        condition: service_healthy
+      # MaxKB 不再设为硬依赖——如果 MaxKB 启动慢或失败，后端仍可启动
+      # 审查时 MaxKB 不可用会自动降级到自有 LLM
+      maxkb:
+        condition: service_started
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3000/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 60s
+    networks:
+      - file-review-network
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+        reservations:
+          memory: 256M
+
+  # ==========================================
+  # 前端 Web 服务 (Nginx)
+  # ==========================================
+  frontend:
+    image: file-review-frontend:v1.0
+    container_name: file_review_frontend
+    ports:
+      - "${FRONTEND_PORT:-80}:80"
+    restart: unless-stopped
+    depends_on:
+      - backend
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:80/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    networks:
+      - file-review-network
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+        reservations:
+          memory: 64M
+
+networks:
+  file-review-network:
+    driver: bridge
+
+volumes:
+  # ⚠️ 重要: 以下卷存储业务数据，升级时请勿删除！
+  # 正常升级: docker-compose up -d（保留数据）
+  # 完全重置: docker-compose down -v（⚠️ 数据丢失！）
+  postgres_data:
+    driver: local
+  redis_data:
+    driver: local
+  uploads:
+  maxkb-logs:
+  maxkb-local:
+  maxkb-pgsql-data:
+  maxkb-redis-data:
