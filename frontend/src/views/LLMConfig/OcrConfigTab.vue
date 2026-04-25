@@ -204,9 +204,19 @@ const handleSaveOcrConfig = async () => {
 onMounted(async () => {
   try {
     const { data } = await getSystemConfigApi('llm_ocr_model')
-    const configData = data?.value || data
+    let configData = data?.value || data
+    
+    // 兼容双重序列化的旧数据
+    if (typeof configData === 'string') {
+      try {
+        configData = JSON.parse(configData)
+      } catch (e) {
+        console.error('JSON 解析失败:', e)
+        return
+      }
+    }
+    
     if (configData && typeof configData === 'object') {
-      // 只更新有值的字段，保留用户当前输入的其他字段
       Object.keys(ocrModelConfig).forEach(key => {
         if (key in configData && configData[key] !== undefined && configData[key] !== null) {
           (ocrModelConfig as any)[key] = configData[key]
@@ -215,7 +225,6 @@ onMounted(async () => {
     }
   } catch (e) {
     console.error('加载配置失败', e)
-    // 加载失败时保留当前表单状态，不重置为默认值
   }
 })
 </script>

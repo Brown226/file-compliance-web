@@ -1,9 +1,9 @@
 # ============================================
-# 文件智能审查系统 - 完整部署配置（在线构建版）
+# 文件智能审查系统 - 完整离线部署配置
 # 包含: PostgreSQL + Redis + MarkItDown + 后端 + 前端
-# ⚠️ 此配置使用 build 上下文，需要源码和公网，不适合离线部署
-# 离线部署请使用 docker-compose.offline.yml
 # ============================================
+
+version: '3.8'
 
 services:
   # ==========================================
@@ -17,10 +17,11 @@ services:
       POSTGRES_PASSWORD: file_review_password
       POSTGRES_DB: file_review_db
     ports:
-      - "${PG_PORT:-5432}:5432"
+      - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ./backend/prisma/init-db.sql:/docker-entrypoint-initdb.d/init-db.sql:ro
+      - ./backend/prisma/schema.prisma:/docker-entrypoint-initdb.d/schema.prisma:ro
     restart: unless-stopped
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U file_review_user -d file_review_db"]
@@ -43,7 +44,7 @@ services:
     image: redis:7-alpine
     container_name: file_review_redis
     ports:
-      - "${REDIS_PORT:-6379}:6379"
+      - "6379:6379"
     volumes:
       - redis_data:/data
     restart: unless-stopped
@@ -69,16 +70,15 @@ services:
     build:
       context: ./backend/markitdown-service
       dockerfile: Dockerfile
-    image: file-review-markitdown:v1.0
     container_name: file_review_markitdown
     ports:
-      - "${PARSER_PORT:-8000}:8000"
+      - "${PARSER_PORT:-8000}:${PARSER_PORT:-8000}"
     environment:
       - TZ=Asia/Shanghai
-      - PORT=8000
+      - PORT=${PARSER_PORT:-8000}
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      test: ["CMD", "python", "-c", "import os, urllib.request; urllib.request.urlopen(f'http://localhost:{os.environ.get(\"PORT\", \"8000\")}/health')"]
       interval: 30s
       timeout: 5s
       retries: 3
@@ -98,10 +98,9 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.backend
-    image: file-review-backend:v1.0
     container_name: file_review_backend
     ports:
-      - "${BACKEND_PORT:-3000}:3000"
+      - "${PORT:-3000}:3000"
     environment:
       - NODE_ENV=production
       - PORT=3000
@@ -110,8 +109,6 @@ services:
       - JWT_SECRET=${JWT_SECRET:-enterprise-review-system-jwt-secret-2026}
       - JWT_EXPIRES_IN=${JWT_EXPIRES_IN:-1d}
       - PARSER_SERVICE_URL=http://markitdown:8000
-      - MAXKB_BASE_URL=${MAXKB_BASE_URL:-http://maxkb:8080}
-      - MAXKB_PUBLIC_URL=${MAXKB_PUBLIC_URL:-http://localhost:8080}
       - TZ=Asia/Shanghai
     volumes:
       - uploads:/app/uploads
@@ -145,18 +142,12 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.frontend
-    image: file-review-frontend:v1.0
     container_name: file_review_frontend
     ports:
       - "${FRONTEND_PORT:-80}:80"
     restart: unless-stopped
     depends_on:
       - backend
-    healthcheck:
-      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:80/health"]
-      interval: 30s
-      timeout: 5s
-      retries: 3
     networks:
       - file-review-network
     deploy:

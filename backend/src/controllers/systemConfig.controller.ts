@@ -38,23 +38,12 @@ export const saveSystemConfig = async (req: AuthRequest, res: Response): Promise
       return;
     }
 
-    // 验证 JSON 格式（如果是对象）
-    let stringValue: string;
-    if (typeof value === 'object') {
-      try {
-        stringValue = JSON.stringify(value);
-      } catch (e) {
-        error(res, '配置值格式错误，无法序列化为 JSON', 400);
-        return;
-      }
-    } else {
-      stringValue = String(value);
-    }
-
+    // Prisma Json 类型直接接受对象或字符串，无需手动 JSON.stringify
+    // 之前手动 stringify 导致双重序列化：存入数据库变成 "\"{...}\"" 而非 {...}
     const config = await prisma.systemConfig.upsert({
       where: { key },
-      update: { value: stringValue },
-      create: { key, value: stringValue },
+      update: { value: value },
+      create: { key, value: value },
     });
 
     success(res, config, '配置保存成功');

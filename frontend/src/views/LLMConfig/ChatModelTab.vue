@@ -123,21 +123,8 @@ const saveLoading = ref(false)
 const testLoading = ref(false)
 
 // 常用模型列表
-const commonModels = [
-  'Qwen/Qwen2.5-72B-Instruct',
-  'Qwen/Qwen2.5-32B-Instruct',
-  'Qwen/Qwen2.5-14B-Instruct',
-  'Qwen/Qwen2.5-7B-Instruct',
-  'deepseek-ai/DeepSeek-V3',
-  'deepseek-ai/DeepSeek-R1',
-  'deepseek-ai/DeepSeek-V2.5',
-  'THUDM/glm-4-9b-chat',
-  'THUDM/glm-4-plus',
-  'moonshot-v1-8k',
-  'moonshot-v1-32k',
-  'doubao-seed-2.0-code',
-  'doubao-seed-2.0-pro',
-]
+// 常用模型列表（已移除，用户可自由输入）
+const commonModels: string[] = []
 
 const tempMarks = {
   0: '0',
@@ -149,7 +136,7 @@ const chatModelConfig = reactive<ChatModelConfig>({
   serviceType: 'custom',
   apiKey: '',
   apiBaseUrl: 'https://api.siliconflow.cn/v1',
-  modelName: 'Qwen/Qwen2.5-72B-Instruct',
+  modelName: 'Qwen/Qwen2.5t', 
   maxTokens: 8192,
   temperature: 0.3,
   timeout: 120,
@@ -211,17 +198,13 @@ const handleSaveChatConfig = async () => {
           }
         )
       } catch {
-        // 用户取消
         return
       }
     }
     
-    // 保存配置到数据库
     await saveSystemConfigApi('llm_chat_model', chatModelConfig)
     ElMessage.success('配置保存成功！')
   } catch (e: any) {
-    console.error('保存配置失败:', e)
-    // 保存失败时不重置表单，保留用户输入
     const errorMsg = e.response?.data?.error || e.message || '保存失败'
     ElMessage.error(`保存失败: ${errorMsg}`)
   } finally {
@@ -232,18 +215,27 @@ const handleSaveChatConfig = async () => {
 onMounted(async () => {
   try {
     const { data } = await getSystemConfigApi('llm_chat_model')
-    const configData = data?.value || data
-    if (configData && typeof configData === 'object') {
-      // 只更新有值的字段，保留用户当前输入的其他字段
+    let configData = data?.value || data
+    
+    // 兼容双重序列化的旧数据：如果 Prisma Json 返回字符串则解析
+    if (typeof configData === 'string') {
+      try {
+        configData = JSON.parse(configData)
+      } catch (e) {
+        console.error('JSON 解析失败:', e)
+        return
+      }
+    }
+    
+    if (configData && typeof configData === 'object' && Object.keys(configData).length > 0) {
       Object.keys(chatModelConfig).forEach(key => {
         if (key in configData && configData[key] !== undefined && configData[key] !== null) {
-          (chatModelConfig as any)[key] = configData[key]
+          ;(chatModelConfig as any)[key] = configData[key]
         }
       })
     }
   } catch (e) {
     console.error('加载配置失败', e)
-    // 加载失败时保留当前表单状态，不重置为默认值
   }
 })
 </script>
