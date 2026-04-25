@@ -13,7 +13,21 @@ export const getSystemConfig = async (req: AuthRequest, res: Response): Promise<
       where: { key },
     });
 
-    success(res, { value: config?.value ?? null });
+    let value = config?.value ?? null;
+
+    // 防御性修复：如果数据库存储的是 JSON 字符串(双重序列化)，自动解析为对象
+    if (typeof value === 'string') {
+      try {
+        const parsed = JSON.parse(value);
+        if (typeof parsed === 'object' && parsed !== null) {
+          value = parsed;
+        }
+      } catch (e) {
+        // 非 JSON 字符串则保持原样
+      }
+    }
+
+    success(res, { value });
   } catch (err) {
     console.error('Get System Config Error:', err);
     error(res, '服务器内部错误', 500);
@@ -38,12 +52,25 @@ export const saveSystemConfig = async (req: AuthRequest, res: Response): Promise
       return;
     }
 
-    // Prisma Json 类型直接接受对象或字符串，无需手动 JSON.stringify
-    // 之前手动 stringify 导致双重序列化：存入数据库变成 "\"{...}\"" 而非 {...}
+    // 防御性修复：如果 value 是字符串且看起来像 JSON，解析为对象后再存入
+    // 防止 old client code 发送 stringify 后的值导致双重序列化
+    let normalizedValue = value;
+    if (typeof normalizedValue === 'string') {
+      try {
+        const parsed = JSON.parse(normalizedValue);
+        if (typeof parsed === 'object' && parsed !== null) {
+          normalizedValue = parsed;
+        }
+      } catch (e) {
+        // 非 JSON 字符串，保持原样
+      }
+    }
+
+    // Prisma Json 类型直接接受对象，无需手动 JSON.stringify
     const config = await prisma.systemConfig.upsert({
       where: { key },
-      update: { value: value },
-      create: { key, value: value },
+      update: { value: normalizedValue },
+      create: { key, value: normalizedValue },
     });
 
     success(res, config, '配置保存成功');
