@@ -42,6 +42,11 @@ export function deleteDepartmentApi(id: string) {
   return request.delete<{ message: string }>(`/departments/${id}`)
 }
 
+// 查找或创建多级部门路径（批量导入用）
+export function findOrCreateDepartmentPathApi(data: { level1?: string; level2?: string; level3?: string }) {
+  return request.post<{ departmentId: string | null; created: string[] }>('/departments/resolve-path', data)
+}
+
 // ==================== 员工管理 ====================
 
 export function getEmployeesApi(params?: {
@@ -87,7 +92,7 @@ export function batchCreateEmployeesApi(employees: Array<{
   departmentId?: string
   email?: string
 }>) {
-  return request.post<{ successCount: number; failCount: number; errors: string[] }>('/employees/batch-create', { employees })
+  return request.post<{ successCount: number; failCount: number; errors: string[] }>('/employees/batch-create', { employees }, { timeout: 120000 })
 }
 
 // 批量启用/禁用

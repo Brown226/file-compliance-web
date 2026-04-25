@@ -13,6 +13,7 @@ router.get('/', departmentController.getDepartmentsTree);
 
 // Create/Update/Delete department - admin only
 router.post('/', requireRole('ADMIN'), departmentController.createDepartment);
+router.post('/resolve-path', requireRole('ADMIN'), departmentController.findOrCreateDepartmentPath);
 router.put('/:id', requireRole('ADMIN'), departmentController.updateDepartment);
 router.delete('/:id', requireRole('ADMIN'), departmentController.deleteDepartment);
 

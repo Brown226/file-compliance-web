@@ -461,7 +461,18 @@
                 {{ getRoleLabel(row.role) }}
               </template>
             </el-table-column>
-            <el-table-column prop="department" label="部门" />
+            <el-table-column label="一级部门" width="120">
+              <template #default="{ row }">{{ row.deptLevel1 || '-' }}</template>
+            </el-table-column>
+            <el-table-column label="二级部门" width="120">
+              <template #default="{ row }">{{ row.deptLevel2 || '-' }}</template>
+            </el-table-column>
+            <el-table-column label="三级部门" width="120">
+              <template #default="{ row }">{{ row.deptLevel3 || '-' }}</template>
+            </el-table-column>
+            <el-table-column label="部门(旧)" width="100">
+              <template #default="{ row }">{{ row.department || '-' }}</template>
+            </el-table-column>
             <el-table-column prop="email" label="邮箱" />
           </el-table>
         </div>
@@ -514,6 +525,7 @@ import {
   createDepartmentApi,
   updateDepartmentApi,
   deleteDepartmentApi,
+  findOrCreateDepartmentPathApi,
   getEmployeesApi,
   createEmployeeApi,
   updateEmployeeApi,
@@ -829,64 +841,33 @@ const findDeptByPath = (depts: any[], path: string[]): any | undefined => {
   return findDeptByPath(found.children || [], rest)
 }
 
-// 根据多级部门字段解析部门ID
-// 规则：按层级查找，最终部门存放到最末级
+// 根据多级部门字段解析部门ID（使用后端接口，一次性完成查找或自动创建）
 const resolveDepartmentId = async (level1: string, level2: string, level3: string): Promise<{ departmentId: string | undefined; createdDepts: string[] }> => {
-  const createdDepts: string[] = []
-  
-  // 1. 收集非空层级
   const levels = [level1, level2, level3].filter(l => l && l.trim())
   if (levels.length === 0) {
     return { departmentId: undefined, createdDepts: [] }
   }
   
-  // 2. 先尝试精确匹配完整路径
-  const matchedDept = findDeptByPath(orgData.value, levels)
-  if (matchedDept) {
-    return { departmentId: matchedDept.id, createdDepts: [] }
-  }
-  
-  // 3. 逐级查找或创建
-  let parentId: string | undefined = undefined
-  let lastFoundDept: any = undefined
-  
-  for (let i = 0; i < levels.length; i++) {
-    const levelName = levels[i].trim()
-    const levelDepts = i === 0 ? orgData.value : (lastFoundDept?.children || [])
-    
-    // 查找当前层级中是否有匹配的部门
-    const existing = levelDepts.find((d: any) => d.name === levelName)
-    
-    if (existing) {
-      lastFoundDept = existing
-      parentId = existing.id
-    } else {
-      // 需要创建新部门
-      try {
-        // 找到父级部门的信息用于显示
-        const parentPath = levels.slice(0, i).join(' -> ') || '根级'
-        console.log(`创建部门 "${levelName}"（父级: ${parentPath}）`)
-        
-        const { data: newDept } = await createDepartmentApi({
-          name: levelName,
-          parentId: parentId || undefined
-        })
-        
-        createdDepts.push(levelName)
-        lastFoundDept = newDept
-        parentId = newDept.id
-        
-        // 刷新部门树
-        await fetchDepartments()
-      } catch (e) {
-        console.error(`创建部门 "${levelName}" 失败:`, e)
-        // 如果创建失败，返回已找到的父级部门
-        break
-      }
+  try {
+    const { data } = await findOrCreateDepartmentPathApi({
+      level1: level1?.trim(),
+      level2: level2?.trim(),
+      level3: level3?.trim()
+    })
+    return {
+      departmentId: data.departmentId || undefined,
+      createdDepts: data.created || []
+    }
+  } catch (e) {
+    console.error('解析部门路径失败:', level1, level2, level3, e)
+    // 失败时尝试本地查找（兼容旧版逻辑）
+    const localLevels = [level1, level2, level3].filter(l => l && l.trim())
+    const matched = findDeptByPath(orgData.value, localLevels)
+    return {
+      departmentId: matched?.id,
+      createdDepts: []
     }
   }
-  
-  return { departmentId: parentId, createdDepts }
 }
 
 // 获取全局全量员工数据（用于部门树计数）
@@ -1263,49 +1244,32 @@ const handleBatchImport = async () => {
 
   batchImportLoading.value = true
   try {
-    // 先收集所有需要创建的部门（去重）
-    const deptToCreate = new Set<string>()
+    // 收集所有唯一的部门路径（去重）
     const deptPathMap = new Map<string, { level1: string; level2: string; level3: string }>()
     
     validData.forEach(r => {
       const levels = [r.deptLevel1, r.deptLevel2, r.deptLevel3].filter(l => l && l.trim())
       if (levels.length > 0) {
         const pathKey = levels.join('|')
-        deptPathMap.set(pathKey, { level1: r.deptLevel1, level2: r.deptLevel2, level3: r.deptLevel3 })
-        
-        // 检查是否需要创建部门
-        const matched = findDeptByPath(orgData.value, levels)
-        if (!matched) {
-          levels.forEach(l => deptToCreate.add(l.trim()))
-        }
-      } else if (r.department) {
-        // 兼容旧版单部门字段
-        const deptId = getDepartmentIdByName(r.department)
-        if (!deptId) {
-          deptToCreate.add(r.department.trim())
+        if (!deptPathMap.has(pathKey)) {
+          deptPathMap.set(pathKey, { level1: r.deptLevel1, level2: r.deptLevel2, level3: r.deptLevel3 })
         }
       }
     })
     
-    // 预创建不存在的部门
-    if (deptToCreate.size > 0) {
-      ElMessage.info(`正在创建 ${deptToCreate.size} 个新部门...`)
-      // 按层级排序创建（一级 -> 二级 -> 三级）
-      const sortedDepts = Array.from(deptToCreate).sort((a, b) => {
-        const levelA = [...deptPathMap.entries()].find(([_, v]) => [v.level1, v.level2, v.level3].includes(a))?.[1]
-        const levelB = [...deptPathMap.entries()].find(([_, v]) => [v.level1, v.level2, v.level3].includes(b))?.[1]
-        const indexA = levelA ? [levelA.level1, levelA.level2, levelA.level3].indexOf(a) : 99
-        const indexB = levelB ? [levelB.level1, levelB.level2, levelB.level3].indexOf(b) : 99
-        return indexA - indexB
-      })
+    // 预创建不存在的部门（使用后端接口，并行处理所有部门路径）
+    if (deptPathMap.size > 0) {
+      ElMessage.info(`正在检查/创建 ${deptPathMap.size} 个部门路径...`)
       
-      // 逐级创建
-      for (const pathKey of deptPathMap.keys()) {
-        const { level1, level2, level3 } = deptPathMap.get(pathKey)!
-        const result = await resolveDepartmentId(level1, level2, level3)
-        if (result.createdDepts.length > 0) {
-          console.log(`为 "${pathKey}" 创建了部门:`, result.createdDepts)
-        }
+      const allCreatedDepts: string[] = []
+      const entries = Array.from(deptPathMap.entries())
+      const results = await Promise.all(
+        entries.map(([, path]) => resolveDepartmentId(path.level1, path.level2, path.level3))
+      )
+      results.forEach(r => allCreatedDepts.push(...r.createdDepts))
+      
+      if (allCreatedDepts.length > 0) {
+        ElMessage.success(`已自动创建 ${allCreatedDepts.length} 个新部门`)
       }
     }
     
@@ -1319,7 +1283,7 @@ const handleBatchImport = async () => {
       const levels = [r.deptLevel1, r.deptLevel2, r.deptLevel3].filter(l => l && l.trim())
       
       if (levels.length > 0) {
-        // 使用新的多级部门匹配
+        // 使用新的多级部门匹配（已在前一步确保部门存在）
         const matched = findDeptByPath(orgData.value, levels)
         departmentId = matched?.id
       } else if (r.department) {

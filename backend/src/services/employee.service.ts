@@ -170,11 +170,23 @@ export class EmployeeService {
     });
     const existingUsernames = new Set(existingUsers.map(u => u.username));
 
-    // 逐个处理，但使用独立的事务包裹每个创建操作
+    // 第一步：预过滤有效员工，并行计算密码哈希
+    const validEmployees: Array<{
+      username: string;
+      name: string;
+      passwordHash: string;
+      role: string;
+      departmentId?: string;
+      email?: string;
+      rowNum: number;
+    }> = [];
+
+    const hashTasks: Promise<void>[] = [];
+
     for (let i = 0; i < employees.length; i++) {
       const emp = employees[i];
-      const rowNum = i + 2; // Excel 行号（从2开始，因为第1行是表头）
-      
+      const rowNum = i + 2;
+
       try {
         // 检查用户名是否存在
         if (existingUsernames.has(emp.username)) {
@@ -199,28 +211,56 @@ export class EmployeeService {
           continue;
         }
 
-        // 哈希密码
-        const salt = await bcrypt.genSalt(10);
-        const passwordHash = await bcrypt.hash(emp.password || '123456', salt);
+        // 加入哈希任务（并行计算）
+        const task = (async () => {
+          const salt = await bcrypt.genSalt(10);
+          const passwordHash = await bcrypt.hash(emp.password || '123456', salt);
+          validEmployees.push({
+            username: emp.username,
+            name: emp.name,
+            passwordHash,
+            role: role as string,
+            departmentId: emp.departmentId,
+            email: emp.email,
+            rowNum,
+          });
+        })();
+        hashTasks.push(task);
+      } catch (err: any) {
+        results.failCount++;
+        results.errors.push(`第${rowNum}行: 验证失败 - ${err.message}`);
+      }
+    }
 
-        // 创建用户
+    // 并行计算所有密码哈希
+    await Promise.all(hashTasks);
+
+    // 第二步：顺序创建用户（已预计算哈希，大幅减少 DB 连接时间）
+    for (const emp of validEmployees) {
+      try {
+        // 检查用户名是否在创建过程中已被其他请求占用
+        if (existingUsernames.has(emp.username)) {
+          results.failCount++;
+          results.errors.push(`第${emp.rowNum}行: 用户名 "${emp.username}" 已存在`);
+          continue;
+        }
+
         await prisma.user.create({
           data: {
             username: emp.username,
-            passwordHash,
+            passwordHash: emp.passwordHash,
             name: emp.name,
-            role: role as any,
+            role: emp.role as any,
             departmentId: emp.departmentId,
             email: emp.email,
           },
         });
 
         results.successCount++;
-        // 将刚成功的用户名加入已存在集合，避免重复
         existingUsernames.add(emp.username);
       } catch (err: any) {
         results.failCount++;
-        results.errors.push(`第${rowNum}行: 创建 "${emp.username}" 失败 - ${err.message}`);
+        results.errors.push(`第${emp.rowNum}行: 创建 "${emp.username}" 失败 - ${err.message}`);
         console.error(`批量创建员工失败 [${emp.username}]:`, err);
       }
     }

@@ -49,6 +49,19 @@ export class DepartmentController {
   }
 
   /**
+   * 查找或创建多级部门路径（批量导入用）
+   */
+  async findOrCreateDepartmentPath(req: Request, res: Response, next: NextFunction) {
+    try {
+      const { level1, level2, level3 } = req.body;
+      const result = await departmentService.findOrCreateDepartmentPath({ level1, level2, level3 });
+      success(res, result);
+    } catch (err) {
+      next(err);
+    }
+  }
+
+  /**
    * 删除部门
    */
   async deleteDepartment(req: Request, res: Response, next: NextFunction) {

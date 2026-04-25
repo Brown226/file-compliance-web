@@ -82,6 +82,45 @@ export class DepartmentService {
   }
 
   /**
+   * 查找或创建多级部门路径
+   * 支持一级、二级、三级部门自动创建
+   * 用于批量导入场景
+   */
+  async findOrCreateDepartmentPath(path: { level1?: string; level2?: string; level3?: string }) {
+    const levels: string[] = [];
+    if (path.level1?.trim()) levels.push(path.level1.trim());
+    if (path.level2?.trim()) levels.push(path.level2.trim());
+    if (path.level3?.trim()) levels.push(path.level3.trim());
+
+    if (levels.length === 0) {
+      return { departmentId: null, created: [] };
+    }
+
+    let parentId: string | null = null;
+    const created: string[] = [];
+
+    for (const levelName of levels) {
+      // 查找当前层级中是否有匹配的部门（根据名称 + 父级ID）
+      const existing = await prisma.department.findFirst({
+        where: { name: levelName, parentId: parentId }
+      });
+
+      if (existing) {
+        parentId = existing.id;
+      } else {
+        // 创建新部门
+        const newDept = await prisma.department.create({
+          data: { name: levelName, parentId }
+        });
+        created.push(levelName);
+        parentId = newDept.id;
+      }
+    }
+
+    return { departmentId: parentId, created };
+  }
+
+  /**
    * 删除部门
    */
   async deleteDepartment(id: string) {
