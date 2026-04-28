@@ -28,34 +28,6 @@
       </div>
     </div>
 
-    <!-- ===== 领导视图：严重违规预警横幅（按部门聚合） ===== -->
-    <div v-if="viewMode === 'admin' && hasHighSeverityIssues && !alertDismissed" class="alert-banner">
-      <div class="alert-body">
-        <div class="alert-title">
-          <el-icon :size="18"><WarningFilled /></el-icon>
-          <span>严重违规预警</span>
-        </div>
-        <div class="alert-depts">
-          <span
-            v-for="dept in unhandledHighDepts"
-            :key="dept.deptName"
-            class="alert-dept-item"
-          >
-            <span class="alert-dept-icon">⛔</span>
-            <span>{{ dept.deptName }} — {{ dept.count }}个严重违规未处理</span>
-            <el-button link size="small" class="alert-detail-link" @click="$router.push('/tasks/history')">
-              查看详情 →
-            </el-button>
-          </span>
-          <div v-if="!unhandledHighDepts.length" class="alert-dept-total">
-            共 {{ highSeverityCount }} 个严重问题待处理
-          </div>
-        </div>
-      </div>
-      <div class="alert-actions">
-        <el-button link class="alert-dismiss-btn" @click="dismissAlert">已知晓 ✕</el-button>
-      </div>
-    </div>
 
     <!-- ===== KPI 统计卡片区 ===== -->
     <div class="kpi-grid" :class="{ 'kpi-grid-5': viewMode === 'admin' }">
@@ -358,20 +330,6 @@ const currentDate = computed(() => {
   return `${d.getFullYear()}.${String(d.getMonth() + 1).padStart(2, '0')}.${String(d.getDate()).padStart(2, '0')} ${weekdays[d.getDay()]}`;
 });
 
-// ===== 严重违规预警 =====
-const highSeverityCount = computed(() => stats.value.bySeverity?.error || 0);
-const hasHighSeverityIssues = computed(() => highSeverityCount.value > 0);
-const unhandledHighDepts = computed(() => {
-  const data = stats.value.unhandledHigh || [];
-  return Array.isArray(data) ? data.filter((d: any) => d.count > 0) : [];
-});
-
-const alertDismissed = ref(false);
-const dismissAlert = () => {
-  alertDismissed.value = true;
-  localStorage.setItem('dashboard-alert-dismissed', new Date().toISOString().slice(0, 10));
-};
-
 // ===== 最近任务 =====
 const recentTasks = ref<any[]>([]);
 
@@ -458,7 +416,7 @@ const adminKpiList = computed(() => [
   },
   {
     label: '严重问题',
-    value: highSeverityCount.value,
+    value: stats.value.bySeverity?.error || 0,
     unit: '',
     icon: Warning,
     theme: 'danger' as const,
@@ -612,11 +570,6 @@ const fetchStats = async () => {
         trendData: trendRes.data || {},
       };
       departmentStats.value = data.departmentStats || [];
-    }
-
-    const dismissedDate = localStorage.getItem('dashboard-alert-dismissed');
-    if (dismissedDate === new Date().toISOString().slice(0, 10)) {
-      alertDismissed.value = true;
     }
 
     nextTick(() => {
@@ -1248,6 +1201,14 @@ onUnmounted(() => {
 
 .chart-card :deep(.el-card__body.el-card__body) {
   padding: 16px 20px 20px;
+  display: flex;
+  flex-direction: column;
+}
+
+.chart-box {
+  flex: 1;
+  min-height: 300px;
+  width: 100%;
 }
 
 .card-header {

@@ -156,7 +156,7 @@ async function fetchData() {
         color: modeMeta[mode]?.color || '#6B7280',
         enabled: cfg.enabled !== false,
         rules: cfg.rules !== false,
-        standardRef: cfg.standardRef || 'on',
+        standardRef: cfg.standardRef === true || cfg.standardRef === 'on',
         ai: cfg.ai !== false,
         aiStrategy: cfg.aiStrategy || 'standard',
         crossFile: cfg.crossFile === true,
@@ -189,12 +189,13 @@ async function handleSave() {
       config[m.mode] = {
         enabled: m.enabled,
         rules: m.rules,
-        standardRef: m.standardRef,
+        standardRef: m.standardRef === true,  // 确保是 boolean 类型
         ai: m.ai,
         aiStrategy: m.aiStrategy,
         crossFile: m.crossFile,
       }
     })
+    console.log('[ModeCapabilities] 保存配置:', JSON.stringify(config, null, 2))
     await saveModeCapabilitiesApi(config)
     originalData.value = JSON.parse(JSON.stringify(config))
     ElMessage.success('保存成功')

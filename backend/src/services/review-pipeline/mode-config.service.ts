@@ -51,18 +51,27 @@ export async function getModeCapabilitiesConfig(): Promise<Record<ReviewModeType
   // 从数据库读取覆盖配置
   try {
     const record = await prisma.systemConfig.findUnique({ where: { key: CONFIG_KEY } });
-    if (record?.value && typeof record.value === 'object') {
-      const overrides = record.value as ModeCapabilitiesConfig;
+    console.log('[ModeConfig] 数据库记录:', record ? `key=${record.key}, value type=${typeof record.value}` : '无记录');
+    
+    if (record?.value) {
+      // Prisma Json 字段可能返回对象或字符串
+      const overrides = typeof record.value === 'string' 
+        ? JSON.parse(record.value) 
+        : record.value as ModeCapabilitiesConfig;
+      
+      console.log('[ModeConfig] 解析后的覆盖配置:', JSON.stringify(overrides, null, 2));
+      
       for (const [mode, override] of Object.entries(overrides)) {
-        if (result[mode] && override) {
-          if (override.standardRef !== undefined) {
-            result[mode].standardRef = override.standardRef === 'on';
+        const cfg = override as ModeConfigOverride | undefined;
+        if (result[mode] && cfg) {
+          if (cfg.standardRef !== undefined) {
+            result[mode].standardRef = cfg.standardRef === 'on';
           }
-          if (override.enabled !== undefined) result[mode].enabled = override.enabled;
-          if (override.rules !== undefined) result[mode].rules = override.rules;
-          if (override.ai !== undefined) result[mode].ai = override.ai;
-          if (override.aiStrategy !== undefined) result[mode].aiStrategy = override.aiStrategy;
-          if (override.crossFile !== undefined) result[mode].crossFile = override.crossFile;
+          if (cfg.enabled !== undefined) result[mode].enabled = cfg.enabled;
+          if (cfg.rules !== undefined) result[mode].rules = cfg.rules;
+          if (cfg.ai !== undefined) result[mode].ai = cfg.ai;
+          if (cfg.aiStrategy !== undefined) result[mode].aiStrategy = cfg.aiStrategy;
+          if (cfg.crossFile !== undefined) result[mode].crossFile = cfg.crossFile;
         }
       }
     }
@@ -70,11 +79,14 @@ export async function getModeCapabilitiesConfig(): Promise<Record<ReviewModeType
     console.error('[ModeConfig] 加载配置失败，使用默认配置', e);
   }
 
+  console.log('[ModeConfig] 最终返回的配置:', JSON.stringify(result, null, 2));
   return result as Record<ReviewModeType, any>;
 }
 
 /** 保存模式配置（standardRef boolean 转换为 'on'/'off'） */
 export async function saveModeCapabilitiesConfig(config: Record<string, any>): Promise<void> {
+  console.log('[ModeConfig] 接收到的配置:', JSON.stringify(config, null, 2));
+  
   // 转换 standardRef: boolean → 'on'/'off'
   const toSave: ModeCapabilitiesConfig = {};
   for (const [mode, cfg] of Object.entries(config)) {
@@ -89,9 +101,13 @@ export async function saveModeCapabilitiesConfig(config: Record<string, any>): P
     };
   }
 
+  console.log('[ModeConfig] 保存到数据库的配置:', JSON.stringify(toSave, null, 2));
+
   await prisma.systemConfig.upsert({
     where: { key: CONFIG_KEY },
     update: { value: JSON.stringify(toSave) },
     create: { key: CONFIG_KEY, value: JSON.stringify(toSave) },
   });
+  
+  console.log('[ModeConfig] 配置保存成功');
 }

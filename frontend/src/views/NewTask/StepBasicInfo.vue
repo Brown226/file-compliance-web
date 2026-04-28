@@ -1,31 +1,41 @@
 <template>
-  <div class="mode-grid">
-    <div
-      v-for="m in reviewModes"
-      :key="m.mode"
-      class="mode-card"
-      :class="{ selected: selectedMode === m.mode }"
-      @click="emit('selectMode', m.mode)"
-      @dblclick="selectedMode === m.mode && emit('next')"
-    >
-      <div class="mc-icon-wrap">
-        <el-icon :size="22" :style="{ color: selectedMode === m.mode ? '#fff' : 'var(--corp-text-secondary)' }">
-          <component :is="modeIcons[m.mode]" />
-        </el-icon>
-      </div>
-      <div class="mc-body">
-        <div class="mc-name">{{ m.displayName }}</div>
-        <div class="mc-desc">{{ m.description }}</div>
-        <!-- 能力标签 -->
-        <div class="mc-caps" v-if="m.capabilities">
-          <span v-if="m.capabilities.rules" class="cap-tag cap-rules">规则</span>
-          <span v-if="m.capabilities.standardRef === 'on'" class="cap-tag cap-stdref">标准</span>
-          <span v-if="m.capabilities.ai" class="cap-tag cap-ai">AI</span>
-          <span v-if="m.capabilities.crossFile" class="cap-tag cap-cross">跨文件</span>
-          <span v-if="m.capabilities.needsRefFiles" class="cap-tag cap-ref">参照</span>
+  <div>
+    <div class="mode-grid">
+      <div
+        v-for="m in reviewModes"
+        :key="m.mode"
+        class="mode-card"
+        :class="{ selected: selectedMode === m.mode }"
+        @click="emit('selectMode', m.mode)"
+        @dblclick="selectedMode === m.mode && emit('next')"
+      >
+        <div class="mc-icon-wrap">
+          <el-icon :size="22" :style="{ color: selectedMode === m.mode ? '#fff' : 'var(--corp-text-secondary)' }">
+            <component :is="modeIcons[m.mode]" />
+          </el-icon>
         </div>
+        <div class="mc-body">
+          <div class="mc-name">{{ m.displayName }}</div>
+          <div class="mc-desc">{{ m.description }}</div>
+          <!-- 能力标签 -->
+          <div class="mc-caps" v-if="m.capabilities">
+            <span v-if="m.capabilities.rules" class="cap-tag cap-rules">规则</span>
+            <span v-if="m.capabilities.standardRef === 'on'" class="cap-tag cap-stdref">标准</span>
+            <span v-if="m.capabilities.ai" class="cap-tag cap-ai">AI</span>
+            <span v-if="m.capabilities.crossFile" class="cap-tag cap-cross">跨文件</span>
+            <span v-if="m.capabilities.needsRefFiles" class="cap-tag cap-ref">参照</span>
+          </div>
+        </div>
+        <div v-if="m.mode === 'FULL_REVIEW'" class="mc-rec-badge">推荐</div>
       </div>
-      <div v-if="m.mode === 'FULL_REVIEW'" class="mc-rec-badge">推荐</div>
+    </div>
+    
+    <!-- 下一步按钮 -->
+    <div class="step-actions">
+      <el-button type="primary" size="large" @click="emit('next')" :disabled="!selectedMode">
+        下一步
+        <el-icon class="el-icon--right"><ArrowRight /></el-icon>
+      </el-button>
     </div>
   </div>
 </template>
@@ -33,7 +43,7 @@
 <script setup lang="ts">
 import {
   Reading, Files, Connection, EditPen,
-  PictureFilled, Setting, Check
+  PictureFilled, Setting, Check, ArrowRight
 } from '@element-plus/icons-vue';
 
 defineProps<{
@@ -162,5 +172,13 @@ const modeIcons: Record<string, any> = {
   font-weight: 500;
   padding: 2px 8px;
   border-radius: var(--radius-sm);
+}
+
+.step-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 24px;
+  padding-top: 20px;
+  border-top: 1px solid var(--corp-border-light);
 }
 </style>

@@ -171,7 +171,7 @@ services:
   # 后端 API 服务
   # ==========================================
   backend:
-    image: file-review-backend:v1.0
+    image: file-review-backend:v1.3
     container_name: file_review_backend
     ports:
       - "${BACKEND_PORT:-3000}:3000"
@@ -219,7 +219,7 @@ services:
   # 前端 Web 服务 (Nginx)
   # ==========================================
   frontend:
-    image: file-review-frontend:v1.0
+    image: file-review-frontend:v1.3
     container_name: file_review_frontend
     ports:
       - "${FRONTEND_PORT:-80}:80"

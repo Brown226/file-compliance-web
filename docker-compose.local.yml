@@ -1,0 +1,64 @@
+# ============================================
+# 本地开发调试 - 挂载 dist 目录覆盖镜像内容
+# 用于快速验证代码修改，无需重新构建镜像
+# 
+# 使用方法:
+#   docker compose -f docker-compose.offline.yml -f docker-compose.local.yml up -d
+# ============================================
+
+services:
+  # 后端 API 服务 - 挂载本地 dist
+  backend:
+    image: file-review-backend:v1.3
+    container_name: file_review_backend
+    ports:
+      - "${BACKEND_PORT:-3000}:3000"
+    environment:
+      - NODE_ENV=production
+      - PORT=3000
+      - DATABASE_URL=postgresql://file_review_user:file_review_password@postgres:5432/file_review_db
+      - REDIS_URL=redis://redis:6379
+      - JWT_SECRET=${JWT_SECRET:-enterprise-review-system-jwt-secret-2026}
+      - JWT_EXPIRES_IN=${JWT_EXPIRES_IN:-1d}
+      - PARSER_SERVICE_URL=http://markitdown:8000
+      - MAXKB_BASE_URL=http://maxkb:8080
+      - TZ=Asia/Shanghai
+    volumes:
+      - ./backend/dist:/app/dist
+      - uploads:/app/uploads
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      markitdown:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3000/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 60s
+    networks:
+      - file-review-network
+
+  # 前端 Web 服务 - 挂载本地 dist
+  frontend:
+    image: file-review-frontend:v1.3
+    container_name: file_review_frontend
+    ports:
+      - "${FRONTEND_PORT:-80}:80"
+    volumes:
+      - ./frontend/dist:/usr/share/nginx/html
+      - ./nginx.conf:/etc/nginx/conf.d/default.conf
+    restart: unless-stopped
+    depends_on:
+      - backend
+    networks:
+      - file-review-network
+
+networks:
+  file-review-network:
+    external: true
+
