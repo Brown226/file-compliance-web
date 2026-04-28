@@ -237,11 +237,11 @@ const resetForm = () => {
 <style scoped>
 .new-task-container {
   background: var(--bg-body);
-  padding: var(--space-6) var(--space-8);
+  padding: var(--space-6) var(--space-5);
 }
 
 .steps-card {
-  max-width: 1200px;
+  max-width: 960px;
   margin: 0 auto var(--space-6);
   background: var(--bg-surface);
   border: 1px solid var(--corp-border-light);
@@ -334,7 +334,7 @@ const resetForm = () => {
 }
 
 .step-content {
-  max-width: 1200px;
+  max-width: 960px;
   margin: 0 auto;
 }
 </style>
