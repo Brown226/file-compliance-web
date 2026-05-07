@@ -20,6 +20,8 @@ import promptTemplateRoutes from './routes/promptTemplate.routes';
 import falsePositiveLibraryRoutes from './routes/falsePositiveLibrary.routes';
 import regexRoutes from './routes/regex.routes';
 import systemRoutes from './routes/system.routes';
+import feedbackRoutes from './routes/feedback.routes';
+import announcementRoutes from './routes/announcement.routes';
 
 // 定时清理孤立文件（每天凌晨2点执行）
 import './services/scheduler.service';
@@ -56,6 +58,8 @@ app.use('/api/prompt-templates', promptTemplateRoutes);
 app.use('/api/false-positive-library', falsePositiveLibraryRoutes);
 app.use('/api/regex', regexRoutes);
 app.use('/api/system', systemRoutes);
+app.use('/api/feedback', feedbackRoutes);
+app.use('/api/announcements', announcementRoutes);
 app.get('/health', (req: Request, res: Response) => {
   res.status(200).json({ status: 'OK', message: 'Server is running' });
 });

@@ -80,6 +80,14 @@
           <el-icon><Document /></el-icon>
           <template #title><span>审计日志</span></template>
         </el-menu-item>
+
+        <!-- 反馈建议 - 所有用户 -->
+        <div class="menu-divider" v-show="!sidebarCollapsed"></div>
+        <div class="menu-group-label" v-show="!sidebarCollapsed">帮助反馈</div>
+        <el-menu-item index="/feedback">
+          <el-icon><ChatDotRound /></el-icon>
+          <template #title><span>反馈建议</span></template>
+        </el-menu-item>
       </el-menu>
 
       <div class="collapse-btn" @click="sidebarCollapsed = !sidebarCollapsed">
@@ -119,6 +127,12 @@
             <el-tooltip content="快捷键 (?)" placement="bottom">
               <div class="tool-icon-wrap" @click="showShortcutHelp = true">
                 <el-icon :size="18"><QuestionFilled /></el-icon>
+              </div>
+            </el-tooltip>
+            <el-tooltip content="系统公告" placement="bottom">
+              <div class="tool-icon-wrap" @click="handleAnnouncementClick" style="position: relative;">
+                <el-icon :size="18"><Bell /></el-icon>
+                <span v-if="announcementUnreadCount > 0" class="badge-dot">{{ announcementUnreadCount > 9 ? '9+' : announcementUnreadCount }}</span>
               </div>
             </el-tooltip>
           </div>
@@ -184,6 +198,10 @@
 
     <GlobalSearch ref="globalSearchRef" />
 
+    <AnnouncementPopup ref="announcementPopupRef" v-if="showAnnouncementPopup" />
+
+    <NotificationCenter ref="notificationCenterRef" />
+
     <el-dialog v-model="showShortcutHelp" title="⌨️ 快捷键" width="520px">
       <el-table :data="shortcutsList" border size="small">
         <el-table-column label="快捷键" width="180" align="center">
@@ -213,11 +231,14 @@ import {
   Setting,
   Document, FullScreen, ArrowDown, Lock, SwitchButton,
   Fold, Expand, Search, QuestionFilled, Edit,
-  Tools, Connection, Operation, WarningFilled,
+  Tools, Connection, Operation, WarningFilled, ChatDotRound, Bell,
 } from '@element-plus/icons-vue'
 import { logoutApi, changePasswordApi } from '@/api/auth'
 import GlobalSearch from '@/components/GlobalSearch.vue'
+import AnnouncementPopup from '@/components/AnnouncementPopup.vue'
+import NotificationCenter from '@/components/NotificationCenter.vue'
 import { useKeyboardShortcuts } from '@/composables/useKeyboardShortcuts'
+import { useAnnouncements } from '@/composables/useAnnouncements'
 
 const route = useRoute()
 const router = useRouter()
@@ -228,6 +249,19 @@ const sidebarOpen = ref(false)
 
 const globalSearchRef = ref<InstanceType<typeof GlobalSearch> | null>(null)
 const showShortcutHelp = ref(false)
+
+// 系统公告
+const announcementPopupRef = ref<InstanceType<typeof AnnouncementPopup> | null>(null)
+const notificationCenterRef = ref<InstanceType<typeof NotificationCenter> | null>(null)
+const {
+  unreadCount: announcementUnreadCount,
+  showAnnouncementPopup,
+  checkAndShow: checkAnnouncements,
+} = useAnnouncements()
+
+const handleAnnouncementClick = () => {
+  notificationCenterRef.value?.open()
+}
 
 const isMobile = ref(false)
 
@@ -245,6 +279,9 @@ onMounted(() => {
     isMobile.value = window.innerWidth < 1024
     if (!isMobile.value) sidebarOpen.value = false
   })
+
+  // 检查未读公告
+  checkAnnouncements()
 })
 
 const { register } = useKeyboardShortcuts()

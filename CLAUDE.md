@@ -103,3 +103,17 @@ Orchestrated by `ReviewService.processTask()`, triggered via `setImmediate()` fr
 - `backend/src/app.ts` — Express app setup + route registration
 - `frontend/vite.config.ts` — Vite config with API proxy
 - `start-platform.bat` / `start-maxkb.bat` — Windows startup scripts
+
+## Agent skills
+
+### Issue tracker
+
+GitHub Issues via `gh` CLI. See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+Five canonical roles: `needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`, `wontfix`. See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+Single-context layout. `CONTEXT.md` at repo root + `docs/adr/` for architectural decision records. See `docs/agents/domain.md`.

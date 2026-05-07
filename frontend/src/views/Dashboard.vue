@@ -221,6 +221,65 @@
         </template>
       </el-col>
     </el-row>
+
+    <!-- ===== 第三行：用户反馈状态卡片 ===== -->
+    <el-row :gutter="20" class="chart-row" v-if="viewMode === 'user'">
+      <el-col :span="24">
+        <div class="feedback-status-card">
+          <div class="card-header panel-header">
+            <span>我的反馈</span>
+            <el-button link type="primary" @click="$router.push('/feedback')">查看全部 →</el-button>
+          </div>
+          <div class="feedback-stats" v-loading="feedbackLoading">
+            <div
+              v-for="stat in feedbackStatsList"
+              :key="stat.status"
+              class="feedback-stat-item"
+              @click="filterByStatus(stat.status)"
+            >
+              <div class="stat-icon" :style="{ background: stat.color }">
+                <el-icon :size="20"><component :is="stat.icon" /></el-icon>
+              </div>
+              <div class="stat-info">
+                <div class="stat-value">{{ stat.count }}</div>
+                <div class="stat-label">{{ stat.label }}</div>
+              </div>
+            </div>
+            <div v-if="feedbackStatsList.length === 0" class="empty-hint">
+              暂无反馈记录，<el-button link type="primary" @click="$router.push('/feedback/submit')">立即提交反馈</el-button>
+            </div>
+          </div>
+        </div>
+      </el-col>
+    </el-row>
+
+    <!-- ===== 领导视图：反馈趋势 ===== -->
+    <el-row :gutter="20" class="chart-row" v-if="viewMode === 'admin' && feedbackStats">
+      <el-col :span="24">
+        <div class="feedback-admin-card">
+          <div class="card-header panel-header">
+            <span>用户反馈统计</span>
+            <el-button link type="primary" @click="$router.push('/system')">管理反馈 →</el-button>
+          </div>
+          <div class="feedback-admin-stats" v-loading="feedbackLoading">
+            <div
+              v-for="stat in feedbackStatsList"
+              :key="stat.status"
+              class="feedback-stat-item"
+            >
+              <div class="stat-icon" :style="{ background: stat.color }">
+                <el-icon :size="20"><component :is="stat.icon" /></el-icon>
+              </div>
+              <div class="stat-info">
+                <div class="stat-value">{{ stat.count }}</div>
+                <div class="stat-label">{{ stat.label }}</div>
+              </div>
+            </div>
+            <div v-if="feedbackStatsList.length === 0" class="empty-hint">暂无反馈数据</div>
+          </div>
+        </div>
+      </el-col>
+    </el-row>
   </div>
 </template>
 
@@ -240,11 +299,13 @@ import { LinearGradient } from 'echarts/lib/util/graphic';
 import {
   DocumentChecked, Warning, CircleClose, Timer,
   WarningFilled, EditPen, List, Collection, ChatDotRound,
+  Clock, Loading, Check, CircleCloseFilled,
 } from '@element-plus/icons-vue';
 import { ElMessage } from 'element-plus';
 import { getDashboardStatsApi, getDashboardTrendApi } from '@/api/dashboard';
 import { getTasksApi } from '@/api/task';
 import { toggleFalsePositiveApi } from '@/api/task';
+import { getMyFeedbacksApi } from '@/api/feedback';
 import { useECharts } from '@/composables/useECharts';
 import { useUserStore } from '@/stores/user';
 
@@ -335,6 +396,53 @@ const recentTasks = ref<any[]>([]);
 
 // ===== 待处理问题（用户视图） =====
 const pendingIssues = ref<any[]>([]);
+
+// ===== 反馈状态数据 =====
+const feedbackLoading = ref(false);
+const feedbackStats = ref<Record<string, number>>({});
+
+const feedbackStatsList = computed(() => [
+  { status: 'PENDING', label: '待处理', count: feedbackStats.value.PENDING || 0, color: '#e6a23c', icon: Clock },
+  { status: 'IN_PROGRESS', label: '处理中', count: feedbackStats.value.IN_PROGRESS || 0, color: '#409eff', icon: Loading },
+  { status: 'RESOLVED', label: '已解决', count: feedbackStats.value.RESOLVED || 0, color: '#67c23a', icon: Check },
+  { status: 'CLOSED', label: '已关闭', count: feedbackStats.value.CLOSED || 0, color: '#909399', icon: CircleCloseFilled },
+]);
+
+// 加载反馈统计数据
+const loadFeedbackStats = async () => {
+  if (viewMode.value !== 'user') return;
+  
+  feedbackLoading.value = true;
+  try {
+    const res = await getMyFeedbacksApi({ page: 1, limit: 100 });
+    const feedbacks = res.data.items || res.data.data || [];
+    
+    // 统计各状态数量
+    const stats: Record<string, number> = {
+      PENDING: 0,
+      IN_PROGRESS: 0,
+      RESOLVED: 0,
+      CLOSED: 0,
+    };
+    
+    feedbacks.forEach((fb: any) => {
+      if (stats[fb.status] !== undefined) {
+        stats[fb.status]++;
+      }
+    });
+    
+    feedbackStats.value = stats;
+  } catch (error: any) {
+    console.error('加载反馈统计失败:', error);
+  } finally {
+    feedbackLoading.value = false;
+  }
+};
+
+// 按状态筛选
+const filterByStatus = (status: string) => {
+  router.push({ path: '/feedback', query: { status } });
+};
 
 // ===== 辅助函数 =====
 const formatAvgTime = (ms: number) => {
@@ -501,7 +609,7 @@ const handleFalsePositive = async (issue: any) => {
 };
 
 const handleFeedback = () => {
-  ElMessage.info('反馈功能开发中，请联系管理员');
+  router.push('/feedback/submit');
 };
 
 // ===== 数据获取 =====
@@ -833,10 +941,12 @@ let refreshTimer: ReturnType<typeof setInterval> | null = null;
 onMounted(() => {
   fetchStats();
   fetchRecentTasks();
+  loadFeedbackStats();
   // 每 60 秒自动刷新
   refreshTimer = setInterval(() => {
     fetchStats();
     if (viewMode.value === 'user') fetchRecentTasks();
+    loadFeedbackStats();
   }, 60000);
 });
 
@@ -1527,6 +1637,69 @@ onUnmounted(() => {
 .action-card span {
   position: relative;
   z-index: 1;
+}
+
+/* ===== 反馈状态卡片 ===== */
+.feedback-status-card,
+.feedback-admin-card {
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: var(--radius-lg);
+  padding: var(--space-5);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+}
+
+.feedback-stats,
+.feedback-admin-stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: var(--space-4);
+  margin-top: var(--space-4);
+}
+
+.feedback-stat-item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  background: #f8fafc;
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.feedback-stat-item:hover {
+  background: #f1f5f9;
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+}
+
+.stat-icon {
+  width: 40px;
+  height: 40px;
+  border-radius: var(--radius-md);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #ffffff;
+  flex-shrink: 0;
+}
+
+.stat-info {
+  flex: 1;
+}
+
+.stat-value {
+  font-size: 24px;
+  font-weight: 700;
+  color: #1e293b;
+  line-height: 1;
+}
+
+.stat-label {
+  font-size: 13px;
+  color: #64748b;
+  margin-top: 4px;
 }
 
 /* ===== 响应式 ===== */

@@ -406,3 +406,87 @@ export interface DwgFileMetadata {
     standardId?: string
   }>
 }
+
+// ===== 反馈建议相关类型 =====
+
+/** 反馈状态 */
+export type FeedbackStatus = 'PENDING' | 'IN_PROGRESS' | 'RESOLVED' | 'CLOSED'
+
+/** 反馈类别 */
+export type FeedbackCategory = 'BUG_REPORT' | 'SUGGESTION' | 'FEATURE_REQUEST' | 'OTHER'
+
+/** 反馈附件 */
+export interface FeedbackAttachment {
+  id: string
+  fileName: string
+  filePath: string
+  fileSize: number
+  fileType: string
+}
+
+/** 反馈 */
+export interface Feedback {
+  id: string
+  title: string
+  content: string
+  category: FeedbackCategory
+  status: FeedbackStatus
+  userId: string
+  user?: {
+    id: string
+    username: string
+    name: string
+    role: UserRole
+  }
+  attachmentPaths?: FeedbackAttachment[] | null
+  createdAt: string
+  updatedAt: string
+  resolvedAt?: string | null
+  resolverId?: string | null
+  resolvedBy?: {
+    id: string
+    username: string
+    name: string
+  } | null
+  remark?: string | null
+}
+
+// ===== 系统公告相关类型 =====
+
+/** 公告紧急程度 */
+export type AnnouncementUrgency = 'NORMAL' | 'IMPORTANT' | 'URGENT'
+
+/** 公告状态 */
+export type AnnouncementStatus = 'DRAFT' | 'PUBLISHED' | 'WITHDRAWN'
+
+/** 系统公告 */
+export interface SystemAnnouncement {
+  id: string
+  title: string
+  content: string
+  urgency: AnnouncementUrgency
+  status: AnnouncementStatus
+  publishAt: string | null
+  withdrawnAt: string | null
+  createdBy: string
+  creator?: {
+    id: string
+    username: string
+    name: string
+  }
+  isRead?: boolean
+  isConfirmed?: boolean
+  createdAt: string
+  updatedAt: string
+}
+
+/** 用户公告阅读记录 */
+export interface UserAnnouncementRead {
+  id: string
+  userId: string
+  announcementId: string
+  announcement?: SystemAnnouncement
+  readAt: string
+  confirmed: boolean
+}
+

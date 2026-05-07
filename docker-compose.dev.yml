@@ -1,18 +1,20 @@
 # ============================================
-# 文件智能审查系统 - 完整离线部署配置
-# 包含: PostgreSQL + Redis + MarkItDown + 后端 + 前端 + MaxKB
-# 支持内网无公网环境运行
-#
-# ⚠️ 部署前请修改 .env 中的 MAXKB_PUBLIC_URL 为服务器实际 IP
+# 本地开发环境 - 完整配置
+# 包含: PostgreSQL + Redis + MarkItDown + MaxKB + 后端(挂载dist) + 前端(挂载dist)
+# 
+# 使用方法:
+#   1. 首次启动: docker compose --env-file .env.local -f docker-compose.dev.yml up -d
+#   2. 修改代码后: npm run build (frontend/backend)
+#   3. 重启容器: docker restart file_review_backend file_review_frontend
 # ============================================
 
 services:
   # ==========================================
-  # PostgreSQL 15 数据库（含 pgvector 向量扩展）
+  # PostgreSQL 15 数据库（含 pgvector）
   # ==========================================
   postgres:
     image: pgvector/pgvector:pg15
-    container_name: file_review_postgres
+    container_name: file_review_postgres_dev
     environment:
       POSTGRES_USER: file_review_user
       POSTGRES_PASSWORD: file_review_password
@@ -38,11 +40,11 @@ services:
           memory: 512M
 
   # ==========================================
-  # Redis 7 缓存服务
+  # Redis 7 缓存
   # ==========================================
   redis:
     image: redis:7-alpine
-    container_name: file_review_redis
+    container_name: file_review_redis_dev
     ports:
       - "${REDIS_PORT:-6379}:6379"
     volumes:
@@ -64,12 +66,11 @@ services:
           memory: 128M
 
   # ==========================================
-  # MarkItDown 文档解析服务（Python FastAPI）
-  # 支持: DOCX / XLSX / PDF / PPTX
+  # MarkItDown 文档解析服务
   # ==========================================
   markitdown:
     image: file-review-markitdown:v1.0
-    container_name: markitdown_service
+    container_name: file_review_markitdown_dev
     ports:
       - "${PARSER_PORT:-8000}:8000"
     environment:
@@ -91,54 +92,7 @@ services:
           memory: 256M
 
   # ==========================================
-  # MaxKB 知识库服务 - PostgreSQL 实例
-  # ==========================================
-  maxkb-pgsql:
-    image: registry.fit2cloud.com/maxkb/maxkb:v2.8.0
-    container_name: maxkb-pgsql
-    hostname: maxkb-pgsql
-    ports:
-      - "127.0.0.1:${MAXKB_PG_PORT:-15432}:5432"
-    volumes:
-      - maxkb-pgsql-data:/opt/maxkb/data
-    env_file:
-      - maxkb-runtime/maxkb/conf/pgsql.env
-    restart: unless-stopped
-    healthcheck:
-      test: ["CMD", "pg_isready", "-q", "-d", "postgres", "-U", "root"]
-      interval: 10s
-      timeout: 10s
-      retries: 30
-    command: ["/usr/bin/start-postgres.sh"]
-    networks:
-      - file-review-network
-
-  # ==========================================
-  # MaxKB 知识库服务 - Redis 实例
-  # ==========================================
-  maxkb-redis:
-    image: registry.fit2cloud.com/maxkb/maxkb:v2.8.0
-    container_name: file_review_maxkb_redis
-    hostname: maxkb-redis
-    ports:
-      - "127.0.0.1:${MAXKB_REDIS_PORT:-16379}:6379"
-    volumes:
-      - maxkb-redis-data:/opt/maxkb/data
-      - maxkb-runtime/maxkb/conf:/opt/maxkb/conf
-    env_file:
-      - maxkb-runtime/maxkb/conf/redis.env
-    restart: unless-stopped
-    healthcheck:
-      test: ["CMD", "redis-cli", "-a", "Password123@redis", "ping"]
-      interval: 10s
-      timeout: 10s
-      retries: 30
-    command: ["/usr/bin/start-redis.sh"]
-    networks:
-      - file-review-network
-
-  # ==========================================
-  # MaxKB 知识库服务 - 主服务
+  # MaxKB 知识库服务 - 简化版（不包含PostgreSQL和Redis）
   # ==========================================
   maxkb:
     image: registry.fit2cloud.com/maxkb/maxkb:v2.8.0
@@ -151,11 +105,6 @@ services:
       - maxkb-local:/opt/maxkb/local
     env_file:
       - maxkb-runtime/maxkb/conf/maxkb.env
-    depends_on:
-      maxkb-pgsql:
-        condition: service_healthy
-      maxkb-redis:
-        condition: service_healthy
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "curl", "-f", "localhost:8080"]
@@ -168,7 +117,7 @@ services:
       - file-review-network
 
   # ==========================================
-  # 后端 API 服务
+  # 后端 API 服务 - 挂载本地 dist
   # ==========================================
   backend:
     image: file-review-backend:v1.5
@@ -178,15 +127,16 @@ services:
     environment:
       - NODE_ENV=production
       - PORT=3000
-      - DATABASE_URL=postgresql://file_review_user:file_review_password@postgres:5432/file_review_db
-      - REDIS_URL=redis://redis:6379
+      - DATABASE_URL=postgresql://file_review_user:file_review_password@file_review_postgres_dev:5432/file_review_db
+      - REDIS_URL=redis://file_review_redis_dev:6379
       - JWT_SECRET=${JWT_SECRET:-enterprise-review-system-jwt-secret-2026}
       - JWT_EXPIRES_IN=${JWT_EXPIRES_IN:-1d}
-      - PARSER_SERVICE_URL=http://markitdown:8000
-      - MAXKB_BASE_URL=http://maxkb:8080
-      - MAXKB_PUBLIC_URL=${MAXKB_PUBLIC_URL:-http://localhost:8080}
+      - PARSER_SERVICE_URL=http://file_review_markitdown_dev:8000
+      - MAXKB_BASE_URL=http://file_review_maxkb:8080
+      - MAXKB_PUBLIC_URL=http://localhost:8080
       - TZ=Asia/Shanghai
     volumes:
+      - ./backend/dist:/app/dist
       - uploads:/app/uploads
     restart: unless-stopped
     depends_on:
@@ -196,8 +146,6 @@ services:
         condition: service_healthy
       markitdown:
         condition: service_healthy
-      # MaxKB 不再设为硬依赖——如果 MaxKB 启动慢或失败，后端仍可启动
-      # 审查时 MaxKB 不可用会自动降级到自有 LLM
       maxkb:
         condition: service_started
     healthcheck:
@@ -216,13 +164,16 @@ services:
           memory: 256M
 
   # ==========================================
-  # 前端 Web 服务 (Nginx)
+  # 前端 Web 服务 (Nginx) - 挂载本地 dist
   # ==========================================
   frontend:
     image: file-review-frontend:v1.5
     container_name: file_review_frontend
     ports:
       - "${FRONTEND_PORT:-80}:80"
+    volumes:
+      - ./frontend/dist:/usr/share/nginx/html
+      - ./nginx.conf:/etc/nginx/conf.d/default.conf
     restart: unless-stopped
     depends_on:
       - backend
@@ -245,15 +196,13 @@ networks:
     driver: bridge
 
 volumes:
-  # ⚠️ 重要: 以下卷存储业务数据，升级时请勿删除！
-  # 正常升级: docker-compose up -d（保留数据）
-  # 完全重置: docker-compose down -v（⚠️ 数据丢失！）
   postgres_data:
     driver: local
   redis_data:
     driver: local
   uploads:
+    driver: local
   maxkb-logs:
+    driver: local
   maxkb-local:
-  maxkb-pgsql-data:
-  maxkb-redis-data:
+    driver: local

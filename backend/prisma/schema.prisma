@@ -31,6 +31,10 @@ model User {
   department   Department? @relation(fields: [departmentId], references: [id])
   tasks        Task[]
   auditLogs    AuditLog[]
+  feedbacks    Feedback[]
+  resolvedFeedbacks Feedback[] @relation("FeedbackResolver")
+  createdAnnouncements SystemAnnouncement[]
+  announcementReads    UserAnnouncementRead[]
   createdAt    DateTime    @default(now())
   updatedAt    DateTime    @updatedAt
 
@@ -339,4 +343,89 @@ model TempStandardEntry {
 
   @@index([userId])
   @@map("temp_standard_entries")
+}
+
+// ===== 反馈建议模块 =====
+
+enum FeedbackStatus {
+  PENDING       // 待处理
+  IN_PROGRESS   // 处理中
+  RESOLVED      // 已解决
+  CLOSED        // 已关闭
+}
+
+enum FeedbackCategory {
+  BUG_REPORT        // Bug报告
+  SUGGESTION        // 建议
+  FEATURE_REQUEST   // 功能请求
+  OTHER             // 其他
+}
+
+enum AnnouncementUrgency {
+  NORMAL      // 普通
+  IMPORTANT   // 重要
+  URGENT      // 紧急
+}
+
+enum AnnouncementStatus {
+  DRAFT       // 草稿
+  PUBLISHED   // 已发布
+  WITHDRAWN   // 已撤回
+}
+
+model Feedback {
+  id              String          @id @default(uuid())
+  title           String                          // 反馈标题
+  content         String          @db.Text        // 反馈内容
+  category        FeedbackCategory @default(OTHER) // 反馈类别
+  status          FeedbackStatus  @default(PENDING) // 处理状态
+  userId          String                          // 提交用户ID
+  user            User            @relation(fields: [userId], references: [id])
+  attachmentPaths Json?                           // 附件路径数组: [{id, fileName, filePath, fileSize, fileType}]
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+  resolvedAt      DateTime?                       // 解决时间
+  resolverId      String?                         // 处理人ID
+  resolvedBy      User?           @relation("FeedbackResolver", fields: [resolverId], references: [id])
+  remark          String?         @db.Text        // 处理备注
+
+  @@index([userId])
+  @@index([status])
+  @@index([category])
+  @@index([createdAt])
+  @@map("feedbacks")
+}
+
+// ===== 系统公告模块 =====
+
+model SystemAnnouncement {
+  id            String                @id @default(uuid())
+  title         String                                    // 标题（max 200）
+  content       String                @db.Text            // Markdown 内容（max 50000）
+  urgency       AnnouncementUrgency   @default(NORMAL)    // 紧急程度
+  status        AnnouncementStatus    @default(DRAFT)     // 发布状态
+  publishAt     DateTime?                                 // 发布时间
+  withdrawnAt   DateTime?                                 // 撤回时间
+  createdBy     String                                    // 创建人（管理员）
+  creator       User                  @relation(fields: [createdBy], references: [id])
+  reads         UserAnnouncementRead[]
+  createdAt     DateTime              @default(now())
+  updatedAt     DateTime              @updatedAt
+
+  @@index([status, publishAt])
+  @@map("system_announcements")
+}
+
+model UserAnnouncementRead {
+  id              String             @id @default(uuid())
+  userId          String
+  user            User               @relation(fields: [userId], references: [id])
+  announcementId  String
+  announcement    SystemAnnouncement @relation(fields: [announcementId], references: [id])
+  readAt          DateTime           @default(now())
+  confirmed       Boolean            @default(false)  // 紧急通知是否已确认
+
+  @@unique([userId, announcementId])
+  @@index([userId])
+  @@map("user_announcement_reads")
 }

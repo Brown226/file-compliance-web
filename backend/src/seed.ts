@@ -442,6 +442,112 @@ async function seed() {
     });
   }
 
+  // 9. 创建测试公告数据
+  const adminUser = await prisma.user.findUnique({ where: { username: 'admin' } });
+  if (adminUser) {
+    // 已发布的普通公告
+    await prisma.systemAnnouncement.upsert({
+      where: { id: 'ann-001' },
+      update: {},
+      create: {
+        id: 'ann-001',
+        title: '系统功能更新通知',
+        content: `## 系统功能更新
+
+亲爱的用户，
+
+系统已完成以下功能更新：
+
+### 新增功能
+- **全局通知系统**：管理员可以发布系统公告，用户登录时自动弹窗展示
+- **公告历史记录**：在通知中心可以查看所有历史公告
+- **多级紧急度**：支持普通、重要、紧急三种紧急程度
+
+### 优化内容
+- 提升了文件解析速度
+- 优化了用户界面体验
+
+如有疑问，请联系系统管理员。
+
+> 系统管理员团队
+`,
+        urgency: 'NORMAL',
+        status: 'PUBLISHED',
+        publishAt: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000), // 7天前发布
+        createdBy: adminUser.id,
+      },
+    });
+
+    // 已发布的重要公告
+    await prisma.systemAnnouncement.upsert({
+      where: { id: 'ann-002' },
+      update: {},
+      create: {
+        id: 'ann-002',
+        title: '系统维护计划通知',
+        content: `## 系统维护计划
+
+各位用户：
+
+为了提供更好的服务体验，系统将于以下时间进行维护升级：
+
+### 维护时间
+- **开始时间**：2024年6月15日 22:00
+- **结束时间**：2024年6月16日 06:00
+
+### 影响范围
+维护期间系统将**暂时无法访问**，请提前安排好工作。
+
+### 维护内容
+1. 数据库性能优化
+2. 服务器硬件升级
+3. 安全补丁更新
+
+感谢您的理解与支持！
+
+> 系统运维团队
+`,
+        urgency: 'IMPORTANT',
+        status: 'PUBLISHED',
+        publishAt: new Date(Date.now() - 3 * 24 * 60 * 60 * 1000), // 3天前发布
+        createdBy: adminUser.id,
+      },
+    });
+
+    // 草稿状态的紧急公告（用于测试管理界面）
+    await prisma.systemAnnouncement.upsert({
+      where: { id: 'ann-003' },
+      update: {},
+      create: {
+        id: 'ann-003',
+        title: '紧急安全更新通知（草稿）',
+        content: `## 紧急安全更新
+
+⚠️ **重要安全提示**
+
+系统检测到潜在的安全风险，即将进行紧急更新。
+
+### 更新内容
+- 修复已知安全漏洞
+- 升级加密算法
+- 增强访问控制
+
+### 注意事项
+1. 更新期间系统可能短暂不可用
+2. 请保存好正在进行的工作
+3. 更新完成后请重新登录
+
+此公告为测试数据，尚未发布。
+`,
+        urgency: 'URGENT',
+        status: 'DRAFT',
+        createdBy: adminUser.id,
+      },
+    });
+
+    console.log('✅ 测试公告数据创建完成');
+  }
+
   console.log('✅ 数据库初始化完成！');
   console.log('');
   console.log('📋 默认账号信息:');

@@ -83,6 +83,25 @@ const routes: Array<RouteRecordRaw> = [
         component: () => import('../views/RegexTool.vue'),
         meta: { title: '正则表达式工具', requiresAdmin: true }
       },
+      // 反馈建议路由
+      {
+        path: 'feedback',
+        name: 'MyFeedbacks',
+        component: () => import('../views/MyFeedbacks.vue'),
+        meta: { title: '我的反馈' }
+      },
+      {
+        path: 'feedback/submit',
+        name: 'FeedbackSubmit',
+        component: () => import('../views/FeedbackSubmit.vue'),
+        meta: { title: '提交反馈' }
+      },
+      {
+        path: 'feedback/:id',
+        name: 'FeedbackDetail',
+        component: () => import('../views/FeedbackDetail.vue'),
+        meta: { title: '反馈详情', hidden: true }
+      },
 
     ]
   }

@@ -61,7 +61,7 @@ echo ""
 # 同步数据库结构（兜底修正历史迁移与当前 schema 漂移）
 # ==========================================
 echo "[entrypoint] 同步数据库结构 (db push)..."
-$PRISMA db push --skip-generate
+$PRISMA db push --skip-generate --accept-data-loss
 
 echo ""
 

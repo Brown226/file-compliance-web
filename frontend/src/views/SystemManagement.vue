@@ -308,6 +308,16 @@
           </el-card>
         </div>
       </div>
+
+      <!-- 反馈建议管理 -->
+      <div v-show="activeTab === 'feedback'" class="tab-content">
+        <FeedbackManagement />
+      </div>
+
+      <!-- 公告管理 -->
+      <div v-show="activeTab === 'announcement'" class="tab-content">
+        <AnnouncementManagement />
+      </div>
     </div>
 
     <!-- 部门弹窗 -->
@@ -537,12 +547,16 @@ import {
   getStorageStatsApi,
   cleanupFilesApi,
 } from '@/api/system'
+import FeedbackManagement from '@/views/FeedbackManagement.vue'
+import AnnouncementManagement from '@/views/AnnouncementManagement.vue'
 
 // ========== Tab 导航 ==========
 const activeTab = ref('department')
 const navTabs = [
   { label: '部门管理', value: 'department', icon: '🏢', desc: '组织架构与员工' },
   { label: '存储管理', value: 'storage', icon: '💾', desc: '文件存储与清理' },
+  { label: '反馈建议', value: 'feedback', icon: '💬', desc: '用户反馈与处理' },
+  { label: '公告管理', value: 'announcement', icon: '📢', desc: '系统公告发布与管理' },
 ]
 
 // ========== 部门管理 ==========
