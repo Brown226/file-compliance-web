@@ -2,26 +2,37 @@
 node_modules/
 backend/markitdown-service/.venv/
 
-# Binary libraries (should use package manager instead)
-Normative/Lib/
-
 # WASM files (large binary assets, should be downloaded separately)
 *.wasm
 
 # Build output
 backend/dist/
 frontend/dist/
+backend/tsconfig.tsbuildinfo
 
 # Environment
 backend/.env
 .env.local
+.env.offline
+.env.production
 .env.production.local
 
-# Qoder IDE
+# IDE / Editor
+.vscode/
+.idea/
 .qoder/
 
-# C# build artifacts
-Normative/**/obj/
+# Legacy .NET project (not part of current system)
+Normative/
+
+# Offline deployment packages (separate deployment artifact)
+offline-packages/
+
+# Extra docker-compose variants (keep docker-compose.yml and docker-compose.offline.yml only)
+docker-compose.complete.yml
+docker-compose.dev.yml
+docker-compose.local.yml
+docker-compose.maxkb-offline.yml
 
 # E2E test files
 e2e/
@@ -38,10 +49,6 @@ maxkb-runtime/
 # Uploads
 backend/uploads/
 
-# IDE / Editor
-.vscode/
-.idea/
-
 # CodeBuddy / WorkBuddy
 .codebuddy/
 .workbuddy/
@@ -50,24 +57,9 @@ backend/uploads/
 Thumbs.db
 .DS_Store
 
-# Test / temp files
-test-compile2.js
-test-error.mjs
-test-result.txt
-
 # Auto-generated type declarations (by unplugin-vue-components / unplugin-auto-import)
 frontend/src/auto-imports.d.ts
 frontend/src/components.d.ts
-
-# Docker images & offline packages (too large for git)
-offline-packages/*.tar
-offline-packages/maxkb-images/
-offline-packages.zip
-offline-packages/DocGenerator/obj/
-offline-packages/.tmp-*
-maxkb-v2.8.0-x86_64-offline-installer/
-maxkb-temp.tar
-MaxKB-2.8.0/
 
 # Log files
 *.log
@@ -117,8 +109,10 @@ false_positive_analysis.json
 nul
 docs/系统2.0升级改造路线/
 docs/系统升级改造效果分析报告.md
-BUGFIX-REPORT-2026-04-24.md
-BUGFIX-SUMMARY-DEPARTMENT.md
+
+# Bug fix / report markdown files
+BUGFIX-REPORT-*.md
+BUGFIX-SUMMARY-*.md
 CODEBUDDY.md
 CONTEXT.md
 DEPARTMENT-MAPPING-FIX.md
@@ -126,10 +120,25 @@ DOCKER-UPDATE-REPORT.md
 LLM-CONFIG-FIX.md
 check-llm-config.sql
 fix_llm_config.sql
-test-document.docx.txt
-test-llm-config.ps1
-test-mode-config.ps1
-test-simple.ps1
+
+# Test / temp scripts
+test-*.ps1
+test-*.txt
+test-*.js
+test-*.mjs
+backend/check-db.js
+backend/db-push.txt
+backend/dev-start.txt
+backend/prisma-gen*.txt
+backend/markitdown-service/test_*
+
+# Redundant SQL init files (docker-compose handles pgvector init)
+backend/prisma/enable-vector.sql
+backend/prisma/init-db.sql
 
 # Backend startup scripts
 backend/startup-*.sh
+
+# Frontend optimization reports (not source code)
+frontend/src/views/*OPTIMIZATION*.md
+frontend/src/views/*SUMMARY*.md
