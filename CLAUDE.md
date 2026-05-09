@@ -64,15 +64,17 @@ Orchestrated by `ReviewService.processTask()`, triggered via `setImmediate()` fr
 1. **Task creation** (`TaskService.createTask`): Creates Task + TaskFile records, triggers pipeline
 2. **File parsing** (`ParserService`): Extracts text from docx (mammoth), xlsx/xls (xlsx), pdf (pdf-parse). DWG is placeholder
 3. **OCR fallback** (`OcrService`): If parsed text < 20 chars for PDF, sends base64 to PaddleOCR-VL
-4. **LLM review** (`LlmService.reviewText`): Splits text into ≤4000-char chunks, sends with standard content to LLM. Returns `ReviewIssue[]` (TYPO or VIOLATION)
-5. **Rule engine** (`RuleEngineService`): Rule-based checks (NAMING, ENCODING, ATTRIBUTE, HEADER, PAGE, SCAN, TEMPLATE) via `ruleCode` pattern
-6. Results bulk-inserted into `task_details` table
+4. **LLM review** (`LlmService.reviewText`): Splits text into ≤4000-char chunks, sends with standard content to LLM. Returns `ReviewIssue[]` with `plainLanguage` field for non-technical explanation
+5. **Prompt templates** (`PromptTemplateService`): DB-stored templates per scene (`library_review`, `consistency`, `typo_grammar`, `doc_review`, `multimodal`, `ocr`), editable via `/admin/prompts`
+6. **Rule engine** (`RuleEngineService`): Rule-based checks (NAMING, ENCODING, ATTRIBUTE, HEADER, PAGE, SCAN, TEMPLATE) via `ruleCode` pattern
+7. Results bulk-inserted into `task_details` table
 
 ### Frontend Structure
 - `utils/request.ts`: Axios instance with `/api` base URL, auto-attaches JWT token, handles 401/403/404 globally
 - `stores/user.ts`: Pinia store for token + userInfo, persisted to localStorage
-- `router/index.ts`: All authenticated routes nested under `AppLayout` (sidebar + topbar), guard redirects to `/login`
-- `views/`: Feature pages — Dashboard (ECharts), NewTask (file upload), TaskHistory, TaskDetails (left file tree + right error cards), StandardLibrary, LLMConfig, DepartmentManage, EmployeeManage, AuditLog
+- `router/index.ts`: User routes (`/workspace`, `/review`, `/qna`, `/tasks`, `/feedback`, `/announcements`) + admin routes (`/admin/*`). Old URLs redirect (e.g., `/dashboard` → `/admin/dashboard`, `/tasks/new` → `/review`). Guard checks `requiresAdminOrManager` meta.
+- `views/`: User pages — Workspace (personal stats), SmartReview (single-page upload → config → submit), TaskHistory, TaskDetails (left file tree + right error cards with plain/professional toggle). Admin pages under `views/admin/` — Dashboard, KnowledgeCategories, RuleLibraries, etc.
+- `components/layout/AppLayout.vue`: Sidebar with user section + collapsible `el-sub-menu` "管理后台" (ADMIN/MANAGER only)
 - `api/`: Thin Axios wrapper modules matching backend route groups
 
 ### Database (Prisma)
@@ -101,6 +103,10 @@ Orchestrated by `ReviewService.processTask()`, triggered via `setImmediate()` fr
 - `backend/src/seed.ts` — default admin/manager/user accounts
 - `backend/prisma/schema.prisma` — all data models
 - `backend/src/app.ts` — Express app setup + route registration
+- `backend/src/services/prompt-template.service.ts` — DB-stored prompt templates with scene/role/variant model
+- `frontend/src/router/index.ts` — user + admin routes with old URL redirects
+- `frontend/src/views/SmartReview.vue` — single-page smart review (upload → config → submit)
+- `frontend/src/components/layout/AppLayout.vue` — sidebar with collapsible admin sub-menu
 - `frontend/vite.config.ts` — Vite config with API proxy
 - `start-platform.bat` / `start-maxkb.bat` — Windows startup scripts
 

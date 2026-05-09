@@ -169,6 +169,7 @@ model TaskDetail {
   originalText  String
   suggestedText String?
   description   String?
+  plainLanguage String?   @map("plain_language") @db.Text  // 大白话解释
   cadHandleId   String?   // CAD 图元 Handle ID，用于在 CAD 中定位
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt

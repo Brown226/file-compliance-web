@@ -83,6 +83,7 @@ const BUILTIN_TEMPLATES: PromptTemplateData[] = [
 - description: 问题描述，必须说明违反了哪条标准规范的什么要求
 - ruleCode: 问题类型编码（如 FORMAT_001、COMPLETENESS_001、CONSISTENCY_001、VIOLATION_001）
 - standardRef: 违反的具体标准条文引用（如"GB/T 50265-2010 第5.2.1条"），如果无法确定具体条文则写null
+- plain_language: 用通俗易懂的语言解释这个问题（让非专业人员也能理解）
 
 如果没有发现问题，输出空数组 []
 不要输出任何其他文字说明`,
@@ -157,6 +158,7 @@ const BUILTIN_TEMPLATES: PromptTemplateData[] = [
 - description: 问题描述，说明哪些位置存在不一致
 - ruleCode: 违反的规则编号(如C1/C2/C3/C4)
 - standardRef: 违反的具体标准条文引用，如果无法确定则写null
+- plain_language: 用通俗易懂的语言解释这个问题（让非专业人员也能理解）
 
 如果没有发现问题，输出空数组 []
 不要输出任何其他文字说明`,
@@ -222,6 +224,7 @@ const BUILTIN_TEMPLATES: PromptTemplateData[] = [
 - description: 问题描述（如"错别字：'XX'应为'YY'"）
 - ruleCode: 固定为 TYPO_001
 - standardRef: null
+- plain_language: 用通俗易懂的语言解释这个问题（让非专业人员也能理解）
 
 如果没有发现问题，输出空数组 []
 不要输出任何其他文字说明`,
@@ -252,7 +255,7 @@ const BUILTIN_TEMPLATES: PromptTemplateData[] = [
     variant: 'default',
     name: '以文审文-比对系统提示词',
     description: '以文审文模式下，LLM 比对待审文件与参照文件时的系统提示词',
-    content: '你是核电工程文件比对专家。请比较【待审文件】与【参照文件】之间的差异，找出待审文件中可能存在的错误或不一致。\n\n## 参照文件内容\n${refTexts}\n\n## 输出要求\n严格按照 JSON 数组格式输出，每个问题包含:\n- issueType: VIOLATION/FORMAT/COMPLETENESS/CONSISTENCY\n- originalText: 待审文件中的问题文本\n- suggestedText: 建议修改内容（参照文件中的对应内容）\n- description: 问题描述和差异说明\n- ruleCode: 问题类型编码(如FORMAT_001/COMPLETENESS_001/CONSISTENCY_001/VIOLATION_001)\n- standardRef: 违反的具体标准规范引用，如果无法确定则写null\n\n如果没有发现差异问题，输出空数组 []\n不要输出任何其他文字说明',
+    content: '你是核电工程文件比对专家。请比较【待审文件】与【参照文件】之间的差异，找出待审文件中可能存在的错误或不一致。\n\n## 参照文件内容\n${refTexts}\n\n## 输出要求\n严格按照 JSON 数组格式输出，每个问题包含:\n- issueType: VIOLATION/FORMAT/COMPLETENESS/CONSISTENCY\n- originalText: 待审文件中的问题文本\n- suggestedText: 建议修改内容（参照文件中的对应内容）\n- description: 问题描述和差异说明\n- ruleCode: 问题类型编码(如FORMAT_001/COMPLETENESS_001/CONSISTENCY_001/VIOLATION_001)\n- standardRef: 违反的具体标准规范引用，如果无法确定则写null\n- plain_language: 用通俗易懂的语言解释这个问题（让非专业人员也能理解）\n\n如果没有发现差异问题，输出空数组 []\n不要输出任何其他文字说明',
     placeholders: JSON.stringify(['${refTexts}']),
     isBuiltin: true,
     enabled: true,
@@ -292,6 +295,7 @@ const BUILTIN_TEMPLATES: PromptTemplateData[] = [
 - originalText: 原始问题文本
 - suggestedText: 建议修改内容
 - description: 问题描述
+- plain_language: 用通俗易懂的语言解释这个问题（让非专业人员也能理解）
 
 如果没有发现问题，输出空数组 []`,
     placeholders: JSON.stringify([]),

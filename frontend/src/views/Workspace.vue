@@ -7,8 +7,8 @@
         <p class="welcome-desc">以下是您的任务概览和最近活动</p>
       </div>
       <div class="welcome-right">
-        <el-button type="primary" @click="$router.push('/tasks/new')">
-          <el-icon><Plus /></el-icon> 新建任务
+        <el-button type="primary" @click="$router.push('/review')">
+          <el-icon><Plus /></el-icon> 新建审查
         </el-button>
       </div>
     </div>
@@ -39,7 +39,7 @@
     <div class="recent-section">
       <div class="recent-header">
         <span class="recent-title">最近审查任务</span>
-        <el-button type="primary" link @click="$router.push('/tasks/history')">查看全部 ></el-button>
+        <el-button type="primary" link @click="$router.push('/tasks')">查看全部 ></el-button>
       </div>
 
       <el-card shadow="never" class="recent-table-card">
@@ -63,7 +63,7 @@
           </el-table-column>
           <el-table-column label="操作" width="100" fixed="right">
             <template #default="{ row }">
-              <el-button type="primary" link size="small" @click="$router.push(`/tasks/${row.id}`)">
+              <el-button type="primary" link size="small" @click="$router.push(`/review/${row.id}`)">
                 详情
               </el-button>
             </template>
@@ -76,7 +76,7 @@
                 <path d="M24 28H76M24 38H66M24 48H50" stroke="var(--color-gray-300)" stroke-width="1.5" stroke-linecap="round"/>
               </svg>
               <p>暂无任务记录</p>
-              <el-button type="primary" link @click="$router.push('/tasks/new')">创建第一个任务</el-button>
+              <el-button type="primary" link @click="$router.push('/review')">创建第一个审查</el-button>
             </div>
           </template>
         </el-table>
@@ -159,12 +159,13 @@ const fetchMyTasks = async () => {
     // 获取最近5条任务
     const { data } = await getTasksApi({ page: 1, limit: 5 })
     recentTasks.value = data.items || []
-    // 使用 Dashboard 统计 API 替代全量拉取
-    const statsRes = await getDashboardStatsApi()
-    stats.pending = statsRes.data.processingTasks || 0
-    stats.processing = statsRes.data.processingTasks || 0
-    stats.completed = statsRes.data.completedTasks || 0
-    stats.failed = statsRes.data.failedTasks || 0
+    // 使用 Dashboard 统计 API 获取个人统计
+    const statsRes = await getDashboardStatsApi({ role: 'user', userId: userStore.userInfo?.id }) as any
+    const byStatus = statsRes.data?.myTasks?.by_status || {}
+    stats.pending = byStatus.PENDING || 0
+    stats.processing = byStatus.PROCESSING || 0
+    stats.completed = byStatus.COMPLETED || 0
+    stats.failed = byStatus.FAILED || 0
   } catch (e) {
     console.error('获取我的任务失败:', e)
     ElMessage.error('获取任务数据失败，请刷新重试')

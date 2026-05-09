@@ -623,6 +623,7 @@ const mapDetailData = (d: any) => ({
   originalText: d.originalText,
   suggestedText: d.suggestedText,
   description: d.description,
+  plainLanguage: d.plainLanguage || null,
   cadHandleId: d.cadHandleId,
   diffRanges: d.diffRanges,
   standardRefId: d.standardRefId,

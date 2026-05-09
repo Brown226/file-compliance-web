@@ -123,6 +123,17 @@
             <span class="issue-desc">{{ detail.description || '-' }}</span>
           </div>
 
+          <!-- 大白话解释 -->
+          <div v-if="detail.plainLanguage" class="plain-language-section">
+            <div class="plain-language-header">
+              <el-icon><ChatLineRound /></el-icon>
+              <span>通俗解释</span>
+            </div>
+            <div class="plain-language-content">
+              {{ detail.plainLanguage }}
+            </div>
+          </div>
+
           <!-- 卡片内容体 -->
           <div class="issue-body">
             <div class="issue-row">
@@ -301,7 +312,7 @@
 
 <script setup lang="ts">
 import { ref, computed, nextTick } from 'vue'
-import { CopyDocument, Search, RefreshRight, Location } from '@element-plus/icons-vue'
+import { CopyDocument, Search, RefreshRight, Location, ChatLineRound } from '@element-plus/icons-vue'
 import DiffText from './DiffText.vue'
 
 const props = defineProps<{
@@ -589,11 +600,40 @@ defineExpose({
 }
 .severity-tag { font-size: 12px; letter-spacing: 0.02em; }
 .severity-error { font-weight: 700; }
-.fp-tag { 
-  font-style: italic; 
+.fp-tag {
+  font-style: italic;
   background-color: #f3e8ff !important;
   border-color: #a855f7 !important;
   color: #7c3aed !important;
+}
+
+/* 大白话解释区域 */
+.plain-language-section {
+  margin: 0 18px 12px;
+  background: linear-gradient(135deg, #f0fdf4 0%, #ecfdf5 100%);
+  border: 1px solid #bbf7d0;
+  border-radius: 8px;
+  overflow: hidden;
+}
+.plain-language-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 12px;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 600;
+  color: #16a34a;
+  transition: background 0.15s;
+}
+.plain-language-header:hover {
+  background: rgba(22, 163, 74, 0.06);
+}
+.plain-language-content {
+  padding: 0 12px 10px;
+  font-size: 14px;
+  line-height: 1.7;
+  color: #15803d;
 }
 
 .issue-body { padding: 14px 18px; font-size: 14px; color: var(--corp-text-regular); line-height: 1.7; }

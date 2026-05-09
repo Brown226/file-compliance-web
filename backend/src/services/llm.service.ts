@@ -19,6 +19,7 @@ export interface ReviewIssue {
   originalText: string;
   suggestedText?: string;
   description?: string;
+  plainLanguage?: string;  // 大白话解释（让非专业人员也能理解）
   cadHandleId?: string;
   ruleCode?: string;      // 标准条文编号（如 R1, STD_5.2.1）
   standardRef?: string;   // 标准规范引用（如 "GB/T 50265-2010 第5.2.1条"）
@@ -91,6 +92,7 @@ export class LlmService {
             originalText: String(item.originalText || ''),
             suggestedText: item.suggestedText ? String(item.suggestedText) : undefined,
             description: item.description ? String(item.description) : undefined,
+            plainLanguage: item.plain_language ? String(item.plain_language) : undefined,
             cadHandleId: item.cadHandleId ? String(item.cadHandleId) : undefined,
             ruleCode: item.ruleCode ? String(item.ruleCode) : undefined,
             standardRef: item.standardRef ? String(item.standardRef) : undefined,

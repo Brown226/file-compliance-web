@@ -14,81 +14,45 @@ const routes: Array<RouteRecordRaw> = [
   {
     path: '/',
     component: AppLayout,
-    redirect: '/dashboard',
+    redirect: '/workspace',
     meta: { requiresAuth: true },
     children: [
+      // ===== 用户路由（所有角色可见）=====
       {
-        path: 'dashboard',
-        name: 'Dashboard',
-        component: () => import('../views/Dashboard.vue'),
-        meta: { title: 'Dashboard' }
+        path: 'workspace',
+        name: 'Workspace',
+        component: () => import('../views/Workspace.vue'),
+        meta: { title: '工作台' }
       },
       {
-        path: 'tasks/new',
-        name: 'NewTask',
-        component: () => import('../views/NewTask/index.vue'),
-        meta: { title: '新建任务' }
+        path: 'review',
+        name: 'SmartReview',
+        component: () => import('../views/SmartReview.vue'),
+        meta: { title: '智能审查' }
       },
       {
-        path: 'tasks/history',
-        name: 'TaskHistory',
-        component: () => import('../views/TaskHistory.vue'),
-        meta: { title: '任务历史' }
-      },
-      {
-        path: 'tasks/:id',
+        path: 'review/:id',
         name: 'TaskDetails',
         component: () => import('../views/TaskDetails/index.vue'),
-        meta: { title: '任务详情', hidden: true }
+        meta: { title: '审查结果', hidden: true }
       },
       {
-        path: 'standards',
-        name: 'StandardLibrary',
-        component: () => import('../views/StandardLibrary/index.vue'),
-        meta: { title: '标准库' }
+        path: 'qna',
+        name: 'QnA',
+        component: () => import('../views/QnA.vue'),
+        meta: { title: '智能问答' }
       },
       {
-        path: 'system',
-        name: 'SystemManagement',
-        component: () => import('../views/SystemManagement.vue'),
-        meta: { title: '系统管理' }
+        path: 'tasks',
+        name: 'TaskHistory',
+        component: () => import('../views/TaskHistory.vue'),
+        meta: { title: '我的任务' }
       },
-      {
-        path: 'audit-logs',
-        name: 'AuditLogs',
-        component: () => import('../views/AuditLogs.vue'),
-        meta: { title: '审计日志' }
-      },
-      {
-        path: 'llm-config',
-        name: 'LLMConfig',
-        component: () => import('../views/LLMConfig/index.vue'),
-        meta: { title: 'LLM服务配置' }
-      },
-      {
-        path: 'pipeline-config',
-        name: 'PipelineConfig',
-        component: () => import('../views/PipelineConfig.vue'),
-        meta: { title: '审查配置', requiresAdmin: true }
-      },
-      {
-        path: 'review-rules',
-        name: 'ReviewRules',
-        component: () => import('../views/ReviewRules.vue'),
-        meta: { title: '审查规则管理' }
-      },
-      {
-        path: 'regex-tool',
-        name: 'RegexTool',
-        component: () => import('../views/RegexTool.vue'),
-        meta: { title: '正则表达式工具', requiresAdmin: true }
-      },
-      // 反馈建议路由
       {
         path: 'feedback',
         name: 'MyFeedbacks',
         component: () => import('../views/MyFeedbacks.vue'),
-        meta: { title: '我的反馈' }
+        meta: { title: '反馈意见' }
       },
       {
         path: 'feedback/submit',
@@ -102,7 +66,87 @@ const routes: Array<RouteRecordRaw> = [
         component: () => import('../views/FeedbackDetail.vue'),
         meta: { title: '反馈详情', hidden: true }
       },
+      {
+        path: 'announcements',
+        name: 'Announcements',
+        component: () => import('../views/AnnouncementManagement.vue'),
+        meta: { title: '系统公告' }
+      },
 
+      // ===== 管理员路由（ADMIN/MANAGER 可见）=====
+      {
+        path: 'admin/dashboard',
+        name: 'AdminDashboard',
+        component: () => import('../views/Dashboard.vue'),
+        meta: { title: '数据看板', requiresAdminOrManager: true }
+      },
+      {
+        path: 'admin/standards',
+        name: 'AdminStandards',
+        component: () => import('../views/StandardLibrary/index.vue'),
+        meta: { title: '标准库管理', requiresAdminOrManager: true }
+      },
+      {
+        path: 'admin/knowledge-categories',
+        name: 'KnowledgeCategories',
+        component: () => import('../views/admin/KnowledgeCategories.vue'),
+        meta: { title: '知识库子库管理', requiresAdminOrManager: true }
+      },
+      {
+        path: 'admin/rule-libraries',
+        name: 'RuleLibraries',
+        component: () => import('../views/admin/RuleLibraries.vue'),
+        meta: { title: '规则库管理', requiresAdminOrManager: true }
+      },
+      {
+        path: 'admin/rules',
+        name: 'AdminReviewRules',
+        component: () => import('../views/ReviewRules.vue'),
+        meta: { title: '审查规则配置', requiresAdminOrManager: true }
+      },
+      {
+        path: 'admin/prompts',
+        name: 'AdminPrompts',
+        component: () => import('../views/PromptConfig.vue'),
+        meta: { title: '提示词模板', requiresAdminOrManager: true }
+      },
+      {
+        path: 'admin/system',
+        name: 'AdminSystem',
+        component: () => import('../views/SystemManagement.vue'),
+        meta: { title: '系统配置', requiresAdminOrManager: true }
+      },
+      {
+        path: 'admin/users',
+        name: 'AdminUsers',
+        component: () => import('../views/SystemManagement.vue'),
+        meta: { title: '部门与员工管理', requiresAdminOrManager: true }
+      },
+      {
+        path: 'admin/audit',
+        name: 'AdminAudit',
+        component: () => import('../views/AuditLogs.vue'),
+        meta: { title: '审计日志', requiresAdminOrManager: true }
+      },
+      {
+        path: 'admin/feedback',
+        name: 'AdminFeedback',
+        component: () => import('../views/FeedbackManagement.vue'),
+        meta: { title: '反馈管理', requiresAdminOrManager: true }
+      },
+
+      // ===== 旧路由重定向（兼容已有书签）=====
+      { path: 'dashboard', redirect: '/admin/dashboard' },
+      { path: 'tasks/new', redirect: '/review' },
+      { path: 'tasks/history', redirect: '/tasks' },
+      { path: 'standards', redirect: '/admin/standards' },
+      { path: 'system', redirect: '/admin/system' },
+      { path: 'llm-config', redirect: '/admin/system' },
+      { path: 'audit-logs', redirect: '/admin/audit' },
+      { path: 'review-rules', redirect: '/admin/rules' },
+      { path: 'pipeline-config', redirect: '/admin/rules' },
+      { path: 'regex-tool', redirect: '/admin/rules' },
+      { path: 'tasks/:id', redirect: to => ({ path: `/review/${to.params.id}` }) },
     ]
   }
 ]
@@ -113,7 +157,6 @@ const router = createRouter({
 })
 
 router.beforeEach((to, _from, next) => {
-  // 路由切换时取消所有未完成的 API 请求，防止旧页面请求阻塞新页面
   cancelAllPendingRequests()
 
   const userStore = useUserStore()
@@ -121,11 +164,12 @@ router.beforeEach((to, _from, next) => {
 
   if (to.meta.requiresAuth && !isAuthenticated) {
     next({ name: 'Login' })
+  } else if (to.meta.requiresAdminOrManager && !userStore.isAdminOrManager()) {
+    next({ path: '/workspace' })
   } else if (to.meta.requiresAdmin && !userStore.isAdmin()) {
-    // 非 ADMIN 用户尝试访问管理员页面，重定向到 Dashboard
-    next({ path: '/dashboard' })
+    next({ path: '/workspace' })
   } else if (to.name === 'Login' && isAuthenticated) {
-    next({ path: '/' })
+    next({ path: '/workspace' })
   } else {
     next()
   }

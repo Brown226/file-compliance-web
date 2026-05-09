@@ -19,75 +19,84 @@
         text-color="#9CA3AF"
         active-text-color="#FFFFFF"
       >
-        <!-- 常用功能 -->
-        <div class="menu-group-label" v-show="!sidebarCollapsed">常用功能</div>
-        <el-menu-item index="/dashboard">
+        <!-- ===== 用户功能（所有角色可见）===== -->
+        <el-menu-item index="/workspace">
           <el-icon><DataBoard /></el-icon>
-          <template #title><span>监控</span></template>
+          <template #title><span>工作台</span></template>
         </el-menu-item>
-
-        <!-- 任务管理 -->
-        <div class="menu-divider" v-show="!sidebarCollapsed"></div>
-        <div class="menu-group-label" v-show="!sidebarCollapsed">任务管理</div>
-        <el-menu-item index="/tasks/new">
+        <el-menu-item index="/review">
           <el-icon><DocumentAdd /></el-icon>
-          <template #title><span>新建</span></template>
+          <template #title><span>智能审查</span></template>
         </el-menu-item>
-        <el-menu-item index="/tasks/history">
-          <el-icon><List /></el-icon>
-          <template #title><span>历史</span></template>
-        </el-menu-item>
-
-        <!-- 知识配置 - ADMIN/MANAGER -->
-        <div class="menu-divider" v-show="!sidebarCollapsed"></div>
-        <div class="menu-group-label" v-show="!sidebarCollapsed">知识配置</div>
-        <el-menu-item v-if="userStore.isAdminOrManager()" index="/standards">
-          <el-icon><Reading /></el-icon>
-          <template #title><span>标准库</span></template>
-        </el-menu-item>
-
-        <!-- 系统配置 - ADMIN -->
-        <div class="menu-divider" v-show="!sidebarCollapsed"></div>
-        <div class="menu-group-label" v-show="!sidebarCollapsed">系统配置</div>
-        <el-menu-item v-if="userStore.isAdmin()" index="/system">
-          <el-icon><Tools /></el-icon>
-          <template #title><span>系统管理</span></template>
-        </el-menu-item>
-        <el-menu-item v-if="userStore.isAdmin()" index="/llm-config">
-          <el-icon><Connection /></el-icon>
-          <template #title><span>LLM配置</span></template>
-        </el-menu-item>
-        <el-menu-item v-if="userStore.isAdmin()" index="/pipeline-config">
-          <el-icon><Operation /></el-icon>
-          <template #title><span>审查配置</span></template>
-        </el-menu-item>
-
-        <!-- 规则管理 - ADMIN -->
-        <div class="menu-divider" v-show="!sidebarCollapsed"></div>
-        <div class="menu-group-label" v-show="!sidebarCollapsed">规则管理</div>
-        <el-menu-item v-if="userStore.isAdmin()" index="/review-rules">
-          <el-icon><Setting /></el-icon>
-          <template #title><span>审查规则</span></template>
-        </el-menu-item>
-        <el-menu-item v-if="userStore.isAdmin()" index="/regex-tool">
-          <el-icon><Edit /></el-icon>
-          <template #title><span>正则工具</span></template>
-        </el-menu-item>
-
-        <!-- 审计 - ADMIN -->
-        <div class="menu-divider" v-show="!sidebarCollapsed"></div>
-        <el-menu-item v-if="userStore.isAdmin()" index="/audit-logs">
-          <el-icon><Document /></el-icon>
-          <template #title><span>审计日志</span></template>
-        </el-menu-item>
-
-        <!-- 反馈建议 - 所有用户 -->
-        <div class="menu-divider" v-show="!sidebarCollapsed"></div>
-        <div class="menu-group-label" v-show="!sidebarCollapsed">帮助反馈</div>
-        <el-menu-item index="/feedback">
+        <el-menu-item index="/qna">
           <el-icon><ChatDotRound /></el-icon>
-          <template #title><span>反馈建议</span></template>
+          <template #title><span>智能问答</span></template>
         </el-menu-item>
+        <el-menu-item index="/tasks">
+          <el-icon><List /></el-icon>
+          <template #title><span>我的任务</span></template>
+        </el-menu-item>
+
+        <div class="menu-divider" v-show="!sidebarCollapsed"></div>
+        <el-menu-item index="/feedback">
+          <el-icon><ChatLineRound /></el-icon>
+          <template #title><span>反馈意见</span></template>
+        </el-menu-item>
+        <el-menu-item index="/announcements">
+          <el-icon><Bell /></el-icon>
+          <template #title><span>系统公告</span></template>
+        </el-menu-item>
+
+        <!-- ===== 管理后台（ADMIN/MANAGER 可见，折叠子菜单）===== -->
+        <template v-if="userStore.isAdminOrManager()">
+          <div class="menu-divider" v-show="!sidebarCollapsed"></div>
+          <el-sub-menu index="/admin" popper-class="admin-submenu-popper">
+            <template #title>
+              <el-icon><Setting /></el-icon>
+              <span>管理后台</span>
+            </template>
+            <el-menu-item index="/admin/dashboard">
+              <el-icon><DataBoard /></el-icon>
+              <template #title><span>数据看板</span></template>
+            </el-menu-item>
+            <el-menu-item index="/admin/standards">
+              <el-icon><Reading /></el-icon>
+              <template #title><span>标准库管理</span></template>
+            </el-menu-item>
+            <el-menu-item index="/admin/knowledge-categories">
+              <el-icon><FolderOpened /></el-icon>
+              <template #title><span>知识库子库</span></template>
+            </el-menu-item>
+            <el-menu-item index="/admin/rule-libraries">
+              <el-icon><Notebook /></el-icon>
+              <template #title><span>规则库</span></template>
+            </el-menu-item>
+            <el-menu-item index="/admin/rules">
+              <el-icon><Operation /></el-icon>
+              <template #title><span>审查规则</span></template>
+            </el-menu-item>
+            <el-menu-item index="/admin/prompts">
+              <el-icon><Edit /></el-icon>
+              <template #title><span>提示词模板</span></template>
+            </el-menu-item>
+            <el-menu-item index="/admin/system">
+              <el-icon><Tools /></el-icon>
+              <template #title><span>系统配置</span></template>
+            </el-menu-item>
+            <el-menu-item index="/admin/users">
+              <el-icon><User /></el-icon>
+              <template #title><span>部门与员工</span></template>
+            </el-menu-item>
+            <el-menu-item index="/admin/audit">
+              <el-icon><Document /></el-icon>
+              <template #title><span>审计日志</span></template>
+            </el-menu-item>
+            <el-menu-item index="/admin/feedback">
+              <el-icon><ChatLineSquare /></el-icon>
+              <template #title><span>反馈管理</span></template>
+            </el-menu-item>
+          </el-sub-menu>
+        </template>
       </el-menu>
 
       <div class="collapse-btn" @click="sidebarCollapsed = !sidebarCollapsed">
@@ -231,7 +240,8 @@ import {
   Setting,
   Document, FullScreen, ArrowDown, Lock, SwitchButton,
   Fold, Expand, Search, QuestionFilled, Edit,
-  Tools, Connection, Operation, WarningFilled, ChatDotRound, Bell,
+  Tools, Operation, WarningFilled, ChatDotRound, ChatLineRound, ChatLineSquare,
+  Bell, FolderOpened, Notebook, User,
 } from '@element-plus/icons-vue'
 import { logoutApi, changePasswordApi } from '@/api/auth'
 import GlobalSearch from '@/components/GlobalSearch.vue'
@@ -267,7 +277,7 @@ const isMobile = ref(false)
 
 const shortcutsList = [
   { keys: 'Ctrl + K', desc: '全局搜索' },
-  { keys: 'Ctrl + N', desc: '新建任务' },
+  { keys: 'Ctrl + N', desc: '智能审查' },
   { keys: 'Esc', desc: '关闭弹窗/返回' },
   { keys: '?', desc: '显示快捷键帮助' },
   { keys: 'Ctrl + S', desc: '保存当前编辑 (表单页)' },
@@ -287,7 +297,7 @@ onMounted(() => {
 const { register } = useKeyboardShortcuts()
 
 register({ key: 'k', label: '全局搜索', modifiers: { ctrl: true }, handler: () => globalSearchRef.value?.open() })
-register({ key: 'n', label: '新建任务', modifiers: { ctrl: true }, handler: () => router.push('/tasks/new') })
+register({ key: 'n', label: '智能审查', modifiers: { ctrl: true }, handler: () => router.push('/review') })
 register({ key: '?', label: '快捷键帮助', handler: () => showShortcutHelp.value = true })
 register({ key: 'escape', label: '关闭', handler: () => {
   globalSearchRef.value?.close()
@@ -552,6 +562,73 @@ const submitPasswordChange = async () => {
 }
 
 .clean-menu.el-menu--collapse :deep(.el-menu-item.el-menu-item .el-icon) {
+  margin-right: 0;
+}
+
+/* 管理后台折叠子菜单 */
+.clean-menu :deep(.el-sub-menu .el-sub-menu__title) {
+  height: 44px;
+  line-height: 44px;
+  margin: var(--space-1) var(--space-2);
+  border-radius: var(--radius-sm);
+  font-weight: 400;
+  font-size: var(--text-base);
+  padding-left: 20px;
+  color: #9CA3AF;
+  border-left: 3px solid transparent;
+}
+
+.clean-menu :deep(.el-sub-menu .el-sub-menu__title:hover) {
+  background-color: rgba(255, 255, 255, 0.06);
+  color: var(--color-gray-200);
+}
+
+.clean-menu :deep(.el-sub-menu .el-sub-menu__title .el-icon) {
+  font-size: 17px;
+  margin-right: 10px;
+  color: #9CA3AF;
+}
+
+.clean-menu :deep(.el-sub-menu.is-opened .el-sub-menu__title) {
+  color: var(--corp-text-inverse);
+}
+
+.clean-menu :deep(.el-sub-menu .el-menu) {
+  background-color: rgba(0, 0, 0, 0.15);
+  border-radius: 0 0 var(--radius-sm) var(--radius-sm);
+  margin: 0 var(--space-2) var(--space-1);
+  padding: var(--space-1) 0;
+}
+
+.clean-menu :deep(.el-sub-menu .el-menu .el-menu-item) {
+  height: 40px;
+  line-height: 40px;
+  padding-left: 48px;
+  font-size: 13px;
+  margin: 1px var(--space-1);
+  border-left: 3px solid transparent;
+}
+
+.clean-menu :deep(.el-sub-menu .el-menu .el-menu-item .el-icon) {
+  font-size: 15px;
+  margin-right: 8px;
+}
+
+.clean-menu :deep(.el-sub-menu .el-menu .el-menu-item.is-active) {
+  background-color: rgba(37, 99, 235, 0.15);
+  color: var(--corp-text-inverse);
+  border-left-color: var(--color-primary-500);
+}
+
+/* 折叠状态下子菜单的样式 */
+.clean-menu.el-menu--collapse :deep(.el-sub-menu .el-sub-menu__title) {
+  padding: 0;
+  justify-content: center;
+  margin: var(--space-1) 6px;
+  padding-left: 0;
+}
+
+.clean-menu.el-menu--collapse :deep(.el-sub-menu .el-sub-menu__title .el-icon) {
   margin-right: 0;
 }
 
