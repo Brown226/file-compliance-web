@@ -43,8 +43,11 @@ playwright.config.js
 /package.json
 /package-lock.json
 
-# MaxKB runtime
+# MaxKB runtime & offline installer
 maxkb-runtime/
+MaxKB-2.8.0/
+maxkb-v2.8.0-x86_64-offline-installer/
+maxkb-temp.tar
 
 # Uploads
 backend/uploads/
