@@ -104,6 +104,9 @@
                 <el-button @click="showBatchImportDialog = true">
                   <el-icon><Upload /></el-icon> 批量导入
                 </el-button>
+                <el-button @click="handleBatchFix">
+                  <el-icon><Edit /></el-icon> 批量修正账号
+                </el-button>
               </div>
             </div>
 
@@ -138,6 +141,17 @@
               </div>
             </transition>
 
+            <!-- 全选 -->
+            <div class="list-header" v-if="filteredEmployees.length > 0">
+              <el-checkbox
+                :model-value="isAllSelected"
+                :indeterminate="isIndeterminate"
+                @change="toggleSelectAll"
+              >
+                全选
+              </el-checkbox>
+            </div>
+
             <!-- 员工卡片列表 -->
             <div class="employee-list" v-loading="empLoading">
               <div
@@ -162,7 +176,7 @@
                       <span class="role-dot"></span>
                       {{ getRoleLabel(emp.role) }}
                     </span>
-                    <span class="emp-dept">{{ emp.department?.name || '未分配' }}</span>
+                    <span class="emp-dept">{{ emp.role === 'ADMIN' ? '系统管理' : (emp.department?.name || '未分配') }}</span>
                   </div>
                   <div class="info-sub">
                     <span class="emp-username">{{ emp.username }}</span>
@@ -518,6 +532,96 @@
         </el-button>
       </template>
     </el-dialog>
+
+    <!-- 批量修正账号弹窗 -->
+    <el-dialog
+      v-model="showBatchFixDialog"
+      title="批量修正登录账号"
+      width="780px"
+    >
+      <div class="batch-import-content">
+        <el-alert type="info" :closable="false" show-icon style="margin-bottom: 16px">
+          <template #title>
+            上传包含修正后登录账号的 Excel 文件。系统将通过「部门 + 真实姓名」匹配用户并更新登录账号。
+          </template>
+        </el-alert>
+
+        <div class="template-section">
+          <el-button size="small" @click="downloadFixTemplate">
+            <el-icon><Download /></el-icon> 下载修正模板
+          </el-button>
+        </div>
+
+        <!-- 预览匹配结果 -->
+        <div v-if="batchFixPreviewData.length > 0" class="preview-section">
+          <div class="preview-header">
+            <span>匹配结果预览（共 {{ batchFixPreviewData.length }} 条）</span>
+            <el-button link type="danger" size="small" @click="clearBatchFix">
+              <el-icon><Delete /></el-icon> 清除
+            </el-button>
+          </div>
+          <el-table :data="batchFixPreviewData" size="small" max-height="320" border>
+            <el-table-column label="部门" min-width="130">
+              <template #default="{ row }">{{ row.departmentPath || '-' }}</template>
+            </el-table-column>
+            <el-table-column prop="name" label="真实姓名" width="100" />
+            <el-table-column label="原登录账号" width="140">
+              <template #default="{ row }">
+                <span v-if="row.oldUsername && row.oldUsername !== '-'" class="old-username">{{ row.oldUsername }}</span>
+                <el-tag v-else-if="row.status === 'matched' || row.status === 'skipped'" type="info" size="small">查询中...</el-tag>
+                <el-tag v-else type="danger" size="small">未匹配</el-tag>
+              </template>
+            </el-table-column>
+            <el-table-column label="新登录账号" width="140">
+              <template #default="{ row }">
+                <span class="new-username">{{ row.newUsername }}</span>
+              </template>
+            </el-table-column>
+            <el-table-column label="状态" width="90">
+              <template #default="{ row }">
+                <el-tag v-if="row.status === 'matched'" type="warning" size="small">待修改</el-tag>
+                <el-tag v-else-if="row.status === 'skipped'" type="success" size="small">已正确</el-tag>
+                <el-tag v-else-if="row.status === 'pending'" type="info" size="small">待匹配</el-tag>
+                <el-tag v-else type="danger" size="small">错误</el-tag>
+              </template>
+            </el-table-column>
+          </el-table>
+          <div v-if="batchFixChangeCount > 0" class="fix-summary">
+            将修改 <strong>{{ batchFixChangeCount }}</strong> 个账号
+          </div>
+        </div>
+
+        <!-- 上传区域 -->
+        <div v-else class="upload-section">
+          <el-upload
+            ref="batchFixUploadRef"
+            class="excel-uploader"
+            drag
+            :auto-upload="false"
+            :limit="1"
+            accept=".xlsx,.xls"
+            :on-change="handleFixFileChange"
+          >
+            <el-icon class="upload-icon"><UploadFilled /></el-icon>
+            <div class="upload-text">
+              <span>将 Excel 文件拖到此处，或 <em>点击上传</em></span>
+              <span class="upload-tip">仅支持 .xlsx, .xls 格式</span>
+            </div>
+          </el-upload>
+        </div>
+      </div>
+      <template #footer>
+        <el-button @click="showBatchFixDialog = false">取消</el-button>
+        <el-button
+          type="primary"
+          :loading="batchFixLoading"
+          :disabled="batchFixPreviewData.length === 0 || batchFixChangeCount === 0"
+          @click="handleBatchFixConfirm"
+        >
+          确认修正 {{ batchFixChangeCount > 0 ? `(${batchFixChangeCount}条)` : '' }}
+        </el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -544,6 +648,7 @@ import {
   batchUpdateStatusApi,
   batchDeleteEmployeesApi,
   resetPasswordApi,
+  batchUpdateUsernamesApi,
   getStorageStatsApi,
   cleanupFilesApi,
 } from '@/api/system'
@@ -737,6 +842,28 @@ const roleTabs = computed(() => {
 const filteredEmployees = computed(() => {
   return employeeData.value
 })
+
+const isAllSelected = computed(() => {
+  if (filteredEmployees.value.length === 0) return false
+  return filteredEmployees.value.every(emp => selectedEmployees.value.includes(emp.id))
+})
+
+const isIndeterminate = computed(() => {
+  if (filteredEmployees.value.length === 0) return false
+  const someSelected = filteredEmployees.value.some(emp => selectedEmployees.value.includes(emp.id))
+  return someSelected && !isAllSelected.value
+})
+
+const toggleSelectAll = (val: boolean) => {
+  const currentIds = filteredEmployees.value.map(emp => emp.id)
+  if (val) {
+    const newSet = new Set([...selectedEmployees.value, ...currentIds])
+    selectedEmployees.value = Array.from(newSet)
+  } else {
+    const currentIdSet = new Set(currentIds)
+    selectedEmployees.value = selectedEmployees.value.filter(id => !currentIdSet.has(id))
+  }
+}
 
 const getAvatarClass = (role: string) => {
   const map: Record<string, string> = { ADMIN: 'admin', MANAGER: 'manager', USER: 'user' }
@@ -1359,6 +1486,260 @@ const handleBatchImport = async () => {
   }
 }
 
+// ========== 批量修正账号 ==========
+const showBatchFixDialog = ref(false)
+const batchFixUploadRef = ref()
+const batchFixLoading = ref(false)
+const batchFixPreviewData = ref<any[]>([])
+const batchFixFile = ref<File | null>(null)
+const batchFixResolved = ref<any[]>([])
+
+const batchFixChangeCount = computed(() => {
+  return batchFixPreviewData.value.filter((r: any) => r.status === 'matched').length
+})
+
+const handleBatchFix = async () => {
+  // 确保部门数据已加载
+  if (orgData.value.length === 0) {
+    await fetchDepartments()
+  }
+  showBatchFixDialog.value = true
+}
+
+const handleFixFileChange = (file: any) => {
+  const maxSize = 10 * 1024 * 1024
+  if (file.size > maxSize) {
+    ElMessage.error(`文件大小超过限制（最大 10MB），当前大小：${(file.size / 1024 / 1024).toFixed(2)}MB`)
+    batchFixUploadRef.value?.clearFiles()
+    return
+  }
+  const fileName = file.name.toLowerCase()
+  if (!fileName.endsWith('.xlsx') && !fileName.endsWith('.xls')) {
+    ElMessage.error('仅支持 .xlsx、.xls 格式的文件')
+    batchFixUploadRef.value?.clearFiles()
+    return
+  }
+  batchFixFile.value = file.raw
+  parseFixExcel(file.raw)
+}
+
+const parseFixExcel = (file: File) => {
+  const reader = new FileReader()
+  reader.onload = async (e) => {
+    try {
+      const data = new Uint8Array(e.target?.result as ArrayBuffer)
+      const workbook = XLSX.read(data, { type: 'array' })
+      const firstSheet = workbook.Sheets[workbook.SheetNames[0]]
+      const jsonData = XLSX.utils.sheet_to_json(firstSheet)
+
+      const parsed = jsonData.map((row: any) => ({
+        username: String(row['登录账号'] || row['username'] || '').toLowerCase(),
+        name: String(row['真实姓名'] || row['name'] || ''),
+        deptLevel1: String(row['一级部门'] || row['deptLevel1'] || ''),
+        deptLevel2: String(row['二级部门'] || row['deptLevel2'] || ''),
+        deptLevel3: String(row['三级部门'] || row['deptLevel3'] || ''),
+      })).filter((r: any) => r.username && r.name)
+
+      if (parsed.length === 0) {
+        ElMessage.warning('未找到有效的员工数据（需包含登录账号和真实姓名）')
+        return
+      }
+
+      // 解析部门路径为部门 ID
+      const resolved: Array<{ departmentId?: string; departmentPath: string; name: string; newUsername: string }> = []
+      for (const item of parsed) {
+        const levels = [item.deptLevel1, item.deptLevel2, item.deptLevel3].filter(l => l)
+        const departmentPath = levels.join(' / ') || '未分配'
+        let departmentId: string | undefined
+        if (levels.length > 0) {
+          const matched = findDeptByPath(orgData.value, levels)
+          departmentId = matched?.id
+        }
+        resolved.push({ departmentId, departmentPath, name: item.name, newUsername: item.username })
+      }
+
+      batchFixResolved.value = resolved
+      await previewBatchFix()
+    } catch (err) {
+      console.error('解析Excel失败', err)
+      ElMessage.error('解析Excel文件失败')
+    }
+  }
+  reader.readAsArrayBuffer(file)
+}
+
+const previewBatchFix = async () => {
+  const validData = batchFixResolved.value.filter(r => r.departmentId)
+  const unresolvedCount = batchFixResolved.value.filter(r => !r.departmentId).length
+
+  // 初始化预览列表
+  batchFixPreviewData.value = batchFixResolved.value.map((r: any) => ({
+    departmentPath: r.departmentPath,
+    name: r.name,
+    oldUsername: '-',
+    newUsername: r.newUsername,
+    status: r.departmentId ? 'pending' : 'error',
+    error: r.departmentId ? undefined : '未找到匹配的部门路径',
+  }))
+
+  if (validData.length === 0) {
+    ElMessage.warning('所有记录均无法解析部门路径，请确认部门信息是否正确')
+    return
+  }
+
+  try {
+    const employees = validData.map(r => ({
+      departmentId: r.departmentId!,
+      name: r.name,
+      newUsername: r.newUsername,
+    }))
+
+    const { data } = await batchUpdateUsernamesApi(employees, true)
+
+    // 构建匹配映射
+    const matchedMap = new Map<string, { oldUsername: string; status: string }>()
+    if (data.matched) {
+      data.matched.forEach((m: any) => {
+        const key = `${m.name}|${m.newUsername}`
+        matchedMap.set(key, { oldUsername: m.oldUsername, status: m.status })
+      })
+    }
+
+    // 构建错误映射
+    const errorMap = new Map<string, string>()
+    if (data.errors) {
+      data.errors.forEach((err: string) => {
+        const match = err.match(/第\d+行: 更新"(.+?)"/)
+        if (match) {
+          errorMap.set(match[1], err)
+        }
+      })
+    }
+
+    batchFixPreviewData.value = batchFixResolved.value.map((r: any) => {
+      if (!r.departmentId) {
+        return {
+          departmentPath: r.departmentPath,
+          name: r.name,
+          oldUsername: '-',
+          newUsername: r.newUsername,
+          status: 'error',
+        }
+      }
+      const key = `${r.name}|${r.newUsername}`
+      const match = matchedMap.get(key)
+      if (match) {
+        return {
+          departmentPath: r.departmentPath,
+          name: r.name,
+          oldUsername: match.oldUsername,
+          newUsername: r.newUsername,
+          status: match.status,
+        }
+      }
+      return {
+        departmentPath: r.departmentPath,
+        name: r.name,
+        oldUsername: '-',
+        newUsername: r.newUsername,
+        status: 'error',
+      }
+    })
+
+    if (unresolvedCount > 0) {
+      ElMessage.warning(`有 ${unresolvedCount} 条记录无法解析部门路径，已自动跳过`)
+    }
+  } catch (e: any) {
+    ElMessage.error('预览匹配失败: ' + (e.response?.data?.message || e.message))
+  }
+}
+
+const handleBatchFixConfirm = async () => {
+  const toUpdate = batchFixResolved.value.filter((r: any) => r.departmentId)
+  if (toUpdate.length === 0) {
+    ElMessage.warning('没有可修正的记录')
+    return
+  }
+
+  const changeCount = batchFixPreviewData.value.filter((r: any) => r.status === 'matched').length
+  if (changeCount === 0) {
+    ElMessage.info('所有账号已是最新，无需修改')
+    showBatchFixDialog.value = false
+    return
+  }
+
+  try {
+    await ElMessageBox.confirm(
+      `确认修正 ${changeCount} 个账号的登录信息？此操作将直接修改数据库中的用户登录账号。`,
+      '批量修正确认',
+      { type: 'warning', confirmButtonText: '确认修正', cancelButtonText: '取消' }
+    )
+  } catch {
+    return
+  }
+
+  batchFixLoading.value = true
+  try {
+    const employees = toUpdate.map((r: any) => ({
+      departmentId: r.departmentId,
+      name: r.name,
+      newUsername: r.newUsername,
+    }))
+
+    const { data } = await batchUpdateUsernamesApi(employees, false)
+
+    const messages: string[] = []
+    if (data.successCount > 0) {
+      messages.push(`✅ 成功修正 ${data.successCount} 个账号`)
+    }
+    if (data.failCount > 0) {
+      const errorList = data.errors.slice(0, 10).join('\n')
+      messages.push(`❌ ${data.failCount} 个修正失败:`)
+      messages.push(errorList)
+      if (data.errors.length > 10) {
+        messages.push(`... 还有 ${data.errors.length - 10} 条错误`)
+      }
+    }
+
+    if (data.failCount > 0) {
+      ElMessageBox.alert(messages.join('\n\n'), '修正结果', {
+        type: data.successCount > 0 ? 'warning' : 'error',
+        confirmButtonText: '确定',
+      })
+    } else {
+      ElMessage.success(messages.join('\n'))
+    }
+
+    showBatchFixDialog.value = false
+    clearBatchFix()
+    fetchEmployees()
+    fetchGlobalEmployeesForCount()
+    fetchDeptEmployeesForCount()
+  } catch (e: any) {
+    ElMessage.error(e.response?.data?.message || '批量修正失败')
+  } finally {
+    batchFixLoading.value = false
+  }
+}
+
+const clearBatchFix = () => {
+  batchFixPreviewData.value = []
+  batchFixResolved.value = []
+  batchFixFile.value = null
+  batchFixUploadRef.value?.clearFiles()
+}
+
+const downloadFixTemplate = () => {
+  const templateData = [
+    { '登录账号': 'zhangsan', '真实姓名': '张三', '一级部门': '总公司', '二级部门': '研发部', '三级部门': '', '邮箱': 'zhangsan@example.com' },
+    { '登录账号': 'lisi', '真实姓名': '李四', '一级部门': '总公司', '二级部门': '结构设计部', '三级部门': '', '邮箱': '' },
+  ]
+  const ws = XLSX.utils.json_to_sheet(templateData)
+  const wb = XLSX.utils.book_new()
+  XLSX.utils.book_append_sheet(wb, ws, '账号修正模板')
+  XLSX.writeFile(wb, '账号修正模板.xlsx')
+}
+
 // ========== 存储管理 ==========
 const storageLoading = ref(false)
 const cleanupLoading = ref(false)
@@ -1693,6 +2074,17 @@ onUnmounted(() => {
   color: var(--corp-primary);
   background: rgba(64, 158, 255, 0.1);
   font-weight: 500;
+}
+
+/* 全选 */
+.list-header {
+  display: flex;
+  align-items: center;
+  padding: 6px 12px;
+  margin-bottom: 4px;
+  font-size: 13px;
+  color: var(--el-text-color-secondary);
+  border-bottom: 1px solid var(--el-border-color-lighter);
 }
 
 /* 批量操作栏 */
@@ -2152,5 +2544,28 @@ onUnmounted(() => {
   display: flex;
   flex-direction: column;
   overflow: hidden;
+}
+
+/* 批量修正账号预览样式 */
+.old-username {
+  color: var(--el-color-danger);
+  text-decoration: line-through;
+  font-size: 12px;
+}
+
+.new-username {
+  color: var(--el-color-success);
+  font-weight: 600;
+  font-size: 13px;
+}
+
+.fix-summary {
+  margin-top: 12px;
+  padding: 8px 16px;
+  background: rgba(230, 162, 60, 0.1);
+  border-radius: 6px;
+  font-size: 13px;
+  color: var(--el-color-warning);
+  text-align: center;
 }
 </style>

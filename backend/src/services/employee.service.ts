@@ -1,6 +1,7 @@
 import bcrypt from 'bcryptjs';
 import prisma from '../config/db';
 import { Prisma } from '@prisma/client';
+import { AppError } from '../middlewares/error.middleware';
 
 /**
  * 递归获取所有下属部门ID
@@ -356,16 +357,174 @@ export class EmployeeService {
 
   /**
    * 删除员工
+   * 先清理关联的外键记录，若有重要依赖数据则阻止删除
    */
   async deleteEmployee(id: string) {
-    // 检查关联任务等（如果需要级联删除或阻止删除，视业务而定）
-    // 当前直接删除
-    const user = await prisma.user.delete({
-      where: { id },
+    const user = await prisma.$transaction(async (tx) => {
+      // 1. 删除公告阅读记录
+      await tx.userAnnouncementRead.deleteMany({ where: { userId: id } });
+
+      // 2. 解除审计日志的用户关联（置空）
+      await tx.auditLog.updateMany({
+        where: { userId: id },
+        data: { userId: null },
+      });
+
+      // 3. 解除反馈处理人关联（置空）
+      await tx.feedback.updateMany({
+        where: { resolverId: id },
+        data: { resolverId: null },
+      });
+
+      // 4. 检查是否有重要依赖数据
+      const [taskCount, feedbackCount, announcementCount] = await Promise.all([
+        tx.task.count({ where: { creatorId: id } }),
+        tx.feedback.count({ where: { userId: id } }),
+        tx.systemAnnouncement.count({ where: { createdBy: id } }),
+      ]);
+
+      if (taskCount > 0 || feedbackCount > 0 || announcementCount > 0) {
+        const reasons: string[] = [];
+        if (taskCount > 0) reasons.push(`创建了 ${taskCount} 个审查任务`);
+        if (feedbackCount > 0) reasons.push(`提交了 ${feedbackCount} 条反馈`);
+        if (announcementCount > 0) reasons.push(`创建了 ${announcementCount} 条公告`);
+        throw new AppError(409, `该用户有关联数据无法删除：${reasons.join('，')}，请先转移或处理这些数据后再删除`);
+      }
+
+      // 5. 删除用户
+      return tx.user.delete({ where: { id } });
     });
 
     const { passwordHash: _, ...rest } = user;
     return rest;
+  }
+
+  /**
+   * 批量修正用户登录账号
+   * 通过部门ID + 真实姓名定位用户，更新其登录账号
+   * @param dryRun 为 true 时仅预览（返回匹配结果但不执行更新）
+   */
+  async batchUpdateUsernames(
+    data: Array<{
+      departmentId: string
+      name: string
+      newUsername: string
+    }>,
+    dryRun: boolean = false
+  ) {
+    const results = {
+      successCount: 0,
+      failCount: 0,
+      errors: [] as string[],
+      matched: [] as Array<{
+        rowNum: number
+        name: string
+        oldUsername: string
+        newUsername: string
+        status: 'matched' | 'skipped' | 'conflict'
+      }>,
+    };
+
+    // 预检查新账号是否已被其他用户使用
+    const allNewUsernames = data.map(d => d.newUsername.toLowerCase());
+    const usersWithTargetNames = await prisma.user.findMany({
+      where: { username: { in: allNewUsernames } },
+      select: { id: true, username: true },
+    });
+    const usernameOwnerMap = new Map(usersWithTargetNames.map(u => [u.username.toLowerCase(), u.id]));
+
+    for (let i = 0; i < data.length; i++) {
+      const { departmentId, name, newUsername } = data[i];
+      const rowNum = i + 2;
+
+      try {
+        // 校验参数
+        if (!name || !name.trim()) {
+          results.failCount++;
+          results.errors.push(`第${rowNum}行: 姓名为空`);
+          continue;
+        }
+        if (!newUsername || !newUsername.trim()) {
+          results.failCount++;
+          results.errors.push(`第${rowNum}行: 新账号为空`);
+          continue;
+        }
+
+        const lowerNewUsername = newUsername.trim().toLowerCase();
+
+        // 按部门ID + 姓名查找用户
+        const users = await prisma.user.findMany({
+          where: {
+            name: name.trim(),
+            departmentId,
+          },
+          select: { id: true, username: true },
+        });
+
+        if (users.length === 0) {
+          results.failCount++;
+          results.errors.push(`第${rowNum}行: 未找到姓名为"${name}"的用户`);
+          continue;
+        }
+
+        if (users.length > 1) {
+          results.failCount++;
+          results.errors.push(`第${rowNum}行: 找到多个姓名为"${name}"的用户，无法确定唯一匹配`);
+          continue;
+        }
+
+        const user = users[0];
+
+        // 检查新账号是否被其他用户占用
+        const ownerId = usernameOwnerMap.get(lowerNewUsername);
+        if (ownerId && ownerId !== user.id) {
+          results.failCount++;
+          results.errors.push(`第${rowNum}行: 新账号"${lowerNewUsername}"已被其他用户使用`);
+          continue;
+        }
+
+        // 如果新旧账号相同，标记为跳过
+        if (user.username.toLowerCase() === lowerNewUsername) {
+          results.matched.push({
+            rowNum,
+            name: name.trim(),
+            oldUsername: user.username,
+            newUsername: lowerNewUsername,
+            status: 'skipped',
+          });
+          results.successCount++;
+          continue;
+        }
+
+        // 记录匹配结果
+        results.matched.push({
+          rowNum,
+          name: name.trim(),
+          oldUsername: user.username,
+          newUsername: lowerNewUsername,
+          status: 'matched',
+        });
+
+        // 非预览模式下执行更新
+        if (!dryRun) {
+          await prisma.user.update({
+            where: { id: user.id },
+            data: { username: lowerNewUsername },
+          });
+        }
+
+        // 更新账号占用记录
+        usernameOwnerMap.set(lowerNewUsername, user.id);
+
+        results.successCount++;
+      } catch (err: any) {
+        results.failCount++;
+        results.errors.push(`第${rowNum}行: 更新"${newUsername}"失败 - ${err.message}`);
+        console.error(`批量修正账号失败 [${newUsername}]:`, err);
+      }
+    }
+
+    return results;
   }
 }
 

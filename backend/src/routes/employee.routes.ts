@@ -24,5 +24,6 @@ router.post('/batch-create', requireRole('ADMIN'), employeeController.batchCreat
 router.post('/batch-update-status', requireRole('ADMIN'), employeeController.batchUpdateStatus);
 router.post('/batch-delete', requireRole('ADMIN'), employeeController.batchDeleteEmployees);
 router.post('/reset-password/:id', requireRole('ADMIN'), employeeController.resetPassword);
+router.post('/batch-update-usernames', requireRole('ADMIN'), employeeController.batchUpdateUsernames);
 
 export default router;

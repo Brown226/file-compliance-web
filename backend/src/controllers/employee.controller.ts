@@ -174,6 +174,26 @@ export class EmployeeController {
       next(err);
     }
   }
+
+  /**
+   * 批量修正用户登录账号
+   */
+  async batchUpdateUsernames(req: Request, res: Response, next: NextFunction) {
+    try {
+      const { employees, dryRun } = req.body;
+
+      if (!Array.isArray(employees) || employees.length === 0) {
+        error(res, '请提供待修正的员工列表', 400);
+        return;
+      }
+
+      const result = await employeeService.batchUpdateUsernames(employees, dryRun === true);
+
+      success(res, result, dryRun ? '预览完成' : `成功修正 ${result.successCount} 个账号`);
+    } catch (err) {
+      next(err);
+    }
+  }
 }
 
 export const employeeController = new EmployeeController();

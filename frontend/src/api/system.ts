@@ -110,6 +110,26 @@ export function resetPasswordApi(id: string, password?: string) {
   return request.post<{ message: string }>(`/employees/reset-password/${id}`, { password })
 }
 
+// 批量修正登录账号（按部门+姓名匹配）
+export function batchUpdateUsernamesApi(employees: Array<{
+  departmentId: string
+  name: string
+  newUsername: string
+}>, dryRun?: boolean) {
+  return request.post<{
+    successCount: number
+    failCount: number
+    errors: string[]
+    matched?: Array<{
+      rowNum: number
+      name: string
+      oldUsername: string
+      newUsername: string
+      status: 'matched' | 'skipped' | 'conflict'
+    }>
+  }>('/employees/batch-update-usernames', { employees, dryRun }, { timeout: 120000 })
+}
+
 // ==================== 存储管理 ====================
 
 export interface StorageStats {
