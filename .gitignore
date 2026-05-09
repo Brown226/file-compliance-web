@@ -14,6 +14,26 @@ frontend/dist/
 
 # Environment
 backend/.env
+.env.local
+.env.production.local
+
+# Qoder IDE
+.qoder/
+
+# C# build artifacts
+Normative/**/obj/
+
+# E2E test files
+e2e/
+test-results/
+playwright.config.js
+
+# Root-level stray files (likely generated in wrong location)
+/package.json
+/package-lock.json
+
+# MaxKB runtime
+maxkb-runtime/
 
 # Uploads
 backend/uploads/
@@ -82,6 +102,34 @@ docs/参考网站的页面设计/
 docs/当前项目的页面设计/
 docs/文档校审资料和源码/
 docs/法律法规/
+
+# 校审测试反馈（测试文件与数据）
+校审测试反馈/
+
+# Non-code directories & temp files
+做汇报的PPT/
+可参考开源项目/
+projects/
+AGENTS.md
+analysis_*.txt
+analysis_*.json
+false_positive_analysis.json
+nul
+docs/系统2.0升级改造路线/
+docs/系统升级改造效果分析报告.md
+BUGFIX-REPORT-2026-04-24.md
+BUGFIX-SUMMARY-DEPARTMENT.md
+CODEBUDDY.md
+CONTEXT.md
+DEPARTMENT-MAPPING-FIX.md
+DOCKER-UPDATE-REPORT.md
+LLM-CONFIG-FIX.md
+check-llm-config.sql
+fix_llm_config.sql
+test-document.docx.txt
+test-llm-config.ps1
+test-mode-config.ps1
+test-simple.ps1
 
 # Backend startup scripts
 backend/startup-*.sh

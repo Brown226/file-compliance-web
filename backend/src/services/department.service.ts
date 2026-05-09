@@ -1,4 +1,5 @@
 import prisma from '../config/db';
+import { AppError } from '../middlewares/error.middleware';
 
 export class DepartmentService {
   /**
@@ -47,7 +48,7 @@ export class DepartmentService {
         where: { id: data.parentId },
       });
       if (!parent) {
-        throw new Error('Parent department not found');
+        throw new AppError(400, '父部门不存在');
       }
     }
 
@@ -62,13 +63,13 @@ export class DepartmentService {
   async updateDepartment(id: string, data: { name?: string; parentId?: string }) {
     if (data.parentId) {
       if (data.parentId === id) {
-        throw new Error('A department cannot be its own parent');
+        throw new AppError(400, '部门不能将自己设为自己的父部门');
       }
       const parent = await prisma.department.findUnique({
         where: { id: data.parentId },
       });
       if (!parent) {
-        throw new Error('Parent department not found');
+        throw new AppError(400, '父部门不存在');
       }
       
       // 可以进一步检查避免循环引用（即新的parentId不能是当前部门的子节点）
@@ -130,7 +131,7 @@ export class DepartmentService {
     });
 
     if (childrenCount > 0) {
-      throw new Error('Cannot delete department with child departments');
+      throw new AppError(400, '该部门下存在子部门，请先删除子部门后再操作');
     }
 
     // 检查是否有员工关联
@@ -139,7 +140,7 @@ export class DepartmentService {
     });
 
     if (usersCount > 0) {
-      throw new Error('Cannot delete department with assigned employees');
+      throw new AppError(400, '该部门下有员工关联，请先转移员工后再操作');
     }
 
     return prisma.department.delete({

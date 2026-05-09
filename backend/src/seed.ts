@@ -47,7 +47,7 @@ async function seed() {
       passwordHash: adminHash,
       name: '系统管理员',
       role: 'ADMIN',
-      departmentId: rootDept.id,
+      departmentId: null, // ADMIN 不归属于任何部门，拥有全局权限
     },
   });
 
