@@ -31,16 +31,6 @@ export function getTaskDetailsApi(id: string) {
   return request.get<TaskDetail[]>(`/tasks/${id}/details`)
 }
 
-// 获取任务文件列表
-export function getTaskFilesApi(id: string) {
-  return request.get<TaskFile[]>(`/tasks/${id}/files`)
-}
-
-// 获取任务问题列表
-export function getTaskIssuesApi(id: string) {
-  return request.get<TaskDetail[]>(`/tasks/${id}/issues`)
-}
-
 // 获取任务审查进度
 export function getTaskProgressApi(id: string) {
   return request.get<{ progress: number; status: string; completedFiles: number; totalFiles: number }>(`/tasks/${id}/progress`)

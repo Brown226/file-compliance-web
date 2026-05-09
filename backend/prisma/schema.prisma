@@ -34,6 +34,7 @@ model User {
   feedbacks    Feedback[]
   resolvedFeedbacks Feedback[] @relation("FeedbackResolver")
   createdAnnouncements SystemAnnouncement[]
+  qaSessions   QASession[]
   announcementReads    UserAnnouncementRead[]
   createdAt    DateTime    @default(now())
   updatedAt    DateTime    @updatedAt
@@ -101,7 +102,12 @@ model Task {
   creator            User           @relation(fields: [creatorId], references: [id])
   standardId         String?
   standard           Standard?      @relation(fields: [standardId], references: [id])
-  maxkbKnowledgeId   String?        // 用户选择的知识库 ID（审查时使用特定知识库）
+  maxkbKnowledgeId   String?        // 用户选择的知识库 ID（审查时使用特定知识库）（兼容旧字段）
+  perspective        String?        // 审查立场
+  preAnalysisData    Json?          @map("pre_analysis_data")   // 预分析结果
+  reviewPlan         Json?          @map("review_plan")         // 审查方案
+  knowledgeCategoryId String?       // 关联的知识子库 ID
+  ruleLibraryId      String?        // 关联的规则库 ID
   files              TaskFile[]
   details            TaskDetail[]
   taskStandards      TaskStandard[]
@@ -117,6 +123,7 @@ enum TaskStatus {
   PROCESSING
   COMPLETED
   FAILED
+  CANCELLED
 }
 
 enum ReviewMode {
@@ -429,4 +436,119 @@ model UserAnnouncementRead {
   @@unique([userId, announcementId])
   @@index([userId])
   @@map("user_announcement_reads")
+}
+
+// ===== 知识子库管理 =====
+
+model KnowledgeCategory {
+  id              String            @id @default(uuid())
+  name            String                              // 子库名称
+  description     String?           @db.Text           // 描述
+  documentTypes   String?                             // 支持的文档类型，逗号分隔：standard,law,reference
+  status          KnowledgeCategoryStatus @default(ACTIVE)
+  parentId        String?
+  parent          KnowledgeCategory? @relation("KnowledgeCategoryToKnowledgeCategory", fields: [parentId], references: [id])
+  children        KnowledgeCategory[] @relation("KnowledgeCategoryToKnowledgeCategory")
+  vectorDocuments VectorDocument[]
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
+
+  @@map("knowledge_categories")
+}
+
+enum KnowledgeCategoryStatus {
+  ACTIVE
+  ARCHIVED
+}
+
+// ===== 向量文档（pgvector） =====
+
+model VectorDocument {
+  id              String              @id @default(uuid())
+  categoryId      String?
+  category        KnowledgeCategory?  @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  sourceType      String              @map("source_type")     // standard, law, reference, rule
+  sourceId        String?             @map("source_id")       // 来源标识
+  title           String?                                    // 文档/标准标题
+  clauseId        String?             @map("clause_id")       // 条文编号
+  content         String              @db.Text                // 文本内容
+  contentHash     String?             @map("content_hash")    // SHA-256 去重
+  chunkIndex      Int                 @default(0) @map("chunk_index")
+  metadata        Json?                                       // 附加元数据
+  embedding       Unsupported("vector(1024)")?               // pgvector 向量
+  createdAt       DateTime            @default(now()) @map("created_at")
+  updatedAt       DateTime            @updatedAt @map("updated_at")
+
+  @@index([categoryId])
+  @@index([sourceType, sourceId])
+  @@index([contentHash])
+  @@index([title])
+  @@map("vector_documents")
+}
+
+// ===== 规则库 =====
+
+model RuleLibrary {
+  id              String              @id @default(uuid())
+  name            String                                // 规则库名称
+  description     String?             @db.Text           // 描述
+  sourceFileName  String?             @map("source_file_name") // 上传的源文件名
+  status          RuleLibraryStatus   @default(DRAFT)    // 草稿/已发布/归档
+  createdBy       String                                // 创建人
+  items           RuleLibraryItem[]
+  createdAt       DateTime            @default(now())
+  updatedAt       DateTime            @updatedAt
+
+  @@map("rule_libraries")
+}
+
+enum RuleLibraryStatus {
+  DRAFT
+  PUBLISHED
+  ARCHIVED
+}
+
+model RuleLibraryItem {
+  id              String        @id @default(uuid())
+  libraryId       String
+  library         RuleLibrary   @relation(fields: [libraryId], references: [id], onDelete: Cascade)
+  ruleCode        String?       @map("rule_code")      // 规则代码
+  ruleName        String?       @map("rule_name")      // 规则名称
+  category        String?                              // 规则分类
+  description     String?       @db.Text               // 规则描述
+  checkMethod     String?       @map("check_method") @db.Text // 检查方法
+  severity        String?       @default("warning")     // 严重度
+  enabled         Boolean       @default(true)
+  createdAt       DateTime      @default(now())
+
+  @@index([libraryId])
+  @@map("rule_library_items")
+}
+
+// ===== 智能问答 =====
+
+model QASession {
+  id              String        @id @default(uuid())
+  userId          String
+  user            User          @relation(fields: [userId], references: [id])
+  title           String?       // 会话标题（首条问题截取）
+  taskId          String?       // 可选关联的审查任务
+  messages        QAMessage[]
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  @@index([userId])
+  @@map("qa_sessions")
+}
+
+model QAMessage {
+  id              String        @id @default(uuid())
+  sessionId       String
+  session         QASession     @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  role            String        // user, assistant, system
+  content         String        @db.Text
+  createdAt       DateTime      @default(now())
+
+  @@index([sessionId])
+  @@map("qa_messages")
 }

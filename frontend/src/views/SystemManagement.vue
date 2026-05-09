@@ -332,6 +332,27 @@
       <div v-show="activeTab === 'announcement'" class="tab-content">
         <AnnouncementManagement />
       </div>
+
+      <!-- AI 引擎配置 -->
+      <div v-show="activeTab === 'ai-engine'" class="tab-content">
+        <el-tabs v-model="aiEngineTab" type="border-card">
+          <el-tab-pane label="对话模型" name="chat">
+            <ChatModelTab />
+          </el-tab-pane>
+          <el-tab-pane label="Embedding 向量模型" name="embedding">
+            <EmbeddingModelTab />
+          </el-tab-pane>
+          <el-tab-pane label="Reranker 重排序模型" name="reranker">
+            <RerankerModelTab />
+          </el-tab-pane>
+          <el-tab-pane label="OCR 文本识别" name="ocr">
+            <OcrConfigTab />
+          </el-tab-pane>
+          <el-tab-pane label="提示词模板" name="prompt">
+            <PromptConfigTab />
+          </el-tab-pane>
+        </el-tabs>
+      </div>
     </div>
 
     <!-- 部门弹窗 -->
@@ -654,14 +675,21 @@ import {
 } from '@/api/system'
 import FeedbackManagement from '@/views/FeedbackManagement.vue'
 import AnnouncementManagement from '@/views/AnnouncementManagement.vue'
+import ChatModelTab from '@/views/LLMConfig/ChatModelTab.vue'
+import EmbeddingModelTab from '@/views/LLMConfig/EmbeddingModelTab.vue'
+import RerankerModelTab from '@/views/LLMConfig/RerankerModelTab.vue'
+import OcrConfigTab from '@/views/LLMConfig/OcrConfigTab.vue'
+import PromptConfigTab from '@/views/PromptConfig.vue'
 
 // ========== Tab 导航 ==========
 const activeTab = ref('department')
+const aiEngineTab = ref('chat')
 const navTabs = [
   { label: '部门管理', value: 'department', icon: '🏢', desc: '组织架构与员工' },
   { label: '存储管理', value: 'storage', icon: '💾', desc: '文件存储与清理' },
   { label: '反馈建议', value: 'feedback', icon: '💬', desc: '用户反馈与处理' },
   { label: '公告管理', value: 'announcement', icon: '📢', desc: '系统公告发布与管理' },
+  { label: 'AI 引擎', value: 'ai-engine', icon: '🤖', desc: '模型与提示词配置' },
 ]
 
 // ========== 部门管理 ==========

@@ -24,8 +24,8 @@ import { ParserService } from '../parser.service';
 import { OcrService } from '../ocr.service';
 import { RuleEngineService } from '../rule-engine.service';
 import { LlmService, ReviewIssue, SourceReference } from '../llm.service';
-import { MaxKBService } from '../maxkb.service';
 import { RAGService } from '../rag.service';
+import { VectorService } from '../vector.service';
 import { RuleIssue } from '../rules/types';
 import { StandardTraceabilityService } from '../standard-traceability.service';
 import { PromptTemplateService } from '../prompt-template.service';
@@ -307,22 +307,22 @@ export abstract class BasePipeline {
   /**
    * 自建 RAG 审查（推荐方案）
    *
-   * 直接使用 MaxKB 知识库 hit_test API 进行向量检索，
+   * 直接使用本地 pgvector 向量检索，
    * 获取相关段落后组装 prompt，调用自有 LLM 进行审查。
    */
   protected async runRAGReview(
     text: string,
     ctx: PipelineContext,
   ): Promise<{ issues: ReviewIssue[]; engine: string; sources?: SourceReference[] }> {
-    // 获取知识库 ID 列表：优先使用多选 ID，回退到单个 ID
-    const knowledgeIds = ctx.maxkbKnowledgeIds && ctx.maxkbKnowledgeIds.length > 0
-      ? ctx.maxkbKnowledgeIds
-      : ctx.maxkbKnowledgeId
-        ? [ctx.maxkbKnowledgeId]
+    // 获取知识子库 ID：优先使用新字段，兼容旧 maxkbKnowledgeId
+    const knowledgeIds = ctx.knowledgeCategoryIds && ctx.knowledgeCategoryIds.length > 0
+      ? ctx.knowledgeCategoryIds
+      : ctx.knowledgeCategoryId
+        ? [ctx.knowledgeCategoryId]
         : [];
 
     if (knowledgeIds.length === 0) {
-      console.warn('[Pipeline] runRAGReview: 未指定知识库ID');
+      console.warn('[Pipeline] runRAGReview: 未指定知识子库ID');
       return { issues: [], engine: 'none' };
     }
 
@@ -350,7 +350,7 @@ export abstract class BasePipeline {
   }
 
   /**
-   * 从 MaxKB 知识库获取标准内容作为上下文，传给自有 LLM 进行审查
+   * 从本地向量库检索标准内容作为上下文，传给自有 LLM 进行审查
    */
   private async fallbackToLLMWithKnowledge(
     text: string,
@@ -363,29 +363,31 @@ export abstract class BasePipeline {
 
     let knowledgeContext = '';
 
-    // 尝试从 MaxKB 知识库获取段落内容（支持多知识库）
-    const kbIds = ctx.maxkbKnowledgeIds && ctx.maxkbKnowledgeIds.length > 0
-      ? ctx.maxkbKnowledgeIds
-      : ctx.maxkbKnowledgeId
-        ? [ctx.maxkbKnowledgeId]
+    // 从本地向量库检索相关段落作为上下文
+    const categoryIds = ctx.knowledgeCategoryIds && ctx.knowledgeCategoryIds.length > 0
+      ? ctx.knowledgeCategoryIds
+      : ctx.knowledgeCategoryId
+        ? [ctx.knowledgeCategoryId]
         : [];
 
-    for (const kbId of kbIds) {
+    for (const catId of categoryIds) {
       try {
-        const kbContext = await MaxKBService.getKnowledgeParagraphs(kbId, {
-          maxParagraphs: Math.ceil(30 / kbIds.length),  // 多知识库时均分
-          maxChars: Math.ceil(15000 / kbIds.length),
+        const results = await VectorService.hybridSearch(text.slice(0, 2000), {
+          limit: 10,
+          categoryId: catId,
+          rerank: false,
         });
-        if (kbContext) {
-          knowledgeContext += kbContext + '\n\n';
+        if (results.length > 0) {
+          const context = results.map(r => r.content).join('\n\n');
+          knowledgeContext += context + '\n\n';
         }
       } catch (e) {
-        console.warn(`[Pipeline] 获取知识库 ${kbId} 段落失败:`, e);
+        console.warn(`[Pipeline] 获取知识子库 ${catId} 段落失败:`, e);
       }
     }
 
     if (knowledgeContext) {
-      console.log(`[Pipeline] 获取到知识库段落作为上下文: ${knowledgeContext.length} 字符 (${kbIds.length} 个知识库)`);
+      console.log(`[Pipeline] 获取到知识库段落作为上下文: ${knowledgeContext.length} 字符 (${categoryIds.length} 个知识子库)`);
     }
 
     // 使用自有 LLM 进行审查（带位置信息）
@@ -466,7 +468,7 @@ export abstract class BasePipeline {
     const config = this.getEffectiveConfig(ctx);
     const aiEngine = config.aiEngine || 'auto';
 
-    const hasKnowledgeIds = (ctx.maxkbKnowledgeIds && ctx.maxkbKnowledgeIds.length > 0) || ctx.maxkbKnowledgeId;
+    const hasKnowledgeIds = (ctx.knowledgeCategoryIds && ctx.knowledgeCategoryIds.length > 0) || ctx.knowledgeCategoryId;
 
     // AI 引擎禁用
     if (aiEngine === 'disabled') {

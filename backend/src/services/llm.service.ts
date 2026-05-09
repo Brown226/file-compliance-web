@@ -605,7 +605,7 @@ export class LlmService {
   /**
    * 从数据库获取 LLM 配置
    */
-  private static async getLlmConfig(): Promise<{
+  static async getLlmConfig(): Promise<{
     apiBaseUrl: string;
     apiKey: string;
     modelName: string;

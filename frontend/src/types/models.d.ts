@@ -173,15 +173,6 @@ export interface Department {
   updatedAt: string
 }
 
-/** MaxKB 状态 */
-export interface MaxKBStatus {
-  initialized: boolean
-  maxkbReachable: boolean
-  maxkbUrl?: string
-  knowledgeId?: string
-  knowledgeDocCount?: number
-}
-
 /** 审查规则 */
 export interface ReviewRule {
   id: string
@@ -192,18 +183,6 @@ export interface ReviewRule {
   description: string
   enabled: boolean
   config?: any
-  createdAt: string
-  updatedAt: string
-}
-
-/** 提示词模板 */
-export interface PromptTemplate {
-  id: string
-  name: string
-  description?: string
-  content: string
-  category?: string
-  isDefault: boolean
   createdAt: string
   updatedAt: string
 }
@@ -272,31 +251,6 @@ export interface TempLibraryEntry {
   standardName: string
   status: string
   createdAt: string
-}
-
-/** 知识库命中测试结果 */
-export interface MaxKBHitTestResult {
-  results: Array<{
-    content: string
-    score: number
-    title?: string
-  }>
-}
-
-/** 知识库条目 */
-export interface KnowledgeBaseItem {
-  id: string
-  name: string
-  documentCount?: number
-}
-
-/** 知识库树节点 */
-export interface KnowledgeTreeNode {
-  id: string
-  name: string
-  type: 'dataset' | 'document'
-  children?: KnowledgeTreeNode[]
-  documentCount?: number
 }
 
 /** 规则分类 */

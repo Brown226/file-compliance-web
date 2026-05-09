@@ -149,17 +149,12 @@ export class ReviewService {
       });
 
       const reviewMode = (task as any).reviewMode || 'FULL_REVIEW';
-      const maxkbKnowledgeId = (task as any).maxkbKnowledgeId || undefined;
+      const knowledgeCategoryId = (task as any).knowledgeCategoryId || undefined;
 
-      // 解析多知识库 ID
-      let maxkbKnowledgeIds: string[] | undefined;
-      if (maxkbKnowledgeId) {
-        try {
-          const parsed = JSON.parse(maxkbKnowledgeId);
-          maxkbKnowledgeIds = Array.isArray(parsed) ? parsed : [maxkbKnowledgeId];
-        } catch {
-          maxkbKnowledgeIds = [maxkbKnowledgeId];
-        }
+      // 解析多知识子库 ID
+      let knowledgeCategoryIds: string[] | undefined;
+      if (knowledgeCategoryId) {
+        knowledgeCategoryIds = [knowledgeCategoryId];
       }
 
       // 标记所有文件为 PENDING
@@ -211,8 +206,8 @@ export class ReviewService {
           fileType: file.fileType,
           extractedText: '',
           reviewMode: reviewMode as any,
-          maxkbKnowledgeId: maxkbKnowledgeId || undefined,
-          maxkbKnowledgeIds: maxkbKnowledgeIds || undefined,
+          knowledgeCategoryId: knowledgeCategoryId || undefined,
+          knowledgeCategoryIds: knowledgeCategoryIds || undefined,
           pipelineConfig,
           refFileGroup: refFileGroupCtx,
         };
@@ -914,8 +909,8 @@ export class ReviewService {
       fileType: file.fileType,
       extractedText: '',
       reviewMode: reviewMode as any,
-      maxkbKnowledgeId: maxkbKnowledgeId || undefined,
-      maxkbKnowledgeIds: maxkbKnowledgeIds || undefined,
+      knowledgeCategoryId: maxkbKnowledgeId || undefined,
+      knowledgeCategoryIds: maxkbKnowledgeIds || undefined,
       onChunkProgress: onProgress,
     };
 

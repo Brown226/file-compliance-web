@@ -2,18 +2,6 @@
   <div class="standard-library-container">
     <!-- Tab 切换 -->
     <div class="tab-header">
-      <!-- MaxKB 知识库 - 仅 ADMIN/MANAGER 可见 -->
-      <div
-        v-if="canManageKnowledge"
-        class="tab-item"
-        :class="{ active: activeTab === 'maxkb' }"
-        @click="switchToMaxKB"
-      >
-        <el-icon><Connection /></el-icon>
-        MaxKB 知识库
-        <el-tag v-if="maxkbStatus?.initialized" size="small" type="success" style="margin-left:6px;">已连接</el-tag>
-        <el-tag v-else-if="maxkbStatus?.maxkbReachable === false" size="small" type="danger" style="margin-left:6px;">未连接</el-tag>
-      </div>
       <div
         class="tab-item"
         :class="{ active: activeTab === 'local' }"
@@ -42,13 +30,6 @@
       </div>
     </div>
 
-    <!-- MaxKB 知识库嵌入 - 仅 ADMIN/MANAGER -->
-    <MaxKBTab
-      v-if="canManageKnowledge && activeTab === 'maxkb'"
-      :status="maxkbStatus"
-      @update:status="maxkbStatus = $event"
-    />
-
     <!-- 本地标准库管理 -->
     <LocalStandardTab v-show="activeTab === 'local'" />
 
@@ -67,36 +48,14 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
-import { Files, Connection, Key, Warning } from '@element-plus/icons-vue'
-import { getMaxKBStatusApi } from '@/api/maxkb'
-import { useUserStore } from '@/stores/user'
+import { ref } from 'vue'
+import { Files, Key, Warning } from '@element-plus/icons-vue'
 import LocalStandardTab from './LocalStandardTab.vue'
-import MaxKBTab from './MaxKBTab.vue'
 import TerminologyTab from './TerminologyTab.vue'
 import FalsePositiveLibraryTab from './FalsePositiveLibraryTab.vue'
 
-const userStore = useUserStore()
-const canManageKnowledge = computed(() => userStore.isAdminOrManager())
-
 // ===== Tab 切换 =====
-const activeTab = ref<'local' | 'maxkb' | 'terminology' | 'falsePositive'>('local')
-
-// ===== MaxKB 状态 =====
-const maxkbStatus = ref<any>(null)
-
-const fetchMaxKBStatus = async () => {
-  try {
-    const { data } = await getMaxKBStatusApi()
-    maxkbStatus.value = data
-  } catch (e) {
-    maxkbStatus.value = null
-  }
-}
-
-const switchToMaxKB = () => {
-  activeTab.value = 'maxkb'
-}
+const activeTab = ref<'local' | 'terminology' | 'falsePositive'>('local')
 
 // ===== 白名单术语总数 =====
 const terminologyTotal = ref(0)
@@ -111,12 +70,6 @@ const fpLibraryTotal = ref(0)
 const switchToFalsePositive = () => {
   activeTab.value = 'falsePositive'
 }
-
-onMounted(() => {
-  setTimeout(() => {
-    fetchMaxKBStatus()
-  }, 1000)
-})
 </script>
 
 <style scoped>

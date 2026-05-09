@@ -8,11 +8,6 @@ export function loginApi(data: { username: string; password: string }) {
   return request.post<{ token: string; user: UserInfo }>('/auth/login', data)
 }
 
-// 获取当前用户信息
-export function getUserInfoApi() {
-  return request.get<UserInfo>('/auth/profile')
-}
-
 // 登出
 export function logoutApi() {
   return request.post<Record<string, never>>('/auth/logout')

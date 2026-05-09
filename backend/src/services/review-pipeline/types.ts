@@ -32,11 +32,11 @@ export interface PipelineModeConfig {
 /** Pipeline 全局配置（存储在 SystemConfig 'pipeline_review_config' 中） */
 export interface PipelineReviewConfig {
   modes: Partial<Record<ReviewModeType, PipelineModeConfig>>;
-  aiEngine: 'auto' | 'rag' | 'rag_llm' | 'maxkb_only' | 'llm_only' | 'disabled';  // AI 引擎策略
+  aiEngine: 'auto' | 'rag' | 'rag_llm' | 'llm_only' | 'disabled';  // AI 引擎策略
   chunkSize: number;           // 文本分片大小
   llmMaxTokens: number;        // LLM max_tokens
   llmTimeout: number;          // LLM 超时（秒）
-  maxkbTimeout: number;        // MaxKB 超时（秒）
+  maxkbTimeout?: number;       // 兼容旧配置（已废弃）
   ocrTimeout: number;          // OCR 超时（秒）
   maxConcurrentReviews: number;// 最大并发审查数
   logLevel: 'debug' | 'info' | 'warn' | 'error';  // 日志级别
@@ -89,8 +89,10 @@ export interface PipelineContext {
   pdfPages?: string[];
   reviewMode: ReviewModeType;
   standardIds?: string[];           // 关联标准ID
-  maxkbKnowledgeId?: string;        // 用户选择的知识库ID（兼容单个）
-  maxkbKnowledgeIds?: string[];     // 用户选择的多个知识库ID（树形选择器多选）
+  maxkbKnowledgeId?: string;        // 用户选择的知识库ID（兼容旧字段）
+  maxkbKnowledgeIds?: string[];     // 用户选择的多个知识库ID（兼容旧字段）
+  knowledgeCategoryId?: string;     // 关联的知识子库 ID
+  knowledgeCategoryIds?: string[];  // 关联的多个知识子库 ID
   refFileGroup?: {                  // 参照文件组（以文审文模式）
     groupId: string;
     groupName: string;
