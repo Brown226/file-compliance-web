@@ -106,7 +106,7 @@ ${fileText.substring(0, 3000)}
 
           console.log('[PreAnalysis] 调用LLM API...');
           const startTime = Date.now();
-          const llmResponse = await LlmService.chat(prompt, { maxTokens: 2048, timeout: 30 }); // 30秒超时
+          const llmResponse = await LlmService.chat(prompt, { maxTokens: 2048, timeout: 60 }); // 60秒超时,LLM响应实测需30-40秒
           const elapsed = Date.now() - startTime;
           console.log(`[PreAnalysis] LLM响应完成，耗时: ${elapsed}ms`);
           
