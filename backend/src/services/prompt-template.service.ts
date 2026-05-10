@@ -5,7 +5,7 @@
  * - module = 审查场景（与 Pipeline ReviewMode 一一对应）
  * - role = 提示词角色（system 定义角色和规则，user 填入变量数据）
  * - variant = 用户提示词变体（with_context / no_context 等，按数据来源区分）
- * - 引擎策略（RAG/LLM/MaxKB）是 Pipeline 运行时决策，不污染提示词分类
+ * - 引擎策略（RAG/LLM）是 Pipeline 运行时决策，不污染提示词分类
  *
  * 场景 → Pipeline 映射：
  * - library_review  → LIBRARY_REVIEW, FULL_REVIEW

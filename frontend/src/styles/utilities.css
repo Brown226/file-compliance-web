@@ -3,19 +3,19 @@
 /* 文字色 */
 .text-primary   { color: #111827; }
 .text-regular   { color: #374151; }
-.text-secondary { color: #64748b; }
-.text-muted     { color: #94a3b8; }
-.text-success   { color: var(--corp-success); }
-.text-warning   { color: var(--corp-warning); }
-.text-danger    { color: var(--corp-danger); }
-.text-link      { color: var(--corp-primary); }
+.text-secondary { color: #6B7280; }
+.text-muted     { color: #9CA3AF; }
+.text-success   { color: #10B981; }
+.text-warning   { color: #F59E0B; }
+.text-danger    { color: #EF4444; }
+.text-link      { color: #3B82F6; }
 
 /* 背景色 */
-.bg-surface { background-color: #ffffff; }
-.bg-page    { background-color: #f8fafc; }
-.bg-sidebar { background-color: #0f172a; }
+.bg-surface { background-color: #FFFFFF; }
+.bg-page    { background-color: #F5F5F5; }
+.bg-sidebar { background-color: #111111; }
 
-/* 间距辅助 (基于 8px 网格) */
+/* 间距辅助 */
 .gap-xs  { gap: 4px; }
 .gap-sm  { gap: 8px; }
 .gap-md  { gap: 12px; }
@@ -23,12 +23,12 @@
 .gap-xl  { gap: 24px; }
 
 .mt-sm { margin-top: 8px; }
-.mt-md { margin-top: 16px; }
+.mt-md { margin-top: 14px; }
 .mb-sm { margin-bottom: 8px; }
-.mb-md { margin-bottom: 16px; }
+.mb-md { margin-bottom: 14px; }
 
-.p-md  { padding: 16px; }
-.p-lg  { padding: 24px; }
+.p-md  { padding: 14px; }
+.p-lg  { padding: 20px; }
 
 /* Flex 常用布局 */
 .flex-center   { display: flex; align-items: center; justify-content: center; }
@@ -46,8 +46,8 @@
 .divider-h {
   width: 100%;
   height: 1px;
-  background-color: #e2e8f0;
-  margin: 12px 0;
+  background-color: #E5E7EB;
+  margin: 10px 0;
 }
 
 /* 状态指示点 */
@@ -58,30 +58,69 @@
   border-radius: 50%;
   margin-right: 6px;
 }
-.status-dot.success { background-color: var(--corp-success); }
-.status-dot.warning { background-color: var(--corp-warning); }
-.status-dot.danger  { background-color: var(--corp-danger); }
-.status-dot.info    { background-color: var(--corp-primary); }
-.status-dot.muted   { background-color: #94a3b8; }
+.status-dot.success { background-color: #10B981; }
+.status-dot.warning { background-color: #F59E0B; }
+.status-dot.danger  { background-color: #EF4444; }
+.status-dot.info    { background-color: #3B82F6; }
+.status-dot.muted   { background-color: #9CA3AF; }
+
+/* ===== Inset Shadow 卡片工具类 ===== */
+.card-inset {
+  border-radius: var(--radius-md);
+  box-shadow: var(--border-inset), 0 1px 2px rgba(0, 0, 0, 0.04);
+  background: #FFFFFF;
+}
+
+.card-elevated {
+  border-radius: var(--radius-md);
+  box-shadow: var(--border-inset), 0 8px 22px rgba(0, 0, 0, 0.04);
+  background: #FFFFFF;
+}
+
+/* ===== 左侧彩色竖条工具类（参考项目核心模式） ===== */
+.accent-block {
+  border-left: 4px solid;
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+  padding: 10px 12px;
+}
+.accent-block.accent-blue {
+  border-color: #60A5FA;
+  background: #EFF6FF;
+  color: #1E40AF;
+}
+.accent-block.accent-green {
+  border-color: #34D399;
+  background: #DCFCE7;
+  color: #166534;
+}
+.accent-block.accent-red {
+  border-color: #F87171;
+  background: #FEE2E2;
+  color: #991B1B;
+}
+.accent-block.accent-orange {
+  border-color: #FB923C;
+  background: #FFF7ED;
+  color: #9A3412;
+}
 
 /* ===== 滚动条 ===== */
 ::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
+  width: 5px;
+  height: 5px;
 }
 ::-webkit-scrollbar-track {
   background: transparent;
 }
 ::-webkit-scrollbar-thumb {
-  background: #cbd5e1;
+  background: #D1D5DB;
   border-radius: 3px;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: #94a3b8;
+  background: #9CA3AF;
 }
 
-/* Firefox scrollbar */
 * {
   scrollbar-width: thin;
-  scrollbar-color: #cbd5e1 transparent;
+  scrollbar-color: #D1D5DB transparent;
 }

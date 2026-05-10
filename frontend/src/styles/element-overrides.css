@@ -1,193 +1,211 @@
 /* ===== Element Plus 组件覆盖 =====
-  使用双重选择器提升特异性，避免 !important。
-  例：.el-card.el-card 优先级高于 .el-card
+   Design Language: 参考 contract-review-v2-master 的精致企业风格
+   核心模式: inset shadow 边框、8px 圆角、紧凑间距、heavy font weights
 */
 
-/* 卡片 — 极简 */
+/* 全局 — 所有交互元素 8px 圆角 */
+.el-button,
+.el-input__wrapper,
+.el-select__wrapper,
+.el-textarea__inner,
+.el-tag,
+.el-dialog,
+.el-card,
+.el-dropdown-menu,
+.el-popover,
+.el-tooltip__trigger {
+  border-radius: var(--radius-md) !important;
+}
+
+/* 卡片 — Inset Shadow 边框 + 轻微投影 */
 .el-card.el-card {
-  border: 1px solid var(--corp-border-light);
+  border: none;
   border-radius: var(--radius-md);
-  box-shadow: var(--shadow-sm);
+  box-shadow: var(--shadow-card);
   background-color: var(--bg-surface);
 }
 
 .el-card.el-card .el-card__header {
-  border-bottom: 1px solid var(--corp-border-light);
-  background-color: var(--color-gray-50);
-  font-weight: 600;
-  padding: 14px 20px;
-  font-size: 15px;
+  border-bottom: 1px solid #E5E7EB;
+  font-weight: 700;
+  padding: 12px 14px;
+  font-size: var(--text-lg);
 }
 
 .el-card.el-card .el-card__body {
-  padding: var(--space-5);
+  padding: 14px;
 }
 
-/* 按钮 — 纯色（通过 Element Plus CSS 变量覆盖） */
-::root {
-  --el-button-bg-color: var(--corp-primary);
-  --el-button-border-color: var(--corp-primary);
-  --el-button-text-color: #ffffff;
-  --el-button-border-radius: var(--radius-md);
-  --el-button-hover-bg-color: var(--corp-primary-dark);
-  --el-button-hover-border-color: var(--corp-primary-dark);
-}
-
+/* 按钮 — Near-black 主调 */
 .el-button.el-button--primary {
-  background-color: var(--corp-primary);
-  border-color: var(--corp-primary);
+  background-color: var(--color-action);
+  border-color: var(--color-action);
   color: #ffffff;
   border-radius: var(--radius-md);
+  font-weight: 700;
+  min-height: 32px;
 }
 .el-button.el-button--primary:hover,
 .el-button.el-button--primary:focus {
-  background-color: var(--corp-primary-dark);
-  border-color: var(--corp-primary-dark);
+  background-color: var(--color-action-hover);
+  border-color: var(--color-action-hover);
 }
 
 .el-button.el-button--success {
   background-color: var(--corp-success);
   border-color: var(--corp-success);
+  font-weight: 700;
 }
 .el-button.el-button--success:hover {
-  background-color: #15803d;
-  border-color: #15803d;
+  background-color: #059669;
+  border-color: #059669;
 }
 
 .el-button.el-button--warning {
   background-color: var(--corp-warning);
   border-color: var(--corp-warning);
+  font-weight: 700;
 }
 .el-button.el-button--warning:hover {
-  background-color: #b45309;
-  border-color: #b45309;
+  background-color: #D97706;
+  border-color: #D97706;
 }
 
 .el-button.el-button--danger {
   background-color: var(--corp-danger);
   border-color: var(--corp-danger);
+  font-weight: 700;
 }
 .el-button.el-button--danger:hover {
-  background-color: #b91c1c;
-  border-color: #b91c1c;
+  background-color: #DC2626;
+  border-color: #DC2626;
 }
 
 .el-button.el-button {
   border-radius: var(--radius-md);
-  font-weight: 500;
+  font-weight: 600;
+  font-size: var(--text-sm);
 }
 
-/* 输入框 */
+/* 输入框 — Inset Shadow 边框 */
 .el-form-item .el-input__wrapper {
   border-radius: var(--radius-md);
-  box-shadow: 0 0 0 1px var(--corp-border-light) inset;
+  box-shadow: 0 0 0 1px #E5E7EB inset;
   transition: box-shadow var(--corp-transition-fast);
 }
 .el-form-item .el-input__wrapper:focus-within {
-  box-shadow: 0 0 0 1px var(--corp-primary) inset;
+  box-shadow: 0 0 0 1px #3B82F6 inset, 0 0 0 3px rgba(59, 130, 246, 0.1);
 }
 .el-input__inner::placeholder {
-  color: var(--color-gray-400);
+  color: #9CA3AF;
 }
 
 /* Select 下拉框 */
 .el-form-item .el-select__wrapper {
   border-radius: var(--radius-md);
-  box-shadow: 0 0 0 1px var(--corp-border-light) inset;
+  box-shadow: 0 0 0 1px #E5E7EB inset;
 }
 .el-form-item .el-select__wrapper:focus-within {
-  box-shadow: 0 0 0 1px var(--corp-primary) inset;
+  box-shadow: 0 0 0 1px #3B82F6 inset, 0 0 0 3px rgba(59, 130, 246, 0.1);
 }
 
 /* Textarea */
 .el-form-item .el-textarea__inner {
   border-radius: var(--radius-md);
-  box-shadow: 0 0 0 1px var(--corp-border-light) inset;
+  box-shadow: 0 0 0 1px #E5E7EB inset;
 }
 .el-form-item .el-textarea__inner:focus {
-  box-shadow: 0 0 0 1px var(--corp-primary) inset;
+  box-shadow: 0 0 0 1px #3B82F6 inset, 0 0 0 3px rgba(59, 130, 246, 0.1);
 }
 
-/* 表格 */
+/* 表格 — 紧凑、无边框感 */
 .el-table {
-  --el-table-border-color: var(--corp-border-light);
-  --el-table-row-hover-bg-color: var(--corp-primary-lighter);
-  --el-table-header-bg-color: var(--corp-bg-sunken);
+  --el-table-border-color: #F0F0F0;
+  --el-table-row-hover-bg-color: #FAFAFA;
+  --el-table-header-bg-color: transparent;
+  font-size: var(--text-sm);
 }
 
 .el-table th.el-table__cell {
-  background-color: var(--corp-bg-sunken);
-  color: var(--color-gray-800);
-  font-weight: 600;
-  font-size: 13px;
+  background-color: transparent;
+  color: #666666;
+  font-weight: 800;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  border-bottom: 1px solid #EEEEEE;
 }
 
 .el-table td.el-table__cell {
-  font-size: var(--text-base);
-  color: var(--color-gray-700);
+  font-size: var(--text-sm);
+  color: #374151;
+  border-bottom: 1px solid #F0F0F0;
+  padding: 8px 0;
 }
 
 .el-table tr:hover > td.el-table__cell {
-  background-color: var(--corp-primary-lighter);
+  background-color: #FAFAFA;
 }
 
-/* Tag 标签 */
+/* Tag 标签 — 全圆角 Pill */
 .el-tag.el-tag {
-  border-radius: var(--radius-sm);
-  font-weight: 500;
-  border: 1px solid transparent;
+  border-radius: var(--radius-full);
+  font-weight: 700;
+  font-size: 11px;
+  border: none;
+  padding: 0 8px;
+  height: 22px;
+  line-height: 22px;
 }
 
 /* Dialog 对话框 */
 .el-dialog.el-dialog {
   border-radius: var(--radius-lg);
-  box-shadow: var(--shadow-xl);
+  box-shadow: var(--shadow-overlay);
 }
 
 .el-dialog__header {
-  border-bottom: 1px solid var(--corp-border-light);
-  padding-bottom: var(--space-4);
+  border-bottom: 1px solid #E5E7EB;
+  padding-bottom: 12px;
   margin-right: 0;
 }
 
 .el-dialog__title {
-  font-weight: 600;
-  font-size: var(--text-xl);
-  color: var(--corp-text-primary);
+  font-weight: 700;
+  font-size: var(--text-lg);
+  color: #111827;
 }
 
 .el-dialog__body {
-  color: var(--color-gray-700);
+  color: #374151;
+  font-size: var(--text-base);
 }
 
 /* Steps 步骤条 */
 .el-steps .el-step__line {
-  background-color: var(--color-gray-200);
+  background-color: #E5E7EB;
 }
-
 .el-step__head.is-wait .el-step__icon.is-icon {
-  background: var(--color-gray-200);
-  color: var(--corp-text-secondary);
-  border: 2px solid var(--color-gray-300);
+  background: #F5F5F5;
+  color: #9CA3AF;
+  border: 2px solid #E5E7EB;
 }
-
 .el-step__head.is-process .el-step__icon,
 .el-step__head.is-finish .el-step__icon {
-  border: 2px solid var(--corp-primary);
+  border: 2px solid #3B82F6;
 }
-
 .el-step__title.is-text {
-  font-weight: 500;
-  color: var(--color-gray-700);
+  font-weight: 600;
+  color: #374151;
 }
 .el-step__head.is-wait + .el-step__main .el-step__title {
-  color: var(--color-gray-400);
+  color: #9CA3AF;
 }
 
 /* Progress 进度条 */
 .el-progress-bar__outer {
   border-radius: var(--radius-md);
-  background-color: var(--color-gray-200);
+  background-color: #E5E7EB;
 }
 .el-progress-bar__inner {
   border-radius: var(--radius-md);
@@ -199,54 +217,56 @@
   border-radius: var(--radius-sm);
 }
 
-/* Message / Notification 消息提示 */
+/* Message / Notification */
 .el-message.el-message {
   border-radius: var(--radius-md);
-  box-shadow: var(--shadow-sm);
-  /* 修复消息弹窗抖动问题 */
+  box-shadow: var(--shadow-card);
   backface-visibility: hidden;
   transform: translateZ(0);
-  -webkit-font-smoothing: antialiased;
 }
-
 .el-notification.el-notification {
   border-radius: var(--radius-md);
-  box-shadow: var(--shadow-sm);
-}
-
-/* 修复 ElMessage 抖动：禁用 transform 动画过渡 */
-.el-message.fade-in-up-enter-active,
-.el-message.fade-in-up-leave-active {
-  transition: none !important;
-}
-
-.el-message.fade-in-up-enter-from {
-  opacity: 0;
-  transform: translateY(-20px) !important;
-}
-
-.el-message.fade-in-up-leave-to {
-  opacity: 0;
-  transform: translateY(-20px) !important;
+  box-shadow: var(--shadow-card);
 }
 
 /* Form 表单 */
 .el-form-item__label {
-  color: var(--color-gray-700);
-  font-weight: 500;
+  color: #374151;
+  font-weight: 600;
+  font-size: var(--text-sm);
 }
 
-/* ===== Vite 6 + Lightning CSS 修复（完整版） =====
-  根因：Lightning CSS 处理 CSS 降级（如 color-scheme）时，
-  错误地将 pointer-events: none 注入到各类交互元素上。
-  表现：只能点击内部 SVG icon，点击卡片/按钮/Tab 等区域无反应。
+/* Menu 侧边栏菜单 */
+.el-menu.el-menu {
+  border-right: none;
+}
+.el-tabs__item.is-active.is-active {
+  color: #3B82F6;
+}
+.el-tabs__active-bar.el-tabs__active-bar {
+  background-color: #3B82F6;
+}
 
-  修复策略：
-  1. 覆盖所有已知受影响的 EP 组件选择器
-  2. 用 [class*="card"]、[role="button"]、[data-*] 等属性选择器兜底自定义组件
-  3. 不覆盖 .el-overlay / .el-dialog__wrapper 等弹窗容器（避免破坏遮罩行为）
-*/
-/* 注意：仅覆盖 EP 组件选择器，避免使用 label/div 等原生标签（会干扰内部渲染） */
+/* Dropdown 下拉菜单 */
+.el-dropdown-menu.el-dropdown-menu {
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-elevated);
+  border: none;
+  padding: 4px;
+}
+
+/* Tooltip / Popover */
+.el-tooltip__trigger:focus-visible,
+.el-tooltip__trigger:focus {
+  outline-color: #3B82F6;
+}
+.el-popover.el-popover {
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-elevated);
+  border: none;
+}
+
+/* ===== Vite 6 + Lightning CSS 修复 ===== */
 .el-menu,
 .el-menu-item,
 .el-sub-menu__title,
@@ -272,34 +292,4 @@
 .el-tree-node,
 .el-tree-node__content {
   pointer-events: auto !important;
-}
-
-/* Menu 侧边栏菜单 */
-.el-menu.el-menu {
-  border-right: none;
-}
-.el-tabs__item.is-active.is-active {
-  color: var(--corp-primary);
-}
-.el-tabs__active-bar.el-tabs__active-bar {
-  background-color: var(--corp-primary);
-}
-
-/* Dropdown 下拉菜单 */
-.el-dropdown-menu.el-dropdown-menu {
-  border-radius: var(--radius-md);
-  box-shadow: var(--shadow-sm);
-  border: 1px solid var(--corp-border-light);
-}
-
-/* Tooltip — :focus-visible 兼容 Chrome < 86，添加 :focus fallback */
-.el-tooltip__trigger:focus-visible,
-.el-tooltip__trigger:focus {
-  outline-color: var(--corp-primary);
-}
-
-/* Popover */
-.el-popover.el-popover {
-  border-radius: var(--radius-md);
-  border: 1px solid var(--corp-border-light);
 }

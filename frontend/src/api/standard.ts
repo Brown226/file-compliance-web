@@ -157,6 +157,7 @@ export interface NormativeImportResult {
   valid: number
   imported: number
   skipped: number
+  message?: string
   errors: Array<{ row: number; message: string; data?: any }>
   preview: NormativePreviewItem[]
 }

@@ -13,7 +13,7 @@ import dashboardRoutes from './routes/dashboard.routes';
 import auditRoutes from './routes/audit.routes';
 import systemConfigRoutes from './routes/systemConfig.routes';
 import ruleRoutes from './routes/rule.routes';
-import maxkbRoutes from './routes/maxkb.routes';
+
 import standardFolderRoutes from './routes/standardFolder.routes';
 import terminologyRoutes from './routes/terminology.routes';
 import promptTemplateRoutes from './routes/promptTemplate.routes';
@@ -25,6 +25,7 @@ import announcementRoutes from './routes/announcement.routes';
 import knowledgeCategoryRoutes from './routes/knowledge-category.routes';
 import ruleLibraryRoutes from './routes/rule-library.routes';
 import qaRoutes from './routes/qa.routes';
+import onlyofficeRoutes from './routes/onlyoffice.routes';
 
 // 定时清理孤立文件（每天凌晨2点执行）
 import './services/scheduler.service';
@@ -55,7 +56,7 @@ app.use('/api/dashboard', dashboardRoutes);
 app.use('/api/audit-logs', auditRoutes);
 app.use('/api/system-config', systemConfigRoutes);
 app.use('/api/rules', ruleRoutes);
-app.use('/api/maxkb', maxkbRoutes);
+
 app.use('/api/terminology', terminologyRoutes);
 app.use('/api/prompt-templates', promptTemplateRoutes);
 app.use('/api/false-positive-library', falsePositiveLibraryRoutes);
@@ -66,6 +67,7 @@ app.use('/api/announcements', announcementRoutes);
 app.use('/api/knowledge-categories', knowledgeCategoryRoutes);
 app.use('/api/rule-libraries', ruleLibraryRoutes);
 app.use('/api/qa', qaRoutes);
+app.use('/api/onlyoffice', onlyofficeRoutes);
 app.get('/health', (req: Request, res: Response) => {
   res.status(200).json({ status: 'OK', message: 'Server is running' });
 });

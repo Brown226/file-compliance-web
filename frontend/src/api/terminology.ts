@@ -23,7 +23,7 @@ export interface TerminologyCategory {
 
 /** 获取术语分类列表 */
 export function getTerminologyCategoriesApi() {
-  return request.get<TerminologyCategory[]>('/terminology/categories')
+  return request.get<{ categories: TerminologyCategory[]; totalCount: number }>('/terminology/categories')
 }
 
 /** 查询术语列表 */
@@ -33,7 +33,7 @@ export function getTerminologyListApi(params?: {
   page?: number
   pageSize?: number
 }) {
-  return request.get<PaginatedResponse<TerminologyEntry>>('/terminology', { params })
+  return request.get<{ terms: TerminologyEntry[]; total: number; page: number; limit: number }>('/terminology', { params })
 }
 
 /** 新增术语 */

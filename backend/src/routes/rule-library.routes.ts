@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { authenticate } from '../middlewares/auth.middleware';
 import { requireRole } from '../middlewares/rbac.middleware';
 import multer from 'multer';
+import path from 'path';
 import {
   listLibraries,
   getLibrary,
@@ -15,7 +16,7 @@ import {
 } from '../controllers/rule-library.controller';
 
 const router = Router();
-const upload = multer({ dest: 'uploads/tmp/' });
+const upload = multer({ dest: path.join(__dirname, '../../uploads/tmp/') });
 
 router.use(authenticate);
 

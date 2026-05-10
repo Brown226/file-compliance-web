@@ -132,7 +132,7 @@ export class VectorService {
 
       await prisma.$executeRawUnsafe(`
         INSERT INTO vector_documents
-          (id, category_id, source_type, source_id, title, clause_id, content, content_hash, chunk_index, metadata, embedding, created_at, updated_at)
+          (id, "categoryId", source_type, source_id, title, clause_id, content, content_hash, chunk_index, metadata, embedding, created_at, updated_at)
         VALUES
           (gen_random_uuid(), $1, $2, $3, $4, $5, $6, $7, $8, $9::jsonb, $10::vector, NOW(), NOW())
       `,
@@ -193,7 +193,7 @@ export class VectorService {
       paramIndex++;
     }
     if (filter.categoryId) {
-      conditions.push(`category_id = $${paramIndex}`);
+      conditions.push(`"categoryId" = $${paramIndex}`);
       params.push(filter.categoryId);
       paramIndex++;
     }
@@ -224,14 +224,22 @@ export class VectorService {
     const { limit, sourceTypes, categoryId } = options;
     const embeddingStr = `[${queryVector.join(',')}]`;
 
+    const params: any[] = [embeddingStr];
+    let paramIndex = 2;
+
     let sourceTypeFilter = '';
     if (sourceTypes?.length) {
-      sourceTypeFilter = `AND source_type = ANY(${this.pgArrayLiteral(sourceTypes)})`;
+      sourceTypeFilter = `AND source_type = ANY($${paramIndex}::text[])`;
+      params.push(sourceTypes);
+      paramIndex++;
     }
     let categoryFilter = '';
     if (categoryId) {
-      categoryFilter = `AND category_id = '${categoryId.replace(/'/g, "''")}'`;
+      categoryFilter = `AND "categoryId" = $${paramIndex}`;
+      params.push(categoryId);
+      paramIndex++;
     }
+    params.push(limit);
 
     const rows = await prisma.$queryRawUnsafe<any[]>(`
       SELECT id, source_type, source_id, title, clause_id, content, content_hash, chunk_index, metadata,
@@ -239,8 +247,8 @@ export class VectorService {
       FROM vector_documents
       WHERE embedding IS NOT NULL ${sourceTypeFilter} ${categoryFilter}
       ORDER BY embedding <=> $1::vector
-      LIMIT ${limit}
-    `, embeddingStr);
+      LIMIT $${paramIndex}
+    `, ...params);
 
     return rows.map(row => ({
       id: row.id,
@@ -288,7 +296,7 @@ export class VectorService {
       paramIndex++;
     }
     if (categoryId) {
-      sql += ` AND category_id = $${paramIndex}`;
+      sql += ` AND "categoryId" = $${paramIndex}`;
       params.push(categoryId);
       paramIndex++;
     }

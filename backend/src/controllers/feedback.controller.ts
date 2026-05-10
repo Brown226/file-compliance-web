@@ -176,7 +176,7 @@ export const getFeedbackDetail = async (req: AuthRequest, res: Response): Promis
   } catch (err) {
     console.error('Get Feedback Detail Error:', err);
     if (err instanceof Error && err.message === '无权查看此反馈') {
-      error(res, err.message, 403);
+      error(res, '无权查看此反馈', 403);
     } else {
       error(res, '获取反馈详情失败', 500);
     }
@@ -244,7 +244,7 @@ export const updateFeedbackStatus = async (req: AuthRequest, res: Response): Pro
   } catch (err) {
     console.error('Update Feedback Status Error:', err);
     if (err instanceof Error && err.message === '反馈不存在') {
-      error(res, err.message, 404);
+      error(res, '反馈不存在', 404);
     } else {
       error(res, '更新反馈状态失败', 500);
     }
@@ -275,7 +275,7 @@ export const deleteFeedback = async (req: AuthRequest, res: Response): Promise<v
   } catch (err) {
     console.error('Delete Feedback Error:', err);
     if (err instanceof Error && err.message === '反馈不存在') {
-      error(res, err.message, 404);
+      error(res, '反馈不存在', 404);
     } else {
       error(res, '删除反馈失败', 500);
     }

@@ -516,14 +516,14 @@ const roleLabel = (role: string): string => {
   return map[role] || role
 }
 
-const roleTagType = (role: string): string => {
-  const map: Record<string, string> = {
+const roleTagType = (role: string): 'warning' | 'info' | 'success' | 'danger' | 'primary' => {
+  const map: Record<string, 'warning' | 'info' | 'success' | 'danger' | 'primary'> = {
     system: 'danger',
     user: 'primary',
     rag_prompt: 'success',
     fallback: 'warning',
     optimization: 'info',
-    greeting: '',
+    greeting: 'info',
   }
   return map[role] || 'info'
 }

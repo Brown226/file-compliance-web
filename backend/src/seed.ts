@@ -242,7 +242,8 @@ async function seed() {
       key: 'llm_chat_model',
       value: {
         serviceType: 'siliconflow',
-        apiKey: 'sk-oilujlprpzdbnphjaqcbvktfwvskabjascfwolsezpuxysmy',
+        // TODO: 在系统管理页面配置真实 API Key
+        apiKey: 'sk-placeholder-replace-in-production',
         apiBaseUrl: 'https://api.siliconflow.cn/v1',
         modelName: 'Qwen/Qwen2.5-72B-Instruct',
         maxTokens: 4096,
@@ -262,7 +263,8 @@ async function seed() {
       key: 'llm_ocr_model',
       value: {
         serviceType: 'siliconflow',
-        apiKey: 'sk-oilujlprpzdbnphjaqcbvktfwvskabjascfwolsezpuxysmy',
+        // TODO: 在系统管理页面配置真实 API Key
+        apiKey: 'sk-placeholder-replace-in-production',
         apiBaseUrl: 'https://api.siliconflow.cn/v1',
         modelName: 'deepseek-ai/DeepSeek-OCR',
         timeout: 180,
@@ -282,7 +284,8 @@ async function seed() {
       key: 'llm_embedding_model',
       value: {
         serviceType: 'siliconflow',
-        apiKey: 'sk-oilujlprpzdbnphjaqcbvktfwvskabjascfwolsezpuxysmy',
+        // TODO: 在系统管理页面配置真实 API Key
+        apiKey: 'sk-placeholder-replace-in-production',
         apiBaseUrl: 'https://api.siliconflow.cn/v1',
         modelName: 'BAAI/bge-m3',
         dimensions: 1024,
@@ -301,7 +304,8 @@ async function seed() {
       key: 'llm_rerank_model',
       value: {
         serviceType: 'siliconflow',
-        apiKey: 'sk-oilujlprpzdbnphjaqcbvktfwvskabjascfwolsezpuxysmy',
+        // TODO: 在系统管理页面配置真实 API Key
+        apiKey: 'sk-placeholder-replace-in-production',
         apiBaseUrl: 'https://api.siliconflow.cn/v1',
         modelName: 'BAAI/bge-reranker-v2-m3',
         topK: 8,

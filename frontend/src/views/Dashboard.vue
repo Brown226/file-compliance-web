@@ -295,7 +295,7 @@ import {
   LegendComponent,
 } from 'echarts/components';
 import { CanvasRenderer } from 'echarts/renderers';
-import { LinearGradient } from 'echarts/lib/util/graphic';
+// LinearGradient accessed via echarts.graphic below
 import {
   DocumentChecked, Warning, CircleClose, Timer,
   WarningFilled, EditPen, List, Collection, ChatDotRound,
@@ -459,8 +459,8 @@ const getStatusLabel = (status: string) => {
   return map[status] || status;
 };
 
-const getStatusTagType = (status: string) => {
-  const map: Record<string, string> = { PENDING: 'info', PROCESSING: '', COMPLETED: 'success', FAILED: 'danger' };
+const getStatusTagType = (status: string): 'warning' | 'info' | 'success' | 'danger' | 'primary' => {
+  const map: Record<string, 'warning' | 'info' | 'success' | 'danger' | 'primary'> = { PENDING: 'info', PROCESSING: 'primary', COMPLETED: 'success', FAILED: 'danger' };
   return map[status] || 'info';
 };
 
@@ -559,6 +559,7 @@ const userKpiList = computed(() => [
     icon: DocumentChecked,
     theme: 'primary' as const,
     trend: undefined as number | undefined,
+    trendUnit: '',
   },
   {
     label: '合规率',
@@ -567,6 +568,7 @@ const userKpiList = computed(() => [
     icon: CircleClose,
     theme: 'success' as const,
     trend: undefined as number | undefined,
+    trendUnit: '%',
   },
   {
     label: '待处理问题',
@@ -575,6 +577,7 @@ const userKpiList = computed(() => [
     icon: Warning,
     theme: 'warning' as const,
     trend: undefined as number | undefined,
+    trendUnit: '项',
   },
   {
     label: '平均耗时',
@@ -583,6 +586,7 @@ const userKpiList = computed(() => [
     icon: Timer,
     theme: 'success' as const,
     trend: undefined as number | undefined,
+    trendUnit: '%',
   },
 ]);
 
@@ -758,7 +762,7 @@ const renderCharts = () => {
         itemStyle: { color: '#2563EB' },
         lineStyle: { width: 2 },
         areaStyle: {
-          color: new LinearGradient(0, 0, 0, 1, [
+          color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
             { offset: 0, color: 'rgba(37,99,235,0.15)' },
             { offset: 1, color: 'rgba(37,99,235,0.02)' },
           ]),
@@ -775,7 +779,7 @@ const renderCharts = () => {
         itemStyle: { color: '#EF4444' },
         lineStyle: { width: 2 },
         areaStyle: {
-          color: new LinearGradient(0, 0, 0, 1, [
+          color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
             { offset: 0, color: 'rgba(239,68,68,0.15)' },
             { offset: 1, color: 'rgba(239,68,68,0.02)' },
           ]),

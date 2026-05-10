@@ -108,6 +108,46 @@ export function toggleFalsePositiveApi(detailId: string, data: { isFalsePositive
   return request.patch<TaskDetail>(`/tasks/details/${detailId}/false-positive`, data)
 }
 
+// 轻量级上传（仅用于预分析，不创建任务）
+export function uploadOnlyApi(formData: FormData) {
+  return request.post<{
+    code: number;
+    message: string;
+    data: {
+      files: Array<{
+        fileName: string;
+        filePath: string;
+        fileSize: number;
+        fileType: string;
+      }>;
+    };
+  }>('/tasks/upload-only', formData, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+  })
+}
+
+// 预分析 — 智能推荐审查方案
+export function preAnalyzeApi(files: Array<{ name: string; size: number }>) {
+  return request.post<{
+    documentType: string;
+    documentTypeLabel: string;
+    contractType?: string; // 文件类型（兼容字段）
+    suggestedPerspective?: string;
+    suggestedReviewPoints?: string[]; // 推荐的审查点
+    suggestedCorePurposes?: string[]; // 推荐的核心目的
+    recommendations: {
+      libraryReview: { enabled: boolean; categoryId?: string; reason: string };
+      docReview: { enabled: boolean; reason: string };
+      ruleLibrary: { enabled: boolean; libraryId?: string; reason: string };
+      generalChecks: {
+        ruleCheck: { enabled: boolean; reason: string };
+        typoCheck: { enabled: boolean; reason: string };
+        crossFileCheck: { enabled: boolean; reason: string };
+      };
+    };
+  }>('/tasks/pre-analyze', { files }, { timeout: 120000 }) // LLM分析需要更长时间，设置为2分钟
+}
+
 // 获取文件提取文本内容（用于原文预览定位）
 export function getTaskFileContentApi(taskId: string, fileId: string) {
   return request.get<{ extractedText: string | null; fileName: string; fileType: string }>(`/tasks/${taskId}/files/${fileId}/content`)

@@ -58,6 +58,27 @@ services:
         reservations:
           memory: 256M
 
+  onlyoffice:
+    image: onlyoffice/documentserver
+    container_name: file_review_onlyoffice
+    restart: unless-stopped
+    ports:
+      - "8082:80"
+    environment:
+      - JWT_ENABLED=true
+      - JWT_SECRET=${ONLYOFFICE_JWT_SECRET:-change-me-onlyoffice-jwt-secret}
+      - JWT_IN_BODY=true
+      - JWT_HEADER=Authorization
+    volumes:
+      - onlyoffice_data:/var/www/onlyoffice/Data
+      - onlyoffice_logs:/var/log/onlyoffice
+      - onlyoffice_lib:/var/lib/onlyoffice
+      - onlyoffice_db:/var/lib/postgresql
+
 volumes:
   postgres_data:
   redis_data:
+  onlyoffice_data:
+  onlyoffice_logs:
+  onlyoffice_lib:
+  onlyoffice_db:

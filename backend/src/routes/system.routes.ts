@@ -2,9 +2,43 @@ import { Router, Request, Response } from 'express';
 import { authenticate } from '../middlewares/auth.middleware';
 import { requireRole } from '../middlewares/rbac.middleware';
 import FileCleanupService from '../services/file-cleanup.service';
+import { PythonParserService } from '../services/python-parser.service';
+import { redisClient } from '../utils/redis';
 import path from 'path';
 
 const router = Router();
+
+// 服务健康检查（无需认证，供前端状态指示器使用）
+router.get('/health', async (req: Request, res: Response) => {
+  const services: Array<{ name: string; reachable: boolean; error?: string }> = [];
+
+  // MarkItDown 解析服务
+  try {
+    const markitdown = await PythonParserService.healthCheck();
+    services.push({ name: 'MarkItDown 文档解析', ...markitdown });
+  } catch (e: any) {
+    services.push({ name: 'MarkItDown 文档解析', reachable: false, error: e.message });
+  }
+
+  // Redis
+  try {
+    await redisClient.getClient().ping();
+    services.push({ name: 'Redis', reachable: true });
+  } catch (e: any) {
+    services.push({ name: 'Redis', reachable: false, error: e.message });
+  }
+
+  // PostgreSQL（通过 Prisma 查询）
+  try {
+    const { default: prisma } = await import('../config/db');
+    await prisma.$queryRaw`SELECT 1`;
+    services.push({ name: 'PostgreSQL', reachable: true });
+  } catch (e: any) {
+    services.push({ name: 'PostgreSQL', reachable: false, error: e.message });
+  }
+
+  res.json({ code: 200, data: { services } });
+});
 
 // 获取存储统计信息
 router.get('/storage-stats', authenticate, requireRole('ADMIN'), async (req: Request, res: Response) => {

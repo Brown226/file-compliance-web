@@ -4,6 +4,7 @@ import { LlmService, ReviewIssue } from './llm.service';
 import { createPipelineAsync, PipelineContext } from './review-pipeline';
 import { CrossFileConsistencyService } from './cross-file-consistency.service';
 import { WebSocketService } from './websocket.service';
+import { ConcurrencyService } from './concurrency.service';
 import path from 'path';
 
 /**
@@ -119,6 +120,19 @@ export class ReviewService {
    */
   static async processTask(taskId: string): Promise<void> {
     console.log(`[Review] 开始处理任务: ${taskId}`);
+
+    // 全局并发控制：等待获取槽位
+    let slotAcquired = false;
+    try {
+      // 先获取任务信息以拿到 userId
+      const taskForQueue = await prisma.task.findUnique({ where: { id: taskId }, select: { creatorId: true } });
+      if (taskForQueue) {
+        await ConcurrencyService.waitForSlot(taskId, taskForQueue.creatorId);
+        slotAcquired = true;
+      }
+    } catch (e) {
+      console.warn(`[Review] 全局并发控制异常，继续执行: ${e}`);
+    }
 
     try {
       // ===== 一次性加载所有数据 =====
@@ -509,6 +523,15 @@ export class ReviewService {
           timestamp: Date.now(),
         });
       } catch (e) { /* ignore */ }
+    } finally {
+      // 释放全局并发槽位
+      if (slotAcquired) {
+        try {
+          await ConcurrencyService.releaseSlot(taskId);
+        } catch (e) {
+          console.warn(`[Review] 释放全局槽位失败: ${e}`);
+        }
+      }
     }
   }
 
@@ -705,7 +728,7 @@ export class ReviewService {
   /**
    * 阶段2: AI 深度审查
    * - 使用阶段1已提取的 ctx.extractedText 和 ctx.pdfPages
-   * - 执行 AI/MaxKB/LLM 审查
+   * - 执行 AI/LLM 审查
    * - 完成后写入数据库并返回结果
    */
   static async runFileSlowPhase(

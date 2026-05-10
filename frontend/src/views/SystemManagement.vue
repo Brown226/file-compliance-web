@@ -353,6 +353,49 @@
           </el-tab-pane>
         </el-tabs>
       </div>
+
+      <!-- 基础设置 -->
+      <div v-show="activeTab === 'basic'" class="tab-content">
+        <el-card shadow="never">
+          <template #header>
+            <span style="font-weight: 600;">系统基础设置</span>
+          </template>
+          <el-form :model="basicSettings" label-width="140px" label-position="left" style="max-width: 600px;">
+            <el-form-item label="系统名称">
+              <el-input v-model="basicSettings.systemName" placeholder="核审通" />
+            </el-form-item>
+            <el-form-item label="文件上传大小限制 (MB)">
+              <el-input-number v-model="basicSettings.maxUploadSizeMB" :min="1" :max="500" />
+            </el-form-item>
+            <el-form-item label="自动清理天数">
+              <el-input-number v-model="basicSettings.autoCleanupDays" :min="0" :max="365" />
+              <div class="form-tip">0 表示不自动清理。已完成任务的文件在指定天数后自动删除。</div>
+            </el-form-item>
+            <el-form-item label="全局并发上限">
+              <el-input-number v-model="basicSettings.globalConcurrencyLimit" :min="1" :max="20" />
+              <div class="form-tip">同时处理的审查任务总数上限，超出的任务进入排队。</div>
+            </el-form-item>
+            <el-form-item>
+              <el-button type="primary" @click="handleSaveBasicSettings" :loading="basicSettingsSaving">保存设置</el-button>
+            </el-form-item>
+          </el-form>
+        </el-card>
+
+        <el-card shadow="never" style="margin-top: 16px;">
+          <template #header>
+            <span style="font-weight: 600;">服务状态</span>
+          </template>
+          <div class="service-status-list">
+            <div v-for="svc in serviceStatuses" :key="svc.name" class="service-status-item">
+              <span class="svc-name">{{ svc.name }}</span>
+              <el-tag :type="svc.reachable ? 'success' : 'danger'" size="small">
+                {{ svc.reachable ? '正常' : '不可达' }}
+              </el-tag>
+              <span v-if="svc.error" class="svc-error">{{ svc.error }}</span>
+            </div>
+          </div>
+        </el-card>
+      </div>
     </div>
 
     <!-- 部门弹窗 -->
@@ -672,6 +715,9 @@ import {
   batchUpdateUsernamesApi,
   getStorageStatsApi,
   cleanupFilesApi,
+  getSystemConfigApi,
+  saveSystemConfigApi,
+  type StorageStats,
 } from '@/api/system'
 import FeedbackManagement from '@/views/FeedbackManagement.vue'
 import AnnouncementManagement from '@/views/AnnouncementManagement.vue'
@@ -684,12 +730,58 @@ import PromptConfigTab from '@/views/PromptConfig.vue'
 // ========== Tab 导航 ==========
 const activeTab = ref('department')
 const aiEngineTab = ref('chat')
+
+// ========== 基础设置 ==========
+const basicSettingsSaving = ref(false)
+const basicSettings = reactive({
+  systemName: '核审通',
+  maxUploadSizeMB: 100,
+  autoCleanupDays: 0,
+  globalConcurrencyLimit: 5,
+})
+
+const serviceStatuses = ref<Array<{ name: string; reachable: boolean; error?: string }>>([])
+
+const handleSaveBasicSettings = async () => {
+  basicSettingsSaving.value = true
+  try {
+    await saveSystemConfigApi('basic_settings', basicSettings)
+    ElMessage.success('基础设置已保存')
+  } catch (e: any) {
+    ElMessage.error(`保存失败: ${e.message || '未知错误'}`)
+  } finally {
+    basicSettingsSaving.value = false
+  }
+}
+
+const loadBasicSettings = async () => {
+  try {
+    const { data } = await getSystemConfigApi('basic_settings')
+    const v = typeof data?.value === 'string' ? JSON.parse(data.value) : (data?.value || {})
+    if (v && typeof v === 'object') {
+      if (v.systemName) basicSettings.systemName = v.systemName
+      if (v.maxUploadSizeMB) basicSettings.maxUploadSizeMB = v.maxUploadSizeMB
+      if (v.autoCleanupDays != null) basicSettings.autoCleanupDays = v.autoCleanupDays
+      if (v.globalConcurrencyLimit) basicSettings.globalConcurrencyLimit = v.globalConcurrencyLimit
+    }
+  } catch {}
+}
+
+const loadServiceStatuses = async () => {
+  try {
+    const { data } = await fetch('/api/system/health').then(r => r.json())
+    serviceStatuses.value = data?.services || []
+  } catch {
+    serviceStatuses.value = []
+  }
+}
 const navTabs = [
   { label: '部门管理', value: 'department', icon: '🏢', desc: '组织架构与员工' },
   { label: '存储管理', value: 'storage', icon: '💾', desc: '文件存储与清理' },
   { label: '反馈建议', value: 'feedback', icon: '💬', desc: '用户反馈与处理' },
   { label: '公告管理', value: 'announcement', icon: '📢', desc: '系统公告发布与管理' },
   { label: 'AI 引擎', value: 'ai-engine', icon: '🤖', desc: '模型与提示词配置' },
+  { label: '基础设置', value: 'basic', icon: '⚙️', desc: '系统名称、限制、服务状态' },
 ]
 
 // ========== 部门管理 ==========
@@ -1772,7 +1864,7 @@ const downloadFixTemplate = () => {
 const storageLoading = ref(false)
 const cleanupLoading = ref(false)
 const cleanupDays = ref(7)
-const storageStats = ref<any>({})
+const storageStats = ref<StorageStats & { referencedPercent?: string; orphanedPercent?: string }>({} as any)
 
 const fetchStorageStats = async () => {
   // 检查登录状态
@@ -1785,7 +1877,7 @@ const fetchStorageStats = async () => {
   storageLoading.value = true
   try {
     const { data } = await getStorageStatsApi()
-    const stats = data || {}
+    const stats: StorageStats = data || {} as StorageStats
     storageStats.value = {
       ...stats,
       // 计算百分比
@@ -1849,6 +1941,8 @@ onMounted(() => {
   fetchDeptEmployeesForCount() // 获取角色统计数据
   fetchEmployees()
   fetchStorageStats()
+  loadBasicSettings()
+  loadServiceStatuses()
   document.addEventListener('click', handleClickOutside)
 })
 
@@ -2595,5 +2689,38 @@ onUnmounted(() => {
   font-size: 13px;
   color: var(--el-color-warning);
   text-align: center;
+}
+
+/* ========== 基础设置 ========== */
+.form-tip {
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
+  margin-top: 4px;
+}
+
+.service-status-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.service-status-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 12px;
+  background: var(--el-fill-color-lighter);
+  border-radius: 6px;
+}
+
+.svc-name {
+  font-weight: 500;
+  min-width: 180px;
+  color: var(--el-text-color-primary);
+}
+
+.svc-error {
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
 }
 </style>

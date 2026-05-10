@@ -91,6 +91,7 @@ import { ref, onMounted, nextTick } from 'vue'
 import { Plus, Delete } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import { useUserStore } from '@/stores/user'
+import { useMarkdown } from '@/composables/useMarkdown'
 import {
   getQASessionsApi,
   createQASessionApi,
@@ -107,19 +108,7 @@ const sessions = ref<any[]>([])
 const currentSessionId = ref('')
 const chatContainer = ref<HTMLElement | null>(null)
 
-const escapeHtml = (text: string) => String(text || '')
-  .replace(/&/g, '&amp;')
-  .replace(/</g, '&lt;')
-  .replace(/>/g, '&gt;')
-  .replace(/"/g, '&quot;')
-
-const renderMarkdown = (text: string) => {
-  // 简单 markdown 渲染：加粗、代码块、换行
-  return escapeHtml(text)
-    .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
-    .replace(/`(.*?)`/g, '<code>$1</code>')
-    .replace(/\n/g, '<br>')
-}
+const { renderMarkdown } = useMarkdown()
 
 const scrollToBottom = async () => {
   await nextTick()

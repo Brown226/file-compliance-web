@@ -86,7 +86,8 @@ export class PromptTemplateController {
   /** PATCH /api/prompt-templates/:key/toggle — 启用/禁用 */
   static async toggle(req: Request, res: Response) {
     try {
-      const { enabled } = req.body;
+      const body = req.body || {};
+      const { enabled } = body;
       if (typeof enabled !== 'boolean') {
         return res.status(400).json({ code: 400, message: 'enabled 字段必须为布尔值' });
       }

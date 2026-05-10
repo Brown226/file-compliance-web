@@ -19,7 +19,7 @@ export interface UserInfo {
 }
 
 /** 任务状态 */
-export type TaskStatus = 'PENDING' | 'PROCESSING' | 'COMPLETED' | 'FAILED'
+export type TaskStatus = 'PENDING' | 'PROCESSING' | 'COMPLETED' | 'FAILED' | 'CANCELLED'
 
 /** 审查模式 */
 export type ReviewMode = 'TEXT' | 'IMAGE' | 'DOCUMENT'
@@ -75,6 +75,8 @@ export interface TaskDetail {
   originalText: string
   suggestedText: string
   description: string
+  /** 通俗语言解释 */
+  plainLanguage?: string | null
   cadHandleId?: string
   diffRanges?: DiffRange[]
   standardRefId?: string
@@ -125,6 +127,22 @@ export interface Standard {
   enabled: boolean
   createdAt: string
   updatedAt: string
+  /** Normative 标准编号 */
+  standardNo?: string
+  /** Normative 标准名称 */
+  standardName?: string
+  /** Normative 标识符 (如 GB/T) */
+  standardIdent?: string
+  /** Normative 状态 */
+  standardStatus?: 'CURRENT' | 'UPCOMING' | 'ABOLISHED'
+  /** 发布日期 */
+  publishDate?: string
+  /** 实施日期 */
+  implementDate?: string
+  /** 废止日期 */
+  abolishDate?: string
+  /** 启用状态 */
+  isActive?: boolean
 }
 
 /** 知识库 */
@@ -219,6 +237,22 @@ export interface DashboardStats {
   highSeverityCount: number
   mediumSeverityCount: number
   lowSeverityCount: number
+  /** 扩展字段：用户视图 */
+  myTasks?: { by_status?: Record<string, number>; total?: number }
+  pendingIssues?: any[]
+  avgProcessingTimeMs?: number
+  complianceRate?: number
+  /** 扩展字段：领导视图 */
+  taskStats?: Record<string, number>
+  issues?: { by_severity?: Record<string, number> }
+  issueStats?: Record<string, number>
+  frequentTypos?: any[]
+  topViolations?: any[]
+  departmentStats?: any[]
+  averageProcessingTimeMs?: number
+  bySeverity?: Record<string, number>
+  unhandledHigh?: any[]
+  comparedToLastPeriod?: { tasksDelta?: number; complianceDelta?: number; avgTimeDelta?: number }
 }
 
 /** 仪表盘趋势数据 */
@@ -282,7 +316,8 @@ export interface PromptTemplate {
 export interface PromptModule {
   key: string
   name: string
-  count?: number
+  label: string
+  count: number
 }
 
 /** LLM 测试结果 */

@@ -5,7 +5,7 @@ import fs from 'fs';
 import path from 'path';
 import { ParserService } from './parser.service';
 import { StandardFolderService } from './standardFolder.service';
-import { MaxKBService } from './maxkb.service';
+
 import { StandardExtractorService } from './standard-extractor.service';
 import { StandardCheckService, StandardCheckItem } from './standard-check.service';
 import { CharDiffService } from './char-diff.service';
@@ -236,16 +236,6 @@ export class StandardService {
   }
 
   static async deleteStandard(id: string): Promise<Standard> {
-    // 删除前检查是否有 MaxKB 关联文档，如有则自动清理
-    const standard = await prisma.standard.findUnique({ where: { id } });
-    if (standard?.maxkbDocId) {
-      try {
-        await MaxKBService.deleteStandardDocument(id);
-        console.log(`[Standard] 已自动清理 MaxKB 文档: ${standard.title}`);
-      } catch (e: any) {
-        console.warn(`[Standard] 清理 MaxKB 文档失败 (${standard.title}):`, e.message);
-      }
-    }
     return prisma.standard.delete({ where: { id } });
   }
 

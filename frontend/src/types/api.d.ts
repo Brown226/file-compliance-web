@@ -23,6 +23,10 @@ export interface PaginatedResponse<T> {
   total: number
   page: number
   limit: number
+  /** 兼容后端部分接口返回 data 字段而非 items */
+  data?: T[]
+  /** 兼容后端部分接口返回 totalPages 字段 */
+  totalPages?: number
 }
 
 /** 类型安全封装：请求返回的 data 部分类型 */

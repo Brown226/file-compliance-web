@@ -314,7 +314,7 @@ export abstract class BasePipeline {
     text: string,
     ctx: PipelineContext,
   ): Promise<{ issues: ReviewIssue[]; engine: string; sources?: SourceReference[] }> {
-    // 获取知识子库 ID：优先使用新字段，兼容旧 maxkbKnowledgeId
+    // 获取知识子库 ID
     const knowledgeIds = ctx.knowledgeCategoryIds && ctx.knowledgeCategoryIds.length > 0
       ? ctx.knowledgeCategoryIds
       : ctx.knowledgeCategoryId
@@ -579,7 +579,7 @@ export abstract class BasePipeline {
   }
 
   /**
-   * AI 策略: 纯 LLM 直接调用（跳过 MaxKB/RAG）
+   * AI 策略: 纯 LLM 直接调用（跳过 RAG）
    * 用于 TYPO_GRAMMAR 等轻量模式
    */
   protected async runLLMOnlyStrategy(

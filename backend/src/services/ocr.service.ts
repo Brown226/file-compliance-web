@@ -9,8 +9,8 @@ import { PromptTemplateService } from './prompt-template.service';
 
 // 默认 OCR 配置
 const DEFAULT_OCR_CONFIG = {
-  apiBaseUrl: 'https://api.siliconflow.cn/v1',
-  apiKey: '',  // 必须通过数据库配置提供，不再硬编码密钥
+  apiBaseUrl: 'http://localhost:11434/v1',
+  apiKey: '',
   modelName: 'PaddlePaddle/PaddleOCR-VL-1.5',
   timeout: 180000,
 };

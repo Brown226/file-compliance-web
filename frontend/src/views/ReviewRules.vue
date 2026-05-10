@@ -332,8 +332,8 @@ const severityShortLabel = (severity: string) => {
   return map[severity] || severity
 }
 
-const severityTagType = (severity: string): '' | 'success' | 'warning' | 'info' | 'danger' => {
-  const map: Record<string, '' | 'success' | 'warning' | 'info' | 'danger'> = {
+const severityTagType = (severity: string): 'warning' | 'info' | 'success' | 'danger' | 'primary' => {
+  const map: Record<string, 'warning' | 'info' | 'success' | 'danger'> = {
     error: 'danger', warning: 'warning', info: 'info'
   }
   return map[severity] || 'info'

@@ -151,10 +151,28 @@ model TaskFile {
   extractedText      String?       @db.Text  // 解析后的纯文本（规则引擎用，缓存）
   extractedMarkdown  String?       @db.Text  // 解析后的 Markdown（LLM 审查+前端预览用，缓存）
   dwgMetadata      Json?    @map("dwg_metadata")  // DWG 文件级元数据（图层列表、图元统计等）
+  documentKey      String?     @unique @map("document_key")  // OnlyOffice 文档密钥，用于缓存失效
   details         TaskDetail[]
+  versions        FileVersion[]
   createdAt       DateTime      @default(now())
 
   @@map("task_files")
+}
+
+model FileVersion {
+  id           String   @id @default(uuid())
+  fileId       String
+  file         TaskFile @relation(fields: [fileId], references: [id], onDelete: Cascade)
+  versionNo    Int      @map("version_no")
+  sourceAction String   @map("source_action")    // replace-text, batch-replace-text, manual-save
+  storagePath  String?  @map("storage_path")      // 快照文件路径
+  plainText    String?  @map("plain_text") @db.Text  // 提取的纯文本（用于 diff）
+  createdBy    String?  @map("created_by")
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  @@unique([fileId, versionNo])
+  @@index([fileId])
+  @@map("file_versions")
 }
 
 enum FileStatus {

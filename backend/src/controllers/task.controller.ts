@@ -1,5 +1,6 @@
 import { Request, Response } from 'express';
 import { TaskService } from '../services/task.service';
+import { PreAnalysisService } from '../services/pre-analysis.service';
 import { AuthRequest } from '../middlewares/auth.middleware';
 import { getTaskFilterByRole } from '../middlewares/rbac.middleware';
 import { TaskStatus } from '@prisma/client';
@@ -69,7 +70,7 @@ export const createTask = async (req: AuthRequest, res: Response): Promise<void>
     success(res, task, '任务创建成功');
   } catch (err) {
     console.error('Create Task Error:', err);
-    error(res, `服务器内部错误: ${err instanceof Error ? err.message : String(err)}`, 500);
+    error(res, '服务器内部错误', 500);
   }
 };
 
@@ -408,5 +409,21 @@ export const toggleFalsePositive = async (req: AuthRequest, res: Response): Prom
       return;
     }
     error(res, '服务器内部错误', 500);
+  }
+};
+
+/** 预分析 — 根据文件信息智能推荐审查方案 */
+export const preAnalyze = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { files } = req.body;
+    if (!Array.isArray(files) || files.length === 0) {
+      error(res, '请提供文件列表', 400);
+      return;
+    }
+    const result = await PreAnalysisService.analyzeFiles(files);
+    success(res, result);
+  } catch (err) {
+    console.error('PreAnalyze Error:', err);
+    error(res, '预分析失败', 500);
   }
 };

@@ -31,6 +31,11 @@ export class EmployeeController {
       const id = req.params.id as unknown as string;
       const employee = await employeeService.getEmployeeById(id);
 
+      if (!employee) {
+        res.status(404).json({ code: 404, message: '员工不存在' });
+        return;
+      }
+
       success(res, employee);
     } catch (err) {
       next(err);

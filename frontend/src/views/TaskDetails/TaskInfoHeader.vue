@@ -25,6 +25,24 @@
           <p v-if="task.description" class="task-desc">{{ task.description }}</p>
         </div>
         <div class="task-status-area">
+          <el-button
+            v-if="task.status === 'PROCESSING' || task.status === 'PENDING'"
+            type="danger"
+            plain
+            @click="$emit('cancelTask')"
+            class="action-btn"
+          >
+            取消任务
+          </el-button>
+          <el-button
+            v-if="task.status === 'FAILED'"
+            type="warning"
+            plain
+            @click="$emit('retryTask')"
+            class="action-btn"
+          >
+            重新审查
+          </el-button>
           <el-button type="primary" :icon="Download" @click="$emit('exportReport')" class="export-btn">
             导出审查报告
           </el-button>
@@ -60,6 +78,8 @@ defineEmits<{
   goBack: []
   expandHeader: []
   exportReport: []
+  cancelTask: []
+  retryTask: []
 }>()
 
 const { formatTime } = useFormatTime()
@@ -118,6 +138,13 @@ const { getTaskStatusLabel: getStatusLabel } = useStatusHelpers()
 .status-failed { background-color: var(--corp-danger-light); color: var(--corp-danger); }
 
 .export-btn {
+  white-space: nowrap;
+  font-size: 14px;
+  padding: 8px 18px;
+  border-radius: var(--radius-md);
+}
+
+.action-btn {
   white-space: nowrap;
   font-size: 14px;
   padding: 8px 18px;

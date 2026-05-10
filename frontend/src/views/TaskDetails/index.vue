@@ -7,6 +7,8 @@
       @goBack="goBack"
       @expandHeader="expandHeader"
       @exportReport="handleExportReport"
+      @cancelTask="handleCancelTask"
+      @retryTask="handleRetryTask"
     />
 
     <!-- WebSocket 实时进度条 -->
@@ -45,13 +47,16 @@
         <!-- 视图切换工具栏 -->
         <div class="view-toolbar">
           <div class="toolbar-left">
-            <el-radio-group v-model="detailViewMode" size="small">
-              <el-radio-button value="detail">
+            <el-radio-group v-model="detailViewMode" size="small" class="view-tabs">
+              <el-radio-button value="detail" class="view-tab">
                 <el-icon><List /></el-icon> 审查明细
               </el-radio-button>
-              <el-radio-button value="summary">
+              <el-radio-button value="summary" class="view-tab">
                 <el-icon><Document /></el-icon> 问题汇总
-                <el-badge v-if="allIssues.length > 0" :value="allIssues.length" type="danger" :max="999" />
+                <el-badge v-if="allIssues.length > 0" :value="allIssues.length" type="danger" :max="999" class="issue-badge" />
+              </el-radio-button>
+              <el-radio-button value="analytics" class="view-tab">
+                <el-icon><DataAnalysis /></el-icon> 统计分析
               </el-radio-button>
             </el-radio-group>
             <span class="detail-count" v-if="detailViewMode === 'detail'">
@@ -77,12 +82,14 @@
               :details="allDetails"
               :loading="loading"
               :selectedFileId="selectedFileId"
+              :isDocxSelected="isDocxFileSelected"
               @update:selectedFileId="selectedFileId = $event"
               @selectFileById="selectFileById"
               @copyHandleId="copyHandleId"
               @openFpDialog="openFpDialog"
               @cancelFp="handleCancelFp"
               @locateText="handleLocateText"
+              @adoptSuggestion="handleAdoptSuggestion"
             />
           </div>
 
@@ -140,6 +147,54 @@
             <EmptyState v-if="filteredSummaryIssues.length === 0 && !loading" icon="🎉" title="暂无问题" description="所有文件审查通过，未发现合规问题" />
           </div>
 
+          <!-- 左侧：统计分析面板 -->
+          <div class="split-left analytics-mode-panel" v-show="detailViewMode === 'analytics'">
+            <div class="analytics-content">
+              <!-- 统计概览 -->
+              <div class="analytics-overview">
+                <div class="analytics-card" v-for="(stat, index) in analyticsStats" :key="index">
+                  <div class="stat-icon" :class="`stat-${stat.type}`">
+                    <el-icon :size="24"><component :is="stat.icon" /></el-icon>
+                  </div>
+                  <div class="stat-info">
+                    <div class="stat-value">{{ stat.value }}</div>
+                    <div class="stat-label">{{ stat.label }}</div>
+                  </div>
+                </div>
+              </div>
+              
+              <!-- 严重度分布 -->
+              <div class="analytics-section">
+                <h3 class="section-title">严重度分布</h3>
+                <div class="severity-distribution">
+                  <div v-for="(item, index) in severityDistribution" :key="index" class="severity-item">
+                    <div class="severity-label">
+                      <span class="severity-dot" :style="{ background: item.color }"></span>
+                      <span>{{ item.label }}</span>
+                    </div>
+                    <div class="severity-bar-wrap">
+                      <div class="severity-bar" :style="{ width: item.percent + '%', background: item.color }"></div>
+                    </div>
+                    <div class="severity-count">{{ item.count }} ({{ item.percent }}%)</div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- 问题分类分布 -->
+              <div class="analytics-section">
+                <h3 class="section-title">问题分类分布</h3>
+                <div class="category-distribution">
+                  <div v-for="(item, index) in categoryDistribution" :key="index" class="category-item">
+                    <div class="category-label">
+                      <el-tag :type="item.tagType" size="small" effect="plain" round>{{ item.label }}</el-tag>
+                    </div>
+                    <div class="category-count">{{ item.count }} 条</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
           <!-- 可拖拽分隔线 -->
           <div 
             class="split-divider" 
@@ -152,9 +207,16 @@
             ></div>
           </div>
 
-          <!-- 右侧：原文预览 / DWG图纸预览 -->
-          <div class="split-right" v-show="detailViewMode === 'detail'" 
+          <!-- 右侧：原文预览 / DWG图纸预览 / OnlyOffice 编辑器 -->
+          <div class="split-right" v-show="detailViewMode === 'detail'"
                :style="{ flex: '0 0 ' + (100 - splitLeftWidth) + '%' }">
+            <!-- 版本历史面板（覆盖在编辑器上方） -->
+            <VersionHistory
+              v-if="showVersionHistory && isDocxFileSelected && selectedFileId"
+              class="version-history-overlay"
+              :fileId="selectedFileId"
+              @close="showVersionHistory = false"
+            />
             <!-- DWG 文件且 SVG 预览成功：图纸预览 -->
             <DwgPreviewPanel
               v-if="isDwgFileSelected && !dwgParseFailed"
@@ -162,7 +224,13 @@
               :file="dwgFileForPreview"
               :locateTarget="dwgLocateTarget"
             />
-            <!-- 非 DWG 文件 或 DWG 解析失败降级：原文预览 -->
+            <!-- DOCX 文件：OnlyOffice 编辑器 -->
+            <OnlyOfficeEditor
+              v-else-if="isDocxFileSelected && selectedFileId"
+              ref="onlyOfficeEditorRef"
+              :fileId="selectedFileId"
+            />
+            <!-- 其他文件：原文预览 -->
             <TextPreviewPanel
               v-else
               :taskId="taskId"
@@ -174,6 +242,17 @@
               <el-icon :size="14" color="var(--el-color-warning)"><WarningFilled /></el-icon>
               <span>图纸预览不可用，已切换为文本预览模式</span>
             </div>
+            <!-- 版本历史按钮（仅 DOCX 文件） -->
+            <el-button
+              v-if="isDocxFileSelected && selectedFileId"
+              class="version-history-btn"
+              size="small"
+              text
+              @click="showVersionHistory = !showVersionHistory"
+            >
+              <el-icon><Clock /></el-icon>
+              版本历史
+            </el-button>
           </div>
         </div>
       </div>
@@ -191,8 +270,8 @@
 import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { List, Document, View, DArrowLeft, DArrowRight, Close, WarningFilled } from '@element-plus/icons-vue'
-import { getTaskByIdApi, getTaskDetailsApi, exportTaskReportApi, toggleFalsePositiveApi } from '@/api/task'
+import { List, Document, View, DArrowLeft, DArrowRight, Close, WarningFilled, Clock, DataAnalysis } from '@element-plus/icons-vue'
+import { getTaskByIdApi, getTaskDetailsApi, exportTaskReportApi, toggleFalsePositiveApi, updateTaskStatusApi, reReviewTaskApi } from '@/api/task'
 import type { Task, TaskDetail, TaskFile } from '@/types/models'
 import TaskInfoHeader from './TaskInfoHeader.vue'
 import FileTreePanel from './FileTreePanel.vue'
@@ -201,6 +280,9 @@ import FalsePositiveDialog from './FalsePositiveDialog.vue'
 import EmptyState from '@/components/common/EmptyState.vue'
 import TextPreviewPanel from './TextPreviewPanel.vue'
 import DwgPreviewPanel from './DwgPreviewPanel.vue'
+import OnlyOfficeEditor from '@/components/OnlyOfficeEditor.vue'
+import VersionHistory from '@/components/VersionHistory.vue'
+import { replaceTextApi } from '@/api/onlyoffice'
 import { wsManager } from '@/composables/useWebSocket'
 
 const route = useRoute()
@@ -249,7 +331,7 @@ const locateTarget = ref<{ originalText: string; textPosition: any; cadHandleId?
 /** 当前选中的文件是否为 DWG */
 const isDwgFileSelected = computed(() => {
   if (!selectedFileId.value) return false
-  const file = files.value.find((f: any) => f.id === selectedFileId.value)
+  const file = files.value.find((f: any) => f.id === selectedFileId.value) as any
   return file?.fileType === 'dwg' || file?.file_type === 'dwg'
 })
 
@@ -260,6 +342,18 @@ let dwgFileAbortController: AbortController | null = null
 const dwgParseFailed = ref(false)
 /** DwgPreviewPanel 组件引用 */
 const dwgPreviewRef = ref<InstanceType<typeof DwgPreviewPanel> | null>(null)
+
+// ===== OnlyOffice 编辑器 =====
+const onlyOfficeEditorRef = ref<InstanceType<typeof OnlyOfficeEditor> | null>(null)
+const showVersionHistory = ref(false)
+
+/** 当前选中的文件是否为 DOCX（可编辑） */
+const isDocxFileSelected = computed(() => {
+  if (!selectedFileId.value) return false
+  const file = files.value.find((f: any) => f.id === selectedFileId.value) as any
+  const ft = (file?.fileType || file?.file_type || '').toLowerCase()
+  return ft === 'docx' || ft === 'doc'
+})
 
 /** 当选中 DWG 文件时，从后端下载原始文件用于 SVG 预览 */
 const loadDwgFileForPreview = async (fileId: string) => {
@@ -293,7 +387,7 @@ const loadDwgFileForPreview = async (fileId: string) => {
 watch(selectedFileId, (fileId) => {
   dwgParseFailed.value = false  // 切换文件时重置降级状态
   if (!fileId) { dwgFileForPreview.value = null; return }
-  const file = files.value.find((f: any) => f.id === fileId)
+  const file = files.value.find((f: any) => f.id === fileId) as any
   if (file?.fileType === 'dwg' || file?.file_type === 'dwg') {
     loadDwgFileForPreview(fileId)
   } else {
@@ -327,7 +421,7 @@ const selectedFileDetails = computed(() => {
 /** 当前选中文件的 DWG 元数据 */
 const selectedFileDwgMetadata = computed(() => {
   if (!selectedFileId.value) return null
-  const file = files.value.find((f: any) => f.id === selectedFileId.value)
+  const file = files.value.find((f: any) => f.id === selectedFileId.value) as any
   return file?.dwgMetadata || file?.dwg_metadata || null
 })
 
@@ -399,12 +493,12 @@ const setupWsSubscription = () => {
 }
 
 // ===== 视图切换 =====
-/** 右侧视图模式：detail=分屏明细视图, summary=汇总表格视图 */
-const detailViewMode = ref<'detail' | 'summary'>('detail')
+/** 右侧视图模式：detail=分屏明细视图, summary=汇总表格视图, analytics=统计分析 */
+const detailViewMode = ref<'detail' | 'summary' | 'analytics'>('detail')
 
 /** 当前右侧预览面板对应的文件名 */
 const previewFileName = computed(() => {
-  const file = files.value.find((f: any) => f.id === selectedFileId.value)
+  const file = files.value.find((f: any) => f.id === selectedFileId.value) as any
   return file ? (file.fileName || file.file_name || '') : ''
 })
 
@@ -453,6 +547,91 @@ const filteredSummaryIssues = computed(() => {
     list = list.filter((d: any) => d.issueType === summaryFilterType.value)
   }
   return list
+})
+
+// ===== 统计分析 =====
+import { CircleCloseFilled, WarningFilled, CircleCheckFilled, DocumentChecked } from '@element-plus/icons-vue'
+
+/** 统计概览数据 */
+const analyticsStats = computed(() => {
+  const total = allDetails.value.length
+  const errorCount = allDetails.value.filter((d: any) => d.severity === 'error').length
+  const warningCount = allDetails.value.filter((d: any) => d.severity === 'warning').length
+  const falsePositiveCount = allDetails.value.filter((d: any) => d.isFalsePositive).length
+  const complianceRate = total > 0 ? (((total - errorCount) / total) * 100).toFixed(1) : '100.0'
+  
+  return [
+    {
+      label: '总问题数',
+      value: total,
+      type: 'primary',
+      icon: DocumentChecked,
+    },
+    {
+      label: '严重错误',
+      value: errorCount,
+      type: 'danger',
+      icon: CircleCloseFilled,
+    },
+    {
+      label: '警告',
+      value: warningCount,
+      type: 'warning',
+      icon: WarningFilled,
+    },
+    {
+      label: '合规率',
+      value: complianceRate + '%',
+      type: 'success',
+      icon: CircleCheckFilled,
+    },
+  ]
+})
+
+/** 严重度分布 */
+const severityDistribution = computed(() => {
+  const total = allDetails.value.length
+  const errorCount = allDetails.value.filter((d: any) => d.severity === 'error').length
+  const warningCount = allDetails.value.filter((d: any) => d.severity === 'warning').length
+  const infoCount = allDetails.value.filter((d: any) => d.severity === 'info').length
+  
+  return [
+    {
+      label: '错误',
+      count: errorCount,
+      percent: total > 0 ? Math.round((errorCount / total) * 100) : 0,
+      color: '#EF4444',
+    },
+    {
+      label: '警告',
+      count: warningCount,
+      percent: total > 0 ? Math.round((warningCount / total) * 100) : 0,
+      color: '#F59E0B',
+    },
+    {
+      label: '提示',
+      count: infoCount,
+      percent: total > 0 ? Math.round((infoCount / total) * 100) : 0,
+      color: '#3B82F6',
+    },
+  ]
+})
+
+/** 问题分类分布 */
+const categoryDistribution = computed(() => {
+  const typeCount: Record<string, number> = {}
+  allDetails.value.forEach((d: any) => {
+    const type = d.issueType || 'OTHER'
+    typeCount[type] = (typeCount[type] || 0) + 1
+  })
+  
+  return Object.entries(typeCount)
+    .sort((a, b) => b[1] - a[1])
+    .map(([type, count]) => ({
+      label: getIssueTypeLabel(type),
+      count,
+      tagType: getCategoryTagType(type),
+    }))
 })
 
 const getSeverityTagType = (s: string) => s === 'error' ? 'danger' : s === 'warning' ? 'warning' : 'info'
@@ -615,7 +794,7 @@ const handleCancelFp = async (detail: any) => {
 }
 
 // ===== 数据获取 =====
-const mapDetailData = (d: any) => ({
+const mapDetailData = (d: any): TaskDetail => ({
   id: d.id,
   issueType: d.issueType,
   ruleCode: d.ruleCode,
@@ -629,6 +808,8 @@ const mapDetailData = (d: any) => ({
   standardRefId: d.standardRefId,
   standardRef: d.standardRef,
   sourceReferences: d.sourceReferences || null,
+  taskId: d.taskId || '',
+  taskFileId: d.taskFileId || '',
   fileId: d.fileId,
   file: d.file,
   isFalsePositive: d.isFalsePositive || false,
@@ -647,7 +828,8 @@ const fetchData = async () => {
       getTaskDetailsApi(taskId.value),
     ])
     task.value = taskRes.data
-    const detailsData = detailsRes.data?.details || detailsRes.data || []
+    const rawDetails = detailsRes.data as any
+    const detailsData = rawDetails?.details || rawDetails || []
     details.value = (Array.isArray(detailsData) ? detailsData : []).map(mapDetailData)
     files.value = task.value?.files || []
 
@@ -672,7 +854,8 @@ const startPolling = () => {
         getTaskDetailsApi(taskId.value),
       ])
       task.value = taskRes.data
-      const detailsData = detailsRes.data?.details || detailsRes.data || []
+      const rawDetails2 = detailsRes.data as any
+      const detailsData = rawDetails2?.details || rawDetails2 || []
       details.value = (Array.isArray(detailsData) ? detailsData : []).map(mapDetailData)
       files.value = task.value?.files || []
 
@@ -757,6 +940,58 @@ const handleExportReport = async () => {
     ElMessage.success('报告导出成功')
   } catch (e) {
     ElMessage.error('导出失败')
+  }
+}
+
+const handleCancelTask = async () => {
+  try {
+    await updateTaskStatusApi(taskId.value, 'CANCELLED')
+    ElMessage.success('任务已取消')
+    task.value.status = 'CANCELLED'
+  } catch (e) {
+    ElMessage.error('取消失败')
+  }
+}
+
+const handleRetryTask = async () => {
+  try {
+    await reReviewTaskApi(taskId.value)
+    ElMessage.success('已重新提交审查')
+    task.value.status = 'PROCESSING'
+    fetchData()
+  } catch (e) {
+    ElMessage.error('重试失败')
+  }
+}
+
+/** 采纳审查建议 — 替换 DOCX 中的文本 */
+const handleAdoptSuggestion = async (detail: any) => {
+  if (!detail.fileId || !detail.originalText || !detail.suggestedText) {
+    ElMessage.warning('缺少替换信息')
+    return
+  }
+
+  try {
+    const res = await replaceTextApi(detail.fileId, {
+      originalText: detail.originalText,
+      suggestedText: detail.suggestedText,
+    })
+
+    const result = res.data
+    if (result.replacements > 0) {
+      ElMessage.success(`已采纳建议 (替换了 ${result.replacements} 处)`)
+      // 刷新编辑器
+      onlyOfficeEditorRef.value?.refresh()
+    } else {
+      ElMessage.warning('未找到匹配的文本，请手动替换')
+    }
+  } catch (e: any) {
+    const msg = e?.response?.data?.message || '采纳建议失败'
+    if (msg === 'DOCX_EXACT_TEXT_NOT_FOUND') {
+      ElMessage.warning('未在文档中找到精确匹配的文本，可能已被修改')
+    } else {
+      ElMessage.error(msg)
+    }
   }
 }
 
@@ -862,11 +1097,51 @@ onUnmounted(() => {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 10px 16px;
-  background: var(--corp-bg-sunken);
-  border-bottom: 1px solid var(--corp-border-light);
+  padding: 12px 20px;
+  background: white;
+  border-bottom: 1px solid #E5E7EB;
   flex-shrink: 0;
   gap: 12px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+}
+
+.view-tabs {
+  display: flex;
+  gap: 0;
+}
+
+.view-tab :deep(.el-radio-button__inner) {
+  padding: 8px 16px;
+  font-weight: 600;
+  font-size: 13px;
+  border: 1px solid #E5E7EB;
+  transition: all 0.2s;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.view-tab :deep(.el-radio-button__inner:hover) {
+  color: #3B82F6;
+  background: #EFF6FF;
+}
+
+.view-tab.is-active :deep(.el-radio-button__inner) {
+  background: #3B82F6;
+  border-color: #3B82F6;
+  color: white;
+  box-shadow: 0 2px 8px rgba(59, 130, 246, 0.3);
+}
+
+.issue-badge {
+  margin-left: 6px;
+}
+
+.issue-badge :deep(.el-badge__content) {
+  font-size: 10px;
+  height: 16px;
+  line-height: 16px;
+  padding: 0 4px;
 }
 
 .toolbar-left {
@@ -1006,6 +1281,29 @@ onUnmounted(() => {
   position: relative;
 }
 
+/* 版本历史面板 */
+.version-history-overlay {
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 320px;
+  height: 100%;
+  z-index: 200;
+  background: var(--corp-bg-panel);
+  border-left: 1px solid var(--corp-border-light);
+  box-shadow: -4px 0 16px rgba(0, 0, 0, 0.08);
+}
+
+.version-history-btn {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  z-index: 150;
+  background: var(--corp-bg-panel);
+  border: 1px solid var(--corp-border-light);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.06);
+}
+
 .dwg-fallback-hint {
   position: absolute;
   top: 8px;
@@ -1113,5 +1411,189 @@ onUnmounted(() => {
 .ws-progress-msg {
   font-size: 12px;
   color: var(--el-text-color-secondary);
+}
+
+/* ===== 统计分析面板 ===== */
+.analytics-mode-panel {
+  padding: 20px;
+  overflow-y: auto;
+  background: white;
+}
+
+.analytics-content {
+  max-width: 900px;
+  margin: 0 auto;
+}
+
+.analytics-overview {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 16px;
+  margin-bottom: 32px;
+}
+
+.analytics-card {
+  background: white;
+  border-radius: 12px;
+  padding: 20px;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+  border: 1px solid #E5E7EB;
+  transition: all 0.3s;
+}
+
+.analytics-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.1);
+}
+
+.stat-icon {
+  width: 48px;
+  height: 48px;
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: white;
+}
+
+.stat-primary {
+  background: linear-gradient(135deg, #3B82F6, #2563EB);
+}
+
+.stat-danger {
+  background: linear-gradient(135deg, #EF4444, #DC2626);
+}
+
+.stat-warning {
+  background: linear-gradient(135deg, #F59E0B, #D97706);
+}
+
+.stat-success {
+  background: linear-gradient(135deg, #10B981, #059669);
+}
+
+.stat-info {
+  flex: 1;
+}
+
+.stat-value {
+  font-size: 28px;
+  font-weight: 800;
+  color: #111827;
+  line-height: 1;
+  margin-bottom: 4px;
+}
+
+.stat-label {
+  font-size: 13px;
+  color: #6B7280;
+  font-weight: 600;
+}
+
+.analytics-section {
+  margin-bottom: 32px;
+}
+
+.section-title {
+  font-size: 16px;
+  font-weight: 700;
+  color: #111827;
+  margin: 0 0 16px;
+  padding-bottom: 8px;
+  border-bottom: 2px solid #E5E7EB;
+}
+
+.severity-distribution {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.severity-item {
+  display: grid;
+  grid-template-columns: 80px 1fr 120px;
+  align-items: center;
+  gap: 12px;
+}
+
+.severity-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+  font-weight: 600;
+  color: #374151;
+}
+
+.severity-dot {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  display: inline-block;
+}
+
+.severity-bar-wrap {
+  height: 8px;
+  background: #F3F4F6;
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.severity-bar {
+  height: 100%;
+  border-radius: 4px;
+  transition: width 0.5s ease;
+}
+
+.severity-count {
+  font-size: 13px;
+  color: #6B7280;
+  font-weight: 600;
+  text-align: right;
+}
+
+.category-distribution {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 12px;
+}
+
+.category-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px;
+  background: #F9FAFB;
+  border-radius: 8px;
+  border: 1px solid #E5E7EB;
+  transition: all 0.2s;
+}
+
+.category-item:hover {
+  background: #EFF6FF;
+  border-color: #BFDBFE;
+}
+
+.category-label {
+  flex: 1;
+}
+
+.category-count {
+  font-size: 14px;
+  font-weight: 700;
+  color: #3B82F6;
+}
+
+@media (max-width: 768px) {
+  .analytics-overview {
+    grid-template-columns: repeat(2, 1fr);
+  }
+  
+  .severity-item {
+    grid-template-columns: 60px 1fr 80px;
+  }
 }
 </style>

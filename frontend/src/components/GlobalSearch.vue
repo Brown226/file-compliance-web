@@ -95,17 +95,17 @@ const allItems = ref<SearchResult[]>([])
 
 function loadAllItems() {
   allItems.value = [
-    { id: '1', category: 'dashboard', title: '监控仪表盘', description: '系统概览与统计', route: '/dashboard' },
-    { id: '2', category: 'task', title: '新建任务', description: '创建新的审查任务', route: '/tasks/new' },
-    { id: '3', category: 'task', title: '任务历史', description: '查看任务历史记录', route: '/tasks/history' },
-    { id: '4', category: 'standard', title: '企业标准规范库', description: '管理与查询标准文档', route: '/standards' },
-    { id: '5', category: 'rule', title: '审查规则管理', description: '配置自动审查规则', route: '/review-rules' },
-    { id: '6', category: 'config', title: '流水线配置', description: '审查流程管线设置', route: '/pipeline-config' },
-    { id: '7', category: 'config', title: '提示词模板管理', description: 'LLM 提示词配置', route: '/llm-config' },
-    { id: '8', category: 'config', title: 'LLM 配置', description: '大语言模型供应商设置', route: '/llm-config' },
-    { id: '9', category: 'dashboard', title: '用户管理', description: '系统用户与权限管理', route: '/system' },
-    { id: '10', category: 'rule', title: '正则表达式工具', description: 'AI 生成与测试正则表达式', route: '/regex-tool' },
-    { id: '11', category: 'dashboard', title: '安全审计日志', description: '查看系统操作审计记录', route: '/audit-logs' },
+    { id: '1', category: 'dashboard', title: '监控仪表盘', description: '系统概览与统计', route: '/admin/dashboard' },
+    { id: '2', category: 'task', title: '新建任务', description: '创建新的审查任务', route: '/review' },
+    { id: '3', category: 'task', title: '任务历史', description: '查看任务历史记录', route: '/tasks' },
+    { id: '4', category: 'standard', title: '企业标准规范库', description: '管理与查询标准文档', route: '/admin/standards' },
+    { id: '5', category: 'rule', title: '审查规则管理', description: '配置自动审查规则', route: '/admin/rules' },
+    { id: '6', category: 'config', title: '流水线配置', description: '审查流程管线设置', route: '/admin/rules' },
+    { id: '7', category: 'config', title: '提示词模板管理', description: 'LLM 提示词配置', route: '/admin/system' },
+    { id: '8', category: 'config', title: 'LLM 配置', description: '大语言模型供应商设置', route: '/admin/system' },
+    { id: '9', category: 'dashboard', title: '用户管理', description: '系统用户与权限管理', route: '/admin/system' },
+    { id: '10', category: 'rule', title: '正则表达式工具', description: 'AI 生成与测试正则表达式', route: '/admin/rules' },
+    { id: '11', category: 'dashboard', title: '安全审计日志', description: '查看系统操作审计记录', route: '/admin/audit' },
   ]
 }
 

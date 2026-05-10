@@ -17,7 +17,7 @@ export const createStandard = async (req: Request, res: Response): Promise<void>
     success(res, standard, '标准创建成功');
   } catch (err: any) {
     console.error('Create Standard Error:', err);
-    error(res, err.message || '服务器内部错误', 400);
+    error(res, '服务器内部错误', 400);
   }
 };
 
@@ -47,7 +47,7 @@ export const createStandardFromFile = async (req: Request, res: Response): Promi
   } catch (err: any) {
     console.error('Create Standard From File Error:', err);
     if (req.file?.path) { try { require('fs').unlinkSync(req.file.path); } catch {} }
-    error(res, err.message || '文件解析失败', 400);
+    error(res, '服务器内部错误', 400);
   }
 };
 
@@ -206,7 +206,7 @@ export const extractFromExcelColumn = async (req: Request, res: Response): Promi
     success(res, { refs, count: refs.length });
   } catch (err: any) {
     console.error('Extract From Excel Column Error:', err);
-    error(res, err.message || '提取失败', 500);
+    error(res, '服务器内部错误', 500);
   }
 };
 
@@ -220,7 +220,7 @@ export const importTempLibrary = async (req: Request, res: Response): Promise<vo
     success(res, result, `成功导入 ${result.count} 条临时标准`);
   } catch (err: any) {
     console.error('Import Temp Library Error:', err);
-    error(res, '导入失败: ' + err.message, 500);
+    error(res, '服务器内部错误', 500);
   }
 };
 
@@ -274,7 +274,7 @@ export const archiveTempToStandard = async (req: Request, res: Response): Promis
     success(res, result, `成功归档 ${result.archived} 条标准，跳过 ${result.skipped} 条已存在的`);
   } catch (err: any) {
     console.error('Archive Temp To Standard Error:', err);
-    error(res, err.message || '归档失败', 500);
+    error(res, '服务器内部错误', 500);
   }
 };
 
@@ -286,7 +286,7 @@ export const archiveAllTempToStandard = async (req: Request, res: Response): Pro
     success(res, result, `成功归档 ${result.archived} 条标准，跳过 ${result.skipped} 条已存在的`);
   } catch (err: any) {
     console.error('Archive All Temp To Standard Error:', err);
-    error(res, err.message || '归档失败', 500);
+    error(res, '服务器内部错误', 500);
   }
 };
 
@@ -337,7 +337,7 @@ export const importNormativeExcel = async (req: Request, res: Response): Promise
     if (req.file?.path) {
       try { require('fs').unlinkSync(req.file.path); } catch {}
     }
-    error(res, err.message || '导入失败', 500);
+    error(res, '服务器内部错误', 500);
   }
 };
 
@@ -366,7 +366,7 @@ export const previewNormativeExcel = async (req: Request, res: Response): Promis
     if (req.file?.path) {
       try { require('fs').unlinkSync(req.file.path); } catch {}
     }
-    error(res, err.message || '预览失败', 500);
+    error(res, '服务器内部错误', 500);
   }
 };
 

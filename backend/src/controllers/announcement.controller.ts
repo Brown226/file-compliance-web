@@ -217,7 +217,8 @@ export const getUnreadAnnouncements = async (req: AuthRequest, res: Response): P
 export const markAnnouncementRead = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const { id } = req.params;
-    const { confirmed } = req.body;
+    const body = req.body || {};
+    const { confirmed } = body;
     const userId = req.user?.id;
 
     if (!userId) {

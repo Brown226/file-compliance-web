@@ -4,6 +4,7 @@ import path from 'path';
 import fs from 'fs';
 import { authenticate } from '../middlewares/auth.middleware';
 import { requireRole } from '../middlewares/rbac.middleware';
+import { success, error } from '../utils/response';
 import {
   createTask,
   getTasks,
@@ -21,6 +22,7 @@ import {
   toggleFalsePositive,
   getModeCapabilities,
   saveModeCapabilities,
+  preAnalyze,
 } from '../controllers/task.controller';
 
 const router = Router();
@@ -70,11 +72,37 @@ const upload = multer({
 // 所有任务接口都需要认证
 router.use(authenticate);
 
+// 轻量级文件上传（仅用于预分析，不需要创建任务）
+router.post('/upload-only', upload.array('files', 50), async (req, res) => {
+  try {
+    const files = req.files as Express.Multer.File[];
+    if (!files || files.length === 0) {
+      return res.status(400).json({ code: 400, message: '没有上传文件' });
+    }
+    
+    // 返回文件信息，不创建任务
+    const fileInfos = files.map(f => ({
+      fileName: f.originalname,
+      filePath: `/uploads/${f.filename}`,
+      fileSize: f.size,
+      fileType: path.extname(f.originalname).toLowerCase().replace('.', ''),
+    }));
+    
+    success(res, { files: fileInfos }, '文件上传成功');
+  } catch (err) {
+    console.error('Upload Only Error:', err);
+    error(res, '文件上传失败', 500);
+  }
+});
+
 // 创建任务 - 支持批量文件上传
 router.post('/', upload.array('files', 50), createTask);
 
 // 审查模式列表（必须在 /:id 路由之前）
 router.get('/review-modes', getReviewModes);
+
+// 预分析 — 智能推荐审查方案（必须在 /:id 路由之前）
+router.post('/pre-analyze', preAnalyze);
 
 // 审查模式能力配置（读写）
 router.get('/mode-capabilities', getModeCapabilities);

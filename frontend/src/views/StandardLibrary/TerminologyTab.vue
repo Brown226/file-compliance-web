@@ -209,9 +209,9 @@ const termCategoryOptions = computed(() => {
   return cats
 })
 
-const termCategoryTagType = (cat: string) => {
-  const map: Record<string, string> = { '核安全术语': 'danger', '设备术语': 'warning', '工艺术语': '', '建筑术语': 'success', '电气术语': 'info', '自定义': '' }
-  return map[cat] || ''
+const termCategoryTagType = (cat: string): 'warning' | 'info' | 'success' | 'danger' | 'primary' => {
+  const map: Record<string, 'warning' | 'info' | 'success' | 'danger' | 'primary'> = { '核安全术语': 'danger', '设备术语': 'warning', '工艺术语': 'info', '建筑术语': 'success', '电气术语': 'primary', '自定义': 'info' }
+  return map[cat] || 'info'
 }
 
 const fetchTerminologyCategories = async () => {

@@ -381,6 +381,7 @@ const submitPasswordChange = async () => {
         userStore.logout()
         router.push('/login')
       } catch (error: any) {
+        ElMessage.error(error?.response?.data?.message || '密码修改失败')
       } finally {
         passwordLoading.value = false
       }
@@ -396,13 +397,13 @@ const submitPasswordChange = async () => {
   background-color: var(--bg-body);
 }
 
+/* ===== 侧边栏 — Near-black (#111111) ===== */
 .aside {
-  background: var(--color-gray-900);
+  background: #111111;
   display: flex;
   flex-direction: column;
   position: relative;
   z-index: 10;
-  box-shadow: 1px 0 3px rgba(0, 0, 0, 0.08);
   transition: width 0.2s ease;
   overflow: hidden;
 }
@@ -417,9 +418,7 @@ const submitPasswordChange = async () => {
     width: var(--corp-sidebar-width) !important;
     transition: left 0.2s ease;
   }
-  .aside.sidebar-open {
-    left: 0;
-  }
+  .aside.sidebar-open { left: 0; }
   .sidebar-overlay {
     position: fixed;
     inset: 0;
@@ -428,49 +427,40 @@ const submitPasswordChange = async () => {
   }
 }
 
-.aside.collapsed {
-  width: 64px !important;
-}
+.aside.collapsed { width: 56px !important; }
 
 @media (max-width: 1024px) {
-  .aside.collapsed {
-    left: -220px;
-  }
-  .aside.collapsed.sidebar-open {
-    left: 0;
-  }
+  .aside.collapsed { left: -220px; }
+  .aside.collapsed.sidebar-open { left: 0; }
 }
 
-.aside.collapsed .logo {
-  justify-content: center;
-  padding: 0;
-}
+.aside.collapsed .logo { justify-content: center; padding: 0; }
 
 .logo {
-  height: 60px;
+  height: 52px;
   display: flex;
   align-items: center;
-  padding: 0 20px;
-  color: var(--corp-text-inverse);
-  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  padding: 0 16px;
+  color: #FFFFFF;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
   flex-shrink: 0;
-  gap: var(--space-3);
+  gap: 10px;
 }
 
 .logo-icon-wrap {
   flex-shrink: 0;
-  width: 32px;
-  height: 32px;
+  width: 28px;
+  height: 28px;
   display: flex;
   align-items: center;
   justify-content: center;
 }
 
 .logo-img {
-  width: 32px;
-  height: 32px;
+  width: 28px;
+  height: 28px;
   object-fit: contain;
-  border-radius: 8px;
+  border-radius: 6px;
 }
 
 .logo-text {
@@ -481,83 +471,72 @@ const submitPasswordChange = async () => {
 
 .logo h2 {
   margin: 0;
-  font-size: var(--text-sm);
-  font-weight: 600;
-  letter-spacing: 0.3px;
-  color: var(--corp-text-inverse);
+  font-size: 14px;
+  font-weight: 800;
+  letter-spacing: 0.5px;
+  color: #FFFFFF;
   white-space: nowrap;
   line-height: 1.3;
 }
 
 .menu-divider {
-  border-top: 1px solid rgba(255, 255, 255, 0.06);
-  margin: var(--space-2) var(--space-4);
-}
-
-.menu-group-label {
-  font-size: 10px;
-  color: rgba(255, 255, 255, 0.25);
-  text-transform: uppercase;
-  letter-spacing: 1.5px;
-  padding: 4px 20px 2px;
-  font-weight: 600;
-  user-select: none;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  margin: 6px 12px;
 }
 
 .menu {
   flex: 1;
   border-right: none;
-  padding: 8px 0;
+  padding: 6px 0;
   overflow-y: auto;
 }
 
+/* 菜单项 — 紧凑、无左边框 */
 .clean-menu :deep(.el-menu-item.el-menu-item) {
-  height: 44px;
-  line-height: 44px;
-  margin: var(--space-1) var(--space-2);
-  border-radius: var(--radius-sm);
-  font-weight: 400;
-  font-size: var(--text-base);
-  padding-left: 20px;
-  transition: all 0.15s ease;
-  position: relative;
-  border-left: 3px solid transparent;
+  height: 38px;
+  line-height: 38px;
+  margin: 2px 8px;
+  border-radius: var(--radius-md);
+  font-weight: 500;
+  font-size: 13px;
+  padding-left: 16px;
+  transition: all 0.12s ease;
+  border-left: none;
 }
 
 .clean-menu :deep(.el-menu-item.el-menu-item:hover) {
-  background-color: rgba(255, 255, 255, 0.06);
-  color: var(--color-gray-200);
+  background-color: rgba(255, 255, 255, 0.08);
+  color: #FFFFFF;
 }
 
 .clean-menu :deep(.el-menu-item.el-menu-item:hover .el-icon) {
-  color: var(--color-gray-200);
+  color: #FFFFFF;
 }
 
 .clean-menu :deep(.el-menu-item.el-menu-item.is-active) {
-  background-color: rgba(37, 99, 235, 0.15);
-  color: var(--corp-text-inverse);
-  border-left-color: var(--color-primary-500);
+  background-color: rgba(59, 130, 246, 0.2);
+  color: #FFFFFF;
   box-shadow: none;
 }
 
 .clean-menu :deep(.el-menu-item.el-menu-item.is-active .el-icon) {
-  color: var(--corp-text-inverse);
+  color: #FFFFFF;
 }
 
 .clean-menu :deep(.el-menu-item.el-menu-item .el-icon) {
-  font-size: 17px;
+  font-size: 16px;
   margin-right: 10px;
-  transition: color 0.15s ease;
+  transition: color 0.12s ease;
 }
 
 .clean-menu.el-menu--collapse {
-  padding: 8px 0;
+  padding: 6px 0;
 }
 
 .clean-menu.el-menu--collapse :deep(.el-menu-item.el-menu-item) {
   padding: 0;
   justify-content: center;
-  margin: var(--space-1) 6px;
+  margin: 2px 6px;
   padding-left: 0;
 }
 
@@ -567,64 +546,62 @@ const submitPasswordChange = async () => {
 
 /* 管理后台折叠子菜单 */
 .clean-menu :deep(.el-sub-menu .el-sub-menu__title) {
-  height: 44px;
-  line-height: 44px;
-  margin: var(--space-1) var(--space-2);
-  border-radius: var(--radius-sm);
-  font-weight: 400;
-  font-size: var(--text-base);
-  padding-left: 20px;
+  height: 38px;
+  line-height: 38px;
+  margin: 2px 8px;
+  border-radius: var(--radius-md);
+  font-weight: 500;
+  font-size: 13px;
+  padding-left: 16px;
   color: #9CA3AF;
-  border-left: 3px solid transparent;
+  border-left: none;
 }
 
 .clean-menu :deep(.el-sub-menu .el-sub-menu__title:hover) {
-  background-color: rgba(255, 255, 255, 0.06);
-  color: var(--color-gray-200);
+  background-color: rgba(255, 255, 255, 0.08);
+  color: #FFFFFF;
 }
 
 .clean-menu :deep(.el-sub-menu .el-sub-menu__title .el-icon) {
-  font-size: 17px;
+  font-size: 16px;
   margin-right: 10px;
   color: #9CA3AF;
 }
 
 .clean-menu :deep(.el-sub-menu.is-opened .el-sub-menu__title) {
-  color: var(--corp-text-inverse);
+  color: #FFFFFF;
 }
 
 .clean-menu :deep(.el-sub-menu .el-menu) {
-  background-color: rgba(0, 0, 0, 0.15);
-  border-radius: 0 0 var(--radius-sm) var(--radius-sm);
-  margin: 0 var(--space-2) var(--space-1);
-  padding: var(--space-1) 0;
+  background-color: rgba(0, 0, 0, 0.2);
+  border-radius: 0 0 var(--radius-md) var(--radius-md);
+  margin: 0 8px 4px;
+  padding: 4px 0;
 }
 
 .clean-menu :deep(.el-sub-menu .el-menu .el-menu-item) {
-  height: 40px;
-  line-height: 40px;
-  padding-left: 48px;
-  font-size: 13px;
-  margin: 1px var(--space-1);
-  border-left: 3px solid transparent;
+  height: 36px;
+  line-height: 36px;
+  padding-left: 44px;
+  font-size: 12px;
+  margin: 1px 4px;
+  border-left: none;
 }
 
 .clean-menu :deep(.el-sub-menu .el-menu .el-menu-item .el-icon) {
-  font-size: 15px;
+  font-size: 14px;
   margin-right: 8px;
 }
 
 .clean-menu :deep(.el-sub-menu .el-menu .el-menu-item.is-active) {
-  background-color: rgba(37, 99, 235, 0.15);
-  color: var(--corp-text-inverse);
-  border-left-color: var(--color-primary-500);
+  background-color: rgba(59, 130, 246, 0.2);
+  color: #FFFFFF;
 }
 
-/* 折叠状态下子菜单的样式 */
 .clean-menu.el-menu--collapse :deep(.el-sub-menu .el-sub-menu__title) {
   padding: 0;
   justify-content: center;
-  margin: var(--space-1) 6px;
+  margin: 2px 6px;
   padding-left: 0;
 }
 
@@ -633,17 +610,15 @@ const submitPasswordChange = async () => {
 }
 
 .collapse-btn {
-  height: 44px;
+  height: 40px;
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: var(--space-2);
   color: rgba(255, 255, 255, 0.3);
   cursor: pointer;
   border-top: 1px solid rgba(255, 255, 255, 0.06);
-  transition: all 0.15s;
+  transition: all 0.12s;
   flex-shrink: 0;
-  font-size: var(--text-sm);
 }
 
 .collapse-btn:hover {
@@ -651,37 +626,38 @@ const submitPasswordChange = async () => {
   background-color: rgba(255, 255, 255, 0.04);
 }
 
+/* 头部 — 毛玻璃效果 */
 .header {
-  background-color: var(--bg-surface);
+  background: rgba(255, 255, 255, 0.92);
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 0 var(--space-6);
-  height: 56px;
+  padding: 0 20px;
+  height: var(--corp-header-height);
   z-index: 9;
-  border-bottom: 1px solid var(--color-gray-200);
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+  box-shadow: inset 0 -1px 0 #E5E7EB;
   gap: 16px;
 }
 
+/* 安全警告 — 低调胶囊 */
 .security-warning {
   display: flex;
   align-items: center;
-  gap: 6px;
-  padding: 4px 14px;
-  background: #fef2f2;
-  border: 1px solid #fca5a5;
-  border-radius: var(--radius-sm);
-  color: #dc2626;
-  font-size: 12px;
+  gap: 5px;
+  padding: 4px 12px;
+  background: #FEF3C7;
+  border-radius: var(--radius-full);
+  color: #92400E;
+  font-size: 11px;
   font-weight: 600;
-  letter-spacing: 0.3px;
   white-space: nowrap;
   flex-shrink: 0;
 }
 
 .security-warning .el-icon {
-  color: #dc2626;
+  color: #F59E0B;
   flex-shrink: 0;
 }
 
@@ -697,7 +673,7 @@ const submitPasswordChange = async () => {
 .header-left {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 10px;
 }
 
 .header-toggle {
@@ -727,98 +703,100 @@ const submitPasswordChange = async () => {
 }
 
 .breadcrumb-item {
-  font-size: 15px;
-  color: var(--corp-text-primary);
-  font-weight: 600;
+  font-size: 14px;
+  color: #111827;
+  font-weight: 700;
 }
 
 .header-right {
   display: flex;
   align-items: center;
-  gap: var(--space-3);
+  gap: 10px;
 }
 
 .header-tools {
   display: flex;
-  gap: var(--space-1);
+  gap: 2px;
 }
 
 .tool-icon-wrap {
-  width: 34px;
-  height: 34px;
+  width: 32px;
+  height: 32px;
   display: flex;
   align-items: center;
   justify-content: center;
-  border-radius: var(--radius-sm);
-  color: var(--color-gray-600);
+  border-radius: var(--radius-md);
+  color: #6B7280;
   cursor: pointer;
-  transition: all 0.15s;
+  transition: all 0.12s;
   position: relative;
 }
 
 .tool-icon-wrap:hover {
-  background-color: var(--color-gray-100);
-  color: var(--color-primary-500);
+  background-color: #F5F5F5;
+  color: #111827;
 }
 
 .badge-dot {
   position: absolute;
   top: 4px;
   right: 4px;
-  min-width: 16px;
-  height: 16px;
+  min-width: 15px;
+  height: 15px;
   border-radius: var(--radius-full);
-  background: var(--color-danger);
+  background: #EF4444;
   color: white;
-  font-size: 10px;
+  font-size: 9px;
+  font-weight: 700;
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 0 4px;
+  padding: 0 3px;
 }
 
 .header-divider {
   width: 1px;
-  height: 24px;
-  background-color: var(--color-gray-200);
+  height: 20px;
+  background-color: #E5E7EB;
 }
 
 .user-info {
   cursor: pointer;
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 4px 8px 4px 4px;
-  border-radius: var(--radius-sm);
-  transition: background 0.15s;
+  gap: 6px;
+  padding: 3px 6px 3px 3px;
+  border-radius: var(--radius-md);
+  transition: background 0.12s;
 }
 
 .user-info:hover {
-  background: var(--color-gray-100);
+  background: #F5F5F5;
 }
 
 .username {
-  color: var(--corp-text-primary);
-  font-weight: 500;
-  font-size: var(--text-sm);
+  color: #111827;
+  font-weight: 600;
+  font-size: 12px;
   line-height: 1.2;
 }
 
 .arrow-icon {
-  color: var(--color-gray-400);
+  color: #9CA3AF;
 }
 
 .user-avatar {
-  background: var(--color-primary-500);
-  color: var(--corp-text-inverse);
-  font-weight: 600;
-  font-size: var(--text-sm);
+  background: #111111;
+  color: #FFFFFF;
+  font-weight: 700;
+  font-size: 12px;
   flex-shrink: 0;
 }
 
+/* 主内容区 */
 .main-content {
-  background-color: var(--bg-body);
-  padding: var(--space-6);
+  background-color: #F5F5F5;
+  padding: 20px;
   overflow-y: auto;
   min-height: calc(100vh - var(--corp-header-height));
 }
