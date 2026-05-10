@@ -34,10 +34,17 @@ export class TaskService {
     reviewMode?: string;
     maxkbKnowledgeId?: string;  // 用户选择的知识库ID（兼容单个）
     maxkbKnowledgeIds?: string[];  // 用户选择的多个知识库ID
+    perspective?: string;  // 审查立场
+    preAnalysisData?: any;  // 预分析完整数据
+    reviewPoints?: string[];  // 用户选中的审查点
+    corePurposes?: string[];  // 用户自定义的核心目的
+    selectedTemplateId?: string;  // 选择的审查模板ID
     files?: Express.Multer.File[];
     dwgParsedData?: Record<string, any>;  // 前端 WASM 解析的 DWG 数据（按文件名映射）
   }): Promise<Task> {
-    const { title, description, creatorId, standardId, standardIds = [], reviewMode, maxkbKnowledgeId, maxkbKnowledgeIds, files = [], dwgParsedData } = data;
+    const { title, description, creatorId, standardId, standardIds = [], reviewMode, maxkbKnowledgeId, maxkbKnowledgeIds,
+      perspective, preAnalysisData, reviewPoints, corePurposes, selectedTemplateId,
+      files = [], dwgParsedData } = data;
 
     // 合并标准 ID：保留单选兼容，同时写入多选
     const allStandardIds = [...new Set([standardId, ...standardIds].filter((id): id is string => Boolean(id)))];
@@ -53,6 +60,20 @@ export class TaskService {
       knowledgeIdForDb = maxkbKnowledgeId;
     }
 
+    // 构建 preAnalysisData JSON（合并预分析结果和用户选择）
+    const preAnalysisJson = preAnalysisData
+      ? {
+          ...(typeof preAnalysisData === 'string' ? JSON.parse(preAnalysisData) : preAnalysisData),
+          reviewPoints: reviewPoints || [],
+          corePurposes: corePurposes || [],
+          selectedTemplateId: selectedTemplateId || 'general',
+        }
+      : (reviewPoints || corePurposes || selectedTemplateId) ? {
+          reviewPoints: reviewPoints || [],
+          corePurposes: corePurposes || [],
+          selectedTemplateId: selectedTemplateId || 'general',
+        } : undefined;
+
     // 创建任务
     const task = await prisma.task.create({
       data: {
@@ -62,6 +83,8 @@ export class TaskService {
         standardId: standardId || allStandardIds[0] || null,
         reviewMode: resolvedReviewMode as any,
         maxkbKnowledgeId: knowledgeIdForDb,
+        perspective: perspective || null,
+        preAnalysisData: preAnalysisJson || undefined,
         // DOC_REVIEW 需要先上传参照文件，创建时先保持 PENDING，待 ref-files 上传后再触发
         status: files.length > 0 && !shouldDelayReview ? 'PROCESSING' : 'PENDING',
       },
@@ -163,10 +186,13 @@ export class TaskService {
     take?: number; 
     status?: TaskStatus;
     search?: string;
+    creator?: string;
+    startDate?: string;
+    endDate?: string;
     creatorId?: string;
     [key: string]: any;
   }): Promise<{ total: number; tasks: any[] }> {
-    const { skip = 0, take = 10, status, search, creatorId, ...restFilter } = params;
+    const { skip = 0, take = 10, status, search, creator, startDate, endDate, creatorId, ...restFilter } = params;
 
     const where: any = {};
     if (status) {
@@ -177,6 +203,14 @@ export class TaskService {
     }
     if (search) {
       where.title = { contains: search, mode: 'insensitive' };
+    }
+    if (creator) {
+      where.creator = { name: { contains: creator, mode: 'insensitive' } };
+    }
+    if (startDate || endDate) {
+      where.createdAt = {};
+      if (startDate) where.createdAt.gte = new Date(startDate);
+      if (endDate) where.createdAt.lte = new Date(endDate + 'T23:59:59.999Z');
     }
     // 合并 RBAC 过滤条件
     Object.assign(where, restFilter);
@@ -693,6 +727,111 @@ export class TaskService {
     }
 
     return updated;
+  }
+
+  /**
+   * 获取审查摘要：聚合 TaskDetail 结果，按严重度/文件/类型统计
+   */
+  static async getReviewSummary(taskId: string) {
+    const task = await prisma.task.findUnique({
+      where: { id: taskId },
+      select: {
+        id: true,
+        title: true,
+        status: true,
+        reviewMode: true,
+        perspective: true,
+        preAnalysisData: true,
+        createdAt: true,
+        updatedAt: true,
+        creator: { select: { id: true, username: true, name: true } },
+      },
+    });
+
+    if (!task) {
+      return null;
+    }
+
+    // 获取所有审查结果
+    const details = await prisma.taskDetail.findMany({
+      where: { taskId },
+      include: {
+        file: { select: { id: true, fileName: true, fileType: true } },
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+
+    // 获取文件列表
+    const files = await prisma.taskFile.findMany({
+      where: { taskId },
+      orderBy: { createdAt: 'asc' },
+    });
+
+    // 统计严重度分布
+    const severityCounts = { error: 0, warning: 0, info: 0 };
+    for (const d of details) {
+      if (d.severity === 'error') severityCounts.error++;
+      else if (d.severity === 'warning') severityCounts.warning++;
+      else severityCounts.info++;
+    }
+
+    // 统计问题类型分布
+    const issueTypeMap: Record<string, number> = {};
+    for (const d of details) {
+      issueTypeMap[d.issueType] = (issueTypeMap[d.issueType] || 0) + 1;
+    }
+    const issueTypeCounts = Object.entries(issueTypeMap)
+      .map(([type, count]) => ({ type, count }))
+      .sort((a, b) => b.count - a.count);
+
+    // 按文件统计
+    const fileIssueCounts = files.map((f) => ({
+      fileId: f.id,
+      fileName: f.fileName,
+      fileType: f.fileType,
+      errorCount: f.errorCount || 0,
+      totalIssues: details.filter((d) => d.fileId === f.id).length,
+    }));
+
+    // 按规则代码统计（Top 10）
+    const ruleCodeMap: Record<string, { code: string; count: number; severity: string }> = {};
+    for (const d of details) {
+      const code = d.ruleCode || 'UNKNOWN';
+      if (!ruleCodeMap[code]) {
+        ruleCodeMap[code] = { code, count: 0, severity: d.severity };
+      }
+      ruleCodeMap[code].count++;
+    }
+    const topRuleCodes = Object.values(ruleCodeMap)
+      .sort((a, b) => b.count - a.count)
+      .slice(0, 10);
+
+    // 误报统计
+    const falsePositiveCount = details.filter((d) => d.isFalsePositive).length;
+
+    return {
+      task: {
+        id: task.id,
+        title: task.title,
+        status: task.status,
+        reviewMode: task.reviewMode,
+        perspective: task.perspective,
+        preAnalysisData: task.preAnalysisData,
+        createdAt: task.createdAt,
+        updatedAt: task.updatedAt,
+        creator: task.creator,
+      },
+      overview: {
+        totalIssues: details.length,
+        falsePositives: falsePositiveCount,
+        effectiveIssues: details.length - falsePositiveCount,
+        severityCounts,
+      },
+      issueTypeCounts,
+      fileIssueCounts,
+      topRuleCodes,
+      fileCount: files.length,
+    };
   }
 
 }

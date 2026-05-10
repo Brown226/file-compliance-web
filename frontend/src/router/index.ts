@@ -32,9 +32,15 @@ const routes: Array<RouteRecordRaw> = [
       },
       {
         path: 'review/:id',
+        name: 'TaskResults',
+        component: () => import('../views/TaskResultsView.vue'),
+        meta: { title: '审查结果（新版）', hidden: true }
+      },
+      {
+        path: 'tasks/details/:id',
         name: 'TaskDetails',
         component: () => import('../views/TaskDetails/index.vue'),
-        meta: { title: '审查结果', hidden: true }
+        meta: { title: '审查结果（旧版）', hidden: true }
       },
       {
         path: 'qna',
@@ -90,7 +96,13 @@ const routes: Array<RouteRecordRaw> = [
         path: 'admin/knowledge-categories',
         name: 'KnowledgeCategories',
         component: () => import('../views/admin/KnowledgeCategories.vue'),
-        meta: { title: '知识库子库管理', requiresAdminOrManager: true }
+        meta: { title: '知识库管理', requiresAdminOrManager: true }
+      },
+      {
+        path: 'admin/knowledge-categories/:id/documents',
+        name: 'KnowledgeDocuments',
+        component: () => import('../views/admin/KnowledgeDocuments.vue'),
+        meta: { title: '知识库文档管理', requiresAdminOrManager: true, hidden: true }
       },
       {
         path: 'admin/rule-libraries',

@@ -8,7 +8,8 @@ import { success, error, paginated } from '../utils/response';
 
 export const createTask = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
-    const { title, description, standardId, standardIds, reviewMode, maxkbKnowledgeId, maxkbKnowledgeIds } = req.body;
+    const { title, description, standardId, standardIds, reviewMode, maxkbKnowledgeId, maxkbKnowledgeIds,
+      perspective, preAnalysisData, reviewPoints, corePurposes, selectedTemplateId } = req.body;
     const creatorId = req.user?.id;
     const files = req.files as Express.Multer.File[];
 
@@ -54,6 +55,33 @@ export const createTask = async (req: AuthRequest, res: Response): Promise<void>
       parsedDwgData = dwgParsedData;
     }
 
+    // 解析 preAnalysisData（通过 FormData 传 JSON 字符串）
+    let parsedPreAnalysisData: any = undefined;
+    if (typeof preAnalysisData === 'string') {
+      try { parsedPreAnalysisData = JSON.parse(preAnalysisData); }
+      catch { /* 忽略解析错误 */ }
+    } else if (typeof preAnalysisData === 'object' && preAnalysisData !== null) {
+      parsedPreAnalysisData = preAnalysisData;
+    }
+
+    // 解析 reviewPoints（通过 FormData 传 JSON 字符串）
+    let parsedReviewPoints: string[] | undefined;
+    if (typeof reviewPoints === 'string') {
+      try { parsedReviewPoints = JSON.parse(reviewPoints); }
+      catch { /* 忽略解析错误 */ }
+    } else if (Array.isArray(reviewPoints)) {
+      parsedReviewPoints = reviewPoints;
+    }
+
+    // 解析 corePurposes（通过 FormData 传 JSON 字符串）
+    let parsedCorePurposes: string[] | undefined;
+    if (typeof corePurposes === 'string') {
+      try { parsedCorePurposes = JSON.parse(corePurposes); }
+      catch { /* 忽略解析错误 */ }
+    } else if (Array.isArray(corePurposes)) {
+      parsedCorePurposes = corePurposes;
+    }
+
     const task = await TaskService.createTask({
       title,
       description,
@@ -65,6 +93,11 @@ export const createTask = async (req: AuthRequest, res: Response): Promise<void>
       maxkbKnowledgeIds: parsedKnowledgeIds,
       files: files || [],
       dwgParsedData: parsedDwgData,
+      perspective,
+      preAnalysisData: parsedPreAnalysisData,
+      reviewPoints: parsedReviewPoints,
+      corePurposes: parsedCorePurposes,
+      selectedTemplateId,
     });
 
     success(res, task, '任务创建成功');
@@ -83,12 +116,15 @@ export const getTasks = async (req: AuthRequest, res: Response): Promise<void> =
     const take = parseInt(req.query.take as string) || limit;
     const status = req.query.status as TaskStatus | undefined;
     const search = req.query.search as string | undefined;
+    const creator = req.query.creator as string | undefined;
+    const startDate = req.query.startDate as string | undefined;
+    const endDate = req.query.endDate as string | undefined;
     const mine = req.query.mine === 'true';
     
     // RBAC: 根据角色过滤数据可见性
     const roleFilter = mine ? { creatorId: req.user?.id } : await getTaskFilterByRole(req.user);
     
-    const result = await TaskService.getTasks({ skip, take, status, search, ...roleFilter });
+    const result = await TaskService.getTasks({ skip, take, status, search, creator, startDate, endDate, ...roleFilter });
     // 映射字段名以匹配前端期望的格式
     const items = result.tasks.map((t: any) => ({
       id: t.id,
@@ -514,6 +550,24 @@ export const toggleFalsePositive = async (req: AuthRequest, res: Response): Prom
       error(res, '未找到该审查结果', 404);
       return;
     }
+    error(res, '服务器内部错误', 500);
+  }
+};
+
+/** 获取任务审查摘要（聚合统计） */
+export const getReviewSummary = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const id = req.params.id as string;
+    const summary = await TaskService.getReviewSummary(id);
+
+    if (!summary) {
+      error(res, '未找到该任务', 404);
+      return;
+    }
+
+    success(res, summary);
+  } catch (err) {
+    console.error('Get Review Summary Error:', err);
     error(res, '服务器内部错误', 500);
   }
 };

@@ -65,7 +65,7 @@
             </el-menu-item>
             <el-menu-item index="/admin/knowledge-categories">
               <el-icon><FolderOpened /></el-icon>
-              <template #title><span>知识库子库</span></template>
+              <template #title><span>知识库管理</span></template>
             </el-menu-item>
             <el-menu-item index="/admin/rule-libraries">
               <el-icon><Notebook /></el-icon>

@@ -191,16 +191,31 @@
         <!-- 空状态 -->
         <template #empty>
           <div class="empty-state">
-            <svg viewBox="0 0 120 100" fill="none" class="empty-svg">
-              <rect x="20" y="15" width="80" height="70" rx="6" stroke="var(--color-gray-200)" stroke-width="2" fill="var(--color-gray-50)"/>
-              <path d="M35 38H85M35 50H75M35 62H60" stroke="var(--color-gray-300)" stroke-width="2" stroke-linecap="round"/>
-              <circle cx="78" cy="68" r="14" fill="var(--color-primary-50)" stroke="var(--color-primary-500)" stroke-width="1.5"/>
-              <path d="M73 68L77 72L84 64" stroke="var(--color-primary-700)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-            </svg>
-            <p>暂无审查任务</p>
-            <el-button type="primary" size="large" @click="$router.push('/tasks/new')">
-              创建第一个审查任务
-            </el-button>
+            <template v-if="hasActiveFilters">
+              <svg viewBox="0 0 120 100" fill="none" class="empty-svg">
+                <rect x="20" y="15" width="80" height="70" rx="6" stroke="var(--color-gray-200)" stroke-width="2" fill="var(--color-gray-50)"/>
+                <path d="M35 38H85M35 50H75M35 62H60" stroke="var(--color-gray-300)" stroke-width="2" stroke-linecap="round"/>
+                <circle cx="78" cy="68" r="14" fill="var(--color-warning-50)" stroke="var(--color-warning-500)" stroke-width="1.5"/>
+                <path d="M78 63V70M78 73V74" stroke="var(--color-warning-700)" stroke-width="2" stroke-linecap="round"/>
+              </svg>
+              <p>未找到匹配的审查任务</p>
+              <p class="empty-hint">尝试调整筛选条件或重置过滤器</p>
+              <el-button type="primary" size="large" @click="resetFilter">
+                重置筛选条件
+              </el-button>
+            </template>
+            <template v-else>
+              <svg viewBox="0 0 120 100" fill="none" class="empty-svg">
+                <rect x="20" y="15" width="80" height="70" rx="6" stroke="var(--color-gray-200)" stroke-width="2" fill="var(--color-gray-50)"/>
+                <path d="M35 38H85M35 50H75M35 62H60" stroke="var(--color-gray-300)" stroke-width="2" stroke-linecap="round"/>
+                <circle cx="78" cy="68" r="14" fill="var(--color-primary-50)" stroke="var(--color-primary-500)" stroke-width="1.5"/>
+                <path d="M73 68L77 72L84 64" stroke="var(--color-primary-700)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+              </svg>
+              <p>暂无审查任务</p>
+              <el-button type="primary" size="large" @click="$router.push('/tasks/new')">
+                创建第一个审查任务
+              </el-button>
+            </template>
           </div>
         </template>
       </el-table>
@@ -223,7 +238,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, onMounted, onUnmounted } from 'vue'
+import { ref, reactive, computed, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { Download, Search, Plus, Select, Delete } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
@@ -257,6 +272,11 @@ const filters = reactive({
 })
 
 const showAdvancedFilter = ref(false)
+
+// 是否有激活的过滤器
+const hasActiveFilters = computed(() => {
+  return !!(filters.search || filters.status || filters.creator || (filters.dateRange && filters.dateRange.length > 0))
+})
 
 const getStatusLabel = getTaskStatusLabel
 
@@ -298,7 +318,10 @@ const fetchTasks = async (silent = false) => {
       page: currentPage.value,
       limit: pageSize.value,
       status: filters.status || undefined,
-      title: filters.search || undefined,
+      search: filters.search || undefined,
+      creator: filters.creator || undefined,
+      startDate: filters.dateRange?.[0] || undefined,
+      endDate: filters.dateRange?.[1] || undefined,
     })
     tableData.value = data.items || []
     total.value = data.total || 0
@@ -642,6 +665,14 @@ onUnmounted(() => { stopPolling() })
   font-size: 15px;
   margin: 0 0 20px;
   font-weight: 500;
+}
+
+.empty-hint {
+  font-size: 13px !important;
+  color: var(--corp-text-secondary) !important;
+  margin: -12px 0 16px !important;
+  font-weight: 400 !important;
+  opacity: 0.7;
 }
 
 /* ===== 分页 ===== */

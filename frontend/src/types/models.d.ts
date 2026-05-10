@@ -95,6 +95,8 @@ export interface TaskDetail {
   textPosition?: TextPosition
   /** DWG 解析元数据 */
   dwgMetadata?: DwgMetadata
+  /** 标记建议是否已采纳 */
+  adopted?: boolean
 }
 
 /** 文本位置信息 */

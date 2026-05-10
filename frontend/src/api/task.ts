@@ -16,7 +16,10 @@ export function getTasksApi(params?: {
   page?: number
   limit?: number
   status?: string
-  title?: string
+  search?: string
+  creator?: string
+  startDate?: string
+  endDate?: string
 }) {
   return request.get<PaginatedResponse<Task>>('/tasks', { params })
 }
@@ -151,6 +154,18 @@ export function preAnalyzeApi(files: Array<{ name: string; size: number }>) {
       };
     };
   }>('/tasks/pre-analyze', { files }, { timeout: 120000 }) // LLM分析需要更长时间，设置为2分钟
+}
+
+// 获取任务审查摘要（聚合统计）
+export function getReviewSummaryApi(id: string) {
+  return request.get<{
+    task: any;
+    overview: { totalIssues: number; falsePositives: number; effectiveIssues: number; severityCounts: { error: number; warning: number; info: number } };
+    issueTypeCounts: Array<{ type: string; count: number }>;
+    fileIssueCounts: Array<{ fileId: string; fileName: string; fileType: string; errorCount: number; totalIssues: number }>;
+    topRuleCodes: Array<{ code: string; count: number; severity: string }>;
+    fileCount: number;
+  }>(`/tasks/${id}/review-summary`)
 }
 
 // 获取文件提取文本内容（用于原文预览定位）

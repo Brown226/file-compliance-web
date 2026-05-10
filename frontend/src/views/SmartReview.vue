@@ -270,7 +270,7 @@
               </el-tag>
             </div>
             <div v-if="config.libraryReview" class="config-body">
-              <el-select v-model="config.knowledgeCategoryId" placeholder="选择知识库子库" style="width: 100%">
+              <el-select v-model="config.knowledgeCategoryIds" placeholder="选择一个或多个知识库子库" style="width: 100%" multiple collapse-tags collapse-tags-tooltip>
                 <el-option
                   v-for="kb in knowledgeCategories"
                   :key="kb.id"
@@ -733,7 +733,7 @@ const applyPreAnalysisData = (data: any) => {
   }
   config.libraryReview = data.recommendations.libraryReview.enabled
   if (data.recommendations.libraryReview.categoryId) {
-    config.knowledgeCategoryId = data.recommendations.libraryReview.categoryId
+    config.knowledgeCategoryIds = [data.recommendations.libraryReview.categoryId]
   }
   config.ruleLibrary = data.recommendations.ruleLibrary.enabled
   if (data.recommendations.ruleLibrary.libraryId) {
@@ -871,7 +871,8 @@ const uploadFilesForPreAnalysis = async (): Promise<Array<{ name: string; size: 
   // 使用axios调用轻量级上传API
   // 注意：响应拦截器已将 response.data 提取为内部 data 对象（即 { files: [...] }）
   const response = await uploadOnlyApi(formData)
-  const { files } = response.data || {}
+  const responseData = response as any
+  const { files } = responseData?.data || responseData || {}
   
   if (!files || files.length === 0) {
     throw new Error('上传返回空文件列表')
@@ -886,11 +887,88 @@ const uploadFilesForPreAnalysis = async (): Promise<Array<{ name: string; size: 
 
 const preAnalysisReasons = ref<Record<string, string>>({})
 
+// ===== localStorage 状态持久化 =====
+const STORAGE_KEY = 'smartReview_draft_v2'
+
+interface PersistedState {
+  currentStep: number
+  title: string
+  preAnalyzed: boolean
+  preAnalysisData: typeof preAnalysisData
+  config: typeof config
+  selectedReviewPoints: string[]
+  customPurposes: Array<{ value: string }>
+  allSuggestedReviewPoints: string[]
+  allSuggestedCorePurposes: string[]
+  selectedTemplateId: string
+  fileNames: string[]
+  refFileNames: string[]
+  savedAt: number
+}
+
+const saveState = () => {
+  try {
+    const state: PersistedState = {
+      currentStep: currentStep.value,
+      title: form.title,
+      preAnalyzed: preAnalyzed.value,
+      preAnalysisData: { ...preAnalysisData },
+      config: { ...config },
+      selectedReviewPoints: [...selectedReviewPoints.value],
+      customPurposes: customPurposes.value.map(p => ({ value: p.value })),
+      allSuggestedReviewPoints: [...allSuggestedReviewPoints.value],
+      allSuggestedCorePurposes: [...allSuggestedCorePurposes.value],
+      selectedTemplateId: selectedTemplateId.value,
+      fileNames: fileList.value.map(f => f.name),
+      refFileNames: refFileList.value.map(f => f.name),
+      savedAt: Date.now(),
+    }
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(state))
+  } catch (e) {
+    // localStorage 不可用或存储满时静默失败
+  }
+}
+
+const restoreState = (): boolean => {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY)
+    if (!raw) return false
+    const state: PersistedState = JSON.parse(raw)
+    // 30分钟内有效
+    if (Date.now() - state.savedAt > 30 * 60 * 1000) {
+      clearSavedState()
+      return false
+    }
+    if (state.currentStep !== undefined) currentStep.value = state.currentStep
+    if (state.title) form.title = state.title
+    if (state.preAnalyzed) preAnalyzed.value = state.preAnalyzed
+    if (state.preAnalysisData) {
+      if (state.preAnalysisData.contractType) preAnalysisData.contractType = state.preAnalysisData.contractType
+      if (state.preAnalysisData.potentialParties?.length) preAnalysisData.potentialParties = state.preAnalysisData.potentialParties
+      if (state.preAnalysisData.suggestedReviewPoints?.length) preAnalysisData.suggestedReviewPoints = state.preAnalysisData.suggestedReviewPoints
+      if (state.preAnalysisData.suggestedCorePurposes?.length) preAnalysisData.suggestedCorePurposes = state.preAnalysisData.suggestedCorePurposes
+    }
+    if (state.config) Object.assign(config, state.config)
+    if (state.selectedReviewPoints?.length) selectedReviewPoints.value = state.selectedReviewPoints
+    if (state.customPurposes?.length) customPurposes.value = state.customPurposes
+    if (state.allSuggestedReviewPoints?.length) allSuggestedReviewPoints.value = state.allSuggestedReviewPoints
+    if (state.allSuggestedCorePurposes?.length) allSuggestedCorePurposes.value = state.allSuggestedCorePurposes
+    if (state.selectedTemplateId) selectedTemplateId.value = state.selectedTemplateId
+    return true
+  } catch (e) {
+    return false
+  }
+}
+
+const clearSavedState = () => {
+  try { localStorage.removeItem(STORAGE_KEY) } catch (e) { /* ignore */ }
+}
+
 // ===== 审查配置 =====
 const config = reactive({
   perspective: '',
   libraryReview: true,
-  knowledgeCategoryId: '',
+  knowledgeCategoryIds: [] as string[],
   docReview: false,
   ruleLibrary: false,
   ruleLibraryId: '',
@@ -921,6 +999,12 @@ watch(refFileList, (newList) => {
     config.docReview = true
   }
 })
+
+// 监听关键状态变化，自动保存到 localStorage
+watch([currentStep, () => form.title, preAnalyzed], () => saveState(), { deep: true })
+watch(preAnalysisData, () => saveState(), { deep: true })
+watch(config, () => saveState(), { deep: true })
+watch([selectedReviewPoints, customPurposes, selectedTemplateId], () => saveState(), { deep: true })
 
 // ===== 结果展示 =====
 const activeAiTab = ref('summary')
@@ -1041,18 +1125,8 @@ const startAnalysis = async () => {
     ElMessage.warning('请选择您的审查立场。')
     return
   }
-  loading.value = true
-  loadingMessage.value = 'AI正在深度审查文件，这可能需要1-2分钟...'
-  try {
-    // TODO: 调用后端API开始分析
-    await new Promise(resolve => setTimeout(resolve, 2000))
-    currentStep.value = 2
-    ElMessage.success('分析完成！')
-  } catch (err) {
-    ElMessage.error('分析失败，请稍后重试')
-  } finally {
-    loading.value = false
-  }
+  // 直接提交任务，后端会自动触发审查流程
+  await submitTask()
 }
 
 const addPurpose = () => {
@@ -1167,9 +1241,42 @@ const submitTask = async () => {
     }
     fd.append('reviewMode', reviewMode)
 
-    // 知识库
-    if (config.libraryReview && config.knowledgeCategoryId) {
-      fd.append('maxkbKnowledgeIds', JSON.stringify([config.knowledgeCategoryId]))
+    // 知识库（支持多选）
+    if (config.libraryReview && config.knowledgeCategoryIds.length > 0) {
+      fd.append('maxkbKnowledgeIds', JSON.stringify(config.knowledgeCategoryIds))
+    }
+
+    // 审查立场
+    if (config.perspective) {
+      fd.append('perspective', config.perspective)
+    }
+
+    // 预分析数据（完整对象，包含文件类型、签约方等）
+    if (preAnalyzed.value) {
+      fd.append('preAnalysisData', JSON.stringify(preAnalysisData))
+    }
+
+    // 用户选中的审查点
+    if (selectedReviewPoints.value.length > 0) {
+      fd.append('reviewPoints', JSON.stringify(selectedReviewPoints.value))
+    }
+
+    // 用户自定义的核心目的（过滤空值）
+    const validPurposes = customPurposes.value
+      .map(p => p.value.trim())
+      .filter(v => v.length > 0)
+    if (validPurposes.length > 0) {
+      fd.append('corePurposes', JSON.stringify(validPurposes))
+    }
+
+    // 选择的审查模板
+    if (selectedTemplateId.value) {
+      fd.append('selectedTemplateId', selectedTemplateId.value)
+    }
+
+    // 规则库（如果启用）
+    if (config.ruleLibrary && config.ruleLibraryId) {
+      fd.append('standardIds', JSON.stringify([config.ruleLibraryId]))
     }
 
     // 文件
@@ -1182,6 +1289,7 @@ const submitTask = async () => {
 
     const { data } = await createTaskApi(fd)
     ElMessage.success('审查任务已创建')
+    clearSavedState() // 任务创建成功，清除草稿
     router.push(`/review/${data.id}`)
   } catch (e: any) {
     ElMessage.error(e?.response?.data?.message || '创建任务失败')
@@ -1192,6 +1300,12 @@ const submitTask = async () => {
 
 // ===== 初始化 =====
 onMounted(async () => {
+  // 恢复上次的草稿状态
+  const restored = restoreState()
+  if (restored && currentStep.value > 0) {
+    console.log('[SmartReview] 已恢复草稿状态, step:', currentStep.value)
+  }
+  
   try {
     const [catRes, libRes] = await Promise.all([
       getAllKnowledgeCategoriesApi(),

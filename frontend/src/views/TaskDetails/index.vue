@@ -58,6 +58,9 @@
               <el-radio-button value="analytics" class="view-tab">
                 <el-icon><DataAnalysis /></el-icon> 统计分析
               </el-radio-button>
+              <el-radio-button value="ai-summary" class="view-tab">
+                <el-icon><MagicStick /></el-icon> AI审查总结
+              </el-radio-button>
             </el-radio-group>
             <span class="detail-count" v-if="detailViewMode === 'detail'">
               共 <strong>{{ allDetails.length }}</strong> 条问题
@@ -195,6 +198,150 @@
             </div>
           </div>
 
+          <!-- AI审查总结面板 -->
+          <div class="split-left ai-summary-panel" v-show="detailViewMode === 'ai-summary'">
+            <div class="ai-summary-content">
+              <div v-if="aiSummaryLoading" class="ai-summary-loading">
+                <el-icon class="is-loading" :size="32"><Loading /></el-icon>
+                <p>正在加载审查总结...</p>
+              </div>
+              
+              <template v-else-if="aiSummary">
+                <!-- 任务信息概览 -->
+                <div class="ai-summary-section">
+                  <h3 class="section-title">
+                    <el-icon><InfoFilled /></el-icon> 任务信息
+                  </h3>
+                  <el-descriptions :column="2" border size="small">
+                    <el-descriptions-item label="任务标题">{{ aiSummary.task?.title || '-' }}</el-descriptions-item>
+                    <el-descriptions-item label="审查模式">{{ getReviewModeLabel(aiSummary.task?.reviewMode) }}</el-descriptions-item>
+                    <el-descriptions-item label="审查立场">{{ aiSummary.task?.perspective || '未指定' }}</el-descriptions-item>
+                    <el-descriptions-item label="状态">
+                      <el-tag :type="aiSummary.task?.status === 'COMPLETED' ? 'success' : aiSummary.task?.status === 'FAILED' ? 'danger' : 'warning'" size="small">
+                        {{ aiSummary.task?.status || '-' }}
+                      </el-tag>
+                    </el-descriptions-item>
+                    <el-descriptions-item label="创建时间">{{ formatDateTime(aiSummary.task?.createdAt) }}</el-descriptions-item>
+                    <el-descriptions-item label="完成时间">{{ formatDateTime(aiSummary.task?.updatedAt) }}</el-descriptions-item>
+                    <el-descriptions-item label="创建人" v-if="aiSummary.task?.creator">{{ aiSummary.task.creator.name || aiSummary.task.creator.username }}</el-descriptions-item>
+                    <el-descriptions-item label="文件数">{{ aiSummary.fileCount || 0 }}</el-descriptions-item>
+                  </el-descriptions>
+                </div>
+
+                <!-- 预分析信息 -->
+                <div class="ai-summary-section" v-if="aiSummary.task?.preAnalysisData">
+                  <h3 class="section-title">
+                    <el-icon><MagicStick /></el-icon> 预分析信息
+                  </h3>
+                  <div class="pre-analysis-info">
+                    <div class="info-row" v-if="aiSummary.task.preAnalysisData.contractType">
+                      <span class="info-label">文件类型：</span>
+                      <el-tag size="small" type="primary">{{ aiSummary.task.preAnalysisData.contractType }}</el-tag>
+                    </div>
+                    <div class="info-row" v-if="aiSummary.task.preAnalysisData.reviewPoints?.length">
+                      <span class="info-label">审查点：</span>
+                      <div class="info-tags">
+                        <el-tag v-for="(pt, i) in aiSummary.task.preAnalysisData.reviewPoints" :key="i" size="small" type="success">{{ pt }}</el-tag>
+                      </div>
+                    </div>
+                    <div class="info-row" v-if="aiSummary.task.preAnalysisData.corePurposes?.length">
+                      <span class="info-label">核心目的：</span>
+                      <div class="info-tags">
+                        <el-tag v-for="(cp, i) in aiSummary.task.preAnalysisData.corePurposes" :key="i" size="small" type="warning">{{ cp }}</el-tag>
+                      </div>
+                    </div>
+                    <div class="info-row" v-if="aiSummary.task.preAnalysisData.selectedTemplateId">
+                      <span class="info-label">审查模板：</span>
+                      <el-tag size="small">{{ aiSummary.task.preAnalysisData.selectedTemplateId }}</el-tag>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- 审查统计概览 -->
+                <div class="ai-summary-section">
+                  <h3 class="section-title">
+                    <el-icon><DataAnalysis /></el-icon> 审查统计概览
+                  </h3>
+                  <div class="summary-stats-cards">
+                    <div class="stat-card stat-total">
+                      <div class="stat-num">{{ aiSummary.overview?.totalIssues || 0 }}</div>
+                      <div class="stat-desc">总问题数</div>
+                    </div>
+                    <div class="stat-card stat-error">
+                      <div class="stat-num">{{ aiSummary.overview?.severityCounts?.error || 0 }}</div>
+                      <div class="stat-desc">错误</div>
+                    </div>
+                    <div class="stat-card stat-warning">
+                      <div class="stat-num">{{ aiSummary.overview?.severityCounts?.warning || 0 }}</div>
+                      <div class="stat-desc">警告</div>
+                    </div>
+                    <div class="stat-card stat-info">
+                      <div class="stat-num">{{ aiSummary.overview?.severityCounts?.info || 0 }}</div>
+                      <div class="stat-desc">提示</div>
+                    </div>
+                    <div class="stat-card stat-fp">
+                      <div class="stat-num">{{ aiSummary.overview?.falsePositives || 0 }}</div>
+                      <div class="stat-desc">误报</div>
+                    </div>
+                    <div class="stat-card stat-effective">
+                      <div class="stat-num">{{ aiSummary.overview?.effectiveIssues || 0 }}</div>
+                      <div class="stat-desc">有效问题</div>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- 问题类型分布 -->
+                <div class="ai-summary-section" v-if="aiSummary.issueTypeCounts?.length">
+                  <h3 class="section-title">问题类型分布</h3>
+                  <div class="type-distribution-list">
+                    <div v-for="(item, i) in aiSummary.issueTypeCounts" :key="i" class="type-item">
+                      <el-tag :type="getCategoryTagType(item.type)" size="small" effect="plain" round>
+                        {{ getIssueTypeLabel(item.type) }}
+                      </el-tag>
+                      <el-progress 
+                        :percentage="aiSummary.overview?.totalIssues > 0 ? Math.round((Number(item.count) / Number(aiSummary.overview.totalIssues)) * 100) : 0" 
+                        :stroke-width="14"
+                        :color="getProgressColor(Number(i) || 0)"
+                      />
+                      <span class="type-count">{{ item.count }} 条</span>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- 按文件统计 -->
+                <div class="ai-summary-section" v-if="aiSummary.fileIssueCounts?.length">
+                  <h3 class="section-title">按文件统计</h3>
+                  <el-table :data="aiSummary.fileIssueCounts" size="small" border stripe max-height="300">
+                    <el-table-column prop="fileName" label="文件名" show-overflow-tooltip />
+                    <el-table-column prop="fileType" label="类型" width="80" align="center">
+                      <template #default="{ row }">
+                        <el-tag size="small" type="info">{{ row.fileType?.toUpperCase() }}</el-tag>
+                      </template>
+                    </el-table-column>
+                    <el-table-column prop="totalIssues" label="问题数" width="90" align="center" sortable />
+                    <el-table-column prop="errorCount" label="错误数" width="90" align="center" sortable />
+                  </el-table>
+                </div>
+
+                <!-- Top 规则代码 -->
+                <div class="ai-summary-section" v-if="aiSummary.topRuleCodes?.length">
+                  <h3 class="section-title">高频规则（Top {{ aiSummary.topRuleCodes.length }}）</h3>
+                  <div class="rule-code-list">
+                    <div v-for="(rule, i) in aiSummary.topRuleCodes" :key="i" class="rule-item">
+                      <span class="rule-rank">{{ String(Number(i) + 1) }}</span>
+                      <el-tag :type="rule.severity === 'error' ? 'danger' : rule.severity === 'warning' ? 'warning' : 'info'" size="small">{{ rule.code }}</el-tag>
+                      <span class="rule-count">{{ rule.count }} 次</span>
+                    </div>
+                  </div>
+                </div>
+
+                <EmptyState v-if="aiSummary.overview?.totalIssues === 0" icon="🎉" title="审查通过" description="未发现任何合规问题" />
+              </template>
+
+              <EmptyState v-else-if="!aiSummaryLoading" icon="📋" title="暂无总结数据" description="请等待审查完成后查看" />
+            </div>
+          </div>
+
           <!-- 可拖拽分隔线 -->
           <div 
             class="split-divider" 
@@ -270,8 +417,8 @@
 import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { List, Document, View, DArrowLeft, DArrowRight, Close, WarningFilled, Clock, DataAnalysis } from '@element-plus/icons-vue'
-import { getTaskByIdApi, getTaskDetailsApi, exportTaskReportApi, toggleFalsePositiveApi, updateTaskStatusApi, reReviewTaskApi } from '@/api/task'
+import { List, Document, View, DArrowLeft, DArrowRight, Close, WarningFilled, Clock, DataAnalysis, MagicStick, InfoFilled, Loading } from '@element-plus/icons-vue'
+import { getTaskByIdApi, getTaskDetailsApi, exportTaskReportApi, toggleFalsePositiveApi, updateTaskStatusApi, reReviewTaskApi, getReviewSummaryApi } from '@/api/task'
 import type { Task, TaskDetail, TaskFile } from '@/types/models'
 import TaskInfoHeader from './TaskInfoHeader.vue'
 import FileTreePanel from './FileTreePanel.vue'
@@ -493,8 +640,55 @@ const setupWsSubscription = () => {
 }
 
 // ===== 视图切换 =====
-/** 右侧视图模式：detail=分屏明细视图, summary=汇总表格视图, analytics=统计分析 */
-const detailViewMode = ref<'detail' | 'summary' | 'analytics'>('detail')
+/** 右侧视图模式：detail=分屏明细视图, summary=汇总表格视图, analytics=统计分析, ai-summary=AI审查总结 */
+const detailViewMode = ref<'detail' | 'summary' | 'analytics' | 'ai-summary'>('detail')
+
+// ===== AI 审查总结 =====
+const aiSummary = ref<any>(null)
+const aiSummaryLoading = ref(false)
+
+const fetchAiSummary = async () => {
+  aiSummaryLoading.value = true
+  try {
+    const { data } = await getReviewSummaryApi(taskId.value)
+    aiSummary.value = data
+  } catch (e: any) {
+    console.warn('[TaskDetails] 获取审查总结失败:', e)
+  } finally {
+    aiSummaryLoading.value = false
+  }
+}
+
+// 监听切换到 AI 总结 tab 时加载数据
+watch(() => detailViewMode.value, (mode) => {
+  if (mode === 'ai-summary' && !aiSummary.value) {
+    fetchAiSummary()
+  }
+})
+
+const getReviewModeLabel = (mode?: string) => {
+  const labels: Record<string, string> = {
+    FULL_REVIEW: '全面审查',
+    LIBRARY_REVIEW: '知识库审查',
+    DOC_REVIEW: '以文审文',
+    RULE_REVIEW: '规则库审查',
+  }
+  return labels[mode || ''] || mode || '未知'
+}
+
+const formatDateTime = (dateStr?: string) => {
+  if (!dateStr) return '-'
+  try {
+    return new Date(dateStr).toLocaleString('zh-CN')
+  } catch {
+    return dateStr
+  }
+}
+
+const getProgressColor = (index: number) => {
+  const colors = ['#409EFF', '#67C23A', '#E6A23C', '#F56C6C', '#909399', '#B37FEB', '#36CFC9', '#FF85C0']
+  return colors[index % colors.length]
+}
 
 /** 当前右侧预览面板对应的文件名 */
 const previewFileName = computed(() => {
@@ -550,7 +744,7 @@ const filteredSummaryIssues = computed(() => {
 })
 
 // ===== 统计分析 =====
-import { CircleCloseFilled, WarningFilled, CircleCheckFilled, DocumentChecked } from '@element-plus/icons-vue'
+import { CircleCloseFilled, CircleCheckFilled, DocumentChecked } from '@element-plus/icons-vue'
 
 /** 统计概览数据 */
 const analyticsStats = computed(() => {
@@ -1594,6 +1788,171 @@ onUnmounted(() => {
   
   .severity-item {
     grid-template-columns: 60px 1fr 80px;
+  }
+}
+
+/* ===== AI 审查总结面板 ===== */
+.ai-summary-panel {
+  flex: 1;
+  overflow-y: auto;
+  padding: 20px 24px;
+}
+
+.ai-summary-content {
+  max-width: 960px;
+  margin: 0 auto;
+}
+
+.ai-summary-loading {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 80px 0;
+  color: #909399;
+  gap: 16px;
+}
+
+.ai-summary-section {
+  margin-bottom: 28px;
+}
+
+.ai-summary-section .section-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 16px;
+  font-weight: 600;
+  color: #303133;
+  margin-bottom: 16px;
+  padding-bottom: 10px;
+  border-bottom: 2px solid #E5E7EB;
+}
+
+/* 预分析信息 */
+.pre-analysis-info {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.pre-analysis-info .info-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.pre-analysis-info .info-label {
+  font-size: 14px;
+  color: #606266;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.pre-analysis-info .info-tags {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+/* 统计卡片 */
+.summary-stats-cards {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+}
+
+.stat-card {
+  padding: 20px 16px;
+  border-radius: 8px;
+  text-align: center;
+  background: #F5F7FA;
+  border: 1px solid #E4E7ED;
+  transition: transform 0.2s;
+}
+
+.stat-card:hover {
+  transform: translateY(-2px);
+}
+
+.stat-card .stat-num {
+  font-size: 28px;
+  font-weight: 700;
+  line-height: 1.2;
+}
+
+.stat-card .stat-desc {
+  font-size: 13px;
+  color: #909399;
+  margin-top: 6px;
+}
+
+.stat-card.stat-total .stat-num { color: #409EFF; }
+.stat-card.stat-error .stat-num { color: #F56C6C; }
+.stat-card.stat-warning .stat-num { color: #E6A23C; }
+.stat-card.stat-info .stat-num { color: #409EFF; }
+.stat-card.stat-fp .stat-num { color: #909399; }
+.stat-card.stat-effective .stat-num { color: #67C23A; }
+
+/* 问题类型分布列表 */
+.type-distribution-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.type-item {
+  display: grid;
+  grid-template-columns: 100px 1fr 60px;
+  align-items: center;
+  gap: 12px;
+}
+
+.type-item .type-count {
+  font-size: 13px;
+  color: #606266;
+  text-align: right;
+  white-space: nowrap;
+}
+
+/* 规则代码列表 */
+.rule-code-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.rule-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  background: #F5F7FA;
+  border-radius: 6px;
+  border: 1px solid #E4E7ED;
+}
+
+.rule-item .rule-rank {
+  font-size: 12px;
+  font-weight: 700;
+  color: #909399;
+  min-width: 20px;
+}
+
+.rule-item .rule-count {
+  font-size: 13px;
+  color: #606266;
+}
+
+/* 响应式 */
+@media (max-width: 768px) {
+  .summary-stats-cards {
+    grid-template-columns: repeat(2, 1fr);
+  }
+  
+  .type-item {
+    grid-template-columns: 80px 1fr 50px;
   }
 }
 </style>

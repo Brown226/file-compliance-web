@@ -266,6 +266,41 @@
   border: none;
 }
 
+/* Drawer 抽屉 */
+.el-drawer.el-drawer {
+  border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+}
+.el-drawer__header {
+  font-weight: 700;
+  font-size: var(--text-lg);
+  color: var(--corp-text-primary);
+  padding: var(--space-5) var(--space-6);
+  margin-bottom: 0;
+  border-bottom: 1px solid #E5E7EB;
+}
+.el-drawer__body {
+  padding: var(--space-6);
+  color: var(--corp-text-primary);
+}
+
+/* Upload 上传组件 */
+.el-upload-dragger {
+  border-radius: var(--radius-md);
+  border: 2px dashed #E5E7EB;
+  background: var(--bg-surface-hover);
+  transition: border-color var(--corp-transition-fast), background var(--corp-transition-fast);
+}
+.el-upload-dragger:hover {
+  border-color: var(--corp-primary);
+  background: var(--color-primary-50);
+}
+
+/* Switch 开关 */
+.el-switch.is-checked .el-switch__core {
+  background-color: var(--corp-primary);
+  border-color: var(--corp-primary);
+}
+
 /* ===== Vite 6 + Lightning CSS 修复 ===== */
 .el-menu,
 .el-menu-item,

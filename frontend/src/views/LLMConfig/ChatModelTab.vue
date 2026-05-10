@@ -94,6 +94,14 @@
           保存配置
         </el-button>
       </div>
+
+      <!-- 测试结果内联显示 -->
+      <div v-if="connectionTestResult" class="test-result" :class="connectionTestResult.success ? 'test-success' : 'test-fail'">
+        <el-icon><component :is="connectionTestResult.success ? 'CircleCheckFilled' : 'CircleCloseFilled'" /></el-icon>
+        <span>{{ connectionTestResult.success ? '✓ 连接成功' : '✗ 连接失败' }}</span>
+        <span v-if="connectionTestResult.message" class="result-detail">{{ connectionTestResult.message }}</span>
+        <span v-if="connectionTestResult.latency !== undefined" class="result-latency">延迟: {{ connectionTestResult.latency }}ms</span>
+      </div>
     </div>
   </div>
 </template>
@@ -101,7 +109,7 @@
 <script setup lang="ts">
 import { ref, reactive, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Check, Connection } from '@element-plus/icons-vue'
+import { Check, Connection, CircleCheckFilled, CircleCloseFilled } from '@element-plus/icons-vue'
 import {
   getSystemConfigApi,
   saveSystemConfigApi,
@@ -121,6 +129,7 @@ interface ChatModelConfig {
 
 const saveLoading = ref(false)
 const testLoading = ref(false)
+const connectionTestResult = ref<{ success: boolean; message?: string; latency?: number } | null>(null)
 
 // 常用模型列表
 // 常用模型列表（已移除，用户可自由输入）
@@ -149,6 +158,8 @@ const handleTestConnection = async () => {
     return
   }
   testLoading.value = true
+  connectionTestResult.value = null
+  const startTime = Date.now()
   try {
     const { data: testResult } = await testLlmConnectionApi({
       serviceType: chatModelConfig.serviceType,
@@ -157,12 +168,22 @@ const handleTestConnection = async () => {
       modelName: chatModelConfig.modelName,
       modelType: 'chat',
     })
+    const latency = Date.now() - startTime
+    connectionTestResult.value = {
+      success: testResult.success,
+      message: testResult.message,
+      latency,
+    }
     if (testResult.success) {
       ElMessage.success('连接测试通过！')
     } else {
       ElMessage.error(`连接失败: ${testResult.message}`)
     }
   } catch (e: any) {
+    connectionTestResult.value = {
+      success: false,
+      message: e.message || '请检查配置参数',
+    }
     ElMessage.error(`连接失败: ${e.message || '请检查配置参数'}`)
   } finally {
     testLoading.value = false
@@ -330,6 +351,44 @@ onMounted(async () => {
 
 .save-btn {
   min-width: 120px;
+}
+
+/* 测试结果显示 */
+.test-result {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 12px;
+  padding: 10px 14px;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.test-success {
+  background: #F0FDF4;
+  border: 1px solid #86EFAC;
+  color: #166534;
+}
+
+.test-fail {
+  background: #FEF2F2;
+  border: 1px solid #FCA5A5;
+  color: #991B1B;
+}
+
+.result-detail {
+  font-weight: 400;
+  font-size: 13px;
+  opacity: 0.8;
+}
+
+.result-latency {
+  margin-left: auto;
+  font-size: 12px;
+  padding: 2px 8px;
+  background: rgba(0,0,0,0.06);
+  border-radius: 4px;
 }
 
 @media (max-width: 600px) {
