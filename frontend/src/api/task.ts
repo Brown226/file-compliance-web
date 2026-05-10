@@ -36,9 +36,14 @@ export function getTaskProgressApi(id: string) {
   return request.get<{ progress: number; status: string; completedFiles: number; totalFiles: number }>(`/tasks/${id}/progress`)
 }
 
-// 导出任务审查报告
+// 导出任务审查报告(Excel)
 export function exportTaskReportApi(id: string) {
   return request.get<Blob>(`/tasks/${id}/export`, { responseType: 'blob' })
+}
+
+// 导出任务审查报告(Word)
+export function exportTaskReportWordApi(id: string) {
+  return request.get<Blob>(`/tasks/${id}/export-word`, { responseType: 'blob' })
 }
 
 // 删除任务

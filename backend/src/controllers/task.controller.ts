@@ -311,6 +311,112 @@ export const exportTaskReport = async (req: Request, res: Response): Promise<voi
   }
 };
 
+export const exportTaskReportWord = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const id = req.params.id as string;
+    const task = await TaskService.getTaskById(id);
+    const details = await TaskService.getTaskDetails(id);
+    const fileName = task ? `${task.title}_审查报告.doc` : '审查报告.doc';
+
+    const html = buildWordHtml(task, details);
+    const buffer = Buffer.from(html, 'utf-8');
+
+    res.setHeader('Content-Type', 'application/msword');
+    res.setHeader('Content-Disposition', `attachment; filename*=UTF-8''${encodeURIComponent(fileName)}`);
+    res.send(buffer);
+  } catch (err) {
+    console.error('Export Word Error:', err);
+    error(res, '导出Word失败', 500);
+  }
+};
+
+/** 构建Word兼容HTML文档 */
+function buildWordHtml(task: any, details: any): string {
+  const issues = details?.issues || [];
+  const summary = details?.summary || {};
+
+  const issuesHtml = issues.map((issue: any, i: number) => {
+    const severityLabels: Record<string, string> = { error: '错误', warning: '警告', info: '提示' };
+    const severity = severityLabels[issue.severity] || issue.severity || '-';
+    return `
+      <tr>
+        <td>${i + 1}</td>
+        <td>${severity}</td>
+        <td>${issue.ruleCode || issue.code || '-'}</td>
+        <td>${issue.description || issue.message || '-'}</td>
+        <td>${issue.suggestion || '-'}</td>
+      </tr>`;
+  }).join('');
+
+  return `
+<html xmlns:o="urn:schemas-microsoft-com:office:office"
+      xmlns:w="urn:schemas-microsoft-com:office:word"
+      xmlns="http://www.w3.org/TR/REC-html40">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+<style>
+  body { font-family: 'Microsoft YaHei', 'SimSun', sans-serif; padding: 40px; }
+  h1 { text-align: center; font-size: 22px; margin-bottom: 10px; }
+  h2 { font-size: 16px; color: #333; border-bottom: 2px solid #1890FF; padding-bottom: 6px; margin-top: 24px; }
+  .meta { color: #666; font-size: 13px; margin-bottom: 20px; }
+  .meta p { margin: 4px 0; }
+  table { width: 100%; border-collapse: collapse; margin-top: 12px; }
+  th, td { border: 1px solid #ccc; padding: 8px 10px; font-size: 13px; text-align: left; }
+  th { background: #F0F5FF; font-weight: 600; }
+  .stats { display: flex; gap: 24px; margin: 16px 0; }
+  .stat-item { padding: 12px 20px; background: #F5F7FA; border-radius: 6px; text-align: center; }
+  .stat-value { font-size: 28px; font-weight: 700; }
+  .stat-label { font-size: 12px; color: #888; }
+</style>
+</head>
+<body>
+  <h1>文件智能审查报告</h1>
+  <div class="meta">
+    <p><strong>任务名称：</strong>${task?.title || '-'}</p>
+    <p><strong>审查时间：</strong>${task?.updatedAt ? new Date(task.updatedAt).toLocaleString('zh-CN') : '-'}</p>
+    <p><strong>审查状态：</strong>${task?.status || '-'}</p>
+  </div>
+  
+  <h2>审查概览</h2>
+  <div class="stats">
+    <div class="stat-item">
+      <div class="stat-value" style="color:#DC2626;">${summary.errors || 0}</div>
+      <div class="stat-label">错误</div>
+    </div>
+    <div class="stat-item">
+      <div class="stat-value" style="color:#D97706;">${summary.warnings || 0}</div>
+      <div class="stat-label">警告</div>
+    </div>
+    <div class="stat-item">
+      <div class="stat-value" style="color:#2563EB;">${summary.infos || 0}</div>
+      <div class="stat-label">提示</div>
+    </div>
+    <div class="stat-item">
+      <div class="stat-value">${issues.length}</div>
+      <div class="stat-label">总计</div>
+    </div>
+  </div>
+
+  <h2>问题明细</h2>
+  <table>
+    <thead>
+      <tr>
+        <th width="50">#</th>
+        <th width="70">严重度</th>
+        <th width="120">规则代码</th>
+        <th>问题描述</th>
+        <th>修改建议</th>
+      </tr>
+    </thead>
+    <tbody>
+      ${issuesHtml || '<tr><td colspan="5" style="text-align:center;color:#999;">暂无审查问题</td></tr>'}
+    </tbody>
+  </table>
+</body>
+</html>`;
+}
+
 /** 上传参照文件（以文审文模式） */
 export const uploadRefFiles = async (req: AuthRequest, res: Response): Promise<void> => {
   try {

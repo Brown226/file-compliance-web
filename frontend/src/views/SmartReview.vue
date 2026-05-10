@@ -362,7 +362,8 @@
         <h2 class="review-title">AI 审查报告</h2>
         <div class="review-actions">
           <el-switch v-model="showPlainLanguage" active-text="大白话模式" />
-          <el-button @click="exportPDF">导出PDF</el-button>
+          <el-button @click="exportWord">导出Word</el-button>
+          <el-button @click="exportExcel">导出Excel</el-button>
           <el-button @click="goBackToConfirm">返回修改配置</el-button>
         </div>
       </div>
@@ -393,9 +394,34 @@
 
         <el-tab-pane label="修改" name="modification">
           <div class="tab-content">
+            <!-- 批量操作栏 -->
+            <div v-if="reviewData.modification_suggestions?.length" class="batch-actions-bar">
+              <el-checkbox
+                :model-value="allSelected"
+                :indeterminate="batchPartialSelected"
+                @change="toggleAll"
+              >
+                全选 ({{ batchSelectedCount }}/{{ reviewData.modification_suggestions.length }})
+              </el-checkbox>
+              <el-button
+                type="primary"
+                size="small"
+                :disabled="batchSelectedCount === 0"
+                @click="batchAdopt"
+              >
+                一键采纳所选 ({{ batchSelectedCount }})
+              </el-button>
+            </div>
+
             <div v-if="reviewData.modification_suggestions?.length" class="suggestions-list">
-              <div v-for="(item, index) in reviewData.modification_suggestions" :key="index" class="suggestion-card">
-                <p class="suggestion-title">{{ suggestionTitle(item, index) }}</p>
+              <div v-for="(item, index) in reviewData.modification_suggestions" :key="index" class="suggestion-card" :class="{ 'batch-selected': batchSelected.has(index) }">
+                <div class="suggestion-header">
+                  <el-checkbox
+                    :model-value="batchSelected.has(index)"
+                    @change="toggleItem(index)"
+                  />
+                  <p class="suggestion-title">{{ suggestionTitle(item, index) }}</p>
+                </div>
                 
                 <!-- 大白话模式 -->
                 <div v-if="showPlainLanguage" class="plain-language-box">
@@ -518,6 +544,40 @@
         </div>
       </div>
     </div>
+
+    <!-- 采纳预览对话框 -->
+    <el-dialog
+      v-model="previewDialogVisible"
+      title="采纳变更预览"
+      width="720px"
+      :close-on-click-modal="false"
+    >
+      <div v-if="previewItem" class="preview-compare">
+        <div class="preview-panel preview-before">
+          <div class="preview-panel-header">
+            <span class="preview-badge badge-before">采纳前</span>
+          </div>
+          <div class="preview-panel-body">
+            <p>{{ suggestionOriginal(previewItem) || '（原文未提取）' }}</p>
+          </div>
+        </div>
+        <div class="preview-arrow">→</div>
+        <div class="preview-panel preview-after">
+          <div class="preview-panel-header">
+            <span class="preview-badge badge-after">采纳后</span>
+          </div>
+          <div class="preview-panel-body">
+            <p>{{ suggestionText(previewItem) }}</p>
+          </div>
+        </div>
+      </div>
+      <template #footer>
+        <el-button @click="previewDialogVisible = false">关闭</el-button>
+        <el-button type="primary" @click="adoptFromPreview">
+          {{ previewItem?.adopted ? '已采纳' : '采纳此建议' }}
+        </el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -530,7 +590,7 @@ import {
   Upload, UploadFilled, Check, MagicStick, InfoFilled, VideoPlay,
   RemoveFilled, CirclePlusFilled, Document, Link, FolderAdd, Delete,
 } from '@element-plus/icons-vue'
-import { createTaskApi, preAnalyzeApi, uploadOnlyApi } from '@/api/task'
+import { createTaskApi, preAnalyzeApi, uploadOnlyApi, exportTaskReportApi, exportTaskReportWordApi } from '@/api/task'
 import { getAllKnowledgeCategoriesApi } from '@/api/knowledge-category'
 import { getRuleLibrariesApi } from '@/api/rule-library'
 import { useUserStore } from '@/stores/user'
@@ -926,6 +986,45 @@ const focusedReviewQuestion = ref('')
 const focusedReviewResult = ref<any>(null)
 const focusedReviewLoading = ref(false)
 
+// 批量采纳
+const batchSelected = reactive(new Set<number>())
+const batchSelectedCount = computed(() => batchSelected.size)
+const allSelected = computed(() =>
+  reviewData.modification_suggestions.length > 0 &&
+  batchSelected.size === reviewData.modification_suggestions.length
+)
+const batchPartialSelected = computed(() =>
+  batchSelected.size > 0 && batchSelected.size < reviewData.modification_suggestions.length
+)
+const toggleAll = (val: boolean) => {
+  if (val) {
+    reviewData.modification_suggestions.forEach((_, i) => batchSelected.add(i))
+  } else {
+    batchSelected.clear()
+  }
+}
+const toggleItem = (index: number) => {
+  if (batchSelected.has(index)) {
+    batchSelected.delete(index)
+  } else {
+    batchSelected.add(index)
+  }
+}
+const batchAdopt = () => {
+  if (batchSelected.size === 0) {
+    ElMessage.warning('请先选择要采纳的建议')
+    return
+  }
+  batchSelected.forEach((i) => {
+    const item = reviewData.modification_suggestions[i]
+    if (item && !item.adopted) {
+      item.adopted = true
+    }
+  })
+  ElMessage.success(`已批量采纳 ${batchSelected.size} 条建议`)
+  batchSelected.clear()
+}
+
 // ===== 操作函数 =====
 const goBackToUpload = () => {
   currentStep.value = 0
@@ -971,9 +1070,21 @@ const querySearchCorePurposes = (queryString: string, cb: any) => {
   cb(results.map(p => ({ value: p })))
 }
 
+// 采纳预览
+const previewDialogVisible = ref(false)
+const previewItem = ref<any>(null)
+
 const previewSuggestion = (item: any) => {
-  // TODO: 实现预览功能
-  ElMessage.info('预览功能开发中')
+  previewItem.value = item
+  previewDialogVisible.value = true
+}
+
+const adoptFromPreview = () => {
+  if (previewItem.value && !previewItem.value.adopted) {
+    previewItem.value.adopted = true
+    ElMessage.success('已采纳建议')
+  }
+  previewDialogVisible.value = false
 }
 
 const adoptSuggestion = (item: any) => {
@@ -982,9 +1093,21 @@ const adoptSuggestion = (item: any) => {
   ElMessage.success(item.adopted ? '已采纳建议' : '已取消采纳')
 }
 
-const exportPDF = () => {
-  // TODO: 实现导出PDF功能
-  ElMessage.info('导出PDF功能开发中')
+const exportWord = async () => {
+  try {
+    // SmartReview中暂无taskId，提示用户先完成审查
+    ElMessage.info('导出Word功能在审查结果页面可用，请完成审查后导出')
+  } catch (e) {
+    ElMessage.error('导出Word失败')
+  }
+}
+
+const exportExcel = async () => {
+  try {
+    ElMessage.info('导出Excel功能在审查结果页面可用，请完成审查后导出')
+  } catch (e) {
+    ElMessage.error('导出Excel失败')
+  }
 }
 
 const submitFocusedReview = async () => {
@@ -1614,11 +1737,35 @@ onMounted(async () => {
   gap: 16px;
 }
 
+.batch-actions-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px;
+  background: #F0F7FF;
+  border: 1px solid #BAE0FF;
+  border-radius: 8px;
+  margin-bottom: 16px;
+}
+
 .issue-card, .suggestion-card, .law-card {
   padding: 16px;
   background: #FAFAFA;
   border-radius: 8px;
   border: 1px solid #E5E7EB;
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+
+.suggestion-card.batch-selected {
+  border-color: #1890FF;
+  box-shadow: 0 0 0 1px rgba(24, 144, 255, 0.2);
+}
+
+.suggestion-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 8px;
 }
 
 .issue-title, .suggestion-title, .law-title {
@@ -1859,5 +2006,67 @@ onMounted(async () => {
   font-size: 12px;
   color: #6B7280;
   margin: 4px 0 0;
+}
+
+/* 采纳预览对话框 */
+.preview-compare {
+  display: flex;
+  align-items: flex-start;
+  gap: 16px;
+}
+
+.preview-panel {
+  flex: 1;
+  border-radius: 8px;
+  overflow: hidden;
+  border: 1px solid #E5E7EB;
+}
+
+.preview-panel-header {
+  padding: 8px 12px;
+  background: #F9FAFB;
+  border-bottom: 1px solid #E5E7EB;
+}
+
+.preview-badge {
+  font-size: 12px;
+  font-weight: 600;
+  padding: 2px 10px;
+  border-radius: 4px;
+}
+
+.badge-before {
+  background: #FEF2F2;
+  color: #DC2626;
+}
+
+.badge-after {
+  background: #F0FDF4;
+  color: #16A34A;
+}
+
+.preview-panel-body {
+  padding: 14px;
+  font-size: 14px;
+  line-height: 1.7;
+  color: #374151;
+}
+
+.preview-before .preview-panel-body {
+  background: #FEF2F2;
+}
+
+.preview-after .preview-panel-body {
+  background: #F0FDF4;
+}
+
+.preview-arrow {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 24px;
+  color: #9CA3AF;
+  min-width: 40px;
+  padding-top: 40px;
 }
 </style>

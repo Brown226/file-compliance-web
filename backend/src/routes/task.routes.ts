@@ -14,6 +14,7 @@ import {
   getTaskFileContent,
   updateTaskStatus,
   exportTaskReport,
+  exportTaskReportWord,
   deleteTask,
   deleteTasks,
   reReviewTask,
@@ -118,6 +119,7 @@ router.get('/:id/details', getTaskDetails);
 router.get('/:id/progress', getTaskProgress);
 router.get('/:id/files/:fileId/content', getTaskFileContent);
 router.get('/:id/export', exportTaskReport);
+router.get('/:id/export-word', exportTaskReportWord);
 
 // 删除接口 - 单个删除和批量删除
 router.delete('/:id', deleteTask);
