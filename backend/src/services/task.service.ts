@@ -3,6 +3,7 @@ import { Task, TaskDetail, TaskFile, TaskStatus } from '@prisma/client';
 import path from 'path';
 import ExcelJS from 'exceljs';
 import { ReviewService } from './review.service';
+import { addReviewJob } from './queue.service';
 import FalsePositiveLibraryService from './falsePositiveLibrary.service';
 import { ParserService } from './parser.service';
 
@@ -171,10 +172,8 @@ export class TaskService {
 
     // 异步触发审查流程（不阻塞响应）
     if (files.length > 0 && !shouldDelayReview) {
-      setImmediate(() => {
-        ReviewService.processTask(task.id).catch((err) => {
-          console.error(`[TaskService] 异步审查任务失败: ${task.id}`, err);
-        });
+      addReviewJob(task.id).catch((err) => {
+        console.error(`[TaskService] 任务入队失败: ${task.id}`, err);
       });
     }
 
@@ -485,10 +484,8 @@ export class TaskService {
       data: { status: 'PROCESSING' }
     });
 
-    setImmediate(() => {
-      ReviewService.processTask(taskId).catch((err) => {
-        console.error(`[TaskService] 启动审查任务失败: ${taskId}`, err);
-      });
+    addReviewJob(taskId).catch((err) => {
+      console.error(`[TaskService] 重新审查入队失败: ${taskId}`, err);
     });
 
     return task;

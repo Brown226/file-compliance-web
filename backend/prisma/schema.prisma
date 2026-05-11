@@ -468,6 +468,10 @@ model KnowledgeCategory {
   parent          KnowledgeCategory? @relation("KnowledgeCategoryToKnowledgeCategory", fields: [parentId], references: [id])
   children        KnowledgeCategory[] @relation("KnowledgeCategoryToKnowledgeCategory")
   vectorDocuments VectorDocument[]
+  tags            Tag[]
+  chunkMode       String            @default("auto") @map("chunk_mode")  // auto, fixed, paragraph, table-aware
+  maxChars        Int               @default(900) @map("max_chars")       // 分块最大字符数
+  overlap         Int               @default(120) @map("overlap")         // 分块重叠字符数
   createdAt       DateTime          @default(now())
   updatedAt       DateTime          @updatedAt
 
@@ -502,6 +506,36 @@ model VectorDocument {
   @@index([contentHash])
   @@index([title])
   @@map("vector_documents")
+}
+
+// ===== 文档标签体系 =====
+
+model Tag {
+  id          String        @id @default(uuid())
+  key         String                              // 标签名（如"文档类型"、"适用阶段"）
+  value       String                              // 标签值（如"设计文件"、"施工阶段"）
+  categoryId  String?       @map("category_id")   // 所属知识子库
+  category    KnowledgeCategory? @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  documents   DocumentTag[]
+  createdAt   DateTime      @default(now()) @map("created_at")
+  updatedAt   DateTime      @updatedAt @map("updated_at")
+
+  @@unique([key, value, categoryId])
+  @@index([categoryId])
+  @@map("tags")
+}
+
+model DocumentTag {
+  id          String      @id @default(uuid())
+  tagId       String      @map("tag_id")
+  tag         Tag         @relation(fields: [tagId], references: [id], onDelete: Cascade)
+  documentTitle String   @map("document_title")  // 关联的文档标题
+  categoryId  String      @map("category_id")
+  createdAt   DateTime    @default(now()) @map("created_at")
+
+  @@unique([tagId, documentTitle, categoryId])
+  @@index([categoryId, documentTitle])
+  @@map("document_tags")
 }
 
 // ===== 规则库 =====

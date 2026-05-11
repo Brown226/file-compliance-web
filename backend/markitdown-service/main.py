@@ -136,6 +136,9 @@ def markdown_to_plain_text(markdown: str) -> str:
     # 移除 HTML 注释
     text = re.sub(r'<!--[\s\S]*?-->', '', text)
 
+    # 移除孤立的标点行（MarkItDown将DOCX空段落转换为"."）
+    text = re.sub(r'^[\s.]+$', '', text, flags=re.MULTILINE)
+
     # 移除多余空行
     text = re.sub(r'\n{3,}', '\n\n', text)
 
@@ -453,15 +456,49 @@ async def parse_file(
 
         logger.info(f"开始解析: {filename} ({len(content)} bytes, type={file_type or ext})")
 
-        # PDF 特殊处理：pdfplumber 逐页 + markitdown Markdown
+        # PDF 增强解析：PyMuPDF 字体启发式 + pdfplumber 表格
         if ext == ".pdf":
+            try:
+                from pdf_enhanced import enhanced_pdf_parse
+                pdf_result = enhanced_pdf_parse(content, filename)
+                if pdf_result:
+                    duration_ms = int((time.time() - start_time) * 1000)
+                    logger.info(f"PDF enhanced parse complete: {filename} → {len(pdf_result['text'])} chars, {duration_ms}ms")
+                    return {"code": 200, "message": "success", "data": pdf_result}
+            except Exception as e:
+                logger.warning(f"PDF enhanced parser failed, trying pdfplumber: {e}")
+            # 回退到 pdfplumber 逐页 + markitdown
             pdf_result = parse_pdf_with_pages(content, filename)
             if pdf_result:
                 duration_ms = int((time.time() - start_time) * 1000)
-                logger.info(f"PDF 解析完成: {filename} → {len(pdf_result['text'])} chars, {duration_ms}ms")
+                logger.info(f"PDF pdfplumber parse complete: {filename} → {len(pdf_result['text'])} chars, {duration_ms}ms")
                 return {"code": 200, "message": "success", "data": pdf_result}
 
-        # 其他格式：使用 markitdown 转换
+        # DOCX 增强解析：python-docx 原生样式
+        if ext == ".docx":
+            try:
+                from docx_enhanced import enhanced_docx_parse
+                docx_result = enhanced_docx_parse(content, filename)
+                if docx_result:
+                    duration_ms = int((time.time() - start_time) * 1000)
+                    logger.info(f"DOCX enhanced parse complete: {filename} → {len(docx_result['text'])} chars, {duration_ms}ms")
+                    return {"code": 200, "message": "success", "data": docx_result}
+            except Exception as e:
+                logger.warning(f"DOCX enhanced parser failed, falling back to markitdown: {e}")
+
+        # XLSX 增强解析：openpyxl 原生合并单元格
+        if ext == ".xlsx":
+            try:
+                from xlsx_enhanced import enhanced_xlsx_parse
+                xlsx_result = enhanced_xlsx_parse(content, filename)
+                if xlsx_result:
+                    duration_ms = int((time.time() - start_time) * 1000)
+                    logger.info(f"XLSX enhanced parse complete: {filename} → {len(xlsx_result['text'])} chars, {duration_ms}ms")
+                    return {"code": 200, "message": "success", "data": xlsx_result}
+            except Exception as e:
+                logger.warning(f"XLSX enhanced parser failed, falling back to markitdown: {e}")
+
+        # 其他格式 / 增强解析失败回退：使用 markitdown 转换
         md = get_engine()
         stream = BytesIO(content)
         result = md.convert_stream(stream, file_extension=ext)

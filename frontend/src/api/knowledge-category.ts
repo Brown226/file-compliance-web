@@ -9,6 +9,9 @@ export interface KnowledgeCategory {
   parentId?: string
   children?: KnowledgeCategory[]
   _count?: { vectorDocuments: number }
+  chunkMode?: 'auto' | 'fixed' | 'paragraph'
+  maxChars?: number
+  overlap?: number
   createdAt: string
 }
 
@@ -38,6 +41,7 @@ export interface DocumentParagraph {
   content: string
   chunkIndex: number
   sourceType: string
+  metadata?: any
   createdAt: string
   updatedAt: string
 }
@@ -80,6 +84,9 @@ export const updateKnowledgeCategoryApi = (id: string, data: {
   description?: string
   documentTypes?: string
   status?: string
+  chunkMode?: string
+  maxChars?: number
+  overlap?: number
 }) => request.put<KnowledgeCategory>(`/knowledge-categories/${id}`, data)
 
 export const deleteKnowledgeCategoryApi = (id: string) =>
@@ -148,3 +155,126 @@ export const deleteVectorDocumentsApi = (data: { ids?: string[]; categoryId?: st
 
 export const getVectorStatsApi = () =>
   request.get<{ totalCount: number; byType: Array<{ sourceType: string; _count: { id: number } }> }>('/knowledge-categories/stats')
+
+// ===== 异步上传 =====
+
+export interface UploadTaskStatus {
+  id: string
+  fileName: string
+  status: 'pending' | 'processing' | 'completed' | 'failed'
+  progress: number
+  message: string
+  chunks?: number
+  error?: string
+  createdAt: number
+}
+
+export const uploadDocumentAsyncApi = (categoryId: string, formData: FormData) =>
+  request.post<{ taskIds: string[] }>(`/knowledge-categories/${categoryId}/upload-async`, formData, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+  })
+
+export const getTaskStatusApi = (taskIds: string[]) =>
+  request.get<UploadTaskStatus[]>(`/knowledge-categories/task-status`, { params: { taskIds: taskIds.join(',') } })
+
+export const getActiveTasksApi = () =>
+  request.get<UploadTaskStatus[]>('/knowledge-categories/active-tasks')
+
+// ===== 分段预览确认 =====
+
+export interface ParagraphSegment {
+  /** 标题（父级标题链） */
+  title: string
+  /** 段落正文 */
+  content: string
+}
+
+export interface PreviewResult {
+  title: string
+  chunks: ParagraphSegment[]
+  metadata: Record<string, any>
+}
+
+export const previewDocumentApi = (categoryId: string, formData: FormData) =>
+  request.post<PreviewResult>(`/knowledge-categories/${categoryId}/preview`, formData, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+  })
+
+export const confirmImportApi = (categoryId: string, data: {
+  title: string
+  chunks: Array<string | ParagraphSegment>
+  metadata?: Record<string, any>
+}) => request.post<{ chunks: number; deduped: number }>(`/knowledge-categories/${categoryId}/confirm-import`, data)
+
+// ===== 命中测试 =====
+
+export interface HitTestResult {
+  originalQuery: string
+  results: Array<{
+    id: string
+    title: string | null
+    clauseId: string | null
+    content: string
+    vectorScore: number
+    keywordScore: number
+    rerankScore?: number
+    comprehensiveScore: number
+    chunkIndex: number
+    isTable: boolean
+    metadata: any
+  }>
+  stats: {
+    totalCandidates: number
+    afterDedup: number
+    afterRerank: number
+    searchTimeMs: number
+  }
+}
+
+export const hitTestApi = (data: {
+  query: string
+  categoryId?: string
+  sourceTypes?: string[]
+  topNumber?: number
+  searchMode?: 'vector' | 'keyword' | 'hybrid'
+}) => request.post<HitTestResult>('/knowledge-categories/hit-test', data)
+
+// ===== 标签管理 =====
+
+export interface Tag {
+  id: string
+  key: string
+  value: string
+  categoryId?: string
+  _count?: { documents: number }
+  createdAt: string
+}
+
+export const getTagsApi = (params?: { categoryId?: string }) =>
+  request.get<Tag[]>('/knowledge-categories/tags', { params })
+
+export const createTagApi = (data: { key: string; value: string; categoryId?: string }) =>
+  request.post<Tag>('/knowledge-categories/tags', data)
+
+export const deleteTagApi = (tagId: string) =>
+  request.delete(`/knowledge-categories/tags/${tagId}`)
+
+export const getDocumentTagsApi = (categoryId: string, title: string) =>
+  request.get<Tag[]>(`/knowledge-categories/${categoryId}/document-tags`, { params: { title } })
+
+export const addDocumentTagApi = (categoryId: string, data: { tagId: string; documentTitle: string }) =>
+  request.post(`/knowledge-categories/${categoryId}/document-tags`, {
+    ...data,
+    categoryId,
+  })
+
+export const removeDocumentTagApi = (categoryId: string, data: { tagId: string; documentTitle: string }) =>
+  request.delete(`/knowledge-categories/${categoryId}/document-tags`, { data: { ...data, categoryId } })
+
+// ===== 问题自动生成 =====
+
+export const generateQuestionsApi = (categoryId: string, title: string) =>
+  request.post<{ totalChunks: number; generatedCount: number }>(
+    `/knowledge-categories/${categoryId}/generate-questions`,
+    { title }
+  )

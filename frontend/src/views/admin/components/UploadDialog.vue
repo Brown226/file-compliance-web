@@ -70,6 +70,7 @@
 import { ref, computed } from 'vue'
 import { UploadFilled, Upload, Document } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
+import { uploadDocumentAsyncApi } from '@/api/knowledge-category'
 
 export interface UploadProgressItem {
   name: string
@@ -92,7 +93,7 @@ const props = withDefaults(defineProps<{
 
 const emit = defineEmits<{
   (e: 'update:modelValue', val: boolean): void
-  (e: 'uploaded'): void
+  (e: 'uploaded', taskIds?: string[]): void
 }>()
 
 const uploadRef = ref<any>()
@@ -123,36 +124,20 @@ const handleUpload = async () => {
   }
 
   uploading.value = true
-  progress.value = fileList.value.map(f => ({ name: f.name, status: 'pending' as const }))
 
-  let successCount = 0
-  let failCount = 0
-
-  for (let i = 0; i < fileList.value.length; i++) {
-    const file = fileList.value[i]
-    try {
-      const fd = new FormData()
-      fd.append('file', file.raw)
-      await props.uploadFn(props.targetId, fd)
-      progress.value[i].status = 'done'
-      successCount++
-    } catch {
-      progress.value[i].status = 'error'
-      failCount++
-    }
-  }
-
-  uploading.value = false
-
-  if (failCount === 0) {
-    ElMessage.success(`全部上传成功，共处理 ${fileList.value.length} 个文件`)
+  try {
+    const fd = new FormData()
+    fileList.value.forEach(f => fd.append('files', f.raw))
+    const { data } = await uploadDocumentAsyncApi(props.targetId, fd)
+    ElMessage.success(`${fileList.value.length} 个文件已提交，正在后台处理`)
+    emit('uploaded', data.taskIds)
     emit('update:modelValue', false)
     fileList.value = []
     progress.value = []
-    emit('uploaded')
-  } else {
-    ElMessage.warning(`上传完成：${successCount} 成功，${failCount} 失败`)
-    emit('uploaded')
+  } catch (err: any) {
+    ElMessage.error(err?.response?.data?.message || '上传失败')
+  } finally {
+    uploading.value = false
   }
 }
 </script>

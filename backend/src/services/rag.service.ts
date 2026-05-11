@@ -9,6 +9,7 @@ import prisma from '../config/db';
 import { VectorService } from './vector.service';
 import { LlmService, ReviewIssue, SourceReference } from './llm.service';
 import { PromptTemplateService } from './prompt-template.service';
+import { SearchService } from './search.service';
 
 // ==================== 类型定义 ====================
 
@@ -62,7 +63,7 @@ export class RAGService {
 
     console.log(`[RAG] 开始检索: query_len=${queryText.length}, top=${topNumber}`);
 
-    const results = await VectorService.hybridSearch(queryText, {
+    const results = await SearchService.search(queryText, {
       limit: topNumber,
       sourceTypes,
       rerank: true,

@@ -242,7 +242,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, onMounted, watch, onBeforeUnmount } from 'vue'
+import { ref, reactive, onMounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import {
   Plus, Upload, Edit, Delete, Search,
@@ -541,6 +541,7 @@ onMounted(async () => {
   box-shadow: var(--shadow-card);
   min-height: calc(100vh - 320px);
   overflow: hidden;
+  border: 1px solid var(--corp-border-light);
 }
 
 /* 左侧边栏 */
@@ -548,10 +549,20 @@ onMounted(async () => {
   width: 280px;
   min-width: 280px;
   border-right: 1px solid var(--corp-border-light);
-  background: linear-gradient(180deg, #FAFBFD 0%, #F7F8FC 100%);
+  background: linear-gradient(180deg, #FAFBFD 0%, #F5F6FA 50%, #F2F3F8 100%);
   display: flex;
   flex-direction: column;
   transition: width var(--corp-transition-base), min-width var(--corp-transition-base);
+  position: relative;
+}
+.kb-sidebar::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  right: -1px;
+  bottom: 0;
+  width: 1px;
+  background: linear-gradient(180deg, rgba(59, 130, 246, 0.08) 0%, transparent 40%, transparent 60%, rgba(59, 130, 246, 0.08) 100%);
 }
 .kb-sidebar--collapsed {
   width: 48px;
@@ -566,11 +577,11 @@ onMounted(async () => {
   border-bottom: 1px solid var(--corp-border-light);
 }
 .kb-sidebar__title {
-  font-size: 11px;
-  font-weight: 800;
+  font-size: 10px;
+  font-weight: 700;
   color: var(--corp-text-tertiary);
   text-transform: uppercase;
-  letter-spacing: 1px;
+  letter-spacing: 1.5px;
 }
 .kb-sidebar__actions {
   display: flex;
@@ -591,7 +602,7 @@ onMounted(async () => {
 .tree-node {
   display: flex;
   align-items: center;
-  gap: var(--space-2);
+  gap: 6px;
   flex: 1;
   width: 0;
   padding-right: var(--space-1);
@@ -599,32 +610,41 @@ onMounted(async () => {
 .tree-node__icon {
   color: var(--corp-text-tertiary);
   flex-shrink: 0;
-  transition: color var(--corp-transition-fast);
+  transition: color var(--corp-transition-fast), transform var(--corp-transition-fast);
 }
 .tree-node:hover .tree-node__icon {
   color: var(--corp-primary);
+  transform: scale(1.1);
 }
 .tree-node__label {
   flex: 1;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: var(--text-base);
+  font-size: 13px;
   font-weight: 500;
+  color: var(--corp-text-primary);
 }
 .tree-node__badge {
   font-size: 10px;
-  font-weight: 700;
+  font-weight: 600;
   color: var(--corp-text-tertiary);
   background: var(--bg-surface);
   border: 1px solid var(--corp-border-light);
   border-radius: var(--radius-full);
   padding: 0 6px;
-  min-width: 20px;
-  height: 20px;
-  line-height: 18px;
+  min-width: 22px;
+  height: 18px;
+  line-height: 16px;
   text-align: center;
   flex-shrink: 0;
+  font-variant-numeric: tabular-nums;
+  transition: all var(--corp-transition-fast);
+}
+.tree-node:hover .tree-node__badge {
+  border-color: var(--color-primary-200);
+  color: var(--color-primary-600);
+  background: var(--color-primary-50);
 }
 .tree-node__actions {
   opacity: 0;
@@ -663,12 +683,19 @@ onMounted(async () => {
   text-align: center;
 }
 .kb-empty-state__icon {
-  color: var(--corp-border);
+  width: 72px;
+  height: 72px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, var(--color-primary-50) 0%, var(--color-primary-100) 100%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--color-primary-300);
   margin-bottom: var(--space-6);
-  opacity: 0.5;
+  box-shadow: 0 4px 16px rgba(59, 130, 246, 0.08);
 }
 .kb-empty-state__title {
-  font-size: var(--text-xl);
+  font-size: var(--text-lg);
   font-weight: 700;
   color: var(--corp-text-primary);
   margin: 0 0 var(--space-2);
@@ -682,14 +709,15 @@ onMounted(async () => {
 }
 .kb-empty-state__hint {
   font-size: var(--text-sm);
-  color: var(--corp-text-tertiary);
+  color: var(--corp-text-secondary);
   margin-top: var(--space-5);
   display: flex;
   align-items: center;
-  gap: var(--space-1);
+  gap: var(--space-2);
   padding: var(--space-2) var(--space-4);
   background: var(--bg-surface-hover);
   border-radius: var(--radius-full);
+  border: 1px solid var(--corp-border-light);
 }
 
 /* 内容区头部 */
@@ -711,7 +739,7 @@ onMounted(async () => {
   font-weight: 700;
   margin: 0;
   color: var(--corp-text-primary);
-  letter-spacing: -0.2px;
+  letter-spacing: -0.3px;
 }
 .kb-content__actions {
   display: flex;
@@ -721,30 +749,46 @@ onMounted(async () => {
 /* 卡片 */
 .kb-card {
   background: var(--bg-surface);
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-lg);
   box-shadow: var(--shadow-surface);
   padding: var(--space-5);
   cursor: pointer;
-  transition: box-shadow var(--corp-transition-base), transform var(--corp-transition-base), border-color var(--corp-transition-base);
+  transition: box-shadow var(--corp-transition-base), transform var(--corp-transition-base);
   margin-bottom: var(--space-4);
+  border: 1px solid var(--corp-border-light);
   border-left: 3px solid transparent;
   position: relative;
+  overflow: hidden;
+}
+.kb-card::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: linear-gradient(90deg, var(--color-primary-400) 0%, var(--color-primary-200) 100%);
+  opacity: 0;
+  transition: opacity var(--corp-transition-base);
 }
 .kb-card:hover {
   box-shadow: var(--shadow-card);
   transform: translateY(-2px);
-  border-left-color: var(--corp-primary);
+  border-left-color: var(--color-primary-400);
+}
+.kb-card:hover::before {
+  opacity: 1;
 }
 
 .kb-card__header {
   display: flex;
   align-items: flex-start;
   gap: var(--space-3);
-  margin-bottom: var(--space-4);
+  margin-bottom: var(--space-3);
 }
 .kb-card__icon {
-  width: 38px;
-  height: 38px;
+  width: 40px;
+  height: 40px;
   border-radius: var(--radius-md);
   background: linear-gradient(135deg, var(--color-primary-50) 0%, var(--color-primary-100) 100%);
   color: var(--color-primary-600);
@@ -752,17 +796,19 @@ onMounted(async () => {
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
-  transition: transform var(--corp-transition-fast);
+  transition: transform var(--corp-transition-fast), box-shadow var(--corp-transition-fast);
+  box-shadow: 0 2px 6px rgba(59, 130, 246, 0.08);
 }
 .kb-card:hover .kb-card__icon {
-  transform: scale(1.05);
+  transform: scale(1.08);
+  box-shadow: 0 4px 12px rgba(59, 130, 246, 0.15);
 }
 .kb-card__info {
   flex: 1;
   min-width: 0;
 }
 .kb-card__name {
-  font-size: var(--text-base);
+  font-size: 14px;
   font-weight: 700;
   color: var(--corp-text-primary);
   overflow: hidden;
@@ -814,6 +860,9 @@ onMounted(async () => {
   color: var(--corp-text-secondary);
   font-weight: 500;
 }
+.kb-card__stat span {
+  font-variant-numeric: tabular-nums;
+}
 .kb-card__divider {
   width: 1px;
   height: 12px;
@@ -839,25 +888,32 @@ onMounted(async () => {
   background: transparent;
 }
 :deep(.el-tree-node__content) {
-  height: 36px;
+  height: 34px;
   padding-right: 4px;
   border-radius: var(--radius-sm);
-  margin-bottom: 2px;
+  margin-bottom: 1px;
   transition: background var(--corp-transition-fast);
 }
 :deep(.el-tree-node__content:hover) {
-  background: rgba(59, 130, 246, 0.06);
+  background: rgba(59, 130, 246, 0.05);
 }
 :deep(.el-tree-node.is-current > .el-tree-node__content) {
   background: var(--color-primary-50);
   font-weight: 600;
+  box-shadow: inset 0 0 0 1px rgba(59, 130, 246, 0.12);
 }
 :deep(.el-tree-node.is-current > .el-tree-node__content .tree-node__icon) {
   color: var(--corp-primary);
 }
+:deep(.el-tree-node.is-current > .el-tree-node__content .tree-node__badge) {
+  background: var(--color-primary-100);
+  color: var(--color-primary-700);
+  border-color: var(--color-primary-200);
+}
 :deep(.el-tree-node__expand-icon) {
   color: var(--corp-text-tertiary);
   font-size: 12px;
+  transition: transform var(--corp-transition-fast);
 }
 :deep(.el-tree-node__expand-icon.is-leaf) {
   color: transparent;

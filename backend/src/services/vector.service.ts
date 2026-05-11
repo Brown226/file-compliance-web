@@ -3,6 +3,11 @@
  *
  * 基于 pgvector 的本地向量检索，替代 MaxKB
  * 功能：分块、入库、三阶段混合检索（向量 + 关键词 + Rerank）
+ *
+ * 分块逻辑移植自 MaxKB 2.8.0 的 SplitModel：
+ * - 按 Markdown 标题层级构建树结构
+ * - 每个段落携带父级标题链作为 title
+ * - 返回 {title, content} 对，与 MaxKB 一致
  */
 
 import crypto from 'crypto';
@@ -32,6 +37,25 @@ interface ImportEntry {
   content: string;
   metadata?: Record<string, any>;
   categoryId?: string;
+  /** 分块配置，不传则使用默认值 */
+  chunkConfig?: ChunkingConfig;
+}
+
+export interface ChunkingConfig {
+  /** 分块模式：auto=标题感知分割(默认), fixed=纯固定长度, paragraph=按段落分割 */
+  mode?: 'auto' | 'fixed' | 'paragraph';
+  /** 每个chunk最大字符数（默认1500） */
+  maxChars?: number;
+  /** chunk间重叠字符数（仅 fixed/paragraph 模式有效） */
+  overlap?: number;
+}
+
+/** 分段结果：与 MaxKB 的 paragraph 格式一致 */
+export interface ParagraphSegment {
+  /** 标题（父级标题链拼接） */
+  title: string;
+  /** 段落正文内容 */
+  content: string;
 }
 
 interface SearchOptions {
@@ -41,46 +65,337 @@ interface SearchOptions {
   rerank?: boolean;
 }
 
+// ============ SplitModel（移植自 MaxKB 2.8.0 split_model.py） ============
+
+/** Markdown 标题层级正则 */
+const HEADING_PATTERNS: RegExp[] = [
+  /^# .+/m,           // H1
+  /^## (?!#).+/m,     // H2
+  /^### (?!#).+/m,    // H3
+  /^#### (?!#).+/m,   // H4
+  /^##### (?!#).+/m,  // H5
+  /^###### (?!#).+/m, // H6
+];
+
+/** 段落分隔正则（双换行） */
+const PARAGRAPH_SEP = /\n\n+/;
+
+interface TreeNode {
+  content: string;
+  state: 'title' | 'block';
+  children?: TreeNode[];
+}
+
+/**
+ * 智能分段：在 limit 附近找到自然断句点
+ * 策略：从 limit 位置向前搜索，优先在高级标点处断开
+ * 多轮搜索：先找句子级标点，找不到再找从句级，最后硬切
+ * 最小分段保障：不会切出过短的段落
+ */
+function smartSplitParagraph(content: string, limit: number): string[] {
+  if (content.length <= limit) return [content];
+
+  // 表格原子化保护：包含 |---| 分隔行的内容不切割，保持表格完整性
+  if (content.split('\n').some(l => isSeparatorLine(l))) {
+    return [content];
+  }
+
+  // 按优先级分组的断句字符
+  const breakLevels = [
+    '。.！!？?；;',  // 句子级
+    '：:',            // 冒号
+    '，,、',          // 从句级
+    '\n',             // 换行
+  ];
+
+  // 最小分段长度：limit 的 1/4，避免切出过短的段落
+  const minChunk = Math.max(Math.floor(limit / 4), 50);
+
+  const result: string[] = [];
+  let start = 0;
+
+  while (start < content.length) {
+    let end = start + limit;
+    if (end >= content.length) {
+      result.push(content.slice(start));
+      break;
+    }
+
+    // 多轮搜索：按优先级逐轮降低
+    let bestSplit = -1;
+    for (const chars of breakLevels) {
+      // 从 limit 位置向前搜索，但不早于 minChunk
+      const searchFrom = end - 1;
+      const searchTo = Math.max(start + minChunk, start);
+      for (let i = searchFrom; i >= searchTo; i--) {
+        if (chars.includes(content[i])) {
+          bestSplit = i + 1;
+          break;
+        }
+      }
+      if (bestSplit > start) break; // 找到了
+    }
+
+    // 都找不到 → 硬切
+    if (bestSplit <= start) bestSplit = end;
+
+    result.push(content.slice(start, bestSplit).trim());
+    start = bestSplit;
+  }
+
+  return result.filter(t => t.length > 0);
+}
+
+/**
+ * 在文本中查找匹配指定正则的所有标题
+ */
+function findHeadings(text: string, pattern: RegExp): Array<{ content: string; index: number }> {
+  const results: Array<{ content: string; index: number }> = [];
+  const flags = pattern.flags.includes('g') ? pattern.flags : pattern.flags + 'g';
+  const re = new RegExp(pattern.source, flags);
+  let match: RegExpExecArray | null;
+  while ((match = re.exec(text)) !== null) {
+    const content = match[0].trim();
+    if (content && content.replace(/^#+\s*/, '').trim()) {
+      results.push({ content, index: match.index });
+    }
+  }
+  return results;
+}
+
+/**
+ * 递归构建标题树（移植自 MaxKB SplitModel.parse_to_tree）
+ */
+function parseToTree(text: string, patternIndex: number, limit: number): TreeNode[] {
+  if (patternIndex >= HEADING_PATTERNS.length) {
+    // 没有更多标题层级，按段落分隔
+    const parts = text.split(PARAGRAPH_SEP).filter(p => p.trim());
+    if (parts.length <= 1) {
+      // 没有双换行分隔，尝试按单换行分割
+      const singleParts = text.split(/\n/).filter(p => p.trim());
+      if (singleParts.length > 1) {
+        return singleParts.flatMap(p => smartSplitParagraph(p, limit).map(s => ({ content: s, state: 'block' })));
+      }
+      // 都没有，按 limit 智能切割
+      return smartSplitParagraph(text, limit).map(s => ({ content: s, state: 'block' }));
+    }
+    return parts.flatMap(p => smartSplitParagraph(p, limit).map(s => ({ content: s, state: 'block' })));
+  }
+
+  const headings = findHeadings(text, HEADING_PATTERNS[patternIndex]);
+
+  if (headings.length === 0) {
+    // 当前级别无标题，尝试下一级别
+    return parseToTree(text, patternIndex + 1, limit);
+  }
+
+  const result: TreeNode[] = [];
+  let cursor = 0;
+
+  // 如果第一个标题之前有内容，作为 block
+  if (headings[0].index > 0) {
+    const preamble = text.slice(0, headings[0].index).trim();
+    if (preamble) {
+      result.push(...parseToTree(preamble, patternIndex + 1, limit).map(n => {
+        if (n.state === 'block') return n;
+        return { content: n.content, state: 'block' as const };
+      }));
+    }
+  }
+
+  for (let i = 0; i < headings.length; i++) {
+    const heading = headings[i];
+    const nextHeadingStart = i + 1 < headings.length ? headings[i + 1].index : text.length;
+    const blockStart = heading.index + heading.content.length;
+    const block = text.slice(blockStart, nextHeadingStart).trim();
+
+    const children: TreeNode[] = block
+      ? parseToTree(block, patternIndex + 1, limit)
+      : [];
+
+    result.push({
+      content: heading.content.replace(/^#+\s*/, ''),
+      state: 'title',
+      children,
+    });
+  }
+
+  return result;
+}
+
+/**
+ * 将树扁平化为 {title, content} 段落数组（移植自 MaxKB result_tree_to_paragraph）
+ */
+function flattenTree(nodes: TreeNode[], parentChain: string[], limit: number): ParagraphSegment[] {
+  const result: ParagraphSegment[] = [];
+
+  for (const node of nodes) {
+    if (node.state === 'block') {
+      // 叶子节点：内容块
+      const segments = smartSplitParagraph(node.content, limit);
+      for (const seg of segments) {
+        result.push({
+          title: parentChain.join(' '),
+          content: seg,
+        });
+      }
+    }
+
+    if (node.children && node.children.length > 0) {
+      result.push(...flattenTree(node.children, [...parentChain, node.content], limit));
+    }
+  }
+
+  return result;
+}
+
+/**
+ * 表格区域检测：识别 Markdown 表格行
+ */
+function isSeparatorLine(line: string): boolean {
+  return /^\|[\s\-:|]+\|$/.test(line.trim());
+}
+
 export class VectorService {
 
-  // ============ 分块 ============
+  // ============ 分块（移植自 MaxKB SplitModel） ============
 
   /**
-   * 将长文本切分为带重叠的小块
+   * 将 Markdown 文本按标题层级分割为 {title, content} 段落数组
+   * 与 MaxKB 的 SplitModel.parse() 行为完全一致：
+   * - 不区分表格/文本，统一按标题树分割
+   * - 表格只是内容的一部分，跟随所属标题段落
+   * - 没有分块数量限制
    */
-  static splitTextIntoChunks(text: string, { maxChars = 900, overlap = 120 } = {}): string[] {
-    const normalized = String(text || '').replace(/\s+/g, ' ').trim();
-    if (!normalized) return [];
+  static splitMarkdownIntoParagraphs(text: string, limit: number = 100000): ParagraphSegment[] {
+    const raw = String(text || '');
+    if (!raw.trim()) return [];
 
-    const paragraphs = normalized
-      .split(/(?:\r?\n)+|(?<=[。！？；;.!?])\s*/g)
-      .map(item => item.trim())
-      .filter(Boolean);
+    // 预处理：与 MaxKB 一致
+    let cleaned = raw
+      .replace(/\r\n/g, '\n')
+      .replace(/\r/g, '\n')
+      .replace(/\0/g, '');
 
-    const chunks: string[] = [];
-    let current = '';
+    // 将 <br> 转换为换行
+    cleaned = cleaned.replace(/<br\s*\/?>/gi, '\n');
+    // 移除孤立标点行
+    cleaned = cleaned.split('\n').filter(line => !/^[\s.]*$/.test(line.trim())).join('\n');
+    // 压缩多余空行
+    cleaned = cleaned.replace(/\n{3,}/g, '\n\n').trim();
 
-    const pushCurrent = () => {
-      if (!current.trim()) return;
-      chunks.push(current.trim());
-      current = current.slice(Math.max(0, current.length - overlap));
-    };
+    if (!cleaned) return [];
 
-    for (const paragraph of paragraphs.length ? paragraphs : [normalized]) {
-      if (paragraph.length > maxChars) {
-        pushCurrent();
-        for (let i = 0; i < paragraph.length; i += maxChars - overlap) {
-          chunks.push(paragraph.slice(i, i + maxChars).trim());
-        }
-        current = '';
-        continue;
-      }
-      if ((current + paragraph).length > maxChars) pushCurrent();
-      current = current ? `${current}\n${paragraph}` : paragraph;
+    // 统一使用标题树解析（与 MaxKB SplitModel.parse 一致）
+    const tree = parseToTree(cleaned, 0, limit);
+    const result = flattenTree(tree, [], limit);
+
+    // 后处理：与 MaxKB post_reset_paragraph 一致
+    const titleSet = new Set(result.map(p => p.title));
+    return result
+      .map(p => this.postResetParagraph(p, titleSet))
+      .filter(p => p.content.trim().length > 0);
+  }
+
+  /**
+   * 后处理单个段落（移植自 MaxKB post_reset_paragraph）
+   */
+  private static postResetParagraph(para: ParagraphSegment, titleSet: Set<string>): ParagraphSegment {
+    let { title, content } = para;
+
+    // content_is_null：如果 content 为空但 title 有值
+    if (!content.trim() && title.trim()) {
+      const isSubTitle = [...titleSet].some(t => t.includes(title) && t !== title);
+      if (isSubTitle) return { title: '', content: '' };
+      return { title: '', content: title };
     }
-    pushCurrent();
 
-    return chunks.filter(chunk => chunk.length >= 20);
+    // filter_title_special_characters
+    title = title.replace(/[#\n\r]/g, '').replace(/\s+/g, ' ').trim();
+
+    // sub_title：title 超过 255 字符时截断
+    if (title.length > 255) {
+      content = title.slice(255) + content;
+      title = title.slice(0, 255);
+    }
+
+    return { title, content };
+  }
+
+  /**
+   * 兼容旧接口：将 Markdown 分块为字符串数组
+   * 内部调用 splitMarkdownIntoParagraphs，将 title+content 拼接
+   */
+  static splitTextIntoChunks(text: string, config: ChunkingConfig = {}): string[] {
+    const { mode = 'auto', maxChars = 900, overlap = 120 } = config;
+    const raw = String(text || '');
+    if (!raw.trim()) return [];
+
+    const withLineBreaks = raw.replace(/<br\s*\/?>/gi, '\n');
+    const cleaned = withLineBreaks
+      .split('\n')
+      .filter(line => !/^[\s.]*$/.test(line.trim()))
+      .join('\n')
+      .replace(/\n{3,}/g, '\n\n')
+      .trim();
+    if (!cleaned) return [];
+
+    if (mode === 'fixed') {
+      return this.splitFixed(cleaned, maxChars).filter(c => c.length >= 20);
+    }
+
+    if (mode === 'paragraph') {
+      return this.splitByParagraph(cleaned, maxChars).filter(c => c.length >= 20);
+    }
+
+    // auto 模式：使用 SplitModel
+    const paragraphs = this.splitMarkdownIntoParagraphs(cleaned, maxChars);
+    return paragraphs
+      .map(p => p.title ? `${p.title}\n${p.content}` : p.content)
+      .filter(c => c.length >= 20);
+  }
+
+  private static splitFixed(text: string, maxChars: number): string[] {
+    const chunks: string[] = [];
+    for (let i = 0; i < text.length; i += maxChars) {
+      const chunk = text.slice(i, i + maxChars).trim();
+      if (chunk) chunks.push(chunk);
+    }
+    return chunks;
+  }
+
+  private static splitByParagraph(text: string, maxChars: number): string[] {
+    const paragraphs = text.split(/\n{2,}/).map(p => p.trim()).filter(p => p.length > 0);
+    const chunks: string[] = [];
+    for (const para of paragraphs) {
+      if (para.length <= maxChars) {
+        chunks.push(para);
+      } else {
+        chunks.push(...this.splitFixed(para, maxChars));
+      }
+    }
+    return chunks;
+  }
+
+  /**
+   * 从内容头部提取条文号（章节号、表号、图号）
+   */
+  static extractClauseId(content: string): string | null {
+    // 取前200字符进行匹配（条文号通常在段落开头）
+    const head = content.substring(0, 200);
+    const patterns = [
+      /^(T-[\d.]+[-\d/（）()]*)/m,                    // 表号 T-2.3-1, T-2.3-36（1/5）
+      /^(F-[\d.]+[-\d/（）()]*)/m,                    // 图号 F-2.1-1
+      /^(\d+\.\d+(?:\.\d+)*(?:\.\d+)*)[\s,，、：:]/m, // 章节号 2.1.1 后跟空格/逗号/冒号
+      /^(第[一二三四五六七八九十百千\d]+[章节条款])/m,  // 第X章/节/条
+      /^(附录[A-Z\d])/m,                              // 附录A, 附录1
+    ];
+
+    for (const pattern of patterns) {
+      const match = head.match(pattern);
+      if (match) return match[1].trim();
+    }
+    return null;
   }
 
   // ============ 去重哈希 ============
@@ -96,39 +411,46 @@ export class VectorService {
 
   /**
    * 将文本内容分块、向量化后入库
+   * 使用 SplitModel 按标题层级分块，每个 chunk 携带标题上下文
+   * title 字段始终存原始文档名，标题链存入 metadata.heading
    */
   static async importDocument(entry: ImportEntry): Promise<{ chunks: number; deduped: number }> {
-    const { sourceType, title, content, clauseId, category, metadata, categoryId } = entry;
-    const chunks = this.splitTextIntoChunks(content);
+    const { sourceType, title, content, clauseId, category, metadata, categoryId, chunkConfig } = entry;
+    const { maxChars = 900 } = chunkConfig || {};
 
-    if (chunks.length === 0) return { chunks: 0, deduped: 0 };
+    const paragraphs = this.splitMarkdownIntoParagraphs(content, maxChars);
+    if (paragraphs.length === 0) return { chunks: 0, deduped: 0 };
 
-    // 构建带元数据的待向量化文本
-    const textsForEmbedding = chunks.map(chunk =>
-      `${title}\n${category || ''}\n${clauseId || ''}\n${chunk}`
-    );
+    // 构建带元数据的待向量化文本（文档名 + 标题上下文 + content），过滤空字段避免稀释embedding信号
+    const textsForEmbedding = paragraphs.map(p => {
+      return [title, p.title, category, clauseId, p.content].filter(Boolean).join('\n');
+    });
 
     const embeddings = await EmbeddingService.embedTexts(textsForEmbedding);
     let deduped = 0;
 
-    for (let i = 0; i < chunks.length; i++) {
-      const chunk = chunks[i];
-      const chunkClauseId = chunks.length > 1 ? `${clauseId || (i + 1)}-${i + 1}` : (clauseId || String(i + 1));
-      const contentHash = this.sourceHash([sourceType, title, category || '', chunkClauseId, chunk]);
+    for (let i = 0; i < paragraphs.length; i++) {
+      const para = paragraphs[i];
+      const chunkContent = para.content;
+
+      // 优先从内容中提取条文号
+      const extractedClause = this.extractClauseId(chunkContent);
+      const chunkClauseId = extractedClause || clauseId || String(i + 1);
+      const contentHash = this.sourceHash([sourceType, title, category || '', chunkClauseId, chunkContent]);
       const sourceId = entry.sourceId || `${sourceType}:${this.sourceHash([title, category || '', chunkClauseId, contentHash])}`;
 
-      // 去重检查
       const existing = await prisma.vectorDocument.findFirst({
         where: { contentHash },
         select: { id: true },
       });
 
-      if (existing) {
-        deduped++;
-        continue;
-      }
+      if (existing) { deduped++; continue; }
 
       const embeddingStr = `[${embeddings[i].join(',')}]`;
+      const isTable = chunkContent.split('\n').some(l => isSeparatorLine(l));
+
+      // 存储时将标题链前缀到 content，提升检索质量
+      const storedContent = para.title ? `${para.title}\n${chunkContent}` : chunkContent;
 
       await prisma.$executeRawUnsafe(`
         INSERT INTO vector_documents
@@ -138,18 +460,86 @@ export class VectorService {
       `,
         categoryId || null,
         sourceType,
-        chunks.length > 1 ? `${sourceId}:chunk:${i}` : sourceId,
-        title,
+        paragraphs.length > 1 ? `${sourceId}:chunk:${i}` : sourceId,
+        title,          // ← 始终存原始文档名
         chunkClauseId,
-        chunk,
+        storedContent,
         contentHash,
         i,
-        JSON.stringify({ ...metadata, original_source_id: sourceId }),
+        JSON.stringify({ ...metadata, original_source_id: sourceId, is_table: isTable, heading: para.title || '' }),
         embeddingStr
       );
     }
 
-    return { chunks: chunks.length, deduped };
+    return { chunks: paragraphs.length, deduped };
+  }
+
+  /**
+   * 直接导入已分块的内容（不重新分块）
+   * 用于分段预览确认后的导入，保证用户的分段编辑生效
+   * 支持两种格式：string[]（兼容旧版）和 ParagraphSegment[]（新版）
+   * title 字段始终存原始文档名，标题链存入 metadata.heading
+   */
+  static async importChunks(
+    chunks: Array<string | ParagraphSegment>,
+    entry: Omit<ImportEntry, 'content' | 'chunkConfig'>
+  ): Promise<{ chunks: number; deduped: number }> {
+    const { sourceType, title, clauseId, category, metadata, categoryId } = entry;
+
+    if (chunks.length === 0) return { chunks: 0, deduped: 0 };
+
+    // 统一转换为 ParagraphSegment 格式
+    const segments: ParagraphSegment[] = chunks.map(c =>
+      typeof c === 'string' ? { title: '', content: c } : c
+    );
+
+    const textsForEmbedding = segments.map(p => {
+      return [title, p.title, category, clauseId, p.content].filter(Boolean).join('\n');
+    });
+
+    const embeddings = await EmbeddingService.embedTexts(textsForEmbedding);
+    let deduped = 0;
+
+    for (let i = 0; i < segments.length; i++) {
+      const para = segments[i];
+      const chunkContent = para.content;
+
+      const extractedClause = this.extractClauseId(chunkContent);
+      const chunkClauseId = extractedClause || clauseId || String(i + 1);
+      const contentHash = this.sourceHash([sourceType, title, category || '', chunkClauseId, chunkContent]);
+      const sourceId = entry.sourceId || `${sourceType}:${this.sourceHash([title, category || '', chunkClauseId, contentHash])}`;
+
+      const existing = await prisma.vectorDocument.findFirst({
+        where: { contentHash },
+        select: { id: true },
+      });
+
+      if (existing) { deduped++; continue; }
+
+      const embeddingStr = `[${embeddings[i].join(',')}]`;
+      const isTable = chunkContent.split('\n').some(l => isSeparatorLine(l));
+      const storedContent = para.title ? `${para.title}\n${chunkContent}` : chunkContent;
+
+      await prisma.$executeRawUnsafe(`
+        INSERT INTO vector_documents
+          (id, "categoryId", source_type, source_id, title, clause_id, content, content_hash, chunk_index, metadata, embedding, created_at, updated_at)
+        VALUES
+          (gen_random_uuid(), $1, $2, $3, $4, $5, $6, $7, $8, $9::jsonb, $10::vector, NOW(), NOW())
+      `,
+        categoryId || null,
+        sourceType,
+        segments.length > 1 ? `${sourceId}:chunk:${i}` : sourceId,
+        title,          // ← 始终存原始文档名
+        chunkClauseId,
+        storedContent,
+        contentHash,
+        i,
+        JSON.stringify({ ...metadata, original_source_id: sourceId, is_table: isTable, heading: para.title || '' }),
+        embeddingStr
+      );
+    }
+
+    return { chunks: segments.length, deduped };
   }
 
   /**
@@ -213,6 +603,27 @@ export class VectorService {
   }
 
   // ============ 三阶段混合检索 ============
+
+  /**
+   * 向量搜索（对外接口：自动embedding查询文本）
+   */
+  static async vectorSearchByQuery(
+    query: string,
+    options: { limit: number; sourceTypes?: string[]; categoryId?: string }
+  ): Promise<VectorSearchResult[]> {
+    const queryVector = await EmbeddingService.embedText(query);
+    return this.vectorSearch(queryVector, options);
+  }
+
+  /**
+   * 关键词搜索（对外接口）
+   */
+  static async keywordSearchByQuery(
+    query: string,
+    options: { limit: number; sourceTypes?: string[]; categoryId?: string }
+  ): Promise<VectorSearchResult[]> {
+    return this.keywordSearch(query, options);
+  }
 
   /**
    * 向量相似度搜索（pgvector <=> 算子）
@@ -435,7 +846,7 @@ export class VectorService {
   private static tokenizeQuery(query: string): string[] {
     const text = query.toLowerCase();
     const terms = text.match(/[一-龥]{2,}|[a-z0-9]{2,}/g) || [];
-    const stopwords = new Set(['合同', '条款', '风险', '审查', '问题', '建议', '相关', '依据', '法律', '法规']);
+    const stopwords = new Set(['的', '了', '和', '与', '是', '在', '有', '这', '那', '就', '也', '都', '而', '及', '或', '等', '个', '之', '其', '中', '为', '对', '被', '将', '从', '到', '把', '让', '给', '向', '以', '于']);
     return [...new Set(terms)]
       .filter(term => !stopwords.has(term) && term.length <= 24)
       .slice(0, 16);
@@ -449,7 +860,4 @@ export class VectorService {
     return metadata;
   }
 
-  private static pgArrayLiteral(items: string[]): string {
-    return `ARRAY[${items.map(s => `'${s.replace(/'/g, "''")}'`).join(',')}]`;
-  }
 }

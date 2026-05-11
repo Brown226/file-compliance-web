@@ -3,7 +3,9 @@ import { AuthRequest } from '../middlewares/auth.middleware';
 import { KnowledgeCategoryService } from '../services/knowledge-category.service';
 import { VectorService } from '../services/vector.service';
 import { RAGService } from '../services/rag.service';
-import { EmbeddingService } from '../services/embedding.service';
+
+import { SearchService } from '../services/search.service';
+import { UploadTaskService } from '../services/upload-task.service';
 import prisma from '../config/db';
 import { success, error } from '../utils/response';
 import path from 'path';
@@ -93,6 +95,129 @@ export const uploadDocument = async (req: AuthRequest, res: Response): Promise<v
   } catch (err: any) {
     console.error('Upload Document Error:', err);
     error(res, err.message || '上传失败', 500);
+  }
+};
+
+// ==================== 异步上传 ====================
+
+/** 异步上传文档 — 立即返回任务ID，后台处理 */
+export const uploadDocumentAsync = async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const id = req.params.id as string;
+    const files = req.files as Express.Multer.File[];
+    if (!files?.length) { error(res, '请选择文件', 400); return; }
+
+    const taskIds: string[] = [];
+
+    for (const file of files) {
+      const originalName = Buffer.from(file.originalname, 'latin1').toString('utf8');
+      const ext = path.extname(originalName);
+      const savedName = `${uuidv4()}${ext}`;
+      const savedPath = path.join(UPLOAD_DIR, savedName);
+      fs.renameSync(file.path, savedPath);
+
+      const taskId = UploadTaskService.createTask(originalName);
+      taskIds.push(taskId);
+
+      // 后台处理，不阻塞响应
+      setImmediate(async () => {
+        try {
+          UploadTaskService.updateTask(taskId, { status: 'processing', progress: 30, message: '正在解析...' });
+          const result = await KnowledgeCategoryService.uploadDocument(id, savedPath, originalName);
+          UploadTaskService.updateTask(taskId, {
+            status: 'completed',
+            progress: 100,
+            message: `完成，${result.chunks} 个分段`,
+            chunks: result.chunks,
+          });
+        } catch (err: any) {
+          UploadTaskService.updateTask(taskId, {
+            status: 'failed',
+            progress: 0,
+            message: '处理失败',
+            error: err.message,
+          });
+        }
+      });
+    }
+
+    success(res, { taskIds }, '文件已接收，正在后台处理');
+  } catch (err: any) {
+    console.error('Upload Async Error:', err);
+    error(res, err.message || '上传失败', 500);
+  }
+};
+
+/** 查询上传任务状态 */
+export const getTaskStatus = async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const { taskIds } = req.query;
+    if (!taskIds) { error(res, '缺少任务ID', 400); return; }
+
+    const ids = (taskIds as string).split(',');
+    const statuses = ids.map(tid => UploadTaskService.getTask(tid)).filter(Boolean);
+    success(res, statuses);
+  } catch (err) {
+    error(res, '查询任务状态失败', 500);
+  }
+};
+
+/** 获取所有进行中的任务 */
+export const getActiveTasks = async (_req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const activeTasks = UploadTaskService.getTasks().filter(t => t.status === 'pending' || t.status === 'processing');
+    success(res, activeTasks);
+  } catch (err) {
+    error(res, '查询任务失败', 500);
+  }
+};
+
+// ==================== 分段预览确认 ====================
+
+/** 预览文档分段（不入库） — 上传后先查看分段结果 */
+export const previewDocument = async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const id = req.params.id as string;
+    const file = req.file;
+    if (!file) { error(res, '请选择文件', 400); return; }
+
+    const originalName = Buffer.from(file.originalname, 'latin1').toString('utf8');
+
+    // 移动到临时目录
+    const ext = path.extname(originalName);
+    const savedName = `${uuidv4()}${ext}`;
+    const savedPath = path.join(UPLOAD_DIR, savedName);
+    fs.renameSync(file.path, savedPath);
+
+    // 解析文件但不入库
+    const preview = await KnowledgeCategoryService.previewDocument(id, savedPath, originalName);
+    success(res, preview, `预览完成，共 ${preview.chunks.length} 个分段`);
+  } catch (err: any) {
+    console.error('Preview Document Error:', err);
+    error(res, err.message || '预览失败', 500);
+  }
+};
+
+/** 确认导入 — 用户确认分段后批量入库（保留用户编辑的分段，不重新分块） */
+export const confirmImport = async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const id = req.params.id as string;
+    const { title, chunks, metadata } = req.body;
+
+    if (!title?.trim()) { error(res, '文档标题不能为空', 400); return; }
+    if (!chunks?.length) { error(res, '分段列表不能为空', 400); return; }
+
+    const result = await VectorService.importChunks(chunks, {
+      sourceType: 'standard',
+      title: title.trim(),
+      categoryId: id,
+      metadata: metadata || {},
+    });
+
+    success(res, { chunks: result.chunks, deduped: result.deduped }, `导入成功，${result.chunks} 个分段，${result.deduped} 个去重`);
+  } catch (err: any) {
+    console.error('Confirm Import Error:', err);
+    error(res, err.message || '导入失败', 500);
   }
 };
 
@@ -290,6 +415,7 @@ export const getDocumentParagraphs = async (req: AuthRequest, res: Response): Pr
         content: true,
         chunkIndex: true,
         sourceType: true,
+        metadata: true,
         createdAt: true,
         updatedAt: true,
       },
@@ -350,47 +476,214 @@ export const deleteParagraph = async (req: AuthRequest, res: Response): Promise<
 
 // ==================== 批量向量化 ====================
 
-/** 批量重新向量化文档 */
+/** 批量重新向量化文档（重新解析 → 重新分段 → 重新向量化） */
 export const batchVectorize = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const categoryId = req.params.id as string;
-    const { titles } = req.body;  // 文档标题数组
+    const { titles } = req.body;
 
     if (!titles?.length) { error(res, '请选择要向量化的文档', 400); return; }
 
     let totalUpdated = 0;
 
     for (const title of titles) {
-      // 获取该文档所有段落
+      // 1. 获取该文档所有段落的原始内容（从第一个段落的 metadata 中获取原始文件信息）
       const paragraphs = await prisma.vectorDocument.findMany({
         where: { categoryId, title },
-        select: { id: true, content: true },
+        select: { id: true, content: true, metadata: true },
         orderBy: { chunkIndex: 'asc' },
       });
 
       if (paragraphs.length === 0) continue;
 
-      // 重新向量化每个段落
-      for (const para of paragraphs) {
-        try {
-          const embedding = await EmbeddingService.embedText(para.content);
-          const embeddingStr = `[${embedding.join(',')}]`;
+      // 2. 删除旧的向量文档
+      await VectorService.deleteDocuments({ categoryId, title });
 
-          await prisma.$executeRawUnsafe(
-            `UPDATE vector_documents SET embedding = $1::vector, updated_at = NOW() WHERE id = $2`,
-            embeddingStr,
-            para.id
-          );
-          totalUpdated++;
-        } catch (e: any) {
-          console.warn(`向量化段落 ${para.id} 失败:`, e.message);
+      // 3. 从段落内容重建完整文本（去掉标题前缀，用原始内容）
+      // 优先从 metadata.original_file 找到原始文件信息
+      const firstMeta = (paragraphs[0].metadata as Record<string, any>) || {};
+      const originalFile = firstMeta.original_file;
+
+      // 获取知识库分类配置
+      const category = await prisma.knowledgeCategory.findUnique({ where: { id: categoryId } });
+      const chunkConfig = {
+        mode: category?.chunkMode as any || 'auto',
+        maxChars: category?.maxChars || 1500,
+        overlap: category?.overlap || 120,
+      };
+
+      // 重建内容：将所有段落的 storedContent 拼接（去掉 heading 前缀如果有的话）
+      const fullContent = paragraphs.map(p => {
+        const content = p.content as string;
+        const meta = (p.metadata as Record<string, any>) || {};
+        // 如果有 heading metadata，去掉 content 中的 heading 前缀
+        if (meta.heading && content.startsWith(meta.heading)) {
+          return content.slice(meta.heading.length).trim();
         }
-      }
+        return content;
+      }).join('\n\n');
+
+      // 4. 重新导入（使用新的 SplitModel 分段 + 向量化）
+      const result = await VectorService.importDocument({
+        sourceType: 'standard',
+        title,
+        content: fullContent,
+        categoryId,
+        chunkConfig,
+        metadata: { original_file: originalFile || title, revectorized: true },
+      });
+
+      totalUpdated += result.chunks;
     }
 
-    success(res, { updatedCount: totalUpdated }, `向量化完成，已更新 ${totalUpdated} 个段落`);
+    success(res, { updatedCount: totalUpdated }, `重新向量化完成，共 ${totalUpdated} 个段落`);
   } catch (err) {
     console.error('Batch Vectorize Error:', err);
     error(res, '批量向量化失败', 500);
+  }
+};
+
+// ==================== 标签管理 ====================
+
+/** 获取标签列表 */
+export const listTags = async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const { categoryId } = req.query;
+    const where: any = {};
+    if (categoryId) where.categoryId = categoryId as string;
+
+    const tags = await prisma.tag.findMany({
+      where,
+      include: { _count: { select: { documents: true } } },
+      orderBy: [{ key: 'asc' }, { value: 'asc' }],
+    });
+    success(res, tags);
+  } catch (err) {
+    console.error('List Tags Error:', err);
+    error(res, '获取标签列表失败', 500);
+  }
+};
+
+/** 创建标签 */
+export const createTag = async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const { key, value, categoryId } = req.body;
+    if (!key?.trim() || !value?.trim()) { error(res, '标签名和值不能为空', 400); return; }
+
+    const tag = await prisma.tag.create({
+      data: { key: key.trim(), value: value.trim(), categoryId },
+    });
+    success(res, tag, '创建成功');
+  } catch (err: any) {
+    if (err?.code === 'P2002') { error(res, '该标签已存在', 409); return; }
+    console.error('Create Tag Error:', err);
+    error(res, '创建标签失败', 500);
+  }
+};
+
+/** 删除标签 */
+export const deleteTag = async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const tagId = req.params.tagId as string;
+    await prisma.tag.delete({ where: { id: tagId } });
+    success(res, null, '删除成功');
+  } catch (err) {
+    console.error('Delete Tag Error:', err);
+    error(res, '删除标签失败', 500);
+  }
+};
+
+/** 给文档添加标签 */
+export const addDocumentTag = async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const { tagId, documentTitle, categoryId } = req.body;
+    if (!tagId || !documentTitle || !categoryId) { error(res, '缺少必要参数', 400); return; }
+
+    const docTag = await prisma.documentTag.create({
+      data: { tagId, documentTitle, categoryId },
+    });
+    success(res, docTag, '添加成功');
+  } catch (err: any) {
+    if (err?.code === 'P2002') { error(res, '该标签已关联此文档', 409); return; }
+    console.error('Add DocumentTag Error:', err);
+    error(res, '添加文档标签失败', 500);
+  }
+};
+
+/** 移除文档标签 */
+export const removeDocumentTag = async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const { tagId, documentTitle, categoryId } = req.body;
+    if (!tagId || !documentTitle || !categoryId) { error(res, '缺少必要参数', 400); return; }
+
+    await prisma.documentTag.deleteMany({
+      where: { tagId, documentTitle, categoryId },
+    });
+    success(res, null, '移除成功');
+  } catch (err) {
+    console.error('Remove DocumentTag Error:', err);
+    error(res, '移除文档标签失败', 500);
+  }
+};
+
+/** 获取文档的标签列表 */
+export const getDocumentTags = async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const categoryId = req.params.id as string;
+    const { title } = req.query;
+
+    if (!title) { error(res, '文档名称不能为空', 400); return; }
+
+    const docTags = await prisma.documentTag.findMany({
+      where: { categoryId, documentTitle: title as string },
+      include: { tag: true },
+    });
+
+    success(res, docTags.map(dt => dt.tag));
+  } catch (err) {
+    console.error('Get DocumentTags Error:', err);
+    error(res, '获取文档标签失败', 500);
+  }
+};
+
+// ==================== 问题自动生成 ====================
+
+/** 为文档段落自动生成问题 */
+export const generateQuestions = async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const categoryId = req.params.id as string;
+    const { title } = req.body;
+
+    if (!title) { error(res, '文档名称不能为空', 400); return; }
+
+    const result = await KnowledgeCategoryService.generateDocumentQuestions(categoryId, title);
+    success(res, result, `生成完成，${result.generatedCount}/${result.totalChunks} 个段落已生成问题`);
+  } catch (err: any) {
+    console.error('Generate Questions Error:', err);
+    error(res, err.message || '问题生成失败', 500);
+  }
+};
+
+// ==================== 命中测试 ====================
+
+/** 命中测试 — 检索效果测试接口 */
+export const hitTest = async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const { query, categoryId, sourceTypes, topNumber, searchMode } = req.body;
+
+    if (!query?.trim()) { error(res, '请输入测试查询', 400); return; }
+
+    const result = await SearchService.hitTest({
+      query: query.trim(),
+      categoryId,
+      sourceTypes,
+      topNumber: Number(topNumber) || 10,
+      searchMode: searchMode || 'hybrid',
+    });
+
+    success(res, result);
+  } catch (err) {
+    console.error('Hit Test Error:', err);
+    error(res, '命中测试失败', 500);
   }
 };

@@ -13,16 +13,18 @@ python-multipart==0.0.20
 # pip install -e vendor/markitdown[docx,xlsx,pdf,pptx]
 
 # --- 格式依赖（显式声明，确保安装） ---
-# DOCX
+# DOCX - mammoth + python-docx 增强解析
 mammoth~=1.11.0
 lxml~=5.4.0
+python-docx==1.1.2
 
 # XLSX - pandas 是 markitdown XlsxConverter 的必需依赖（pd.read_excel + DataFrame.to_html）
 pandas~=2.2.0
 openpyxl~=3.1.5
 
-# PDF - pdfplumber 自带 pdfminer.six
+# PDF - pdfplumber 自带 pdfminer.six + PyMuPDF 增强解析
 pdfplumber~=0.11.9
+PyMuPDF==1.25.5
 
 # PPTX
 python-pptx~=1.0.2

@@ -35,6 +35,9 @@ COPY vendor/markitdown/src/markitdown/ /usr/local/lib/python3.12/site-packages/m
 # 复制服务代码
 COPY main.py .
 COPY engine.py .
+COPY pdf_enhanced.py .
+COPY docx_enhanced.py .
+COPY xlsx_enhanced.py .
 
 # 暴露端口（默认 8000，可通过 PORT 环境变量修改）
 EXPOSE 8000

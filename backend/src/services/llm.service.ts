@@ -631,6 +631,71 @@ export class LlmService {
   }
 
   /**
+   * 查询优化 — 用 LLM 重写/扩展用户查询，提升知识库检索质量
+   * 适用于查询过短、模糊、或缺少领域术语的场景
+   */
+  static async rewriteQuery(query: string, options?: { maxTokens?: number; timeout?: number }): Promise<string> {
+    const config = await this.getLlmConfig();
+    if (!config) return query; // 未配置 LLM 时直接返回原始查询
+
+    const maxTokens = options?.maxTokens || 256;
+    const timeoutMs = (options?.timeout || 15) * 1000;
+
+    const body = {
+      model: config.modelName,
+      messages: [
+        {
+          role: 'system',
+          content: `你是核电工程文件检索查询优化专家。根据用户的查询意图，生成1-3个优化后的检索查询，用换行分隔。
+
+规则：
+- 保持原始查询的核心意图
+- 补充核电工程领域的专业术语（如规格书、技术条件、施工方案等）
+- 如果查询已经足够明确，直接返回原文即可
+- 不要添加查询中没有的概念
+- 只输出优化后的查询，不要解释`,
+        },
+        {
+          role: 'user',
+          content: query,
+        },
+      ],
+      stream: false,
+      max_tokens: maxTokens,
+    };
+
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+
+      const response = await fetch(`${config.apiBaseUrl}/chat/completions`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${config.apiKey}`,
+        },
+        body: JSON.stringify(body),
+        signal: controller.signal,
+      });
+      clearTimeout(timeoutId);
+
+      if (!response.ok) return query;
+
+      const data = await response.json() as any;
+      const content = (data.choices?.[0]?.message?.content || '').trim();
+      if (!content) return query;
+
+      // 取第一行作为优化查询（LLM可能返回多行）
+      const rewritten = content.split('\n').filter((l: string) => l.trim())[0] || query;
+      console.log(`[LLM] 查询优化: "${query}" → "${rewritten}"`);
+      return rewritten;
+    } catch (err: any) {
+      console.warn(`[LLM] 查询优化失败，使用原始查询: ${err.message}`);
+      return query;
+    }
+  }
+
+  /**
    * 通用聊天接口 - 用于 AI 正则表达式生成等场景
    */
   static async chat(prompt: string, options?: { systemPrompt?: string; maxTokens?: number; timeout?: number }): Promise<string> {
@@ -677,5 +742,39 @@ export class LlmService {
     } finally {
       clearTimeout(timeoutId);
     }
+  }
+
+  /**
+   * 为文本段落自动生成问题
+   * 返回 JSON 数组格式：["问题1", "问题2", ...]
+   */
+  static async generateQuestions(content: string, options?: { maxTokens?: number; timeout?: number }): Promise<string[]> {
+    const truncated = content.substring(0, 1500);
+    const prompt = `请根据以下文本内容，生成3-5个高质量的中文问答问题。问题应该覆盖文本的核心知识点，适合用于知识库检索训练。
+
+要求：
+1. 问题要具体、明确，不要过于宽泛
+2. 问题应能从给定文本中找到明确答案
+3. 覆盖不同层面：定义、规则、数据、适用范围等
+4. 每个问题独占一行，以问号结尾
+5. 只输出问题，不要输出答案或其他文字
+
+文本内容：
+${truncated}`;
+
+    const result = await this.chat(prompt, {
+      systemPrompt: '你是核电工程文档分析专家，擅长从技术文档中提取关键知识点并生成高质量的检索问题。',
+      maxTokens: options?.maxTokens || 512,
+      timeout: options?.timeout || 30,
+    });
+
+    // 解析问题列表
+    const questions = result
+      .split('\n')
+      .map(line => line.replace(/^\d+[\.\)、]\s*/, '').trim())
+      .filter(q => q.endsWith('？') || q.endsWith('?'))
+      .slice(0, 5);
+
+    return questions;
   }
 }

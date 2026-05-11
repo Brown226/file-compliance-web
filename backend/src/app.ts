@@ -30,6 +30,10 @@ import onlyofficeRoutes from './routes/onlyoffice.routes';
 // 定时清理孤立文件（每天凌晨2点执行）
 import './services/scheduler.service';
 
+// 异步任务队列（Bull/Redis）
+import { initQueueProcessors, closeQueue } from './services/queue.service';
+initQueueProcessors();
+
 
 const app: Express = express();
 
