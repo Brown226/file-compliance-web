@@ -17,10 +17,12 @@ backend/.env
 .env.production
 .env.production.local
 
-# IDE / Editor
+# IDE / Editor / AI Agent
 .vscode/
 .idea/
 .qoder/
+.claude/
+CLAUDE.md
 
 # Legacy .NET project (not part of current system)
 Normative/
@@ -93,10 +95,6 @@ frontend/fe-start.txt
 *.woff2
 *.ttf
 *.eot
-docs/参考网站的页面设计/
-docs/当前项目的页面设计/
-docs/文档校审资料和源码/
-docs/法律法规/
 
 # 校审测试反馈（测试文件与数据）
 校审测试反馈/
@@ -110,8 +108,17 @@ analysis_*.txt
 analysis_*.json
 false_positive_analysis.json
 nul
-docs/系统2.0升级改造路线/
-docs/系统升级改造效果分析报告.md
+
+# Docs directory (keep locally, not in repo)
+docs/
+
+# Python markitdown microservice (separate from Node.js backend)
+backend/markitdown-service/
+
+# Temp doc files (not source code)
+Tab导航调整与工作台功能说明.md
+TaskResultsView实现说明.md
+frontend/README.md
 
 # Bug fix / report markdown files
 BUGFIX-REPORT-*.md
