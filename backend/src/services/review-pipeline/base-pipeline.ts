@@ -16,23 +16,24 @@
  *   ├── 阶段1 (runFastPhase): 文本提取 → beforeFastPhase钩子 → 规则+标准引用(并行) → afterFastPhase钩子
  *   ├── 阶段2 (runSlowPhase): runAIStrategy钩子 → AI审查
  *   └── 返回结果
+ *
+ * 模块提取（2026-05-12）：
+ * 将 BasePipeline 中的实现细节提取为 4 个独立模块，BasePipeline 仅保留编排逻辑并委托调用：
+ * - text-extraction.service.ts — 文本提取（ensureText / extractPdfPages / ensureWordStructure / ensureDwgStructure）
+ * - ai-review.service.ts — AI 审查（runRAGReview / runAIReview / runLLMOnlyStrategy / runLLMOnly）
+ * - standard-ref-check.service.ts — 标准引用检查（runStandardRefCheck）
+ * - pipeline-config.ts — 配置工具函数（getEffectiveConfig / shouldRunStage / getEffectiveRulePrefixes）
  */
 
 import { PipelineContext, PipelineResult, PipelineReviewConfig, ReviewModeType } from './types';
 import { ModeCapabilities } from './mode-config';
-import { ParserService } from '../parser.service';
-import { OcrService } from '../ocr.service';
 import { RuleEngineService } from '../rule-engine.service';
-import { LlmService, ReviewIssue, SourceReference } from '../llm.service';
-import { RAGService } from '../rag.service';
-import { VectorService } from '../vector.service';
+import { ReviewIssue, SourceReference } from '../llm.service';
 import { RuleIssue } from '../rules/types';
-import { StandardTraceabilityService } from '../standard-traceability.service';
-import { PromptTemplateService } from '../prompt-template.service';
-import { StandardExtractorService } from '../standard-extractor.service';
-import { StandardCheckService, StandardCheckItem } from '../standard-check.service';
-import { CharDiffService } from '../char-diff.service';
-import prisma from '../../config/db';
+import { TextExtractionService } from './text-extraction.service';
+import { AiReviewService } from './ai-review.service';
+import { StandardRefCheckService } from './standard-ref-check.service';
+import { getEffectiveConfig, shouldRunStage, getEffectiveRulePrefixes } from './pipeline-config';
 
 export abstract class BasePipeline {
   // ==================== 子类必须实现的抽象属性 ====================
@@ -139,43 +140,14 @@ export abstract class BasePipeline {
    * 如果 ctx.extractedText 已有内容则跳过
    */
   protected async ensureText(ctx: PipelineContext): Promise<string> {
-    if (ctx.extractedText && ctx.extractedText.trim().length > 0) {
-      return ctx.extractedText;
-    }
-
-    let text = '';
-    try {
-      text = await ParserService.parseFile(ctx.filePath, ctx.fileType);
-      // 将 Python 解析结果写入 ctx
-      ctx.parseResult = ParserService.getLastParseResult();
-    } catch (e) {
-      console.warn(`[Pipeline] 文件解析失败: ${ctx.fileName}`, e);
-    }
-
-    // OCR 降级
-    if (ParserService.needsOcr(text, ctx.fileType) && OcrService.isOcrSupported(ctx.fileType)) {
-      try {
-        const ocrText = await OcrService.recognizeFile(ctx.filePath, ctx.fileType);
-        if (ocrText) text = ocrText;
-      } catch (e) {
-        console.warn(`[Pipeline] OCR 处理失败: ${ctx.fileName}`, e);
-      }
-    }
-
-    return text;
+    return TextExtractionService.ensureText(ctx);
   }
 
   /**
    * 公共步骤: PDF 逐页文本提取
    */
   protected async extractPdfPages(ctx: PipelineContext): Promise<string[] | undefined> {
-    if (ctx.fileType.toLowerCase() !== 'pdf') return undefined;
-    try {
-      return await ParserService.parsePdfPages(ctx.filePath);
-    } catch (e) {
-      console.warn(`[Pipeline] PDF逐页提取失败: ${ctx.fileName}`, e);
-      return undefined;
-    }
+    return TextExtractionService.extractPdfPages(ctx);
   }
 
   /**
@@ -183,20 +155,7 @@ export abstract class BasePipeline {
    * 为 Word 文件提取页眉信息，模拟 pdfPages 格式供规则引擎使用
    */
   protected async ensureWordStructure(ctx: PipelineContext): Promise<void> {
-    if (!['docx', 'doc'].includes(ctx.fileType.toLowerCase())) return;
-
-    try {
-      const { WordStructureService } = await import('../word-structure.service');
-      const structure = await WordStructureService.extractStructure(ctx.filePath, ctx.parseResult);
-      ctx.wordStructure = structure;
-
-      // 如果有页眉数据且当前没有 pdfPages，模拟 pdfPages 格式供规则引擎使用
-      if (structure.headers.length > 0 && !ctx.pdfPages) {
-        ctx.pdfPages = this.simulatePagesFromWord(structure);
-      }
-    } catch (e) {
-      console.warn('[Pipeline] Word 结构提取失败:', e);
-    }
+    return TextExtractionService.ensureWordStructure(ctx);
   }
 
   /**
@@ -204,77 +163,7 @@ export abstract class BasePipeline {
    * 为 DWG 文件提取图层/文本/尺寸标注/标准引用数据，模拟 pdfPages 格式供规则引擎使用
    */
   protected ensureDwgStructure(ctx: PipelineContext): void {
-    if (ctx.fileType.toLowerCase() !== 'dwg' && ctx.fileType.toLowerCase() !== 'dxf') return;
-    if (!ctx.parseResult?.structure && !ctx.parseResult?.metadata) return;
-
-    const metadata = ctx.parseResult.metadata as any;
-    const structure = ctx.parseResult.structure as any;
-
-    // 构建 DwgStructure
-    const layers: string[] = metadata?.dwg_layers || [];
-    const textEntities = (structure?.paragraphs || []).map((p: any) => ({
-      text: p.text || '',
-      layer: (p.style || '').replace('图层:', ''),
-      // ★ 优先使用 paragraphs 中传入的 entityType（WASM 预填充路径已包含），
-      //   回退到 'TEXT' 默认值（兼容旧版 Python 解析路径）
-      entityType: (p.entityType || 'TEXT') as 'TEXT' | 'MTEXT',
-      handle: p.handle || '',
-      insert: p.insert as [number, number] | undefined,
-    }));
-    const dimensions = structure?.dimensions || [];
-    const standardRefs = (structure?.standardRefs || []).map((r: any) => ({
-      standardNo: r.standardNo || '',
-      standardName: r.standardName || '',
-      standardIdent: r.standardIdent || '',
-      cadHandleId: r.cadHandleId || '',
-    }));
-
-    ctx.dwgStructure = { layers, textEntities, dimensions, standardRefs };
-
-    // 模拟 pdfPages 供规则引擎使用（HEADER/PAGE 类规则需要 pdfPages 存在才能触发）
-    if (!ctx.pdfPages && textEntities.length > 0) {
-      ctx.pdfPages = this.simulatePagesFromDwg(ctx.dwgStructure);
-    }
-  }
-
-  /**
-   * 将 Word 结构化数据模拟为 PDF pages 格式
-   * 使 HEADER/PAGE 规则可以正常触发
-   */
-  private simulatePagesFromWord(structure: NonNullable<PipelineContext['wordStructure']>): string[] {
-    const pages: string[] = [];
-    const PAGE_SIZE = 50; // 每 50 段模拟一页
-
-    for (let i = 0; i < structure.paragraphs.length; i += PAGE_SIZE) {
-      const pageParagraphs = structure.paragraphs.slice(i, i + PAGE_SIZE);
-      const headerText = structure.headers.map(h => h.text).join('\n');
-      const pageText = pageParagraphs.map(p => p.text).join('\n');
-      pages.push(headerText ? `[页眉] ${headerText}\n\n${pageText}` : pageText);
-    }
-
-    return pages.length > 0 ? pages : [structure.paragraphs.map(p => p.text).join('\n')];
-  }
-
-  /**
-   * 将 DWG 结构化数据模拟为 PDF pages 格式
-   * 使 HEADER/PAGE 规则可以正常触发
-   */
-  private simulatePagesFromDwg(dwg: NonNullable<PipelineContext['dwgStructure']>): string[] {
-    const pages: string[] = [];
-    const PAGE_SIZE = 30; // 每 30 个文本实体模拟一页
-
-    // 第一页：图层概览
-    const layerOverview = `[图层概览] ${dwg.layers.length} 个图层: ${dwg.layers.slice(0, 10).join(', ')}${dwg.layers.length > 10 ? '...' : ''}`;
-    pages.push(layerOverview);
-
-    // 后续页：文本实体
-    for (let i = 0; i < dwg.textEntities.length; i += PAGE_SIZE) {
-      const pageEntities = dwg.textEntities.slice(i, i + PAGE_SIZE);
-      const pageText = pageEntities.map(e => `[${e.layer}] ${e.text}`).join('\n');
-      pages.push(pageText);
-    }
-
-    return pages.length > 0 ? pages : [dwg.textEntities.map(e => e.text).join('\n')];
+    return TextExtractionService.ensureDwgStructure(ctx);
   }
 
   /**
@@ -314,147 +203,7 @@ export abstract class BasePipeline {
     text: string,
     ctx: PipelineContext,
   ): Promise<{ issues: ReviewIssue[]; engine: string; sources?: SourceReference[] }> {
-    // 获取知识子库 ID
-    const knowledgeIds = ctx.knowledgeCategoryIds && ctx.knowledgeCategoryIds.length > 0
-      ? ctx.knowledgeCategoryIds
-      : ctx.knowledgeCategoryId
-        ? [ctx.knowledgeCategoryId]
-        : [];
-
-    if (knowledgeIds.length === 0) {
-      console.warn('[Pipeline] runRAGReview: 未指定知识子库ID');
-      return { issues: [], engine: 'none' };
-    }
-
-    const config = this.getEffectiveConfig(ctx);
-    console.log(`[Pipeline] 启动自建 RAG 审查: kbs=[${knowledgeIds.join(',')}], text_len=${text.length}`);
-
-    try {
-      const result = await RAGService.reviewWithKnowledge(text, knowledgeIds, {
-        chunkSize: config.chunkSize || 4000,
-        topK: 5,
-        llmMaxTokens: config.llmMaxTokens || 4096,
-        llmTimeout: config.llmTimeout || 180,
-        scene: this.scene,
-      });
-
-      // 进度回调（一次性传完所有 issues，RAG 内部已处理所有分片）
-      const enriched = StandardTraceabilityService.enrichWithStandardRef(result.issues);
-      ctx.onChunkProgress?.(text.length, enriched, 0, 1, 'rag-llm');
-      return { issues: enriched, engine: 'rag-llm', sources: result.sourceReferences };
-    } catch (e) {
-      console.error('[Pipeline] 自建 RAG 审查失败:', e);
-      // RAG 失败时降级到纯 LLM
-      return this.fallbackToLLMWithKnowledge(text, ctx, config);
-    }
-  }
-
-  /**
-   * 从本地向量库检索标准内容作为上下文，传给自有 LLM 进行审查
-   */
-  private async fallbackToLLMWithKnowledge(
-    text: string,
-    ctx: PipelineContext,
-    config: ReturnType<typeof this.getEffectiveConfig>,
-  ): Promise<{ issues: ReviewIssue[]; engine: string }> {
-    const chunkSize = config.chunkSize || 4000;
-    const llmMaxTokens = config.llmMaxTokens || 4096;
-    const llmTimeout = config.llmTimeout || 180;
-
-    let knowledgeContext = '';
-
-    // 从本地向量库检索相关段落作为上下文
-    const categoryIds = ctx.knowledgeCategoryIds && ctx.knowledgeCategoryIds.length > 0
-      ? ctx.knowledgeCategoryIds
-      : ctx.knowledgeCategoryId
-        ? [ctx.knowledgeCategoryId]
-        : [];
-
-    for (const catId of categoryIds) {
-      try {
-        const results = await VectorService.hybridSearch(text.slice(0, 2000), {
-          limit: 10,
-          categoryId: catId,
-          rerank: false,
-        });
-        if (results.length > 0) {
-          const context = results.map(r => r.content).join('\n\n');
-          knowledgeContext += context + '\n\n';
-        }
-      } catch (e) {
-        console.warn(`[Pipeline] 获取知识子库 ${catId} 段落失败:`, e);
-      }
-    }
-
-    if (knowledgeContext) {
-      console.log(`[Pipeline] 获取到知识库段落作为上下文: ${knowledgeContext.length} 字符 (${categoryIds.length} 个知识子库)`);
-    }
-
-    // 使用自有 LLM 进行审查（带位置信息）
-    const issues: ReviewIssue[] = [];
-    const chunks = LlmService.splitText(text, chunkSize, true);
-    const totalChunks = chunks.length;
-
-    // 按场景加载系统提示词
-    const systemPrompt = await PromptTemplateService.getPromptByScene(
-      this.scene, 'system', 'default',
-      '你是文件合规审查专家。请检查文本中的问题，严格按照 JSON 数组格式输出。',
-    );
-
-    for (const chunk of chunks) {
-      try {
-        let llmIssues: ReviewIssue[];
-        if (knowledgeContext) {
-          // 将知识库内容作为标准上下文传给 LLM
-          const userTpl = await PromptTemplateService.getPromptByScene(
-            this.scene, 'user', 'with_context',
-            `【审查标准】\n${knowledgeContext}\n\n【待审查文本】\n${chunk.text}\n\n请根据以上审查标准，检查待审查文本的合规性问题。`,
-          );
-          const userContent = userTpl
-            .replace(/\$\{ragContext\}/g, knowledgeContext)
-            .replace(/\$\{standardContext\}/g, knowledgeContext)
-            .replace(/\$\{text\}/g, chunk.text);
-
-          llmIssues = await LlmService.reviewText(userContent, {
-            maxTokens: llmMaxTokens,
-            timeout: llmTimeout,
-            systemPrompt,
-            skipUserTemplate: true,
-            positionInfo: {
-              chunkIndex: chunk.chunkIndex,
-              chunkStartIndex: chunk.startIndex,
-              totalChunks,
-            },
-          });
-        } else {
-          const userTpl = await PromptTemplateService.getPromptByScene(
-            this.scene, 'user', 'no_context',
-            `【待审查文本】\n${chunk.text}\n\n请检查以上文本的合规性问题。`,
-          );
-          const userContent = userTpl.replace(/\$\{text\}/g, chunk.text);
-
-          llmIssues = await LlmService.reviewText(userContent, {
-            maxTokens: llmMaxTokens,
-            timeout: llmTimeout,
-            systemPrompt,
-            skipUserTemplate: true,
-            positionInfo: {
-              chunkIndex: chunk.chunkIndex,
-              chunkStartIndex: chunk.startIndex,
-              totalChunks,
-            },
-          });
-        }
-        issues.push(...llmIssues);
-        // 每个 chunk 完成后回调进度并传递该片的 issues（用于立即入库推送）
-        ctx.onChunkProgress?.(chunk.text.length, llmIssues, chunk.chunkIndex, totalChunks, knowledgeContext ? 'llm-with-knowledge' : 'llm-direct');
-      } catch (e: any) {
-        console.warn(`[Pipeline] LLM 审查分片失败:`, e.message);
-      }
-    }
-
-    const engineName = knowledgeContext ? 'llm-with-knowledge' : 'llm-direct';
-    return { issues, engine: engineName };
+    return AiReviewService.runRAGReview(text, ctx, this.scene, this.getEffectiveConfig(ctx));
   }
 
   /**
@@ -465,117 +214,7 @@ export abstract class BasePipeline {
     text: string,
     ctx: PipelineContext,
   ): Promise<{ issues: ReviewIssue[]; engine: string; sources?: SourceReference[] }> {
-    const config = this.getEffectiveConfig(ctx);
-    const aiEngine = config.aiEngine || 'auto';
-
-    const hasKnowledgeIds = (ctx.knowledgeCategoryIds && ctx.knowledgeCategoryIds.length > 0) || ctx.knowledgeCategoryId;
-
-    // AI 引擎禁用
-    if (aiEngine === 'disabled') {
-      return { issues: [], engine: 'none' };
-    }
-
-    // 自建 RAG 模式（推荐：向量检索 + 自有 LLM）
-    if (aiEngine === 'rag' || aiEngine === 'rag_llm') {
-      if (!hasKnowledgeIds) {
-        console.warn('[Pipeline] RAG 模式需要选择知识库，降级到 LLM 直接调用');
-        return this.runLLMWithFallback(text, ctx, config);
-      }
-      return this.runRAGReview(text, ctx);
-    }
-
-    // 仅 LLM 模式
-    if (aiEngine === 'llm_only') {
-      return this.runLLMDirect(text, ctx, config);
-    }
-
-    // auto 模式：有知识库时使用 RAG，无知识库时使用 LLM
-    if (hasKnowledgeIds) {
-      console.log('[Pipeline] auto 模式: 检测到知识库选择，使用自建 RAG');
-      try {
-        const ragResult = await this.runRAGReview(text, ctx);
-        if (ragResult.issues.length > 0 || ragResult.engine !== 'none') {
-          return ragResult;
-        }
-        console.log('[Pipeline] 自建 RAG 无结果，降级到 LLM + 知识库段落');
-      } catch (e) {
-        console.warn('[Pipeline] 自建 RAG 失败，降级到 LLM + 知识库段落:', e);
-      }
-      // RAG 失败或无结果时，降级到 LLM + 知识库段落
-      return this.runLLMWithFallback(text, ctx, config);
-    } else {
-      // 无知识库选择，直接使用 LLM
-      console.log('[Pipeline] auto 模式: 无知识库选择，使用 LLM 直接调用');
-      return this.runLLMDirect(text, ctx, config);
-    }
-  }
-
-  /**
-   * LLM 直接调用（无知识库上下文）
-   */
-  private async runLLMDirect(
-    text: string,
-    ctx: PipelineContext,
-    config: ReturnType<typeof this.getEffectiveConfig>,
-  ): Promise<{ issues: ReviewIssue[]; engine: string; sources?: SourceReference[] }> {
-    const chunkSize = config.chunkSize || 4000;
-    const llmMaxTokens = config.llmMaxTokens || 4096;
-    const llmTimeout = config.llmTimeout || 180;
-    const issues: ReviewIssue[] = [];
-
-    try {
-      const systemPrompt = await PromptTemplateService.getPromptByScene(
-        this.scene, 'system', 'default',
-        '你是文件审查专家。请检查文本中的问题，严格按照 JSON 数组格式输出。',
-      );
-      const userTpl = await PromptTemplateService.getPromptByScene(
-        this.scene, 'user', 'no_context',
-        `【待审查文本】\n\n请检查以上文本的合规性问题。`,
-      );
-
-      const chunks = LlmService.splitText(text, chunkSize, true);
-      const totalChunks = chunks.length;
-      for (const chunk of chunks) {
-        try {
-          const userContent = userTpl.replace(/\$\{text\}/g, chunk.text);
-          const llmIssues = await LlmService.reviewText(userContent, {
-            maxTokens: llmMaxTokens,
-            timeout: llmTimeout,
-            systemPrompt,
-            skipUserTemplate: true,
-            positionInfo: {
-              chunkIndex: chunk.chunkIndex,
-              chunkStartIndex: chunk.startIndex,
-              totalChunks,
-            },
-          });
-          issues.push(...llmIssues);
-          // 每个 chunk 完成后回调进度并传递该片的 issues
-          ctx.onChunkProgress?.(chunk.text.length, llmIssues, chunk.chunkIndex, totalChunks, 'llm-direct');
-        } catch (e: any) {
-          console.warn(`[Pipeline] LLM 审查分片失败:`, e.message);
-        }
-      }
-      return { issues: StandardTraceabilityService.enrichWithStandardRef(issues), engine: 'llm-direct' };
-    } catch (e) {
-      console.error('[Pipeline] LLM 直接调用失败:', e);
-      return { issues: [], engine: 'none' };
-    }
-  }
-
-  /**
-   * LLM 调用（带知识库段落上下文，降级路径）
-   */
-  private async runLLMWithFallback(
-    text: string,
-    ctx: PipelineContext,
-    config: ReturnType<typeof this.getEffectiveConfig>,
-  ) {
-    const fallback = await this.fallbackToLLMWithKnowledge(text, ctx, config);
-    return {
-      issues: StandardTraceabilityService.enrichWithStandardRef(fallback.issues),
-      engine: fallback.engine,
-    };
+    return AiReviewService.runAIReview(text, ctx, this.scene, this.getEffectiveConfig(ctx));
   }
 
   /**
@@ -586,58 +225,14 @@ export abstract class BasePipeline {
     text: string,
     ctx: PipelineContext,
   ): Promise<{ issues: ReviewIssue[]; engine: string; sources?: SourceReference[] }> {
-    const config = this.getEffectiveConfig(ctx);
-    const chunkSize = config.chunkSize || 4000;
-    const llmMaxTokens = config.llmMaxTokens || 4096;
-    const llmTimeout = config.llmTimeout || 180;
-
-    try {
-      const systemPrompt = await PromptTemplateService.getPromptByScene(
-        this.scene, 'system', 'default',
-        '你是文件审查专家。请检查文本中的问题，严格按照 JSON 数组格式输出。',
-      );
-
-      const chunks = LlmService.splitText(text, chunkSize, true);
-      const totalChunks = chunks.length;
-      const issues: ReviewIssue[] = [];
-      for (const chunk of chunks) {
-        try {
-          const userTpl = await PromptTemplateService.getPromptByScene(
-            this.scene, 'user', 'default',
-            `【待审查文本】\n${chunk.text}\n\n请检查以上文本的问题。`,
-          );
-          const userContent = userTpl.replace(/\$\{text\}/g, chunk.text);
-
-          const llmIssues = await LlmService.reviewText(userContent, {
-            maxTokens: llmMaxTokens,
-            timeout: llmTimeout,
-            systemPrompt,
-            skipUserTemplate: true,
-            positionInfo: {
-              chunkIndex: chunk.chunkIndex,
-              chunkStartIndex: chunk.startIndex,
-              totalChunks,
-            },
-          });
-          issues.push(...llmIssues);
-          ctx.onChunkProgress?.(chunk.text.length, llmIssues, chunk.chunkIndex, totalChunks, 'llm-only');
-        } catch (e: any) {
-          console.warn(`[Pipeline] LLM 审查分片失败:`, e.message);
-        }
-      }
-      return { issues: StandardTraceabilityService.enrichWithStandardRef(issues), engine: 'llm-direct' };
-    } catch (e) {
-      console.error('[Pipeline] LLM 调用失败:', e);
-      return { issues: [], engine: 'none' };
-    }
+    return AiReviewService.runLLMOnlyStrategy(text, ctx, this.scene, this.getEffectiveConfig(ctx));
   }
 
   /**
    * @deprecated 使用 runLLMOnlyStrategy 替代。保留用于子类向后兼容。
    */
   protected async runLLMOnly(text: string, ctx: PipelineContext): Promise<ReviewIssue[]> {
-    const result = await this.runLLMOnlyStrategy(text, ctx);
-    return result.issues;
+    return AiReviewService.runLLMOnly(text, ctx, this.scene, this.getEffectiveConfig(ctx));
   }
 
   // ==================== 配置工具方法 ====================
@@ -646,31 +241,7 @@ export abstract class BasePipeline {
    * 获取有效的流水线配置（带默认值回退）
    */
   protected getEffectiveConfig(ctx: PipelineContext): PipelineReviewConfig {
-    const cfg = ctx.pipelineConfig;
-    if (!cfg) {
-      return {
-        modes: {},
-        aiEngine: 'auto',
-        chunkSize: 4000,
-        llmMaxTokens: 4096,
-        llmTimeout: 180,
-        maxkbTimeout: 180,
-        ocrTimeout: 60,
-        maxConcurrentReviews: 3,
-        logLevel: 'info',
-      };
-    }
-    return {
-      modes: cfg.modes || {},
-      aiEngine: cfg.aiEngine || 'auto',
-      chunkSize: cfg.chunkSize || 4000,
-      llmMaxTokens: cfg.llmMaxTokens || 4096,
-      llmTimeout: cfg.llmTimeout || 180,
-      maxkbTimeout: cfg.maxkbTimeout || 180,
-      ocrTimeout: cfg.ocrTimeout || 60,
-      maxConcurrentReviews: cfg.maxConcurrentReviews || 3,
-      logLevel: cfg.logLevel || 'info',
-    };
+    return getEffectiveConfig(ctx);
   }
 
   /**
@@ -679,32 +250,14 @@ export abstract class BasePipeline {
    * @param stageName 阶段名称：'rules' | 'ai' | 'stdRef'
    */
   protected shouldRunStage(ctx: PipelineContext, stageName: 'rules' | 'ai' | 'stdRef'): boolean {
-    const config = this.getEffectiveConfig(ctx);
-    const modeConfig = config.modes?.[ctx.reviewMode as ReviewModeType];
-    if (!modeConfig?.stages) {
-      // 无运行时配置时，回退到 capabilities 的静态声明
-      if (stageName === 'rules') return this.capabilities.rules;
-      if (stageName === 'ai') return this.capabilities.ai;
-      if (stageName === 'stdRef') return this.capabilities.standardRef !== 'off';
-      return true;
-    }
-    const stages = modeConfig.stages as any;
-    if (stageName in stages) {
-      return stages[stageName] !== false;
-    }
-    return true; // 未配置的阶段默认执行
+    return shouldRunStage(ctx, this.capabilities, stageName);
   }
 
   /**
    * 获取当前模式的自定义规则前缀（如果配置了），否则返回默认前缀
    */
   protected getEffectiveRulePrefixes(ctx: PipelineContext, defaultPrefixes: string[]): string[] {
-    const config = this.getEffectiveConfig(ctx);
-    const modeConfig = config.modes?.[ctx.reviewMode as ReviewModeType];
-    if (modeConfig?.rulePrefixes && modeConfig.rulePrefixes.length > 0) {
-      return modeConfig.rulePrefixes;
-    }
-    return defaultPrefixes;
+    return getEffectiveRulePrefixes(ctx, this.capabilities, defaultPrefixes);
   }
 
   /**
@@ -715,118 +268,7 @@ export abstract class BasePipeline {
     ctx: PipelineContext,
     extractedText: string,
   ): Promise<ReviewIssue[]> {
-    if (!this.shouldRunStage(ctx, 'stdRef')) {
-      return [];
-    }
-
-    if (!extractedText || !extractedText.trim()) {
-      return [];
-    }
-
-    // 1. 提取标准引用
-    let extractedRefs = StandardExtractorService.extractFromText(extractedText, ctx.fileType);
-
-    // Excel 文件额外固定列提取
-    if (['xlsx', 'xls'].includes(ctx.fileType.toLowerCase()) && ctx.filePath) {
-      try {
-        const columnRefs = await StandardExtractorService.extractFromExcelByColumn(ctx.filePath);
-        const existingNos = new Set(extractedRefs.map(r => r.standardNo));
-        for (const ref of columnRefs) {
-          if (!existingNos.has(ref.standardNo)) {
-            extractedRefs.push(ref);
-            existingNos.add(ref.standardNo);
-          }
-        }
-      } catch (e) {
-        console.warn('[Pipeline] Excel 固定列提取失败:', e);
-      }
-    }
-
-    if (extractedRefs.length === 0) return [];
-
-    // 2. 加载标准库
-    const standards = await prisma.standard.findMany({
-      where: { standardNo: { not: null } },
-      select: { id: true, standardNo: true, standardName: true, standardIdent: true, standardStatus: true },
-    });
-
-    if (standards.length === 0) return [];
-
-    const checkLibrary: StandardCheckItem[] = standards
-      .filter(s => s.standardNo)
-      .map(s => ({
-        id: s.id,
-        standardNo: s.standardNo!,
-        standardName: s.standardName || '',
-        standardIdent: s.standardIdent || StandardExtractorService.getIdent(s.standardNo!),
-        standardStatus: s.standardStatus,
-      }));
-
-    // 3. 逐个引用进行 8 级比对 + 字符差异定位
-    const issues: ReviewIssue[] = [];
-
-    for (const ref of extractedRefs) {
-      const matchResult = StandardCheckService.findBestMatch(ref, checkLibrary);
-
-      if (!matchResult.matched) {
-        issues.push({
-          issueType: 'VIOLATION',
-          ruleCode: 'STD_001',
-          originalText: ref.fullMatch,
-          description: `未找到该标准规范: ${ref.standardNo}${ref.standardName ? ` (${ref.standardName})` : ''}`,
-        });
-      } else if (matchResult.matchedItem) {
-        const libItem = matchResult.matchedItem;
-
-        // 标准状态检查
-        if (libItem.standardStatus === 'ABOLISHED') {
-          issues.push({
-            issueType: 'VIOLATION', ruleCode: 'STD_003',
-            originalText: ref.fullMatch,
-            suggestedText: libItem.standardNo,
-            description: `该标准已废止: ${libItem.standardNo}`,
-          });
-          continue;
-        }
-        if (libItem.standardStatus === 'UPCOMING') {
-          issues.push({
-            issueType: 'VIOLATION', ruleCode: 'STD_004', severity: 'info',
-            originalText: ref.fullMatch,
-            suggestedText: libItem.standardNo,
-            description: `该标准尚未实施: ${libItem.standardNo}`,
-          });
-          continue;
-        }
-
-        // 字符级差异定位
-        const noDiff = CharDiffService.compare(ref.standardNo, libItem.standardNo);
-        const nameDiff = ref.standardName && libItem.standardName
-          ? CharDiffService.compare(ref.standardName, libItem.standardName)
-          : { originalRanges: [] as any[], correctRanges: [] as any[] };
-
-        if (noDiff.originalRanges.length > 0 || nameDiff.originalRanges.length > 0) {
-          const diffRanges: any = {};
-          if (noDiff.originalRanges.length > 0 || noDiff.correctRanges.length > 0) {
-            diffRanges.original = noDiff.originalRanges;
-            diffRanges.correct = noDiff.correctRanges;
-          }
-          if (nameDiff.originalRanges.length > 0 || nameDiff.correctRanges.length > 0) {
-            diffRanges.nameOriginal = nameDiff.originalRanges;
-            diffRanges.nameCorrect = nameDiff.correctRanges;
-          }
-
-          issues.push({
-            issueType: 'VIOLATION', ruleCode: 'STD_002',
-            originalText: ref.standardNo + (ref.standardName ? ` (${ref.standardName})` : ''),
-            suggestedText: libItem.standardNo + (libItem.standardName ? ` (${libItem.standardName})` : ''),
-            description: `标准引用有误: "${ref.standardNo}" 应为 "${libItem.standardNo}"${matchResult.similarity ? ` (相似度: ${(matchResult.similarity * 100).toFixed(0)}%)` : ''}`,
-            diffRanges,
-          });
-        }
-      }
-    }
-
-    return issues;
+    return StandardRefCheckService.runStandardRefCheck(ctx, extractedText);
   }
 
   // ==================== 两阶段并行编排（能力驱动） ====================

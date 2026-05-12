@@ -8,7 +8,7 @@ import { success, error, paginated } from '../utils/response';
 
 export const createTask = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
-    const { title, description, standardId, standardIds, reviewMode, maxkbKnowledgeId, maxkbKnowledgeIds,
+    const { title, description, standardId, standardIds, reviewMode, knowledgeCategoryId, knowledgeCategoryIds,
       perspective, preAnalysisData, reviewPoints, corePurposes, selectedTemplateId } = req.body;
     const creatorId = req.user?.id;
     const files = req.files as Express.Multer.File[];
@@ -33,12 +33,12 @@ export const createTask = async (req: AuthRequest, res: Response): Promise<void>
       catch { /* 忽略解析错误 */ }
     }
 
-    // 解析 maxkbKnowledgeIds（前端通过 FormData 传 JSON 字符串）
+    // 解析 knowledgeCategoryIds（前端通过 FormData 传 JSON 字符串）
     let parsedKnowledgeIds: string[] | undefined;
-    if (Array.isArray(maxkbKnowledgeIds)) {
-      parsedKnowledgeIds = maxkbKnowledgeIds;
-    } else if (typeof maxkbKnowledgeIds === 'string') {
-      try { parsedKnowledgeIds = JSON.parse(maxkbKnowledgeIds); }
+    if (Array.isArray(knowledgeCategoryIds)) {
+      parsedKnowledgeIds = knowledgeCategoryIds;
+    } else if (typeof knowledgeCategoryIds === 'string') {
+      try { parsedKnowledgeIds = JSON.parse(knowledgeCategoryIds); }
       catch { /* 忽略解析错误 */ }
     }
 
@@ -89,8 +89,8 @@ export const createTask = async (req: AuthRequest, res: Response): Promise<void>
       standardId,
       standardIds: parsedStandardIds || (standardId ? [standardId] : []),
       reviewMode,
-      maxkbKnowledgeId: maxkbKnowledgeId || parsedKnowledgeIds?.[0],
-      maxkbKnowledgeIds: parsedKnowledgeIds,
+      knowledgeCategoryId: knowledgeCategoryId || parsedKnowledgeIds?.[0],
+      knowledgeCategoryIds: parsedKnowledgeIds,
       files: files || [],
       dwgParsedData: parsedDwgData,
       perspective,
@@ -572,7 +572,32 @@ export const getReviewSummary = async (req: Request, res: Response): Promise<voi
   }
 };
 
-/** 预分析 — 根据文件信息智能推荐审查方案 */
+// ---- 预分析异步处理 ----
+
+interface PreAnalysisEntry {
+  status: 'processing' | 'completed' | 'failed';
+  result?: any;
+  error?: string;
+  createdAt: number;
+}
+
+const preAnalysisStore = new Map<string, PreAnalysisEntry>();
+
+// 定期清理超过 30 分钟的条目
+setInterval(() => {
+  const cutoff = Date.now() - 30 * 60 * 1000;
+  for (const [key, entry] of preAnalysisStore) {
+    if (entry.createdAt < cutoff) {
+      preAnalysisStore.delete(key);
+    }
+  }
+}, 5 * 60 * 1000);
+
+function generateUploadId(): string {
+  return `pa_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
+}
+
+/** 预分析 — 根据文件信息智能推荐审查方案（非阻塞，后台处理） */
 export const preAnalyze = async (req: Request, res: Response): Promise<void> => {
   try {
     const { files } = req.body;
@@ -580,10 +605,55 @@ export const preAnalyze = async (req: Request, res: Response): Promise<void> => 
       error(res, '请提供文件列表', 400);
       return;
     }
-    const result = await PreAnalysisService.analyzeFiles(files);
-    success(res, result);
+
+    const uploadId = generateUploadId();
+    preAnalysisStore.set(uploadId, { status: 'processing', createdAt: Date.now() });
+
+    // 启动后台分析，不等待结果
+    setImmediate(async () => {
+      try {
+        const result = await PreAnalysisService.analyzeFiles(files);
+        preAnalysisStore.set(uploadId, { status: 'completed', result, createdAt: Date.now() });
+      } catch (err) {
+        console.error('[PreAnalysis] Background error:', err);
+        preAnalysisStore.set(uploadId, {
+          status: 'failed',
+          error: err instanceof Error ? err.message : '预分析失败',
+          createdAt: Date.now(),
+        });
+      }
+    });
+
+    success(res, { uploadId, status: 'processing', message: '预分析已启动' });
   } catch (err) {
     console.error('PreAnalyze Error:', err);
     error(res, '预分析失败', 500);
+  }
+};
+
+/** 查询预分析状态和结果 */
+export const getPreAnalysisStatus = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const uploadId = req.params.uploadId as string;
+    const entry = preAnalysisStore.get(uploadId);
+
+    if (!entry) {
+      error(res, '未找到该预分析任务', 404);
+      return;
+    }
+
+    if (entry.status === 'processing') {
+      success(res, { status: 'processing', message: '预分析进行中...' });
+    } else if (entry.status === 'completed') {
+      success(res, { status: 'completed', result: entry.result });
+      // 返回结果后清理
+      preAnalysisStore.delete(uploadId);
+    } else {
+      success(res, { status: 'failed', error: entry.error });
+      preAnalysisStore.delete(uploadId);
+    }
+  } catch (err) {
+    console.error('Get PreAnalysis Status Error:', err);
+    error(res, '服务器内部错误', 500);
   }
 };

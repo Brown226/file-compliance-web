@@ -917,8 +917,8 @@ export class ReviewService {
     taskId: string,
     file: { id: string; fileName: string; filePath: string; fileType: string },
     reviewMode: string = 'FULL_REVIEW',
-    maxkbKnowledgeId?: string,
-    maxkbKnowledgeIds?: string[],
+    knowledgeCategoryId?: string,
+    knowledgeCategoryIds?: string[],
     onProgress?: (chunkProgress: number) => void,
   ): Promise<void> {
     const uploadsDir = path.join(__dirname, '../../uploads');
@@ -932,8 +932,8 @@ export class ReviewService {
       fileType: file.fileType,
       extractedText: '',
       reviewMode: reviewMode as any,
-      knowledgeCategoryId: maxkbKnowledgeId || undefined,
-      knowledgeCategoryIds: maxkbKnowledgeIds || undefined,
+      knowledgeCategoryId: knowledgeCategoryId || undefined,
+      knowledgeCategoryIds: knowledgeCategoryIds || undefined,
       onChunkProgress: onProgress,
     };
 

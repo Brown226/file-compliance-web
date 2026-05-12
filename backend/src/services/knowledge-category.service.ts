@@ -80,7 +80,7 @@ export class KnowledgeCategoryService {
     const title = fileName.replace(/\.\w+$/, '');
 
     // 使用 SplitModel 按标题层级分块
-    const paragraphs = VectorService.splitMarkdownIntoParagraphs(content, category.maxChars || 900);
+    const paragraphs = VectorService.splitMarkdownIntoParagraphs(content, category.maxChars || 3000);
 
     return {
       title,

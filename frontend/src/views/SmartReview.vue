@@ -150,11 +150,67 @@
 
     <!-- Step 1: 预审配置 - 参考项目左右分栏布局 -->
     <div v-if="currentStep === 1" class="confirm-step">
-      <div v-if="preAnalyzed" class="confirm-content">
+      <!-- 后台上传/预分析状态横幅 -->
+      <el-alert
+        v-if="backgroundStatus === 'uploading'"
+        title="正在上传文件..."
+        type="info"
+        :closable="false"
+        show-icon
+        class="background-status-alert"
+      >
+        <template #default>
+          <span>文件正在后台上传，您可以先配置审查参数，上传完成后将自动开始AI预分析。</span>
+        </template>
+      </el-alert>
+      <el-alert
+        v-else-if="backgroundStatus === 'pre-analyzing'"
+        title="正在AI预分析..."
+        type="warning"
+        :closable="false"
+        show-icon
+        class="background-status-alert"
+      >
+        <template #default>
+          <span>AI 正在分析您的文件内容并生成推荐配置，您可以先手动选择审查参数。</span>
+        </template>
+      </el-alert>
+      <el-alert
+        v-else-if="backgroundStatus === 'done'"
+        title="预分析完成"
+        type="success"
+        :closable="true"
+        show-icon
+        @close="backgroundStatus = 'idle'"
+        class="background-status-alert"
+      >
+        <template #default>
+          <span>AI 预分析已完成，推荐配置已自动填入下方表单。</span>
+        </template>
+      </el-alert>
+      <el-alert
+        v-else-if="backgroundStatus === 'failed'"
+        title="预分析失败"
+        type="error"
+        :closable="true"
+        show-icon
+        @close="backgroundStatus = 'idle'"
+        class="background-status-alert"
+      >
+        <template #default>
+          <span>AI 预分析失败，不影响正常使用。请手动配置后点击"开始分析"。</span>
+        </template>
+      </el-alert>
+
+      <div class="confirm-content">
         <!-- 文件上传成功提示 -->
         <div class="upload-success">
           <p class="success-text">文件 <span class="file-name">{{ fileList.length }} 个文件</span> 已上传成功。</p>
           <p class="ai-hint" v-if="preAnalysisData.contractType">AI初步识别文件类型为：<span class="type-text">{{ preAnalysisData.contractType }}</span></p>
+          <p class="ai-hint" v-else-if="!preAnalyzed">
+            <el-icon class="is-loading"><Loading /></el-icon>
+            AI 正在识别文件类型...
+          </p>
         </div>
 
         <!-- 左右分栏：审查立场 + 审查范围 -->
@@ -348,11 +404,6 @@
             </div>
           </div>
         </div>
-      </div>
-
-      <!-- 预分析中 -->
-      <div v-else class="pre-analyzing">
-        <el-skeleton :rows="8" animated />
       </div>
     </div>
 
@@ -589,6 +640,7 @@ import type { UploadFile, FormInstance, FormRules } from 'element-plus'
 import {
   Upload, UploadFilled, Check, MagicStick, InfoFilled, VideoPlay,
   RemoveFilled, CirclePlusFilled, Document, Link, FolderAdd, Delete,
+  Loading,
 } from '@element-plus/icons-vue'
 import { createTaskApi, preAnalyzeApi, uploadOnlyApi, exportTaskReportApi, exportTaskReportWordApi } from '@/api/task'
 import { getAllKnowledgeCategoriesApi } from '@/api/knowledge-category'
@@ -674,23 +726,22 @@ const preAnalysisData = reactive({
 let preAnalyzeTimer: ReturnType<typeof setTimeout> | null = null
 
 // 监听文件列表变化，后台进行预分析（不自动跳转步骤）
+// 仅在已在步骤1时触发（如用户返回重新上传），步骤0的预分析由 goToStep1 处理
 watch(fileList, (newList) => {
   if (preAnalyzeTimer) clearTimeout(preAnalyzeTimer)
   if (newList.length > 0) {
     // 标记预分析未完成（因为文件列表变化了）
     preAnalyzed.value = false
     preAnalyzing.value = true
-    // 不再自动跳转步骤，保持在当前步骤（上传页面）
-    // currentStep.value = 1  // 已移除：由用户主动点击“下一步”按钮触发
-    
-    // 防抖：文件列表变化后 800ms 触发后台预分析
-    preAnalyzeTimer = setTimeout(() => runPreAnalysis(newList), 800)
+
+    // 仅在已在步骤1时自动触发预分析（用户返回修改文件的场景）
+    if (currentStep.value === 1) {
+      preAnalyzeTimer = setTimeout(() => runPreAnalysis(newList), 800)
+    }
   } else {
     // 文件列表为空时，重置预分析状态
     preAnalyzed.value = false
     preAnalyzing.value = false
-    // 保持在上传步骤
-    // currentStep.value = 0  // 已移除：不需要自动跳转
   }
 }, { deep: true })
 
@@ -792,62 +843,69 @@ const runPreAnalysis = async (files: UploadFile[]) => {
   }
 }
 
-// 下一步：进入预审配置
-const goToStep1 = async () => {
+// 下一步：进入预审配置（非阻塞，立即跳转，后台上传+预分析）
+const goToStep1 = () => {
   console.log('[SmartReview] goToStep1 被调用')
   console.log('[SmartReview] fileList.length:', fileList.value.length)
   console.log('[SmartReview] preAnalyzed.value:', preAnalyzed.value)
-  
+
   if (fileList.value.length === 0) {
     ElMessage.warning('请至少选择一个待审文件')
     return
   }
-  
-  // 触发预分析（如果还没有分析过）
-  if (!preAnalyzed.value) {
-    console.log('[SmartReview] 开始预分析流程...')
-    let loading: any = null
+
+  // 立即跳转到步骤1
+  currentStep.value = 1
+
+  // 如果已经预分析过，不需要再做
+  if (preAnalyzed.value) {
+    backgroundStatus.value = 'idle'
+    return
+  }
+
+  // 后台启动上传+预分析流程（fire-and-forget）
+  backgroundStatus.value = 'uploading'
+  ;(async () => {
     try {
-      // 显示全屏加载遮罩
-      console.log('[SmartReview] 显示加载遮罩...')
-      loading = ElLoading.service({
-        lock: true,
-        text: '正在上传文件并进行AI预分析，请稍候...',
-        background: 'rgba(0, 0, 0, 0.7)',
-      })
-      
-      // 使用轻量级上传API（不需要标题），只上传文件获取服务器路径
-      console.log('[SmartReview] 开始上传文件...')
+      console.log('[SmartReview] 后台开始上传文件...')
       const uploadedFileNames = await uploadFilesForPreAnalysis()
-      console.log('[SmartReview] 上传完成，返回文件:', uploadedFileNames)
-      
+      console.log('[SmartReview] 后台上传完成，返回文件:', uploadedFileNames)
+      backgroundUploadedServerFiles.value = uploadedFileNames || []
+
       if (uploadedFileNames && uploadedFileNames.length > 0) {
-        // 使用上传后的实际文件名进行预分析
+        backgroundStatus.value = 'pre-analyzing'
+        console.log('[SmartReview] 后台开始预分析...')
         await runPreAnalysisWithServerFiles(uploadedFileNames)
       } else {
         throw new Error('文件上传返回空列表')
       }
-      
-      // 预分析完成后，关闭加载遮罩并跳转到步骤2
-      loading.close()
-      currentStep.value = 1
-      ElMessage.success('预分析完成！')
+
+      backgroundStatus.value = 'done'
+      ElMessage.success('AI 预分析完成，已自动填入推荐配置')
+      // 3秒后自动隐藏状态提示
+      if (backgroundStatusHideTimer) clearTimeout(backgroundStatusHideTimer)
+      backgroundStatusHideTimer = setTimeout(() => {
+        backgroundStatus.value = 'idle'
+      }, 3000)
     } catch (err) {
-      console.error('[SmartReview] 预分析失败:', err)
-      if (loading) loading.close()
-      ElMessage.warning('预分析失败，将使用基础配置')
+      console.error('[SmartReview] 后台预分析失败:', err)
       // 降级：使用原始文件名进行预分析
       try {
+        backgroundStatus.value = 'pre-analyzing'
         await runPreAnalysis(fileList.value)
+        backgroundStatus.value = 'done'
+        ElMessage.success('AI 预分析完成（降级模式）')
+        if (backgroundStatusHideTimer) clearTimeout(backgroundStatusHideTimer)
+        backgroundStatusHideTimer = setTimeout(() => {
+          backgroundStatus.value = 'idle'
+        }, 3000)
       } catch (preErr) {
         console.error('[SmartReview] 降级预分析也失败:', preErr)
+        backgroundStatus.value = 'failed'
+        ElMessage.warning('预分析失败，您可手动配置后直接开始分析')
       }
-      currentStep.value = 1
     }
-  } else {
-    // 已经预分析过，直接跳转
-    currentStep.value = 1
-  }
+  })()
 }
 
 // 轻量级文件上传（仅用于预分析，不需要创建任务）
@@ -886,6 +944,12 @@ const uploadFilesForPreAnalysis = async (): Promise<Array<{ name: string; size: 
 }
 
 const preAnalysisReasons = ref<Record<string, string>>({})
+
+// ===== 后台上传+预分析状态跟踪 =====
+// 'idle' | 'uploading' | 'pre-analyzing' | 'done' | 'failed'
+const backgroundStatus = ref<'idle' | 'uploading' | 'pre-analyzing' | 'done' | 'failed'>('idle')
+const backgroundUploadedServerFiles = ref<Array<{ name: string; size: number }>>([])
+let backgroundStatusHideTimer: ReturnType<typeof setTimeout> | null = null
 
 // ===== localStorage 状态持久化 =====
 const STORAGE_KEY = 'smartReview_draft_v2'
@@ -1243,7 +1307,7 @@ const submitTask = async () => {
 
     // 知识库（支持多选）
     if (config.libraryReview && config.knowledgeCategoryIds.length > 0) {
-      fd.append('maxkbKnowledgeIds', JSON.stringify(config.knowledgeCategoryIds))
+      fd.append('knowledgeCategoryIds', JSON.stringify(config.knowledgeCategoryIds))
     }
 
     // 审查立场
@@ -1594,6 +1658,21 @@ onMounted(async () => {
 .confirm-step {
   max-width: 1000px;
   margin: 0 auto;
+}
+
+/* 后台上传/预分析状态横幅 */
+.background-status-alert {
+  margin-bottom: 16px;
+  border-radius: 8px;
+}
+
+.background-status-alert :deep(.el-alert__title) {
+  font-weight: 600;
+}
+
+.background-status-alert :deep(.el-alert__content) {
+  font-size: 13px;
+  line-height: 1.5;
 }
 
 .upload-success {

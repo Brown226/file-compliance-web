@@ -89,8 +89,6 @@ export interface PipelineContext {
   pdfPages?: string[];
   reviewMode: ReviewModeType;
   standardIds?: string[];           // 关联标准ID
-  maxkbKnowledgeId?: string;        // 用户选择的知识库ID（兼容旧字段）
-  maxkbKnowledgeIds?: string[];     // 用户选择的多个知识库ID（兼容旧字段）
   knowledgeCategoryId?: string;     // 关联的知识子库 ID
   knowledgeCategoryIds?: string[];  // 关联的多个知识子库 ID
   refFileGroup?: {                  // 参照文件组（以文审文模式）

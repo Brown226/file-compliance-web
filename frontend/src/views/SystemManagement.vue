@@ -690,7 +690,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, computed, onMounted, onUnmounted } from 'vue'
+import { ref, reactive, computed, onMounted, onUnmounted, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useUserStore } from '@/stores/user'
 import {
@@ -719,6 +719,7 @@ import {
   saveSystemConfigApi,
   type StorageStats,
 } from '@/api/system'
+import { useRoute } from 'vue-router'
 import FeedbackManagement from '@/views/FeedbackManagement.vue'
 import AnnouncementManagement from '@/views/AnnouncementManagement.vue'
 import ChatModelTab from '@/views/LLMConfig/ChatModelTab.vue'
@@ -728,8 +729,18 @@ import OcrConfigTab from '@/views/LLMConfig/OcrConfigTab.vue'
 import PromptConfigTab from '@/views/PromptConfig.vue'
 
 // ========== Tab 导航 ==========
+const route = useRoute()
 const activeTab = ref('department')
 const aiEngineTab = ref('chat')
+
+// 根据路由自动切换 tab
+watch(() => route.path, (path) => {
+  if (path === '/admin/users') {
+    activeTab.value = 'department'
+  } else if (path === '/admin/system') {
+    activeTab.value = 'basic'
+  }
+}, { immediate: true })
 
 // ========== 基础设置 ==========
 const basicSettingsSaving = ref(false)

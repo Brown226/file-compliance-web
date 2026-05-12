@@ -34,13 +34,11 @@ const routes: Array<RouteRecordRaw> = [
         path: 'review/:id',
         name: 'TaskResults',
         component: () => import('../views/TaskResultsView.vue'),
-        meta: { title: '审查结果（新版）', hidden: true }
+        meta: { title: '审查结果', hidden: true }
       },
       {
         path: 'tasks/details/:id',
-        name: 'TaskDetails',
-        component: () => import('../views/TaskDetails/index.vue'),
-        meta: { title: '审查结果（旧版）', hidden: true }
+        redirect: to => ({ path: `/review/${to.params.id}` })
       },
       {
         path: 'qna',

@@ -91,6 +91,39 @@ services:
           memory: 256M
 
   # ==========================================
+  # OCR 服务（PaddleOCR Python）
+  # 支持: PDF/图片 OCR 识别
+  # ==========================================
+  ocr-service:
+    build:
+      context: ./backend/ocr-service
+      dockerfile: Dockerfile
+    container_name: file_review_ocr
+    ports:
+      - "${OCR_PORT:-8001}:8000"
+    environment:
+      - TZ=Asia/Shanghai
+    volumes:
+      - ocr_models:/root/.paddleocr
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    networks:
+      - file-review-network
+    deploy:
+      resources:
+        limits:
+          memory: 4G
+          cpus: "2.0"
+        reservations:
+          memory: 2G
+          cpus: "1.0"
+
+  # ==========================================
   # MaxKB 知识库服务 - PostgreSQL 实例
   # ==========================================
   maxkb-pgsql:
@@ -185,6 +218,7 @@ services:
       - PARSER_SERVICE_URL=http://markitdown:8000
       - MAXKB_BASE_URL=http://maxkb:8080
       - MAXKB_PUBLIC_URL=${MAXKB_PUBLIC_URL:-http://localhost:8080}
+      - OCR_SERVICE_URL=http://ocr-service:8000
       - TZ=Asia/Shanghai
     volumes:
       - uploads:/app/uploads
@@ -257,3 +291,5 @@ volumes:
   maxkb-local:
   maxkb-pgsql-data:
   maxkb-redis-data:
+  ocr_models:
+    driver: local

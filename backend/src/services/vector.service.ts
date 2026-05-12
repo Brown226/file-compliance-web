@@ -44,7 +44,7 @@ interface ImportEntry {
 export interface ChunkingConfig {
   /** 分块模式：auto=标题感知分割(默认), fixed=纯固定长度, paragraph=按段落分割 */
   mode?: 'auto' | 'fixed' | 'paragraph';
-  /** 每个chunk最大字符数（默认1500） */
+  /** 每个chunk最大字符数（默认3000） */
   maxChars?: number;
   /** chunk间重叠字符数（仅 fixed/paragraph 模式有效） */
   overlap?: number;
@@ -327,7 +327,7 @@ export class VectorService {
    * 内部调用 splitMarkdownIntoParagraphs，将 title+content 拼接
    */
   static splitTextIntoChunks(text: string, config: ChunkingConfig = {}): string[] {
-    const { mode = 'auto', maxChars = 900, overlap = 120 } = config;
+    const { mode = 'auto', maxChars = 3000, overlap = 200 } = config;
     const raw = String(text || '');
     if (!raw.trim()) return [];
 
@@ -416,7 +416,7 @@ export class VectorService {
    */
   static async importDocument(entry: ImportEntry): Promise<{ chunks: number; deduped: number }> {
     const { sourceType, title, content, clauseId, category, metadata, categoryId, chunkConfig } = entry;
-    const { maxChars = 900 } = chunkConfig || {};
+    const { maxChars = 3000 } = chunkConfig || {};
 
     const paragraphs = this.splitMarkdownIntoParagraphs(content, maxChars);
     if (paragraphs.length === 0) return { chunks: 0, deduped: 0 };

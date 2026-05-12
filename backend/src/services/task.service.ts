@@ -33,8 +33,8 @@ export class TaskService {
     standardId?: string;
     standardIds?: string[];  // 多标准关联
     reviewMode?: string;
-    maxkbKnowledgeId?: string;  // 用户选择的知识库ID（兼容单个）
-    maxkbKnowledgeIds?: string[];  // 用户选择的多个知识库ID
+    knowledgeCategoryId?: string;  // 用户选择的知识库ID
+    knowledgeCategoryIds?: string[];  // 用户选择的多个知识库ID
     perspective?: string;  // 审查立场
     preAnalysisData?: any;  // 预分析完整数据
     reviewPoints?: string[];  // 用户选中的审查点
@@ -43,7 +43,7 @@ export class TaskService {
     files?: Express.Multer.File[];
     dwgParsedData?: Record<string, any>;  // 前端 WASM 解析的 DWG 数据（按文件名映射）
   }): Promise<Task> {
-    const { title, description, creatorId, standardId, standardIds = [], reviewMode, maxkbKnowledgeId, maxkbKnowledgeIds,
+    const { title, description, creatorId, standardId, standardIds = [], reviewMode, knowledgeCategoryId, knowledgeCategoryIds,
       perspective, preAnalysisData, reviewPoints, corePurposes, selectedTemplateId,
       files = [], dwgParsedData } = data;
 
@@ -53,12 +53,12 @@ export class TaskService {
     const shouldDelayReview = resolvedReviewMode === 'DOC_REVIEW';
 
     // 知识库 ID：多选优先，回退到单选
-    // 存储策略：将多个知识库 ID 存为 JSON 字符串到 maxkbKnowledgeId 字段
+    // 存储策略：将多个知识库 ID 存为 JSON 字符串到 knowledgeCategoryId 字段
     let knowledgeIdForDb: string | null = null;
-    if (maxkbKnowledgeIds && maxkbKnowledgeIds.length > 0) {
-      knowledgeIdForDb = JSON.stringify(maxkbKnowledgeIds);
-    } else if (maxkbKnowledgeId) {
-      knowledgeIdForDb = maxkbKnowledgeId;
+    if (knowledgeCategoryIds && knowledgeCategoryIds.length > 0) {
+      knowledgeIdForDb = JSON.stringify(knowledgeCategoryIds);
+    } else if (knowledgeCategoryId) {
+      knowledgeIdForDb = knowledgeCategoryId;
     }
 
     // 构建 preAnalysisData JSON（合并预分析结果和用户选择）
@@ -83,7 +83,7 @@ export class TaskService {
         creatorId,
         standardId: standardId || allStandardIds[0] || null,
         reviewMode: resolvedReviewMode as any,
-        maxkbKnowledgeId: knowledgeIdForDb,
+        knowledgeCategoryId: knowledgeIdForDb,
         perspective: perspective || null,
         preAnalysisData: preAnalysisJson || undefined,
         // DOC_REVIEW 需要先上传参照文件，创建时先保持 PENDING，待 ref-files 上传后再触发

@@ -24,6 +24,7 @@ import {
   getModeCapabilities,
   saveModeCapabilities,
   preAnalyze,
+  getPreAnalysisStatus,
   getReviewSummary,
 } from '../controllers/task.controller';
 
@@ -105,6 +106,9 @@ router.get('/review-modes', getReviewModes);
 
 // 预分析 — 智能推荐审查方案（必须在 /:id 路由之前）
 router.post('/pre-analyze', preAnalyze);
+
+// 预分析结果轮询（必须在 /:id 路由之前）
+router.get('/pre-analysis-status/:uploadId', getPreAnalysisStatus);
 
 // 审查模式能力配置（读写）
 router.get('/mode-capabilities', getModeCapabilities);
