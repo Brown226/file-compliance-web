@@ -24,11 +24,13 @@ import prisma from '../../config/db';
  */
 let cachedRuntimeCapabilities: Record<ReviewModeType, ModeCapabilities> | null = null;
 let cacheTime = 0;
-const CACHE_TTL = 5000; // 5秒缓存
+const CACHE_TTL = 30000; // 30秒缓存（配置变更时通过 clearCapabilitiesCache 主动清除）
+let inflightRequest: Promise<Record<ReviewModeType, ModeCapabilities>> | null = null;
 
 /**
- * 获取运行时能力配置（带缓存）
+ * 获取运行时能力配置（带缓存 + 请求去重）
  * 优先从 DB 的 pipeline_mode_capabilities 读取覆盖配置，回退到 mode-config.ts 默认值
+ * 并发请求共享同一次 DB 查询，避免缓存穿透
  */
 async function getRuntimeCapabilities(): Promise<Record<ReviewModeType, ModeCapabilities>> {
   const now = Date.now();
@@ -36,17 +38,27 @@ async function getRuntimeCapabilities(): Promise<Record<ReviewModeType, ModeCapa
     return cachedRuntimeCapabilities;
   }
 
-  try {
-    // 从 DB 读取运行时配置
-    const dbConfig = await getModeCapabilitiesConfig();
-    cachedRuntimeCapabilities = dbConfig as any;
-    cacheTime = now;
-    return cachedRuntimeCapabilities;
-  } catch (e) {
-    // DB 不可用时回退到缓存
-    if (cachedRuntimeCapabilities) return cachedRuntimeCapabilities;
-    throw e;
+  // 请求去重：并发请求共享同一次 DB 查询
+  if (inflightRequest) {
+    return inflightRequest;
   }
+
+  inflightRequest = (async () => {
+    try {
+      const dbConfig = await getModeCapabilitiesConfig();
+      cachedRuntimeCapabilities = dbConfig as any;
+      cacheTime = Date.now();
+      return cachedRuntimeCapabilities;
+    } catch (e) {
+      // DB 不可用时回退到缓存
+      if (cachedRuntimeCapabilities) return cachedRuntimeCapabilities;
+      throw e;
+    } finally {
+      inflightRequest = null;
+    }
+  })();
+
+  return inflightRequest;
 }
 
 /** 同步获取缓存的运行时能力（无缓存时返回 null） */
