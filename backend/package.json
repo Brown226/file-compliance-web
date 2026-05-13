@@ -18,6 +18,7 @@
     "@types/bull": "^3.15.9",
     "adm-zip": "^0.5.17",
     "axios": "^1.15.0",
+    "backend": "file:",
     "bcryptjs": "^3.0.3",
     "bull": "^4.16.5",
     "cors": "^2.8.6",
@@ -32,6 +33,7 @@
     "morgan": "^1.10.1",
     "multer": "^2.1.1",
     "pdf-parse": "^2.4.5",
+    "pdf-to-img": "^6.0.0",
     "uuid": "^14.0.0",
     "ws": "^8.20.0",
     "xlsx": "^0.18.5"
@@ -61,7 +63,7 @@
     "ts-node": "^10.9.2",
     "ts-node-dev": "^2.0.0",
     "tsx": "^4.21.0",
-    "typescript": "^6.0.2"
+    "typescript": "^5.7.3"
   },
   "prisma": {
     "seed": "ts-node src/seed.ts"

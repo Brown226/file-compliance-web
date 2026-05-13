@@ -1,4 +1,6 @@
 import { Request, Response } from 'express';
+import path from 'path';
+import fs from 'fs';
 import { TaskService } from '../services/task.service';
 import { PreAnalysisService } from '../services/pre-analysis.service';
 import { AuthRequest } from '../middlewares/auth.middleware';
@@ -9,7 +11,7 @@ import { success, error, paginated } from '../utils/response';
 export const createTask = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const { title, description, standardId, standardIds, reviewMode, knowledgeCategoryId, knowledgeCategoryIds,
-      perspective, preAnalysisData, reviewPoints, corePurposes, selectedTemplateId } = req.body;
+      perspective, preAnalysisData, reviewPoints, corePurposes, selectedTemplateId, intraFileConsistency } = req.body;
     const creatorId = req.user?.id;
     const files = req.files as Express.Multer.File[];
 
@@ -98,6 +100,7 @@ export const createTask = async (req: AuthRequest, res: Response): Promise<void>
       reviewPoints: parsedReviewPoints,
       corePurposes: parsedCorePurposes,
       selectedTemplateId,
+      intraFileConsistency: intraFileConsistency === 'true' || intraFileConsistency === true,
     });
 
     success(res, task, '任务创建成功');
@@ -308,6 +311,32 @@ export const getTaskFileContent = async (req: Request, res: Response): Promise<v
     success(res, file);
   } catch (err) {
     console.error('Get Task File Content Error:', err);
+    error(res, '服务器内部错误', 500);
+  }
+};
+
+export const getTaskFileRaw = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const taskId = req.params.id as string;
+    const fileId = req.params.fileId as string;
+
+    const file = await TaskService.getTaskFileRaw(taskId, fileId);
+    if (!file) {
+      error(res, '未找到文件', 404);
+      return;
+    }
+
+    const absPath = path.join(__dirname, '..', '..', file.filePath);
+    if (!fs.existsSync(absPath)) {
+      error(res, '文件不存在', 404);
+      return;
+    }
+
+    res.setHeader('Content-Type', 'application/octet-stream');
+    res.setHeader('Content-Disposition', `inline; filename="${encodeURIComponent(file.fileName)}"`);
+    res.sendFile(absPath);
+  } catch (err) {
+    console.error('Get Task File Raw Error:', err);
     error(res, '服务器内部错误', 500);
   }
 };
@@ -572,32 +601,7 @@ export const getReviewSummary = async (req: Request, res: Response): Promise<voi
   }
 };
 
-// ---- 预分析异步处理 ----
-
-interface PreAnalysisEntry {
-  status: 'processing' | 'completed' | 'failed';
-  result?: any;
-  error?: string;
-  createdAt: number;
-}
-
-const preAnalysisStore = new Map<string, PreAnalysisEntry>();
-
-// 定期清理超过 30 分钟的条目
-setInterval(() => {
-  const cutoff = Date.now() - 30 * 60 * 1000;
-  for (const [key, entry] of preAnalysisStore) {
-    if (entry.createdAt < cutoff) {
-      preAnalysisStore.delete(key);
-    }
-  }
-}, 5 * 60 * 1000);
-
-function generateUploadId(): string {
-  return `pa_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
-}
-
-/** 预分析 — 根据文件信息智能推荐审查方案（非阻塞，后台处理） */
+/** 预分析 — 根据文件信息智能推荐审查方案 */
 export const preAnalyze = async (req: Request, res: Response): Promise<void> => {
   try {
     const { files } = req.body;
@@ -606,54 +610,10 @@ export const preAnalyze = async (req: Request, res: Response): Promise<void> => 
       return;
     }
 
-    const uploadId = generateUploadId();
-    preAnalysisStore.set(uploadId, { status: 'processing', createdAt: Date.now() });
-
-    // 启动后台分析，不等待结果
-    setImmediate(async () => {
-      try {
-        const result = await PreAnalysisService.analyzeFiles(files);
-        preAnalysisStore.set(uploadId, { status: 'completed', result, createdAt: Date.now() });
-      } catch (err) {
-        console.error('[PreAnalysis] Background error:', err);
-        preAnalysisStore.set(uploadId, {
-          status: 'failed',
-          error: err instanceof Error ? err.message : '预分析失败',
-          createdAt: Date.now(),
-        });
-      }
-    });
-
-    success(res, { uploadId, status: 'processing', message: '预分析已启动' });
+    const result = await PreAnalysisService.analyzeFiles(files);
+    success(res, result);
   } catch (err) {
     console.error('PreAnalyze Error:', err);
     error(res, '预分析失败', 500);
-  }
-};
-
-/** 查询预分析状态和结果 */
-export const getPreAnalysisStatus = async (req: Request, res: Response): Promise<void> => {
-  try {
-    const uploadId = req.params.uploadId as string;
-    const entry = preAnalysisStore.get(uploadId);
-
-    if (!entry) {
-      error(res, '未找到该预分析任务', 404);
-      return;
-    }
-
-    if (entry.status === 'processing') {
-      success(res, { status: 'processing', message: '预分析进行中...' });
-    } else if (entry.status === 'completed') {
-      success(res, { status: 'completed', result: entry.result });
-      // 返回结果后清理
-      preAnalysisStore.delete(uploadId);
-    } else {
-      success(res, { status: 'failed', error: entry.error });
-      preAnalysisStore.delete(uploadId);
-    }
-  } catch (err) {
-    console.error('Get PreAnalysis Status Error:', err);
-    error(res, '服务器内部错误', 500);
   }
 };

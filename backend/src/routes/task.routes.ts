@@ -12,6 +12,7 @@ import {
   getTaskDetails,
   getTaskProgress,
   getTaskFileContent,
+  getTaskFileRaw,
   updateTaskStatus,
   exportTaskReport,
   exportTaskReportWord,
@@ -24,7 +25,6 @@ import {
   getModeCapabilities,
   saveModeCapabilities,
   preAnalyze,
-  getPreAnalysisStatus,
   getReviewSummary,
 } from '../controllers/task.controller';
 
@@ -107,9 +107,6 @@ router.get('/review-modes', getReviewModes);
 // 预分析 — 智能推荐审查方案（必须在 /:id 路由之前）
 router.post('/pre-analyze', preAnalyze);
 
-// 预分析结果轮询（必须在 /:id 路由之前）
-router.get('/pre-analysis-status/:uploadId', getPreAnalysisStatus);
-
 // 审查模式能力配置（读写）
 router.get('/mode-capabilities', getModeCapabilities);
 router.put('/mode-capabilities', requireRole('ADMIN'), saveModeCapabilities);
@@ -123,6 +120,7 @@ router.get('/:id', getTaskById);
 router.get('/:id/details', getTaskDetails);
 router.get('/:id/progress', getTaskProgress);
 router.get('/:id/files/:fileId/content', getTaskFileContent);
+router.get('/:id/files/:fileId/raw', getTaskFileRaw);
 router.get('/:id/export', exportTaskReport);
 router.get('/:id/export-word', exportTaskReportWord);
 router.get('/:id/review-summary', getReviewSummary);

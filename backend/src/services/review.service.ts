@@ -3,6 +3,7 @@ import { ParserService } from './parser.service';
 import { LlmService, ReviewIssue } from './llm.service';
 import { createPipelineAsync, PipelineContext } from './review-pipeline';
 import { CrossFileConsistencyService } from './cross-file-consistency.service';
+import { IntraFileConsistencyService } from './intra-file-consistency.service';
 import { WebSocketService } from './websocket.service';
 import { ConcurrencyService } from './concurrency.service';
 import path from 'path';
@@ -165,6 +166,10 @@ export class ReviewService {
       const reviewMode = (task as any).reviewMode || 'FULL_REVIEW';
       const knowledgeCategoryId = (task as any).knowledgeCategoryId || undefined;
 
+      // 从 preAnalysisData 读取文件内一致性开关
+      const taskPreAnalysis = (task as any).preAnalysisData;
+      const intraFileConsistency = !!(taskPreAnalysis && typeof taskPreAnalysis === 'object' && taskPreAnalysis.intraFileConsistency);
+
       // 解析多知识子库 ID
       let knowledgeCategoryIds: string[] | undefined;
       if (knowledgeCategoryId) {
@@ -224,6 +229,7 @@ export class ReviewService {
           knowledgeCategoryIds: knowledgeCategoryIds || undefined,
           pipelineConfig,
           refFileGroup: refFileGroupCtx,
+          intraFileConsistency,
         };
 
         // ★ DWG 前端 WASM 数据：如果 taskFile 已有 dwg_wasm_parsed 标记，
@@ -370,6 +376,50 @@ export class ReviewService {
       }
 
       console.log(`[Review] 阶段1完成: 成功 ${fastSuccessCount}, 失败 ${fastFailedCount}`);
+
+      // ===== 文件内一致性检查（与阶段2并行） =====
+      if (intraFileConsistency) {
+        WebSocketService.emitTaskProgress(taskId, {
+          type: 'intra_consistency_check',
+          step: '文件内一致性检查',
+          progress: 42,
+          message: '正在进行文件内一致性检查...',
+          timestamp: Date.now(),
+        });
+
+        // 收集已成功提取文本的文件上下文
+        const filesWithText = fileContexts.filter(({ ctx }) => ctx.extractedText && ctx.extractedText.trim().length > 0);
+
+        // 与阶段2并行执行，不阻塞主流程
+        const intraConsistencyPromise = Promise.all(
+          filesWithText.map(async ({ file, ctx }) => {
+            try {
+              const issueCount = await IntraFileConsistencyService.check(
+                taskId, file.id, file.fileName, ctx.extractedText,
+              );
+              if (issueCount > 0) {
+                console.log(`[Review] ${file.fileName} 文件内一致性: 发现 ${issueCount} 个不一致`);
+              }
+              return { fileId: file.id, issueCount };
+            } catch (e) {
+              console.warn(`[Review] ${file.fileName} 文件内一致性检查失败:`, e);
+              return { fileId: file.id, issueCount: 0 };
+            }
+          }),
+        );
+
+        // 不 await，让它与阶段2并行，最后汇总
+        intraConsistencyPromise.then(results => {
+          const totalIssues = results.reduce((sum, r) => sum + r.issueCount, 0);
+          WebSocketService.emitTaskProgress(taskId, {
+            type: 'intra_consistency_done',
+            step: '文件内一致性检查完成',
+            progress: 92,
+            message: `文件内一致性检查完成: 发现 ${totalIssues} 个不一致问题`,
+            timestamp: Date.now(),
+          });
+        }).catch(() => { /* ignore */ });
+      }
 
       // ===== 阶段2: 用户级别并发 AI 审查 =====
       // 使用 capabilities.ai 判断是否需要 AI 审查（能力驱动，替代原先硬编码 needsAI）

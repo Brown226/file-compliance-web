@@ -230,7 +230,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref, reactive, onMounted } from 'vue'
+import { computed, ref, reactive, onMounted, onUnmounted, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useUserStore } from '@/stores/user'
 import { ElMessage, ElMessageBox } from 'element-plus'
@@ -254,8 +254,21 @@ const route = useRoute()
 const router = useRouter()
 const userStore = useUserStore()
 const activeMenu = computed(() => route.path)
-const sidebarCollapsed = ref(false)
+const sidebarCollapsed = ref(localStorage.getItem('sidebar_collapsed') === 'true')
 const sidebarOpen = ref(false)
+
+watch(sidebarCollapsed, (val) => {
+  localStorage.setItem('sidebar_collapsed', String(val))
+})
+
+// 监听其他页面（如结果页）通过 localStorage 发出的侧边栏控制信号
+const onStorageChange = (e: StorageEvent) => {
+  if (e.key === 'sidebar_collapsed' && e.newValue !== null) {
+    sidebarCollapsed.value = e.newValue === 'true'
+  }
+}
+onMounted(() => window.addEventListener('storage', onStorageChange))
+onUnmounted(() => window.removeEventListener('storage', onStorageChange))
 
 const globalSearchRef = ref<InstanceType<typeof GlobalSearch> | null>(null)
 const showShortcutHelp = ref(false)

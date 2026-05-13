@@ -40,11 +40,12 @@ export class TaskService {
     reviewPoints?: string[];  // 用户选中的审查点
     corePurposes?: string[];  // 用户自定义的核心目的
     selectedTemplateId?: string;  // 选择的审查模板ID
+    intraFileConsistency?: boolean;  // 文件内一致性检查
     files?: Express.Multer.File[];
     dwgParsedData?: Record<string, any>;  // 前端 WASM 解析的 DWG 数据（按文件名映射）
   }): Promise<Task> {
     const { title, description, creatorId, standardId, standardIds = [], reviewMode, knowledgeCategoryId, knowledgeCategoryIds,
-      perspective, preAnalysisData, reviewPoints, corePurposes, selectedTemplateId,
+      perspective, preAnalysisData, reviewPoints, corePurposes, selectedTemplateId, intraFileConsistency,
       files = [], dwgParsedData } = data;
 
     // 合并标准 ID：保留单选兼容，同时写入多选
@@ -68,11 +69,13 @@ export class TaskService {
           reviewPoints: reviewPoints || [],
           corePurposes: corePurposes || [],
           selectedTemplateId: selectedTemplateId || 'general',
+          intraFileConsistency: !!intraFileConsistency,
         }
-      : (reviewPoints || corePurposes || selectedTemplateId) ? {
+      : (reviewPoints || corePurposes || selectedTemplateId || intraFileConsistency) ? {
           reviewPoints: reviewPoints || [],
           corePurposes: corePurposes || [],
           selectedTemplateId: selectedTemplateId || 'general',
+          intraFileConsistency: !!intraFileConsistency,
         } : undefined;
 
     // 创建任务
@@ -428,6 +431,13 @@ export class TaskService {
     }
 
     return { extractedText: content, fileName: file.fileName, fileType: file.fileType };
+  }
+
+  static async getTaskFileRaw(taskId: string, fileId: string): Promise<{ filePath: string; fileName: string } | null> {
+    return prisma.taskFile.findFirst({
+      where: { id: fileId, taskId },
+      select: { filePath: true, fileName: true },
+    });
   }
 
   static async updateTaskStatus(id: string, status: TaskStatus): Promise<Task> {

@@ -203,6 +203,18 @@
       </el-alert>
 
       <div class="confirm-content">
+        <!-- 任务标题 -->
+        <div class="title-input-section">
+          <el-input
+            v-model="form.title"
+            placeholder="请输入任务标题，例如：XX项目施工图审查"
+            size="large"
+            clearable
+            maxlength="100"
+            show-word-limit
+          />
+        </div>
+
         <!-- 文件上传成功提示 -->
         <div class="upload-success">
           <p class="success-text">文件 <span class="file-name">{{ fileList.length }} 个文件</span> 已上传成功。</p>
@@ -293,7 +305,7 @@
                 trigger-on-focus
               ></el-autocomplete>
               <el-button 
-                type="text" 
+                type="primary" link
                 @click="removePurpose(index)"
                 class="remove-btn"
               >
@@ -301,7 +313,7 @@
               </el-button>
             </div>
             <el-button 
-              type="text" 
+              type="primary" link
               @click="addPurpose" 
               class="add-purpose-btn"
             >
@@ -311,96 +323,152 @@
           </div>
         </div>
 
-        <!-- 预分析推荐配置 - 保留现有功能 -->
-        <div class="pre-analysis-config">
-          <h3 class="panel-title">AI 推荐配置</h3>
-          
-          <!-- 以库审文 -->
-          <div class="config-item">
-            <div class="config-header">
-              <el-checkbox v-model="config.libraryReview" class="config-checkbox">
-                <span class="config-name">以库审文（知识库审查）</span>
-              </el-checkbox>
-              <el-tag size="small" :type="config.libraryReview ? 'success' : 'info'" effect="plain">
-                {{ config.libraryReview ? '已启用' : '推荐' }}
-              </el-tag>
+        <!-- 审查项选择（需求驱动） -->
+        <div class="review-items-section">
+          <h3 class="panel-title">选择审查内容</h3>
+          <p class="panel-desc">系统已根据文件特征自动配置，您可按需调整。</p>
+
+          <div class="review-items-list">
+            <!-- 规范性审查 -->
+            <div class="review-item">
+              <div class="review-item-main">
+                <el-switch v-model="reviewItems.standardReview.enabled" />
+                <div class="review-item-info">
+                  <div class="review-item-title">
+                    规范性审查
+                    <el-tag v-if="reviewItems.standardReview.recommended" size="small" type="success" effect="plain">AI 推荐</el-tag>
+                  </div>
+                  <div class="review-item-desc">对照标准规范检查文件合规性，基于知识库进行 RAG 检索审查</div>
+                </div>
+              </div>
+              <div v-if="reviewItems.standardReview.enabled" class="review-item-config">
+                <el-select v-model="reviewItems.standardReview.knowledgeCategoryIds" placeholder="选择知识库（可多选）" style="width: 100%" multiple collapse-tags collapse-tags-tooltip>
+                  <el-option v-for="kb in knowledgeCategories" :key="kb.id" :label="kb.name" :value="kb.id" />
+                </el-select>
+                <div v-if="reviewItems.standardReview.reason" class="config-reason">
+                  <el-icon><InfoFilled /></el-icon>
+                  {{ reviewItems.standardReview.reason }}
+                </div>
+              </div>
             </div>
-            <div v-if="config.libraryReview" class="config-body">
-              <el-select v-model="config.knowledgeCategoryIds" placeholder="选择一个或多个知识库子库" style="width: 100%" multiple collapse-tags collapse-tags-tooltip>
-                <el-option
-                  v-for="kb in knowledgeCategories"
-                  :key="kb.id"
-                  :label="kb.name"
-                  :value="kb.id"
-                />
-              </el-select>
-              <div v-if="preAnalysisReasons.library" class="config-reason">
-                <el-icon><InfoFilled /></el-icon>
-                {{ preAnalysisReasons.library }}
+
+            <!-- 参照比对 -->
+            <div class="review-item" :class="{ disabled: refFileList.length === 0 }">
+              <div class="review-item-main">
+                <el-switch v-model="reviewItems.docCompare.enabled" :disabled="refFileList.length === 0" />
+                <div class="review-item-info">
+                  <div class="review-item-title">
+                    参照比对
+                    <el-tag v-if="refFileList.length > 0" size="small" type="primary" effect="plain">已上传 {{ refFileList.length }} 个参照文件</el-tag>
+                    <el-tag v-else size="small" type="info" effect="plain">需上传参照文件</el-tag>
+                  </div>
+                  <div class="review-item-desc">将待审文件与参照文件（指导书、参数规范书等）进行比对，检查是否符合参照文件要求</div>
+                </div>
+              </div>
+              <div v-if="reviewItems.docCompare.enabled && refFileList.length > 0" class="review-item-config">
+                <div class="config-reason">
+                  <el-icon><InfoFilled /></el-icon>
+                  参照文件将作为比对基准，逐份检查待审文件与参照文件的差异和不一致
+                </div>
+              </div>
+            </div>
+
+            <!-- 文件内一致性 -->
+            <div class="review-item">
+              <div class="review-item-main">
+                <el-switch v-model="reviewItems.intraFileConsistency.enabled" />
+                <div class="review-item-info">
+                  <div class="review-item-title">
+                    文件内一致性
+                    <el-tag v-if="reviewItems.intraFileConsistency.recommended" size="small" type="success" effect="plain">AI 推荐</el-tag>
+                  </div>
+                  <div class="review-item-desc">检查每个文件内部的参数值、语义描述是否前后一致，避免上下文出现数值矛盾或描述冲突</div>
+                </div>
+              </div>
+              <div v-if="reviewItems.intraFileConsistency.enabled" class="review-item-config">
+                <div class="config-reason">
+                  <el-icon><InfoFilled /></el-icon>
+                  例如：同一参数在不同位置值不一致（温度 100 vs 50），同一人物描述矛盾（工程师 vs 学生）
+                </div>
+              </div>
+            </div>
+
+            <!-- 文字校对 -->
+            <div class="review-item">
+              <div class="review-item-main">
+                <el-switch v-model="reviewItems.typoCheck.enabled" />
+                <div class="review-item-info">
+                  <div class="review-item-title">
+                    文字校对
+                    <el-tag v-if="reviewItems.typoCheck.recommended" size="small" type="success" effect="plain">AI 推荐</el-tag>
+                  </div>
+                  <div class="review-item-desc">检查错别字、语法错误、术语一致性，使用纯 LLM + 术语库进行校对</div>
+                </div>
+              </div>
+            </div>
+
+            <!-- 图纸识别 -->
+            <div v-if="hasDrawingFiles" class="review-item">
+              <div class="review-item-main">
+                <el-switch v-model="reviewItems.drawingRecognition.enabled" />
+                <div class="review-item-info">
+                  <div class="review-item-title">
+                    图纸识别
+                    <el-tag size="small" type="warning" effect="plain">检测到图纸文件</el-tag>
+                  </div>
+                  <div class="review-item-desc">表格结构化、公式识别、图纸智能分析，使用多模态 AI 进行深度解析</div>
+                </div>
+              </div>
+            </div>
+
+            <!-- 规则库检查 -->
+            <div class="review-item" :class="{ disabled: ruleLibraries.length === 0 }">
+              <div class="review-item-main">
+                <el-switch v-model="reviewItems.ruleLibrary.enabled" :disabled="ruleLibraries.length === 0" />
+                <div class="review-item-info">
+                  <div class="review-item-title">
+                    规则库检查
+                    <el-tag v-if="ruleLibraries.length === 0" size="small" type="info" effect="plain">系统无规则库</el-tag>
+                    <el-tag v-if="reviewItems.ruleLibrary.recommended" size="small" type="success" effect="plain">AI 推荐</el-tag>
+                  </div>
+                  <div class="review-item-desc">按规则库条目逐条检查（格式、命名、编码等），不调用 AI</div>
+                </div>
+              </div>
+              <div v-if="reviewItems.ruleLibrary.enabled && ruleLibraries.length > 0" class="review-item-config">
+                <el-select v-model="reviewItems.ruleLibrary.ruleLibraryId" placeholder="选择规则库" style="width: 100%">
+                  <el-option v-for="rl in ruleLibraries" :key="rl.id" :label="rl.name" :value="rl.id" />
+                </el-select>
+                <div v-if="reviewItems.ruleLibrary.reason" class="config-reason">
+                  <el-icon><InfoFilled /></el-icon>
+                  {{ reviewItems.ruleLibrary.reason }}
+                </div>
               </div>
             </div>
           </div>
 
-          <!-- 以文审文 -->
-          <div v-if="refFileList.length > 0" class="config-item">
-            <div class="config-header">
-              <el-checkbox v-model="config.docReview" class="config-checkbox">
-                <span class="config-name">以文审文（参照文件比对）</span>
-              </el-checkbox>
-              <el-tag size="small" type="success" effect="plain">已上传 {{ refFileList.length }} 个参照文件</el-tag>
+          <!-- 高级选项 -->
+          <div class="advanced-section">
+            <div class="advanced-toggle" @click="advancedOpen = !advancedOpen">
+              <el-icon><ArrowDown v-if="!advancedOpen" /><ArrowUp v-else /></el-icon>
+              <span>高级选项</span>
+              <span v-if="manualMode" class="manual-mode-hint">手动模式: {{ MODE_DISPLAY_NAMES[manualMode] || manualMode }}</span>
             </div>
-            <div v-if="config.docReview" class="config-body">
-              <div class="config-reason">
+            <div v-if="advancedOpen" class="advanced-content">
+              <p class="advanced-hint">手动指定审查模式（覆盖自动推荐）</p>
+              <el-radio-group v-model="manualMode" class="mode-radio-group">
+                <el-radio value="">自动推荐（{{ derivedModeDisplay }}）</el-radio>
+                <el-radio value="FULL_REVIEW">全量审查</el-radio>
+                <el-radio value="LIBRARY_REVIEW">以库审文</el-radio>
+                <el-radio value="DOC_REVIEW">以文审文</el-radio>
+                <el-radio value="CONSISTENCY">全文一致性</el-radio>
+                <el-radio value="TYPO_GRAMMAR">错别字/语法</el-radio>
+                <el-radio value="MULTIMODAL">多模态识别</el-radio>
+                <el-radio value="CUSTOM_RULE">自定义规则</el-radio>
+              </el-radio-group>
+              <div v-if="manualMode" class="config-reason" style="margin-top: 8px;">
                 <el-icon><InfoFilled /></el-icon>
-                参照文件将作为比对基准，检查待审文件中的差异和不一致
+                手动模式已覆盖自动推荐，审查策略由您指定
               </div>
-            </div>
-          </div>
-
-          <!-- 规则库审查 -->
-          <div class="config-item">
-            <div class="config-header">
-              <el-checkbox v-model="config.ruleLibrary" class="config-checkbox">
-                <span class="config-name">规则库审查</span>
-              </el-checkbox>
-              <el-tag size="small" :type="config.ruleLibrary ? 'success' : 'info'" effect="plain">
-                {{ config.ruleLibrary ? '已启用' : '可选' }}
-              </el-tag>
-            </div>
-            <div v-if="config.ruleLibrary" class="config-body">
-              <el-select v-model="config.ruleLibraryId" placeholder="选择规则库" style="width: 100%">
-                <el-option
-                  v-for="rl in ruleLibraries"
-                  :key="rl.id"
-                  :label="rl.name"
-                  :value="rl.id"
-                />
-              </el-select>
-              <div v-if="preAnalysisReasons.ruleLibrary" class="config-reason">
-                <el-icon><InfoFilled /></el-icon>
-                {{ preAnalysisReasons.ruleLibrary }}
-              </div>
-            </div>
-          </div>
-
-          <!-- 通用检查 -->
-          <div class="config-item">
-            <div class="config-header">
-              <span class="config-name" style="font-weight: 600;">通用检查</span>
-            </div>
-            <div class="config-body general-checks">
-              <el-checkbox v-model="config.ruleCheck">
-                <span>规则检查</span>
-                <span class="check-desc">格式、命名、编码等基础规则</span>
-              </el-checkbox>
-              <el-checkbox v-model="config.typoCheck">
-                <span>错别字检查</span>
-                <span class="check-desc">错别字、语法错误、术语一致性</span>
-              </el-checkbox>
-              <el-checkbox v-model="config.crossFileCheck" :disabled="fileList.length < 2">
-                <span>跨文件一致性</span>
-                <span class="check-desc">{{ fileList.length < 2 ? '需上传2个以上文件' : '跨文件参数和语义一致性' }}</span>
-              </el-checkbox>
             </div>
           </div>
         </div>
@@ -640,7 +708,7 @@ import type { UploadFile, FormInstance, FormRules } from 'element-plus'
 import {
   Upload, UploadFilled, Check, MagicStick, InfoFilled, VideoPlay,
   RemoveFilled, CirclePlusFilled, Document, Link, FolderAdd, Delete,
-  Loading,
+  Loading, ArrowDown, ArrowUp,
 } from '@element-plus/icons-vue'
 import { createTaskApi, preAnalyzeApi, uploadOnlyApi, exportTaskReportApi, exportTaskReportWordApi } from '@/api/task'
 import { getAllKnowledgeCategoriesApi } from '@/api/knowledge-category'
@@ -771,7 +839,7 @@ const applyPreAnalysisData = (data: any) => {
     documentTypeLabel: data.documentTypeLabel,
     recommendations: data.recommendations,
   }, null, 2))
-  
+
   // 应用推荐结果
   if (data.suggestedPerspective) {
     config.perspective = data.suggestedPerspective
@@ -782,24 +850,49 @@ const applyPreAnalysisData = (data: any) => {
   } else if (data.documentTypeLabel) {
     preAnalysisData.contractType = data.documentTypeLabel
   }
-  config.libraryReview = data.recommendations.libraryReview.enabled
-  if (data.recommendations.libraryReview.categoryId) {
-    config.knowledgeCategoryIds = [data.recommendations.libraryReview.categoryId]
+
+  // 根据预分析结果设置审查项
+  const rec = data.recommendations
+  if (!rec) {
+    console.log('[SmartReview] 无推荐数据，跳过审查项设置')
+    return
   }
-  config.ruleLibrary = data.recommendations.ruleLibrary.enabled
-  if (data.recommendations.ruleLibrary.libraryId) {
-    config.ruleLibraryId = data.recommendations.ruleLibrary.libraryId
+
+  // 规范性审查
+  reviewItems.standardReview.recommended = !!rec.libraryReview?.enabled
+  reviewItems.standardReview.reason = rec.libraryReview?.reason || ''
+  if (rec.libraryReview?.categoryId) {
+    reviewItems.standardReview.knowledgeCategoryIds = [rec.libraryReview.categoryId]
   }
-  config.ruleCheck = data.recommendations.generalChecks.ruleCheck.enabled
-  config.typoCheck = data.recommendations.generalChecks.typoCheck.enabled
-  config.crossFileCheck = data.recommendations.generalChecks.crossFileCheck.enabled
+
+  // 参照比对（由 refFileList 驱动，无需预分析推荐）
+  reviewItems.docCompare.enabled = refFileList.value.length > 0
+
+  // 文件内一致性
+  reviewItems.intraFileConsistency.recommended = !!rec.generalChecks?.crossFileCheck?.enabled
+  if (rec.generalChecks?.crossFileCheck?.enabled) {
+    reviewItems.intraFileConsistency.enabled = true
+  }
+
+  // 文字校对
+  reviewItems.typoCheck.recommended = !!rec.generalChecks?.typoCheck?.enabled
+  if (rec.generalChecks?.typoCheck?.enabled) {
+    reviewItems.typoCheck.enabled = true
+  }
+
+  // 规则库检查
+  reviewItems.ruleLibrary.recommended = !!rec.ruleLibrary?.enabled
+  reviewItems.ruleLibrary.reason = rec.ruleLibrary?.reason || ''
+  if (rec.ruleLibrary?.libraryId) {
+    reviewItems.ruleLibrary.ruleLibraryId = rec.ruleLibrary.libraryId
+  }
 
   // 保存推荐理由
   preAnalysisReasons.value = {
-    library: data.recommendations.libraryReview.reason,
-    ruleLibrary: data.recommendations.ruleLibrary.reason,
-    typo: data.recommendations.generalChecks.typoCheck.reason,
-    crossFile: data.recommendations.generalChecks.crossFileCheck.reason,
+    library: rec.libraryReview?.reason,
+    ruleLibrary: rec.ruleLibrary?.reason,
+    typo: rec.generalChecks?.typoCheck?.reason,
+    crossFile: rec.generalChecks?.crossFileCheck?.reason,
   }
 
   // 更新预分析数据
@@ -952,14 +1045,15 @@ const backgroundUploadedServerFiles = ref<Array<{ name: string; size: number }>>
 let backgroundStatusHideTimer: ReturnType<typeof setTimeout> | null = null
 
 // ===== localStorage 状态持久化 =====
-const STORAGE_KEY = 'smartReview_draft_v2'
+const STORAGE_KEY = 'smartReview_draft_v3'
 
 interface PersistedState {
   currentStep: number
   title: string
   preAnalyzed: boolean
   preAnalysisData: typeof preAnalysisData
-  config: typeof config
+  reviewItems: typeof reviewItems
+  manualMode: string
   selectedReviewPoints: string[]
   customPurposes: Array<{ value: string }>
   allSuggestedReviewPoints: string[]
@@ -977,7 +1071,8 @@ const saveState = () => {
       title: form.title,
       preAnalyzed: preAnalyzed.value,
       preAnalysisData: { ...preAnalysisData },
-      config: { ...config },
+      reviewItems: JSON.parse(JSON.stringify(reviewItems)),
+      manualMode: manualMode.value,
       selectedReviewPoints: [...selectedReviewPoints.value],
       customPurposes: customPurposes.value.map(p => ({ value: p.value })),
       allSuggestedReviewPoints: [...allSuggestedReviewPoints.value],
@@ -1012,7 +1107,8 @@ const restoreState = (): boolean => {
       if (state.preAnalysisData.suggestedReviewPoints?.length) preAnalysisData.suggestedReviewPoints = state.preAnalysisData.suggestedReviewPoints
       if (state.preAnalysisData.suggestedCorePurposes?.length) preAnalysisData.suggestedCorePurposes = state.preAnalysisData.suggestedCorePurposes
     }
-    if (state.config) Object.assign(config, state.config)
+    if (state.reviewItems) Object.assign(reviewItems, state.reviewItems)
+    if (state.manualMode) manualMode.value = state.manualMode
     if (state.selectedReviewPoints?.length) selectedReviewPoints.value = state.selectedReviewPoints
     if (state.customPurposes?.length) customPurposes.value = state.customPurposes
     if (state.allSuggestedReviewPoints?.length) allSuggestedReviewPoints.value = state.allSuggestedReviewPoints
@@ -1028,18 +1124,65 @@ const clearSavedState = () => {
   try { localStorage.removeItem(STORAGE_KEY) } catch (e) { /* ignore */ }
 }
 
-// ===== 审查配置 =====
+// ===== 审查配置（需求驱动） =====
 const config = reactive({
   perspective: '',
-  libraryReview: true,
-  knowledgeCategoryIds: [] as string[],
-  docReview: false,
-  ruleLibrary: false,
-  ruleLibraryId: '',
-  ruleCheck: true,
-  typoCheck: false,
-  crossFileCheck: false,
 })
+
+// 审查项状态
+const reviewItems = reactive({
+  standardReview: { enabled: true, knowledgeCategoryIds: [] as string[], recommended: false, reason: '' },
+  docCompare: { enabled: false, recommended: false },
+  intraFileConsistency: { enabled: false, recommended: false },
+  typoCheck: { enabled: false, recommended: false },
+  drawingRecognition: { enabled: false },
+  ruleLibrary: { enabled: false, ruleLibraryId: '', recommended: false, reason: '' },
+})
+
+// 高级选项
+const advancedOpen = ref(false)
+const manualMode = ref('')
+
+// 模式显示名称
+const MODE_DISPLAY_NAMES: Record<string, string> = {
+  FULL_REVIEW: '全量审查',
+  LIBRARY_REVIEW: '以库审文',
+  DOC_REVIEW: '以文审文',
+  CONSISTENCY: '全文一致性',
+  TYPO_GRAMMAR: '错别字/语法',
+  MULTIMODAL: '多模态识别',
+  CUSTOM_RULE: '自定义规则',
+}
+
+// 是否有图纸文件
+const hasDrawingFiles = computed(() =>
+  fileList.value.some(f => /\.(dwg|dxf)$/i.test(f.name))
+)
+
+// 根据审查项推导审查模式
+const derivedMode = computed(() => {
+  if (manualMode.value) return manualMode.value
+
+  const active = Object.entries(reviewItems)
+    .filter(([_, v]) => v.enabled)
+    .map(([k]) => k)
+
+  if (active.length === 0) return 'FULL_REVIEW'
+
+  // 单项 → 专用模式
+  if (active.length === 1) {
+    if (active[0] === 'standardReview') return 'LIBRARY_REVIEW'
+    if (active[0] === 'docCompare') return 'DOC_REVIEW'
+    if (active[0] === 'typoCheck') return 'TYPO_GRAMMAR'
+    if (active[0] === 'drawingRecognition') return 'MULTIMODAL'
+    if (active[0] === 'ruleLibrary') return 'CUSTOM_RULE'
+  }
+
+  // 多项 → FULL_REVIEW
+  return 'FULL_REVIEW'
+})
+
+const derivedModeDisplay = computed(() => MODE_DISPLAY_NAMES[derivedMode.value] || derivedMode.value)
 
 // 知识库子库列表
 const knowledgeCategories = ref<Array<{ id: string; name: string }>>([])
@@ -1057,17 +1200,15 @@ const allSuggestedCorePurposes = ref<string[]>([])
 const selectedReviewPoints = ref<string[]>([])
 const customPurposes = ref<Array<{ value: string }>>([{ value: '' }])
 
-// 监听参照文件上传，自动启用以文审文
+// 监听参照文件上传，自动启用参照比对
 watch(refFileList, (newList) => {
-  if (newList.length > 0 && !config.docReview) {
-    config.docReview = true
-  }
+  reviewItems.docCompare.enabled = newList.length > 0
 })
 
 // 监听关键状态变化，自动保存到 localStorage
 watch([currentStep, () => form.title, preAnalyzed], () => saveState(), { deep: true })
 watch(preAnalysisData, () => saveState(), { deep: true })
-watch(config, () => saveState(), { deep: true })
+watch(reviewItems, () => saveState(), { deep: true })
 watch([selectedReviewPoints, customPurposes, selectedTemplateId], () => saveState(), { deep: true })
 
 // ===== 结果展示 =====
@@ -1269,8 +1410,14 @@ const submitFocusedReview = async () => {
 
 const canSubmit = computed(() => {
   if (!form.title.trim()) return false
-  // 至少启用一种审查方式
-  return config.libraryReview || config.docReview || config.ruleLibrary || config.ruleCheck || config.typoCheck || config.crossFileCheck
+  // 至少启用一项审查
+  const hasActiveItem = Object.values(reviewItems).some(v => v.enabled)
+  if (!hasActiveItem) return false
+  // 参照比对需要参照文件
+  if (reviewItems.docCompare.enabled && refFileList.value.length === 0) return false
+  // 规则库检查需要选择规则库
+  if (reviewItems.ruleLibrary.enabled && !reviewItems.ruleLibrary.ruleLibraryId) return false
+  return true
 })
 
 // ===== 提交 =====
@@ -1295,19 +1442,12 @@ const submitTask = async () => {
     const fd = new FormData()
     fd.append('title', form.title)
 
-    // 根据配置确定审查模式
-    // Phase 1: 使用 FULL_REVIEW 模式，后续 Phase 2 会改为智能推荐
-    let reviewMode = 'FULL_REVIEW'
-    if (config.libraryReview && !config.ruleCheck && !config.typoCheck) {
-      reviewMode = 'LIBRARY_REVIEW'
-    } else if (config.docReview && !config.libraryReview) {
-      reviewMode = 'DOC_REVIEW'
-    }
-    fd.append('reviewMode', reviewMode)
+    // 审查模式（由审查项组合推导或手动指定）
+    fd.append('reviewMode', derivedMode.value)
 
-    // 知识库（支持多选）
-    if (config.libraryReview && config.knowledgeCategoryIds.length > 0) {
-      fd.append('knowledgeCategoryIds', JSON.stringify(config.knowledgeCategoryIds))
+    // 知识库（规范性审查启用时）
+    if (reviewItems.standardReview.enabled && reviewItems.standardReview.knowledgeCategoryIds.length > 0) {
+      fd.append('knowledgeCategoryIds', JSON.stringify(reviewItems.standardReview.knowledgeCategoryIds))
     }
 
     // 审查立场
@@ -1338,13 +1478,19 @@ const submitTask = async () => {
       fd.append('selectedTemplateId', selectedTemplateId.value)
     }
 
-    // 规则库（如果启用）
-    if (config.ruleLibrary && config.ruleLibraryId) {
-      fd.append('standardIds', JSON.stringify([config.ruleLibraryId]))
+    // 规则库（规则库检查启用时）
+    if (reviewItems.ruleLibrary.enabled && reviewItems.ruleLibrary.ruleLibraryId) {
+      fd.append('standardIds', JSON.stringify([reviewItems.ruleLibrary.ruleLibraryId]))
     }
+
+    // 文件内一致性开关
+    fd.append('intraFileConsistency', String(reviewItems.intraFileConsistency.enabled))
 
     // 文件
     fileList.value.forEach(f => { if (f.raw) fd.append('files', f.raw) })
+
+    // 参照文件
+    refFileList.value.forEach(f => { if (f.raw) fd.append('refFiles', f.raw) })
 
     // DWG 解析数据
     if (Object.keys(dwgParsedDataMap.value).length > 0) {
@@ -1356,7 +1502,11 @@ const submitTask = async () => {
     clearSavedState() // 任务创建成功，清除草稿
     router.push(`/review/${data.id}`)
   } catch (e: any) {
-    ElMessage.error(e?.response?.data?.message || '创建任务失败')
+    console.error('[SmartReview] 创建任务失败详细错误:', e)
+    console.error('[SmartReview] 响应数据:', e?.response?.data)
+    console.error('[SmartReview] 响应状态:', e?.response?.status)
+    console.error('[SmartReview] 请求配置:', e?.config?.url, e?.config?.method)
+    ElMessage.error(e?.response?.data?.message || e?.message || '创建任务失败')
   } finally {
     submitting.value = false
   }
@@ -1675,6 +1825,10 @@ onMounted(async () => {
   line-height: 1.5;
 }
 
+.title-input-section {
+  margin-bottom: 20px;
+}
+
 .upload-success {
   text-align: center;
   margin-bottom: 32px;
@@ -1800,7 +1954,7 @@ onMounted(async () => {
 }
 
 /* 预分析配置 */
-.pre-analysis-config {
+.review-items-section {
   background: white;
   border-radius: 12px;
   padding: 24px;
@@ -1808,41 +1962,74 @@ onMounted(async () => {
   border: 1px solid #E5E7EB;
 }
 
-.pre-analysis-config .panel-title {
+.review-items-section .panel-title {
   font-size: 18px;
   font-weight: 700;
   color: #111827;
+  margin: 0 0 4px;
+}
+
+.review-items-section .panel-desc {
+  font-size: 14px;
+  color: #6B7280;
   margin: 0 0 20px;
 }
 
-.config-item {
-  padding: 16px 0;
-  border-bottom: 1px solid #F0F0F0;
-}
-
-.config-item:last-child {
-  border-bottom: none;
-}
-
-.config-header {
+.review-items-list {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
+  flex-direction: column;
   gap: 12px;
 }
 
-.config-checkbox {
-  flex: 1;
+.review-item {
+  padding: 16px;
+  border: 1px solid #E5E7EB;
+  border-radius: 10px;
+  background: #FAFAFA;
+  transition: all 0.2s ease;
 }
 
-.config-name {
+.review-item:hover {
+  border-color: #D1D5DB;
+  background: #F9FAFB;
+}
+
+.review-item.disabled {
+  opacity: 0.5;
+  pointer-events: none;
+}
+
+.review-item-main {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+}
+
+.review-item-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.review-item-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
   font-size: 15px;
   font-weight: 600;
   color: #111827;
+  margin-bottom: 4px;
 }
 
-.config-body {
+.review-item-desc {
+  font-size: 13px;
+  color: #6B7280;
+  line-height: 1.5;
+}
+
+.review-item-config {
   margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px dashed #E5E7EB;
 }
 
 .config-reason {
@@ -1850,7 +2037,7 @@ onMounted(async () => {
   align-items: flex-start;
   gap: 6px;
   margin-top: 8px;
-  font-size: 14px;
+  font-size: 13px;
   color: #6B7280;
   line-height: 1.5;
 }
@@ -1861,23 +2048,52 @@ onMounted(async () => {
   flex-shrink: 0;
 }
 
-.general-checks {
+/* 高级选项 */
+.advanced-section {
+  margin-top: 16px;
+  border-top: 1px solid #E5E7EB;
+  padding-top: 12px;
+}
+
+.advanced-toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  font-size: 14px;
+  color: #6B7280;
+  user-select: none;
+}
+
+.advanced-toggle:hover {
+  color: #374151;
+}
+
+.manual-mode-hint {
+  margin-left: 8px;
+  font-size: 12px;
+  color: #F59E0B;
+  font-weight: 600;
+}
+
+.advanced-content {
+  margin-top: 12px;
+  padding: 16px;
+  background: #F9FAFB;
+  border-radius: 8px;
+  border: 1px solid #E5E7EB;
+}
+
+.advanced-hint {
+  font-size: 13px;
+  color: #6B7280;
+  margin: 0 0 12px;
+}
+
+.mode-radio-group {
   display: flex;
   flex-direction: column;
-  gap: 12px;
-}
-
-.general-checks .el-checkbox {
-  display: flex;
-  align-items: flex-start;
   gap: 8px;
-}
-
-.check-desc {
-  display: block;
-  font-size: 12px;
-  color: #9CA3AF;
-  margin-top: 2px;
 }
 
 .pre-analyzing {

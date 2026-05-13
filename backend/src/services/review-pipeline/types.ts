@@ -120,6 +120,8 @@ export interface PipelineContext {
   ) => void;
   /** 阶段1（规则+标准引用）完成后的回调，允许立即返回快速结果 */
   onFastResult?: (fastResult: { ruleIssues: RuleIssue[]; stdRefIssues: ReviewIssue[] }) => void;
+  /** 是否启用文件内一致性检查 */
+  intraFileConsistency?: boolean;
   /** Python 解析服务的结构化结果（可能为 null） */
   parseResult?: import('../python-parser.service').ParseResult | null;
   /** Word 文档结构化数据 */

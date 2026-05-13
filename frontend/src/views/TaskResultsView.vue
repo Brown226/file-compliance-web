@@ -32,29 +32,39 @@
 
     <!-- 主内容区：左右分栏 -->
     <div v-else class="main-content">
-      <!-- 左侧：OnlyOffice编辑器 / 文件预览 -->
+      <!-- 左侧：文件预览 -->
       <div class="left-panel">
         <div class="panel-header">
-          <span class="hint-text">左侧为文件实时预览与编辑区。可选中文本后进行专项审查。</span>
+          <!-- 文件切换 Tab -->
+          <div class="file-tabs" v-if="files.length > 1">
+            <button
+              v-for="f in files"
+              :key="f.id"
+              :class="['file-tab', { active: selectedFileId === f.id }]"
+              @click="selectFile(f.id)"
+              :title="f.fileName"
+            >
+              <span class="file-tab-icon">{{ getFileIcon(f.fileType) }}</span>
+              <span class="file-tab-name">{{ f.fileName }}</span>
+              <span class="file-tab-count" v-if="getFileIssueCount(f.id) > 0">{{ getFileIssueCount(f.id) }}</span>
+            </button>
+          </div>
+          <span v-else class="hint-text">左侧为文件实时预览与编辑区。可选中文本后进行专项审查。</span>
         </div>
         <div class="editor-container">
-          <!-- OnlyOffice编辑器（DOCX文件） -->
-          <OnlyOfficeEditor
-            v-if="isDocxFileSelected && selectedFileId"
-            ref="onlyOfficeEditorRef"
-            :fileId="selectedFileId"
-          />
-          <!-- DWG图纸预览 -->
+          <!-- DWG图纸预览（保留专用组件，支持图纸交互） -->
           <DwgPreviewPanel
-            v-else-if="isDwgFileSelected && !dwgParseFailed"
+            v-if="isDwgFileSelected && !dwgParseFailed"
             :file="dwgFileForPreview"
             :locateTarget="dwgLocateTarget"
           />
-          <!-- 其他文件：文本预览 -->
-          <TextPreviewPanel
+          <!-- 统一文件预览（Word/PDF/Excel/PPT/其他） -->
+          <FilePreviewPanel
             v-else
             :taskId="taskId"
             :fileId="selectedFileId"
+            :fileType="selectedFileType"
+            :fileName="selectedFileName"
             :locateTarget="locateTarget"
           />
         </div>
@@ -86,6 +96,25 @@
         <div class="panel-header">
           <div class="header-left">
             <h3 class="panel-title">AI 审查报告</h3>
+            <!-- 文件筛选下拉（多文件时显示） -->
+            <el-select
+              v-if="files.length > 1"
+              v-model="filterFileId"
+              size="small"
+              style="width: 160px;"
+              clearable
+              placeholder="全部文件"
+            >
+              <el-option
+                v-for="f in files"
+                :key="f.id"
+                :label="f.fileName"
+                :value="f.id"
+              >
+                <span>{{ getFileIcon(f.fileType) }} {{ f.fileName }}</span>
+                <span style="float: right; color: #9CA3AF; font-size: 11px;">{{ getFileIssueCount(f.id) }}</span>
+              </el-option>
+            </el-select>
             <div class="plain-mode-switch">
               <span class="switch-label">大白话模式</span>
               <el-switch v-model="showPlainLanguage" size="small" />
@@ -144,13 +173,13 @@
               </div>
             </div>
 
-            <el-empty v-if="allDetails.length === 0" description="审查通过，未发现任何问题" />
+            <el-empty v-if="filteredDetails.length === 0" description="审查通过，未发现任何问题" />
           </div>
 
           <!-- Tab 2: 问题明细（核心功能） -->
           <div v-if="activeTab === 'suggestions'" class="tab-pane">
             <!-- 批量操作工具栏 -->
-            <div v-if="allDetails.length > 0" class="batch-toolbar">
+            <div v-if="filteredDetails.length > 0" class="batch-toolbar">
               <el-checkbox
                 v-model="selectAll"
                 @change="handleSelectAll"
@@ -171,9 +200,9 @@
             </div>
 
             <!-- 问题卡片列表 -->
-            <div v-if="allDetails.length > 0" class="suggestions-list">
+            <div v-if="filteredDetails.length > 0" class="suggestions-list">
               <div
-                v-for="(item, index) in allDetails"
+                v-for="(item, index) in filteredDetails"
                 :key="item.id || index"
                 :class="['suggestion-card', { adopted: item.adopted }]"
               >
@@ -186,6 +215,15 @@
                       class="card-checkbox"
                     />
                     <p class="card-title">{{ getIssueTitle(item, index) }}</p>
+                    <el-tag
+                      v-if="item.fileId && files.length > 1"
+                      size="small"
+                      type="info"
+                      class="file-tag"
+                      @click="selectFile(item.fileId)"
+                    >
+                      {{ getFileNameById(item.fileId) }}
+                    </el-tag>
                   </div>
                   <div class="card-actions">
                     <el-tooltip content="在文档中定位" placement="top">
@@ -334,7 +372,7 @@
                   v-model="focusedReviewText"
                   type="textarea"
                   :rows="6"
-                  placeholder="可从左侧 OnlyOffice 选中文本后读取，也可手动粘贴某一条款或段落"
+                  placeholder="可从左侧预览区选中文本后读取，也可手动粘贴某一条款或段落"
                   class="mt-3"
                 />
                 <el-input
@@ -509,9 +547,8 @@ import {
 } from '@/api/task'
 import { replaceTextApi } from '@/api/onlyoffice'
 import type { Task, TaskDetail, TaskFile } from '@/types/models'
-import OnlyOfficeEditor from '@/components/OnlyOfficeEditor.vue'
+import FilePreviewPanel from '@/views/TaskDetails/FilePreviewPanel.vue'
 import DwgPreviewPanel from '@/views/TaskDetails/DwgPreviewPanel.vue'
-import TextPreviewPanel from '@/views/TaskDetails/TextPreviewPanel.vue'
 import FalsePositiveDialog from '@/views/TaskDetails/FalsePositiveDialog.vue'
 
 const route = useRoute()
@@ -530,15 +567,35 @@ const showPlainLanguage = ref(false)
 
 // ===== 文件预览相关 =====
 const selectedFileId = ref<string | null>(null)
+const filterFileId = ref<string>('')
 const locateTarget = ref<{ originalText: string; textPosition: any; cadHandleId?: string } | null>(null)
-const onlyOfficeEditorRef = ref<InstanceType<typeof OnlyOfficeEditor> | null>(null)
 
-const isDocxFileSelected = computed(() => {
-  if (!selectedFileId.value) return false
-  const file = files.value.find((f: any) => f.id === selectedFileId.value) as any
-  const ft = (file?.fileType || file?.file_type || '').toLowerCase()
-  return ft === 'docx' || ft === 'doc'
-})
+const selectedFile = computed(() => files.value.find((f: any) => f.id === selectedFileId.value) as any)
+const selectedFileType = computed(() => selectedFile.value?.fileType || selectedFile.value?.file_type || '')
+const selectedFileName = computed(() => selectedFile.value?.fileName || '')
+
+const selectFile = (fileId: string) => {
+  selectedFileId.value = fileId
+  filterFileId.value = fileId
+}
+
+const getFileNameById = (fileId: string): string => {
+  const f = files.value.find((f: any) => f.id === fileId)
+  return f?.fileName || '未知文件'
+}
+
+const getFileIcon = (fileType: string): string => {
+  const t = (fileType || '').toLowerCase()
+  if (t === 'docx' || t === 'doc') return '📄'
+  if (t === 'dwg' || t === 'dxf') return '📐'
+  if (t === 'pdf') return '📕'
+  if (t === 'xlsx' || t === 'xls') return '📊'
+  return '📎'
+}
+
+const getFileIssueCount = (fileId: string): number => {
+  return allDetails.value.filter((d: any) => d.fileId === fileId).length
+}
 
 const isDwgFileSelected = computed(() => {
   if (!selectedFileId.value) return false
@@ -583,10 +640,14 @@ const fpSubmitting = ref(false)
 const fpTargetDetail = ref<TaskDetail | null>(null)
 
 // ===== 数据过滤 =====
-const errorIssues = computed(() => allDetails.value.filter((d: any) => d.severity === 'error'))
-const warningIssues = computed(() => allDetails.value.filter((d: any) => d.severity === 'warning'))
-const infoIssues = computed(() => allDetails.value.filter((d: any) => d.severity === 'info'))
-const standardRefIssues = computed(() => allDetails.value.filter((d: any) => d.standardRef || d.standardRefId))
+const filteredDetails = computed(() => {
+  if (!filterFileId.value) return allDetails.value
+  return allDetails.value.filter((d: any) => d.fileId === filterFileId.value)
+})
+const errorIssues = computed(() => filteredDetails.value.filter((d: any) => d.severity === 'error'))
+const warningIssues = computed(() => filteredDetails.value.filter((d: any) => d.severity === 'warning'))
+const infoIssues = computed(() => filteredDetails.value.filter((d: any) => d.severity === 'info'))
+const standardRefIssues = computed(() => filteredDetails.value.filter((d: any) => d.standardRef || d.standardRefId))
 
 // ===== 工作台功能 =====
 const focusedReviewText = ref('')
@@ -713,6 +774,10 @@ const fetchData = async () => {
 
 // ===== 操作函数 =====
 const handleLocateText = (item: TaskDetail) => {
+  // 自动切换到问题所属文件
+  if (item.fileId && item.fileId !== selectedFileId.value) {
+    selectedFileId.value = item.fileId
+  }
   locateTarget.value = {
     originalText: item.originalText || '',
     textPosition: item.textPosition || null,
@@ -743,9 +808,6 @@ const handleAdoptSuggestion = async (item: TaskDetail) => {
         after: item.suggestedText,
         status: 'success',
       }
-
-      // 刷新编辑器
-      onlyOfficeEditorRef.value?.refresh()
     } else {
       ElMessage.warning('未找到匹配的文本，请手动替换')
     }
@@ -802,7 +864,7 @@ const toggleSelect = (index: number, checked: boolean) => {
 
 const handleSelectAll = (val: boolean) => {
   if (val) {
-    selectedIndexes.value = allDetails.value.map((_, i) => i)
+    selectedIndexes.value = filteredDetails.value.map((_, i) => i)
   } else {
     selectedIndexes.value = []
   }
@@ -816,7 +878,7 @@ const handleBatchAdopt = async () => {
   let failCount = 0
 
   for (const idx of selectedIndexes.value) {
-    const item = allDetails.value[idx]
+    const item = filteredDetails.value[idx]
     if (!item.adopted && item.suggestedText) {
       try {
         await handleAdoptSuggestion(item)
@@ -899,24 +961,14 @@ const loadLatestDiff = async () => {
 
 const prepareFocusedReviewFromSelection = async () => {
   activeTab.value = 'workspace'
-  if (!onlyOfficeEditorRef.value) {
-    ElMessage.warning('编辑器未就绪')
-    return
-  }
-
-  try {
-    // 尝试从 OnlyOffice 获取选中文本
-    const editor = onlyOfficeEditorRef.value as any
-    const selectedText = await editor.getSelectedText?.()
-    
-    if (selectedText && selectedText.trim()) {
-      focusedReviewText.value = selectedText.trim()
-      ElMessage.success('已读取左侧选中文本')
-    } else {
-      ElMessage.info('未读取到选中文本，可在专项审查框中手动粘贴条款')
-    }
-  } catch (error) {
-    ElMessage.info('当前 OnlyOffice 版本未暴露选中文本接口，请手动粘贴条款进行专项审查')
+  // 尝试从浏览器选区获取文本
+  const selection = window.getSelection()
+  const selectedText = selection?.toString()?.trim()
+  if (selectedText) {
+    focusedReviewText.value = selectedText
+    ElMessage.success('已读取左侧选中文本')
+  } else {
+    ElMessage.info('请先在左侧预览区选中文本，再点击此按钮读取')
   }
 }
 
@@ -969,30 +1021,37 @@ const applyFocusedSuggestion = async () => {
   const suggestedText = focusedReviewResult.value.suggested_text
 
   try {
-    // 尝试实时替换到 OnlyOffice 编辑器
-    if (onlyOfficeEditorRef.value && originalText) {
-      const editor = onlyOfficeEditorRef.value as any
-      await editor.replaceText?.(originalText, suggestedText)
-
-      selectedSuggestionPreview.value = {
-        before: originalText,
-        after: suggestedText,
-        status: '专项审查建议已替换到左侧文档',
+    // 尝试通过后端 API 替换文本
+    if (selectedFileId.value && originalText) {
+      const res = await replaceTextApi(selectedFileId.value, {
+        originalText,
+        suggestedText,
+      })
+      const result = res.data
+      if (result.replacements > 0) {
+        selectedSuggestionPreview.value = {
+          before: originalText,
+          after: suggestedText,
+          status: '专项审查建议已替换',
+        }
+        focusedReviewText.value = suggestedText
+        ElMessage.success('专项审查建议已更新')
+      } else {
+        selectedSuggestionPreview.value = {
+          before: originalText,
+          after: suggestedText,
+          status: '未匹配到原文，建议已展示在预览区',
+        }
+        ElMessage.warning('未在文档中匹配到原文，请手动替换')
       }
-
-      focusedReviewText.value = suggestedText
-      ElMessage.success('专项审查建议已更新到左侧文档')
     } else {
-      // 编辑器中未匹配到原文，仍然展示预览
       selectedSuggestionPreview.value = {
         before: originalText,
         after: suggestedText,
-        status: '未连接到编辑器，建议已展示在预览区',
+        status: '建议已展示在预览区',
       }
-      ElMessage.warning('未连接到编辑器，请在文档中手动替换')
     }
   } catch (e: any) {
-    // 无论成功或失败，都更新采纳预览面板
     selectedSuggestionPreview.value = {
       before: originalText,
       after: suggestedText,
@@ -1058,6 +1117,11 @@ const goBack = () => {
 
 // ===== 生命周期 =====
 onMounted(() => {
+  // 进入结果页时自动收起侧边栏，给更多显示空间
+  localStorage.setItem('sidebar_collapsed', 'true')
+  // 触发 storage 事件让 AppLayout 响应（同页面内手动同步）
+  window.dispatchEvent(new StorageEvent('storage', { key: 'sidebar_collapsed', newValue: 'true' }))
+
   fetchData()
 })
 
@@ -1160,6 +1224,7 @@ onUnmounted(() => {
   gap: 16px;
   padding: 16px;
   overflow: hidden;
+  min-height: 0;
 }
 
 /* 左侧面板 */
@@ -1171,6 +1236,7 @@ onUnmounted(() => {
   border-radius: 8px;
   border: 1px solid #E5E7EB;
   overflow: hidden;
+  min-height: 0;
 }
 
 .panel-header {
@@ -1184,9 +1250,73 @@ onUnmounted(() => {
   color: #6B7280;
 }
 
+/* 文件切换 Tab */
+.file-tabs {
+  display: flex;
+  gap: 4px;
+  overflow-x: auto;
+  scrollbar-width: thin;
+}
+
+.file-tab {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 10px;
+  font-size: 12px;
+  color: #6B7280;
+  background: #F3F4F6;
+  border: 1px solid #E5E7EB;
+  border-radius: 6px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all 0.15s;
+}
+
+.file-tab:hover {
+  background: #EFF6FF;
+  border-color: #BFDBFE;
+  color: #3B82F6;
+}
+
+.file-tab.active {
+  background: #3B82F6;
+  border-color: #3B82F6;
+  color: white;
+}
+
+.file-tab-icon {
+  font-size: 13px;
+}
+
+.file-tab-name {
+  max-width: 120px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.file-tab-count {
+  background: rgba(0, 0, 0, 0.1);
+  padding: 0 5px;
+  border-radius: 8px;
+  font-size: 10px;
+  font-weight: 600;
+}
+
+.file-tab.active .file-tab-count {
+  background: rgba(255, 255, 255, 0.25);
+}
+
+/* 问题卡片上的文件标签 */
+.file-tag {
+  cursor: pointer;
+  margin-left: 6px;
+}
+
 .editor-container {
   flex: 1;
   overflow: hidden;
+  min-height: 0;
 }
 
 .adopt-preview-panel {
