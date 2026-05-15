@@ -634,8 +634,13 @@ export class ReviewService {
         const preText = await ParserService.parseFile(absolutePath, file.fileType);
         if (preText && preText.trim().length > 0) {
           ctx.extractedText = preText;
+          console.log(`[Review] 预提取成功: ${file.fileName}, ${preText.length} 字符`);
+        } else {
+          console.warn(`[Review] 预提取返回空文本: ${file.fileName}, fileType=${file.fileType}`);
         }
-      } catch (e) { /* 预提取失败不影响 pipeline */ }
+      } catch (e) {
+        console.warn(`[Review] 预提取异常: ${file.fileName}, fileType=${file.fileType}, error=${(e as Error).message || e}`);
+      }
     }
 
     const textLength = ctx.extractedText?.length || 0;
@@ -787,7 +792,7 @@ export class ReviewService {
     ctx: PipelineContext,
     fileIndex: number,
     totalFiles: number,
-  ): Promise<{ aiIssues: any[]; usedEngine?: string }> {
+  ): Promise<{ aiIssues: any[]; usedEngine?: string; skippedNoText?: boolean }> {
     const fileProgress = Math.round((fileIndex / totalFiles) * 100);
 
     // 推送文件阶段2开始
@@ -906,6 +911,19 @@ export class ReviewService {
       }
     }
 
+    const skippedNoText = !ctx.extractedText || ctx.extractedText.trim().length === 0;
+    if (skippedNoText) {
+      WebSocketService.emitTaskProgress(taskId, {
+        type: 'file_skipped_no_text',
+        step: 'AI 审查跳过',
+        progress: fileProgress + Math.round(50 / totalFiles),
+        message: `文件无可用文本，已跳过 AI 审查: ${file.fileName}`,
+        fileName: file.fileName,
+        phase: 'phase2',
+        timestamp: Date.now(),
+      });
+    }
+
     // 推送文件阶段2完成
     WebSocketService.emitTaskProgress(taskId, {
       type: 'slow_phase_complete',
@@ -921,7 +939,7 @@ export class ReviewService {
 
     console.log(`[Review] 文件 ${file.fileName} 阶段2完成: AI=${slowResult.aiIssues.length}, engine=${slowResult.usedEngine}`);
 
-    return { aiIssues: slowResult.aiIssues, usedEngine: slowResult.usedEngine };
+    return { aiIssues: slowResult.aiIssues, usedEngine: slowResult.usedEngine, skippedNoText };
   }
 
   /**

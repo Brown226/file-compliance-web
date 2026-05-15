@@ -414,110 +414,92 @@ export interface DwgSvgResult {
   handleMap: Record<string, string>
 }
 
+// ==================== Web Worker 版 dwgToSvg ====================
+
+let dwgWorker: Worker | null = null
+let dwgRequestId = 0
+
+function getDwgWorker(): Worker {
+  if (!dwgWorker) {
+    dwgWorker = new Worker(
+      /* @vite-ignore */ new URL('./dwg-worker.ts', import.meta.url),
+      { type: 'module' },
+    )
+  }
+  return dwgWorker
+}
+
 /**
- * 将 DWG 文件转为 SVG（浏览器端 WASM）
+ * 终止 DWG Worker（释放内存和 WASM 实例）
+ * 页面卸载或不再需要 DWG 预览时调用
+ */
+export function terminateDwgWorker(): void {
+  if (dwgWorker) {
+    dwgWorker.terminate()
+    dwgWorker = null
+  }
+}
+
+/**
+ * 将 DWG 文件转为 SVG（浏览器端 WASM，在 Web Worker 中执行）
  * 同时在 SVG 元素上注入 data-handle 属性，用于错误图元定位
  * @param file DWG 文件
  * @returns SVG 字符串和 handle 映射
  */
 export async function dwgToSvg(file: File): Promise<DwgSvgResult> {
   if (file.size > DWG_MAX_FILE_SIZE) {
-    throw new Error(`DWG 文件过大（${(file.size / 1024 / 1024).toFixed(1)}MB），超过 ${DWG_MAX_FILE_SIZE / 1024 / 1024}MB 限制。`)
+    throw new Error(
+      `DWG 文件过大（${(file.size / 1024 / 1024).toFixed(1)}MB），超过 ${DWG_MAX_FILE_SIZE / 1024 / 1024}MB 限制。`,
+    )
   }
 
-  const wasm = await ensureWasm()
   const buffer = await file.arrayBuffer()
-  const dataPtr = wasm.dwg_read_data(new Uint8Array(buffer), 0)
-  if (!dataPtr) {
-    throw new Error('WASM 解析 DWG 失败：dwg_read_data 返回空指针')
-  }
+  const id = ++dwgRequestId
 
-  try {
-    // Step 1: convert dataPtr → DwgDatabase
-    // dwg_read_data 即使遇到 CRC 错误（错误码 2048）也会返回非空 dataPtr，
-    // 但 convert 可能在处理有错误的数据时抛异常或返回 null
-    let db: DwgDatabase | null = null
+  return new Promise((resolve, reject) => {
+    const worker = getDwgWorker()
+
+    const handler = (e: MessageEvent) => {
+      const msg = e.data
+      if (msg.id !== id) return
+
+      worker.removeEventListener('message', handler)
+      // 发生错误后 Worker 内部已释放内存，可直接退出
+      worker.onerror = null
+
+      if (msg.type === 'error') {
+        reject(new Error(msg.payload.message || 'DWG 解析失败'))
+      } else {
+        resolve({
+          svg: msg.payload.svg,
+          handleMap: msg.payload.handleMap,
+        })
+      }
+    }
+
+    // Worker 未预期的错误（如网络加载失败）
+    worker.onerror = (err) => {
+      worker.removeEventListener('message', handler)
+      worker.onerror = null
+      reject(new Error(`Worker 加载失败: ${err.message}`))
+    }
+
+    worker.addEventListener('message', handler)
+
     try {
-      db = wasm.convert(dataPtr)
-    } catch (convertErr: any) {
-      console.warn('[dwgToSvg] wasm.convert 抛出异常:', convertErr?.message || convertErr)
+      worker.postMessage({ id, type: 'dwgToSvg', payload: { buffer, fileName: file.name } })
+    } catch (postErr: any) {
+      worker.removeEventListener('message', handler)
+      worker.onerror = null
+      reject(new Error(`发送消息到 Worker 失败: ${postErr?.message || postErr}`))
     }
-
-    if (!db) {
-      throw new Error(
-        'DWG 文件解析失败：无法将 DWG 数据转换为结构化对象。' +
-        '可能原因：DWG 版本不兼容、文件损坏或包含不支持的对象。' +
-        `（文件: ${file.name}, 大小: ${(file.size / 1024).toFixed(0)}KB）`
-      )
-    }
-
-    // Step 2: DwgDatabase → SVG
-    let svg: string
-    try {
-      svg = wasm.dwg_to_svg(db)
-    } catch (svgErr: any) {
-      console.warn('[dwgToSvg] wasm.dwg_to_svg(db) 抛出异常:', svgErr?.message || svgErr)
-      throw new Error(
-        'DWG 转 SVG 失败：无法将图纸数据渲染为 SVG。' +
-        '可能原因：图纸包含不支持的实体类型或几何数据异常。' +
-        `（文件: ${file.name}, 实体数: ${db.entities?.length || 0}）`
-      )
-    }
-
-    if (!svg || typeof svg !== 'string' || !svg.includes('<svg')) {
-      throw new Error('DWG 转 SVG 失败：生成的 SVG 内容无效')
-    }
-
-    // Step 3: 注入 data-handle 属性用于错误定位
-    const handleMap: Record<string, string> = {}
-
-    if (db.entities) {
-      let idx = 0
-      for (const entity of db.entities) {
-        if (entity.handle) {
-          const svgId = `dwg-entity-${idx}`
-          handleMap[entity.handle] = svgId
-        }
-        idx++
-      }
-    }
-
-    let enrichedSvg = svg
-    if (db.entities && db.entities.length > 0) {
-      // 收集所有 <g 标签位置
-      const positions: number[] = []
-      const re = /<g\s/g
-      let match: RegExpExecArray | null
-      while ((match = re.exec(svg)) !== null) {
-        positions.push(match.index)
-      }
-
-      // 从后往前替换（避免偏移问题）
-      for (let i = Math.min(positions.length, db.entities.length) - 1; i >= 0; i--) {
-        const entity = db.entities[i]
-        if (entity.handle) {
-          const pos = positions[i]
-          // 在 <g 后面插入 data-handle 属性
-          enrichedSvg =
-            enrichedSvg.substring(0, pos + 2) +
-            ` data-handle="${entity.handle}" data-entity-type="${entity.type || ''}" id="dwg-entity-${i}" ` +
-            enrichedSvg.substring(pos + 2)
-        }
-      }
-    }
-
-    console.log(`[dwgToSvg] 成功: ${file.name}, 实体数=${db.entities?.length || 0}, SVG长度=${enrichedSvg.length}`)
-    return { svg: enrichedSvg, handleMap }
-  } finally {
-    try { wasm.dwg_free(dataPtr) } catch { /* ignore */ }
-  }
+  })
 }
 
 /**
- * 将 DWG 的 DwgParsedData（已有数据）重新解析为 SVG
- * 用于审查结果页面从原始 DWG 文件生成 SVG 预览
+ * 将 DWG 文件转为 SVG（Worker 版本，仅返回 SVG 字符串）
  * @param file DWG 文件
- * @returns SVG 字符串（已注入 data-handle）
+ * @returns SVG 字符串
  */
 export async function dwgFileToSvg(file: File): Promise<string> {
   const result = await dwgToSvg(file)

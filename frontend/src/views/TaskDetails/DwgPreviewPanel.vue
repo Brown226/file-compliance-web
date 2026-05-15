@@ -24,9 +24,17 @@
 
     <!-- 加载状态 -->
     <div v-if="loading" class="preview-loading">
-      <el-icon class="is-loading" :size="28"><Loading /></el-icon>
-      <span>正在解析图纸并生成预览...</span>
-      <span class="loading-hint">首次解析较大 DWG 文件可能需要 10-30 秒</span>
+      <template v-if="!showTimeoutFallback">
+        <el-icon class="is-loading" :size="28"><Loading /></el-icon>
+        <span>正在解析图纸并生成预览...</span>
+        <span class="loading-hint">首次解析较大 DWG 文件可能需要 10-30 秒</span>
+      </template>
+      <template v-else>
+        <el-icon :size="28" color="var(--el-color-warning)"><WarningFilled /></el-icon>
+        <span>图纸解析时间较长</span>
+        <span class="loading-hint">可先查看文本内容，解析完成后可切换回图纸预览</span>
+        <el-button type="primary" size="small" @click="fallbackToText">查看文本内容</el-button>
+      </template>
     </div>
 
     <!-- 解析失败 -->
@@ -34,6 +42,8 @@
       <el-icon :size="28" color="var(--el-color-warning)"><WarningFilled /></el-icon>
       <span>图纸预览生成失败</span>
       <span class="error-msg">{{ errorMsg }}</span>
+      <span class="version-hint">libredwg 支持格式：DWG R13-R14 (1994-1998)、R15 (2000-2002)、R18 (2010-2012)、R21 (2013-2016)、R24 (2018-2020)。如文件为更高版本或其他格式，建议另存为 R24 以下版本后重新上传。</span>
+      <el-button type="primary" size="small" @click="fallbackToText">查看文本内容</el-button>
     </div>
 
     <!-- SVG 预览区域 -->
@@ -83,7 +93,7 @@
 <script setup lang="ts">
 import { ref, computed, watch, nextTick, onUnmounted } from 'vue'
 import { Loading, WarningFilled, Picture, ZoomIn, ZoomOut, FullScreen, RefreshRight } from '@element-plus/icons-vue'
-import { dwgToSvg, type DwgSvgResult } from '@/utils/dwg-parser'
+import { dwgToSvg, terminateDwgWorker, type DwgSvgResult } from '@/utils/dwg-parser'
 import DOMPurify from 'dompurify'
 
 interface HighlightInfo {
@@ -112,6 +122,15 @@ const fileName = ref('')
 /** 解析是否失败，供父组件降级到 TextPreviewPanel */
 const parseFailed = ref(false)
 defineExpose({ parseFailed })
+
+/** 超时降级：解析超过 30 秒时允许用户跳过图纸预览 */
+const showTimeoutFallback = ref(false)
+const FALLBACK_TIMEOUT_MS = 30000
+let fallbackTimeoutId: ReturnType<typeof setTimeout> | null = null
+
+const emit = defineEmits<{
+  fallbackToText: []
+}>()
 
 // 视图变换参数
 const scale = ref(1)
@@ -143,9 +162,15 @@ async function generateSvg(file: File) {
   loading.value = true
   error.value = false
   parseFailed.value = false
+  showTimeoutFallback.value = false
   svgContent.value = ''
   handleMap.value = {}
   fileName.value = file.name
+
+  // 30 秒超时降级：如果 WASM 解析耗时过长，允许用户跳过
+  fallbackTimeoutId = setTimeout(() => {
+    showTimeoutFallback.value = true
+  }, FALLBACK_TIMEOUT_MS)
 
   try {
     const result: DwgSvgResult = await dwgToSvg(file)
@@ -157,6 +182,12 @@ async function generateSvg(file: File) {
     })
     handleMap.value = result.handleMap
 
+    // SVG 生成后检查是否有待定位的图元（locateTarget 可能在解析期间被设置）
+    if (props.locateTarget?.cadHandleId) {
+      await nextTick()
+      highlightEntity(props.locateTarget.cadHandleId, props.locateTarget.description)
+    }
+
     // 初始适应窗口
     await nextTick()
     setTimeout(fitToWindow, 100)
@@ -166,6 +197,10 @@ async function generateSvg(file: File) {
     errorMsg.value = e?.message || '未知错误'
     parseFailed.value = true
   } finally {
+    if (fallbackTimeoutId) {
+      clearTimeout(fallbackTimeoutId)
+      fallbackTimeoutId = null
+    }
     loading.value = false
   }
 }
@@ -179,6 +214,18 @@ watch(() => props.file, (newFile) => {
     handleMap.value = {}
   }
 }, { immediate: true })
+
+/** 用户主动降级：点击"查看文本内容"时通知父组件切换到文本预览 */
+function fallbackToText() {
+  if (fallbackTimeoutId) {
+    clearTimeout(fallbackTimeoutId)
+    fallbackTimeoutId = null
+  }
+  loading.value = false
+  showTimeoutFallback.value = false
+  parseFailed.value = true
+  emit('fallbackToText')
+}
 
 // ==================== 缩放和平移 ====================
 
@@ -351,11 +398,16 @@ watch(() => props.locateTarget, (target) => {
       highlightEntity(handle, target.description)
     })
   }
-}, { deep: true })
+})
 
 onUnmounted(() => {
+  if (fallbackTimeoutId) {
+    clearTimeout(fallbackTimeoutId)
+    fallbackTimeoutId = null
+  }
   clearHighlight()
   highlightInfo.value = null
+  terminateDwgWorker()
 })
 </script>
 
@@ -440,6 +492,14 @@ onUnmounted(() => {
   color: var(--el-color-warning, #e6a23c);
   max-width: 300px;
   text-align: center;
+}
+
+.version-hint {
+  font-size: 11px;
+  color: var(--corp-text-secondary, #6b7280);
+  max-width: 360px;
+  text-align: center;
+  line-height: 1.5;
 }
 
 .empty-hint {

@@ -24,10 +24,33 @@
       </div>
     </div>
 
-    <!-- 加载状态 -->
-    <div v-if="loading" class="loading-overlay">
-      <el-icon class="is-loading" :size="48"><Loading /></el-icon>
-      <p class="loading-text">{{ loadingMessage }}</p>
+    <!-- 加载状态 / 审查中进度 -->
+    <div v-if="loading || reviewing" class="loading-overlay">
+      <el-icon v-if="!reviewing" class="is-loading" :size="48"><Loading /></el-icon>
+      <p class="loading-text">{{ reviewing ? 'AI 正在审查您的文件...' : loadingMessage }}</p>
+
+      <!-- 审查进度面板 -->
+      <div v-if="reviewing" class="review-progress-panel">
+        <div class="progress-bar-wrap">
+          <el-progress
+            :percentage="reviewProgress"
+            :stroke-width="6"
+            :show-text="true"
+            :status="reviewProgress >= 100 ? 'success' : ''"
+          />
+        </div>
+        <p class="progress-step">{{ reviewStep || '准备中...' }}</p>
+        <p class="progress-message">{{ reviewMessage }}</p>
+
+        <div v-if="reviewFileProgress.fileName" class="chunk-progress">
+          <span>{{ reviewFileProgress.fileName }}</span>
+          <span>分片 {{ reviewFileProgress.chunkIndex }}/{{ reviewFileProgress.totalChunks }}</span>
+        </div>
+
+        <p v-if="totalLiveIssueCount > 0" class="live-issue-count">
+          已实时发现 {{ totalLiveIssueCount }} 个问题
+        </p>
+      </div>
     </div>
 
     <!-- 主内容区：左右分栏 -->
@@ -57,6 +80,7 @@
             v-if="isDwgFileSelected && !dwgParseFailed"
             :file="dwgFileForPreview"
             :locateTarget="dwgLocateTarget"
+            @fallbackToText="dwgParseFailed = true"
           />
           <!-- 统一文件预览（Word/PDF/Excel/PPT/其他） -->
           <FilePreviewPanel
@@ -527,7 +551,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, reactive, onMounted, onUnmounted } from 'vue'
+import { ref, computed, reactive, watch, onMounted, onUnmounted, nextTick } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import {
@@ -546,6 +570,8 @@ import {
   toggleFalsePositiveApi,
 } from '@/api/task'
 import { replaceTextApi } from '@/api/onlyoffice'
+import { useWebSocket, type WsMessage } from '@/composables/useWebSocket'
+import request from '@/utils/request'
 import type { Task, TaskDetail, TaskFile } from '@/types/models'
 import FilePreviewPanel from '@/views/TaskDetails/FilePreviewPanel.vue'
 import DwgPreviewPanel from '@/views/TaskDetails/DwgPreviewPanel.vue'
@@ -561,6 +587,23 @@ const allDetails = ref<TaskDetail[]>([])
 const files = ref<TaskFile[]>([])
 const loading = ref(false)
 const loadingMessage = ref('正在加载审查结果...')
+
+// ===== 审查实时进度（WebSocket 推送） =====
+const { subscribeTask } = useWebSocket()
+const reviewing = ref(false)
+const reviewProgress = ref(0)
+const reviewStep = ref('')
+const reviewMessage = ref('')
+const reviewFileProgress = reactive({
+  fileName: '',
+  chunkIndex: 0,
+  totalChunks: 0,
+  issueCount: 0,
+})
+const totalLiveIssueCount = ref(0)
+const skippedNoTextFiles = ref<string[]>([])
+const runtimeFileStatus = ref<Record<string, 'completed' | 'failed' | 'skipped'>>({})
+let unsubscribeWs: (() => void) | null = null
 const currentStep = ref(2)
 const activeTab = ref('suggestions')
 const showPlainLanguage = ref(false)
@@ -574,9 +617,27 @@ const selectedFile = computed(() => files.value.find((f: any) => f.id === select
 const selectedFileType = computed(() => selectedFile.value?.fileType || selectedFile.value?.file_type || '')
 const selectedFileName = computed(() => selectedFile.value?.fileName || '')
 
-const selectFile = (fileId: string) => {
+const switchToFileContext = (
+  fileId: string,
+  options?: { locate?: { originalText: string; textPosition: any; cadHandleId?: string } }
+) => {
   selectedFileId.value = fileId
   filterFileId.value = fileId
+
+  if (options?.locate) {
+    // 延迟设置 locateTarget，让文件切换先完成（如需要），避免同步触发全文渲染
+    nextTick(() => {
+      locateTarget.value = {
+        originalText: options.locate!.originalText || '',
+        textPosition: options.locate!.textPosition || null,
+        cadHandleId: options.locate!.cadHandleId,
+      }
+    })
+  }
+}
+
+const selectFile = (fileId: string) => {
+  switchToFileContext(fileId)
 }
 
 const getFileNameById = (fileId: string): string => {
@@ -597,6 +658,22 @@ const getFileIssueCount = (fileId: string): number => {
   return allDetails.value.filter((d: any) => d.fileId === fileId).length
 }
 
+const fileStatusSummary = computed(() => {
+  const ids = new Set(files.value.map((f: any) => f.id))
+  let completed = 0
+  let failed = 0
+  let skipped = 0
+
+  Object.entries(runtimeFileStatus.value).forEach(([fileId, status]) => {
+    if (!ids.has(fileId)) return
+    if (status === 'completed') completed++
+    if (status === 'failed') failed++
+    if (status === 'skipped') skipped++
+  })
+
+  return { completed, failed, skipped }
+})
+
 const isDwgFileSelected = computed(() => {
   if (!selectedFileId.value) return false
   const file = files.value.find((f: any) => f.id === selectedFileId.value) as any
@@ -611,6 +688,43 @@ const dwgLocateTarget = computed(() => {
     cadHandleId: locateTarget.value.cadHandleId,
     originalText: locateTarget.value.originalText,
     description: '',
+  }
+})
+
+/** 下载 DWG 原始文件并在前端创建 File 对象供 WASM 解析 */
+async function loadDwgFile(fileId: string) {
+  dwgParseFailed.value = false
+  dwgFileForPreview.value = null
+
+  try {
+    const resp = await request.get(
+      `/tasks/${taskId.value}/files/${fileId}/raw`,
+      { responseType: 'arraybuffer' }
+    )
+    const file = files.value.find((f: any) => f.id === fileId) as any
+    const fileName = file?.fileName || 'drawing.dwg'
+    const blob = new Blob([resp.data])
+    dwgFileForPreview.value = new File([blob], fileName, { type: 'application/octet-stream' })
+  } catch (e: any) {
+    console.error('[TaskResultsView] DWG 文件下载失败:', e)
+    dwgParseFailed.value = true
+  }
+}
+
+// 监听文件切换：选中 DWG 时自动下载原始文件
+watch(() => selectedFileId.value, (fileId) => {
+  if (!fileId) {
+    dwgFileForPreview.value = null
+    dwgParseFailed.value = false
+    return
+  }
+  const file = files.value.find((f: any) => f.id === fileId) as any
+  const isDwg = file?.fileType === 'dwg' || file?.file_type === 'dwg'
+  if (isDwg) {
+    loadDwgFile(fileId)
+  } else {
+    dwgFileForPreview.value = null
+    dwgParseFailed.value = false
   }
 })
 
@@ -728,6 +842,80 @@ const getCategoryTagType = (type: string): any => {
   return m[type] || 'info'
 }
 
+// ===== WebSocket 实时进度处理 =====
+
+/** 增量追加 WS 推送的 issues 到结果列表 */
+const appendNewIssues = (msg: WsMessage) => {
+  if (!msg.issues?.length) return
+  const newIssues = msg.issues.map((d: any) => ({
+    id: d.id || `live_${Date.now()}_${Math.random()}`,
+    issueType: d.issueType,
+    ruleCode: d.ruleCode,
+    severity: d.severity,
+    originalText: d.originalText,
+    suggestedText: d.suggestedText,
+    description: d.description,
+    plainLanguage: d.plainLanguage || null,
+    cadHandleId: d.cadHandleId || null,
+    standardRef: d.standardRef,
+    sourceReferences: d.sourceReferences,
+    matchLevel: d.matchLevel,
+    similarity: d.similarity,
+    diffRanges: d.diffRanges,
+    textPosition: d.textPosition,
+    fileId: msg.fileId,
+    isFalsePositive: false,
+    adopted: false,
+    taskId: taskId.value,
+    taskFileId: msg.fileId || '',
+  }))
+  allDetails.value = [...allDetails.value, ...newIssues]
+}
+
+/** 处理 WebSocket 推送的消息 */
+const handleWsMessage = (msg: WsMessage) => {
+  switch (msg.type) {
+    case 'task_progress':
+      reviewProgress.value = msg.progress ?? reviewProgress.value
+      reviewStep.value = msg.step ?? reviewStep.value
+      reviewMessage.value = msg.message ?? reviewMessage.value
+
+      // 审查完成
+      if (msg.progressType === 'completed' || msg.progressType === 'failed') {
+        finishReview()
+      }
+      break
+
+    case 'chunk_result':
+      reviewFileProgress.fileName = msg.fileName ?? reviewFileProgress.fileName
+      reviewFileProgress.chunkIndex = (msg.chunkIndex ?? -1) + 1
+      reviewFileProgress.totalChunks = msg.totalChunks ?? reviewFileProgress.totalChunks
+      reviewFileProgress.issueCount += msg.issueCount ?? 0
+      totalLiveIssueCount.value += msg.issueCount ?? 0
+      reviewStep.value = `AI 审查中`
+      reviewMessage.value = `正在审查 ${msg.fileName}（分片 ${reviewFileProgress.chunkIndex}/${reviewFileProgress.totalChunks}）`
+      appendNewIssues(msg)
+      break
+  }
+}
+
+/** 审查完成：清理 WS 订阅 + 最终加载 */
+const finishReview = async () => {
+  reviewing.value = false
+  reviewProgress.value = 100
+  reviewStep.value = '审查完成'
+  reviewMessage.value = '正在加载最终结果...'
+  if (unsubscribeWs) {
+    unsubscribeWs()
+    unsubscribeWs = null
+  }
+  // 给后端一点时间完成最后的 DB 写入
+  setTimeout(async () => {
+    await fetchData()
+    loading.value = false
+  }, 800)
+}
+
 // ===== 数据加载 =====
 const fetchData = async () => {
   loading.value = true
@@ -762,7 +950,7 @@ const fetchData = async () => {
 
     // 默认选中第一个文件
     if (files.value.length > 0 && !selectedFileId.value) {
-      selectedFileId.value = files.value[0].id
+      switchToFileContext(files.value[0].id)
     }
   } catch (e: any) {
     ElMessage.error('加载审查结果失败')
@@ -774,15 +962,16 @@ const fetchData = async () => {
 
 // ===== 操作函数 =====
 const handleLocateText = (item: TaskDetail) => {
-  // 自动切换到问题所属文件
-  if (item.fileId && item.fileId !== selectedFileId.value) {
-    selectedFileId.value = item.fileId
-  }
-  locateTarget.value = {
-    originalText: item.originalText || '',
-    textPosition: item.textPosition || null,
-    cadHandleId: item.cadHandleId,
-  }
+  if (!item.fileId) return
+
+  // 统一文件上下文切换，保持预览与列表一致
+  switchToFileContext(item.fileId, {
+    locate: {
+      originalText: item.originalText || '',
+      textPosition: item.textPosition || null,
+      cadHandleId: item.cadHandleId,
+    },
+  })
 }
 
 const handleAdoptSuggestion = async (item: TaskDetail) => {
@@ -1116,17 +1305,27 @@ const goBack = () => {
 }
 
 // ===== 生命周期 =====
-onMounted(() => {
+onMounted(async () => {
   // 进入结果页时自动收起侧边栏，给更多显示空间
   localStorage.setItem('sidebar_collapsed', 'true')
   // 触发 storage 事件让 AppLayout 响应（同页面内手动同步）
   window.dispatchEvent(new StorageEvent('storage', { key: 'sidebar_collapsed', newValue: 'true' }))
 
-  fetchData()
+  await fetchData()
+
+  // 如果任务状态不是 COMPLETED/FAILED，进入审查中模式，订阅 WS 实时更新
+  if (task.value?.status !== 'COMPLETED' && task.value?.status !== 'FAILED') {
+    reviewing.value = true
+    reviewMessage.value = '正在初始化审查...'
+    unsubscribeWs = subscribeTask(taskId.value, handleWsMessage)
+  }
 })
 
 onUnmounted(() => {
-  // 清理资源
+  if (unsubscribeWs) {
+    unsubscribeWs()
+    unsubscribeWs = null
+  }
 })
 </script>
 
@@ -1215,6 +1414,49 @@ onUnmounted(() => {
 
 .loading-text {
   font-size: 14px;
+}
+
+/* 审查进度面板 */
+.review-progress-panel {
+  margin-top: 20px;
+  width: 420px;
+  background: white;
+  border-radius: 12px;
+  padding: 20px 24px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.08);
+  text-align: center;
+}
+
+.progress-bar-wrap {
+  margin-bottom: 12px;
+}
+
+.progress-step {
+  font-size: 15px;
+  font-weight: 700;
+  color: #1F2937;
+  margin: 0 0 4px;
+}
+
+.progress-message {
+  font-size: 13px;
+  color: #6B7280;
+  margin: 0 0 12px;
+}
+
+.chunk-progress {
+  display: flex;
+  justify-content: space-between;
+  font-size: 12px;
+  color: #9CA3AF;
+  margin-bottom: 8px;
+}
+
+.live-issue-count {
+  font-size: 14px;
+  color: #3B82F6;
+  font-weight: 600;
+  margin: 8px 0 0;
 }
 
 /* 主内容区 */
@@ -1307,16 +1549,21 @@ onUnmounted(() => {
   background: rgba(255, 255, 255, 0.25);
 }
 
-/* 问题卡片上的文件标签 */
-.file-tag {
-  cursor: pointer;
-  margin-left: 6px;
-}
-
 .editor-container {
   flex: 1;
   overflow: hidden;
   min-height: 0;
+}
+
+.dwg-loading {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  color: var(--corp-text-secondary, #6B7280);
+  font-size: 13px;
 }
 
 .adopt-preview-panel {
@@ -1569,8 +1816,9 @@ onUnmounted(() => {
 
 .card-title-wrap {
   display: flex;
-  align-items: center;
-  gap: 8px;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 4px 8px;
   flex: 1;
 }
 
@@ -1579,6 +1827,14 @@ onUnmounted(() => {
   font-weight: 600;
   color: #374151;
   margin: 0;
+  flex: 1;
+  min-width: 0;
+}
+
+/* 问题卡片上的文件标签 */
+.file-tag {
+  cursor: pointer;
+  flex-basis: 100%;
 }
 
 .card-actions {

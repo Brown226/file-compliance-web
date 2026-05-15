@@ -69,11 +69,11 @@
             </el-menu-item>
             <el-menu-item index="/admin/rule-libraries">
               <el-icon><Notebook /></el-icon>
-              <template #title><span>规则库</span></template>
+              <template #title><span>规则库管理</span></template>
             </el-menu-item>
             <el-menu-item index="/admin/rules">
               <el-icon><Operation /></el-icon>
-              <template #title><span>审查规则</span></template>
+              <template #title><span>审查规则管理</span></template>
             </el-menu-item>
             <el-menu-item index="/admin/prompts">
               <el-icon><Edit /></el-icon>
@@ -82,10 +82,6 @@
             <el-menu-item index="/admin/system">
               <el-icon><Tools /></el-icon>
               <template #title><span>系统配置</span></template>
-            </el-menu-item>
-            <el-menu-item index="/admin/users">
-              <el-icon><User /></el-icon>
-              <template #title><span>部门与员工</span></template>
             </el-menu-item>
             <el-menu-item index="/admin/audit">
               <el-icon><Document /></el-icon>
@@ -100,7 +96,7 @@
       </el-menu>
 
       <div class="collapse-btn" @click="sidebarCollapsed = !sidebarCollapsed">
-        <el-icon :size="16">
+        <el-icon :size="18">
           <Fold v-if="!sidebarCollapsed" />
           <Expand v-else />
         </el-icon>
@@ -148,17 +144,32 @@
           <div class="header-divider"></div>
           <el-dropdown @command="handleCommand" trigger="click">
             <div class="user-info">
-              <el-avatar :size="32" class="user-avatar">{{ userStore.userInfo?.username?.charAt(0).toUpperCase() || 'A' }}</el-avatar>
-              <span class="username" v-show="!sidebarCollapsed">{{ userStore.userInfo?.username || 'Admin' }}</span>
+              <el-avatar :size="32" class="user-avatar">{{ userStore.userInfo?.name?.charAt(0).toUpperCase() || 'A' }}</el-avatar>
+              <span class="username" v-show="!sidebarCollapsed">{{ userStore.userInfo?.name || userStore.userInfo?.username || 'Admin' }}</span>
               <el-icon class="arrow-icon" :size="12"><arrow-down /></el-icon>
             </div>
             <template #dropdown>
               <el-dropdown-menu>
+                <!-- 用户信息头 -->
+                <div class="dropdown-user-header">
+                  <el-avatar :size="40" class="dropdown-avatar">{{ userStore.userInfo?.name?.charAt(0).toUpperCase() || 'A' }}</el-avatar>
+                  <div class="dropdown-user-meta">
+                    <span class="dropdown-username">{{ userStore.userInfo?.name || userStore.userInfo?.username || 'Admin' }}</span>
+                    <span class="dropdown-role">{{ roleDisplayText }}</span>
+                    <span class="dropdown-account">账号：{{ userStore.userInfo?.username }}</span>
+                  </div>
+                </div>
+                <el-dropdown-item command="myTasks">
+                  <el-icon><List /></el-icon>我的任务
+                </el-dropdown-item>
+                <el-dropdown-item command="myFeedbacks">
+                  <el-icon><ChatLineRound /></el-icon>我的反馈
+                </el-dropdown-item>
+                <el-dropdown-item command="changeUsername">
+                  <el-icon><Edit /></el-icon>修改登录账号
+                </el-dropdown-item>
                 <el-dropdown-item command="changePassword">
                   <el-icon><Lock /></el-icon>修改密码
-                </el-dropdown-item>
-                <el-dropdown-item command="shortcuts" @click="showShortcutHelp = true">
-                  <el-icon><QuestionFilled /></el-icon>快捷键
                 </el-dropdown-item>
                 <el-dropdown-item command="logout" divided class="text-danger">
                   <el-icon><SwitchButton /></el-icon>退出登录
@@ -205,6 +216,27 @@
       </template>
     </el-dialog>
 
+    <!-- 修改登录账号对话框 -->
+    <el-dialog v-model="usernameDialogVisible" title="修改登录账号" width="420px" destroy-on-close>
+      <el-form ref="usernameFormRef" :model="usernameForm" :rules="usernameRules" label-width="100px">
+        <el-form-item label="当前账号">
+          <el-input :model-value="userStore.userInfo?.username" disabled />
+        </el-form-item>
+        <el-form-item label="新账号" prop="newUsername">
+          <el-input v-model="usernameForm.newUsername" placeholder="请输入新登录账号" maxlength="50" show-word-limit />
+        </el-form-item>
+        <el-form-item label="登录密码" prop="password">
+          <el-input v-model="usernameForm.password" type="password" show-password placeholder="请输入当前密码验证身份" />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <span class="dialog-footer">
+          <el-button @click="usernameDialogVisible = false">取消</el-button>
+          <el-button type="primary" :loading="usernameLoading" @click="submitUsernameChange">确认修改</el-button>
+        </span>
+      </template>
+    </el-dialog>
+
     <GlobalSearch ref="globalSearchRef" />
 
     <AnnouncementPopup ref="announcementPopupRef" v-if="showAnnouncementPopup" />
@@ -243,7 +275,7 @@ import {
   Tools, Operation, WarningFilled, ChatDotRound, ChatLineRound, ChatLineSquare,
   Bell, FolderOpened, Notebook, User,
 } from '@element-plus/icons-vue'
-import { logoutApi, changePasswordApi } from '@/api/auth'
+import { logoutApi, changePasswordApi, changeUsernameApi, loginApi } from '@/api/auth'
 import GlobalSearch from '@/components/GlobalSearch.vue'
 import AnnouncementPopup from '@/components/AnnouncementPopup.vue'
 import NotificationCenter from '@/components/NotificationCenter.vue'
@@ -254,6 +286,11 @@ const route = useRoute()
 const router = useRouter()
 const userStore = useUserStore()
 const activeMenu = computed(() => route.path)
+const roleDisplayText = computed(() => {
+  const role = userStore.userInfo?.role
+  const map: Record<string, string> = { ADMIN: '系统管理员', MANAGER: '部门管理员', USER: '普通用户' }
+  return map[role || ''] || userStore.userInfo?.departmentName || role || '普通用户'
+})
 const sidebarCollapsed = ref(localStorage.getItem('sidebar_collapsed') === 'true')
 const sidebarOpen = ref(false)
 
@@ -362,6 +399,16 @@ const handleCommand = (command: string) => {
     if (passwordFormRef.value) {
       passwordFormRef.value.resetFields()
     }
+  } else if (command === 'myTasks') {
+    router.push('/tasks')
+  } else if (command === 'myFeedbacks') {
+    router.push('/feedback')
+  } else if (command === 'changeUsername') {
+    usernameDialogVisible.value = true
+    usernameForm.newUsername = userStore.userInfo?.username || ''
+    if (usernameFormRef.value) {
+      usernameFormRef.value.resetFields()
+    }
   } else if (command === 'logout') {
     ElMessageBox.confirm('确认退出登录吗?', '提示', {
       confirmButtonText: '确定',
@@ -401,6 +448,56 @@ const submitPasswordChange = async () => {
     }
   })
 }
+
+// 修改登录账号
+const usernameDialogVisible = ref(false)
+const usernameLoading = ref(false)
+const usernameFormRef = ref<FormInstance>()
+
+const usernameForm = reactive({
+  newUsername: '',
+  password: '',
+})
+
+const usernameRules = reactive<FormRules>({
+  newUsername: [
+    { required: true, message: '请输入新登录账号', trigger: 'blur' },
+    { min: 2, message: '账号长度不能小于2位', trigger: 'blur' },
+    { max: 50, message: '账号长度不能超过50位', trigger: 'blur' },
+    { pattern: /^[a-zA-Z0-9_]+$/, message: '账号只能包含字母、数字和下划线', trigger: 'blur' },
+  ],
+  password: [
+    { required: true, message: '请输入当前密码验证身份', trigger: 'blur' },
+  ],
+})
+
+const submitUsernameChange = async () => {
+  if (!usernameFormRef.value) return
+  await usernameFormRef.value.validate(async (valid) => {
+    if (valid) {
+      usernameLoading.value = true
+      try {
+        await changeUsernameApi({
+          newUsername: usernameForm.newUsername,
+          password: usernameForm.password,
+        })
+        ElMessage.success('登录账号修改成功')
+        usernameDialogVisible.value = false
+        // 用新账号重新登录刷新用户信息
+        const { data } = await loginApi({
+          username: usernameForm.newUsername,
+          password: usernameForm.password,
+        })
+        userStore.setToken(data.token)
+        userStore.setUserInfo(data.user)
+      } catch (error: any) {
+        ElMessage.error(error?.response?.data?.message || '修改失败')
+      } finally {
+        usernameLoading.value = false
+      }
+    }
+  })
+}
 </script>
 
 <style scoped>
@@ -410,15 +507,17 @@ const submitPasswordChange = async () => {
   background-color: var(--bg-body);
 }
 
-/* ===== 侧边栏 — Near-black (#111111) ===== */
+/* ===== 侧边栏 — Near-black with subtle depth ===== */
 .aside {
-  background: #111111;
+  background:
+    linear-gradient(180deg, #0F0F0F 0%, #111111 30%, #111111 70%, #0D0D0D 100%);
   display: flex;
   flex-direction: column;
   position: relative;
   z-index: 10;
-  transition: width 0.2s ease;
+  transition: width 0.25s cubic-bezier(0.4, 0, 0.2, 1);
   overflow: hidden;
+  border-right: 1px solid rgba(255, 255, 255, 0.04);
 }
 
 @media (max-width: 1024px) {
@@ -455,9 +554,10 @@ const submitPasswordChange = async () => {
   align-items: center;
   padding: 0 16px;
   color: #FFFFFF;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
   flex-shrink: 0;
   gap: 10px;
+  background: rgba(255, 255, 255, 0.02);
 }
 
 .logo-icon-wrap {
@@ -493,8 +593,8 @@ const submitPasswordChange = async () => {
 }
 
 .menu-divider {
-  border-top: 1px solid rgba(255, 255, 255, 0.08);
-  margin: 6px 12px;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+  margin: 8px 16px;
 }
 
 .menu {
@@ -504,42 +604,61 @@ const submitPasswordChange = async () => {
   overflow-y: auto;
 }
 
-/* 菜单项 — 紧凑、无左边框 */
+/* 菜单项 — 紧凑、左侧激活指示条 */
 .clean-menu :deep(.el-menu-item.el-menu-item) {
-  height: 38px;
-  line-height: 38px;
+  height: 40px;
+  line-height: 40px;
   margin: 2px 8px;
-  border-radius: var(--radius-md);
+  border-radius: 6px;
   font-weight: 500;
   font-size: 13px;
   padding-left: 16px;
-  transition: all 0.12s ease;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
   border-left: none;
+  position: relative;
+}
+
+.clean-menu :deep(.el-menu-item.el-menu-item::before) {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 50%;
+  transform: translateY(-50%) scaleY(0);
+  width: 3px;
+  height: 20px;
+  border-radius: 0 3px 3px 0;
+  background: var(--color-primary-400);
+  transition: transform 0.2s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 .clean-menu :deep(.el-menu-item.el-menu-item:hover) {
-  background-color: rgba(255, 255, 255, 0.08);
-  color: #FFFFFF;
+  background-color: rgba(255, 255, 255, 0.06);
+  color: #E5E7EB;
 }
 
 .clean-menu :deep(.el-menu-item.el-menu-item:hover .el-icon) {
-  color: #FFFFFF;
+  color: #E5E7EB;
 }
 
 .clean-menu :deep(.el-menu-item.el-menu-item.is-active) {
-  background-color: rgba(59, 130, 246, 0.2);
+  background-color: rgba(59, 130, 246, 0.12);
   color: #FFFFFF;
-  box-shadow: none;
+  font-weight: 600;
+}
+
+.clean-menu :deep(.el-menu-item.el-menu-item.is-active::before) {
+  transform: translateY(-50%) scaleY(1);
 }
 
 .clean-menu :deep(.el-menu-item.el-menu-item.is-active .el-icon) {
-  color: #FFFFFF;
+  color: var(--color-primary-300);
 }
 
 .clean-menu :deep(.el-menu-item.el-menu-item .el-icon) {
-  font-size: 16px;
+  font-size: 17px;
   margin-right: 10px;
-  transition: color 0.12s ease;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  color: #8B93A0;
 }
 
 .clean-menu.el-menu--collapse {
@@ -555,59 +674,82 @@ const submitPasswordChange = async () => {
 
 .clean-menu.el-menu--collapse :deep(.el-menu-item.el-menu-item .el-icon) {
   margin-right: 0;
+  font-size: 18px;
+}
+
+.clean-menu.el-menu--collapse :deep(.el-menu-item.el-menu-item.is-active .el-icon) {
+  color: var(--color-primary-300);
+}
+
+.clean-menu.el-menu--collapse :deep(.el-menu-item.el-menu-item.is-active::before) {
+  display: none;
 }
 
 /* 管理后台折叠子菜单 */
 .clean-menu :deep(.el-sub-menu .el-sub-menu__title) {
-  height: 38px;
-  line-height: 38px;
+  height: 40px;
+  line-height: 40px;
   margin: 2px 8px;
-  border-radius: var(--radius-md);
+  border-radius: 6px;
   font-weight: 500;
   font-size: 13px;
   padding-left: 16px;
   color: #9CA3AF;
   border-left: none;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 .clean-menu :deep(.el-sub-menu .el-sub-menu__title:hover) {
-  background-color: rgba(255, 255, 255, 0.08);
-  color: #FFFFFF;
+  background-color: rgba(255, 255, 255, 0.06);
+  color: #E5E7EB;
 }
 
 .clean-menu :deep(.el-sub-menu .el-sub-menu__title .el-icon) {
-  font-size: 16px;
+  font-size: 17px;
   margin-right: 10px;
-  color: #9CA3AF;
+  color: #8B93A0;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 .clean-menu :deep(.el-sub-menu.is-opened .el-sub-menu__title) {
   color: #FFFFFF;
 }
 
+.clean-menu :deep(.el-sub-menu.is-opened .el-sub-menu__title .el-icon) {
+  color: var(--color-primary-300);
+}
+
 .clean-menu :deep(.el-sub-menu .el-menu) {
-  background-color: rgba(0, 0, 0, 0.2);
-  border-radius: 0 0 var(--radius-md) var(--radius-md);
+  background-color: rgba(0, 0, 0, 0.25);
+  border-radius: 0 0 6px 6px;
   margin: 0 8px 4px;
   padding: 4px 0;
 }
 
 .clean-menu :deep(.el-sub-menu .el-menu .el-menu-item) {
-  height: 36px;
-  line-height: 36px;
+  height: 34px;
+  line-height: 34px;
   padding-left: 44px;
   font-size: 12px;
   margin: 1px 4px;
   border-left: none;
+  border-radius: 4px;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.clean-menu :deep(.el-sub-menu .el-menu .el-menu-item:hover) {
+  background-color: rgba(255, 255, 255, 0.04);
+  color: #E5E7EB;
 }
 
 .clean-menu :deep(.el-sub-menu .el-menu .el-menu-item .el-icon) {
   font-size: 14px;
   margin-right: 8px;
+  color: #8B93A0;
 }
 
 .clean-menu :deep(.el-sub-menu .el-menu .el-menu-item.is-active) {
-  background-color: rgba(59, 130, 246, 0.2);
+  background-color: rgba(59, 130, 246, 0.12);
   color: #FFFFFF;
 }
 
@@ -620,22 +762,27 @@ const submitPasswordChange = async () => {
 
 .clean-menu.el-menu--collapse :deep(.el-sub-menu .el-sub-menu__title .el-icon) {
   margin-right: 0;
+  font-size: 18px;
+}
+
+.clean-menu.el-menu--collapse :deep(.el-sub-menu.is-opened .el-sub-menu__title .el-icon) {
+  color: var(--color-primary-300);
 }
 
 .collapse-btn {
-  height: 40px;
+  height: 44px;
   display: flex;
   align-items: center;
   justify-content: center;
-  color: rgba(255, 255, 255, 0.3);
+  color: #8B93A0;
   cursor: pointer;
   border-top: 1px solid rgba(255, 255, 255, 0.06);
-  transition: all 0.12s;
+  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
   flex-shrink: 0;
 }
 
 .collapse-btn:hover {
-  color: rgba(255, 255, 255, 0.7);
+  color: #D1D5DB;
   background-color: rgba(255, 255, 255, 0.04);
 }
 
@@ -806,6 +953,50 @@ const submitPasswordChange = async () => {
   flex-shrink: 0;
 }
 
+/* 下拉菜单用户信息头 */
+.dropdown-user-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 16px;
+  border-bottom: 1px solid #E5E7EB;
+  margin-bottom: 4px;
+}
+
+.dropdown-avatar {
+  background: #111111;
+  color: #FFFFFF;
+  font-weight: 700;
+  font-size: 14px;
+  flex-shrink: 0;
+}
+
+.dropdown-user-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.dropdown-username {
+  font-size: 14px;
+  font-weight: 700;
+  color: #111827;
+  line-height: 1.3;
+}
+
+.dropdown-role {
+  font-size: 11px;
+  color: #6B7280;
+  line-height: 1.3;
+}
+
+.dropdown-account {
+  font-size: 11px;
+  color: #9CA3AF;
+  line-height: 1.3;
+}
+
 /* 主内容区 */
 .main-content {
   background-color: #F5F5F5;
@@ -847,5 +1038,54 @@ const submitPasswordChange = async () => {
   color: var(--color-gray-500);
   border: 1px solid var(--color-gray-200);
   font-family: inherit;
+}
+</style>
+
+<!-- 管理后台折叠弹出菜单 — 非 scoped（teleported 到 body） -->
+<style>
+.admin-submenu-popper {
+  background: #1A1A1A !important;
+  border: 1px solid rgba(255, 255, 255, 0.08) !important;
+  border-radius: 8px !important;
+  padding: 4px 0 !important;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4) !important;
+  min-width: 180px !important;
+}
+
+.admin-submenu-popper .el-menu--popup .el-menu-item {
+  height: 36px !important;
+  line-height: 36px !important;
+  padding: 0 16px !important;
+  font-size: 13px !important;
+  color: #9CA3AF !important;
+  background-color: transparent !important;
+  border-radius: 4px !important;
+  margin: 2px 6px !important;
+  transition: all 0.15s ease !important;
+}
+
+.admin-submenu-popper .el-menu--popup .el-menu-item:hover {
+  background-color: rgba(255, 255, 255, 0.06) !important;
+  color: #E5E7EB !important;
+}
+
+.admin-submenu-popper .el-menu--popup .el-menu-item.is-active {
+  background-color: rgba(59, 130, 246, 0.15) !important;
+  color: #FFFFFF !important;
+  font-weight: 600 !important;
+}
+
+.admin-submenu-popper .el-menu--popup .el-menu-item .el-icon {
+  color: #8B93A0 !important;
+  font-size: 16px !important;
+  margin-right: 8px !important;
+}
+
+.admin-submenu-popper .el-menu--popup .el-menu-item.is-active .el-icon {
+  color: var(--color-primary-300, #93C5FD) !important;
+}
+
+.admin-submenu-popper .el-menu--popup .el-menu-item:hover .el-icon {
+  color: #D1D5DB !important;
 }
 </style>

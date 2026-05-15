@@ -169,7 +169,7 @@ watch(() => props.fileId, loadFile, { immediate: true })
 watch(() => props.locateTarget, () => {
   buildHighlightMap()
   nextTick(scrollToFirstHighlight)
-}, { deep: true })
+})
 </script>
 
 <style scoped>

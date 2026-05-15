@@ -20,3 +20,8 @@ export function changePasswordApi(data: { oldPassword: string; newPassword: stri
     newPassword: data.newPassword,
   })
 }
+
+// 修改登录账号
+export function changeUsernameApi(data: { newUsername: string; password: string }) {
+  return request.post<{ message: string }>('/auth/change-username', data)
+}

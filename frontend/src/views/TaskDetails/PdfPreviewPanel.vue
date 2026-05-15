@@ -10,7 +10,8 @@
     </div>
     <iframe
       v-else-if="pdfUrl"
-      :src="pdfUrl"
+      ref="iframeRef"
+      :src="effectivePdfUrl"
       class="pdf-iframe"
       frameborder="0"
     />
@@ -18,7 +19,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, watch, onUnmounted } from 'vue'
+import { ref, watch, computed, onUnmounted } from 'vue'
 import { Loading, WarningFilled } from '@element-plus/icons-vue'
 import request from '@/utils/request'
 
@@ -32,6 +33,16 @@ const props = defineProps<{
 const loading = ref(false)
 const error = ref('')
 const pdfUrl = ref('')
+const iframeRef = ref<HTMLIFrameElement | null>(null)
+
+// PDF URL 拼接 #search= 片段，使浏览器原生 PDF 查看器自动搜索定位
+const effectivePdfUrl = computed(() => {
+  if (!pdfUrl.value) return ''
+  const search = props.locateTarget?.originalText?.trim()
+  if (!search) return pdfUrl.value
+  const base = pdfUrl.value.split('#')[0]
+  return `${base}#search=${encodeURIComponent(search)}`
+})
 
 const loadPdf = async () => {
   if (!props.fileId && !props.fileUrl) return

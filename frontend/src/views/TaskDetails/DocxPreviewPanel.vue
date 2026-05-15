@@ -55,6 +55,12 @@ const loadDocx = async () => {
     if (result.messages.length > 0) {
       console.warn('[DocxPreview] 转换警告:', result.messages)
     }
+
+    // 内容加载完成后，检查是否有待定位的原文（locateTarget 可能在加载期间被设置）
+    await nextTick()
+    if (props.locateTarget?.originalText) {
+      highlightAndScroll()
+    }
   } catch (e: any) {
     error.value = e?.message || 'Word 文档渲染失败'
     console.error('[DocxPreview] 错误:', e)
@@ -101,7 +107,7 @@ const highlightAndScroll = () => {
 }
 
 watch(() => props.fileId, () => loadDocx(), { immediate: true })
-watch(() => props.locateTarget, () => nextTick(highlightAndScroll), { deep: true })
+watch(() => props.locateTarget, () => nextTick(highlightAndScroll))
 </script>
 
 <style scoped>

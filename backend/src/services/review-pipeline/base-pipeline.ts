@@ -354,7 +354,12 @@ export abstract class BasePipeline {
     // 运行时配置也可禁用 AI
     const config = this.getEffectiveConfig(ctx);
     const stages = config.modes?.[ctx.reviewMode as ReviewModeType]?.stages;
-    if (stages?.ai === false || !text.trim()) {
+    if (stages?.ai === false) {
+      console.log(`[${this.constructor.name}] 阶段2跳过: ${ctx.fileName}, 运行时配置禁用了 AI`);
+      return { aiIssues: [], usedEngine: 'none' };
+    }
+    if (!text.trim()) {
+      console.warn(`[${this.constructor.name}] 阶段2跳过: ${ctx.fileName}, 文本为空（extractedText 长度=${text.length}），无法进行 AI 审查`);
       return { aiIssues: [], usedEngine: 'none' };
     }
 
@@ -383,8 +388,9 @@ export abstract class BasePipeline {
         usedEngine,
       };
     } catch (e) {
+      // 阶段2异常应作为真实失败处理，交由上层记录错误详情并标记文件失败
       console.error(`[${this.constructor.name}] 阶段2 AI审查失败:`, e);
-      return { aiIssues: [], usedEngine: 'none' };
+      throw e;
     }
   }
 

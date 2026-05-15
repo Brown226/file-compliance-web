@@ -138,6 +138,14 @@ const loadPptx = async () => {
     )
     const buffer = resp.data
     slides.value = await extractTextFromPptx(buffer)
+    // 内容加载完成后，检查是否有待定位的原文
+    if (props.locateTarget?.originalText) {
+      const idx = findSlideWithText(props.locateTarget.originalText)
+      if (idx !== -1 && idx !== currentSlide.value) {
+        currentSlide.value = idx
+      }
+      scrollToHighlight()
+    }
   } catch (e: any) {
     error.value = e?.message || 'PPTX 解析失败'
     console.error('[PptxPreview] 错误:', e)
@@ -169,7 +177,7 @@ watch(() => props.locateTarget, (target) => {
     currentSlide.value = idx
   }
   scrollToHighlight()
-}, { deep: true })
+})
 
 watch(currentSlide, () => {
   if (props.locateTarget?.originalText) scrollToHighlight()

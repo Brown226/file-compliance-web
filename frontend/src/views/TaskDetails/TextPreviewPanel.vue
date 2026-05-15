@@ -82,7 +82,8 @@ const props = defineProps<{
   /** 当前需要定位高亮的问题 */
   locateTarget?: {
     originalText: string
-    textPosition: TextPosition | null
+    textPosition?: TextPosition | null
+    cadHandleId?: string
   } | null
 }>()
 
@@ -179,22 +180,12 @@ const prepareHighlightedText = (text: string, searchText: string, _targetChunk?:
   return foundAny ? result.join('') : text
 }
 
-/** Markdown 渲染后的 HTML */
+/** Markdown 渲染后的 HTML（不依赖 locateTarget，避免每次定位触发全文 markdown 重渲染） */
 const renderedHtml = computed(() => {
   const text = extractedText.value
   if (!text) return ''
 
-  const searchText = props.locateTarget?.originalText || ''
-  let processedText = text
-
-  // 如果有定位目标，在文本中高亮标记
-  if (searchText) {
-    const targetChunk = props.locateTarget?.textPosition?.chunkIndex ?? -1
-    processedText = prepareHighlightedText(text, searchText, targetChunk)
-  }
-
-  // 渲染 Markdown，保留 HTML 标记
-  const html = md.render(processedText)
+  const html = md.render(text)
   return DOMPurify.sanitize(html, {
     ADD_TAGS: ['mark'],
     ADD_ATTR: ['class'],
@@ -260,6 +251,45 @@ const displayedChunks = computed<TextChunk[]>(() => {
   return chunks
 })
 
+/** 在渲染后的 DOM 中查找并高亮定位目标文本（避免全文 markdown 重渲染） */
+const applyHighlightToRendered = () => {
+  if (!props.locateTarget?.originalText || !markdownRef.value) return
+
+  // 清除旧高亮
+  markdownRef.value.querySelectorAll('.md-highlight').forEach(el => {
+    const parent = el.parentNode
+    if (parent) {
+      parent.replaceChild(document.createTextNode(el.textContent || ''), el)
+      parent.normalize()
+    }
+  })
+
+  const searchText = props.locateTarget.originalText.trim()
+  if (!searchText) return
+
+  const walker = document.createTreeWalker(markdownRef.value, NodeFilter.SHOW_TEXT)
+  let found = false
+  while (walker.nextNode()) {
+    const node = walker.currentNode as Text
+    const idx = node.data.indexOf(searchText)
+    if (idx !== -1) {
+      const range = document.createRange()
+      range.setStart(node, idx)
+      range.setEnd(node, idx + searchText.length)
+      const mark = document.createElement('mark')
+      mark.className = 'md-highlight'
+      range.surroundContents(mark)
+
+      if (!found) {
+        requestAnimationFrame(() => {
+          mark.scrollIntoView({ behavior: 'smooth', block: 'center' })
+        })
+        found = true
+      }
+    }
+  }
+}
+
 /** 切换渲染模式 */
 const toggleRenderMode = () => {
   renderMode.value = renderMode.value === 'rendered' ? 'source' : 'rendered'
@@ -269,17 +299,13 @@ const toggleRenderMode = () => {
 
 // 滚动到高亮位置
 const scrollToHighlight = () => {
-  const chunkIdx = props.locateTarget?.textPosition?.chunkIndex ?? 0
-
   if (renderMode.value === 'rendered' && markdownRef.value) {
-    // Markdown 渲染模式：查找 .md-highlight 元素
-    const highlightEl = markdownRef.value.querySelector('.md-highlight')
-    if (highlightEl) {
-      highlightEl.scrollIntoView({ behavior: 'smooth', block: 'center' })
-      return
-    }
+    // Markdown 渲染模式：用 DOM 操作插入高亮并滚动
+    applyHighlightToRendered()
+    return
   }
 
+  const chunkIdx = props.locateTarget?.textPosition?.chunkIndex ?? 0
   if (renderMode.value === 'source' && sourceRef.value) {
     // 源码模式：查找 .highlight-segment 元素
     const highlightEl = document.getElementById(`highlight-${chunkIdx}-1`)
@@ -304,7 +330,7 @@ watch(() => props.locateTarget, async (target) => {
   highlightTimer = setTimeout(() => {
     activeChunkIndex.value = null
   }, 5000)
-}, { deep: true })
+})
 
 // 监听 fileId 变化，加载文本内容
 watch(() => props.fileId, async (fileId) => {
@@ -319,6 +345,11 @@ watch(() => props.fileId, async (fileId) => {
     extractedText.value = res.data?.extractedText || null
     fileName.value = res.data?.fileName || ''
     fileType.value = res.data?.fileType || ''
+    // 内容加载完成后，检查是否有待定位的原文
+    await nextTick()
+    if (props.locateTarget?.originalText) {
+      scrollToHighlight()
+    }
   } catch (e) {
     console.error('[TextPreview] 加载文件内容失败:', e)
     extractedText.value = null

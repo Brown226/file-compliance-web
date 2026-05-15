@@ -123,3 +123,68 @@ export const changePassword = async (req: AuthRequest, res: Response): Promise<v
     error(res, '服务器内部错误', 500);
   }
 };
+
+export const changeUsername = async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const { newUsername, password } = req.body;
+    const userId = req.user?.id;
+
+    if (!userId) {
+      error(res, '未认证用户', 401);
+      return;
+    }
+
+    if (!newUsername || !password) {
+      error(res, '请提供新账号和当前密码', 400);
+      return;
+    }
+
+    if (newUsername.length < 2) {
+      error(res, '账号长度不能小于2位', 400);
+      return;
+    }
+
+    if (!/^[a-zA-Z0-9_]+$/.test(newUsername)) {
+      error(res, '账号只能包含字母、数字和下划线', 400);
+      return;
+    }
+
+    // 查找用户
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+    });
+
+    if (!user) {
+      error(res, '用户不存在', 404);
+      return;
+    }
+
+    // 验证密码
+    const isPasswordValid = await bcrypt.compare(password, user.passwordHash);
+    if (!isPasswordValid) {
+      error(res, '密码错误', 400);
+      return;
+    }
+
+    // 检查新账号是否已被占用
+    const existingUser = await prisma.user.findUnique({
+      where: { username: newUsername },
+    });
+
+    if (existingUser && existingUser.id !== userId) {
+      error(res, '该账号已被占用', 409);
+      return;
+    }
+
+    // 更新账号
+    await prisma.user.update({
+      where: { id: userId },
+      data: { username: newUsername },
+    });
+
+    success(res, null, '登录账号修改成功');
+  } catch (err) {
+    console.error('Change Username Error:', err);
+    error(res, '服务器内部错误', 500);
+  }
+};

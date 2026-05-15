@@ -127,12 +127,6 @@ const routes: Array<RouteRecordRaw> = [
         meta: { title: '系统配置', requiresAdminOrManager: true }
       },
       {
-        path: 'admin/users',
-        name: 'AdminUsers',
-        component: () => import('../views/SystemManagement.vue'),
-        meta: { title: '部门与员工管理', requiresAdminOrManager: true }
-      },
-      {
         path: 'admin/audit',
         name: 'AdminAudit',
         component: () => import('../views/AuditLogs.vue'),

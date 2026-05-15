@@ -39,7 +39,6 @@
           v-model="isSelectAll"
           :indeterminate="isIndeterminate"
           @change="handleSelectAll"
-          style="margin-right: 12px;"
         >
           {{ isSelectAll ? '取消全选' : '全选' }}
         </el-checkbox>
@@ -48,13 +47,13 @@
           placeholder="搜索规则..."
           clearable
           :prefix-icon="Search"
-          style="width: 180px;"
+          style="width: 200px;"
         />
         <el-select
           v-model="filterCategory"
           placeholder="分类"
           clearable
-          style="width: 120px;"
+          style="width: 130px;"
         >
           <el-option v-for="cat in categories" :key="cat" :label="categoryLabel(cat)" :value="cat" />
         </el-select>
@@ -82,21 +81,25 @@
 
       <!-- 紧凑的统计行 -->
       <div class="stats-row">
-        <div class="stat-item">
-          <span class="stat-dot enabled"></span>
-          <span>已启用 {{ enabledCount }}</span>
+        <div class="stat-chip stat-enabled">
+          <span class="chip-dot"></span>
+          <span class="chip-label">已启用</span>
+          <span class="chip-value">{{ enabledCount }}</span>
         </div>
-        <div class="stat-item">
-          <span class="stat-dot error"></span>
-          <span>严重 {{ errorCount }}</span>
+        <div class="stat-chip stat-error">
+          <span class="chip-dot"></span>
+          <span class="chip-label">严重</span>
+          <span class="chip-value">{{ errorCount }}</span>
         </div>
-        <div class="stat-item">
-          <span class="stat-dot warning"></span>
-          <span>警告 {{ warningCount }}</span>
+        <div class="stat-chip stat-warning">
+          <span class="chip-dot"></span>
+          <span class="chip-label">警告</span>
+          <span class="chip-value">{{ warningCount }}</span>
         </div>
-        <div class="stat-item">
-          <span class="stat-dot info"></span>
-          <span>提示 {{ infoCount }}</span>
+        <div class="stat-chip stat-info">
+          <span class="chip-dot"></span>
+          <span class="chip-label">提示</span>
+          <span class="chip-value">{{ infoCount }}</span>
         </div>
       </div>
 
@@ -795,11 +798,13 @@ onMounted(() => {
 .filter-bar {
   display: flex;
   align-items: center;
-  gap: 8px;
-  margin-bottom: 10px;
-  padding: 8px 12px;
-  background: #f5f7fa;
-  border-radius: 4px;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-bottom: 14px;
+  padding: 10px 14px;
+  border: 1px solid var(--el-border-color-lighter);
+  border-radius: 8px;
+  background: var(--el-bg-color);
 }
 
 .filter-result {
@@ -810,31 +815,40 @@ onMounted(() => {
 
 .stats-row {
   display: flex;
-  gap: 20px;
-  margin-bottom: 10px;
-  padding: 6px 12px;
-  background: linear-gradient(90deg, rgba(64, 158, 255, 0.06) 0%, rgba(103, 194, 58, 0.06) 100%);
-  border-radius: 4px;
+  gap: 12px;
+  margin-bottom: 14px;
 }
 
-.stat-item {
+.stat-chip {
   display: flex;
   align-items: center;
   gap: 6px;
+  padding: 4px 14px 4px 10px;
+  border-radius: 20px;
   font-size: 12px;
-  color: var(--corp-text-secondary);
+  background: var(--el-fill-color-lighter);
 }
 
-.stat-dot {
+.chip-dot {
   width: 8px;
   height: 8px;
   border-radius: 50%;
+  flex-shrink: 0;
 }
 
-.stat-dot.enabled { background: #67c23a; }
-.stat-dot.error { background: #f56c6c; }
-.stat-dot.warning { background: #e6a23c; }
-.stat-dot.info { background: #909399; }
+.stat-enabled .chip-dot { background: #67c23a; }
+.stat-error .chip-dot { background: #f56c6c; }
+.stat-warning .chip-dot { background: #e6a23c; }
+.stat-info .chip-dot { background: #909399; }
+
+.chip-label {
+  color: var(--el-text-color-secondary);
+}
+
+.chip-value {
+  font-weight: 600;
+  color: var(--el-text-color-primary);
+}
 
 .rules-list {
   min-height: 200px;

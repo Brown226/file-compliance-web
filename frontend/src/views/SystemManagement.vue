@@ -15,7 +15,7 @@
         :class="['nav-tab', { active: activeTab === tab.value }]"
         @click="activeTab = tab.value"
       >
-        <span class="tab-icon">{{ tab.icon }}</span>
+        <el-icon class="tab-icon"><component :is="tab.icon" /></el-icon>
         <span class="tab-label">{{ tab.label }}</span>
       </button>
     </div>
@@ -323,35 +323,31 @@
         </div>
       </div>
 
-      <!-- 反馈建议管理 -->
-      <div v-show="activeTab === 'feedback'" class="tab-content">
-        <FeedbackManagement />
-      </div>
-
-      <!-- 公告管理 -->
-      <div v-show="activeTab === 'announcement'" class="tab-content">
-        <AnnouncementManagement />
-      </div>
-
+      
       <!-- AI 引擎配置 -->
       <div v-show="activeTab === 'ai-engine'" class="tab-content">
-        <el-tabs v-model="aiEngineTab" type="border-card">
-          <el-tab-pane label="对话模型" name="chat">
+        <div class="ai-engine-grid">
+          <el-card shadow="never" class="ai-card">
+            <template #header><span class="ai-card-title">对话模型</span></template>
             <ChatModelTab />
-          </el-tab-pane>
-          <el-tab-pane label="Embedding 向量模型" name="embedding">
+          </el-card>
+          <el-card shadow="never" class="ai-card">
+            <template #header><span class="ai-card-title">Embedding 向量模型</span></template>
             <EmbeddingModelTab />
-          </el-tab-pane>
-          <el-tab-pane label="Reranker 重排序模型" name="reranker">
+          </el-card>
+          <el-card shadow="never" class="ai-card">
+            <template #header><span class="ai-card-title">Reranker 重排序模型</span></template>
             <RerankerModelTab />
-          </el-tab-pane>
-          <el-tab-pane label="OCR 文本识别" name="ocr">
+          </el-card>
+          <el-card shadow="never" class="ai-card">
+            <template #header><span class="ai-card-title">OCR 文本识别</span></template>
             <OcrConfigTab />
-          </el-tab-pane>
-          <el-tab-pane label="提示词模板" name="prompt">
+          </el-card>
+          <el-card shadow="never" class="ai-card">
+            <template #header><span class="ai-card-title">提示词模板</span></template>
             <PromptConfigTab />
-          </el-tab-pane>
-        </el-tabs>
+          </el-card>
+        </div>
       </div>
 
       <!-- 基础设置 -->
@@ -360,7 +356,8 @@
           <template #header>
             <span style="font-weight: 600;">系统基础设置</span>
           </template>
-          <el-form :model="basicSettings" label-width="140px" label-position="left" style="max-width: 600px;">
+          <el-form :model="basicSettings" label-width="150px" label-position="left" style="max-width: 640px;">
+            <div class="form-group-title">通用设置</div>
             <el-form-item label="系统名称">
               <el-input v-model="basicSettings.systemName" placeholder="核审通" />
             </el-form-item>
@@ -371,6 +368,7 @@
               <el-input-number v-model="basicSettings.autoCleanupDays" :min="0" :max="365" />
               <div class="form-tip">0 表示不自动清理。已完成任务的文件在指定天数后自动删除。</div>
             </el-form-item>
+            <div class="form-group-title">性能设置</div>
             <el-form-item label="全局并发上限">
               <el-input-number v-model="basicSettings.globalConcurrencyLimit" :min="1" :max="20" />
               <div class="form-tip">同时处理的审查任务总数上限，超出的任务进入排队。</div>
@@ -383,17 +381,33 @@
 
         <el-card shadow="never" style="margin-top: 16px;">
           <template #header>
-            <span style="font-weight: 600;">服务状态</span>
-          </template>
-          <div class="service-status-list">
-            <div v-for="svc in serviceStatuses" :key="svc.name" class="service-status-item">
-              <span class="svc-name">{{ svc.name }}</span>
-              <el-tag :type="svc.reachable ? 'success' : 'danger'" size="small">
-                {{ svc.reachable ? '正常' : '不可达' }}
-              </el-tag>
-              <span v-if="svc.error" class="svc-error">{{ svc.error }}</span>
+            <div class="svc-header">
+              <span style="font-weight: 600;">服务状态</span>
+              <el-button size="small" @click="refreshServiceStatus" :loading="refreshingStatus">
+                <el-icon><RefreshRight /></el-icon> 刷新
+              </el-button>
             </div>
-          </div>
+          </template>
+          <el-table :data="serviceStatuses" v-loading="statusLoading" size="small">
+            <el-table-column prop="name" label="服务名称" min-width="200">
+              <template #default="{ row }">
+                <span class="svc-table-name">{{ row.name }}</span>
+              </template>
+            </el-table-column>
+            <el-table-column label="状态" width="120">
+              <template #default="{ row }">
+                <el-tag :type="row.reachable ? 'success' : 'danger'" size="small">
+                  {{ row.reachable ? '正常' : '不可达' }}
+                </el-tag>
+              </template>
+            </el-table-column>
+            <el-table-column prop="error" label="错误信息" min-width="200" show-overflow-tooltip>
+              <template #default="{ row }">
+                <span v-if="row.error" class="svc-table-error">{{ row.error }}</span>
+                <span v-else class="svc-table-ok">—</span>
+              </template>
+            </el-table-column>
+          </el-table>
         </el-card>
       </div>
     </div>
@@ -695,7 +709,8 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { useUserStore } from '@/stores/user'
 import {
   Plus, Search, Folder, Edit, Delete, Upload, Download, User, Key,
-  Check, Close, RefreshRight, UploadFilled, Files, Document, CircleCheckFilled
+  Check, Close, RefreshRight, UploadFilled, Files, Document, CircleCheckFilled,
+  OfficeBuilding, ChatDotSquare, Notification, Cpu, Setting, Monitor
 } from '@element-plus/icons-vue'
 import * as XLSX from 'xlsx'
 import {
@@ -720,8 +735,6 @@ import {
   type StorageStats,
 } from '@/api/system'
 import { useRoute } from 'vue-router'
-import FeedbackManagement from '@/views/FeedbackManagement.vue'
-import AnnouncementManagement from '@/views/AnnouncementManagement.vue'
 import ChatModelTab from '@/views/LLMConfig/ChatModelTab.vue'
 import EmbeddingModelTab from '@/views/LLMConfig/EmbeddingModelTab.vue'
 import RerankerModelTab from '@/views/LLMConfig/RerankerModelTab.vue'
@@ -731,7 +744,6 @@ import PromptConfigTab from '@/views/PromptConfig.vue'
 // ========== Tab 导航 ==========
 const route = useRoute()
 const activeTab = ref('department')
-const aiEngineTab = ref('chat')
 
 // 根据路由自动切换 tab
 watch(() => route.path, (path) => {
@@ -752,6 +764,8 @@ const basicSettings = reactive({
 })
 
 const serviceStatuses = ref<Array<{ name: string; reachable: boolean; error?: string }>>([])
+const statusLoading = ref(false)
+const refreshingStatus = ref(false)
 
 const handleSaveBasicSettings = async () => {
   basicSettingsSaving.value = true
@@ -779,20 +793,34 @@ const loadBasicSettings = async () => {
 }
 
 const loadServiceStatuses = async () => {
+  statusLoading.value = true
   try {
     const { data } = await fetch('/api/system/health').then(r => r.json())
     serviceStatuses.value = data?.services || []
   } catch {
     serviceStatuses.value = []
+  } finally {
+    statusLoading.value = false
+  }
+}
+
+const refreshServiceStatus = async () => {
+  refreshingStatus.value = true
+  try {
+    const { data } = await fetch('/api/system/health').then(r => r.json())
+    serviceStatuses.value = data?.services || []
+    ElMessage.success('服务状态已刷新')
+  } catch {
+    ElMessage.error('获取服务状态失败')
+  } finally {
+    refreshingStatus.value = false
   }
 }
 const navTabs = [
-  { label: '部门管理', value: 'department', icon: '🏢', desc: '组织架构与员工' },
-  { label: '存储管理', value: 'storage', icon: '💾', desc: '文件存储与清理' },
-  { label: '反馈建议', value: 'feedback', icon: '💬', desc: '用户反馈与处理' },
-  { label: '公告管理', value: 'announcement', icon: '📢', desc: '系统公告发布与管理' },
-  { label: 'AI 引擎', value: 'ai-engine', icon: '🤖', desc: '模型与提示词配置' },
-  { label: '基础设置', value: 'basic', icon: '⚙️', desc: '系统名称、限制、服务状态' },
+  { label: '部门管理', value: 'department', icon: 'OfficeBuilding', desc: '组织架构与员工' },
+  { label: '存储管理', value: 'storage', icon: 'Files', desc: '文件存储与清理' },
+  { label: 'AI 引擎', value: 'ai-engine', icon: 'Cpu', desc: '模型与提示词配置' },
+  { label: '基础设置', value: 'basic', icon: 'Setting', desc: '系统名称、限制、服务状态' },
 ]
 
 // ========== 部门管理 ==========
@@ -2028,43 +2056,66 @@ onUnmounted(() => {
 /* Tab 导航 */
 .nav-tabs {
   display: flex;
-  gap: 8px;
-  padding: 0 24px 16px;
+  gap: 4px;
+  padding: 0 24px 0;
   border-bottom: 1px solid var(--el-border-color-lighter);
   margin-bottom: 0;
+  background: #fff;
+  position: relative;
 }
 
 .nav-tab {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 10px 20px;
+  gap: 6px;
+  padding: 12px 20px 10px;
   border: none;
   background: transparent;
-  border-radius: 8px;
   cursor: pointer;
-  font-size: 14px;
+  font-size: 13px;
   color: var(--el-text-color-secondary);
-  transition: all 0.2s;
+  transition: all 0.2s ease;
+  position: relative;
+  margin-bottom: -1px;
+  border-bottom: 2px solid transparent;
+  letter-spacing: 0.3px;
 }
 
 .nav-tab:hover {
-  background: var(--el-fill-color-light);
   color: var(--el-text-color-primary);
+  background: var(--el-fill-color-light);
 }
 
 .nav-tab.active {
-  background: var(--el-color-primary-light-9);
   color: var(--el-color-primary);
-  font-weight: 500;
+  font-weight: 600;
+  border-bottom-color: var(--el-color-primary);
+  background: transparent;
 }
 
-.tab-icon {
+.nav-tab.active::after {
+  content: '';
+  position: absolute;
+  bottom: -1px;
+  left: 8px;
+  right: 8px;
+  height: 2px;
+  background: var(--el-color-primary);
+  border-radius: 2px 2px 0 0;
+}
+
+.nav-tab .tab-icon {
   font-size: 16px;
+  transition: transform 0.2s ease;
 }
 
-.tab-label {
-  font-size: 14px;
+.nav-tab.active .tab-icon {
+  transform: scale(1.1);
+}
+
+.nav-tab .tab-label {
+  font-size: 13px;
+  line-height: 1;
 }
 
 /* 内容区域 */
@@ -2125,15 +2176,16 @@ onUnmounted(() => {
 }
 
 .dept-icon {
-  color: #f59e0b;
+  color: #3B82F6;
   font-size: 16px;
 }
 
 .dept-count {
-  font-size: 13px;
-  color: var(--el-text-color-secondary);
-  background: var(--el-fill-color-light);
-  padding: 2px 10px;
+  font-size: 12px;
+  font-weight: 500;
+  color: #6B7280;
+  background: rgba(0, 0, 0, 0.04);
+  padding: 3px 10px;
   border-radius: 10px;
 }
 
@@ -2190,23 +2242,41 @@ onUnmounted(() => {
 }
 
 .role-tab {
-  padding: 6px 14px;
+  padding: 8px 16px;
   font-size: 13px;
   color: var(--el-text-color-secondary);
   cursor: pointer;
-  border-radius: 6px;
+  border-radius: 6px 6px 0 0;
   transition: all 0.15s;
+  position: relative;
+}
+
+.role-tab::after {
+  content: '';
+  position: absolute;
+  bottom: -9px;
+  left: 50%;
+  transform: translateX(-50%) scaleX(0);
+  width: 60%;
+  height: 2px;
+  background: var(--corp-primary);
+  border-radius: 1px;
+  transition: transform 0.2s ease;
 }
 
 .role-tab:hover {
   color: var(--corp-primary);
-  background: rgba(64, 158, 255, 0.06);
+  background: var(--color-primary-50);
 }
 
 .role-tab.active {
   color: var(--corp-primary);
-  background: rgba(64, 158, 255, 0.1);
-  font-weight: 500;
+  background: var(--color-primary-50);
+  font-weight: 600;
+}
+
+.role-tab.active::after {
+  transform: translateX(-50%) scaleX(1);
 }
 
 /* 全选 */
@@ -2249,17 +2319,22 @@ onUnmounted(() => {
 .employee-card {
   display: flex;
   align-items: center;
-  padding: 14px 12px;
-  border-bottom: 1px solid var(--el-border-color-lighter);
-  transition: background 0.15s;
+  padding: 12px 14px;
+  margin-bottom: 6px;
+  border-radius: 8px;
+  background: var(--bg-surface);
+  border: 1px solid var(--corp-border-light);
+  transition: all 0.15s ease;
 }
 
 .employee-card:hover {
-  background: var(--el-fill-color-light);
+  background: var(--bg-surface-hover);
+  border-color: var(--color-primary-200);
 }
 
 .employee-card.selected {
-  background: rgba(64, 158, 255, 0.06);
+  background: var(--color-primary-50);
+  border-color: var(--color-primary-300);
 }
 
 .card-left {
@@ -2271,13 +2346,13 @@ onUnmounted(() => {
 
 /* 头像 */
 .avatar-circle {
-  width: 42px;
-  height: 42px;
+  width: 36px;
+  height: 36px;
   border-radius: 50%;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 16px;
+  font-size: 14px;
   font-weight: 600;
   color: #ffffff;
   flex-shrink: 0;
@@ -2709,29 +2784,50 @@ onUnmounted(() => {
   margin-top: 4px;
 }
 
-.service-status-list {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
+.form-group-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--el-text-color-primary);
+  margin: 0 0 12px 0;
+  padding: 6px 0;
+  border-bottom: 1px solid var(--el-border-color-lighter);
 }
 
-.service-status-item {
+/* ========== 服务状态表格 ========== */
+.svc-header {
   display: flex;
+  justify-content: space-between;
   align-items: center;
-  gap: 12px;
-  padding: 8px 12px;
-  background: var(--el-fill-color-lighter);
-  border-radius: 6px;
 }
 
-.svc-name {
+.svc-table-name {
   font-weight: 500;
-  min-width: 180px;
   color: var(--el-text-color-primary);
 }
 
-.svc-error {
+.svc-table-error {
   font-size: 12px;
-  color: var(--el-text-color-secondary);
+  color: var(--el-color-danger);
+}
+
+.svc-table-ok {
+  color: var(--el-text-color-placeholder);
+}
+
+/* ========== AI 引擎配置 ========== */
+.ai-engine-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(440px, 1fr));
+  gap: 16px;
+}
+
+.ai-card {
+  border-radius: 8px;
+}
+
+.ai-card-title {
+  font-weight: 600;
+  font-size: 14px;
+  color: var(--el-text-color-primary);
 }
 </style>

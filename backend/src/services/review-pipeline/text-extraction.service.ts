@@ -20,10 +20,13 @@ export class TextExtractionService {
     let text = '';
     try {
       text = await ParserService.parseFile(ctx.filePath, ctx.fileType);
+      if (!text || text.trim().length === 0) {
+        console.warn(`[Pipeline] 文件解析返回空文本: ${ctx.fileName}, fileType=${ctx.fileType}`);
+      }
       // 将 Python 解析结果写入 ctx
       ctx.parseResult = ParserService.getLastParseResult();
     } catch (e) {
-      console.warn(`[Pipeline] 文件解析失败: ${ctx.fileName}`, e);
+      console.warn(`[Pipeline] 文件解析失败: ${ctx.fileName}, fileType=${ctx.fileType}, error=${(e as Error).message || e}`);
     }
 
     // OCR 降级
