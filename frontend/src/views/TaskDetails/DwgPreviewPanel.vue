@@ -130,6 +130,7 @@ let fallbackTimeoutId: ReturnType<typeof setTimeout> | null = null
 
 const emit = defineEmits<{
   fallbackToText: []
+  locateResult: [{ success: boolean; mode: 'direct' | 'fallback'; hint?: string }]
 }>()
 
 // 视图变换参数
@@ -334,8 +335,8 @@ function clearHighlight() {
   })
 }
 
-function highlightEntity(handle: string, description?: string) {
-  if (!canvasRef.value) return
+function highlightEntity(handle: string, description?: string): boolean {
+  if (!canvasRef.value) return false
 
   clearHighlight()
 
@@ -343,7 +344,7 @@ function highlightEntity(handle: string, description?: string) {
   const el = canvasRef.value.querySelector(`[data-handle="${handle}"]`) as SVGElement | null
   if (!el) {
     console.warn('[DwgPreviewPanel] 未找到 handle:', handle)
-    return
+    return false
   }
 
   // 添加高亮样式
@@ -382,6 +383,8 @@ function highlightEntity(handle: string, description?: string) {
       top: `${elRect.top - vpRect2.top - 8}px`,
     }
   }
+
+  return true
 }
 
 // 监听定位目标变化
@@ -395,9 +398,21 @@ watch(() => props.locateTarget, (target) => {
   const handle = target.cadHandleId
   if (handle) {
     nextTick(() => {
-      highlightEntity(handle, target.description)
+      const found = highlightEntity(handle, target.description)
+      emit('locateResult', {
+        success: found,
+        mode: found ? 'direct' : 'fallback',
+        hint: found ? undefined : (target.description || '未找到对应图元，请按“页/段/句+关键词”提示辅助定位。'),
+      })
     })
+    return
   }
+
+  emit('locateResult', {
+    success: false,
+    mode: 'fallback',
+    hint: target.description || '缺少 CAD 句柄，已降级到文本线索定位。',
+  })
 })
 
 onUnmounted(() => {

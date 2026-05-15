@@ -6,24 +6,28 @@
       :taskId="taskId"
       :fileId="fileId"
       :locateTarget="locateTarget"
+      @locateResult="forwardLocateResult"
     />
     <PdfPreviewPanel
       v-else-if="isPdf"
       :taskId="taskId"
       :fileId="fileId"
       :locateTarget="locateTarget"
+      @locateResult="forwardLocateResult"
     />
     <ExcelPreviewPanel
       v-else-if="isExcel"
       :taskId="taskId"
       :fileId="fileId"
       :locateTarget="locateTarget"
+      @locateResult="forwardLocateResult"
     />
     <PptxPreviewPanel
       v-else-if="isPptx"
       :taskId="taskId"
       :fileId="fileId"
       :locateTarget="locateTarget"
+      @locateResult="forwardLocateResult"
     />
     <!-- 通用文本预览（兜底） -->
     <TextPreviewPanel
@@ -31,6 +35,7 @@
       :taskId="taskId"
       :fileId="fileId"
       :locateTarget="locateTarget"
+      @locateResult="forwardLocateResult"
     />
   </div>
 </template>
@@ -48,8 +53,16 @@ const props = defineProps<{
   fileId: string | null
   fileType?: string
   fileName?: string
-  locateTarget?: { originalText: string; textPosition?: any; cadHandleId?: string } | null
+  locateTarget?: { originalText: string; locateCandidates?: string[]; textPosition?: any; cadHandleId?: string; locateHint?: string; triggerId?: string } | null
 }>()
+
+const emit = defineEmits<{
+  locateResult: [{ success: boolean; mode: 'direct' | 'fallback'; hint?: string }]
+}>()
+
+const forwardLocateResult = (payload: { success: boolean; mode: 'direct' | 'fallback'; hint?: string }) => {
+  emit('locateResult', payload)
+}
 
 const ext = computed(() => {
   const ft = (props.fileType || '').toLowerCase()

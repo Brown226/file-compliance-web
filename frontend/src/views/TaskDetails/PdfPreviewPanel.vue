@@ -27,7 +27,11 @@ const props = defineProps<{
   taskId: string
   fileId: string | null
   fileUrl?: string
-  locateTarget?: { originalText: string } | null
+  locateTarget?: { originalText: string; locateCandidates?: string[]; locateHint?: string } | null
+}>()
+
+const emit = defineEmits<{
+  locateResult: [{ success: boolean; mode: 'direct' | 'fallback'; hint?: string }]
 }>()
 
 const loading = ref(false)
@@ -38,10 +42,11 @@ const iframeRef = ref<HTMLIFrameElement | null>(null)
 // PDF URL 拼接 #search= 片段，使浏览器原生 PDF 查看器自动搜索定位
 const effectivePdfUrl = computed(() => {
   if (!pdfUrl.value) return ''
-  const search = props.locateTarget?.originalText?.trim()
-  if (!search) return pdfUrl.value
+  const candidates = props.locateTarget?.locateCandidates || []
+  const primary = (candidates.find(s => String(s || '').trim()) || props.locateTarget?.originalText || '').trim()
+  if (!primary) return pdfUrl.value
   const base = pdfUrl.value.split('#')[0]
-  return `${base}#search=${encodeURIComponent(search)}`
+  return `${base}#search=${encodeURIComponent(primary)}`
 })
 
 const loadPdf = async () => {
@@ -76,6 +81,16 @@ const loadPdf = async () => {
 }
 
 watch(() => props.fileId, () => loadPdf(), { immediate: true })
+
+watch(() => props.locateTarget, (target) => {
+  if (!target?.originalText?.trim()) return
+  const kw = (target.locateCandidates?.[0] || target.originalText || '').trim()
+  emit('locateResult', {
+    success: false,
+    mode: 'fallback',
+    hint: target.locateHint || `PDF 预览器仅支持关键词检索，请优先搜索“${kw}”并结合页段提示定位。`,
+  })
+})
 
 onUnmounted(() => {
   if (pdfUrl.value && pdfUrl.value.startsWith('blob:')) {

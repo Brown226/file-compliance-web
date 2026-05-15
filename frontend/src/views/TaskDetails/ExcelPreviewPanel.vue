@@ -66,7 +66,11 @@ import * as XLSX from 'xlsx'
 const props = defineProps<{
   taskId: string
   fileId: string | null
-  locateTarget?: { originalText: string } | null
+  locateTarget?: { originalText: string; locateCandidates?: string[]; locateHint?: string } | null
+}>()
+
+const emit = defineEmits<{
+  locateResult: [{ success: boolean; mode: 'direct' | 'fallback'; hint?: string }]
 }>()
 
 const loading = ref(false)
@@ -86,29 +90,53 @@ function toCellKey(row: number, col: number) {
   return `${row},${col}`
 }
 
+const normalizeForLocate = (text: string): string =>
+  text
+    .toLowerCase()
+    .replace(/[\s\u3000]/g, '')
+    .replace(/[，。！？；：、“”"'`‘’（）()\[\]【】《》〈〉,.;:!?\-_/\\|]/g, '')
+
+const includesLoose = (haystack: string, needle: string): boolean => {
+  const n = normalizeForLocate(needle)
+  if (!n) return false
+  return normalizeForLocate(haystack).includes(n)
+}
+
+const getLocateTerms = (): string[] => {
+  const target = props.locateTarget
+  if (!target) return []
+  const list = Array.isArray(target.locateCandidates) ? target.locateCandidates : []
+  const terms = [...list, target.originalText]
+    .map(s => String(s || '').trim())
+    .filter(Boolean)
+  return [...new Set(terms)]
+}
+
 function isCellHighlighted(value: unknown) {
-  if (!props.locateTarget?.originalText || value == null) return false
+  const locateTerms = getLocateTerms()
+  if (!locateTerms.length || value == null) return false
   const text = String(value)
-  return text.includes(props.locateTarget.originalText)
+  return locateTerms.some(term => text.includes(term) || includesLoose(text, term))
 }
 
 function registerCell(el: unknown, row: number, col: number, value: unknown) {
-  if (!props.locateTarget?.originalText || value == null) return
+  const locateTerms = getLocateTerms()
+  if (!locateTerms.length || value == null) return
   const text = String(value)
-  if (text.includes(props.locateTarget.originalText)) {
+  if (locateTerms.some(term => text.includes(term) || includesLoose(text, term))) {
     highlightCells.value.add(toCellKey(row, col))
   }
 }
 
 function buildHighlightMap() {
   highlightCells.value.clear()
-  const search = props.locateTarget?.originalText
-  if (!search) return
+  const locateTerms = getLocateTerms()
+  if (!locateTerms.length) return
   const data = currentData.value
   for (let r = 0; r < data.length; r++) {
     for (let c = 0; c < data[r].length; c++) {
       const cell = data[r][c]
-      if (cell != null && String(cell).includes(search)) {
+      if (cell != null && locateTerms.some(term => includesLoose(String(cell), term))) {
         highlightCells.value.add(toCellKey(r, c))
       }
     }
@@ -152,8 +180,18 @@ async function loadFile() {
     }
     sheets.value = parsed
     activeSheet.value = workbook.SheetNames[0] || ''
-    buildHighlightMap()
-    nextTick(scrollToFirstHighlight)
+    if (props.locateTarget?.originalText) {
+      buildHighlightMap()
+      nextTick(() => {
+        scrollToFirstHighlight()
+        const found = highlightCells.value.size > 0
+        emit('locateResult', {
+          success: found,
+          mode: found ? 'direct' : 'fallback',
+          hint: found ? undefined : (props.locateTarget?.locateHint || '未能在表格单元格中精确匹配原文，请按提示页段信息辅助定位。'),
+        })
+      })
+    }
   } catch (e) {
     console.error('[ExcelPreview] 加载文件失败:', e)
     sheetNames.value = []
@@ -166,9 +204,18 @@ async function loadFile() {
 
 watch(() => props.fileId, loadFile, { immediate: true })
 
-watch(() => props.locateTarget, () => {
+watch(() => props.locateTarget, (target) => {
   buildHighlightMap()
-  nextTick(scrollToFirstHighlight)
+  nextTick(() => {
+    scrollToFirstHighlight()
+    if (!target?.originalText?.trim()) return
+    const found = highlightCells.value.size > 0
+    emit('locateResult', {
+      success: found,
+      mode: found ? 'direct' : 'fallback',
+      hint: found ? undefined : (target.locateHint || '未能在表格单元格中精确匹配原文，请按提示页段信息辅助定位。'),
+    })
+  })
 })
 </script>
 

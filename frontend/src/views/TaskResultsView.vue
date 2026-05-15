@@ -24,37 +24,14 @@
       </div>
     </div>
 
-    <!-- 加载状态 / 审查中进度 -->
-    <div v-if="loading || reviewing" class="loading-overlay">
-      <el-icon v-if="!reviewing" class="is-loading" :size="48"><Loading /></el-icon>
-      <p class="loading-text">{{ reviewing ? 'AI 正在审查您的文件...' : loadingMessage }}</p>
-
-      <!-- 审查进度面板 -->
-      <div v-if="reviewing" class="review-progress-panel">
-        <div class="progress-bar-wrap">
-          <el-progress
-            :percentage="reviewProgress"
-            :stroke-width="6"
-            :show-text="true"
-            :status="reviewProgress >= 100 ? 'success' : ''"
-          />
-        </div>
-        <p class="progress-step">{{ reviewStep || '准备中...' }}</p>
-        <p class="progress-message">{{ reviewMessage }}</p>
-
-        <div v-if="reviewFileProgress.fileName" class="chunk-progress">
-          <span>{{ reviewFileProgress.fileName }}</span>
-          <span>分片 {{ reviewFileProgress.chunkIndex }}/{{ reviewFileProgress.totalChunks }}</span>
-        </div>
-
-        <p v-if="totalLiveIssueCount > 0" class="live-issue-count">
-          已实时发现 {{ totalLiveIssueCount }} 个问题
-        </p>
-      </div>
+    <!-- 加载状态（仅首屏加载时显示，不阻塞审查中结果页） -->
+    <div v-if="loading && !reviewing" class="loading-overlay">
+      <el-icon class="is-loading" :size="48"><Loading /></el-icon>
+      <p class="loading-text">{{ loadingMessage }}</p>
     </div>
 
     <!-- 主内容区：左右分栏 -->
-    <div v-else class="main-content">
+    <div class="main-content">
       <!-- 左侧：文件预览 -->
       <div class="left-panel">
         <div class="panel-header">
@@ -80,6 +57,7 @@
             v-if="isDwgFileSelected && !dwgParseFailed"
             :file="dwgFileForPreview"
             :locateTarget="dwgLocateTarget"
+            @locateResult="handleLocateResult"
             @fallbackToText="dwgParseFailed = true"
           />
           <!-- 统一文件预览（Word/PDF/Excel/PPT/其他） -->
@@ -90,6 +68,7 @@
             :fileType="selectedFileType"
             :fileName="selectedFileName"
             :locateTarget="locateTarget"
+            @locateResult="handleLocateResult"
           />
         </div>
 
@@ -155,6 +134,38 @@
               返回历史
             </el-button>
           </div>
+        </div>
+
+        <!-- 审查中进度（非阻塞，嵌入结果面板） -->
+        <div v-if="reviewing" class="inline-review-progress">
+          <div class="progress-top">
+            <span class="progress-title">AI 审查进行中</span>
+            <span class="progress-percent">{{ reviewProgress }}%</span>
+          </div>
+          <el-progress
+            :percentage="reviewProgress"
+            :stroke-width="6"
+            :show-text="false"
+            :status="reviewProgress >= 100 ? 'success' : ''"
+          />
+          <p class="progress-step">{{ reviewStep || '准备中...' }}</p>
+          <p class="progress-message">{{ reviewMessage }}</p>
+          <div v-if="reviewFileProgress.fileName" class="chunk-progress">
+            <span>{{ reviewFileProgress.fileName }}</span>
+            <span>分片 {{ reviewFileProgress.chunkIndex }}/{{ reviewFileProgress.totalChunks }}</span>
+          </div>
+          <p v-if="totalLiveIssueCount > 0" class="live-issue-count">
+            已实时发现 {{ totalLiveIssueCount }} 个问题
+          </p>
+        </div>
+
+        <div v-if="locateFeedback" class="locate-feedback">
+          <el-alert
+            :title="locateFeedback.message"
+            :type="locateFeedback.type"
+            :closable="false"
+            show-icon
+          />
         </div>
 
         <!-- Tab导航 -->
@@ -239,25 +250,19 @@
                       class="card-checkbox"
                     />
                     <p class="card-title">{{ getIssueTitle(item, index) }}</p>
-                    <el-tag
-                      v-if="item.fileId && files.length > 1"
-                      size="small"
-                      type="info"
-                      class="file-tag"
-                      @click="selectFile(item.fileId)"
-                    >
-                      {{ getFileNameById(item.fileId) }}
-                    </el-tag>
                   </div>
                   <div class="card-actions">
                     <el-tooltip content="在文档中定位" placement="top">
                       <el-button
-                        type="primary"
                         link
                         size="small"
+                        :class="[
+                          'locate-btn',
+                          getLocateStatus(item) === 'direct' ? 'locate-btn-direct' : 'locate-btn-fallback',
+                        ]"
                         @click="handleLocateText(item)"
                       >
-                        <el-icon><Search /></el-icon>
+                        <el-icon><ArrowRightBold /></el-icon>
                       </el-button>
                     </el-tooltip>
                     <el-tooltip content="标记误报" placement="top">
@@ -556,7 +561,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import {
   Loading,
-  Search,
+  ArrowRightBold,
   WarningFilled,
   Check,
   Remove,
@@ -611,7 +616,10 @@ const showPlainLanguage = ref(false)
 // ===== 文件预览相关 =====
 const selectedFileId = ref<string | null>(null)
 const filterFileId = ref<string>('')
-const locateTarget = ref<{ originalText: string; textPosition: any; cadHandleId?: string } | null>(null)
+const locateTarget = ref<{ originalText: string; locateCandidates?: string[]; textPosition: any; cadHandleId?: string; locateHint?: string; triggerId?: string } | null>(null)
+const locateFeedback = ref<{ type: 'success' | 'warning'; message: string } | null>(null)
+const locateStatusMap = ref<Record<string, 'direct' | 'fallback'>>({})
+const locatingIssueId = ref<string | null>(null)
 
 const selectedFile = computed(() => files.value.find((f: any) => f.id === selectedFileId.value) as any)
 const selectedFileType = computed(() => selectedFile.value?.fileType || selectedFile.value?.file_type || '')
@@ -619,18 +627,22 @@ const selectedFileName = computed(() => selectedFile.value?.fileName || '')
 
 const switchToFileContext = (
   fileId: string,
-  options?: { locate?: { originalText: string; textPosition: any; cadHandleId?: string } }
+  options?: { locate?: { originalText: string; locateCandidates?: string[]; textPosition: any; cadHandleId?: string; locateHint?: string } }
 ) => {
   selectedFileId.value = fileId
   filterFileId.value = fileId
 
   if (options?.locate) {
-    // 延迟设置 locateTarget，让文件切换先完成（如需要），避免同步触发全文渲染
+    // 先清空再设置，确保重复点击同一问题也会触发子预览组件定位
+    locateTarget.value = null
     nextTick(() => {
       locateTarget.value = {
         originalText: options.locate!.originalText || '',
+        locateCandidates: options.locate!.locateCandidates || [],
         textPosition: options.locate!.textPosition || null,
         cadHandleId: options.locate!.cadHandleId,
+        locateHint: options.locate!.locateHint,
+        triggerId: `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
       }
     })
   }
@@ -638,6 +650,27 @@ const switchToFileContext = (
 
 const selectFile = (fileId: string) => {
   switchToFileContext(fileId)
+}
+
+const getLocateStatus = (item: TaskDetail): 'direct' | 'fallback' => {
+  const key = item.id || ''
+  return locateStatusMap.value[key] || 'fallback'
+}
+
+const handleLocateResult = (payload: { success: boolean; mode: 'direct' | 'fallback'; hint?: string }) => {
+  if (locatingIssueId.value) {
+    locateStatusMap.value[locatingIssueId.value] = payload.success && payload.mode === 'direct' ? 'direct' : 'fallback'
+  }
+
+  if (payload.success && payload.mode === 'direct') {
+    locateFeedback.value = { type: 'success', message: '已定位到原文位置并高亮显示' }
+    locatingIssueId.value = null
+    return
+  }
+
+  const fallbackHint = payload.hint || '未能直接定位，请按“页/段/句”提示快速查找。'
+  locateFeedback.value = { type: 'warning', message: `未能直接定位：${fallbackHint}` }
+  locatingIssueId.value = null
 }
 
 const getFileNameById = (fileId: string): string => {
@@ -687,7 +720,7 @@ const dwgLocateTarget = computed(() => {
   return {
     cadHandleId: locateTarget.value.cadHandleId,
     originalText: locateTarget.value.originalText,
-    description: '',
+    description: locateTarget.value.locateHint || '',
   }
 })
 
@@ -911,14 +944,15 @@ const finishReview = async () => {
   }
   // 给后端一点时间完成最后的 DB 写入
   setTimeout(async () => {
-    await fetchData()
-    loading.value = false
+    await fetchData(true)
   }, 800)
 }
 
 // ===== 数据加载 =====
-const fetchData = async () => {
-  loading.value = true
+const fetchData = async (silent = false) => {
+  if (!silent) {
+    loading.value = true
+  }
   try {
     const [taskRes, detailsRes] = await Promise.all([
       getTaskByIdApi(taskId.value),
@@ -937,6 +971,9 @@ const fetchData = async () => {
       description: d.description,
       plainLanguage: d.plainLanguage || null,
       cadHandleId: d.cadHandleId,
+      textPosition: d.textPosition || null,
+      diffRanges: d.diffRanges || null,
+      sourceReferences: d.sourceReferences || null,
       standardRefId: d.standardRefId,
       standardRef: d.standardRef,
       fileId: d.fileId,
@@ -956,22 +993,111 @@ const fetchData = async () => {
     ElMessage.error('加载审查结果失败')
     console.error(e)
   } finally {
-    loading.value = false
+    if (!silent) {
+      loading.value = false
+    }
   }
 }
 
 // ===== 操作函数 =====
+const pickLocateKeyword = (text: string): string => {
+  const raw = (text || '').trim()
+  if (!raw) return ''
+
+  const candidates = raw
+    .split(/[|｜\n\r\t]/)
+    .map(s => s.trim())
+    .filter(Boolean)
+    .sort((a, b) => b.length - a.length)
+
+  // 优先使用长度适中的片段，避免整段表格文本导致无法命中
+  const preferred = candidates.find(s => s.length >= 6 && s.length <= 40)
+  if (preferred) return preferred
+
+  return candidates[0] || raw.slice(0, 40)
+}
+
+const collectLocateAnchors = (item: TaskDetail): string[] => {
+  const anchors: string[] = []
+
+  if (item.originalText) anchors.push(item.originalText)
+
+  const refs = Array.isArray(item.sourceReferences) ? item.sourceReferences : []
+  refs.forEach((ref: any) => {
+    if (typeof ref?.chunkContent === 'string' && ref.chunkContent.trim()) {
+      anchors.push(ref.chunkContent)
+    }
+    if (typeof ref?.standardTitle === 'string' && ref.standardTitle.trim()) {
+      anchors.push(ref.standardTitle)
+    }
+  })
+
+  const diffRanges = item.diffRanges as any
+  if (diffRanges && typeof diffRanges === 'object') {
+    const maybeOriginal = diffRanges.originalText || diffRanges.original || diffRanges.rawText
+    if (typeof maybeOriginal === 'string' && maybeOriginal.trim()) {
+      anchors.push(maybeOriginal)
+    }
+  }
+
+  const seen = new Set<string>()
+  return anchors
+    .map(s => String(s || '').trim())
+    .filter(Boolean)
+    .filter(s => {
+      const key = s.replace(/\s+/g, '').toLowerCase()
+      if (!key || seen.has(key)) return false
+      seen.add(key)
+      return true
+    })
+}
+
+const buildLocatePayload = (item: TaskDetail): { originalText: string; locateCandidates: string[]; textPosition: any; cadHandleId?: string; locateHint?: string } => {
+  const anchors = collectLocateAnchors(item)
+  const locateCandidates = anchors
+    .map(pickLocateKeyword)
+    .map(s => s.trim())
+    .filter(Boolean)
+  const uniqueCandidates = [...new Set(locateCandidates)]
+
+  const bestAnchor = uniqueCandidates[0] || ''
+
+  const textPos = item.textPosition as any
+  const chunkNo = typeof textPos?.chunkIndex === 'number' ? textPos.chunkIndex + 1 : null
+  const charNo = typeof textPos?.charOffset === 'number' ? textPos.charOffset + 1 : null
+  const keyword = bestAnchor || item.originalText || item.description || ''
+
+  const fallbackHint = chunkNo
+    ? `建议先看第 ${chunkNo} 段${charNo ? `（约第 ${charNo} 字）` : ''}，再搜索“${keyword}”`
+    : `建议搜索“${keyword}”并结合问题描述定位`
+
+  return {
+    originalText: keyword,
+    locateCandidates: uniqueCandidates,
+    textPosition: item.textPosition || null,
+    cadHandleId: item.cadHandleId,
+    locateHint: fallbackHint,
+  }
+}
+
 const handleLocateText = (item: TaskDetail) => {
-  if (!item.fileId) return
+  locateFeedback.value = null
+
+  if (!item.fileId) {
+    locateFeedback.value = { type: 'warning', message: '该问题缺少文件归属，无法自动定位，请先切换到对应文件后手动检索。' }
+    return
+  }
+
+  const locate = buildLocatePayload(item)
+  if (!locate.originalText.trim()) {
+    locateFeedback.value = { type: 'warning', message: '该问题缺少可检索原文，建议结合问题描述手动定位。' }
+    return
+  }
+
+  locatingIssueId.value = item.id
 
   // 统一文件上下文切换，保持预览与列表一致
-  switchToFileContext(item.fileId, {
-    locate: {
-      originalText: item.originalText || '',
-      textPosition: item.textPosition || null,
-      cadHandleId: item.cadHandleId,
-    },
-  })
+  switchToFileContext(item.fileId, { locate })
 }
 
 const handleAdoptSuggestion = async (item: TaskDetail) => {
@@ -1416,32 +1542,45 @@ onUnmounted(() => {
   font-size: 14px;
 }
 
-/* 审查进度面板 */
-.review-progress-panel {
-  margin-top: 20px;
-  width: 420px;
-  background: white;
-  border-radius: 12px;
-  padding: 20px 24px;
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.08);
-  text-align: center;
+/* 审查进度（嵌入右侧面板，非阻塞） */
+.inline-review-progress {
+  margin: 12px 16px 0;
+  padding: 12px;
+  border: 1px solid #E5E7EB;
+  border-radius: 8px;
+  background: #F9FAFB;
 }
 
-.progress-bar-wrap {
-  margin-bottom: 12px;
+.progress-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.progress-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: #1F2937;
+}
+
+.progress-percent {
+  font-size: 12px;
+  font-weight: 600;
+  color: #3B82F6;
 }
 
 .progress-step {
-  font-size: 15px;
-  font-weight: 700;
+  font-size: 13px;
+  font-weight: 600;
   color: #1F2937;
-  margin: 0 0 4px;
+  margin: 8px 0 4px;
 }
 
 .progress-message {
-  font-size: 13px;
+  font-size: 12px;
   color: #6B7280;
-  margin: 0 0 12px;
+  margin: 0 0 8px;
 }
 
 .chunk-progress {
@@ -1449,14 +1588,14 @@ onUnmounted(() => {
   justify-content: space-between;
   font-size: 12px;
   color: #9CA3AF;
-  margin-bottom: 8px;
+  margin-bottom: 6px;
 }
 
 .live-issue-count {
-  font-size: 14px;
+  font-size: 12px;
   color: #3B82F6;
   font-weight: 600;
-  margin: 8px 0 0;
+  margin: 0;
 }
 
 /* 主内容区 */
@@ -2069,6 +2208,31 @@ onUnmounted(() => {
   font-size: 13px;
   font-weight: 600;
   color: #3B82F6;
+}
+
+/* 定位按钮状态 */
+.locate-btn {
+  border-radius: 50%;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 1px solid transparent;
+}
+
+.locate-btn-direct {
+  color: #16a34a;
+  background: #dcfce7;
+  border-color: #86efac;
+}
+
+.locate-btn-fallback {
+  color: #ca8a04;
+  background: #fef9c3;
+  border-color: #fde047;
+}
+
+.locate-btn:hover {
+  transform: scale(1.06);
 }
 
 /* 工作台样式 */

@@ -91,7 +91,7 @@ services:
           memory: 256M
 
   # ==========================================
-  # OCR 服务（PaddleOCR Python）
+  # OCR 服务（PaddleOCR 主路径 + 视觉模型兜底）
   # 支持: PDF/图片 OCR 识别
   # ==========================================
   ocr-service:

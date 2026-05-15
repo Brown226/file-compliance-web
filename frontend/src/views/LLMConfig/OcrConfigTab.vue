@@ -5,7 +5,7 @@
       <div class="banner-icon">📄</div>
       <div class="banner-content">
         <div class="banner-title">OCR 文字识别配置</div>
-        <div class="banner-desc">用于识别扫描件 PDF、图片中的文字内容，支持视觉模型（Qwen-VL、DeepSeek-VL 等）</div>
+        <div class="banner-desc">默认主路径是独立 PaddleOCR 服务；仅在高级配置下启用视觉模型兜底识别扫描件 PDF、图片中的文字内容</div>
       </div>
     </div>
 
@@ -33,7 +33,7 @@
               placeholder="https://api.openai.com/v1"
               clearable
             />
-            <div class="form-tip">OpenAI 兼容接口地址，需使用支持视觉识别的模型</div>
+      <div class="form-tip">OpenAI 兼容接口地址，仅在需要视觉模型兜底时配置；默认 OCR 仍由独立 PaddleOCR 服务处理</div>
           </el-form-item>
 
           <el-form-item label="模型名称" required>
@@ -52,7 +52,7 @@
                 :value="model"
               />
             </el-select>
-            <div class="form-tip">推荐：Qwen-VL2、DeepSeek-VL2、PaddleOCR-VL 等视觉模型</div>
+            <div class="form-tip">推荐：仅在需要更高识别质量时配置视觉模型；默认 OCR 仍走独立 PaddleOCR 服务</div>
           </el-form-item>
 
           <el-form-item label="超时时间">

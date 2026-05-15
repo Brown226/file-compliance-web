@@ -79,12 +79,11 @@ interface TextPosition {
 const props = defineProps<{
   taskId: string
   fileId: string | null
-  /** 当前需要定位高亮的问题 */
-  locateTarget?: {
-    originalText: string
-    textPosition?: TextPosition | null
-    cadHandleId?: string
-  } | null
+  locateTarget?: { originalText: string; locateCandidates?: string[]; textPosition?: TextPosition | null; cadHandleId?: string; locateHint?: string } | null
+}>()
+
+const emit = defineEmits<{
+  locateResult: [{ success: boolean; mode: 'direct' | 'fallback'; hint?: string }]
 }>()
 
 const loading = ref(false)
@@ -132,6 +131,30 @@ interface TextSegment {
 
 interface TextChunk {
   segments: TextSegment[]
+}
+
+const getLocateTerms = (): string[] => {
+  const target = props.locateTarget
+  if (!target) return []
+  const list = Array.isArray(target.locateCandidates) ? target.locateCandidates : []
+  const terms = [...list, target.originalText]
+    .map(s => String(s || '').trim())
+    .filter(Boolean)
+  return [...new Set(terms)]
+}
+
+const getPrimaryLocateTerm = (): string => getLocateTerms()[0] || ''
+
+const normalizeForLocate = (text: string): string =>
+  text
+    .toLowerCase()
+    .replace(/[\s\u3000]/g, '')
+    .replace(/[，。！？；：、“”"'`‘’（）()\[\]【】《》〈〉,.;:!?\-_/\\|]/g, '')
+
+const includesLoose = (haystack: string, needle: string): boolean => {
+  const n = normalizeForLocate(needle)
+  if (!n) return false
+  return normalizeForLocate(haystack).includes(n)
 }
 
 /**
@@ -200,7 +223,8 @@ const displayedChunks = computed<TextChunk[]>(() => {
   const totalChunks = Math.ceil(text.length / CHUNK_SIZE) || 1
   const chunks: TextChunk[] = []
 
-  const searchText = props.locateTarget?.originalText || ''
+  const locateTerms = getLocateTerms()
+  const searchText = getPrimaryLocateTerm()
   const targetChunk = props.locateTarget?.textPosition?.chunkIndex ?? -1
 
   for (let i = 0; i < totalChunks; i++) {
@@ -224,21 +248,62 @@ const displayedChunks = computed<TextChunk[]>(() => {
           chunks.push({ segments })
           continue
         }
+
+        // 精确匹配失败时，基于 charOffset 做锚点高亮，避免静默失败
+        const anchorLen = Math.max(20, Math.min(searchText.length || 20, 80))
+        const anchorStart = Math.max(0, Math.min(offset, Math.max(0, chunkText.length - 1)))
+        const anchorEnd = Math.min(chunkText.length, anchorStart + anchorLen)
+        if (anchorStart > 0) segments.push({ text: chunkText.substring(0, anchorStart), highlight: false })
+        segments.push({ text: chunkText.substring(anchorStart, anchorEnd), highlight: true })
+        if (anchorEnd < chunkText.length) segments.push({ text: chunkText.substring(anchorEnd), highlight: false })
+        chunks.push({ segments })
+        continue
       }
 
-      // 回退：在当前分片中搜索
+      // 回退：在当前分片中搜索（支持多候选词 + 宽松匹配）
       let lastEnd = 0
       let found = false
-      let pos = chunkText.indexOf(searchText)
-      while (pos !== -1) {
+      let hitTerm = ''
+      let hitPos = -1
+
+      for (const term of locateTerms) {
+        const pos = chunkText.indexOf(term)
+        if (pos !== -1) {
+          hitTerm = term
+          hitPos = pos
+          break
+        }
+      }
+
+      if (hitPos !== -1 && hitTerm) {
         found = true
-        if (pos > lastEnd) segments.push({ text: chunkText.substring(lastEnd, pos), highlight: false })
-        segments.push({ text: searchText, highlight: true })
-        lastEnd = pos + searchText.length
-        pos = chunkText.indexOf(searchText, lastEnd)
+        let pos = hitPos
+        while (pos !== -1) {
+          if (pos > lastEnd) segments.push({ text: chunkText.substring(lastEnd, pos), highlight: false })
+          segments.push({ text: hitTerm, highlight: true })
+          lastEnd = pos + hitTerm.length
+          pos = chunkText.indexOf(hitTerm, lastEnd)
+        }
+      }
+
+      if (!found) {
+        for (const term of locateTerms) {
+          if (includesLoose(chunkText, term)) {
+            found = true
+            break
+          }
+        }
+      }
+      if (!found && searchText && includesLoose(chunkText, searchText)) {
+        found = true
       }
       if (found) {
-        if (lastEnd < chunkText.length) segments.push({ text: chunkText.substring(lastEnd), highlight: false })
+        if (lastEnd < chunkText.length && lastEnd > 0) {
+          segments.push({ text: chunkText.substring(lastEnd), highlight: false })
+        }
+        if (lastEnd === 0) {
+          segments.push({ text: chunkText, highlight: true })
+        }
         chunks.push({ segments })
       } else {
         chunks.push({ segments: [{ text: chunkText, highlight: false }] })
@@ -252,8 +317,8 @@ const displayedChunks = computed<TextChunk[]>(() => {
 })
 
 /** 在渲染后的 DOM 中查找并高亮定位目标文本（避免全文 markdown 重渲染） */
-const applyHighlightToRendered = () => {
-  if (!props.locateTarget?.originalText || !markdownRef.value) return
+const applyHighlightToRendered = (): boolean => {
+  if (!props.locateTarget || !markdownRef.value) return false
 
   // 清除旧高亮
   markdownRef.value.querySelectorAll('.md-highlight').forEach(el => {
@@ -264,18 +329,30 @@ const applyHighlightToRendered = () => {
     }
   })
 
-  const searchText = props.locateTarget.originalText.trim()
-  if (!searchText) return
+  const locateTerms = getLocateTerms()
+  const searchText = getPrimaryLocateTerm()
+  if (!searchText && !locateTerms.length) return false
 
   const walker = document.createTreeWalker(markdownRef.value, NodeFilter.SHOW_TEXT)
   let found = false
   while (walker.nextNode()) {
     const node = walker.currentNode as Text
-    const idx = node.data.indexOf(searchText)
-    if (idx !== -1) {
+
+    let hitTerm = ''
+    let idx = -1
+    for (const term of locateTerms) {
+      const i = node.data.indexOf(term)
+      if (i !== -1) {
+        hitTerm = term
+        idx = i
+        break
+      }
+    }
+
+    if (idx !== -1 && hitTerm) {
       const range = document.createRange()
       range.setStart(node, idx)
-      range.setEnd(node, idx + searchText.length)
+      range.setEnd(node, idx + hitTerm.length)
       const mark = document.createElement('mark')
       mark.className = 'md-highlight'
       range.surroundContents(mark)
@@ -286,8 +363,33 @@ const applyHighlightToRendered = () => {
         })
         found = true
       }
+      continue
+    }
+
+    if (!found && locateTerms.some(term => includesLoose(node.data, term)) && node.data.trim()) {
+      const range = document.createRange()
+      range.setStart(node, 0)
+      range.setEnd(node, node.data.length)
+      const mark = document.createElement('mark')
+      mark.className = 'md-highlight'
+      range.surroundContents(mark)
+      requestAnimationFrame(() => {
+        mark.scrollIntoView({ behavior: 'smooth', block: 'center' })
+      })
+      found = true
     }
   }
+
+  if (!found && props.locateTarget?.textPosition?.chunkIndex != null) {
+    // 渲染模式无法精确命中时，回退到源码模式做分片锚点高亮
+    renderMode.value = 'source'
+    requestAnimationFrame(() => {
+      scrollToHighlight()
+    })
+    return true
+  }
+
+  return found
 }
 
 /** 切换渲染模式 */
@@ -298,11 +400,11 @@ const toggleRenderMode = () => {
 }
 
 // 滚动到高亮位置
-const scrollToHighlight = () => {
+const scrollToHighlight = (): boolean => {
   if (renderMode.value === 'rendered' && markdownRef.value) {
     // Markdown 渲染模式：用 DOM 操作插入高亮并滚动
-    applyHighlightToRendered()
-    return
+    const found = applyHighlightToRendered()
+    return found
   }
 
   const chunkIdx = props.locateTarget?.textPosition?.chunkIndex ?? 0
@@ -314,16 +416,24 @@ const scrollToHighlight = () => {
     if (highlightEl) {
       highlightEl.scrollIntoView({ behavior: 'smooth', block: 'center' })
       activeChunkIndex.value = chunkIdx
+      return true
     }
   }
+
+  return false
 }
 
 // 监听 locateTarget 变化，滚动到高亮位置
 watch(() => props.locateTarget, async (target) => {
-  if (!target?.originalText) return
+  if (!target) return
 
   await nextTick()
-  scrollToHighlight()
+  const found = scrollToHighlight()
+  emit('locateResult', {
+    success: found,
+    mode: found ? 'direct' : 'fallback',
+    hint: found ? undefined : (target.locateHint || '未能在文本预览中精确匹配原文，请按提示页段信息辅助定位。'),
+  })
 
   // 5秒后取消分片高亮（仅源码模式有效）
   if (highlightTimer) clearTimeout(highlightTimer)
@@ -347,7 +457,7 @@ watch(() => props.fileId, async (fileId) => {
     fileType.value = res.data?.fileType || ''
     // 内容加载完成后，检查是否有待定位的原文
     await nextTick()
-    if (props.locateTarget?.originalText) {
+    if (props.locateTarget) {
       scrollToHighlight()
     }
   } catch (e) {

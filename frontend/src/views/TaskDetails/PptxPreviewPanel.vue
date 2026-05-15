@@ -46,14 +46,18 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, watch, nextTick, onUnmounted } from 'vue'
+import { ref, computed, watch, nextTick } from 'vue'
 import { ArrowLeft, ArrowRight, Loading, WarningFilled, Document } from '@element-plus/icons-vue'
 import request from '@/utils/request'
 
 const props = defineProps<{
   taskId: string
   fileId: string | null
-  locateTarget?: { originalText: string } | null
+  locateTarget?: { originalText: string; locateCandidates?: string[]; locateHint?: string } | null
+}>()
+
+const emit = defineEmits<{
+  locateResult: [{ success: boolean; mode: 'direct' | 'fallback'; hint?: string }]
 }>()
 
 const loading = ref(false)
@@ -65,12 +69,39 @@ const slideCardRef = ref<HTMLElement | null>(null)
 const escapeHtml = (s: string) =>
   s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
 
+const normalizeForLocate = (text: string): string =>
+  text
+    .toLowerCase()
+    .replace(/[\s\u3000]/g, '')
+    .replace(/[，。！？；：、“”"'`‘’（）()\[\]【】《》〈〉,.;:!?\-_/\\|]/g, '')
+
+const includesLoose = (haystack: string, needle: string): boolean => {
+  const n = normalizeForLocate(needle)
+  if (!n) return false
+  return normalizeForLocate(haystack).includes(n)
+}
+
+const getLocateTerms = (): string[] => {
+  const target = props.locateTarget
+  if (!target) return []
+  const list = Array.isArray(target.locateCandidates) ? target.locateCandidates : []
+  const terms = [...list, target.originalText]
+    .map(s => String(s || '').trim())
+    .filter(Boolean)
+  return [...new Set(terms)]
+}
+
 const highlightText = (text: string, search: string): string => {
   if (!search) return escapeHtml(text)
   const escaped = escapeHtml(text)
   const escapedSearch = escapeHtml(search)
   const idx = escaped.toLowerCase().indexOf(escapedSearch.toLowerCase())
-  if (idx === -1) return escaped
+  if (idx === -1) {
+    if (includesLoose(text, search)) {
+      return `<mark class="pptx-highlight">${escaped}</mark>`
+    }
+    return escaped
+  }
   return (
     escaped.substring(0, idx) +
     '<mark class="pptx-highlight">' +
@@ -82,7 +113,7 @@ const highlightText = (text: string, search: string): string => {
 
 const currentSlideLines = computed(() => {
   const raw = slides.value[currentSlide.value] || ''
-  const search = props.locateTarget?.originalText || ''
+  const search = getLocateTerms()[0] || ''
   return raw
     .split('\n')
     .filter(l => l.trim())
@@ -140,11 +171,18 @@ const loadPptx = async () => {
     slides.value = await extractTextFromPptx(buffer)
     // 内容加载完成后，检查是否有待定位的原文
     if (props.locateTarget?.originalText) {
-      const idx = findSlideWithText(props.locateTarget.originalText)
+      const terms = getLocateTerms()
+      const idx = findSlideWithText(terms)
       if (idx !== -1 && idx !== currentSlide.value) {
         currentSlide.value = idx
       }
-      scrollToHighlight()
+      await nextTick()
+      const highlighted = scrollToHighlight()
+      emit('locateResult', {
+        success: highlighted,
+        mode: highlighted ? 'direct' : 'fallback',
+        hint: highlighted ? undefined : (props.locateTarget.locateHint || '未能在幻灯片文本中精确匹配原文，请按提示页段信息辅助定位。'),
+      })
     }
   } catch (e: any) {
     error.value = e?.message || 'PPTX 解析失败'
@@ -154,29 +192,35 @@ const loadPptx = async () => {
   }
 }
 
-const findSlideWithText = (text: string): number => {
-  const search = text.trim().toLowerCase()
-  if (!search) return -1
-  return slides.value.findIndex(s => s.toLowerCase().includes(search))
+const findSlideWithText = (terms: string[]): number => {
+  if (!terms.length) return -1
+  return slides.value.findIndex(s => terms.some(term => term && includesLoose(s, term)))
 }
 
-const scrollToHighlight = () => {
-  nextTick(() => {
-    if (!slideCardRef.value) return
-    const mark = slideCardRef.value.querySelector('.pptx-highlight')
-    if (mark) mark.scrollIntoView({ behavior: 'smooth', block: 'center' })
-  })
+const scrollToHighlight = (): boolean => {
+  if (!slideCardRef.value) return false
+  const mark = slideCardRef.value.querySelector('.pptx-highlight') as HTMLElement | null
+  if (!mark) return false
+  mark.scrollIntoView({ behavior: 'smooth', block: 'center' })
+  return true
 }
 
 watch(() => props.fileId, () => loadPptx(), { immediate: true })
 
-watch(() => props.locateTarget, (target) => {
+watch(() => props.locateTarget, async (target) => {
   if (!target?.originalText || !slides.value.length) return
-  const idx = findSlideWithText(target.originalText)
+  const terms = getLocateTerms()
+  const idx = findSlideWithText(terms)
   if (idx !== -1 && idx !== currentSlide.value) {
     currentSlide.value = idx
   }
-  scrollToHighlight()
+  await nextTick()
+  const highlighted = scrollToHighlight()
+  emit('locateResult', {
+    success: highlighted,
+    mode: highlighted ? 'direct' : 'fallback',
+    hint: highlighted ? undefined : (target.locateHint || '未能在幻灯片文本中精确匹配原文，请按提示页段信息辅助定位。'),
+  })
 })
 
 watch(currentSlide, () => {

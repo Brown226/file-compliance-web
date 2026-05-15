@@ -22,7 +22,11 @@ const props = defineProps<{
   taskId: string
   fileId: string | null
   fileUrl?: string
-  locateTarget?: { originalText: string } | null
+  locateTarget?: { originalText: string; locateCandidates?: string[]; locateHint?: string } | null
+}>()
+
+const emit = defineEmits<{
+  locateResult: [{ success: boolean; mode: 'direct' | 'fallback'; hint?: string }]
 }>()
 
 const loading = ref(false)
@@ -59,7 +63,12 @@ const loadDocx = async () => {
     // 内容加载完成后，检查是否有待定位的原文（locateTarget 可能在加载期间被设置）
     await nextTick()
     if (props.locateTarget?.originalText) {
-      highlightAndScroll()
+      const found = highlightAndScroll()
+      emit('locateResult', {
+        success: found,
+        mode: found ? 'direct' : 'fallback',
+        hint: found ? undefined : (props.locateTarget.locateHint || '未能在 Word 渲染文本中精确匹配原文，请按提示页段信息辅助定位。'),
+      })
     }
   } catch (e: any) {
     error.value = e?.message || 'Word 文档渲染失败'
@@ -69,8 +78,30 @@ const loadDocx = async () => {
   }
 }
 
-const highlightAndScroll = () => {
-  if (!props.locateTarget?.originalText || !contentRef.value) return
+const normalizeForLocate = (text: string): string =>
+  text
+    .toLowerCase()
+    .replace(/[\s\u3000]/g, '')
+    .replace(/[，。！？；：、“”"'`‘’（）()\[\]【】《》〈〉,.;:!?\-_/\\|]/g, '')
+
+const includesLoose = (haystack: string, needle: string): boolean => {
+  const n = normalizeForLocate(needle)
+  if (!n) return false
+  return normalizeForLocate(haystack).includes(n)
+}
+
+const getLocateTerms = (): string[] => {
+  const target = props.locateTarget
+  if (!target) return []
+  const list = Array.isArray(target.locateCandidates) ? target.locateCandidates : []
+  const terms = [...list, target.originalText]
+    .map(s => String(s || '').trim())
+    .filter(Boolean)
+  return [...new Set(terms)]
+}
+
+const highlightAndScroll = (): boolean => {
+  if (!contentRef.value) return false
 
   // 清除旧高亮
   contentRef.value.querySelectorAll('.docx-highlight').forEach(el => {
@@ -81,19 +112,30 @@ const highlightAndScroll = () => {
     }
   })
 
-  const searchText = props.locateTarget.originalText.trim()
-  if (!searchText) return
+  const locateTerms = getLocateTerms()
+  if (!locateTerms.length) return false
 
   // 在 DOM 中查找并高亮文本
   const walker = document.createTreeWalker(contentRef.value, NodeFilter.SHOW_TEXT)
   let found = false
   while (walker.nextNode()) {
     const node = walker.currentNode as Text
-    const idx = node.data.indexOf(searchText)
-    if (idx !== -1) {
+
+    let hitTerm = ''
+    let idx = -1
+    for (const term of locateTerms) {
+      const i = node.data.indexOf(term)
+      if (i !== -1) {
+        hitTerm = term
+        idx = i
+        break
+      }
+    }
+
+    if (idx !== -1 && hitTerm) {
       const range = document.createRange()
       range.setStart(node, idx)
-      range.setEnd(node, idx + searchText.length)
+      range.setEnd(node, idx + hitTerm.length)
       const mark = document.createElement('mark')
       mark.className = 'docx-highlight'
       range.surroundContents(mark)
@@ -102,12 +144,37 @@ const highlightAndScroll = () => {
         mark.scrollIntoView({ behavior: 'smooth', block: 'center' })
         found = true
       }
+      continue
+    }
+
+    if (!found && locateTerms.some(term => includesLoose(node.data, term)) && node.data.trim()) {
+      const range = document.createRange()
+      range.setStart(node, 0)
+      range.setEnd(node, node.data.length)
+      const mark = document.createElement('mark')
+      mark.className = 'docx-highlight'
+      range.surroundContents(mark)
+      mark.scrollIntoView({ behavior: 'smooth', block: 'center' })
+      found = true
     }
   }
+
+  return found
 }
 
 watch(() => props.fileId, () => loadDocx(), { immediate: true })
-watch(() => props.locateTarget, () => nextTick(highlightAndScroll))
+watch(() => props.locateTarget, () => {
+  nextTick(() => {
+    const target = props.locateTarget
+    if (!target?.originalText?.trim()) return
+    const found = highlightAndScroll()
+    emit('locateResult', {
+      success: found,
+      mode: found ? 'direct' : 'fallback',
+      hint: found ? undefined : (target.locateHint || '未能在 Word 渲染文本中精确匹配原文，请按提示页段信息辅助定位。'),
+    })
+  })
+})
 </script>
 
 <style scoped>

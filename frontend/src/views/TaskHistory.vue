@@ -490,20 +490,21 @@ onUnmounted(() => { stopPolling() })
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 20px;
+  margin-bottom: 24px;
 }
 
 .page-title {
   margin: 0;
-  font-size: 18px;
+  font-size: 24px;
   font-weight: 700;
+  line-height: 1.35;
   color: var(--corp-text-primary);
 }
 
 /* ===== 过滤栏 ===== */
 .filter-bar {
-  margin-bottom: 18px;
-  padding: 16px 22px;
+  margin-bottom: 22px;
+  padding: 18px 22px;
   border-radius: var(--corp-radius-md);
   background: var(--bg-surface);
   border: 1px solid var(--corp-border-light);
@@ -513,12 +514,35 @@ onUnmounted(() => { stopPolling() })
 .filter-form {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
+  justify-content: flex-end;
+  gap: 12px 10px;
 }
 
 ::deep(.filter-form .el-form-item) {
-  margin-bottom: 0;
-  margin-right: 12px;
+  margin-bottom: 4px;
+  margin-right: 14px;
+}
+
+::deep(.filter-form .el-form-item__label) {
+  font-size: 15px;
+  line-height: 36px;
+}
+
+::deep(.filter-form .el-input__wrapper),
+::deep(.filter-form .el-select__wrapper) {
+  min-height: 38px;
+}
+
+::deep(.filter-form .el-input__inner),
+::deep(.filter-form .el-select__selected-item) {
+  font-size: 15px;
+  line-height: 1.6;
+}
+
+::deep(.filter-form .el-button) {
+  font-size: 14px;
+  min-height: 36px;
+  padding: 0 14px;
 }
 
 /* ===== 批量操作 ===== */
@@ -535,7 +559,7 @@ onUnmounted(() => { stopPolling() })
 }
 
 .selected-info {
-  font-size: 13.5px;
+  font-size: 15px;
   color: var(--corp-primary);
   font-weight: 600;
   display: flex;
@@ -544,7 +568,7 @@ onUnmounted(() => { stopPolling() })
 }
 
 .selected-info strong {
-  font-size: 16px;
+  font-size: 17px;
 }
 
 .slide-fade-enter-active { transition: all 0.25s ease; }
@@ -558,6 +582,24 @@ onUnmounted(() => { stopPolling() })
   border-radius: var(--corp-radius-md);
   overflow: hidden;
   box-shadow: var(--corp-shadow-sm);
+}
+
+:deep(.table-wrapper .el-table) {
+  font-size: 14px;
+}
+
+:deep(.table-wrapper .el-table th.el-table__cell) {
+  height: 48px;
+  padding: 10px 0;
+}
+
+:deep(.table-wrapper .el-table td.el-table__cell) {
+  height: 48px;
+  padding: 10px 0;
+}
+
+:deep(.table-wrapper .el-table .cell) {
+  line-height: 1.55;
 }
 
 .task-row {
@@ -581,8 +623,60 @@ onUnmounted(() => { stopPolling() })
 }
 
 .task-name-cell {
-  font-weight: 550;
+  font-size: 14px;
+  line-height: 1.5;
+  font-weight: 600;
   color: var(--corp-text-primary);
+}
+
+.mode-tag {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 13px;
+  line-height: 1.4;
+  font-weight: 600;
+  color: var(--color-primary-700);
+  background: var(--color-primary-50);
+  border: 1px solid var(--color-primary-200);
+}
+
+.status-tag {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 60px;
+  padding: 3px 10px;
+  border-radius: 999px;
+  font-size: 13px;
+  line-height: 1.35;
+  font-weight: 600;
+  border: 1px solid transparent;
+}
+
+.table-wrapper .status-tag.status-completed {
+  color: #166534 !important;
+  background-color: #dcfce7 !important;
+  border-color: #86efac !important;
+}
+
+.table-wrapper .status-tag.status-processing {
+  color: #1d4ed8 !important;
+  background-color: #dbeafe !important;
+  border-color: #93c5fd !important;
+}
+
+.table-wrapper .status-tag.status-pending {
+  color: #9a3412 !important;
+  background-color: #ffedd5 !important;
+  border-color: #fdba74 !important;
+}
+
+.table-wrapper .status-tag.status-failed {
+  color: #b91c1c !important;
+  background-color: #fee2e2 !important;
+  border-color: #fca5a5 !important;
 }
 
 /* 进度条包裹 */
@@ -615,6 +709,7 @@ onUnmounted(() => { stopPolling() })
 }
 
 .count-num {
+  font-size: 15px;
   font-weight: 650;
   color: var(--corp-text-regular);
   font-family: 'SF Mono', monospace;
@@ -622,6 +717,7 @@ onUnmounted(() => { stopPolling() })
 }
 
 .issue-count {
+  font-size: 15px;
   font-weight: 700;
   color: var(--corp-text-regular);
   font-family: 'SF Mono', monospace;
@@ -634,18 +730,19 @@ onUnmounted(() => { stopPolling() })
 }
 
 .time-cell {
-  font-size: 13px;
+  font-size: 14px;
   color: var(--corp-text-secondary);
   font-variant-numeric: tabular-nums;
 }
 
 .action-btns {
   display: flex;
-  gap: 2px;
+  gap: 4px;
 }
 
 .action-btns .el-button.el-button {
-  padding: 0 4px;
+  font-size: 14px;
+  padding: 0 6px;
 }
 
 /* ===== 空状态 ===== */
@@ -680,6 +777,20 @@ onUnmounted(() => { stopPolling() })
   margin-top: 24px;
   display: flex;
   justify-content: center;
+}
+
+:deep(.pagination-container .el-pagination) {
+  font-size: 14px;
+}
+
+:deep(.pagination-container .el-pager li),
+:deep(.pagination-container .btn-prev),
+:deep(.pagination-container .btn-next),
+:deep(.pagination-container .el-input__inner) {
+  min-width: 34px;
+  height: 34px;
+  line-height: 34px;
+  font-size: 14px;
 }
 
 /* ===== 高级筛选 ===== */
