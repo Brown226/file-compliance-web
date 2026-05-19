@@ -103,6 +103,7 @@ frontend/fe-start.txt
 做汇报的PPT/
 可参考开源项目/
 projects/
+.tmp_*/
 AGENTS.md
 analysis_*.txt
 analysis_*.json

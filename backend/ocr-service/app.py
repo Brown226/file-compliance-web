@@ -22,12 +22,27 @@ MAX_PAGES = 3
 
 def extract_text_from_result(result: Any) -> str:
     text = ""
+
+    def append_from_items(items: Any) -> None:
+        nonlocal text
+        if not isinstance(items, list):
+            return
+        for item in items:
+            if isinstance(item, list) and len(item) >= 2:
+                value = item[1]
+                if isinstance(value, (list, tuple)) and value:
+                    text += str(value[0]) + "\n"
+
     if result and isinstance(result, list):
         for page in result:
-            if page and isinstance(page, list):
-                for item in page:
-                    if isinstance(item, list) and len(item) >= 2:
-                        text += str(item[1][0]) + "\n"
+            if isinstance(page, list):
+                # PaddleOCR 单张图片通常直接返回这一层；PDF/多页场景可能外面再套一层页数组。
+                if page and isinstance(page[0], list) and len(page[0]) >= 2:
+                    append_from_items(page)
+                else:
+                    for item in page:
+                        if isinstance(item, list) and len(item) >= 2:
+                            append_from_items([item])
     return text.strip()
 
 
@@ -70,6 +85,25 @@ def image_to_data_url(image: Image.Image) -> str:
 def log_to_file(message: str) -> None:
     with open('/app/ocr_logs.txt', 'a', encoding='utf-8') as f:
         f.write(message + '\n')
+
+
+def recognize_via_paddleocr(file_bytes: bytes, file_type: str | None, file_name: str | None = None) -> str:
+    source_images = load_source_images(file_bytes, file_type, file_name)
+    if not source_images:
+        raise HTTPException(status_code=400, detail='无法从文件中提取图像')
+
+    results: List[str] = []
+    for image in source_images[:MAX_PAGES]:
+        try:
+            ocr_result = ocr.ocr(np.array(image), cls=True)
+            text = extract_text_from_result(ocr_result)
+            if text:
+                results.append(text)
+        except Exception as e:
+            log_to_file(f'PaddleOCR failed: {str(e)}')
+            raise HTTPException(status_code=500, detail=str(e))
+
+    return '\n'.join(results).strip()
 
 
 def call_vision_model(image_data_url: str, config: Dict[str, Any], page_num: int, total_pages: int) -> str:
