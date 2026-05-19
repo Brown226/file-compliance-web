@@ -1,0 +1,975 @@
+<template>
+  <div class="department-management">
+    <div class="page-header">
+      <div class="header-left">
+        <h2>部门与员工管理</h2>
+      </div>
+    </div>
+
+    <!-- 内容区域 -->
+    <div class="content-area">
+      <div class="dept-layout">
+        <!-- 左侧：组织架构树 -->
+        <el-card class="dept-tree-card" shadow="never">
+          <template #header>
+            <div class="card-header">
+              <span><el-icon><Folder /></el-icon> 组织架构</span>
+              <el-button type="primary" size="small" @click="handleAddRootDept">
+                <el-icon><Plus /></el-icon> 添加
+              </el-button>
+            </div>
+          </template>
+
+          <div class="dept-tree-container">
+            <el-tree
+              ref="deptTreeRef"
+              :data="orgData"
+              node-key="id"
+              default-expand-all
+              :expand-on-click-node="false"
+              :props="{ label: 'name', children: 'children' }"
+              @node-contextmenu="handleDeptContextMenu"
+              @node-click="handleDeptNodeClick"
+            >
+              <template #default="{ data }">
+                <div class="dept-node">
+                  <span class="dept-name">
+                    <el-icon class="dept-icon"><Folder /></el-icon>
+                    {{ data.name }}
+                  </span>
+                  <span class="dept-count">{{ getDeptMemberCount(data.id) }}人</span>
+                </div>
+              </template>
+            </el-tree>
+
+            <div
+              v-show="contextMenuVisible"
+              class="context-menu"
+              :style="{ top: contextMenuY + 'px', left: contextMenuX + 'px' }"
+            >
+              <div class="context-item" @click="handleAddChildDept">
+                <el-icon><Plus /></el-icon> 添加子部门
+              </div>
+              <div class="context-item" @click="handleEditDept">
+                <el-icon><Edit /></el-icon> 编辑部门
+              </div>
+              <div class="context-item danger" @click="handleDeleteDept">
+                <el-icon><Delete /></el-icon> 删除部门
+              </div>
+            </div>
+          </div>
+        </el-card>
+
+        <!-- 右侧：员工列表 -->
+        <el-card class="dept-employees-card" shadow="never">
+          <template #header>
+            <div class="card-header">
+              <span>
+                <el-icon><User /></el-icon>
+                {{ selectedDeptName || '全部部门' }} - 员工列表
+              </span>
+            </div>
+          </template>
+
+          <div class="employee-toolbar">
+            <el-input v-model="empSearch" placeholder="搜索姓名或账号..." prefix-icon="Search" clearable style="width: 240px" @input="handleSearchChange" />
+            <div class="toolbar-right">
+              <el-button @click="handleBatchFix"><el-icon><Edit /></el-icon> 修正账号</el-button>
+              <el-button @click="showBatchImportDialog = true"><el-icon><Upload /></el-icon> 批量导入</el-button>
+              <el-button type="primary" @click="handleNewAccount"><el-icon><Plus /></el-icon> 新建账号</el-button>
+            </div>
+          </div>
+
+          <!-- 角色筛选 -->
+          <div class="role-tabs">
+            <div v-for="tab in roleTabs" :key="tab.value" class="role-tab" :class="{ active: empRoleFilter === tab.value }" @click="handleRoleFilter(tab.value)">
+              {{ tab.label }} ({{ tab.count }})
+            </div>
+          </div>
+
+          <!-- 批量操作 -->
+          <div v-if="selectedEmployees.length > 0" class="batch-actions">
+            <span class="selected-info">
+              <el-icon><Check /></el-icon> 已选择 {{ selectedEmployees.length }} 项
+            </span>
+            <el-button size="small" @click="selectedEmployees = []"><el-icon><Close /></el-icon> 取消</el-button>
+            <el-button size="small" type="warning" @click="handleBatchDisable" :loading="batchLoading"><el-icon><Close /></el-icon> 批量停用</el-button>
+            <el-button size="small" type="danger" @click="handleBatchDelete" :loading="batchLoading"><el-icon><Delete /></el-icon> 批量删除</el-button>
+          </div>
+
+          <!-- 员工列表（使用卡片展示） -->
+          <div class="employee-list" v-loading="empLoading">
+            <!-- 全选 -->
+            <div class="list-header">
+              <el-checkbox :model-value="isAllSelected" :indeterminate="isIndeterminate" @change="toggleSelectAll" />
+              <span style="margin-left: 8px;">全选</span>
+            </div>
+
+            <!-- 卡片列表 -->
+            <div v-if="filteredEmployees.length > 0">
+              <div v-for="emp in filteredEmployees" :key="emp.id" class="employee-card" :class="{ selected: selectedEmployees.includes(emp.id) }">
+                <div class="card-left">
+                  <el-checkbox :model-value="selectedEmployees.includes(emp.id)" @change="(val: boolean) => toggleSelect(emp.id, val)" />
+                  <div class="avatar-circle" :class="getAvatarClass(emp.role)">{{ getAvatarLetter(emp) }}</div>
+                </div>
+                <div class="card-info">
+                  <div class="info-main">
+                    <span class="emp-name">{{ emp.name }}</span>
+                    <span class="role-badge" :class="'role-badge-' + emp.role.toLowerCase()">
+                      <span class="role-dot"></span>{{ getRoleLabel(emp.role) }}
+                    </span>
+                  </div>
+                  <div class="info-sub">
+                    <span>{{ emp.username }}</span>
+                    <span v-if="emp.department?.name">{{ emp.department.name }}</span>
+                    <span v-if="emp.email">{{ emp.email }}</span>
+                    <span v-if="emp.enabled === false" style="color: var(--el-color-danger);">已停用</span>
+                  </div>
+                </div>
+                <div class="card-actions">
+                  <el-button link type="primary" size="small" @click="handleEditEmployee(emp)">编辑</el-button>
+                  <el-button link type="danger" size="small" @click="handleDeleteEmployee(emp)">删除</el-button>
+                  <el-button link size="small" @click="handleResetPassword(emp)">重置密码</el-button>
+                </div>
+              </div>
+            </div>
+            <div v-else class="empty-state">
+              <el-empty :description="empSearch ? '没有匹配的员工' : (selectedDeptId ? '该部门暂无员工' : '暂无员工数据')" />
+            </div>
+          </div>
+
+          <!-- 分页 -->
+          <div class="pagination-container">
+            <el-pagination
+              v-model:current-page="empPage"
+              v-model:page-size="empPageSize"
+              :total="empTotal"
+              layout="total, prev, pager, next"
+              small
+              @current-change="fetchEmployees"
+            />
+          </div>
+        </el-card>
+      </div>
+    </div>
+
+    <!-- 部门弹窗 -->
+    <el-dialog v-model="deptDialogVisible" :title="deptDialogType === 'add' ? (deptParentId ? '添加子部门' : '添加顶级部门') : '编辑部门'" width="420px">
+      <el-form :model="deptForm" label-width="80px">
+        <el-form-item label="部门名称" required>
+          <el-input v-model="deptForm.name" placeholder="请输入部门名称" />
+        </el-form-item>
+        <el-form-item label="上级部门" v-if="deptDialogType === 'add' && !deptParentId">
+          <el-cascader v-model="deptForm.parentId" :data="orgData" :props="{ label: 'name', children: 'children', value: 'id', checkStrictly: true }" placeholder="留空表示顶级部门" clearable :show-all-levels="false" />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="deptDialogVisible = false">取消</el-button>
+        <el-button type="primary" :loading="deptSubmitting" @click="submitDeptForm">确定</el-button>
+      </template>
+    </el-dialog>
+
+    <!-- 账号弹窗 -->
+    <el-dialog v-model="accountDialogVisible" :title="accountDialogType === 'add' ? '新建账号' : '编辑账号'" width="620px">
+      <el-form :model="accountForm" label-width="85px">
+        <el-row :gutter="16">
+          <el-col :span="12">
+            <el-form-item label="登录账号" required>
+              <el-input v-model="accountForm.username" placeholder="请输入登录账号" :disabled="accountDialogType === 'edit'" />
+            </el-form-item>
+          </el-col>
+          <el-col :span="12">
+            <el-form-item label="真实姓名" required>
+              <el-input v-model="accountForm.name" placeholder="请输入真实姓名" />
+            </el-form-item>
+          </el-col>
+        </el-row>
+        <el-row :gutter="16" v-if="accountDialogType === 'add'">
+          <el-col :span="12">
+            <el-form-item label="初始密码" required>
+              <div style="display:flex;gap:8px">
+                <el-input v-model="accountForm.password" placeholder="自动生成" style="flex:1" />
+                <el-button @click="generatePassword">生成</el-button>
+              </div>
+            </el-form-item>
+          </el-col>
+          <el-col :span="12">
+            <el-form-item label="邮箱">
+              <el-input v-model="accountForm.email" placeholder="可选" />
+            </el-form-item>
+          </el-col>
+        </el-row>
+        <el-row :gutter="16" v-else>
+          <el-col :span="12">
+            <el-form-item label="邮箱">
+              <el-input v-model="accountForm.email" placeholder="可选" />
+            </el-form-item>
+          </el-col>
+          <el-col :span="12">
+            <el-form-item label="修改密码">
+              <el-input v-model="accountForm.password" placeholder="留空则保持不变" show-password />
+            </el-form-item>
+          </el-col>
+        </el-row>
+        <el-form-item label="分配角色" required>
+          <div class="role-card-group">
+            <div v-for="role in roleOptions" :key="role.value" class="role-card" :class="{ 'role-card-active': accountForm.role === role.value }" @click="accountForm.role = role.value">
+              <span class="role-dot" :class="'role-dot-' + role.cls"></span>
+              <span>{{ role.label }}</span>
+            </div>
+          </div>
+        </el-form-item>
+        <el-alert v-if="accountDialogType === 'add'" type="info" :closable="false" show-icon>
+          <template #title>密码将自动生成，首次登录后建议修改</template>
+        </el-alert>
+        <el-alert v-else type="info" :closable="false" show-icon>
+          <template #title>如需重置密码，请在上方输入新密码后保存；留空则保持原密码不变</template>
+        </el-alert>
+      </el-form>
+      <template #footer>
+        <el-button @click="accountDialogVisible = false">取消</el-button>
+        <el-button type="primary" :loading="accountSubmitting" @click="submitAccountForm">{{ accountDialogType === 'add' ? '创建账号' : '保存修改' }}</el-button>
+      </template>
+    </el-dialog>
+
+    <!-- 批量导入弹窗 -->
+    <el-dialog v-model="showBatchImportDialog" title="批量导入员工" width="680px">
+      <div class="batch-import-content">
+        <el-alert type="info" :closable="false" show-icon style="margin-bottom: 16px">
+          <template #title>请上传包含员工信息的 Excel 文件，支持 .xlsx/.xls 格式</template>
+        </el-alert>
+        <div class="template-section">
+          <el-button size="small" @click="downloadTemplate"><el-icon><Download /></el-icon> 下载导入模板</el-button>
+        </div>
+        <div v-if="previewData.length > 0" class="preview-section">
+          <div class="preview-header">
+            <span>预览数据（共 {{ previewData.length }} 条）</span>
+            <el-button link type="danger" size="small" @click="previewData = []"><el-icon><Delete /></el-icon> 清除</el-button>
+          </div>
+          <el-table :data="previewData" size="small" max-height="200" border>
+            <el-table-column prop="username" label="登录账号" />
+            <el-table-column prop="name" label="真实姓名" />
+            <el-table-column prop="password" label="密码" />
+            <el-table-column prop="role" label="角色"><template #default="{ row }">{{ getRoleLabel(row.role) }}</template></el-table-column>
+            <el-table-column label="一级部门" width="120"><template #default="{ row }">{{ row.deptLevel1 || '-' }}</template></el-table-column>
+            <el-table-column label="二级部门" width="120"><template #default="{ row }">{{ row.deptLevel2 || '-' }}</template></el-table-column>
+            <el-table-column label="三级部门" width="120"><template #default="{ row }">{{ row.deptLevel3 || '-' }}</template></el-table-column>
+            <el-table-column label="部门(旧)" width="100"><template #default="{ row }">{{ row.department || '-' }}</template></el-table-column>
+            <el-table-column prop="email" label="邮箱" />
+          </el-table>
+        </div>
+        <div v-else class="upload-section">
+          <el-upload ref="uploadRef" class="excel-uploader" drag :auto-upload="false" :limit="1" accept=".xlsx,.xls" :on-change="handleFileChange">
+            <el-icon class="upload-icon"><UploadFilled /></el-icon>
+            <div class="upload-text"><span>将 Excel 文件拖到此处，或 <em>点击上传</em></span><span class="upload-tip">仅支持 .xlsx, .xls 格式</span></div>
+          </el-upload>
+        </div>
+      </div>
+      <template #footer>
+        <el-button @click="showBatchImportDialog = false">取消</el-button>
+        <el-button type="primary" :loading="batchImportLoading" :disabled="previewData.length === 0" @click="handleBatchImport">确认导入 {{ previewData.length > 0 ? `(${previewData.length}条)` : '' }}</el-button>
+      </template>
+    </el-dialog>
+
+    <!-- 批量修正账号弹窗 -->
+    <el-dialog v-model="showBatchFixDialog" title="批量修正登录账号" width="780px">
+      <div class="batch-import-content">
+        <el-alert type="info" :closable="false" show-icon style="margin-bottom: 16px">
+          <template #title>上传包含修正后登录账号的 Excel 文件。系统将通过「部门 + 真实姓名」匹配用户并更新登录账号。</template>
+        </el-alert>
+        <div class="template-section">
+          <el-button size="small" @click="downloadFixTemplate"><el-icon><Download /></el-icon> 下载修正模板</el-button>
+        </div>
+        <div v-if="batchFixPreviewData.length > 0" class="preview-section">
+          <div class="preview-header">
+            <span>匹配结果预览（共 {{ batchFixPreviewData.length }} 条）</span>
+            <el-button link type="danger" size="small" @click="clearBatchFix"><el-icon><Delete /></el-icon> 清除</el-button>
+          </div>
+          <el-table :data="batchFixPreviewData" size="small" max-height="320" border>
+            <el-table-column label="部门" min-width="130"><template #default="{ row }">{{ row.departmentPath || '-' }}</template></el-table-column>
+            <el-table-column prop="name" label="真实姓名" width="100" />
+            <el-table-column label="原登录账号" width="140">
+              <template #default="{ row }">
+                <span v-if="row.oldUsername && row.oldUsername !== '-'" class="old-username">{{ row.oldUsername }}</span>
+                <el-tag v-else-if="row.status === 'matched' || row.status === 'skipped'" type="info" size="small">查询中...</el-tag>
+                <el-tag v-else type="danger" size="small">未匹配</el-tag>
+              </template>
+            </el-table-column>
+            <el-table-column label="新登录账号" width="140"><template #default="{ row }"><span class="new-username">{{ row.newUsername }}</span></template></el-table-column>
+            <el-table-column label="状态" width="90">
+              <template #default="{ row }">
+                <el-tag v-if="row.status === 'matched'" type="warning" size="small">待修改</el-tag>
+                <el-tag v-else-if="row.status === 'skipped'" type="success" size="small">已正确</el-tag>
+                <el-tag v-else-if="row.status === 'pending'" type="info" size="small">待匹配</el-tag>
+                <el-tag v-else type="danger" size="small">错误</el-tag>
+              </template>
+            </el-table-column>
+          </el-table>
+          <div v-if="batchFixChangeCount > 0" class="fix-summary">将修改 <strong>{{ batchFixChangeCount }}</strong> 个账号</div>
+        </div>
+        <div v-else class="upload-section">
+          <el-upload ref="batchFixUploadRef" class="excel-uploader" drag :auto-upload="false" :limit="1" accept=".xlsx,.xls" :on-change="handleFixFileChange">
+            <el-icon class="upload-icon"><UploadFilled /></el-icon>
+            <div class="upload-text"><span>将 Excel 文件拖到此处，或 <em>点击上传</em></span><span class="upload-tip">仅支持 .xlsx, .xls 格式</span></div>
+          </el-upload>
+        </div>
+      </div>
+      <template #footer>
+        <el-button @click="showBatchFixDialog = false">取消</el-button>
+        <el-button type="primary" :loading="batchFixLoading" :disabled="batchFixPreviewData.length === 0 || batchFixChangeCount === 0" @click="handleBatchFixConfirm">确认修正 {{ batchFixChangeCount > 0 ? `(${batchFixChangeCount}条)` : '' }}</el-button>
+      </template>
+    </el-dialog>
+  </div>
+</template>
+
+<script setup lang="ts">
+import { ref, reactive, computed, onMounted, onUnmounted } from 'vue'
+import { ElMessage, ElMessageBox } from 'element-plus'
+import { Plus, Search, Folder, Edit, Delete, Upload, Download, User, Key, Check, Close, RefreshRight, UploadFilled, OfficeBuilding } from '@element-plus/icons-vue'
+import * as XLSX from 'xlsx'
+import {
+  getDepartmentsTreeApi, createDepartmentApi, updateDepartmentApi, deleteDepartmentApi,
+  findOrCreateDepartmentPathApi, getEmployeesApi, createEmployeeApi, updateEmployeeApi,
+  deleteEmployeeApi, batchCreateEmployeesApi, batchUpdateStatusApi, batchDeleteEmployeesApi,
+  resetPasswordApi, batchUpdateUsernamesApi,
+} from '@/api/system'
+
+// ========== 部门管理 ==========
+const orgData = ref<any[]>([])
+const deptTreeRef = ref()
+const deptTreeLoading = ref(false)
+const selectedDeptId = ref<string | null>(null)
+const selectedDeptName = ref('')
+const contextMenuVisible = ref(false)
+const contextMenuX = ref(0)
+const contextMenuY = ref(0)
+const contextMenuDept = ref<any>(null)
+
+const handleDeptContextMenu = (e: MouseEvent, data: any) => {
+  e.preventDefault()
+  contextMenuDept.value = data
+  contextMenuX.value = e.clientX
+  contextMenuY.value = e.clientY
+  contextMenuVisible.value = true
+}
+
+const hideContextMenu = () => { contextMenuVisible.value = false }
+
+const handleDeptNodeClick = (data: any) => {
+  if (selectedDeptId.value === data.id) { selectedDeptId.value = null; selectedDeptName.value = '' }
+  else { selectedDeptId.value = data.id; selectedDeptName.value = data.name }
+  empRoleFilter.value = 'ALL'; empPage.value = 1; empSearch.value = ''; fetchEmployees(); fetchDeptEmployeesForCount()
+}
+
+const fetchDepartments = async () => {
+  deptTreeLoading.value = true
+  try {
+    const res = await getDepartmentsTreeApi()
+    orgData.value = res.data || []
+  } catch (e) { console.error('获取部门数据失败', e); ElMessage.error('获取部门数据失败') }
+  finally { deptTreeLoading.value = false }
+}
+
+const handleAddRootDept = () => { deptParentId.value = ''; deptDialogType.value = 'add'; deptForm.name = ''; deptForm.parentId = []; deptDialogVisible.value = true }
+const handleAddChildDept = () => {
+  hideContextMenu(); if (!contextMenuDept.value) return
+  deptParentId.value = contextMenuDept.value.id; deptDialogType.value = 'add'; deptForm.name = ''; deptForm.parentId = buildDeptPath(orgData.value, contextMenuDept.value.id) || []; deptDialogVisible.value = true
+}
+const handleEditDept = () => {
+  hideContextMenu(); if (!contextMenuDept.value) return
+  deptDialogType.value = 'edit'; deptForm.id = contextMenuDept.value.id; deptForm.name = contextMenuDept.value.name
+  deptForm.parentId = contextMenuDept.value.parentId ? (buildDeptPath(orgData.value, contextMenuDept.value.parentId) || []) : []
+  deptDialogVisible.value = true
+}
+const handleDeleteDept = () => {
+  hideContextMenu(); if (!contextMenuDept.value) return
+  ElMessageBox.confirm(`确认删除部门 "${contextMenuDept.value.name}" 吗？删除后该部门下的员工将变为未分配状态。`, '删除确认', { type: 'warning' })
+    .then(async () => {
+      try {
+        await deleteDepartmentApi(contextMenuDept.value.id); ElMessage.success('部门已删除')
+        if (selectedDeptId.value === contextMenuDept.value.id) { selectedDeptId.value = null; selectedDeptName.value = '' }
+        fetchDepartments(); fetchEmployees(); fetchGlobalEmployeesForCount(); fetchDeptEmployeesForCount()
+      } catch (e: any) { ElMessage.error(e.response?.data?.message || '删除失败') }
+    }).catch(() => {})
+}
+
+const deptDialogVisible = ref(false)
+const deptDialogType = ref<'add' | 'edit'>('add')
+const deptSubmitting = ref(false)
+const deptParentId = ref('')
+const deptForm = reactive({ id: '', name: '', parentId: [] as string[] })
+
+const submitDeptForm = async () => {
+  if (!deptForm.name.trim()) { ElMessage.warning('请输入部门名称'); return }
+  const parentDeptId = Array.isArray(deptForm.parentId) && deptForm.parentId.length > 0 ? deptForm.parentId[deptForm.parentId.length - 1] : undefined
+  deptSubmitting.value = true
+  try {
+    if (deptDialogType.value === 'add') { await createDepartmentApi({ name: deptForm.name, parentId: parentDeptId || undefined }); ElMessage.success('部门添加成功') }
+    else { await updateDepartmentApi(deptForm.id, { name: deptForm.name }); ElMessage.success('部门编辑成功') }
+    deptDialogVisible.value = false; fetchDepartments(); fetchGlobalEmployeesForCount()
+  } catch (e: any) { ElMessage.error(e.response?.data?.message || '操作失败') }
+  finally { deptSubmitting.value = false }
+}
+
+// ========== 员工管理 ==========
+const employeeData = ref<any[]>([])
+const allEmployeesData = ref<any[]>([])
+const empLoading = ref(false)
+const empPage = ref(1)
+const empPageSize = ref(10)
+const empTotal = ref(0)
+const empSearch = ref('')
+const empRoleFilter = ref('ALL')
+const selectedEmployees = ref<string[]>([])
+const batchLoading = ref(false)
+
+const roleOptions = [
+  { value: 'ADMIN', label: '管理员', cls: 'admin' },
+  { value: 'MANAGER', label: '部门主管', cls: 'manager' },
+  { value: 'USER', label: '普通员工', cls: 'user' },
+]
+
+const roleTabs = computed(() => {
+  const all = allEmployeesData.value
+  return [
+    { label: '全部', value: 'ALL', count: all.length },
+    { label: '管理员', value: 'ADMIN', count: all.filter((e: any) => e.role === 'ADMIN').length },
+    { label: '部门主管', value: 'MANAGER', count: all.filter((e: any) => e.role === 'MANAGER').length },
+    { label: '普通员工', value: 'USER', count: all.filter((e: any) => e.role === 'USER').length },
+  ]
+})
+
+const filteredEmployees = computed(() => employeeData.value)
+
+const isAllSelected = computed(() => {
+  if (filteredEmployees.value.length === 0) return false
+  return filteredEmployees.value.every((emp: any) => selectedEmployees.value.includes(emp.id))
+})
+const isIndeterminate = computed(() => {
+  if (filteredEmployees.value.length === 0) return false
+  const someSelected = filteredEmployees.value.some((emp: any) => selectedEmployees.value.includes(emp.id))
+  return someSelected && !isAllSelected.value
+})
+
+const toggleSelectAll = (val: boolean) => {
+  const currentIds = filteredEmployees.value.map((emp: any) => emp.id)
+  if (val) { const newSet = new Set([...selectedEmployees.value, ...currentIds]); selectedEmployees.value = Array.from(newSet) }
+  else { const currentIdSet = new Set(currentIds); selectedEmployees.value = selectedEmployees.value.filter((id: string) => !currentIdSet.has(id)) }
+}
+
+const getAvatarClass = (role: string) => { const map: Record<string, string> = { ADMIN: 'admin', MANAGER: 'manager', USER: 'user' }; return map[role] || 'user' }
+const getAvatarLetter = (emp: any) => (emp.name || emp.username || '?').charAt(0).toUpperCase()
+const getRoleLabel = (role: string) => { const map: Record<string, string> = { ADMIN: '管理员', MANAGER: '部门主管', USER: '普通员工' }; return map[role] || role }
+
+const deptMemberCounts = ref<Record<string, number>>({})
+
+const getSubDeptIds = (dept: any): string[] => {
+  const ids = [dept.id]
+  if (dept.children) dept.children.forEach((child: any) => ids.push(...getSubDeptIds(child)))
+  return ids
+}
+
+const findDeptNode = (tree: any[], deptId: string): any => {
+  for (const node of tree) {
+    if (node.id === deptId) return node
+    if (node.children) { const found = findDeptNode(node.children, deptId); if (found) return found }
+  }
+  return null
+}
+
+const buildDeptPath = (tree: any[], targetId: string, path: string[] = []): string[] | null => {
+  for (const node of tree) {
+    const currentPath = [...path, node.id]
+    if (node.id === targetId) return currentPath
+    if (node.children) { const found = buildDeptPath(node.children, targetId, currentPath); if (found) return found }
+  }
+  return null
+}
+
+const getDeptMemberCount = (deptId: string) => deptMemberCounts.value[deptId] || 0
+
+const globalEmployeesData = ref<any[]>([])
+
+const buildDeptNameToIdMap = (depts: any[], parentPath = ''): Map<string, string> => {
+  const map = new Map<string, string>()
+  for (const dept of depts) {
+    const fullPath = parentPath ? `${parentPath}/${dept.name}` : dept.name
+    map.set(dept.name, dept.id)
+    map.set(fullPath, dept.id)
+    if (dept.children && dept.children.length > 0) {
+      const childMap = buildDeptNameToIdMap(dept.children, fullPath)
+      childMap.forEach((value, key) => map.set(key, value))
+    }
+  }
+  return map
+}
+
+const getDepartmentIdByName = (deptName: string): string | undefined => {
+  if (!deptName || !orgData.value || orgData.value.length === 0) return undefined
+  const nameToIdMap = buildDeptNameToIdMap(orgData.value)
+  if (nameToIdMap.has(deptName)) return nameToIdMap.get(deptName)
+  const trimmedName = deptName.trim()
+  if (nameToIdMap.has(trimmedName)) return nameToIdMap.get(trimmedName)
+  for (const [name, id] of nameToIdMap.entries()) {
+    if (name.includes(trimmedName) || trimmedName.includes(name)) { console.warn(`部门名称 "${deptName}" 模糊匹配到 "${name}"`); return id }
+  }
+  console.warn(`未找到部门: "${deptName}"`); return undefined
+}
+
+const findDeptByPath = (depts: any[], path: string[]): any | undefined => {
+  if (path.length === 0) return undefined
+  const [current, ...rest] = path
+  const found = depts.find((d: any) => d.name === current)
+  if (!found) return undefined
+  if (rest.length === 0) return found
+  return findDeptByPath(found.children || [], rest)
+}
+
+const resolveDepartmentId = async (level1: string, level2: string, level3: string): Promise<{ departmentId: string | undefined; createdDepts: string[] }> => {
+  const levels = [level1, level2, level3].filter(l => l && l.trim())
+  if (levels.length === 0) return { departmentId: undefined, createdDepts: [] }
+  try {
+    const { data } = await findOrCreateDepartmentPathApi({ level1: level1?.trim(), level2: level2?.trim(), level3: level3?.trim() })
+    return { departmentId: data.departmentId || undefined, createdDepts: data.created || [] }
+  } catch (e) {
+    console.error('解析部门路径失败:', level1, level2, level3, e)
+    const localLevels = [level1, level2, level3].filter(l => l && l.trim())
+    const matched = findDeptByPath(orgData.value, localLevels)
+    return { departmentId: matched?.id, createdDepts: [] }
+  }
+}
+
+const fetchGlobalEmployeesForCount = async () => {
+  try {
+    const { data } = await getEmployeesApi({ page: 1, limit: 99999, includeChildren: false })
+    const records = data?.data || []
+    globalEmployeesData.value = records.map((u: any) => ({ id: u.id, departmentId: u.departmentId, role: u.role }))
+    updateDeptMemberCounts()
+  } catch (e) { console.error('获取全局员工数据失败', e) }
+}
+
+const fetchDeptEmployeesForCount = async () => {
+  try {
+    const params: any = { page: 1, limit: 99999, includeChildren: true }
+    if (selectedDeptId.value) params.departmentId = selectedDeptId.value
+    const { data } = await getEmployeesApi(params)
+    const records = data?.data || []
+    allEmployeesData.value = records.map((u: any) => ({ id: u.id, departmentId: u.departmentId, role: u.role }))
+  } catch (e) { console.error('获取部门员工数据失败', e) }
+}
+
+const updateDeptMemberCounts = () => {
+  const counts: Record<string, number> = {}
+  globalEmployeesData.value.forEach((emp: any) => {
+    if (emp.departmentId) counts[emp.departmentId] = (counts[emp.departmentId] || 0) + 1
+  })
+  const computeWithChildren = (depts: any[]): Record<string, number> => {
+    const result: Record<string, number> = {}
+    for (const dept of depts) {
+      const selfCount = counts[dept.id] || 0
+      let total = selfCount
+      if (dept.children && dept.children.length > 0) {
+        const childCounts = computeWithChildren(dept.children)
+        for (const child of dept.children) total += childCounts[child.id] || 0
+        Object.assign(result, childCounts)
+      }
+      result[dept.id] = total
+    }
+    return result
+  }
+  deptMemberCounts.value = computeWithChildren(orgData.value)
+}
+
+const fetchEmployees = async () => {
+  empLoading.value = true
+  try {
+    const { data } = await getEmployeesApi({
+      page: empPage.value, limit: empPageSize.value,
+      departmentId: selectedDeptId.value || undefined,
+      role: empRoleFilter.value !== 'ALL' ? empRoleFilter.value : undefined,
+      search: empSearch.value || undefined, includeChildren: true,
+    })
+    const records = data?.data || []
+    employeeData.value = records.map((u: any) => ({
+      id: u.id, username: u.username, name: u.name || u.username,
+      role: u.role, email: u.email, department: u.department || null,
+      departmentId: u.departmentId, enabled: u.enabled,
+    }))
+    empTotal.value = data?.total || 0
+  } catch (e) { console.error('获取员工数据失败', e); ElMessage.error('获取员工数据失败') }
+  finally { empLoading.value = false }
+}
+
+const handleSearchChange = () => { empPage.value = 1; fetchEmployees() }
+const handleRoleFilter = (role: string) => { empRoleFilter.value = role; empPage.value = 1; fetchEmployees() }
+
+const toggleSelect = (id: string, selected: boolean) => {
+  if (selected) selectedEmployees.value.push(id)
+  else selectedEmployees.value = selectedEmployees.value.filter((i: string) => i !== id)
+}
+
+const handleBatchDisable = () => {
+  ElMessageBox.confirm(`确认停用选中的 ${selectedEmployees.value.length} 个账号？`, '批量停用', { type: 'warning' })
+    .then(async () => {
+      batchLoading.value = true
+      try { await batchUpdateStatusApi(selectedEmployees.value, false); ElMessage.success('批量停用成功'); selectedEmployees.value = []; fetchEmployees(); fetchGlobalEmployeesForCount(); fetchDeptEmployeesForCount() }
+      catch (e: any) { ElMessage.error(e.response?.data?.message || '操作失败') }
+      finally { batchLoading.value = false }
+    }).catch(() => {})
+}
+
+const handleBatchDelete = () => {
+  ElMessageBox.confirm(`确认删除选中的 ${selectedEmployees.value.length} 个账号？此操作不可恢复！`, '批量删除', { type: 'warning' })
+    .then(async () => {
+      batchLoading.value = true
+      try { await batchDeleteEmployeesApi(selectedEmployees.value); ElMessage.success('批量删除成功'); selectedEmployees.value = []; fetchEmployees(); fetchGlobalEmployeesForCount(); fetchDeptEmployeesForCount() }
+      catch (e: any) { ElMessage.error(e.response?.data?.message || '操作失败') }
+      finally { batchLoading.value = false }
+    }).catch(() => {})
+}
+
+const accountDialogVisible = ref(false)
+const accountDialogType = ref<'add' | 'edit'>('add')
+const accountSubmitting = ref(false)
+const accountForm = reactive({ id: '', username: '', name: '', password: '', role: 'USER', email: '', departmentId: [] as string[] })
+
+const generatePassword = () => {
+  const chars = 'ABCDEFGHJKMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789!@#'
+  let pwd = ''
+  for (let i = 0; i < 10; i++) pwd += chars.charAt(Math.floor(Math.random() * chars.length))
+  accountForm.password = pwd
+}
+
+const handleNewAccount = async () => {
+  accountDialogType.value = 'add'; accountForm.id = ''; accountForm.username = ''; accountForm.name = ''
+  accountForm.password = ''; accountForm.role = 'USER'; accountForm.email = ''
+  if (orgData.value.length === 0) await fetchDepartments()
+  accountForm.departmentId = selectedDeptId.value ? (buildDeptPath(orgData.value, selectedDeptId.value) || []) : []
+  accountDialogVisible.value = true
+}
+
+const handleEditEmployee = async (row: any) => {
+  accountDialogType.value = 'edit'; accountForm.id = row.id; accountForm.username = row.username; accountForm.name = row.name
+  accountForm.password = ''; accountForm.role = row.role; accountForm.email = row.email || ''
+  if (orgData.value.length === 0) await fetchDepartments()
+  accountForm.departmentId = row.department?.id ? (buildDeptPath(orgData.value, row.department.id) || []) : []
+  accountDialogVisible.value = true
+}
+
+const handleDeleteEmployee = (row: any) => {
+  ElMessageBox.confirm(`确认删除账号 "${row.username}" 吗？`, '提示', { type: 'warning' })
+    .then(async () => { try { await deleteEmployeeApi(row.id); ElMessage.success('账号已删除'); fetchEmployees(); fetchGlobalEmployeesForCount(); fetchDeptEmployeesForCount() } catch (e: any) { ElMessage.error(e.response?.data?.message || '删除失败') } })
+    .catch(() => {})
+}
+
+const handleResetPassword = (row: any) => {
+  ElMessageBox.confirm(`确认重置账号 "${row.username}" 的密码？`, '重置密码', { type: 'warning' })
+    .then(async () => { try { await resetPasswordApi(row.id); ElMessage.success('密码已重置为默认密码: 123456') } catch (e: any) { ElMessage.error(e.response?.data?.message || '重置失败') } })
+    .catch(() => {})
+}
+
+const submitAccountForm = async () => {
+  if (!accountForm.username || !accountForm.name) { ElMessage.warning('请填写完整的账号信息'); return }
+  const deptId = Array.isArray(accountForm.departmentId) && accountForm.departmentId.length > 0 ? accountForm.departmentId[accountForm.departmentId.length - 1] : null
+  accountSubmitting.value = true
+  try {
+    if (accountDialogType.value === 'add') {
+      await createEmployeeApi({ username: accountForm.username, password: accountForm.password || undefined, name: accountForm.name, role: accountForm.role, email: accountForm.email || undefined, departmentId: deptId || undefined })
+      ElMessage.success('账号添加成功')
+    } else {
+      const updateData: any = { name: accountForm.name, role: accountForm.role, email: accountForm.email || undefined, departmentId: deptId || null }
+      if (accountForm.password && accountForm.password.trim()) updateData.password = accountForm.password
+      await updateEmployeeApi(accountForm.id, updateData)
+      ElMessage.success('账号编辑成功')
+    }
+    accountDialogVisible.value = false; fetchEmployees(); fetchGlobalEmployeesForCount(); fetchDeptEmployeesForCount()
+  } catch (e: any) { ElMessage.error(e.response?.data?.message || '操作失败') }
+  finally { accountSubmitting.value = false }
+}
+
+// ========== 批量导入 ==========
+const showBatchImportDialog = ref(false)
+const uploadRef = ref()
+const batchImportLoading = ref(false)
+const previewData = ref<any[]>([])
+const uploadedFile = ref<File | null>(null)
+
+const downloadTemplate = () => {
+  const templateData = [
+    { '登录账号': 'zhangsan', '真实姓名': '张三', '密码': '123456', '角色': 'USER', '一级部门': '总公司', '二级部门': '研发部', '三级部门': '', '邮箱': 'zhangsan@example.com' },
+    { '登录账号': 'lisi', '真实姓名': '李四', '密码': '123456', '角色': 'MANAGER', '一级部门': '总公司', '二级部门': '结构设计部', '三级部门': '', '邮箱': 'lisi@example.com' },
+  ]
+  const ws = XLSX.utils.json_to_sheet(templateData)
+  const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, '员工导入模板')
+  XLSX.writeFile(wb, '员工导入模板.xlsx')
+}
+
+const handleFileChange = (file: any) => {
+  const maxSize = 10 * 1024 * 1024
+  if (file.size > maxSize) { ElMessage.error(`文件大小超过限制（最大 10MB），当前大小：${(file.size / 1024 / 1024).toFixed(2)}MB`); uploadRef.value?.clearFiles(); return }
+  const fileName = file.name.toLowerCase()
+  if (!fileName.endsWith('.xlsx') && !fileName.endsWith('.xls') && !fileName.endsWith('.csv')) { ElMessage.error('仅支持 .xlsx、.xls、.csv 格式的文件'); uploadRef.value?.clearFiles(); return }
+  uploadedFile.value = file.raw; parseExcel(file.raw)
+}
+
+const parseExcel = (file: File) => {
+  const reader = new FileReader()
+  reader.onload = (e) => {
+    try {
+      const data = new Uint8Array(e.target?.result as ArrayBuffer)
+      const workbook = XLSX.read(data, { type: 'array' })
+      const firstSheet = workbook.Sheets[workbook.SheetNames[0]]
+      const jsonData = XLSX.utils.sheet_to_json(firstSheet)
+      previewData.value = jsonData.map((row: any) => ({
+        username: row['登录账号'] || row['username'] || '',
+        name: row['真实姓名'] || row['name'] || '',
+        password: row['密码'] || row['password'] || '',
+        role: row['角色'] || row['role'] || 'USER',
+        deptLevel1: row['一级部门'] || row['deptLevel1'] || '',
+        deptLevel2: row['二级部门'] || row['deptLevel2'] || '',
+        deptLevel3: row['三级部门'] || row['deptLevel3'] || '',
+        department: row['部门'] || row['department'] || '',
+        email: row['邮箱'] || row['email'] || '',
+      })).filter((r: any) => r.username && r.name)
+    } catch (err) { console.error('解析Excel失败', err); ElMessage.error('解析Excel文件失败') }
+  }
+  reader.readAsArrayBuffer(file)
+}
+
+const handleBatchImport = async () => {
+  if (previewData.value.length === 0) { ElMessage.warning('请先上传员工数据'); return }
+  const validData = previewData.value.filter((r: any) => r.username && r.name)
+  if (validData.length === 0) { ElMessage.warning('没有有效的员工数据'); return }
+  batchImportLoading.value = true
+  try {
+    const deptPathMap = new Map<string, { level1: string; level2: string; level3: string }>()
+    validData.forEach((r: any) => {
+      const levels = [r.deptLevel1, r.deptLevel2, r.deptLevel3].filter((l: string) => l && l.trim())
+      if (levels.length > 0) { const pathKey = levels.join('|'); if (!deptPathMap.has(pathKey)) deptPathMap.set(pathKey, { level1: r.deptLevel1, level2: r.deptLevel2, level3: r.deptLevel3 }) }
+    })
+    if (deptPathMap.size > 0) {
+      ElMessage.info(`正在检查/创建 ${deptPathMap.size} 个部门路径...`)
+      const entries = Array.from(deptPathMap.entries())
+      const results = await Promise.all(entries.map(([, path]) => resolveDepartmentId(path.level1, path.level2, path.level3)))
+      const allCreatedDepts: string[] = []
+      results.forEach(r => allCreatedDepts.push(...r.createdDepts))
+      if (allCreatedDepts.length > 0) ElMessage.success(`已自动创建 ${allCreatedDepts.length} 个新部门`)
+    }
+    await fetchDepartments()
+    const employees = validData.map((r: any) => {
+      let departmentId: string | undefined = undefined
+      const levels = [r.deptLevel1, r.deptLevel2, r.deptLevel3].filter((l: string) => l && l.trim())
+      if (levels.length > 0) { const matched = findDeptByPath(orgData.value, levels); departmentId = matched?.id }
+      else if (r.department) departmentId = getDepartmentIdByName(r.department)
+      return { username: r.username, name: r.name, password: r.password || undefined, role: r.role?.toUpperCase() || 'USER', departmentId, email: r.email || undefined }
+    })
+    const result = await batchCreateEmployeesApi(employees)
+    const messages: string[] = []
+    if (result.data.successCount > 0) messages.push(`✅ 成功创建 ${result.data.successCount} 个账号`)
+    if (result.data.failCount > 0) {
+      messages.push(`❌ 有 ${result.data.failCount} 个账号创建失败:`)
+      const errorList = result.data.errors.slice(0, 10).join('\n'); messages.push(errorList)
+      if (result.data.errors.length > 10) messages.push(`... 还有 ${result.data.errors.length - 10} 条错误`)
+    }
+    if (result.data.failCount > 0) {
+      ElMessageBox.alert(messages.join('\n\n'), '导入结果', { confirmButtonText: '确定', type: result.data.successCount > 0 ? 'warning' : 'error' })
+    } else { ElMessage.success(messages.join('\n')) }
+    showBatchImportDialog.value = false; previewData.value = []; uploadedFile.value = null; fetchEmployees()
+  } catch (e: any) {
+    const errorMsg = e.response?.data?.message || e.response?.data?.error || '批量导入失败'; ElMessage.error(errorMsg)
+  } finally { batchImportLoading.value = false }
+}
+
+// ========== 批量修正账号 ==========
+const showBatchFixDialog = ref(false)
+const batchFixUploadRef = ref()
+const batchFixLoading = ref(false)
+const batchFixPreviewData = ref<any[]>([])
+const batchFixFile = ref<File | null>(null)
+const batchFixResolved = ref<any[]>([])
+const batchFixChangeCount = computed(() => batchFixPreviewData.value.filter((r: any) => r.status === 'matched').length)
+
+const handleBatchFix = async () => {
+  if (orgData.value.length === 0) await fetchDepartments()
+  showBatchFixDialog.value = true
+}
+
+const handleFixFileChange = (file: any) => {
+  const maxSize = 10 * 1024 * 1024
+  if (file.size > maxSize) { ElMessage.error(`文件大小超过限制（最大 10MB），当前大小：${(file.size / 1024 / 1024).toFixed(2)}MB`); batchFixUploadRef.value?.clearFiles(); return }
+  const fileName = file.name.toLowerCase()
+  if (!fileName.endsWith('.xlsx') && !fileName.endsWith('.xls')) { ElMessage.error('仅支持 .xlsx、.xls 格式的文件'); batchFixUploadRef.value?.clearFiles(); return }
+  batchFixFile.value = file.raw; parseFixExcel(file.raw)
+}
+
+const parseFixExcel = (file: File) => {
+  const reader = new FileReader()
+  reader.onload = async (e) => {
+    try {
+      const data = new Uint8Array(e.target?.result as ArrayBuffer)
+      const workbook = XLSX.read(data, { type: 'array' })
+      const firstSheet = workbook.Sheets[workbook.SheetNames[0]]
+      const jsonData = XLSX.utils.sheet_to_json(firstSheet)
+      const parsed = jsonData.map((row: any) => ({
+        username: String(row['登录账号'] || row['username'] || '').toLowerCase(),
+        name: String(row['真实姓名'] || row['name'] || ''),
+        deptLevel1: String(row['一级部门'] || row['deptLevel1'] || ''),
+        deptLevel2: String(row['二级部门'] || row['deptLevel2'] || ''),
+        deptLevel3: String(row['三级部门'] || row['deptLevel3'] || ''),
+      })).filter((r: any) => r.username && r.name)
+      if (parsed.length === 0) { ElMessage.warning('未找到有效的员工数据（需包含登录账号和真实姓名）'); return }
+      const resolved: Array<{ departmentId?: string; departmentPath: string; name: string; newUsername: string }> = []
+      for (const item of parsed) {
+        const levels = [item.deptLevel1, item.deptLevel2, item.deptLevel3].filter((l: string) => l)
+        const departmentPath = levels.join(' / ') || '未分配'
+        let departmentId: string | undefined
+        if (levels.length > 0) { const matched = findDeptByPath(orgData.value, levels); departmentId = matched?.id }
+        resolved.push({ departmentId, departmentPath, name: item.name, newUsername: item.username })
+      }
+      batchFixResolved.value = resolved; await previewBatchFix()
+    } catch (err) { console.error('解析Excel失败', err); ElMessage.error('解析Excel文件失败') }
+  }
+  reader.readAsArrayBuffer(file)
+}
+
+const previewBatchFix = async () => {
+  const validData = batchFixResolved.value.filter((r: any) => r.departmentId)
+  const unresolvedCount = batchFixResolved.value.filter((r: any) => !r.departmentId).length
+  batchFixPreviewData.value = batchFixResolved.value.map((r: any) => ({
+    departmentPath: r.departmentPath, name: r.name, oldUsername: '-', newUsername: r.newUsername,
+    status: r.departmentId ? 'pending' : 'error',
+    error: r.departmentId ? undefined : '未找到匹配的部门路径',
+  }))
+  if (validData.length === 0) { ElMessage.warning('所有记录均无法解析部门路径，请确认部门信息是否正确'); return }
+  try {
+    const employees = validData.map((r: any) => ({ departmentId: r.departmentId!, name: r.name, newUsername: r.newUsername }))
+    const { data } = await batchUpdateUsernamesApi(employees, true)
+    const matchedMap = new Map<string, { oldUsername: string; status: string }>()
+    if (data.matched) data.matched.forEach((m: any) => { const key = `${m.name}|${m.newUsername}`; matchedMap.set(key, { oldUsername: m.oldUsername, status: m.status }) })
+    batchFixPreviewData.value = batchFixResolved.value.map((r: any) => {
+      if (!r.departmentId) return { departmentPath: r.departmentPath, name: r.name, oldUsername: '-', newUsername: r.newUsername, status: 'error' }
+      const key = `${r.name}|${r.newUsername}`
+      const match = matchedMap.get(key)
+      if (match) return { departmentPath: r.departmentPath, name: r.name, oldUsername: match.oldUsername, newUsername: r.newUsername, status: match.status }
+      return { departmentPath: r.departmentPath, name: r.name, oldUsername: '-', newUsername: r.newUsername, status: 'error' }
+    })
+    if (unresolvedCount > 0) ElMessage.warning(`有 ${unresolvedCount} 条记录无法解析部门路径，已自动跳过`)
+  } catch (e: any) { ElMessage.error('预览匹配失败: ' + (e.response?.data?.message || e.message)) }
+}
+
+const handleBatchFixConfirm = async () => {
+  const toUpdate = batchFixResolved.value.filter((r: any) => r.departmentId)
+  if (toUpdate.length === 0) { ElMessage.warning('没有可修正的记录'); return }
+  const changeCount = batchFixPreviewData.value.filter((r: any) => r.status === 'matched').length
+  if (changeCount === 0) { ElMessage.info('所有账号已是最新，无需修改'); showBatchFixDialog.value = false; return }
+  try { await ElMessageBox.confirm(`确认修正 ${changeCount} 个账号的登录信息？此操作将直接修改数据库中的用户登录账号。`, '批量修正确认', { type: 'warning', confirmButtonText: '确认修正', cancelButtonText: '取消' }) }
+  catch { return }
+  batchFixLoading.value = true
+  try {
+    const employees = toUpdate.map((r: any) => ({ departmentId: r.departmentId, name: r.name, newUsername: r.newUsername }))
+    const { data } = await batchUpdateUsernamesApi(employees, false)
+    const messages: string[] = []
+    if (data.successCount > 0) messages.push(`✅ 成功修正 ${data.successCount} 个账号`)
+    if (data.failCount > 0) { const errorList = data.errors.slice(0, 10).join('\n'); messages.push(`❌ ${data.failCount} 个修正失败:`); messages.push(errorList); if (data.errors.length > 10) messages.push(`... 还有 ${data.errors.length - 10} 条错误`) }
+    if (data.failCount > 0) { ElMessageBox.alert(messages.join('\n\n'), '修正结果', { type: data.successCount > 0 ? 'warning' : 'error', confirmButtonText: '确定' }) }
+    else { ElMessage.success(messages.join('\n')) }
+    showBatchFixDialog.value = false; clearBatchFix(); fetchEmployees(); fetchGlobalEmployeesForCount(); fetchDeptEmployeesForCount()
+  } catch (e: any) { ElMessage.error(e.response?.data?.message || '批量修正失败') }
+  finally { batchFixLoading.value = false }
+}
+
+const clearBatchFix = () => { batchFixPreviewData.value = []; batchFixResolved.value = []; batchFixFile.value = null; batchFixUploadRef.value?.clearFiles() }
+
+const downloadFixTemplate = () => {
+  const templateData = [
+    { '登录账号': 'zhangsan', '真实姓名': '张三', '一级部门': '总公司', '二级部门': '研发部', '三级部门': '', '邮箱': 'zhangsan@example.com' },
+    { '登录账号': 'lisi', '真实姓名': '李四', '一级部门': '总公司', '二级部门': '结构设计部', '三级部门': '', '邮箱': '' },
+  ]
+  const ws = XLSX.utils.json_to_sheet(templateData)
+  const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, '账号修正模板')
+  XLSX.writeFile(wb, '账号修正模板.xlsx')
+}
+
+// ========== 点击外部关闭右键菜单 ==========
+const handleClickOutside = (e: MouseEvent) => { if (contextMenuVisible.value) hideContextMenu() }
+
+onMounted(() => {
+  fetchDepartments(); fetchGlobalEmployeesForCount(); fetchDeptEmployeesForCount(); fetchEmployees()
+  document.addEventListener('click', handleClickOutside)
+})
+
+onUnmounted(() => { document.removeEventListener('click', handleClickOutside) })
+</script>
+
+<style scoped>
+.department-management { padding: 20px; height: calc(100vh - 80px); overflow-y: auto; }
+.page-header { margin-bottom: 20px; }
+.page-header h2 { font-size: 20px; font-weight: 600; color: var(--corp-text-primary); margin: 0; }
+.content-area { min-height: calc(100% - 60px); }
+.dept-layout { display: flex; gap: 20px; height: calc(100vh - 220px); }
+.dept-tree-card { width: 280px; flex-shrink: 0; display: flex; flex-direction: column; }
+.dept-employees-card { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+.card-header { display: flex; justify-content: space-between; align-items: center; font-weight: 600; color: var(--corp-text-primary); }
+.dept-tree-container { flex: 1; overflow-y: auto; position: relative; }
+.dept-node { display: flex; align-items: center; justify-content: space-between; width: 100%; padding-right: 8px; }
+.dept-name { display: flex; align-items: center; gap: 8px; font-weight: 500; font-size: 15px; }
+.dept-icon { color: #3B82F6; font-size: 16px; }
+.dept-count { font-size: 12px; font-weight: 500; color: #6B7280; background: rgba(0,0,0,0.04); padding: 3px 10px; border-radius: 10px; }
+.context-menu { position: fixed; background: #fff; border: 1px solid var(--el-border-color-light); border-radius: 8px; box-shadow: 0 4px 16px rgba(0,0,0,0.12); padding: 6px 0; z-index: 9999; min-width: 140px; }
+.context-item { display: flex; align-items: center; gap: 8px; padding: 8px 16px; font-size: 13px; cursor: pointer; transition: background 0.15s; }
+.context-item:hover { background: var(--el-fill-color-light); }
+.context-item.danger { color: var(--el-color-danger); }
+.employee-toolbar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
+.toolbar-right { display: flex; gap: 10px; }
+.role-tabs { display: flex; gap: 4px; margin-bottom: 12px; border-bottom: 1px solid var(--el-border-color-lighter); padding-bottom: 8px; }
+.role-tab { padding: 8px 16px; font-size: 13px; color: var(--el-text-color-secondary); cursor: pointer; border-radius: 6px 6px 0 0; transition: all 0.15s; position: relative; }
+.role-tab::after { content: ''; position: absolute; bottom: -9px; left: 50%; transform: translateX(-50%) scaleX(0); width: 60%; height: 2px; background: var(--corp-primary); border-radius: 1px; transition: transform 0.2s ease; }
+.role-tab:hover { color: var(--corp-primary); background: var(--color-primary-50); }
+.role-tab.active { color: var(--corp-primary); background: var(--color-primary-50); font-weight: 600; }
+.role-tab.active::after { transform: translateX(-50%) scaleX(1); }
+.list-header { display: flex; align-items: center; padding: 6px 12px; margin-bottom: 4px; font-size: 13px; color: var(--el-text-color-secondary); border-bottom: 1px solid var(--el-border-color-lighter); }
+.batch-actions { display: flex; align-items: center; gap: 12px; padding: 10px 16px; background: rgba(64,158,255,0.06); border-radius: 8px; margin-bottom: 12px; }
+.selected-info { display: flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 500; color: var(--corp-primary); }
+.employee-list { flex: 1; overflow-y: auto; }
+.employee-card { display: flex; align-items: center; padding: 12px 14px; margin-bottom: 6px; border-radius: 8px; background: var(--bg-surface); border: 1px solid var(--corp-border-light); transition: all 0.15s ease; }
+.employee-card:hover { background: var(--bg-surface-hover); border-color: var(--color-primary-200); }
+.employee-card.selected { background: var(--color-primary-50); border-color: var(--color-primary-300); }
+.card-left { display: flex; align-items: center; gap: 12px; margin-right: 14px; }
+.avatar-circle { width: 36px; height: 36px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 14px; font-weight: 600; color: #fff; flex-shrink: 0; }
+.avatar-admin { background: #ef4444; }
+.avatar-manager { background: #f59e0b; }
+.avatar-user { background: #3b82f6; }
+.card-info { flex: 1; min-width: 0; }
+.info-main { display: flex; align-items: center; gap: 10px; margin-bottom: 4px; }
+.emp-name { font-size: 14px; font-weight: 600; color: var(--corp-text-primary); }
+.role-badge { display: inline-flex; align-items: center; gap: 4px; padding: 2px 10px; border-radius: 12px; font-size: 12px; font-weight: 500; }
+.role-badge-admin { background: #fef2f2; color: #dc2626; }
+.role-badge-manager { background: #fffbeb; color: #d97706; }
+.role-badge-user { background: #eff6ff; color: #2563eb; }
+.info-sub { display: flex; align-items: center; gap: 16px; font-size: 12px; color: var(--el-text-color-secondary); }
+.card-actions { display: flex; gap: 6px; flex-shrink: 0; }
+.card-actions .el-button { font-size: 13px; padding: 6px 8px; }
+.pagination-container { margin-top: 16px; display: flex; justify-content: flex-end; }
+.role-card-group { display: flex; gap: 10px; }
+.role-card { display: flex; align-items: center; gap: 6px; padding: 8px 16px; border: 1.5px solid var(--el-border-color); border-radius: 8px; cursor: pointer; transition: all 0.15s; font-size: 13px; font-weight: 500; }
+.role-card:hover { border-color: var(--el-border-color-dark); }
+.role-card-active { border-color: var(--corp-primary); background: rgba(64,158,255,0.06); color: var(--corp-primary); }
+.role-dot-admin { background: #ef4444; }
+.role-dot-manager { background: #f59e0b; }
+.role-dot-user { background: #3b82f6; }
+.batch-import-content { padding: 0 4px; }
+.template-section { margin-bottom: 16px; }
+.preview-section { margin-top: 16px; }
+.preview-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; font-size: 13px; font-weight: 500; color: var(--corp-text-primary); }
+.upload-section { margin-top: 16px; }
+.excel-uploader { width: 100%; }
+:deep(.el-upload-dragger) { padding: 40px 20px; }
+.upload-icon { font-size: 48px; color: var(--el-text-color-secondary); margin-bottom: 16px; }
+.upload-text { color: var(--el-text-color-secondary); }
+.upload-text em { color: var(--corp-primary); font-style: normal; cursor: pointer; }
+.upload-tip { display: block; font-size: 12px; margin-top: 8px; color: var(--el-text-color-disabled); }
+.empty-state { padding: 60px 0; text-align: center; }
+.old-username { color: var(--el-color-danger); text-decoration: line-through; font-size: 12px; }
+.new-username { color: var(--el-color-success); font-weight: 600; font-size: 13px; }
+.fix-summary { margin-top: 12px; padding: 8px 16px; background: rgba(230,162,60,0.1); border-radius: 6px; font-size: 13px; color: var(--el-color-warning); text-align: center; }
+</style>

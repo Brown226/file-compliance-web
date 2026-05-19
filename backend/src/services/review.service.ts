@@ -1,4 +1,4 @@
-import prisma from '../config/db';
+﻿import prisma from '../config/db';
 import { ParserService } from './parser.service';
 import { LlmService, ReviewIssue } from './llm.service';
 import { createPipelineAsync, PipelineContext } from './review-pipeline';
@@ -22,6 +22,55 @@ import path from 'path';
 export class ReviewService {
   // 用户级别并发控制：追踪每个用户正在进行的 AI 审查文件数量
   private static userConcurrencyMap = new Map<string, number>();
+
+  private static buildLocateMeta(
+    extractedText: string,
+    issue: {
+      originalText?: string;
+      textPosition?: any;
+      locateMeta?: any;
+      cadHandleId?: string | null;
+    },
+    extra?: {
+      fileId?: string;
+      pageHint?: number;
+      lineHint?: number;
+    },
+  ) {
+    if (issue.locateMeta) return issue.locateMeta;
+
+    if (issue.cadHandleId) {
+      return LlmService.buildLocateMeta('', '', {
+        cadHandleId: issue.cadHandleId,
+        fileId: extra?.fileId,
+        pageHint: extra?.pageHint,
+        lineHint: extra?.lineHint,
+      });
+    }
+
+    if (!issue.originalText || !extractedText) return null;
+    const legacyPos = issue.textPosition || {};
+    return LlmService.buildLocateMeta(extractedText, issue.originalText, {
+      chunkIndex: legacyPos.chunkIndex,
+      chunkStartIndex: typeof legacyPos.charOffset === 'number' ? legacyPos.charOffset : undefined,
+      totalChunks: legacyPos.totalChunks,
+      fileId: extra?.fileId,
+      pageHint: extra?.pageHint,
+      lineHint: extra?.lineHint,
+    });
+  }
+
+  private static buildLegacyTextPosition(locateMeta: any, extractedText: string, originalText?: string) {
+    if (locateMeta?.absolute?.start != null) {
+      return {
+        chunkIndex: locateMeta.chunk?.index ?? Math.floor(locateMeta.absolute.start / 4000),
+        charOffset: locateMeta.absolute.start,
+        totalChunks: locateMeta.chunk?.total ?? Math.max(1, Math.ceil((extractedText || '').length / 4000)),
+      };
+    }
+    if (!originalText || !extractedText) return null;
+    return LlmService.findTextPosition(extractedText, originalText);
+  }
 
   /**
    * 获取用户当前正在进行的 AI 审查文件数量
@@ -685,9 +734,12 @@ export class ReviewService {
         suggestedText: issue.suggestedText || null,
         description: issue.description,
         cadHandleId: (issue as any).cadHandleId || null,
-        textPosition: (issue.originalText && ctx.extractedText)
-          ? LlmService.findTextPosition(ctx.extractedText, issue.originalText)
-          : null,
+        textPosition: this.buildLegacyTextPosition(
+          this.buildLocateMeta(ctx.extractedText, issue, { fileId: file.id }),
+          ctx.extractedText,
+          issue.originalText,
+        ),
+        locateMeta: this.buildLocateMeta(ctx.extractedText, issue, { fileId: file.id }),
       }));
       await prisma.taskDetail.createMany({ data: ruleData }).catch(() => { /* ignore */ });
       allFastIssues.push(...ruleData);
@@ -705,9 +757,12 @@ export class ReviewService {
         matchLevel: (issue as any).matchLevel || null,
         similarity: (issue as any).similarity || null,
         diffRanges: issue.diffRanges || null,
-        textPosition: (issue.originalText && ctx.extractedText)
-          ? LlmService.findTextPosition(ctx.extractedText, issue.originalText)
-          : null,
+        textPosition: this.buildLegacyTextPosition(
+          this.buildLocateMeta(ctx.extractedText, issue, { fileId: file.id }),
+          ctx.extractedText,
+          issue.originalText,
+        ),
+        locateMeta: this.buildLocateMeta(ctx.extractedText, issue, { fileId: file.id }),
       }));
       await prisma.taskDetail.createMany({ data: stdRefData }).catch(() => { /* ignore */ });
       allFastIssues.push(...stdRefData);
@@ -834,10 +889,13 @@ export class ReviewService {
           matchLevel: issue.matchLevel || null,
           similarity: issue.similarity || null,
           diffRanges: issue.diffRanges || null,
-          textPosition: issue.textPosition
-            || (issue.originalText && ctx.extractedText
-              ? LlmService.findTextPosition(ctx.extractedText, issue.originalText)
-              : null),
+          textPosition: this.buildLegacyTextPosition(
+            issue.locateMeta || this.buildLocateMeta(ctx.extractedText, issue, { fileId: file.id }),
+            ctx.extractedText,
+            issue.originalText,
+          ),
+          locateMeta: issue.locateMeta
+            || this.buildLocateMeta(ctx.extractedText, issue, { fileId: file.id }),
         }));
 
         try {
@@ -898,10 +956,13 @@ export class ReviewService {
             matchLevel: (issue as any).matchLevel || null,
             similarity: (issue as any).similarity || null,
             diffRanges: issue.diffRanges || null,
-            textPosition: issue.textPosition
-              || (issue.originalText && ctx.extractedText
-                ? LlmService.findTextPosition(ctx.extractedText, issue.originalText)
-                : null),
+            textPosition: this.buildLegacyTextPosition(
+              issue.locateMeta || this.buildLocateMeta(ctx.extractedText, issue, { fileId: file.id }),
+              ctx.extractedText,
+              issue.originalText,
+            ),
+            locateMeta: issue.locateMeta
+              || this.buildLocateMeta(ctx.extractedText, issue, { fileId: file.id }),
           }));
           await prisma.taskDetail.createMany({ data: aiData as any });
           console.log(`[Review] 兜底写入 ${aiData.length} 条`);
@@ -1130,3 +1191,4 @@ export class ReviewService {
     }
   }
 }
+

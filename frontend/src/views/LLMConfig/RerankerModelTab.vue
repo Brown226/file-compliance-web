@@ -1,14 +1,11 @@
 <template>
-  <div class="reranker-tab">
-    <div class="config-section">
-      <div class="section-title">Reranker 模型配置</div>
-      <p class="section-desc">用于检索结果重排序，提升知识库检索精度。配置后三阶段混合检索自动生效。</p>
-
+  <div class="engine-tab">
+    <section class="config-section">
       <div class="config-card">
         <el-form :model="config" label-width="120px" label-position="left">
           <el-form-item label="API 密钥">
             <el-input v-model="config.apiKey" type="password" placeholder="sk-..." show-password clearable />
-            <div class="form-tip">通常与 Embedding 模型使用相同的 API Key</div>
+            <div class="form-tip">通常可与 Embedding 模型复用同一组 API 凭据。</div>
           </el-form-item>
 
           <el-form-item label="API 基础 URL">
@@ -20,35 +17,34 @@
               <el-option label="BAAI/bge-reranker-v2-m3" value="BAAI/bge-reranker-v2-m3" />
               <el-option label="BAAI/bge-reranker-large" value="BAAI/bge-reranker-large" />
             </el-select>
-            <div class="form-tip">推荐 BAAI/bge-reranker-v2-m3</div>
+            <div class="form-tip">推荐使用 BAAI/bge-reranker-v2-m3。</div>
           </el-form-item>
         </el-form>
       </div>
-    </div>
 
-    <div class="action-bar">
-      <el-button @click="handleTest" :loading="testLoading" class="test-btn">
-        <el-icon><Connection /></el-icon>
-        测试连接
-      </el-button>
-      <el-button type="primary" @click="handleSave" :loading="saveLoading">
-        <el-icon><Check /></el-icon>
-        保存配置
-      </el-button>
-    </div>
+      <div class="action-bar">
+        <el-button @click="handleTest" :loading="testLoading" class="test-btn">
+          <el-icon><Connection /></el-icon>
+          测试连接
+        </el-button>
+        <el-button type="primary" @click="handleSave" :loading="saveLoading">
+          <el-icon><Check /></el-icon>
+          保存配置
+        </el-button>
+      </div>
 
-    <!-- 测试结果内联显示 -->
-    <div v-if="connectionTestResult" class="test-result" :class="connectionTestResult.success ? 'test-success' : 'test-fail'">
-      <el-icon><component :is="connectionTestResult.success ? 'CircleCheckFilled' : 'CircleCloseFilled'" /></el-icon>
-      <span>{{ connectionTestResult.success ? '✓ 连接成功' : '✗ 连接失败' }}</span>
-      <span v-if="connectionTestResult.message" class="result-detail">{{ connectionTestResult.message }}</span>
-      <span v-if="connectionTestResult.latency !== undefined" class="result-latency">延迟: {{ connectionTestResult.latency }}ms</span>
-    </div>
+      <div v-if="connectionTestResult" class="test-result" :class="connectionTestResult.success ? 'test-success' : 'test-fail'">
+        <el-icon><component :is="connectionTestResult.success ? CircleCheckFilled : CircleCloseFilled" /></el-icon>
+        <span>{{ connectionTestResult.success ? '连接成功' : '连接失败' }}</span>
+        <span v-if="connectionTestResult.message" class="result-detail">{{ connectionTestResult.message }}</span>
+        <span v-if="connectionTestResult.latency !== undefined" class="result-latency">延迟: {{ connectionTestResult.latency }}ms</span>
+      </div>
+    </section>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, onMounted } from 'vue'
+import { computed, reactive, ref, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import { Check, Connection, CircleCheckFilled, CircleCloseFilled } from '@element-plus/icons-vue'
 import { getSystemConfigApi, saveSystemConfigApi, testLlmConnectionApi } from '@/api/system'
@@ -63,6 +59,15 @@ const config = reactive({
   modelName: 'BAAI/bge-reranker-v2-m3',
 })
 
+const originalConfig = ref('')
+
+const normalizedConfig = computed(() => JSON.stringify(config))
+const hasUnsavedChanges = computed(() => normalizedConfig.value !== originalConfig.value)
+const summary = computed(() => [
+  { label: '模型名称', value: config.modelName || '未设置' },
+  { label: '接口地址', value: config.apiBaseUrl || '未设置' },
+])
+
 const handleSave = async () => {
   if (!config.apiKey || !config.apiBaseUrl || !config.modelName) {
     ElMessage.warning('请填写完整的配置信息')
@@ -71,6 +76,7 @@ const handleSave = async () => {
   saveLoading.value = true
   try {
     await saveSystemConfigApi('reranker_model', config)
+    originalConfig.value = JSON.stringify(config)
     ElMessage.success('Reranker 模型配置保存成功')
   } catch (e: any) {
     ElMessage.error(`保存失败: ${e.message || '未知错误'}`)
@@ -102,7 +108,7 @@ const handleTest = async () => {
       latency,
     }
     if (testResult.success) {
-      ElMessage.success('连接测试通过！')
+      ElMessage.success('连接测试通过')
     } else {
       ElMessage.error(`连接失败: ${testResult.message}`)
     }
@@ -124,69 +130,101 @@ onMounted(async () => {
     if (configData && typeof configData === 'object') {
       Object.keys(config).forEach(key => {
         if (key in configData && configData[key] != null) {
-          (config as any)[key] = configData[key]
+          ;(config as any)[key] = configData[key]
         }
       })
     }
+    originalConfig.value = JSON.stringify(config)
   } catch (e) {
     console.error('加载 Reranker 配置失败', e)
   }
 })
+
+defineExpose({
+  get hasUnsavedChanges() {
+    return hasUnsavedChanges.value
+  },
+  get summary() {
+    return summary.value
+  },
+})
 </script>
 
 <style scoped>
-.reranker-tab { display: flex; flex-direction: column; gap: 20px; }
-.config-section { }
-.section-title { font-size: 15px; font-weight: 600; color: var(--corp-text-primary); margin-bottom: 4px; }
-.section-desc { font-size: 13px; color: var(--corp-text-secondary); margin: 0 0 16px; }
-.config-card { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 20px; }
-.form-tip { font-size: 12px; color: #94a3b8; margin-top: 4px; }
-.action-bar { display: flex; gap: 8px; align-items: center; }
+.engine-tab {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.config-section {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.config-card {
+  background: linear-gradient(180deg, #ffffff 0%, #f8fafc 100%);
+  border: 1px solid #e2e8f0;
+  border-radius: 16px;
+  padding: 20px;
+}
+
+.form-tip {
+  margin-top: 4px;
+  font-size: 12px;
+  color: #64748b;
+  line-height: 1.5;
+}
+
+.action-bar {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+}
 
 .test-btn {
-  border-color: var(--corp-primary);
-  color: var(--corp-primary);
+  border-color: #2563eb;
+  color: #2563eb;
 }
 
 .test-btn:hover {
-  background: var(--color-primary-50);
+  background: #eff6ff;
 }
 
-/* 测试结果显示 */
 .test-result {
   display: flex;
   align-items: center;
   gap: 8px;
-  margin-top: 0;
   padding: 10px 14px;
-  border-radius: 8px;
+  border-radius: 10px;
   font-size: 14px;
-  font-weight: 500;
+  font-weight: 600;
 }
 
 .test-success {
-  background: #F0FDF4;
-  border: 1px solid #86EFAC;
+  background: #f0fdf4;
+  border: 1px solid #86efac;
   color: #166534;
 }
 
 .test-fail {
-  background: #FEF2F2;
-  border: 1px solid #FCA5A5;
-  color: #991B1B;
+  background: #fef2f2;
+  border: 1px solid #fca5a5;
+  color: #991b1b;
 }
 
 .result-detail {
   font-weight: 400;
   font-size: 13px;
-  opacity: 0.8;
+  opacity: 0.85;
 }
 
 .result-latency {
   margin-left: auto;
   font-size: 12px;
   padding: 2px 8px;
-  background: rgba(0,0,0,0.06);
-  border-radius: 4px;
+  background: rgba(0, 0, 0, 0.06);
+  border-radius: 999px;
 }
 </style>

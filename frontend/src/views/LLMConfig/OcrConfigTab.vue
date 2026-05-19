@@ -1,44 +1,30 @@
 <template>
-  <div class="ocr-config-tab">
-    <!-- 说明提示 -->
-    <div class="info-banner">
-      <div class="banner-icon">📄</div>
-      <div class="banner-content">
-        <div class="banner-title">OCR 文字识别配置</div>
-        <div class="banner-desc">默认主路径是独立 PaddleOCR 服务；仅在高级配置下启用视觉模型兜底识别扫描件 PDF、图片中的文字内容</div>
-      </div>
-    </div>
-
-    <!-- 配置卡片 -->
-    <div class="config-card">
-      <div class="card-header">
-        <span class="card-title">连接参数</span>
-      </div>
-      
-      <div class="card-body">
+  <div class="engine-tab">
+    <section class="config-section">
+      <div class="config-card">
         <el-form :model="ocrModelConfig" label-width="120px" label-position="left">
           <el-form-item label="API 密钥" required>
-            <el-input 
-              v-model="ocrModelConfig.apiKey" 
-              type="password" 
-              placeholder="sk-..." 
-              show-password 
+            <el-input
+              v-model="ocrModelConfig.apiKey"
+              type="password"
+              placeholder="sk-..."
+              show-password
               clearable
             />
           </el-form-item>
 
           <el-form-item label="API 基础 URL" required>
-            <el-input 
-              v-model="ocrModelConfig.apiBaseUrl" 
+            <el-input
+              v-model="ocrModelConfig.apiBaseUrl"
               placeholder="https://api.openai.com/v1"
               clearable
             />
-      <div class="form-tip">OpenAI 兼容接口地址，仅在需要视觉模型兜底时配置；默认 OCR 仍由独立 PaddleOCR 服务处理</div>
+            <div class="form-tip">默认主路径是独立 OCR 服务。只有在视觉模型兜底场景下才依赖这里的接口。</div>
           </el-form-item>
 
           <el-form-item label="模型名称" required>
-            <el-select 
-              v-model="ocrModelConfig.modelName" 
+            <el-select
+              v-model="ocrModelConfig.modelName"
               placeholder="输入模型名称"
               filterable
               allow-create
@@ -52,15 +38,15 @@
                 :value="model"
               />
             </el-select>
-            <div class="form-tip">推荐：仅在需要更高识别质量时配置视觉模型；默认 OCR 仍走独立 PaddleOCR 服务</div>
+            <div class="form-tip">建议仅在需要更高识别质量时配置视觉模型兜底。</div>
           </el-form-item>
 
           <el-form-item label="超时时间">
-            <div class="input-with-unit">
-              <el-input-number 
-                v-model="ocrModelConfig.timeout" 
-                :min="30" 
-                :max="300" 
+            <div class="inline-number">
+              <el-input-number
+                v-model="ocrModelConfig.timeout"
+                :min="30"
+                :max="300"
                 controls-position="right"
               />
               <span class="unit-label">秒</span>
@@ -69,22 +55,22 @@
         </el-form>
       </div>
 
-      <div class="card-footer">
+      <div class="action-bar">
         <el-button @click="handleTestConnection" :loading="testLoading" class="test-btn">
           <el-icon><Connection /></el-icon>
           测试连接
         </el-button>
-        <el-button type="primary" :loading="saveLoading" @click="handleSaveOcrConfig" class="save-btn">
+        <el-button type="primary" :loading="saveLoading" @click="handleSaveOcrConfig">
           <el-icon><Check /></el-icon>
           保存配置
         </el-button>
       </div>
-    </div>
+    </section>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, onMounted } from 'vue'
+import { computed, reactive, ref, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Check, Connection } from '@element-plus/icons-vue'
 import {
@@ -105,7 +91,6 @@ interface OCRModelConfig {
 const saveLoading = ref(false)
 const testLoading = ref(false)
 
-// 常用 OCR 视觉模型
 const commonOcrModels = [
   'Qwen/Qwen2-VL-72B-Instruct',
   'Qwen/Qwen2-VL-7B-Instruct',
@@ -116,7 +101,7 @@ const commonOcrModels = [
   'deepseek-ai/DeepSeek-VL2-7B',
   'PaddlePaddle/PaddleOCR-VL-1.5',
   'THUDM/glm-4v-9b',
-  'moonshot-v1-8k', // 支持图片输入
+  'moonshot-v1-8k',
 ]
 
 const ocrModelConfig = reactive<OCRModelConfig>({
@@ -127,6 +112,16 @@ const ocrModelConfig = reactive<OCRModelConfig>({
   timeout: 180,
   enabled: true,
 })
+
+const originalConfig = ref('')
+
+const normalizedConfig = computed(() => JSON.stringify(ocrModelConfig))
+const hasUnsavedChanges = computed(() => normalizedConfig.value !== originalConfig.value)
+const summary = computed(() => [
+  { label: '模型名称', value: ocrModelConfig.modelName || '未设置' },
+  { label: '接口地址', value: ocrModelConfig.apiBaseUrl || '未设置' },
+  { label: '超时时间', value: `${ocrModelConfig.timeout} 秒` },
+])
 
 const handleTestConnection = async () => {
   if (!ocrModelConfig.apiKey) {
@@ -143,7 +138,7 @@ const handleTestConnection = async () => {
       modelType: 'chat',
     })
     if (testResult.success) {
-      ElMessage.success('连接测试通过！')
+      ElMessage.success('连接测试通过')
     } else {
       ElMessage.error(`连接失败: ${testResult.message}`)
     }
@@ -161,7 +156,6 @@ const handleSaveOcrConfig = async () => {
   }
   saveLoading.value = true
   try {
-    // 先测试连接
     const { data: testResult } = await testLlmConnectionApi({
       serviceType: ocrModelConfig.serviceType,
       apiKey: ocrModelConfig.apiKey,
@@ -169,12 +163,11 @@ const handleSaveOcrConfig = async () => {
       modelName: ocrModelConfig.modelName,
       modelType: 'chat',
     })
-    
-    // 测试失败时给用户选择权
+
     if (!testResult.success) {
       try {
         await ElMessageBox.confirm(
-          `连接测试失败: ${testResult.message}\n\n是否仍然保存配置？您可以稍后修正后再测试。`,
+          `连接测试失败: ${testResult.message}\n\n是否仍然保存配置？`,
           '警告',
           {
             confirmButtonText: '仍然保存',
@@ -183,17 +176,14 @@ const handleSaveOcrConfig = async () => {
           }
         )
       } catch {
-        // 用户取消
         return
       }
     }
-    
-    // 保存配置到数据库
+
     await saveSystemConfigApi('llm_ocr_model', ocrModelConfig)
-    ElMessage.success('配置保存成功！')
+    originalConfig.value = JSON.stringify(ocrModelConfig)
+    ElMessage.success('配置保存成功')
   } catch (e: any) {
-    console.error('保存配置失败:', e)
-    // 保存失败时不重置表单，保留用户输入
     const errorMsg = e.response?.data?.error || e.message || '保存失败'
     ElMessage.error(`保存失败: ${errorMsg}`)
   } finally {
@@ -205,8 +195,7 @@ onMounted(async () => {
   try {
     const { data } = await getSystemConfigApi('llm_ocr_model')
     let configData = data?.value || data
-    
-    // 兼容双重序列化的旧数据
+
     if (typeof configData === 'string') {
       try {
         configData = JSON.parse(configData)
@@ -215,125 +204,79 @@ onMounted(async () => {
         return
       }
     }
-    
+
     if (configData && typeof configData === 'object') {
       Object.keys(ocrModelConfig).forEach(key => {
         if (key in configData && configData[key] !== undefined && configData[key] !== null) {
-          (ocrModelConfig as any)[key] = configData[key]
+          ;(ocrModelConfig as any)[key] = configData[key]
         }
       })
     }
+    originalConfig.value = JSON.stringify(ocrModelConfig)
   } catch (e) {
     console.error('加载配置失败', e)
   }
 })
+
+defineExpose({
+  get hasUnsavedChanges() {
+    return hasUnsavedChanges.value
+  },
+  get summary() {
+    return summary.value
+  },
+})
 </script>
 
 <style scoped>
-.ocr-config-tab {
+.engine-tab {
   display: flex;
   flex-direction: column;
-  gap: 20px;
-  padding: 8px 0;
+  gap: 18px;
 }
 
-/* 信息提示横幅 */
-.info-banner {
+.config-section {
   display: flex;
-  align-items: center;
-  gap: 16px;
-  padding: 16px 20px;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-  border-radius: var(--corp-radius-lg);
-  color: #fff;
+  flex-direction: column;
+  gap: 18px;
 }
 
-.banner-icon {
-  font-size: 32px;
-  flex-shrink: 0;
-}
-
-.banner-content {
-  flex: 1;
-}
-
-.banner-title {
-  font-size: 15px;
-  font-weight: 600;
-  margin-bottom: 4px;
-}
-
-.banner-desc {
-  font-size: 13px;
-  opacity: 0.9;
-}
-
-/* 配置卡片 */
 .config-card {
-  background: var(--bg-surface);
-  border-radius: var(--corp-radius-lg);
-  border: 1px solid var(--corp-border-light);
-  overflow: hidden;
-}
-
-.card-header {
-  padding: 14px 20px;
-  background: #fafafa;
-  border-bottom: 1px solid var(--corp-border-light);
-}
-
-.card-title {
-  font-size: 14px;
-  font-weight: 600;
-  color: var(--corp-text-primary);
-}
-
-.card-body {
+  background: linear-gradient(180deg, #ffffff 0%, #f8fafc 100%);
+  border: 1px solid #e2e8f0;
+  border-radius: 16px;
   padding: 20px;
-  background: #fff;
 }
 
-.input-with-unit {
+.inline-number {
   display: flex;
   align-items: center;
   gap: 8px;
 }
 
-.unit-label {
-  font-size: 13px;
-  color: var(--corp-text-secondary);
-}
-
-.reset-btn {
+.unit-label,
+.form-tip {
   font-size: 12px;
-}
-
-.card-footer {
-  display: flex;
-  justify-content: flex-end;
-  gap: 12px;
-  padding: 16px 20px;
-  background: #fafafa;
-  border-top: 1px solid var(--corp-border-light);
-}
-
-.test-btn {
-  border-color: var(--corp-primary);
-  color: var(--corp-primary);
-}
-
-.test-btn:hover {
-  background: var(--color-primary-50);
-}
-
-.save-btn {
-  min-width: 110px;
+  color: #64748b;
 }
 
 .form-tip {
-  font-size: 12px;
-  color: var(--corp-text-secondary);
   margin-top: 4px;
-  line-height: 1.4;
+  line-height: 1.5;
+}
+
+.action-bar {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+.test-btn {
+  border-color: #2563eb;
+  color: #2563eb;
+}
+
+.test-btn:hover {
+  background: #eff6ff;
 }
 </style>

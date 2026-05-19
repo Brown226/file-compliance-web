@@ -1,4 +1,4 @@
-<template>
+﻿<template>
   <el-container class="layout-container">
     <el-aside :width="sidebarCollapsed ? '64px' : 'var(--corp-sidebar-width)'" class="aside" :class="{ collapsed: sidebarCollapsed, 'sidebar-open': sidebarOpen }">
       <div class="logo" :class="{ 'logo-collapsed': sidebarCollapsed }">
@@ -19,7 +19,7 @@
         text-color="#9CA3AF"
         active-text-color="#FFFFFF"
       >
-        <!-- ===== 用户功能（所有角色可见）===== -->
+        <!-- ===== 鐢ㄦ埛鍔熻兘锛堟墍鏈夎鑹插彲瑙侊級===== -->
         <el-menu-item index="/workspace">
           <el-icon><DataBoard /></el-icon>
           <template #title><span>工作台</span></template>
@@ -47,7 +47,7 @@
           <template #title><span>系统公告</span></template>
         </el-menu-item>
 
-        <!-- ===== 管理后台（ADMIN/MANAGER 可见，折叠子菜单）===== -->
+        <!-- ===== 管理后台锛圓DMIN/MANAGER 鍙锛屾姌鍙犲瓙鑿滃崟锛?==== -->
         <template v-if="userStore.isAdminOrManager()">
           <div class="menu-divider" v-show="!sidebarCollapsed"></div>
           <el-sub-menu index="/admin" popper-class="admin-submenu-popper">
@@ -55,42 +55,68 @@
               <el-icon><Setting /></el-icon>
               <span>管理后台</span>
             </template>
-            <el-menu-item index="/admin/dashboard">
-              <el-icon><DataBoard /></el-icon>
-              <template #title><span>数据看板</span></template>
-            </el-menu-item>
-            <el-menu-item index="/admin/standards">
-              <el-icon><Reading /></el-icon>
-              <template #title><span>标准库管理</span></template>
-            </el-menu-item>
-            <el-menu-item index="/admin/knowledge-categories">
-              <el-icon><FolderOpened /></el-icon>
-              <template #title><span>知识库管理</span></template>
-            </el-menu-item>
-            <el-menu-item index="/admin/rule-libraries">
-              <el-icon><Notebook /></el-icon>
-              <template #title><span>规则库管理</span></template>
-            </el-menu-item>
-            <el-menu-item index="/admin/rules">
-              <el-icon><Operation /></el-icon>
-              <template #title><span>审查规则管理</span></template>
-            </el-menu-item>
-            <el-menu-item index="/admin/prompts">
-              <el-icon><Edit /></el-icon>
-              <template #title><span>提示词模板</span></template>
-            </el-menu-item>
-            <el-menu-item index="/admin/system">
-              <el-icon><Tools /></el-icon>
-              <template #title><span>系统配置</span></template>
-            </el-menu-item>
-            <el-menu-item index="/admin/audit">
-              <el-icon><Document /></el-icon>
-              <template #title><span>审计日志</span></template>
-            </el-menu-item>
-            <el-menu-item index="/admin/feedback">
-              <el-icon><ChatLineSquare /></el-icon>
-              <template #title><span>反馈管理</span></template>
-            </el-menu-item>
+            <el-menu-item-group title="运营与监控">
+              <el-menu-item index="/admin/dashboard">
+                <el-icon><DataBoard /></el-icon>
+                <template #title><span>数据看板</span></template>
+              </el-menu-item>
+              <el-menu-item index="/admin/feedback">
+                <el-icon><ChatLineSquare /></el-icon>
+                <template #title><span>反馈管理</span></template>
+              </el-menu-item>
+            </el-menu-item-group>
+            <el-menu-item-group title="规范与知识">
+              <el-menu-item index="/admin/standards">
+                <el-icon><Reading /></el-icon>
+                <template #title><span>标准库管理</span></template>
+              </el-menu-item>
+              <el-menu-item index="/admin/knowledge-categories">
+                <el-icon><FolderOpened /></el-icon>
+                <template #title><span>知识库管理</span></template>
+              </el-menu-item>
+              <el-menu-item index="/admin/rule-libraries">
+                <el-icon><Notebook /></el-icon>
+                <template #title><span>规则库管理</span></template>
+              </el-menu-item>
+            </el-menu-item-group>
+            <el-menu-item-group title="审查配置">
+              <el-menu-item index="/admin/rules">
+                <el-icon><Operation /></el-icon>
+                <template #title><span>审查规则</span></template>
+              </el-menu-item>
+              <el-menu-item index="/admin/prompts">
+                <el-icon><Edit /></el-icon>
+                <template #title><span>提示词模板</span></template>
+              </el-menu-item>
+            </el-menu-item-group>
+            <el-menu-item-group title="系统设置">
+              <el-menu-item index="/admin/system">
+                <el-icon><Tools /></el-icon>
+                <template #title><span>系统总览</span></template>
+              </el-menu-item>
+              <el-menu-item index="/admin/users">
+                <el-icon><User /></el-icon>
+                <template #title><span>部门与员工</span></template>
+              </el-menu-item>
+              <el-menu-item index="/admin/storage">
+                <el-icon><FolderOpened /></el-icon>
+                <template #title><span>存储管理</span></template>
+              </el-menu-item>
+              <el-menu-item index="/admin/ai-engine">
+                <el-icon><Tools /></el-icon>
+                <template #title><span>AI 引擎</span></template>
+              </el-menu-item>
+              <el-menu-item index="/admin/basic">
+                <el-icon><Setting /></el-icon>
+                <template #title><span>基础设置</span></template>
+              </el-menu-item>
+            </el-menu-item-group>
+            <el-menu-item-group title="治理与审计">
+              <el-menu-item index="/admin/audit">
+                <el-icon><Document /></el-icon>
+                <template #title><span>审计日志</span></template>
+              </el-menu-item>
+            </el-menu-item-group>
           </el-sub-menu>
         </template>
       </el-menu>
@@ -110,12 +136,12 @@
             <el-icon :size="20"><Fold /></el-icon>
           </div>
           <div class="breadcrumb">
-            <span class="breadcrumb-item">{{ route.meta.title || '系统' }}</span>
+            <span class="breadcrumb-item">{{ route.meta.title || '绯荤粺' }}</span>
           </div>
         </div>
         <div class="security-warning">
           <el-icon :size="14"><WarningFilled /></el-icon>
-          <span>审查内容由AI审查，仅供参考！本平台严禁处理、存储和传递涉密敏感信息！</span>
+          <span>审查内容由 AI 生成，仅供参考。平台严禁处理、存储和传输涉密敏感信息。</span>
         </div>
         <div class="header-right">
           <div class="header-tools">
@@ -150,7 +176,7 @@
             </div>
             <template #dropdown>
               <el-dropdown-menu>
-                <!-- 用户信息头 -->
+                <!-- 鐢ㄦ埛淇℃伅澶?-->
                 <div class="dropdown-user-header">
                   <el-avatar :size="40" class="dropdown-avatar">{{ userStore.userInfo?.name?.charAt(0).toUpperCase() || 'A' }}</el-avatar>
                   <div class="dropdown-user-meta">
@@ -172,8 +198,7 @@
                   <el-icon><Lock /></el-icon>修改密码
                 </el-dropdown-item>
                 <el-dropdown-item command="logout" divided class="text-danger">
-                  <el-icon><SwitchButton /></el-icon>退出登录
-                </el-dropdown-item>
+                  <el-icon><SwitchButton /></el-icon>退出登录                </el-dropdown-item>
               </el-dropdown-menu>
             </template>
           </el-dropdown>
@@ -243,14 +268,14 @@
 
     <NotificationCenter ref="notificationCenterRef" />
 
-    <el-dialog v-model="showShortcutHelp" title="⌨️ 快捷键" width="520px">
+    <el-dialog v-model="showShortcutHelp" title="快捷键" width="520px">
       <el-table :data="shortcutsList" border size="small">
         <el-table-column label="快捷键" width="180" align="center">
           <template #default="{ row }">
             <kbd class="kbd">{{ row.keys }}</kbd>
           </template>
         </el-table-column>
-        <el-table-column label="功能" prop="desc" />
+        <el-table-column label="鍔熻兘" prop="desc" />
       </el-table>
       <template #footer>
         <el-button type="primary" @click="showShortcutHelp = false">知道了</el-button>
@@ -298,7 +323,7 @@ watch(sidebarCollapsed, (val) => {
   localStorage.setItem('sidebar_collapsed', String(val))
 })
 
-// 监听其他页面（如结果页）通过 localStorage 发出的侧边栏控制信号
+// 监听其他页面通过 localStorage 发出的侧边栏控制信号
 const onStorageChange = (e: StorageEvent) => {
   if (e.key === 'sidebar_collapsed' && e.newValue !== null) {
     sidebarCollapsed.value = e.newValue === 'true'
@@ -330,7 +355,7 @@ const shortcutsList = [
   { keys: 'Ctrl + N', desc: '智能审查' },
   { keys: 'Esc', desc: '关闭弹窗/返回' },
   { keys: '?', desc: '显示快捷键帮助' },
-  { keys: 'Ctrl + S', desc: '保存当前编辑 (表单页)' },
+  { keys: 'Ctrl + S', desc: '保存当前编辑（表单页）' },
 ]
 
 onMounted(() => {
@@ -368,7 +393,7 @@ const validateConfirmPassword = (_rule: any, value: string, callback: any) => {
   if (value === '') {
     callback(new Error('请再次输入新密码'))
   } else if (value !== passwordForm.newPassword) {
-    callback(new Error('两次输入密码不一致!'))
+    callback(new Error('两次输入密码不一致'))
   } else {
     callback()
   }
@@ -483,7 +508,7 @@ const submitUsernameChange = async () => {
         })
         ElMessage.success('登录账号修改成功')
         usernameDialogVisible.value = false
-        // 用新账号重新登录刷新用户信息
+        // 鐢ㄦ柊璐﹀彿閲嶆柊鐧诲綍鍒锋柊鐢ㄦ埛淇℃伅
         const { data } = await loginApi({
           username: usernameForm.newUsername,
           password: usernameForm.password,
@@ -507,7 +532,7 @@ const submitUsernameChange = async () => {
   background-color: var(--bg-body);
 }
 
-/* ===== 侧边栏 — Near-black with subtle depth ===== */
+/* ===== 渚ц竟鏍?鈥?Near-black with subtle depth ===== */
 .aside {
   background:
     linear-gradient(180deg, #0F0F0F 0%, #111111 30%, #111111 70%, #0D0D0D 100%);
@@ -604,7 +629,7 @@ const submitUsernameChange = async () => {
   overflow-y: auto;
 }
 
-/* 菜单项 — 紧凑、左侧激活指示条 */
+/* 鑿滃崟椤?鈥?绱у噾銆佸乏渚ф縺娲绘寚绀烘潯 */
 .clean-menu :deep(.el-menu-item.el-menu-item) {
   height: 40px;
   line-height: 40px;
@@ -685,7 +710,7 @@ const submitUsernameChange = async () => {
   display: none;
 }
 
-/* 管理后台折叠子菜单 */
+/* 管理后台鎶樺彔瀛愯彍鍗?*/
 .clean-menu :deep(.el-sub-menu .el-sub-menu__title) {
   height: 40px;
   line-height: 40px;
@@ -786,7 +811,7 @@ const submitUsernameChange = async () => {
   background-color: rgba(255, 255, 255, 0.04);
 }
 
-/* 头部 — 毛玻璃效果 */
+/* 澶撮儴 鈥?姣涚幓鐠冩晥鏋?*/
 .header {
   background: rgba(255, 255, 255, 0.92);
   backdrop-filter: blur(18px);
@@ -801,7 +826,7 @@ const submitUsernameChange = async () => {
   gap: 16px;
 }
 
-/* 安全警告 — 低调胶囊 */
+/* 瀹夊叏璀﹀憡 鈥?浣庤皟鑳跺泭 */
 .security-warning {
   display: flex;
   align-items: center;
@@ -953,7 +978,7 @@ const submitUsernameChange = async () => {
   flex-shrink: 0;
 }
 
-/* 下拉菜单用户信息头 */
+/* 涓嬫媺鑿滃崟鐢ㄦ埛淇℃伅澶?*/
 .dropdown-user-header {
   display: flex;
   align-items: center;
@@ -997,7 +1022,7 @@ const submitUsernameChange = async () => {
   line-height: 1.3;
 }
 
-/* 主内容区 */
+/* 涓诲唴瀹瑰尯 */
 .main-content {
   background-color: #F5F5F5;
   padding: 20px;
@@ -1041,7 +1066,7 @@ const submitUsernameChange = async () => {
 }
 </style>
 
-<!-- 管理后台折叠弹出菜单 — 非 scoped（teleported 到 body） -->
+<!-- 管理后台鎶樺彔寮瑰嚭鑿滃崟 鈥?闈?scoped锛坱eleported 鍒?body锛?-->
 <style>
 .admin-submenu-popper {
   background: #1A1A1A !important;
@@ -1089,3 +1114,9 @@ const submitUsernameChange = async () => {
   color: #D1D5DB !important;
 }
 </style>
+
+
+
+
+
+

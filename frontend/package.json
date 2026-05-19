@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "vite",
     "build": "vue-tsc -b && vite build",
+    "check:mojibake": "node ../scripts/scan-mojibake.js",
     "preview": "vite preview",
     "postinstall": "node -e \"const fs=require('fs'),p=require('path'),src=p.join(__dirname,'node_modules/@mlightcad/libredwg-web/wasm/libredwg-web.wasm'),dst=p.join(__dirname,'public/libredwg-web.wasm');if(fs.existsSync(src)&&!fs.existsSync(dst)){fs.copyFileSync(src,dst);console.log('[postinstall] Copied libredwg-web.wasm to public/')}else if(!fs.existsSync(src)){console.warn('[postinstall] WARN: @mlightcad/libredwg-web wasm not found, skip copy')}else{console.log('[postinstall] libredwg-web.wasm already in public/')}\""
   },

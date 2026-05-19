@@ -93,6 +93,7 @@ export interface TaskDetail {
   similarity?: number
   /** 文本位置信息 - 用于前端定位 */
   textPosition?: TextPosition
+  locateMeta?: LocateMeta | null
   /** DWG 解析元数据 */
   dwgMetadata?: DwgMetadata
   /** 标记建议是否已采纳 */
@@ -107,6 +108,17 @@ export interface TextPosition {
 }
 
 /** Diff 高亮范围 */
+export interface LocateMeta {
+  version: 2
+  mode: 'text' | 'dwg'
+  confidence: 'exact' | 'trimmed' | 'normalized' | 'fallback'
+  absolute?: { start: number; end: number }
+  quote?: { text: string; normalizedText?: string }
+  context?: { prefix: string; suffix: string }
+  chunk?: { index: number; start: number; end: number; total: number }
+  hint?: { fileId?: string; pageHint?: number; lineHint?: number; cadHandleId?: string }
+}
+
 export interface DiffRange {
   start: number
   length: number

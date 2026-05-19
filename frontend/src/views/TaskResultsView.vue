@@ -208,7 +208,45 @@
               </div>
             </div>
 
-            <el-empty v-if="filteredDetails.length === 0" description="审查通过，未发现任何问题" />
+            <div v-if="filteredDetails.length === 0" class="review-summary">
+              <h3 class="summary-title">审查摘要</h3>
+              <div v-if="reviewSummary" class="summary-cards">
+                <div class="summary-card">
+                  <span class="summary-label">审查模式</span>
+                  <span class="summary-value">{{ getModeLabel(reviewSummary.reviewMode) }}</span>
+                </div>
+                <div class="summary-card">
+                  <span class="summary-label">审查文件</span>
+                  <span class="summary-value">{{ reviewSummary.totalFiles }}个 ({{ (reviewSummary.fileTypes || []).join(', ') || '—' }})</span>
+                </div>
+                <div class="summary-card" :class="{ 'has-issues': reviewSummary.totalIssues > 0 }">
+                  <span class="summary-label">发现问题</span>
+                  <span class="summary-value">{{ reviewSummary.totalIssues }}条</span>
+                </div>
+                <div class="summary-card sub" v-if="reviewSummary.ruleIssues > 0">
+                  <span class="summary-label">· 规则引擎</span>
+                  <span class="summary-value">{{ reviewSummary.ruleIssues }}条</span>
+                </div>
+                <div class="summary-card sub" v-if="reviewSummary.stdRefIssues > 0">
+                  <span class="summary-label">· 标准引用</span>
+                  <span class="summary-value">{{ reviewSummary.stdRefIssues }}条</span>
+                </div>
+                <div class="summary-card sub" v-if="reviewSummary.aiIssues > 0">
+                  <span class="summary-label">· AI 审查</span>
+                  <span class="summary-value">{{ reviewSummary.aiIssues }}条</span>
+                </div>
+                <div class="summary-card" v-if="reviewSummary.fastFailedCount > 0 || reviewSummary.slowFailedCount > 0">
+                  <span class="summary-label" style="color: var(--el-color-danger)">处理异常</span>
+                  <span class="summary-value" style="color: var(--el-color-danger)">
+                    {{ reviewSummary.fastFailedCount + reviewSummary.slowFailedCount }}个文件处理失败
+                  </span>
+                </div>
+              </div>
+              <div v-if="totalIssuesExclSummary === 0" class="summary-pass">
+                <el-icon color="#67c23a" :size="24"><CircleCheckFilled /></el-icon>
+                <span>审查完成，未发现需要处理的问题</span>
+              </div>
+            </div>
           </div>
 
           <!-- Tab 2: 问题明细（核心功能） -->
@@ -566,6 +604,7 @@ import {
   Check,
   Remove,
   CirclePlus,
+  CircleCheckFilled,
 } from '@element-plus/icons-vue'
 import {
   getTaskByIdApi,
@@ -616,7 +655,7 @@ const showPlainLanguage = ref(false)
 // ===== 文件预览相关 =====
 const selectedFileId = ref<string | null>(null)
 const filterFileId = ref<string>('')
-const locateTarget = ref<{ originalText: string; locateCandidates?: string[]; textPosition: any; cadHandleId?: string; locateHint?: string; triggerId?: string } | null>(null)
+const locateTarget = ref<{ originalText: string; locateCandidates?: string[]; textPosition: any; locateMeta?: any; cadHandleId?: string; locateHint?: string; triggerId?: string } | null>(null)
 const locateFeedback = ref<{ type: 'success' | 'warning'; message: string } | null>(null)
 const locateStatusMap = ref<Record<string, 'direct' | 'fallback'>>({})
 const locatingIssueId = ref<string | null>(null)
@@ -627,7 +666,7 @@ const selectedFileName = computed(() => selectedFile.value?.fileName || '')
 
 const switchToFileContext = (
   fileId: string,
-  options?: { locate?: { originalText: string; locateCandidates?: string[]; textPosition: any; cadHandleId?: string; locateHint?: string } }
+  options?: { locate?: { originalText: string; locateCandidates?: string[]; textPosition: any; locateMeta?: any; cadHandleId?: string; locateHint?: string } }
 ) => {
   selectedFileId.value = fileId
   filterFileId.value = fileId
@@ -640,6 +679,7 @@ const switchToFileContext = (
         originalText: options.locate!.originalText || '',
         locateCandidates: options.locate!.locateCandidates || [],
         textPosition: options.locate!.textPosition || null,
+        locateMeta: options.locate!.locateMeta || null,
         cadHandleId: options.locate!.cadHandleId,
         locateHint: options.locate!.locateHint,
         triggerId: `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
@@ -787,10 +827,31 @@ const fpSubmitting = ref(false)
 const fpTargetDetail = ref<TaskDetail | null>(null)
 
 // ===== 数据过滤 =====
-const filteredDetails = computed(() => {
-  if (!filterFileId.value) return allDetails.value
-  return allDetails.value.filter((d: any) => d.fileId === filterFileId.value)
+const reviewSummary = computed(() => {
+  const detail = allDetails.value.find((d: any) => d.issueType === 'REVIEW_SUMMARY')
+  if (detail?.description) return typeof detail.description === 'string' ? JSON.parse(detail.description) : detail.description
+  return null
 })
+
+const getModeLabel = (mode: string) => {
+  const map: Record<string, string> = {
+    LIBRARY_REVIEW: '以库审文',
+    DOC_REVIEW: '以文审文',
+    CONSISTENCY: '一致性审查',
+    TYPO_GRAMMAR: '错别字/语法',
+    MULTIMODAL: '多模态识别',
+    CUSTOM_RULE: '自定义规则',
+    FULL_REVIEW: '全量审查',
+  }
+  return map[mode] || mode
+}
+
+const filteredDetails = computed(() => {
+  let details = allDetails.value.filter((d: any) => d.issueType !== 'REVIEW_SUMMARY')
+  if (filterFileId.value) details = details.filter((d: any) => d.fileId === filterFileId.value)
+  return details
+})
+const totalIssuesExclSummary = computed(() => filteredDetails.value.length)
 const errorIssues = computed(() => filteredDetails.value.filter((d: any) => d.severity === 'error'))
 const warningIssues = computed(() => filteredDetails.value.filter((d: any) => d.severity === 'warning'))
 const infoIssues = computed(() => filteredDetails.value.filter((d: any) => d.severity === 'info'))
@@ -896,6 +957,7 @@ const appendNewIssues = (msg: WsMessage) => {
     similarity: d.similarity,
     diffRanges: d.diffRanges,
     textPosition: d.textPosition,
+    locateMeta: d.locateMeta || null,
     fileId: msg.fileId,
     isFalsePositive: false,
     adopted: false,
@@ -972,6 +1034,7 @@ const fetchData = async (silent = false) => {
       plainLanguage: d.plainLanguage || null,
       cadHandleId: d.cadHandleId,
       textPosition: d.textPosition || null,
+      locateMeta: d.locateMeta || null,
       diffRanges: d.diffRanges || null,
       sourceReferences: d.sourceReferences || null,
       standardRefId: d.standardRefId,
@@ -1052,7 +1115,7 @@ const collectLocateAnchors = (item: TaskDetail): string[] => {
     })
 }
 
-const buildLocatePayload = (item: TaskDetail): { originalText: string; locateCandidates: string[]; textPosition: any; cadHandleId?: string; locateHint?: string } => {
+const buildLocatePayload = (item: TaskDetail): { originalText: string; locateCandidates: string[]; textPosition: any; locateMeta?: any; cadHandleId?: string; locateHint?: string } => {
   const anchors = collectLocateAnchors(item)
   const locateCandidates = anchors
     .map(pickLocateKeyword)
@@ -1075,6 +1138,7 @@ const buildLocatePayload = (item: TaskDetail): { originalText: string; locateCan
     originalText: keyword,
     locateCandidates: uniqueCandidates,
     textPosition: item.textPosition || null,
+    locateMeta: item.locateMeta || null,
     cadHandleId: item.cadHandleId,
     locateHint: fallbackHint,
   }
@@ -2431,6 +2495,71 @@ onUnmounted(() => {
 
 .mt-3 {
   margin-top: 12px;
+}
+
+/* 审查摘要 */
+.review-summary {
+  padding: 24px;
+}
+
+.summary-title {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--el-text-color-primary);
+  margin: 0 0 16px 0;
+}
+
+.summary-cards {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-bottom: 20px;
+}
+
+.summary-card {
+  display: flex;
+  flex-direction: column;
+  padding: 12px 16px;
+  background: var(--el-fill-color-light);
+  border-radius: 8px;
+  min-width: 140px;
+  border: 1px solid var(--el-border-color-lighter);
+}
+
+.summary-card.sub {
+  background: transparent;
+  border: none;
+  min-width: 100px;
+  padding: 6px 12px;
+}
+
+.summary-card.has-issues {
+  border-color: var(--el-color-warning);
+  background: rgba(230, 162, 60, 0.06);
+}
+
+.summary-label {
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
+  margin-bottom: 4px;
+}
+
+.summary-value {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--el-text-color-primary);
+}
+
+.summary-pass {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 16px;
+  background: rgba(103, 194, 58, 0.06);
+  border-radius: 8px;
+  font-size: 14px;
+  color: #67c23a;
+  font-weight: 500;
 }
 
 /* 响应式 */

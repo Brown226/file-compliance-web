@@ -1,33 +1,30 @@
 <template>
-  <div class="chat-model-tab">
-    <!-- 配置表单 -->
-    <div class="config-section">
-      <div class="section-title">Chat 模型配置</div>
-      
+  <div class="engine-tab">
+    <section class="config-section">
       <div class="config-card">
         <el-form :model="chatModelConfig" label-width="120px" label-position="left">
           <el-form-item label="API 密钥" required>
-            <el-input 
-              v-model="chatModelConfig.apiKey" 
-              type="password" 
-              placeholder="sk-..." 
-              show-password 
+            <el-input
+              v-model="chatModelConfig.apiKey"
+              type="password"
+              placeholder="sk-..."
+              show-password
               clearable
             />
           </el-form-item>
 
           <el-form-item label="API 基础 URL" required>
-            <el-input 
-              v-model="chatModelConfig.apiBaseUrl" 
+            <el-input
+              v-model="chatModelConfig.apiBaseUrl"
               placeholder="https://api.openai.com/v1"
               clearable
             />
-            <div class="form-tip">OpenAI 兼容接口地址，例如：硅基流动、火山引擎、本地 VLLM/Ollama 等</div>
+            <div class="form-tip">OpenAI 兼容接口地址，例如：硅基流动、火山引擎、本地 VLLM/Ollama 等。</div>
           </el-form-item>
 
           <el-form-item label="模型名称" required>
-            <el-select 
-              v-model="chatModelConfig.modelName" 
+            <el-select
+              v-model="chatModelConfig.modelName"
               placeholder="输入模型名称"
               filterable
               allow-create
@@ -41,44 +38,46 @@
                 :value="model"
               />
             </el-select>
-            <div class="form-tip">支持常见模型：Qwen、DeepSeek、Kimi、GLM、doubao 等</div>
+            <div class="form-tip">支持自定义模型名称，便于对接不同供应商的兼容接口。</div>
           </el-form-item>
 
           <div class="param-row">
             <el-form-item label="最大 Tokens">
-              <el-input-number 
-                v-model="chatModelConfig.maxTokens" 
-                :min="1" 
-                :max="100000" 
+              <el-input-number
+                v-model="chatModelConfig.maxTokens"
+                :min="1"
+                :max="100000"
                 controls-position="right"
               />
             </el-form-item>
 
             <el-form-item label="超时时间">
-              <el-input-number 
-                v-model="chatModelConfig.timeout" 
-                :min="10" 
-                :max="300" 
-                controls-position="right"
-              />
-              <span class="unit-label">秒</span>
+              <div class="inline-number">
+                <el-input-number
+                  v-model="chatModelConfig.timeout"
+                  :min="10"
+                  :max="300"
+                  controls-position="right"
+                />
+                <span class="unit-label">秒</span>
+              </div>
             </el-form-item>
           </div>
 
           <el-form-item label="温度值">
             <div class="slider-wrapper">
-              <el-slider 
-                v-model="chatModelConfig.temperature" 
-                :min="0" 
-                :max="1" 
+              <el-slider
+                v-model="chatModelConfig.temperature"
+                :min="0"
+                :max="1"
                 :step="0.05"
                 :marks="tempMarks"
               />
-            </div>
-            <div class="temp-labels">
-              <span>精确</span>
-              <span class="temp-value">{{ chatModelConfig.temperature.toFixed(2) }}</span>
-              <span>创意</span>
+              <div class="temp-labels">
+                <span>精确</span>
+                <span class="temp-value">{{ chatModelConfig.temperature.toFixed(2) }}</span>
+                <span>发散</span>
+              </div>
             </div>
           </el-form-item>
         </el-form>
@@ -89,25 +88,24 @@
           <el-icon><Connection /></el-icon>
           测试连接
         </el-button>
-        <el-button type="primary" :loading="saveLoading" @click="handleSaveChatConfig" class="save-btn">
+        <el-button type="primary" :loading="saveLoading" @click="handleSaveChatConfig">
           <el-icon><Check /></el-icon>
           保存配置
         </el-button>
       </div>
 
-      <!-- 测试结果内联显示 -->
       <div v-if="connectionTestResult" class="test-result" :class="connectionTestResult.success ? 'test-success' : 'test-fail'">
-        <el-icon><component :is="connectionTestResult.success ? 'CircleCheckFilled' : 'CircleCloseFilled'" /></el-icon>
-        <span>{{ connectionTestResult.success ? '✓ 连接成功' : '✗ 连接失败' }}</span>
+        <el-icon><component :is="connectionTestResult.success ? CircleCheckFilled : CircleCloseFilled" /></el-icon>
+        <span>{{ connectionTestResult.success ? '连接成功' : '连接失败' }}</span>
         <span v-if="connectionTestResult.message" class="result-detail">{{ connectionTestResult.message }}</span>
         <span v-if="connectionTestResult.latency !== undefined" class="result-latency">延迟: {{ connectionTestResult.latency }}ms</span>
       </div>
-    </div>
+    </section>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, onMounted } from 'vue'
+import { computed, reactive, ref, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Check, Connection, CircleCheckFilled, CircleCloseFilled } from '@element-plus/icons-vue'
 import {
@@ -131,8 +129,6 @@ const saveLoading = ref(false)
 const testLoading = ref(false)
 const connectionTestResult = ref<{ success: boolean; message?: string; latency?: number } | null>(null)
 
-// 常用模型列表
-// 常用模型列表（已移除，用户可自由输入）
 const commonModels: string[] = []
 
 const tempMarks = {
@@ -145,12 +141,23 @@ const chatModelConfig = reactive<ChatModelConfig>({
   serviceType: 'custom',
   apiKey: '',
   apiBaseUrl: 'https://api.siliconflow.cn/v1',
-  modelName: 'Qwen/Qwen2.5t', 
+  modelName: 'Qwen/Qwen2.5t',
   maxTokens: 8192,
   temperature: 0.3,
   timeout: 120,
   enabled: true,
 })
+
+const originalConfig = ref<string>('')
+
+const normalizedConfig = computed(() => JSON.stringify(chatModelConfig))
+const hasUnsavedChanges = computed(() => normalizedConfig.value !== originalConfig.value)
+const summary = computed(() => [
+  { label: '模型名称', value: chatModelConfig.modelName || '未设置' },
+  { label: '接口地址', value: chatModelConfig.apiBaseUrl || '未设置' },
+  { label: '最大 Tokens', value: String(chatModelConfig.maxTokens) },
+  { label: '超时时间', value: `${chatModelConfig.timeout} 秒` },
+])
 
 const handleTestConnection = async () => {
   if (!chatModelConfig.apiKey) {
@@ -175,7 +182,7 @@ const handleTestConnection = async () => {
       latency,
     }
     if (testResult.success) {
-      ElMessage.success('连接测试通过！')
+      ElMessage.success('连接测试通过')
     } else {
       ElMessage.error(`连接失败: ${testResult.message}`)
     }
@@ -197,7 +204,6 @@ const handleSaveChatConfig = async () => {
   }
   saveLoading.value = true
   try {
-    // 先测试连接
     const { data: testResult } = await testLlmConnectionApi({
       serviceType: chatModelConfig.serviceType,
       apiKey: chatModelConfig.apiKey,
@@ -205,12 +211,11 @@ const handleSaveChatConfig = async () => {
       modelName: chatModelConfig.modelName,
       modelType: 'chat',
     })
-    
-    // 测试失败时给用户选择权
+
     if (!testResult.success) {
       try {
         await ElMessageBox.confirm(
-          `连接测试失败: ${testResult.message}\n\n是否仍然保存配置？您可以稍后修正后再测试。`,
+          `连接测试失败: ${testResult.message}\n\n是否仍然保存配置？`,
           '警告',
           {
             confirmButtonText: '仍然保存',
@@ -222,9 +227,10 @@ const handleSaveChatConfig = async () => {
         return
       }
     }
-    
+
     await saveSystemConfigApi('llm_chat_model', chatModelConfig)
-    ElMessage.success('配置保存成功！')
+    originalConfig.value = JSON.stringify(chatModelConfig)
+    ElMessage.success('配置保存成功')
   } catch (e: any) {
     const errorMsg = e.response?.data?.error || e.message || '保存失败'
     ElMessage.error(`保存失败: ${errorMsg}`)
@@ -237,8 +243,7 @@ onMounted(async () => {
   try {
     const { data } = await getSystemConfigApi('llm_chat_model')
     let configData = data?.value || data
-    
-    // 兼容双重序列化的旧数据：如果 Prisma Json 返回字符串则解析
+
     if (typeof configData === 'string') {
       try {
         configData = JSON.parse(configData)
@@ -247,7 +252,7 @@ onMounted(async () => {
         return
       }
     }
-    
+
     if (configData && typeof configData === 'object' && Object.keys(configData).length > 0) {
       Object.keys(chatModelConfig).forEach(key => {
         if (key in configData && configData[key] !== undefined && configData[key] !== null) {
@@ -255,146 +260,137 @@ onMounted(async () => {
         }
       })
     }
+    originalConfig.value = JSON.stringify(chatModelConfig)
   } catch (e) {
     console.error('加载配置失败', e)
   }
 })
+
+defineExpose({
+  get hasUnsavedChanges() {
+    return hasUnsavedChanges.value
+  },
+  get summary() {
+    return summary.value
+  },
+})
 </script>
 
 <style scoped>
-.chat-model-tab {
+.engine-tab {
   display: flex;
   flex-direction: column;
-  gap: 24px;
-  padding: 8px 0;
+  gap: 18px;
 }
 
-.section-title {
-  font-size: 15px;
-  font-weight: 600;
-  color: var(--corp-text-primary);
-  margin-bottom: 16px;
-}
-
-/* 配置区 */
 .config-section {
-  background: var(--bg-surface);
-  border-radius: var(--corp-radius-lg);
-  border: 1px solid var(--corp-border-light);
-  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
 }
 
 .config-card {
-  background: #fff;
-  border-radius: var(--corp-radius-md);
-  padding: 8px 0;
+  background: linear-gradient(180deg, #ffffff 0%, #f8fafc 100%);
+  border: 1px solid #e2e8f0;
+  border-radius: 16px;
+  padding: 20px;
 }
 
 .param-row {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 20px;
+}
+
+.inline-number {
   display: flex;
-  gap: 24px;
+  align-items: center;
+  gap: 8px;
 }
 
-.param-row .el-form-item {
-  flex: 1;
+.unit-label,
+.form-tip {
+  font-size: 12px;
+  color: #64748b;
 }
 
-.unit-label {
-  margin-left: 8px;
-  font-size: 13px;
-  color: var(--corp-text-secondary);
+.form-tip {
+  margin-top: 4px;
+  line-height: 1.5;
 }
 
 .slider-wrapper {
-  flex: 1;
-  padding-right: 20px;
+  width: 100%;
+  padding-right: 16px;
 }
 
 .temp-labels {
   display: flex;
   justify-content: space-between;
+  margin-top: 6px;
   font-size: 12px;
-  color: var(--corp-text-secondary);
-  margin-top: 4px;
+  color: #64748b;
 }
 
 .temp-value {
-  font-weight: 600;
-  color: var(--corp-primary);
+  font-weight: 700;
+  color: #2563eb;
 }
 
-.form-tip {
-  font-size: 12px;
-  color: var(--corp-text-secondary);
-  margin-top: 4px;
-  line-height: 1.4;
-}
-
-/* 操作栏 */
 .action-bar {
   display: flex;
   justify-content: flex-end;
-  gap: 12px;
-  margin-top: 20px;
-  padding-top: 16px;
-  border-top: 1px solid var(--corp-border-light);
+  gap: 10px;
 }
 
 .test-btn {
-  border-color: var(--corp-primary);
-  color: var(--corp-primary);
+  border-color: #2563eb;
+  color: #2563eb;
 }
 
 .test-btn:hover {
-  background: var(--color-primary-50);
+  background: #eff6ff;
 }
 
-.save-btn {
-  min-width: 120px;
-}
-
-/* 测试结果显示 */
 .test-result {
   display: flex;
   align-items: center;
   gap: 8px;
-  margin-top: 12px;
   padding: 10px 14px;
-  border-radius: 8px;
+  border-radius: 10px;
   font-size: 14px;
-  font-weight: 500;
+  font-weight: 600;
 }
 
 .test-success {
-  background: #F0FDF4;
-  border: 1px solid #86EFAC;
+  background: #f0fdf4;
+  border: 1px solid #86efac;
   color: #166534;
 }
 
 .test-fail {
-  background: #FEF2F2;
-  border: 1px solid #FCA5A5;
-  color: #991B1B;
+  background: #fef2f2;
+  border: 1px solid #fca5a5;
+  color: #991b1b;
 }
 
 .result-detail {
   font-weight: 400;
   font-size: 13px;
-  opacity: 0.8;
+  opacity: 0.85;
 }
 
 .result-latency {
   margin-left: auto;
   font-size: 12px;
   padding: 2px 8px;
-  background: rgba(0,0,0,0.06);
-  border-radius: 4px;
+  background: rgba(0, 0, 0, 0.06);
+  border-radius: 999px;
 }
 
-@media (max-width: 600px) {
+@media (max-width: 760px) {
   .param-row {
-    flex-direction: column;
-    gap: 0;
+    grid-template-columns: 1fr;
   }
 }
 </style>

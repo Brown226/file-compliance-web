@@ -76,10 +76,21 @@ interface TextPosition {
   totalChunks: number
 }
 
+interface LocateMeta {
+  version: 2
+  mode: 'text' | 'dwg'
+  confidence: 'exact' | 'trimmed' | 'normalized' | 'fallback'
+  absolute?: { start: number; end: number }
+  quote?: { text: string; normalizedText?: string }
+  context?: { prefix: string; suffix: string }
+  chunk?: { index: number; start: number; end: number; total: number }
+  hint?: { fileId?: string; pageHint?: number; lineHint?: number; cadHandleId?: string }
+}
+
 const props = defineProps<{
   taskId: string
   fileId: string | null
-  locateTarget?: { originalText: string; locateCandidates?: string[]; textPosition?: TextPosition | null; cadHandleId?: string; locateHint?: string } | null
+  locateTarget?: { originalText: string; locateCandidates?: string[]; textPosition?: TextPosition | null; locateMeta?: LocateMeta | null; cadHandleId?: string; locateHint?: string } | null
 }>()
 
 const emit = defineEmits<{
@@ -133,6 +144,12 @@ interface TextChunk {
   segments: TextSegment[]
 }
 
+interface LocateRange {
+  start: number
+  end: number
+  mode: 'absolute' | 'quote' | 'context' | 'fuzzy'
+}
+
 const getLocateTerms = (): string[] => {
   const target = props.locateTarget
   if (!target) return []
@@ -155,6 +172,55 @@ const includesLoose = (haystack: string, needle: string): boolean => {
   const n = normalizeForLocate(needle)
   if (!n) return false
   return normalizeForLocate(haystack).includes(n)
+}
+
+const resolveLocateRange = (text: string, target?: { originalText: string; locateCandidates?: string[]; locateMeta?: LocateMeta | null } | null): LocateRange | null => {
+  if (!text || !target) return null
+
+  const absolute = target.locateMeta?.absolute
+  if (
+    absolute
+    && Number.isFinite(absolute.start)
+    && Number.isFinite(absolute.end)
+    && absolute.start >= 0
+    && absolute.end > absolute.start
+    && absolute.end <= text.length
+  ) {
+    return { start: absolute.start, end: absolute.end, mode: 'absolute' }
+  }
+
+  const quote = target.locateMeta?.quote?.text?.trim()
+  if (quote) {
+    const idx = text.indexOf(quote)
+    if (idx !== -1) return { start: idx, end: idx + quote.length, mode: 'quote' }
+
+    const prefix = target.locateMeta?.context?.prefix || ''
+    const suffix = target.locateMeta?.context?.suffix || ''
+    let bestStart = -1
+    let bestScore = -1
+    let from = 0
+    while (true) {
+      const hit = text.indexOf(quote, from)
+      if (hit === -1) break
+      const left = text.slice(Math.max(0, hit - prefix.length), hit)
+      const right = text.slice(hit + quote.length, Math.min(text.length, hit + quote.length + suffix.length))
+      const score = (prefix && left.endsWith(prefix) ? 1 : 0) + (suffix && right.startsWith(suffix) ? 1 : 0)
+      if (score > bestScore) {
+        bestScore = score
+        bestStart = hit
+      }
+      from = hit + 1
+    }
+    if (bestStart !== -1) return { start: bestStart, end: bestStart + quote.length, mode: 'context' }
+  }
+
+  const locateTerms = [...(target.locateCandidates || []), target.originalText].filter(Boolean)
+  for (const term of locateTerms) {
+    const idx = text.indexOf(term)
+    if (idx !== -1) return { start: idx, end: idx + term.length, mode: 'fuzzy' }
+  }
+
+  return null
 }
 
 /**
@@ -226,12 +292,27 @@ const displayedChunks = computed<TextChunk[]>(() => {
   const locateTerms = getLocateTerms()
   const searchText = getPrimaryLocateTerm()
   const targetChunk = props.locateTarget?.textPosition?.chunkIndex ?? -1
+  const locateRange = resolveLocateRange(text, props.locateTarget)
 
   for (let i = 0; i < totalChunks; i++) {
     const start = i * CHUNK_SIZE
     const end = Math.min(start + CHUNK_SIZE, text.length)
     const chunkText = text.substring(start, end)
     const segments: TextSegment[] = []
+
+    if (locateRange) {
+      const overlapStart = Math.max(start, locateRange.start)
+      const overlapEnd = Math.min(end, locateRange.end)
+      if (overlapStart < overlapEnd) {
+        const localStart = overlapStart - start
+        const localEnd = overlapEnd - start
+        if (localStart > 0) segments.push({ text: chunkText.substring(0, localStart), highlight: false })
+        segments.push({ text: chunkText.substring(localStart, localEnd), highlight: true })
+        if (localEnd < chunkText.length) segments.push({ text: chunkText.substring(localEnd), highlight: false })
+        chunks.push({ segments })
+        continue
+      }
+    }
 
     if (searchText) {
       // 优先使用 textPosition 精确定位
@@ -380,7 +461,7 @@ const applyHighlightToRendered = (): boolean => {
     }
   }
 
-  if (!found && props.locateTarget?.textPosition?.chunkIndex != null) {
+  if (!found && (props.locateTarget?.locateMeta?.absolute || props.locateTarget?.textPosition?.chunkIndex != null)) {
     // 渲染模式无法精确命中时，回退到源码模式做分片锚点高亮
     renderMode.value = 'source'
     requestAnimationFrame(() => {
@@ -407,7 +488,7 @@ const scrollToHighlight = (): boolean => {
     return found
   }
 
-  const chunkIdx = props.locateTarget?.textPosition?.chunkIndex ?? 0
+  const chunkIdx = props.locateTarget?.locateMeta?.chunk?.index ?? props.locateTarget?.textPosition?.chunkIndex ?? 0
   if (renderMode.value === 'source' && sourceRef.value) {
     // 源码模式：查找 .highlight-segment 元素
     const highlightEl = document.getElementById(`highlight-${chunkIdx}-1`)
@@ -426,6 +507,9 @@ const scrollToHighlight = (): boolean => {
 // 监听 locateTarget 变化，滚动到高亮位置
 watch(() => props.locateTarget, async (target) => {
   if (!target) return
+
+  // 如果文本尚未加载，跳过 — fileId watch 会在加载完成后重试
+  if (!extractedText.value) return
 
   await nextTick()
   const found = scrollToHighlight()
@@ -456,9 +540,15 @@ watch(() => props.fileId, async (fileId) => {
     fileName.value = res.data?.fileName || ''
     fileType.value = res.data?.fileType || ''
     // 内容加载完成后，检查是否有待定位的原文
+    // 必须 emit 结果，因为 locateTarget watch 可能在文本加载前就被触发了
     await nextTick()
     if (props.locateTarget) {
-      scrollToHighlight()
+      const found = scrollToHighlight()
+      emit('locateResult', {
+        success: found,
+        mode: found ? 'direct' : 'fallback',
+        hint: found ? undefined : (props.locateTarget.locateHint || '未能在文本预览中精确匹配原文，请按提示页段信息辅助定位。'),
+      })
     }
   } catch (e) {
     console.error('[TextPreview] 加载文件内容失败:', e)

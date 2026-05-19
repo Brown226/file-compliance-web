@@ -124,7 +124,31 @@ const routes: Array<RouteRecordRaw> = [
         path: 'admin/system',
         name: 'AdminSystem',
         component: () => import('../views/SystemManagement.vue'),
-        meta: { title: '系统配置', requiresAdminOrManager: true }
+        meta: { title: '绯荤粺璁剧疆', requiresAdminOrManager: true }
+      },
+      {
+        path: 'admin/users',
+        name: 'AdminDepartment',
+        component: () => import('../views/admin/DepartmentManagement.vue'),
+        meta: { title: '部门与员工', requiresAdminOrManager: true }
+      },
+      {
+        path: 'admin/storage',
+        name: 'AdminStorage',
+        component: () => import('../views/admin/StorageManagement.vue'),
+        meta: { title: '存储管理', requiresAdminOrManager: true }
+      },
+      {
+        path: 'admin/ai-engine',
+        name: 'AdminAiEngine',
+        component: () => import('../views/admin/AiEngineConfig.vue'),
+        meta: { title: 'AI 引擎配置', requiresAdminOrManager: true }
+      },
+      {
+        path: 'admin/basic',
+        name: 'AdminBasic',
+        component: () => import('../views/admin/BasicSettings.vue'),
+        meta: { title: '基础设置', requiresAdminOrManager: true }
       },
       {
         path: 'admin/audit',
@@ -144,8 +168,8 @@ const routes: Array<RouteRecordRaw> = [
       { path: 'tasks/new', redirect: '/review' },
       { path: 'tasks/history', redirect: '/tasks' },
       { path: 'standards', redirect: '/admin/standards' },
-      { path: 'system', redirect: '/admin/system' },
-      { path: 'llm-config', redirect: '/admin/system' },
+      { path: 'system', redirect: '/admin/users' },
+      { path: 'llm-config', redirect: '/admin/ai-engine' },
       { path: 'audit-logs', redirect: '/admin/audit' },
       { path: 'review-rules', redirect: '/admin/rules' },
       { path: 'pipeline-config', redirect: '/admin/rules' },

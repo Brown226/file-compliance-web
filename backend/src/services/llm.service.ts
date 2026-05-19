@@ -1,4 +1,4 @@
-/**
+﻿/**
  * LLM 工具服务 — 提供文本分片、审查结果解析和直接 LLM 调用的公共方法
  *
  * 支持 MaxKB 作为优先 AI 引擎，不可用时降级到 LLM 直接调用
@@ -33,6 +33,37 @@ export interface ReviewIssue {
     chunkIndex: number;   // 所在分片索引
     charOffset: number;  // 在分片内的字符偏移量
     totalChunks: number; // 总分片数
+  };
+  locateMeta?: LocateMeta | null;
+}
+
+export interface LocateMeta {
+  version: 2;
+  mode: 'text' | 'dwg';
+  confidence: 'exact' | 'trimmed' | 'normalized' | 'fallback';
+  absolute?: {
+    start: number;
+    end: number;
+  };
+  quote?: {
+    text: string;
+    normalizedText?: string;
+  };
+  context?: {
+    prefix: string;
+    suffix: string;
+  };
+  chunk?: {
+    index: number;
+    start: number;
+    end: number;
+    total: number;
+  };
+  hint?: {
+    fileId?: string;
+    pageHint?: number;
+    lineHint?: number;
+    cadHandleId?: string;
   };
 }
 
@@ -439,6 +470,120 @@ export class LlmService {
     return includePosition ? chunkInfos : chunks;
   }
 
+  static normalizeForLocate(text: string): string {
+    return (text || '')
+      .toLowerCase()
+      .replace(/[\s\u3000]/g, '')
+      .replace(/[，。！？；：、"'`‘’“”（）()\[\]【】《》<>.,;:!?\-_/\\|]/g, '');
+  }
+
+  static findBestTextRange(
+    fullText: string,
+    searchText: string,
+  ): { start: number; end: number; confidence: 'exact' | 'trimmed' | 'normalized' } | null {
+    if (!fullText || !searchText) return null;
+
+    const exactIdx = fullText.indexOf(searchText);
+    if (exactIdx !== -1) {
+      return { start: exactIdx, end: exactIdx + searchText.length, confidence: 'exact' };
+    }
+
+    const trimmed = searchText.trim();
+    if (trimmed) {
+      const trimmedIdx = fullText.indexOf(trimmed);
+      if (trimmedIdx !== -1) {
+        return { start: trimmedIdx, end: trimmedIdx + trimmed.length, confidence: 'trimmed' };
+      }
+    }
+
+    const needle = this.normalizeForLocate(trimmed || searchText);
+    if (!needle) return null;
+
+    const haystack = this.normalizeForLocate(fullText);
+    const normalizedIdx = haystack.indexOf(needle);
+    if (normalizedIdx === -1) return null;
+
+    let cursor = 0;
+    let rawStart = -1;
+    let rawEnd = -1;
+    for (let i = 0; i < fullText.length; i++) {
+      const normalizedChar = this.normalizeForLocate(fullText[i]);
+      if (!normalizedChar) continue;
+      if (cursor === normalizedIdx) rawStart = i;
+      cursor += normalizedChar.length;
+      if (cursor >= normalizedIdx + needle.length) {
+        rawEnd = i + 1;
+        break;
+      }
+    }
+
+    if (rawStart === -1 || rawEnd === -1 || rawEnd <= rawStart) return null;
+    return { start: rawStart, end: rawEnd, confidence: 'normalized' };
+  }
+
+  static buildLocateMeta(
+    fullText: string,
+    searchText: string,
+    opts?: {
+      chunkIndex?: number;
+      chunkStartIndex?: number;
+      chunkEndIndex?: number;
+      totalChunks?: number;
+      cadHandleId?: string;
+      pageHint?: number;
+      lineHint?: number;
+      fileId?: string;
+    },
+  ): LocateMeta | null {
+    const range = this.findBestTextRange(fullText, searchText);
+    if (!range && !opts?.cadHandleId) return null;
+
+    if (opts?.cadHandleId) {
+      return {
+        version: 2,
+        mode: 'dwg',
+        confidence: 'fallback',
+        hint: {
+          cadHandleId: opts.cadHandleId,
+          fileId: opts.fileId,
+          pageHint: opts.pageHint,
+          lineHint: opts.lineHint,
+        },
+      };
+    }
+
+    const start = range!.start;
+    const end = range!.end;
+    return {
+      version: 2,
+      mode: 'text',
+      confidence: range!.confidence,
+      absolute: { start, end },
+      quote: {
+        text: fullText.slice(start, end),
+        normalizedText: this.normalizeForLocate(fullText.slice(start, end)),
+      },
+      context: {
+        prefix: fullText.slice(Math.max(0, start - 30), start),
+        suffix: fullText.slice(end, Math.min(fullText.length, end + 30)),
+      },
+      chunk: typeof opts?.chunkIndex === 'number'
+        ? {
+            index: opts.chunkIndex,
+            start: opts.chunkStartIndex ?? 0,
+            end: opts.chunkEndIndex ?? (opts.chunkStartIndex ?? 0),
+            total: opts.totalChunks ?? 1,
+          }
+        : undefined,
+      hint: {
+        fileId: opts?.fileId,
+        pageHint: opts?.pageHint,
+        lineHint: opts?.lineHint,
+        cadHandleId: opts?.cadHandleId,
+      },
+    };
+  }
+
   /**
    * 查找文本在原始文本中的位置
    * @param originalText 原始完整文本
@@ -446,26 +591,15 @@ export class LlmService {
    * @returns 位置信息
    */
   static findTextPosition(originalText: string, searchText: string): { chunkIndex: number; charOffset: number; totalChunks: number } | null {
-    if (!searchText || !originalText) return null;
+    const range = this.findBestTextRange(originalText, searchText);
+    if (!range) return null;
 
-    // 在原始文本中查找
-    const index = originalText.indexOf(searchText);
-    if (index === -1) {
-      // 尝试模糊匹配（去掉首尾空格）
-      const trimmedSearch = searchText.trim();
-      const trimmedIndex = originalText.indexOf(trimmedSearch);
-      if (trimmedIndex === -1) return null;
-      return { chunkIndex: 0, charOffset: trimmedIndex, totalChunks: 1 };
-    }
-
-    // 使用当前分片逻辑计算 chunkIndex 和 charOffset
     const config = this.getEffectiveChunkSize();
     const chunkSize = config || 4000;
-    const chunkIndex = Math.floor(index / chunkSize);
-    const charOffset = index % chunkSize;
+    const chunkIndex = Math.floor(range.start / chunkSize);
     const totalChunks = Math.ceil(originalText.length / chunkSize);
 
-    return { chunkIndex, charOffset, totalChunks };
+    return { chunkIndex, charOffset: range.start, totalChunks };
   }
 
   private static getEffectiveChunkSize(): number {
@@ -583,14 +717,35 @@ export class LlmService {
         return issues.map(issue => {
           // 计算 originalText 在当前 chunk 中的位置
           const offsetInChunk = text.indexOf(issue.originalText);
-          const charOffset = offsetInChunk >= 0 ? chunkStartIndex + offsetInChunk : chunkStartIndex;
+          const absoluteStart = offsetInChunk >= 0 ? chunkStartIndex + offsetInChunk : chunkStartIndex;
+          const absoluteEnd = offsetInChunk >= 0 ? absoluteStart + issue.originalText.length : Math.min(chunkStartIndex + text.length, absoluteStart + 40);
 
           return {
             ...issue,
             textPosition: {
               chunkIndex,
-              charOffset,
+              charOffset: absoluteStart,
               totalChunks,
+            },
+            locateMeta: {
+              version: 2,
+              mode: 'text',
+              confidence: offsetInChunk >= 0 ? 'exact' : 'fallback',
+              absolute: { start: absoluteStart, end: absoluteEnd },
+              quote: {
+                text: issue.originalText || text.slice(Math.max(0, absoluteStart - chunkStartIndex), Math.max(0, absoluteEnd - chunkStartIndex)),
+                normalizedText: this.normalizeForLocate(issue.originalText || text.slice(Math.max(0, absoluteStart - chunkStartIndex), Math.max(0, absoluteEnd - chunkStartIndex))),
+              },
+              context: {
+                prefix: text.slice(Math.max(0, absoluteStart - chunkStartIndex - 30), Math.max(0, absoluteStart - chunkStartIndex)),
+                suffix: text.slice(Math.max(0, absoluteEnd - chunkStartIndex), Math.min(text.length, absoluteEnd - chunkStartIndex + 30)),
+              },
+              chunk: {
+                index: chunkIndex,
+                start: chunkStartIndex,
+                end: chunkStartIndex + text.length,
+                total: totalChunks,
+              },
             },
           };
         });
@@ -778,3 +933,4 @@ ${truncated}`;
     return questions;
   }
 }
+

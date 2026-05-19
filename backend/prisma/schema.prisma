@@ -102,7 +102,7 @@ model Task {
   creator            User           @relation(fields: [creatorId], references: [id])
   standardId         String?
   standard           Standard?      @relation(fields: [standardId], references: [id])
-  maxkbKnowledgeId   String?        // 用户选择的知识库 ID（审查时使用特定知识库）（兼容旧字段）
+  // maxkbKnowledgeId — 已删除（v2.0 本地 pgvector 替代 MaxKB，无代码引用此字段）
   perspective        String?        // 审查立场
   preAnalysisData    Json?          @map("pre_analysis_data")   // 预分析结果
   reviewPlan         Json?          @map("review_plan")         // 审查方案
@@ -212,6 +212,8 @@ model TaskDetail {
   textPosition     Json?                        // 文本位置信息：{chunkIndex, charOffset, totalChunks} 用于前端定位
   dwgMetadata      Json?    @map("dwg_metadata") // DWG 解析元数据（图层、图元、标注等）
 
+  locateMeta       Json?    @map("locate_meta") // 新版定位元数据：absolute range + quote + context
+  @@unique([taskId, fileId, issueType, ruleCode, originalText])
   @@map("task_details")
 }
 

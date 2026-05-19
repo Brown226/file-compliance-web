@@ -43,26 +43,30 @@
 
           <div v-else-if="query" class="search-empty">
             <el-icon :size="40" color="#d1d5db"><Search /></el-icon>
-            <p>未找到匹配的结果</p>
+            <p>未找到匹配结果</p>
           </div>
 
           <div v-else class="search-empty">
             <p>输入关键词开始搜索</p>
             <div class="search-hints">
               <span class="hint-label">快捷键</span>
-              <kbd class="kbd">Ctrl+K</kbd> 打开搜索
+              <kbd class="kbd">Ctrl+K</kbd>
+              <span>打开搜索</span>
             </div>
           </div>
 
           <div class="search-footer">
             <span class="footer-item">
-              <kbd class="kbd">↑↓</kbd> 导航
+              <kbd class="kbd">↑↓</kbd>
+              <span>导航</span>
             </span>
             <span class="footer-item">
-              <kbd class="kbd">↵</kbd> 打开
+              <kbd class="kbd">Enter</kbd>
+              <span>打开</span>
             </span>
             <span class="footer-item">
-              <kbd class="kbd">ESC</kbd> 关闭
+              <kbd class="kbd">ESC</kbd>
+              <span>关闭</span>
             </span>
           </div>
         </div>
@@ -100,12 +104,15 @@ function loadAllItems() {
     { id: '3', category: 'task', title: '任务历史', description: '查看任务历史记录', route: '/tasks' },
     { id: '4', category: 'standard', title: '企业标准规范库', description: '管理与查询标准文档', route: '/admin/standards' },
     { id: '5', category: 'rule', title: '审查规则管理', description: '配置自动审查规则', route: '/admin/rules' },
-    { id: '6', category: 'config', title: '流水线配置', description: '审查流程管线设置', route: '/admin/rules' },
-    { id: '7', category: 'config', title: '提示词模板管理', description: 'LLM 提示词配置', route: '/admin/system' },
-    { id: '8', category: 'config', title: 'LLM 配置', description: '大语言模型供应商设置', route: '/admin/system' },
-    { id: '9', category: 'dashboard', title: '用户管理', description: '系统用户与权限管理', route: '/admin/system' },
+    { id: '6', category: 'config', title: '流水线配置', description: '审查流程与规则配置入口', route: '/admin/rules' },
+    { id: '7', category: 'config', title: '提示词模板管理', description: 'LLM 提示词配置', route: '/admin/prompts' },
+    { id: '8', category: 'config', title: 'LLM 配置', description: '大语言模型与 OCR 配置', route: '/admin/ai-engine' },
+    { id: '9', category: 'dashboard', title: '用户管理', description: '系统用户与权限管理', route: '/admin/users' },
     { id: '10', category: 'rule', title: '正则表达式工具', description: 'AI 生成与测试正则表达式', route: '/admin/rules' },
     { id: '11', category: 'dashboard', title: '安全审计日志', description: '查看系统操作审计记录', route: '/admin/audit' },
+    { id: '12', category: 'config', title: '系统设置', description: '系统设置总览与导航页', route: '/admin/system' },
+    { id: '13', category: 'config', title: '存储管理', description: '文件存储空间与资源清理', route: '/admin/storage' },
+    { id: '14', category: 'config', title: '基础设置', description: '平台基础参数与上传限制', route: '/admin/basic' },
   ]
 }
 
@@ -166,7 +173,11 @@ function highlightText(text: string) {
 
 const categoryLabel = (cat: string) => {
   const map: Record<string, string> = {
-    task: '任务', standard: '标准', rule: '规则', config: '配置', dashboard: '系统',
+    task: '任务',
+    standard: '标准',
+    rule: '规则',
+    config: '配置',
+    dashboard: '系统',
   }
   return map[cat] || cat
 }
@@ -184,8 +195,11 @@ const categoryColor = (cat: string) => {
 
 const categoryIcon = (cat: string) => {
   const map: Record<string, any> = {
-    task: Document, standard: Reading, rule: List,
-    config: Setting, dashboard: DataBoard,
+    task: Document,
+    standard: Reading,
+    rule: List,
+    config: Setting,
+    dashboard: DataBoard,
   }
   return map[cat] || Document
 }

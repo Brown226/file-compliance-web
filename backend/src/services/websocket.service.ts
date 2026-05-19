@@ -145,6 +145,7 @@ export class WebSocketService {
       similarity: number | null;
       diffRanges: any | null;
       textPosition: any | null;
+      locateMeta?: any | null;
     }>;
     /** 引擎名称 */
     engine: string;
