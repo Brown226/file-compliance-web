@@ -36,7 +36,6 @@ export interface PipelineReviewConfig {
   chunkSize: number;           // 文本分片大小
   llmMaxTokens: number;        // LLM max_tokens
   llmTimeout: number;          // LLM 超时（秒）
-  maxkbTimeout?: number;       // 兼容旧配置（已废弃）
   ocrTimeout: number;          // OCR 超时（秒）
   maxConcurrentReviews: number;// 最大并发审查数
   logLevel: 'debug' | 'info' | 'warn' | 'error';  // 日志级别
