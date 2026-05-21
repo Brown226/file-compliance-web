@@ -1,0 +1,369 @@
+<template>
+  <div class="smart-review-new-page">
+    <div v-if="!selectedModule" class="module-step-card">
+      <h3 class="module-title">先选择审查模块</h3>
+      <p class="module-desc">在上传文件前先确认审查目标，后续会按该目标默认配置审查项。</p>
+
+      <div class="module-grid">
+        <button
+          v-for="item in modules"
+          :key="item.id"
+          type="button"
+          class="module-item"
+          :data-module="item.id"
+          @click="selectModule(item.id)"
+        >
+          <span class="module-icon-emoji">{{ item.title.split(' ')[0] }}</span>
+          <div class="module-item-title">{{ item.title.substring(item.title.indexOf(' ') + 1) }}</div>
+          <div class="module-item-desc">{{ item.desc }}</div>
+          <div class="module-item-scenario">{{ item.scenario.replace('适用：', '') }}</div>
+        </button>
+      </div>
+    </div>
+
+    <div v-else class="module-selected-bar">
+      <span>已选模块：{{ selectedModuleLabel }}</span>
+      <el-button text type="primary" @click="selectedModule = ''">重新选择</el-button>
+    </div>
+
+    <SmartReviewLegacy v-if="selectedModule" />
+  </div>
+</template>
+
+<script setup lang="ts">
+import { computed, ref } from 'vue'
+import SmartReviewLegacy from './SmartReview.vue'
+
+type ModuleId = 'LIBRARY' | 'CONSISTENCY' | 'PROOFREAD' | 'RULE_ONLY' | 'MULTIMODAL' | 'DOC_REVIEW'
+
+const selectedModule = ref<ModuleId | ''>('')
+
+const modules: Array<{ id: ModuleId; title: string; desc: string; scenario: string }> = [
+  {
+    id: 'LIBRARY',
+    title: '📚 以库审文',
+    desc: '基于知识库和标准库进行综合合规审查，AI + 规则引擎双重检查，覆盖面最全',
+    scenario: '适用：首次审查、合规性检查、标准符合性验证（最常用）'
+  },
+  {
+    id: 'CONSISTENCY',
+    title: '🔗 一致性审查',
+    desc: '检查多份文件之间或同一文件内部的数据/参数是否自洽（数值精确比对，非语义比对）',
+    scenario: '适用：总图与分图参数核对、文档前后数据矛盾、BOM表跨表校验'
+  },
+  {
+    id: 'PROOFREAD',
+    title: '✏️ 基础校对',
+    desc: '错别字、语病、标点、术语规范等文字层面检查，轻量快速',
+    scenario: '适用：终稿校对、发布前文字把关、格式规范化检查'
+  },
+  {
+    id: 'MULTIMODAL',
+    title: '🖼️ 多模态识别',
+    desc: '针对含图纸(DWG)、表格、公式的结构化内容进行专项识别与审查',
+    scenario: '适用：工程设计图纸审核、带复杂表格的说明书、含公式计算书'
+  },
+  {
+    id: 'DOC_REVIEW',
+    title: '📄 以文审文',
+    desc: '将待审文件与参照文件(模板/旧版/标准)逐项比对，AI 语义级分析差异与遗漏',
+    scenario: '适用：合同vs模板核对、新版vs旧版变更审查、投标文件vs招标要求对照'
+  },
+  {
+    id: 'RULE_ONLY',
+    title: '📋 规则库审查',
+    desc: '仅执行预定义规则检查（命名/编码/格式/页码等），不调用 AI，速度最快',
+    scenario: '适用：批量格式检查、快速初筛、无需AI的纯规则场景'
+  },
+]
+
+const selectedModuleLabel = computed(() => modules.find(m => m.id === selectedModule.value)?.title ?? '')
+
+const selectModule = (id: ModuleId) => {
+  selectedModule.value = id
+  sessionStorage.setItem('smartReview.entryModule', id)
+}
+</script>
+
+<style scoped>
+.smart-review-new-page {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+/* ===== 容器卡片 ===== */
+.module-step-card {
+  background: linear-gradient(135deg, #ffffff 0%, #f8fafc 100%);
+  border: 1px solid #e2e8f0;
+  border-radius: 16px;
+  padding: 32px;
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -2px rgba(0, 0, 0, 0.03);
+}
+
+/* ===== 标题区域 ===== */
+.module-title {
+  margin: 0 0 8px 0;
+  font-size: 24px;
+  font-weight: 700;
+  color: #1e293b;
+  letter-spacing: -0.02em;
+}
+
+.module-desc {
+  margin: 0 0 28px 0;
+  color: #64748b;
+  font-size: 15px;
+  line-height: 1.6;
+}
+
+/* ===== 网格布局 ===== */
+.module-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+}
+
+/* ===== 模块卡片（基础样式）===== */
+.module-item {
+  position: relative;
+  text-align: left;
+  border: 2px solid #e2e8f0;
+  border-radius: 14px;
+  padding: 20px;
+  background: #ffffff;
+  cursor: pointer;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  overflow: hidden;
+}
+
+.module-item::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 4px;
+  background: linear-gradient(90deg, var(--module-color) 0%, var(--module-color-light) 100%);
+  opacity: 0.9;
+  transition: opacity 0.3s ease;
+}
+
+/* Hover 状态 */
+.module-item:hover {
+  transform: translateY(-4px);
+  border-color: var(--module-color);
+  box-shadow: 
+    0 20px 25px -5px rgba(0, 0, 0, 0.08),
+    0 10px 10px -5px rgba(0, 0, 0, 0.04),
+    0 0 0 1px var(--module-color-alpha);
+}
+
+.module-item:hover::before {
+  opacity: 1;
+}
+
+.module-item:hover .module-item-title {
+  color: var(--module-color);
+}
+
+.module-item:hover .module-icon-emoji {
+  transform: scale(1.15) rotate(-5deg);
+}
+
+/* Focus 状态（键盘导航） */
+.module-item:focus-visible {
+  outline: none;
+  border-color: var(--module-color);
+  box-shadow: 0 0 0 3px var(--module-color-alpha);
+}
+
+/* ===== 图标区域 ===== */
+.module-icon-emoji {
+  font-size: 28px;
+  display: inline-block;
+  margin-bottom: 12px;
+  transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+  filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.08));
+}
+
+/* ===== 标题区域 ===== */
+.module-item-title {
+  font-size: 17px;
+  font-weight: 700;
+  margin-bottom: 10px;
+  color: #1e293b;
+  line-height: 1.3;
+  transition: color 0.3s ease;
+  letter-spacing: -0.01em;
+}
+
+/* ===== 描述区域 ===== */
+.module-item-desc {
+  color: #475569;
+  font-size: 13.5px;
+  line-height: 1.65;
+  margin-bottom: 14px;
+}
+
+/* ===== 场景标签（改为pill样式）===== */
+.module-item-scenario {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: auto;
+  padding: 7px 13px;
+  background: linear-gradient(135deg, #f1f5f9 0%, #f8fafc 100%);
+  border: 1px solid #e2e8f0;
+  border-radius: 20px;
+  color: #64748b;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.4;
+  transition: all 0.3s ease;
+}
+
+.module-item-scenario::before {
+  content: '💡';
+  font-size: 11px;
+  flex-shrink: 0;
+}
+
+.module-item:hover .module-item-scenario {
+  background: linear-gradient(135deg, var(--module-color-ultra-light) 0%, #ffffff 100%);
+  border-color: var(--module-color-light);
+  color: var(--module-color-dark);
+}
+
+/* ===== 各模块主题色定义 ===== */
+.module-item[data-module="LIBRARY"] {
+  --module-color: #3b82f6;
+  --module-color-light: #93bbfd;
+  --module-color-ultra-light: #eff6ff;
+  --module-color-dark: #1d4ed8;
+  --module-color-alpha: rgba(59, 130, 246, 0.15);
+}
+
+.module-item[data-module="CONSISTENCY"] {
+  --module-color: #8b5cf6;
+  --module-color-light: #c4b5fd;
+  --module-color-ultra-light: #f5f3ff;
+  --module-color-dark: #6d28d9;
+  --module-color-alpha: rgba(139, 92, 246, 0.15);
+}
+
+.module-item[data-module="PROOFREAD"] {
+  --module-color: #10b981;
+  --module-color-light: #6ee7b7;
+  --module-color-ultra-light: #ecfdf5;
+  --module-color-dark: #059669;
+  --module-color-alpha: rgba(16, 185, 129, 0.15);
+}
+
+.module-item[data-module="MULTIMODAL"] {
+  --module-color: #f59e0b;
+  --module-color-light: #fcd34d;
+  --module-color-ultra-light: #fffbeb;
+  --module-color-dark: #d97706;
+  --module-color-alpha: rgba(245, 158, 11, 0.15);
+}
+
+.module-item[data-module="DOC_REVIEW"] {
+  --module-color: #ef4444;
+  --module-color-light: #fca5a5;
+  --module-color-ultra-light: #fef2f2;
+  --module-color-dark: #dc2626;
+  --module-color-alpha: rgba(239, 68, 68, 0.15);
+}
+
+.module-item[data-module="RULE_ONLY"] {
+  --module-color: #06b6d4;
+  --module-color-light: #67e8f9;
+  --module-color-ultra-light: #ecfeff;
+  --module-color-dark: #0891b2;
+  --module-color-alpha: rgba(6, 182, 212, 0.15);
+}
+
+/* ===== 已选择模块栏 ===== */
+.module-selected-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 20px;
+  background: linear-gradient(135deg, #f0f9ff 0%, #e0f2fe 100%);
+  border: 2px solid #bae6fd;
+  border-radius: 12px;
+  box-shadow: 0 2px 8px rgba(14, 165, 233, 0.08);
+  animation: slideIn 0.3s ease-out;
+}
+
+@keyframes slideIn {
+  from {
+    opacity: 0;
+    transform: translateY(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* ===== 响应式适配 ===== */
+
+/* 中等屏幕：保持2列但调整间距 */
+@media (max-width: 1200px) {
+  .module-grid {
+    gap: 14px;
+  }
+  
+  .module-item {
+    padding: 18px;
+  }
+  
+  .module-icon-emoji {
+    font-size: 26px;
+  }
+  
+  .module-item-title {
+    font-size: 16px;
+  }
+}
+
+/* 小屏幕/平板：单列布局 */
+@media (max-width: 900px) {
+  .module-step-card {
+    padding: 24px;
+  }
+  
+  .module-title {
+    font-size: 22px;
+  }
+  
+  .module-grid {
+    grid-template-columns: 1fr;
+    gap: 12px;
+  }
+  
+  .module-item {
+    padding: 18px;
+  }
+  
+  .module-icon-emoji {
+    font-size: 24px;
+    margin-bottom: 10px;
+  }
+  
+  .module-item-title {
+    font-size: 16px;
+  }
+  
+  .module-item-desc {
+    font-size: 13px;
+  }
+  
+  .module-item-scenario {
+    font-size: 11.5px;
+    padding: 6px 12px;
+  }
+}
+</style>
