@@ -5,38 +5,12 @@
       <!-- 左侧分类/目录面板 -->
       <aside class="rl-sidebar">
         <div class="sidebar-header">
-          <h3 class="sidebar-title">分类管理</h3>
+          <h3 class="sidebar-title">规则目录</h3>
           <div class="sidebar-actions">
-            <el-button size="small" icon="Plus" @click="showCreateCategoryDialog">新建分类</el-button>
             <el-button size="small" icon="FolderPlus" @click="showCreateFolderDialog">新建目录</el-button>
           </div>
         </div>
         
-        <!-- 分类列表 -->
-        <div class="category-section">
-          <div class="section-title">
-            <el-icon class="section-icon"><Folder /></el-icon>
-            <span>规则分类</span>
-          </div>
-          <div class="category-list">
-            <div
-              v-for="cat in categories"
-              :key="cat.id"
-              class="category-item"
-              :class="{ active: selectedCategory?.id === cat.id }"
-              @click="selectCategory(cat)"
-            >
-              <el-icon class="category-icon" size="14">Tag</el-icon>
-              <span class="category-name">{{ cat.name }}</span>
-              <span class="category-count">{{ getCategoryCount(cat.id) }}</span>
-              <div class="category-actions" @click.stop>
-                <el-button size="small" :icon="Edit" @click="showEditCategoryDialog(cat)" aria-label="编辑分类" />
-                <el-button size="small" :icon="Delete" type="danger" @click="handleDeleteCategory(cat.id)" aria-label="删除分类" />
-              </div>
-            </div>
-          </div>
-        </div>
-
         <!-- 目录树 -->
         <div class="folder-section">
           <div class="section-header">
@@ -156,15 +130,6 @@
                 <div class="metric-info">
                   <span class="metric-value">{{ executableCount }}</span>
                   <span class="metric-label">可执行规则</span>
-                </div>
-              </div>
-              <div class="metric-card">
-                <div class="metric-icon bg-orange">
-                  <el-icon><Grid /></el-icon>
-                </div>
-                <div class="metric-info">
-                  <span class="metric-value">{{ categories.length }}</span>
-                  <span class="metric-label">分类数</span>
                 </div>
               </div>
             </div>
@@ -399,31 +364,20 @@
         <el-form-item label="描述">
           <el-input v-model="formData.description" type="textarea" :rows="3" placeholder="规则库用途说明" />
         </el-form-item>
-        <el-form-item label="分类">
-          <el-select v-model="formData.categoryId" placeholder="选择分类" clearable>
-            <el-option v-for="cat in categories" :key="cat.id" :label="cat.name" :value="cat.id" />
-          </el-select>
+        <el-form-item label="所属目录">
+          <el-tree-select
+            :data="folderTreeData"
+            :props="treeProps"
+            v-model="formData.folderId"
+            placeholder="选择目录（可选）"
+            clearable
+            check-strictly
+          />
         </el-form-item>
       </el-form>
       <template #footer>
         <el-button @click="dialogVisible = false">取消</el-button>
         <el-button type="primary" @click="handleSubmit" :loading="submitting">确定</el-button>
-      </template>
-    </el-dialog>
-
-    <!-- 新建分类对话框 -->
-    <el-dialog v-model="categoryDialogVisible" :title="isEditCategory ? '编辑分类' : '新建分类'" width="400px">
-      <el-form :model="categoryForm" label-width="60px">
-        <el-form-item label="名称" required>
-          <el-input v-model="categoryForm.name" placeholder="分类名称" />
-        </el-form-item>
-        <el-form-item label="描述">
-          <el-input v-model="categoryForm.description" type="textarea" :rows="2" placeholder="分类描述" />
-        </el-form-item>
-      </el-form>
-      <template #footer>
-        <el-button @click="categoryDialogVisible = false">取消</el-button>
-        <el-button type="primary" @click="handleSaveCategory" :loading="submitting">确定</el-button>
       </template>
     </el-dialog>
 
@@ -624,6 +578,15 @@ import {
   type RuleLibraryItem,
   type RuleLibraryPreviewItem,
 } from '@/api/rule-library'
+import {
+  getRuleFoldersApi,
+  createRuleFolderApi,
+  updateRuleFolderApi,
+  deleteRuleFolderApi,
+  moveRuleFoldersApi,
+  mergeRuleFoldersApi,
+  type RuleFolderTreeNode,
+} from '@/api/rule-folder'
 
 // 视图模式
 const viewMode = ref<'grid' | 'list'>('list')
@@ -637,33 +600,13 @@ const importing = ref(false)
 // 数据
 const libraries = ref<RuleLibrary[]>([])
 const selectedLibrary = ref<RuleLibrary | null>(null)
-const selectedCategory = ref<any>(null)
-const categories = ref<any[]>([
-  { id: 'cat-1', name: '命名规范', description: '文件命名、变量命名等规则' },
-  { id: 'cat-2', name: '格式规范', description: '文档格式、排版规则' },
-  { id: 'cat-3', name: '内容规范', description: '文档内容要求' },
-  { id: 'cat-4', name: 'DWG规范', description: 'CAD图纸相关规则' },
-])
 
 // 目录树
 const folderTreeRef = ref<InstanceType<typeof ElTree> | null>(null)
-const folderTree = ref([
-  {
-    id: 'folder-1',
-    label: '根目录',
-    count: 15,
-    children: [
-      { id: 'folder-1-1', label: '命名规则', count: 5 },
-      { id: 'folder-1-2', label: '格式规则', count: 6 },
-      { id: 'folder-1-3', label: '内容规则', count: 4, children: [
-        { id: 'folder-1-3-1', label: '标题规范', count: 2 },
-        { id: 'folder-1-3-2', label: '正文规范', count: 2 },
-      ]},
-    ]
-  },
-])
-const expandedFolderKeys = ref(['folder-1'])
-const checkedFolderKeys = ref([])
+const folderTree = ref<RuleFolderTreeNode[]>([])
+const folderTreeData = ref<RuleFolderTreeNode[]>([]) // for tree-select (flat compatible)
+const expandedFolderKeys = ref<string[]>([])
+const checkedFolderKeys = ref<string[]>([])
 const treeProps = {
   children: 'children',
   label: 'label',
@@ -689,12 +632,7 @@ const mergeFolderForm = reactive({ name: '' })
 const dialogVisible = ref(false)
 const isEdit = ref(false)
 const editId = ref('')
-const formData = reactive({ name: '', description: '', categoryId: '' })
-
-const categoryDialogVisible = ref(false)
-const isEditCategory = ref(false)
-const editingCategoryId = ref('')
-const categoryForm = reactive({ name: '', description: '' })
+const formData = reactive({ name: '', description: '', folderId: '' as string | null })
 
 const folderDialogVisible = ref(false)
 const folderForm = reactive({ name: '', parentId: '' })
@@ -756,19 +694,10 @@ const filteredItems = computed(() => {
   return items
 })
 
-// 方法
-const getCategoryCount = (categoryId: string) => {
-  let count = 0
-  libraries.value.forEach(lib => {
-    lib.items?.forEach(item => {
-      if (item.category === categories.value.find(c => c.id === categoryId)?.name) {
-        count++
-      }
-    })
-  })
-  return count
-}
+// 文件夹相关常量
+const FOLDER_COUNT = computed(() => folderTree.value.length)
 
+// 获取状态相关方法
 const getStatusClass = (status: string) => {
   const map: Record<string, string> = {
     DRAFT: 'status-draft',
@@ -805,33 +734,27 @@ const getStatusIcon = (status: string) => {
   return map[status] || List
 }
 
-const selectCategory = (cat: any) => {
-  selectedCategory.value = cat
+// 获取目录树
+const fetchFolders = async () => {
+  try {
+    const { data } = await getRuleFoldersApi()
+    folderTree.value = data || []
+    // For tree-select, clone and add a virtual root
+    folderTreeData.value = data?.length ? data : []
+    // Auto-expand first level
+    expandedFolderKeys.value = (data || []).map((f: RuleFolderTreeNode) => f.id)
+  } catch (e: any) {
+    console.error('获取目录树失败:', e)
+  }
 }
 
 const handleFolderClick = (data: any) => {
-    console.log('Folder clicked:', data)
-  }
+  // 点击目录可以过滤规则库（未来扩展）
+}
 
-  const handleFolderCheck = (data: any, checked: boolean) => {
-    console.log('Folder checked:', data, checked)
-  }
-
-  // 查找节点
-  const findNodeById = (nodes: any[], id: string): { node: any; parent: any; index: number } | null => {
-    for (let i = 0; i < nodes.length; i++) {
-      if (nodes[i].id === id) {
-        return { node: nodes[i], parent: null, index: i }
-      }
-      if (nodes[i].children) {
-        const found = findNodeById(nodes[i].children, id)
-        if (found) {
-          return { node: found.node, parent: nodes[i], index: found.index }
-        }
-      }
-    }
-    return null
-  }
+const handleFolderCheck = (_data: any, _checked: boolean) => {
+  // checkbox 选中状态通过 checkedFolderKeys 自动同步
+}
 
   // 编辑目录
   const showEditFolderDialog = (data: any) => {
@@ -840,75 +763,46 @@ const handleFolderClick = (data: any) => {
     editFolderDialogVisible.value = true
   }
 
-  const handleEditFolder = () => {
+  const handleEditFolder = async () => {
     if (!editFolderForm.name.trim()) {
       ElMessage.warning('请输入目录名称')
       return
     }
-    editingFolder.value.label = editFolderForm.name.trim()
-    ElMessage.success('目录名称更新成功')
-    editFolderDialogVisible.value = false
+    if (!editingFolder.value?.id) return
+    submitting.value = true
+    try {
+      await updateRuleFolderApi(editingFolder.value.id, { name: editFolderForm.name.trim() })
+      ElMessage.success('目录名称更新成功')
+      editFolderDialogVisible.value = false
+      await fetchFolders()
+    } catch (e: any) {
+      ElMessage.error(e?.response?.data?.message || '更新失败')
+    } finally {
+      submitting.value = false
+    }
   }
 
   // 删除目录
   const handleDeleteFolder = (folderId: string) => {
-    if (folderId === 'folder-1') {
-      ElMessage.warning('根目录不能删除')
-      return
-    }
     ElMessageBox.confirm(
-      '确认删除此目录？目录下的子目录和规则将一并删除。',
+      '确认删除此目录？目录下的子目录将移到上级，关联的规则库将解除目录绑定。',
       '删除目录',
       {
         confirmButtonText: '确定删除',
         cancelButtonText: '取消',
         type: 'warning',
       }
-    ).then(() => {
-      const removeFromTree = (nodes: any[]): boolean => {
-        for (let i = 0; i < nodes.length; i++) {
-          if (nodes[i].id === folderId) {
-            nodes.splice(i, 1)
-            return true
-          }
-          if (nodes[i].children && removeFromTree(nodes[i].children)) {
-            return true
-          }
-        }
-        return false
+    ).then(async () => {
+      try {
+        await deleteRuleFolderApi(folderId)
+        checkedFolderKeys.value = checkedFolderKeys.value.filter(id => id !== folderId)
+        ElMessage.success('删除成功')
+        await fetchFolders()
+        await fetchLibraries()
+      } catch (e: any) {
+        ElMessage.error(e?.response?.data?.message || '删除失败')
       }
-      removeFromTree(folderTree.value)
-      checkedFolderKeys.value = checkedFolderKeys.value.filter(id => id !== folderId)
-      ElMessage.success('删除成功')
     }).catch(() => {})
-  }
-
-  // 上移目录
-  const moveFolderUp = (data: any, node: any) => {
-    if (!node.parent || node.parent.children.length <= 1) return
-    
-    const siblings = node.parent.children
-    const index = siblings.findIndex((item: any) => item.id === data.id)
-    if (index > 0) {
-      const temp = siblings[index]
-      siblings[index] = siblings[index - 1]
-      siblings[index - 1] = temp
-      ElMessage.success('已上移')
-    }
-  }
-
-  // 下移目录
-  const moveFolderDown = (data: any, node: any) => {
-    if (!node.parent) return
-    
-    const siblings = node.parent.children
-    const index = siblings.findIndex((item: any) => item.id === data.id)
-    if (index < siblings.length - 1) {
-      const temp = siblings[index]
-      siblings[index] = siblings[index + 1]
-      siblings[index + 1] = temp
-      ElMessage.success('已下移')
-    }
   }
 
   // 移动目录对话框
@@ -917,30 +811,27 @@ const handleFolderClick = (data: any) => {
     moveFolderDialogVisible.value = true
   }
 
-  const handleMoveFolder = () => {
+  const handleMoveFolder = async () => {
     if (!moveFolderForm.targetId) {
       ElMessage.warning('请选择目标目录')
       return
     }
-    
-    selectedFolders.value.forEach(folderId => {
-      if (folderId === moveFolderForm.targetId) return
-      
-      const found = findNodeById(folderTree.value, folderId)
-      if (found && found.parent) {
-        found.parent.children.splice(found.index, 1)
-        
-        const targetFound = findNodeById(folderTree.value, moveFolderForm.targetId)
-        if (targetFound) {
-          if (!targetFound.node.children) targetFound.node.children = []
-          targetFound.node.children.push(found.node)
-        }
-      }
-    })
-    
-    ElMessage.success('移动成功')
-    moveFolderDialogVisible.value = false
-    checkedFolderKeys.value = []
+    if (selectedFolders.value.length === 0) {
+      ElMessage.warning('请勾选要移动的目录')
+      return
+    }
+    submitting.value = true
+    try {
+      await moveRuleFoldersApi(selectedFolders.value, moveFolderForm.targetId)
+      ElMessage.success('移动成功')
+      moveFolderDialogVisible.value = false
+      checkedFolderKeys.value = []
+      await fetchFolders()
+    } catch (e: any) {
+      ElMessage.error(e?.response?.data?.message || '移动失败')
+    } finally {
+      submitting.value = false
+    }
   }
 
   // 合并目录对话框
@@ -949,43 +840,34 @@ const handleFolderClick = (data: any) => {
     mergeFolderDialogVisible.value = true
   }
 
-  const handleMergeFolder = () => {
+  const handleMergeFolder = async () => {
     if (!mergeFolderForm.name.trim()) {
       ElMessage.warning('请输入合并后的目录名称')
       return
     }
-    
-    const mergedChildren: any[] = []
-    const mergedCount: number = 0
-    
-    selectedFolders.value.forEach(folderId => {
-      const found = findNodeById(folderTree.value, folderId)
-      if (found && found.parent) {
-        const node = found.node
-        if (node.children) {
-          mergedChildren.push(...node.children)
-        }
-        found.parent.children.splice(found.index, 1)
-      }
-    })
-    
-    const newFolder = {
-      id: `folder-${Date.now()}`,
-      label: mergeFolderForm.name.trim(),
-      count: mergedCount,
-      children: mergedChildren.length > 0 ? mergedChildren : undefined,
+    if (selectedFolders.value.length < 2) {
+      ElMessage.warning('至少勾选 2 个目录进行合并')
+      return
     }
-    
-    folderTree.value.push(newFolder)
-    ElMessage.success('合并成功')
-    mergeFolderDialogVisible.value = false
-    checkedFolderKeys.value = []
+    submitting.value = true
+    try {
+      await mergeRuleFoldersApi(selectedFolders.value, mergeFolderForm.name.trim())
+      ElMessage.success('合并成功')
+      mergeFolderDialogVisible.value = false
+      checkedFolderKeys.value = []
+      await fetchFolders()
+      await fetchLibraries()
+    } catch (e: any) {
+      ElMessage.error(e?.response?.data?.message || '合并失败')
+    } finally {
+      submitting.value = false
+    }
   }
 
 const resetLibraryForm = () => {
   formData.name = ''
   formData.description = ''
-  formData.categoryId = ''
+  formData.folderId = null
 }
 
 const resetItemForm = () => {
@@ -1032,6 +914,7 @@ const showEditDialog = (row: RuleLibrary) => {
   editId.value = row.id
   formData.name = row.name
   formData.description = row.description || ''
+  formData.folderId = (row as any).folderId || null
   dialogVisible.value = true
 }
 
@@ -1043,13 +926,22 @@ const handleSubmit = async () => {
   submitting.value = true
   try {
     if (isEdit.value) {
-      await updateRuleLibraryApi(editId.value, { name: formData.name.trim(), description: formData.description || '' })
+      await updateRuleLibraryApi(editId.value, {
+        name: formData.name.trim(),
+        description: formData.description || '',
+        folderId: formData.folderId || null,
+      })
     } else {
-      await createRuleLibraryApi({ name: formData.name.trim(), description: formData.description || '' })
+      await createRuleLibraryApi({
+        name: formData.name.trim(),
+        description: formData.description || '',
+        folderId: formData.folderId || null,
+      })
     }
     ElMessage.success(isEdit.value ? '更新成功' : '创建成功')
     dialogVisible.value = false
     await fetchLibraries()
+    await fetchFolders()
   } catch (e: any) {
     ElMessage.error(e?.response?.data?.message || '操作失败')
   } finally {
@@ -1219,76 +1111,6 @@ const handleDeleteItem = async (itemId: string) => {
   }
 }
 
-const showCreateCategoryDialog = () => {
-  isEditCategory.value = false
-  editingCategoryId.value = ''
-  categoryForm.name = ''
-  categoryForm.description = ''
-  categoryDialogVisible.value = true
-}
-
-const showEditCategoryDialog = (cat: any) => {
-  isEditCategory.value = true
-  editingCategoryId.value = cat.id
-  categoryForm.name = cat.name
-  categoryForm.description = cat.description || ''
-  categoryDialogVisible.value = true
-}
-
-const handleSaveCategory = async () => {
-  if (!categoryForm.name.trim()) {
-    ElMessage.warning('请输入分类名称')
-    return
-  }
-  submitting.value = true
-  try {
-    if (isEditCategory.value) {
-      const index = categories.value.findIndex(c => c.id === editingCategoryId.value)
-      if (index !== -1) {
-        categories.value[index] = {
-          ...categories.value[index],
-          name: categoryForm.name.trim(),
-          description: categoryForm.description,
-        }
-      }
-      ElMessage.success('分类更新成功')
-    } else {
-      categories.value.push({
-        id: `cat-${Date.now()}`,
-        name: categoryForm.name.trim(),
-        description: categoryForm.description,
-      })
-      ElMessage.success('分类创建成功')
-    }
-    categoryDialogVisible.value = false
-  } catch (e: any) {
-    ElMessage.error(e?.response?.data?.message || '操作失败')
-  } finally {
-    submitting.value = false
-  }
-}
-
-const handleDeleteCategory = (categoryId: string) => {
-  ElMessageBox.confirm(
-    '确认删除此分类？',
-    '删除分类',
-    {
-      confirmButtonText: '确定删除',
-      cancelButtonText: '取消',
-      type: 'warning',
-    }
-  ).then(() => {
-    const index = categories.value.findIndex(c => c.id === categoryId)
-    if (index !== -1) {
-      categories.value.splice(index, 1)
-      if (selectedCategory.value?.id === categoryId) {
-        selectedCategory.value = null
-      }
-      ElMessage.success('删除成功')
-    }
-  }).catch(() => {})
-}
-
 const showCreateFolderDialog = () => {
   folderForm.name = ''
   folderForm.parentId = ''
@@ -1302,36 +1124,15 @@ const handleSaveFolder = async () => {
   }
   submitting.value = true
   try {
-    const newFolder = {
-      id: `folder-${Date.now()}`,
-      label: folderForm.name.trim(),
-      count: 0,
-      children: [],
-    }
-    
-    if (folderForm.parentId) {
-      const addToTree = (nodes: any[]): boolean => {
-        for (const node of nodes) {
-          if (node.id === folderForm.parentId) {
-            if (!node.children) node.children = []
-            node.children.push(newFolder)
-            return true
-          }
-          if (node.children && addToTree(node.children)) {
-            return true
-          }
-        }
-        return false
-      }
-      addToTree(folderTree.value)
-    } else {
-      folderTree.value.push(newFolder)
-    }
-    
+    await createRuleFolderApi({
+      name: folderForm.name.trim(),
+      parentId: folderForm.parentId || null,
+    })
     ElMessage.success('目录创建成功')
     folderDialogVisible.value = false
+    await fetchFolders()
   } catch (e: any) {
-    ElMessage.error('操作失败')
+    ElMessage.error(e?.response?.data?.message || '创建失败')
   } finally {
     submitting.value = false
   }
@@ -1339,6 +1140,7 @@ const handleSaveFolder = async () => {
 
 onMounted(() => {
   fetchLibraries()
+  fetchFolders()
 })
 </script>
 

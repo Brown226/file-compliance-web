@@ -1,9 +1,9 @@
 # ============================================
 # 文件智能审查系统 - 完整离线部署配置
-# 包含: PostgreSQL + Redis + MarkItDown + 后端 + 前端 + MaxKB
+# 包含: PostgreSQL + Redis + MarkItDown + OCR + 后端 + 前端
 # 支持内网无公网环境运行
 #
-# ⚠️ 部署前请修改 .env 中的 MAXKB_PUBLIC_URL 为服务器实际 IP
+# ⚠️ 部署前请检查 .env 配置
 # ============================================
 
 services:
@@ -124,83 +124,6 @@ services:
           cpus: "1.0"
 
   # ==========================================
-  # MaxKB 知识库服务 - PostgreSQL 实例
-  # ==========================================
-  maxkb-pgsql:
-    image: registry.fit2cloud.com/maxkb/maxkb:v2.8.0
-    container_name: maxkb-pgsql
-    hostname: maxkb-pgsql
-    ports:
-      - "127.0.0.1:${MAXKB_PG_PORT:-15432}:5432"
-    volumes:
-      - maxkb-pgsql-data:/opt/maxkb/data
-    env_file:
-      - maxkb-runtime/maxkb/conf/pgsql.env
-    restart: unless-stopped
-    healthcheck:
-      test: ["CMD", "pg_isready", "-q", "-d", "postgres", "-U", "root"]
-      interval: 10s
-      timeout: 10s
-      retries: 30
-    command: ["/usr/bin/start-postgres.sh"]
-    networks:
-      - file-review-network
-
-  # ==========================================
-  # MaxKB 知识库服务 - Redis 实例
-  # ==========================================
-  maxkb-redis:
-    image: registry.fit2cloud.com/maxkb/maxkb:v2.8.0
-    container_name: file_review_maxkb_redis
-    hostname: maxkb-redis
-    ports:
-      - "127.0.0.1:${MAXKB_REDIS_PORT:-16379}:6379"
-    volumes:
-      - maxkb-redis-data:/opt/maxkb/data
-      - maxkb-runtime/maxkb/conf:/opt/maxkb/conf
-    env_file:
-      - maxkb-runtime/maxkb/conf/redis.env
-    restart: unless-stopped
-    healthcheck:
-      test: ["CMD", "redis-cli", "-a", "Password123@redis", "ping"]
-      interval: 10s
-      timeout: 10s
-      retries: 30
-    command: ["/usr/bin/start-redis.sh"]
-    networks:
-      - file-review-network
-
-  # ==========================================
-  # MaxKB 知识库服务 - 主服务
-  # ==========================================
-  maxkb:
-    image: registry.fit2cloud.com/maxkb/maxkb:v2.8.0
-    container_name: file_review_maxkb
-    hostname: maxkb
-    ports:
-      - "${MAXKB_PORT:-8080}:8080"
-    volumes:
-      - maxkb-logs:/opt/maxkb/logs
-      - maxkb-local:/opt/maxkb/local
-    env_file:
-      - maxkb-runtime/maxkb/conf/maxkb.env
-    depends_on:
-      maxkb-pgsql:
-        condition: service_healthy
-      maxkb-redis:
-        condition: service_healthy
-    restart: unless-stopped
-    healthcheck:
-      test: ["CMD", "curl", "-f", "localhost:8080"]
-      interval: 30s
-      timeout: 10s
-      retries: 120
-      start_period: 120s
-    command: ['/usr/bin/start-maxkb.sh']
-    networks:
-      - file-review-network
-
-  # ==========================================
   # 后端 API 服务
   # ==========================================
   backend:
@@ -216,8 +139,6 @@ services:
       - JWT_SECRET=${JWT_SECRET:-enterprise-review-system-jwt-secret-2026}
       - JWT_EXPIRES_IN=${JWT_EXPIRES_IN:-1d}
       - PARSER_SERVICE_URL=http://markitdown:8000
-      - MAXKB_BASE_URL=http://maxkb:8080
-      - MAXKB_PUBLIC_URL=${MAXKB_PUBLIC_URL:-http://localhost:8080}
       - OCR_SERVICE_URL=http://ocr-service:8000
       - TZ=Asia/Shanghai
     volumes:
@@ -230,10 +151,6 @@ services:
         condition: service_healthy
       markitdown:
         condition: service_healthy
-      # MaxKB 不再设为硬依赖——如果 MaxKB 启动慢或失败，后端仍可启动
-      # 审查时 MaxKB 不可用会自动降级到自有 LLM
-      maxkb:
-        condition: service_started
     healthcheck:
       test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3000/health"]
       interval: 30s
@@ -287,9 +204,5 @@ volumes:
   redis_data:
     driver: local
   uploads:
-  maxkb-logs:
-  maxkb-local:
-  maxkb-pgsql-data:
-  maxkb-redis-data:
   ocr_models:
     driver: local

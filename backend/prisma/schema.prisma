@@ -603,6 +603,20 @@ model DocumentTag {
 
 // ===== 规则库 =====
 
+model RuleFolder {
+  id        String       @id @default(uuid())
+  name      String
+  parentId  String?
+  parent    RuleFolder?  @relation("RuleFolderTree", fields: [parentId], references: [id])
+  children  RuleFolder[] @relation("RuleFolderTree")
+  libraries RuleLibrary[]
+  sortOrder Int          @default(0)
+  createdAt DateTime     @default(now())
+  updatedAt DateTime     @updatedAt
+
+  @@map("rule_folders")
+}
+
 model RuleLibrary {
   id              String              @id @default(uuid())
   name            String                                // 规则库名称
@@ -610,6 +624,8 @@ model RuleLibrary {
   sourceFileName  String?             @map("source_file_name") // 上传的源文件名
   status          RuleLibraryStatus   @default(DRAFT)    // 草稿/已发布/归档
   createdBy       String                                // 创建人
+  folderId        String?
+  folder          RuleFolder?         @relation(fields: [folderId], references: [id], onDelete: SetNull)
   tasks           Task[]
   items           RuleLibraryItem[]
   createdAt       DateTime            @default(now())

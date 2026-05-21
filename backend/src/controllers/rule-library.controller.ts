@@ -38,9 +38,14 @@ export const getLibrary = async (req: AuthRequest, res: Response): Promise<void>
 /** 创建规则库 */
 export const createLibrary = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
-    const { name, description } = req.body;
+    const { name, description, folderId } = req.body;
     if (!name?.trim()) { error(res, '名称不能为空', 400); return; }
-    const library = await RuleLibraryService.create({ name: name.trim(), description, createdBy: req.user!.id });
+    const library = await RuleLibraryService.create({
+      name: name.trim(),
+      description,
+      folderId: folderId || null,
+      createdBy: req.user!.id,
+    });
     success(res, library, '创建成功');
   } catch (err) {
     console.error('Create RuleLibrary Error:', err);

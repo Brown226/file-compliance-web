@@ -1,3 +1,7 @@
+<!--
+  @deprecated 此组件已被 ImportWizard.vue 替代，分块设置已整合到导入向导 Step 2 的 Accordion 面板中。
+  保留此文件仅作参考，不再被任何页面引用。
+-->
 <template>
   <el-dialog
     :model-value="modelValue"

@@ -60,12 +60,13 @@ export const getRuleLibrariesApi = (params?: { selectableOnly?: boolean }) =>
 export const getRuleLibraryApi = (id: string) =>
   request.get<RuleLibrary>(`/rule-libraries/${id}`)
 
-export const createRuleLibraryApi = (data: { name: string; description?: string }) =>
+export const createRuleLibraryApi = (data: { name: string; description?: string; folderId?: string | null }) =>
   request.post<RuleLibrary>('/rule-libraries', data)
 
 export const updateRuleLibraryApi = (id: string, data: {
   name?: string
   description?: string
+  folderId?: string | null
   status?: string
 }) => request.put<RuleLibrary>(`/rule-libraries/${id}`, data)
 

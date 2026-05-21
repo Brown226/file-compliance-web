@@ -253,7 +253,9 @@ export const confirmImportApi = (categoryId: string, data: {
   title: string
   chunks: Array<string | ParagraphSegment>
   metadata?: Record<string, any>
-}) => request.post<{ chunks: number; deduped: number }>(`/knowledge-categories/${categoryId}/confirm-import`, data)
+}) => request.post<{ chunks: number; deduped: number }>(`/knowledge-categories/${categoryId}/confirm-import`, data, {
+  timeout: 300000, // 5分钟超时，向量化大文件需要更多时间
+})
 
 // ===== 命中测试 =====
 

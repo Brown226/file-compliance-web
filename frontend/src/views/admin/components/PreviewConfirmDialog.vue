@@ -1,3 +1,7 @@
+<!--
+  @deprecated 此组件已被 ImportWizard.vue 替代，功能已整合到分步导入向导的 Step 2 和 Step 3。
+  保留此文件仅作参考，不再被任何页面引用。
+-->
 <template>
   <el-dialog
     :model-value="modelValue"

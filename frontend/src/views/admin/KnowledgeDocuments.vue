@@ -10,40 +10,19 @@
     <div class="kd-header" v-if="categoryInfo">
       <div class="kd-header__title-row">
         <h2 class="kd-header__title">{{ categoryInfo.name }}</h2>
-        <el-popover placement="bottom-start" :width="320" trigger="click">
-          <template #reference>
-            <el-button size="small" text>
-              <el-icon><Setting /></el-icon> 分块设置
-            </el-button>
-          </template>
-          <div class="chunk-settings">
-            <div class="chunk-settings__title">分块配置</div>
-            <el-form label-position="top" size="small">
-              <el-form-item label="分块模式">
-                <el-select v-model="chunkConfig.mode" style="width: 100%;">
-                  <el-option label="自动（推荐，标题感知）" value="auto" />
-                  <el-option label="固定长度（无标题结构时使用）" value="fixed" />
-                  <el-option label="按段落（已分段文档使用）" value="paragraph" />
-                </el-select>
-              </el-form-item>
-              <el-form-item label="最大字符数">
-                <el-input-number v-model="chunkConfig.maxChars" :min="200" :max="4000" :step="100" style="width: 100%;" />
-              </el-form-item>
-              <el-form-item label="重叠字符数" v-if="chunkConfig.mode !== 'fixed'">
-                <el-input-number v-model="chunkConfig.overlap" :min="0" :max="500" :step="50" style="width: 100%;" />
-              </el-form-item>
-              <el-form-item>
-                <el-button type="primary" @click="saveChunkConfig" :loading="chunkConfigSaving">
-                  保存配置
-                </el-button>
-                <span class="chunk-settings__hint">配置影响后续上传文档的分块方式</span>
-              </el-form-item>
-            </el-form>
-          </div>
-        </el-popover>
       </div>
       <p v-if="categoryInfo.description" class="kd-header__desc">{{ categoryInfo.description }}</p>
     </div>
+
+    <!-- Tab 导航 -->
+    <el-tabs v-model="activeTab" class="kd-tabs" @tab-change="handleTabChange">
+      <el-tab-pane label="文档列表" name="documents" />
+      <el-tab-pane label="检索测试" name="test" />
+      <el-tab-pane label="知识库设置" name="settings" />
+    </el-tabs>
+
+    <!-- Tab 1: 文档列表 -->
+    <template v-if="activeTab === 'documents'">
 
     <!-- 统计卡片 -->
     <div class="kd-stats">
@@ -86,11 +65,8 @@
       <!-- 工具栏 -->
       <div class="kd-toolbar">
         <div class="kd-toolbar__left">
-          <el-button type="primary" size="small" @click="uploadDialogVisible = true">
+          <el-button type="primary" size="small" @click="importWizardVisible = true">
             <el-icon><Upload /></el-icon> 上传文档
-          </el-button>
-          <el-button size="small" @click="previewDialogVisible = true">
-            <el-icon><View /></el-icon> 分段预览导入
           </el-button>
           <el-button
             size="small"
@@ -98,9 +74,6 @@
             :disabled="selectedDocs.length === 0"
           >
             <el-icon><RefreshRight /></el-icon> 批量向量化
-          </el-button>
-          <el-button size="small" @click="openHitTestDrawer">
-            <el-icon><Aim /></el-icon> 检索测试
           </el-button>
           <el-dropdown v-if="selectedDocs.length > 0">
             <el-button size="small" :disabled="selectedDocs.length === 0">
@@ -256,17 +229,17 @@
             </div>
           </template>
         </el-table-column>
-        <el-table-column label="状态" width="120" align="center">
+        <el-table-column label="状态" width="140" align="center">
           <template #default="{ row }">
-            <div class="status-cell">
+            <div class="status-cell" :class="{ 'status-cell--active': !row.is_fully_embedded }">
               <el-icon
                 v-if="row.is_fully_embedded"
                 class="status-cell__icon status-cell__icon--success"
                 :size="14"
               ><CircleCheck /></el-icon>
               <el-icon
-                v-else-if="row.embedded_count > 0"
-                class="status-cell__icon status-cell__icon--warning"
+                v-else-if="!row.is_fully_embedded && (row.embedded_count > 0 || row.vector_status === 'STARTED')"
+                class="is-loading status-cell__icon status-cell__icon--warning"
                 :size="14"
               ><Loading /></el-icon>
               <el-icon
@@ -275,7 +248,7 @@
                 :size="14"
               ><CircleClose /></el-icon>
               <span class="status-cell__text">
-                {{ row.is_fully_embedded ? '已完成' : row.embedded_count > 0 ? '部分向量化' : '未向量化' }}
+                {{ row.is_fully_embedded ? '已完成' : row.vector_status === 'STARTED' ? '向量化中' : row.embedded_count > 0 ? `${row.embedded_count}/${row.paragraph_count} 段` : '未向量化' }}
               </span>
             </div>
           </template>
@@ -335,21 +308,12 @@
       </div>
     </el-card>
 
-    <!-- 上传对话框 -->
-    <UploadDialog
-      v-model="uploadDialogVisible"
+    <!-- 导入向导 -->
+    <ImportWizard
+      v-model="importWizardVisible"
       :target-id="categoryId"
       :target-name="categoryInfo?.name || ''"
-      title="上传文档"
-      :upload-fn="uploadKnowledgeDocumentApi"
-      @uploaded="handleUploadComplete"
-    />
-
-    <!-- 分段预览确认对话框 -->
-    <PreviewConfirmDialog
-      v-model="previewDialogVisible"
-      :category-id="categoryId"
-      @imported="fetchDocuments"
+      @imported="handleImportComplete"
     />
 
     <!-- 段落全屏浏览页 -->
@@ -467,104 +431,154 @@
         <el-empty v-else-if="!paragraphLoading" description="暂无段落数据" />
       </div>
     </div>
+    </template>
 
-    <!-- 向量化配置对话框 -->
-    <VectorizeDialog
-      v-model="vectorizeDialogVisible"
-      @confirm="handleVectorizeConfirm"
-    />
-
-    <!-- 检索测试抽屉 -->
-    <el-drawer
-      v-model="hitTestDrawerVisible"
-      title="检索效果测试"
-      direction="rtl"
-      size="520px"
-      :before-close="closeHitTestDrawer"
-      class="hit-test-drawer"
-    >
-      <div class="ht-drawer">
-        <!-- 查询表单 -->
-        <div class="ht-form">
+    <!-- Tab 2: 检索测试 -->
+    <template v-if="activeTab === 'test'">
+      <div class="kd-test-layout">
+        <div class="kd-test-left">
           <el-input
             v-model="hitTestForm.query"
             placeholder="输入检索内容，如：消防水泵扬程要求"
             clearable
             @keyup.enter="handleHitTest"
-            class="ht-form__query"
+            class="kd-test-query"
           >
             <template #prefix>
               <el-icon><Search /></el-icon>
             </template>
           </el-input>
-          <div class="ht-form__options">
-            <el-radio-group v-model="hitTestForm.searchMode" size="small">
-              <el-radio-button value="hybrid">混合</el-radio-button>
-              <el-radio-button value="vector">向量</el-radio-button>
-              <el-radio-button value="keyword">关键词</el-radio-button>
-            </el-radio-group>
-            <el-input-number
-              v-model="hitTestForm.topNumber"
-              :min="1" :max="30"
-              size="small"
-              style="width: 80px;"
-            />
-            <el-button
-              type="primary"
-              @click="handleHitTest"
-              :loading="hitTestLoading"
-              size="small"
+          <div class="kd-test-options">
+            <el-form label-position="top" size="small">
+              <el-form-item label="搜索模式">
+                <el-radio-group v-model="hitTestForm.searchMode" size="small">
+                  <el-radio-button value="hybrid">混合</el-radio-button>
+                  <el-radio-button value="vector">向量</el-radio-button>
+                  <el-radio-button value="keyword">关键词</el-radio-button>
+                </el-radio-group>
+              </el-form-item>
+              <el-form-item label="返回条数">
+                <el-input-number
+                  v-model="hitTestForm.topNumber"
+                  :min="1" :max="30"
+                  size="small"
+                  style="width: 120px;"
+                />
+              </el-form-item>
+              <el-form-item>
+                <el-button
+                  type="primary"
+                  @click="handleHitTest"
+                  :loading="hitTestLoading"
+                >
+                  <el-icon><Search /></el-icon> 测试
+                </el-button>
+              </el-form-item>
+            </el-form>
+          </div>
+          <div class="kd-test-history" v-if="hitTestHistory.length > 0">
+            <div class="kd-test-history__title">搜索历史</div>
+            <div
+              v-for="(item, idx) in hitTestHistory"
+              :key="idx"
+              class="kd-test-history__item"
+              @click="hitTestForm.query = item; handleHitTest()"
             >
-              <el-icon><Search /></el-icon> 测试
-            </el-button>
-          </div>
-        </div>
-
-        <!-- 结果统计 -->
-        <div v-if="hitTestResult" class="ht-stats">
-          <el-tag size="small" type="info" effect="plain">{{ hitTestResult.stats.searchTimeMs }}ms</el-tag>
-          <el-tag size="small" effect="plain">候选 {{ hitTestResult.stats.totalCandidates }}</el-tag>
-        </div>
-
-        <!-- 结果列表 -->
-        <el-scrollbar class="ht-results" v-if="hitTestResult">
-          <div v-if="hitTestResult.results.length === 0" class="ht-empty">
-            <el-empty description="未检索到相关内容" :image-size="60" />
-          </div>
-          <div
-            v-for="(item, index) in hitTestResult.results"
-            :key="item.id"
-            class="ht-result"
-          >
-            <div class="ht-result__header">
-              <span class="ht-result__rank">#{{ index + 1 }}</span>
-              <span class="ht-result__title">
-                {{ item.title || '未知' }}
-                <el-tag v-if="item.clauseId" size="small" type="primary" effect="plain" style="margin-left: 4px;">
-                  {{ item.clauseId }}
-                </el-tag>
-                <el-tag v-if="item.isTable" size="small" type="warning" effect="plain" style="margin-left: 2px;">
-                  表格
-                </el-tag>
-              </span>
-              <div class="ht-result__scores">
-                <el-tag size="small" :type="hitScoreType(item.comprehensiveScore)" effect="plain">
-                  {{ (item.comprehensiveScore * 100).toFixed(0) }}%
-                </el-tag>
-                <el-tag v-if="item.rerankScore != null" size="small" type="success" effect="plain">
-                  RR {{ (item.rerankScore * 100).toFixed(0) }}%
-                </el-tag>
-              </div>
+              <el-icon :size="12"><Search /></el-icon>
+              <span>{{ item }}</span>
             </div>
-            <div class="ht-result__content">{{ item.content.substring(0, 300) }}{{ item.content.length > 300 ? '...' : '' }}</div>
           </div>
-        </el-scrollbar>
-        <div v-else class="ht-placeholder">
-          <el-icon :size="32" color="var(--corp-text-tertiary)"><Aim /></el-icon>
-          <p>输入查询测试当前知识库的检索效果</p>
+        </div>
+        <div class="kd-test-right">
+          <div v-if="hitTestResult" class="kd-test-stats">
+            <el-tag size="small" type="info" effect="plain">{{ hitTestResult.stats.searchTimeMs }}ms</el-tag>
+            <el-tag size="small" effect="plain">候选 {{ hitTestResult.stats.totalCandidates }}</el-tag>
+          </div>
+          <div v-if="hitTestResult" class="kd-test-results">
+            <div v-if="hitTestResult.results.length === 0" class="kd-test-empty">
+              <el-empty description="未检索到相关内容" :image-size="60" />
+            </div>
+            <div
+              v-for="(item, index) in hitTestResult.results"
+              :key="item.id"
+              class="kd-test-result"
+            >
+              <div class="kd-test-result__header">
+                <span class="kd-test-result__rank">#{{ index + 1 }}</span>
+                <span class="kd-test-result__title">
+                  {{ item.title || '未知' }}
+                  <el-tag v-if="item.clauseId" size="small" type="primary" effect="plain" style="margin-left: 4px;">
+                    {{ item.clauseId }}
+                  </el-tag>
+                  <el-tag v-if="item.isTable" size="small" type="warning" effect="plain" style="margin-left: 2px;">
+                    表格
+                  </el-tag>
+                </span>
+                <div class="kd-test-result__scores">
+                  <el-tag size="small" :type="hitScoreType(item.comprehensiveScore)" effect="plain">
+                    {{ (item.comprehensiveScore * 100).toFixed(0) }}%
+                  </el-tag>
+                  <el-tag v-if="item.rerankScore != null" size="small" type="success" effect="plain">
+                    RR {{ (item.rerankScore * 100).toFixed(0) }}%
+                  </el-tag>
+                </div>
+              </div>
+              <div class="kd-test-result__content">{{ item.content.substring(0, 300) }}{{ item.content.length > 300 ? '...' : '' }}</div>
+            </div>
+          </div>
+          <div v-else class="kd-test-placeholder">
+            <el-icon :size="32" color="var(--corp-text-tertiary)"><Aim /></el-icon>
+            <p>输入查询测试当前知识库的检索效果</p>
+          </div>
         </div>
       </div>
-    </el-drawer>
+    </template>
+
+    <!-- Tab 3: 知识库设置 -->
+    <template v-if="activeTab === 'settings'">
+      <el-card class="kd-settings-card" shadow="never">
+        <template #header>
+          <span class="kd-settings-card__title">分块配置</span>
+        </template>
+        <el-form label-position="top" size="small" class="kd-settings-form">
+          <el-form-item label="分块模式">
+            <el-select v-model="chunkConfig.mode" style="width: 280px;">
+              <el-option label="自动（推荐，标题感知）" value="auto" />
+              <el-option label="固定长度（无标题结构时使用）" value="fixed" />
+              <el-option label="按段落（已分段文档使用）" value="paragraph" />
+            </el-select>
+          </el-form-item>
+          <el-form-item label="最大字符数">
+            <el-input-number v-model="chunkConfig.maxChars" :min="200" :max="4000" :step="100" style="width: 180px;" />
+            <span class="kd-settings-tip">推荐 800-1500 字符</span>
+          </el-form-item>
+          <el-form-item label="重叠字符数" v-if="chunkConfig.mode !== 'paragraph'">
+            <el-input-number v-model="chunkConfig.overlap" :min="0" :max="500" :step="50" style="width: 180px;" />
+            <span class="kd-settings-tip">推荐 100-200 字符</span>
+          </el-form-item>
+          <el-form-item>
+            <el-button type="primary" @click="saveChunkConfig" :loading="chunkConfigSaving">
+              保存配置
+            </el-button>
+            <span class="kd-settings-hint">配置影响后续上传文档的分块方式</span>
+          </el-form-item>
+        </el-form>
+      </el-card>
+
+      <el-card class="kd-settings-card" shadow="never" v-if="categoryInfo">
+        <template #header>
+          <span class="kd-settings-card__title">基本信息</span>
+        </template>
+        <el-descriptions :column="2" border size="small">
+          <el-descriptions-item label="名称">{{ categoryInfo.name }}</el-descriptions-item>
+          <el-descriptions-item label="类型">{{ categoryInfo.isLeaf ? '叶子知识库' : '目录' }}</el-descriptions-item>
+          <el-descriptions-item label="创建时间">{{ formatTime(categoryInfo.createdAt) }}</el-descriptions-item>
+          <el-descriptions-item label="状态">{{ categoryInfo.status === 'ACTIVE' ? '启用' : '已归档' }}</el-descriptions-item>
+          <el-descriptions-item label="描述" :span="2">{{ categoryInfo.description || '-' }}</el-descriptions-item>
+        </el-descriptions>
+      </el-card>
+    </template>
+
   </div>
 </template>
 
@@ -574,19 +588,16 @@ import { useRouter, useRoute } from 'vue-router'
 import {
   Upload, RefreshRight, Refresh, Search, ArrowLeft,
   Document, View, Edit, Delete, ArrowDown, MoreFilled,
-  CircleCheck, CircleClose, Loading, DataAnalysis, Notebook, Grid, Plus, PriceTag, Setting, ChatDotRound, Aim,
+  CircleCheck, CircleClose, Loading, DataAnalysis, Notebook, Grid, Plus, PriceTag, ChatDotRound, Aim,
 } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import StatsCard from './components/StatsCard.vue'
-import UploadDialog from './components/UploadDialog.vue'
-import PreviewConfirmDialog from './components/PreviewConfirmDialog.vue'
-import VectorizeDialog from './components/VectorizeDialog.vue'
+import ImportWizard from './components/ImportWizard.vue'
 import {
   getKnowledgeCategoriesApi,
   getGroupedDocumentsApi,
   updateDocumentApi,
   deleteDocumentApi,
-  uploadKnowledgeDocumentApi,
   getDocumentParagraphsApi,
   updateParagraphApi,
   deleteParagraphApi,
@@ -610,6 +621,12 @@ import {
 const router = useRouter()
 const route = useRoute()
 const categoryId = route.params.id as string
+
+const activeTab = ref((route.query.tab as string) || 'documents')
+
+const handleTabChange = (tab: string) => {
+  router.replace({ query: { tab } })
+}
 
 // ===== 分类信息 =====
 const categoryInfo = ref<any>(null)
@@ -846,8 +863,7 @@ const handleRowCommand = async (command: string, row: any) => {
 }
 
 // ===== 上传 =====
-const uploadDialogVisible = ref(false)
-const previewDialogVisible = ref(false)
+const importWizardVisible = ref(false)
 
 // ===== 异步上传任务追踪 =====
 const activeTasks = ref<UploadTaskStatus[]>([])
@@ -873,7 +889,7 @@ const stopTaskPolling = () => {
   if (taskPollTimer) { clearInterval(taskPollTimer); taskPollTimer = null }
 }
 
-const handleUploadComplete = (taskIds?: string[]) => {
+const handleImportComplete = (taskIds?: string[]) => {
   if (taskIds?.length) {
     activeTasks.value = taskIds.map(id => ({
       id,
@@ -1058,43 +1074,30 @@ const handleDeleteParagraph = async (paraId: string) => {
   } catch { ElMessage.error('删除失败') }
 }
 
-// ===== 向量化配置对话框 =====
-const vectorizeDialogVisible = ref(false)
-const pendingVectorizeDocs = ref<string[]>([])
-
 // ===== 检索测试 =====
-const hitTestDrawerVisible = ref(false)
 const hitTestLoading = ref(false)
 const hitTestResult = ref<HitTestResult | null>(null)
+const hitTestHistory = ref<string[]>([])
 const hitTestForm = reactive({
   query: '',
   searchMode: 'hybrid' as 'vector' | 'keyword' | 'hybrid',
   topNumber: 10,
 })
 
-const openHitTestDrawer = () => {
-  hitTestDrawerVisible.value = true
-  hitTestResult.value = null
-  hitTestForm.query = ''
-}
-
-const closeHitTestDrawer = () => {
-  hitTestDrawerVisible.value = false
-  hitTestResult.value = null
-}
-
 const handleHitTest = async () => {
-  if (!hitTestForm.query.trim()) return
-  hitTestLoading.value = true
-  try {
-    const res = await hitTestApi({
-      query: hitTestForm.query.trim(),
-      categoryId,
-      topNumber: hitTestForm.topNumber,
-      searchMode: hitTestForm.searchMode,
-    })
-    hitTestResult.value = res.data
-  } catch (err: any) {
+    if (!hitTestForm.query.trim()) return
+    hitTestLoading.value = true
+    try {
+      const res = await hitTestApi({
+        query: hitTestForm.query.trim(),
+        categoryId,
+        topNumber: hitTestForm.topNumber,
+        searchMode: hitTestForm.searchMode,
+      })
+      hitTestResult.value = res.data
+      const q = hitTestForm.query.trim()
+      hitTestHistory.value = [q, ...hitTestHistory.value.filter(h => h !== q)].slice(0, 10)
+    } catch (err: any) {
     console.error('Hit test failed:', err)
   } finally {
     hitTestLoading.value = false
@@ -1105,17 +1108,6 @@ const hitScoreType = (score: number) => {
   if (score >= 0.8) return 'success'
   if (score >= 0.5) return 'warning'
   return 'info'
-}
-
-const handleVectorizeConfirm = async (_config: any) => {
-  try {
-    await batchVectorizeApi(categoryId, pendingVectorizeDocs.value)
-    ElMessage.success('向量化任务已提交')
-    pendingVectorizeDocs.value = []
-    fetchDocuments()
-  } catch {
-    ElMessage.error('向量化失败')
-  }
 }
 
 // ===== 工具函数 =====
@@ -1371,6 +1363,7 @@ onBeforeUnmount(() => { stopPolling(); stopTaskPolling() })
   font-size: var(--text-sm);
   font-weight: 500;
 }
+.status-cell--active { color: var(--color-warning); }
 .status-cell__icon--success { color: var(--color-success); }
 .status-cell__icon--warning { color: var(--color-warning); }
 .status-cell__icon--danger { color: var(--color-danger); }
@@ -1910,5 +1903,38 @@ onBeforeUnmount(() => { stopPolling(); stopTaskPolling() })
   color: var(--corp-text-tertiary);
   flex: 1;
 }
+
+/* ===== Tab 导航 ===== */
+.kd-tabs { margin-bottom: var(--space-4); }
+.kd-tabs :deep(.el-tabs__header) { margin-bottom: 0; border-bottom: 1px solid var(--corp-border-light); }
+.kd-tabs :deep(.el-tabs__nav-wrap::after) { display: none; }
+
+/* ===== 检索测试 Tab 左右分栏 ===== */
+.kd-test-layout { display: flex; gap: var(--space-6); min-height: 0; }
+.kd-test-left { flex: 0 0 360px; display: flex; flex-direction: column; gap: var(--space-4); }
+.kd-test-query :deep(.el-input__wrapper) { box-shadow: 0 1px 3px rgba(0,0,0,0.06); }
+.kd-test-options { padding: var(--space-4); background: var(--bg-surface); border-radius: var(--radius-md); border: 1px solid var(--corp-border-light); }
+.kd-test-history { margin-top: var(--space-2); }
+.kd-test-history__title { font-size: var(--text-sm); font-weight: 700; color: var(--corp-text-secondary); margin-bottom: var(--space-2); padding: 0 var(--space-1); }
+.kd-test-history__item { display: flex; align-items: center; gap: var(--space-2); padding: var(--space-2) var(--space-3); font-size: var(--text-sm); color: var(--corp-text-secondary); border-radius: var(--radius-sm); cursor: pointer; transition: background var(--corp-transition-fast); }
+.kd-test-history__item:hover { background: var(--bg-surface-hover); color: var(--corp-primary); }
+.kd-test-right { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: var(--space-4); }
+.kd-test-stats { display: flex; gap: var(--space-2); flex-wrap: wrap; }
+.kd-test-results { display: flex; flex-direction: column; gap: var(--space-3); }
+.kd-test-result { background: var(--bg-surface); border-radius: var(--radius-md); padding: var(--space-4); border: 1px solid var(--corp-border-light); }
+.kd-test-result__header { display: flex; align-items: center; gap: var(--space-3); margin-bottom: var(--space-2); }
+.kd-test-result__rank { font-weight: 700; color: var(--color-primary-500); font-size: var(--text-sm); min-width: 28px; }
+.kd-test-result__title { font-size: var(--text-sm); font-weight: 600; color: var(--corp-text-primary); flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.kd-test-result__scores { display: flex; gap: var(--space-1); }
+.kd-test-result__content { font-size: var(--text-sm); color: var(--corp-text-secondary); line-height: 1.6; white-space: pre-wrap; word-break: break-all; padding-left: 28px; }
+.kd-test-placeholder { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: var(--space-3); padding: var(--space-16) 0; color: var(--corp-text-tertiary); font-size: var(--text-sm); }
+.kd-test-placeholder p { margin: 0; }
+
+/* ===== 知识库设置 Tab ===== */
+.kd-settings-card { margin-bottom: var(--space-4); }
+.kd-settings-card__title { font-size: var(--text-base); font-weight: 700; color: var(--corp-text-primary); }
+.kd-settings-form { max-width: 560px; }
+.kd-settings-tip { font-size: var(--text-xs); color: var(--corp-text-tertiary); margin-left: var(--space-3); font-weight: 500; }
+.kd-settings-hint { font-size: var(--text-xs); color: var(--corp-text-tertiary); margin-left: var(--space-4); font-weight: 500; }
 
 </style>

@@ -186,6 +186,20 @@
                       </el-tag>
                     </div>
                   </div>
+                  <div class="kb-card__actions">
+                    <el-tooltip content="编辑" placement="top">
+                      <el-button type="primary" link size="small" @click.stop="handleCardCommand('edit', cat)">
+                        <el-icon><Edit /></el-icon>
+                      </el-button>
+                    </el-tooltip>
+                    <el-popconfirm title="确认删除此节点？" @confirm="handleCardCommand('delete', cat)">
+                      <template #reference>
+                        <el-button type="danger" link size="small" @click.stop>
+                          <el-icon><Delete /></el-icon>
+                        </el-button>
+                      </template>
+                    </el-popconfirm>
+                  </div>
                 </div>
               </el-col>
             </el-row>
@@ -201,73 +215,22 @@
     <el-dialog
       v-model="dialogVisible"
       :title="isEdit ? '编辑节点' : '新建节点'"
-      width="560px"
+      width="480px"
       destroy-on-close
     >
       <el-form :model="formData" label-position="top" require-asterisk-position="right">
-        <el-row :gutter="16">
-          <el-col :span="12">
-            <el-form-item label="名称" required>
-              <el-input v-model="formData.name" placeholder="如：核电标准、法律法规" maxlength="50" show-word-limit />
-            </el-form-item>
-          </el-col>
-          <el-col :span="12">
-            <el-form-item label="目录类型">
-              <el-select v-model="formData.scopeType" placeholder="选择类型" clearable style="width: 100%">
-                <el-option label="自定义目录" value="CUSTOM" />
-                <el-option label="部门目录" value="DEPARTMENT" />
-                <el-option label="专业域目录" value="DOMAIN" />
-                <el-option label="标准目录" value="STANDARD" />
-                <el-option label="项目目录" value="PROJECT" />
-              </el-select>
-              <div class="form-tip">标识目录的业务用途，仅起分类标识作用</div>
-            </el-form-item>
-          </el-col>
-        </el-row>
-        <el-row :gutter="16">
-          <el-col :span="12">
-            <el-form-item label="访问级别">
-              <el-select v-model="formData.accessLevel" placeholder="选择访问级别" clearable style="width: 100%">
-                <el-option label="公开" value="PUBLIC" />
-                <el-option label="部门内可见" value="DEPARTMENT" />
-                <el-option label="仅本人/创建者" value="PRIVATE" />
-                <el-option label="需审批" value="APPROVAL_REQUIRED" />
-              </el-select>
-              <div class="form-tip">控制谁可以查看此目录及其内容</div>
-            </el-form-item>
-          </el-col>
-          <el-col :span="12">
-            <el-form-item label="继承父级权限">
-              <el-switch v-model="formData.inheritPermission" :default-value="true" />
-              <div class="form-tip">开启后将沿用上级节点的权限设置</div>
-            </el-form-item>
-          </el-col>
-        </el-row>
-        <el-form-item label="父级目录">
-          <el-tree-select
-            v-model="formData.parentId"
-            :data="treeSelectData"
-            :props="{ label: 'name', value: 'id', children: 'children' } as any"
-            placeholder="不选则为根目录"
-            clearable
-            check-strictly
-            :render-after-expand="false"
-            style="width: 100%"
-          />
+        <el-form-item label="名称" required>
+          <el-input v-model="formData.name" placeholder="请输入节点名称" maxlength="50" show-word-limit />
         </el-form-item>
         <el-form-item label="描述">
           <el-input
             v-model="formData.description"
             type="textarea"
             :rows="3"
-            placeholder="节点用途说明"
+            placeholder="可选，节点用途说明"
             maxlength="200"
             show-word-limit
           />
-        </el-form-item>
-        <el-form-item label="文档类型">
-          <el-input v-model="formData.documentTypes" placeholder="standard,law,reference（逗号分隔）" />
-          <div class="form-tip">不同类型用英文逗号分隔，仅对叶子知识库收录文档时生效</div>
         </el-form-item>
       </el-form>
       <template #footer>
@@ -971,6 +934,19 @@ onMounted(async () => {
   width: 1px;
   height: 12px;
   background: var(--corp-border-light);
+}
+.kb-card__actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding-top: var(--space-2);
+  visibility: hidden;
+  opacity: 0;
+  transition: opacity var(--corp-transition-fast), visibility var(--corp-transition-fast);
+}
+.kb-card:hover .kb-card__actions {
+  visibility: visible;
+  opacity: 1;
 }
 
 .kb-card-empty {
