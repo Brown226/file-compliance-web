@@ -176,6 +176,15 @@
                       <el-icon :size="13"><FolderOpened v-if="hasChildren(cat)" /><Collection v-else /></el-icon>
                       <span>{{ hasChildren(cat) ? `${cat.children?.length || 0} 个子节点` : '叶子知识库' }}</span>
                     </div>
+                    <div class="kb-card__divider"></div>
+                    <div class="kb-card__stat">
+                      <el-tag v-if="cat.scopeType && cat.scopeType !== 'CUSTOM'" size="small" effect="plain" style="font-size: 10px; padding: 0 6px; height: 20px; line-height: 18px;">
+                        {{ scopeTypeLabel(cat.scopeType) }}
+                      </el-tag>
+                      <el-tag v-else size="small" type="info" effect="plain" style="font-size: 10px; padding: 0 6px; height: 20px; line-height: 18px;">
+                        {{ accessLevelLabel(cat.accessLevel) }}
+                      </el-tag>
+                    </div>
                   </div>
                 </div>
               </el-col>
@@ -196,9 +205,44 @@
       destroy-on-close
     >
       <el-form :model="formData" label-position="top" require-asterisk-position="right">
-        <el-form-item label="名称" required>
-          <el-input v-model="formData.name" placeholder="如：核电标准、法律法规" maxlength="50" show-word-limit />
-        </el-form-item>
+        <el-row :gutter="16">
+          <el-col :span="12">
+            <el-form-item label="名称" required>
+              <el-input v-model="formData.name" placeholder="如：核电标准、法律法规" maxlength="50" show-word-limit />
+            </el-form-item>
+          </el-col>
+          <el-col :span="12">
+            <el-form-item label="目录类型">
+              <el-select v-model="formData.scopeType" placeholder="选择类型" clearable style="width: 100%">
+                <el-option label="自定义目录" value="CUSTOM" />
+                <el-option label="部门目录" value="DEPARTMENT" />
+                <el-option label="专业域目录" value="DOMAIN" />
+                <el-option label="标准目录" value="STANDARD" />
+                <el-option label="项目目录" value="PROJECT" />
+              </el-select>
+              <div class="form-tip">标识目录的业务用途，仅起分类标识作用</div>
+            </el-form-item>
+          </el-col>
+        </el-row>
+        <el-row :gutter="16">
+          <el-col :span="12">
+            <el-form-item label="访问级别">
+              <el-select v-model="formData.accessLevel" placeholder="选择访问级别" clearable style="width: 100%">
+                <el-option label="公开" value="PUBLIC" />
+                <el-option label="部门内可见" value="DEPARTMENT" />
+                <el-option label="仅本人/创建者" value="PRIVATE" />
+                <el-option label="需审批" value="APPROVAL_REQUIRED" />
+              </el-select>
+              <div class="form-tip">控制谁可以查看此目录及其内容</div>
+            </el-form-item>
+          </el-col>
+          <el-col :span="12">
+            <el-form-item label="继承父级权限">
+              <el-switch v-model="formData.inheritPermission" :default-value="true" />
+              <div class="form-tip">开启后将沿用上级节点的权限设置</div>
+            </el-form-item>
+          </el-col>
+        </el-row>
         <el-form-item label="父级目录">
           <el-tree-select
             v-model="formData.parentId"
@@ -354,6 +398,27 @@ const hasChildren = (cat: Partial<KnowledgeCategory>) => {
   return Boolean(cat.children && cat.children.length > 0)
 }
 
+const scopeTypeLabel = (type?: string) => {
+  const labels: Record<string, string> = {
+    DEPARTMENT: '部门',
+    DOMAIN: '专业域',
+    STANDARD: '标准',
+    PROJECT: '项目',
+    CUSTOM: '自定义',
+  }
+  return labels[type || 'CUSTOM'] || '自定义'
+}
+
+const accessLevelLabel = (level?: string) => {
+  const labels: Record<string, string> = {
+    PUBLIC: '公开',
+    DEPARTMENT: '部门可见',
+    PRIVATE: '私有',
+    APPROVAL_REQUIRED: '需审批',
+  }
+  return labels[level || 'PUBLIC'] || '公开'
+}
+
 // 展平树形结构为一维数组
 const flattenTree = (nodes: KnowledgeCategory[]): KnowledgeCategory[] => {
   const result: KnowledgeCategory[] = []
@@ -426,7 +491,13 @@ const fetchFlatCategories = async () => {
 const dialogVisible = ref(false)
 const isEdit = ref(false)
 const editId = ref('')
-const formData = reactive({ name: '', description: '', documentTypes: '', parentId: '' as string | undefined })
+const formData = reactive({
+  name: '', description: '', documentTypes: '',
+  parentId: '' as string | undefined,
+  scopeType: 'CUSTOM' as string,
+  accessLevel: 'PUBLIC' as string,
+  inheritPermission: true,
+})
 const submitting = ref(false)
 
 const showCreateDialog = (parentNode: KnowledgeTreeNode | KnowledgeCategory | null) => {
@@ -436,6 +507,9 @@ const showCreateDialog = (parentNode: KnowledgeTreeNode | KnowledgeCategory | nu
   formData.description = ''
   formData.documentTypes = ''
   formData.parentId = parentNode?.id || undefined
+  formData.scopeType = 'CUSTOM'
+  formData.accessLevel = 'PUBLIC'
+  formData.inheritPermission = true
   dialogVisible.value = true
 }
 
@@ -447,6 +521,9 @@ const showEditDialog = (node: KnowledgeTreeNode | KnowledgeCategory) => {
   formData.description = cat.description || ''
   formData.documentTypes = cat.documentTypes || ''
   formData.parentId = cat.parentId || undefined
+  formData.scopeType = cat.scopeType || 'CUSTOM'
+  formData.accessLevel = cat.accessLevel || 'PUBLIC'
+  formData.inheritPermission = cat.inheritPermission !== undefined ? cat.inheritPermission : true
   dialogVisible.value = true
 }
 
@@ -463,6 +540,9 @@ const handleSubmit = async () => {
         description: formData.description,
         documentTypes: formData.documentTypes,
         parentId: formData.parentId || undefined,
+        scopeType: formData.scopeType,
+        accessLevel: formData.accessLevel,
+        inheritPermission: formData.inheritPermission,
       })
       ElMessage.success('创建成功')
     }

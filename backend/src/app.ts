@@ -26,6 +26,7 @@ import knowledgeCategoryRoutes from './routes/knowledge-category.routes';
 import ruleLibraryRoutes from './routes/rule-library.routes';
 import qaRoutes from './routes/qa.routes';
 import onlyofficeRoutes from './routes/onlyoffice.routes';
+import langchainRoutes from './routes/langchain.routes';
 
 // 定时清理孤立文件（每天凌晨2点执行）
 import './services/scheduler.service';
@@ -72,6 +73,7 @@ app.use('/api/knowledge-categories', knowledgeCategoryRoutes);
 app.use('/api/rule-libraries', ruleLibraryRoutes);
 app.use('/api/qa', qaRoutes);
 app.use('/api/onlyoffice', onlyofficeRoutes);
+app.use('/api/langchain', langchainRoutes);
 app.get('/health', (req: Request, res: Response) => {
   res.status(200).json({ status: 'OK', message: 'Server is running' });
 });

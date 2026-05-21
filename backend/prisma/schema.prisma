@@ -472,6 +472,10 @@ model KnowledgeCategory {
   parentId        String?
   parent          KnowledgeCategory? @relation("KnowledgeCategoryToKnowledgeCategory", fields: [parentId], references: [id])
   children        KnowledgeCategory[] @relation("KnowledgeCategoryToKnowledgeCategory")
+  scopeType       KnowledgeCategoryScopeType    @default(CUSTOM) @map("scope_type")     // 目录类型
+  accessLevel     KnowledgeCategoryAccessLevel  @default(PUBLIC)  @map("access_level")   // 访问级别
+  inheritPermission Boolean                    @default(true)    @map("inherit_permission") // 是否继承父级权限
+  isLeaf          Boolean                      @default(true)    @map("is_leaf")         // 是否为叶子节点（知识库容器）
   vectorDocuments VectorDocument[]
   tags            Tag[]
   chunkMode       String            @default("auto") @map("chunk_mode")  // auto, fixed, paragraph, table-aware
@@ -483,6 +487,8 @@ model KnowledgeCategory {
   enableRerank    Boolean           @default(true) @map("enable_rerank")
   embeddingUseDocumentTitle Boolean @default(true) @map("embedding_use_document_title")
   embeddingUseClauseId Boolean      @default(false) @map("embedding_use_clause_id")
+  contextualRetrieval Boolean      @default(false) @map("contextual_retrieval")
+  permissions     KnowledgeCategoryPermission[]
   createdAt       DateTime          @default(now())
   updatedAt       DateTime          @updatedAt
 
@@ -492,6 +498,51 @@ model KnowledgeCategory {
 enum KnowledgeCategoryStatus {
   ACTIVE
   ARCHIVED
+}
+
+enum KnowledgeCategoryScopeType {
+  DEPARTMENT   // 部门目录
+  DOMAIN       // 专业域目录
+  STANDARD     // 标准目录
+  PROJECT      // 项目目录
+  CUSTOM       // 自定义目录（默认）
+}
+
+enum KnowledgeCategoryAccessLevel {
+  PUBLIC              // 公开
+  DEPARTMENT          // 部门内可见
+  PRIVATE             // 仅本人/创建者
+  APPROVAL_REQUIRED   // 需审批
+}
+
+// 目录级权限表
+model KnowledgeCategoryPermission {
+  id            String          @id @default(uuid())
+  categoryId    String          @map("category_id")
+  category      KnowledgeCategory @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  principalType PermissionPrincipalType @default(ROLE) @map("principal_type") // 主体类型：user/role/dept
+  principalId   String          @map("principal_id")                           // 主体 ID
+  permission    CategoryPermission     @default(READ)                          // 权限
+  inherited     Boolean         @default(false)                               // 是否从父级继承
+  createdAt     DateTime        @default(now())
+
+  @@unique([categoryId, principalType, principalId, permission])
+  @@index([categoryId])
+  @@map("knowledge_category_permissions")
+}
+
+enum PermissionPrincipalType {
+  USER
+  ROLE
+  DEPARTMENT
+}
+
+enum CategoryPermission {
+  READ
+  WRITE
+  UPLOAD
+  PUBLISH
+  ADMIN
 }
 
 // ===== 向量文档（pgvector） =====

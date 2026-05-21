@@ -47,6 +47,24 @@ const routes: Array<RouteRecordRaw> = [
         meta: { title: '智能问答' }
       },
       {
+        path: 'langchain/search',
+        name: 'LangChainSearch',
+        component: () => import('../views/langchain/LangChainSearch.vue'),
+        meta: { title: 'LC 知识检索' }
+      },
+      {
+        path: 'langchain/qa',
+        name: 'LangChainQA',
+        component: () => import('../views/langchain/LangChainQA.vue'),
+        meta: { title: 'LC 智能问答' }
+      },
+      {
+        path: 'langchain/review-compare',
+        name: 'LangChainReviewCompare',
+        component: () => import('../views/langchain/LangChainReviewCompare.vue'),
+        meta: { title: '审查 A/B 对比' }
+      },
+      {
         path: 'tasks',
         name: 'TaskHistory',
         component: () => import('../views/TaskHistory.vue'),

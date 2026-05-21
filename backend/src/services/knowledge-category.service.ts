@@ -126,6 +126,10 @@ export class KnowledgeCategoryService {
       throw new AppError(409, '不能将节点设为自己的子节点');
     }
 
+    if (parent.isLeaf) {
+      throw new AppError(409, '该节点是叶子知识库，不能创建子节点');
+    }
+
     if (parent._count.vectorDocuments > 0) {
       throw new AppError(409, '该节点下已有文档，不能创建子节点');
     }
@@ -136,7 +140,7 @@ export class KnowledgeCategoryService {
   static async ensureLeafCategory(categoryId: string) {
     const category = await this.getCategoryById(categoryId);
     if (!category) throw new AppError(404, '知识子库不存在');
-    if (category._count.children > 0) {
+    if (!category.isLeaf) {
       throw new AppError(409, '仅叶子知识库允许挂载文档');
     }
     return category;
@@ -151,7 +155,11 @@ export class KnowledgeCategoryService {
       orderBy: { name: 'asc' },
     });
 
-    return this.buildCategoryTree(categories);
+    const result = categories.map(cat => ({
+      ...cat,
+    }));
+
+    return this.buildCategoryTree(result);
   }
 
   static async listAll() {
@@ -164,19 +172,41 @@ export class KnowledgeCategoryService {
     return categories.filter(cat => cat._count.children === 0);
   }
 
-  static async create(data: { name: string; description?: string; documentTypes?: string; parentId?: string }) {
+  static async create(data: {
+    name: string;
+    description?: string;
+    documentTypes?: string;
+    parentId?: string;
+    scopeType?: string;
+    accessLevel?: string;
+    inheritPermission?: boolean;
+  }) {
     if (data.parentId) {
       await this.assertParentAcceptsChildren(data.parentId);
     }
 
-    return prisma.knowledgeCategory.create({
+    const newCategory = await prisma.knowledgeCategory.create({
       data: {
         name: data.name,
         description: data.description,
         documentTypes: data.documentTypes,
         parentId: data.parentId || null,
+        scopeType: (data.scopeType as any) || 'CUSTOM',
+        accessLevel: (data.accessLevel as any) || 'PUBLIC',
+        inheritPermission: data.inheritPermission ?? true,
+        isLeaf: true,
       },
     });
+
+    // 如果父节点之前是 leaf，需标记为非 leaf
+    if (data.parentId) {
+      await prisma.knowledgeCategory.update({
+        where: { id: data.parentId },
+        data: { isLeaf: false },
+      });
+    }
+
+    return newCategory;
   }
 
   static async update(id: string, data: {
@@ -188,6 +218,10 @@ export class KnowledgeCategoryService {
     maxChars?: number;
     overlap?: number;
     parentId?: string | null;
+    scopeType?: string;
+    accessLevel?: string;
+    inheritPermission?: boolean;
+    isLeaf?: boolean;
   }) {
     const existing = await prisma.knowledgeCategory.findUnique({ where: { id } });
     if (!existing) throw new AppError(404, '知识子库不存在');
@@ -212,6 +246,10 @@ export class KnowledgeCategoryService {
         ...(data.maxChars !== undefined && { maxChars: data.maxChars }),
         ...(data.overlap !== undefined && { overlap: data.overlap }),
         ...(data.parentId !== undefined && { parentId: data.parentId || null }),
+        ...(data.scopeType !== undefined && { scopeType: data.scopeType as any }),
+        ...(data.accessLevel !== undefined && { accessLevel: data.accessLevel as any }),
+        ...(data.inheritPermission !== undefined && { inheritPermission: data.inheritPermission }),
+        ...(data.isLeaf !== undefined && { isLeaf: data.isLeaf }),
       },
     });
   }
@@ -226,7 +264,20 @@ export class KnowledgeCategoryService {
       throw new AppError(409, '该节点下还有文档，无法删除');
     }
 
-    return prisma.knowledgeCategory.delete({ where: { id } });
+    await prisma.knowledgeCategory.delete({ where: { id } });
+
+    // 如果父节点不再有子节点，恢复为叶子节点
+    if (existing.parentId) {
+      const siblingCount = await prisma.knowledgeCategory.count({
+        where: { parentId: existing.parentId },
+      });
+      if (siblingCount === 0) {
+        await prisma.knowledgeCategory.update({
+          where: { id: existing.parentId },
+          data: { isLeaf: true },
+        });
+      }
+    }
   }
 
   /**
@@ -335,6 +386,7 @@ export class KnowledgeCategoryService {
         mode: category.chunkMode as any,
         maxChars: category.maxChars,
         overlap: category.overlap,
+        contextualRetrieval: category.contextualRetrieval,
       },
       embeddingUseDocumentTitle: category.embeddingUseDocumentTitle,
       embeddingUseClauseId: category.embeddingUseClauseId,

@@ -1020,9 +1020,11 @@ const refreshSelectedLibrary = async () => {
 }
 
 const showCreateDialog = () => {
+  console.debug('[RuleLibraries] showCreateDialog called')
   isEdit.value = false
   resetLibraryForm()
   dialogVisible.value = true
+  console.debug('[RuleLibraries] dialogVisible set to:', dialogVisible.value)
 }
 
 const showEditDialog = (row: RuleLibrary) => {
@@ -1631,6 +1633,7 @@ onMounted(() => {
   height: 100%;
   background: radial-gradient(circle, rgba(14, 165, 233, 0.15) 0%, transparent 70%);
   border-radius: 50%;
+  pointer-events: none;
 }
 
 .hero-panel::after {
@@ -1642,6 +1645,7 @@ onMounted(() => {
   height: 80%;
   background: radial-gradient(circle, rgba(139, 92, 246, 0.1) 0%, transparent 70%);
   border-radius: 50%;
+  pointer-events: none;
 }
 
 .hero-copy {
@@ -1779,6 +1783,8 @@ onMounted(() => {
   background: linear-gradient(135deg, #0ea5e9 0%, #0284c7 100%);
   border: none;
   box-shadow: 0 8px 24px rgba(14, 165, 233, 0.3);
+  position: relative;
+  z-index: 10;
 }
 
 /* 网格视图 */

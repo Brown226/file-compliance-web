@@ -41,9 +41,17 @@ export const listAllCategories = async (_req: AuthRequest, res: Response): Promi
 /** 创建知识子库 */
 export const createCategory = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
-    const { name, description, documentTypes, parentId } = req.body;
+    const { name, description, documentTypes, parentId, scopeType, accessLevel, inheritPermission } = req.body;
     if (!name?.trim()) { error(res, '名称不能为空', 400); return; }
-    const category = await KnowledgeCategoryService.create({ name: name.trim(), description, documentTypes, parentId });
+    const category = await KnowledgeCategoryService.create({
+      name: name.trim(),
+      description,
+      documentTypes,
+      parentId,
+      scopeType,
+      accessLevel,
+      inheritPermission,
+    });
     success(res, category, '创建成功');
   } catch (err: any) {
     console.error('Create KnowledgeCategory Error:', err);
@@ -230,6 +238,8 @@ export const confirmImport = async (req: AuthRequest, res: Response): Promise<vo
       categoryId: id,
       embeddingUseDocumentTitle: category?.embeddingUseDocumentTitle ?? false,
       embeddingUseClauseId: category?.embeddingUseClauseId ?? false,
+      contextualRetrieval: category?.contextualRetrieval ?? false,
+      wholeDocumentContent: chunks.map((c: any) => typeof c === 'string' ? c : c.content || '').join('\n\n'),
       metadata: metadata || {},
     });
 
@@ -548,6 +558,7 @@ export const batchVectorize = async (req: AuthRequest, res: Response): Promise<v
         mode: category?.chunkMode as any || 'auto',
         maxChars: category?.maxChars || 1500,
         overlap: category?.overlap || 120,
+        contextualRetrieval: category?.contextualRetrieval ?? false,
       };
 
       // 重建内容：将所有段落的 storedContent 拼接（去掉 heading 前缀如果有的话）

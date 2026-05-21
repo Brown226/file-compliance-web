@@ -18,6 +18,10 @@ export interface KnowledgeCategory {
   enableRerank?: boolean
   embeddingUseDocumentTitle?: boolean
   embeddingUseClauseId?: boolean
+  scopeType?: 'DEPARTMENT' | 'DOMAIN' | 'STANDARD' | 'PROJECT' | 'CUSTOM'
+  accessLevel?: 'PUBLIC' | 'DEPARTMENT' | 'PRIVATE' | 'APPROVAL_REQUIRED'
+  inheritPermission?: boolean
+  isLeaf?: boolean
   createdAt: string
 }
 
@@ -94,6 +98,9 @@ export const createKnowledgeCategoryApi = (data: {
   description?: string
   documentTypes?: string
   parentId?: string
+  scopeType?: string
+  accessLevel?: string
+  inheritPermission?: boolean
 }) => request.post<KnowledgeCategory>('/knowledge-categories', data)
 
 export const updateKnowledgeCategoryApi = (id: string, data: {
@@ -111,6 +118,10 @@ export const updateKnowledgeCategoryApi = (id: string, data: {
   embeddingUseDocumentTitle?: boolean
   embeddingUseClauseId?: boolean
   parentId?: string | null
+  scopeType?: string
+  accessLevel?: string
+  inheritPermission?: boolean
+  isLeaf?: boolean
 }) => request.put<KnowledgeCategory>(`/knowledge-categories/${id}`, data)
 
 export const deleteKnowledgeCategoryApi = (id: string) =>

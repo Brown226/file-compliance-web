@@ -241,7 +241,7 @@ export class RAGService {
         id: cat.id,
         name: cat.name,
         parentId: cat.parentId,
-        type: 'knowledge',
+        type: cat.isLeaf ? 'knowledge' : 'folder',
         documentCount: cat._count.vectorDocuments,
         children: [],
       });
@@ -251,7 +251,6 @@ export class RAGService {
       if (node.parentId && map.has(node.parentId)) {
         const parent = map.get(node.parentId)!;
         parent.children!.push(node);
-        parent.type = 'folder';
       } else {
         roots.push(node);
       }

@@ -13,6 +13,8 @@
 import crypto from 'crypto';
 import prisma from '../config/db';
 import { EmbeddingService } from './embedding.service';
+import { ContextualRetrievalService } from './contextual-retrieval.service';
+import { jiebaSplit } from './common/jieba';
 
 export interface VectorSearchResult {
   id: string;
@@ -47,10 +49,12 @@ interface ImportEntry {
 export interface ChunkingConfig {
   /** 分块模式：auto=标题感知分割(默认), fixed=纯固定长度, paragraph=按段落分割 */
   mode?: 'auto' | 'fixed' | 'paragraph';
-  /** 每个chunk最大字符数（默认3000） */
+  /** 每个chunk最大字符数（默认1500） */
   maxChars?: number;
-  /** chunk间重叠字符数（仅 fixed/paragraph 模式有效） */
+  /** chunk间重叠字符数 */
   overlap?: number;
+  /** 是否启用 Contextual Retrieval（上下文感知分块），用 LLM 为每个 chunk 生成上下文摘要再 embedding */
+  contextualRetrieval?: boolean;
 }
 
 /** 分段结果：与 MaxKB 的 paragraph 格式一致 */
@@ -89,9 +93,9 @@ interface TreeNode {
   children?: TreeNode[];
 }
 
-const MIN_CHUNK_LENGTH = 180;
-const TARGET_CHUNK_LENGTH = 900;
-const MAX_CHUNK_LENGTH = 1800;
+const MIN_CHUNK_LENGTH = 100;
+const TARGET_CHUNK_LENGTH = 600;
+const MAX_CHUNK_LENGTH = 1500;
 
 function normalizeForSplit(text: string): string {
   return String(text || '')
@@ -430,7 +434,7 @@ export class VectorService {
    * 内部调用 splitMarkdownIntoParagraphs，将 title+content 拼接
    */
   static splitTextIntoChunks(text: string, config: ChunkingConfig = {}): string[] {
-    const { mode = 'auto', maxChars = 3000, overlap = 200 } = config;
+    const { mode = 'auto', maxChars = 1500, overlap = 300 } = config;
     const raw = normalizeForSplit(text);
     if (!raw.trim()) return [];
 
@@ -559,7 +563,7 @@ export class VectorService {
       embeddingUseDocumentTitle = false,
       embeddingUseClauseId = false,
     } = entry;
-    const { mode = 'auto', maxChars = 3000, overlap = 200 } = chunkConfig || {};
+    const { mode = 'auto', maxChars = 1500, overlap = 300, contextualRetrieval = false } = chunkConfig || {};
 
     const chunks = this.splitTextIntoChunks(content, { mode, maxChars, overlap });
     const paragraphs: ParagraphSegment[] = chunks.map(chunk => {
@@ -572,11 +576,34 @@ export class VectorService {
 
     if (paragraphs.length === 0) return { chunks: 0, deduped: 0 };
 
-    const textsForEmbedding = paragraphs.map(p => {
+    // Contextual Retrieval: 为每个 chunk 生成上下文摘要
+    let contextualMap: Map<number, string> = new Map();
+    if (contextualRetrieval) {
+      try {
+        const chunkTexts = paragraphs.map(p => p.content);
+        const enhanced = await ContextualRetrievalService.enhanceChunks(content, chunkTexts, {
+          enabled: true,
+          concurrency: 3,
+          timeout: 30,
+        });
+        enhanced.forEach((item, idx) => {
+          if (item.contextSummary) {
+            contextualMap.set(idx, item.contextSummary);
+          }
+        });
+        console.log(`[ContextualRetrieval] importDocument: ${contextualMap.size}/${paragraphs.length} chunks 已增强`);
+      } catch (err: any) {
+        console.warn(`[ContextualRetrieval] importDocument 上下文生成失败，继续使用原始内容: ${err.message}`);
+      }
+    }
+
+    const textsForEmbedding = paragraphs.map((p, idx) => {
       const fields: string[] = [];
       if (embeddingUseDocumentTitle && title) fields.push(title);
       if (p.title) fields.push(p.title);
       if (embeddingUseClauseId && clauseId) fields.push(clauseId);
+      const contextSummary = contextualMap.get(idx);
+      if (contextSummary) fields.push(`[${contextSummary}]`);
       fields.push(p.content);
       return fields.filter(Boolean).join('\n');
     });
@@ -588,7 +615,6 @@ export class VectorService {
       const para = paragraphs[i];
       const chunkContent = para.content;
 
-      // 优先从内容中提取条文号
       const extractedClause = this.extractClauseId(chunkContent);
       const chunkClauseId = extractedClause || clauseId || String(i + 1);
       const contentHash = this.sourceHash([sourceType, title, category || '', chunkClauseId, chunkContent]);
@@ -604,8 +630,9 @@ export class VectorService {
       const embeddingStr = `[${embeddings[i].join(',')}]`;
       const isTable = chunkContent.split('\n').some(l => isSeparatorLine(l));
 
-      // 存储时将标题链前缀到 content，提升检索质量
       const storedContent = para.title ? `${para.title}\n${chunkContent}` : chunkContent;
+
+      const contextSummary = contextualMap.get(i);
 
       await prisma.$executeRawUnsafe(`
         INSERT INTO vector_documents
@@ -626,7 +653,8 @@ export class VectorService {
           original_source_id: sourceId,
           is_table: isTable,
           heading: para.title || '',
-          chunkConfigUsed: { mode, maxChars, overlap },
+          chunkConfigUsed: { mode, maxChars, overlap, contextualRetrieval },
+          ...(contextSummary ? { contextSummary } : {}),
         }),
         embeddingStr,
         'SUCCESS'
@@ -644,7 +672,7 @@ export class VectorService {
    */
   static async importChunks(
     chunks: Array<string | ParagraphSegment>,
-    entry: Omit<ImportEntry, 'content' | 'chunkConfig'>
+    entry: Omit<ImportEntry, 'content' | 'chunkConfig'> & { contextualRetrieval?: boolean; wholeDocumentContent?: string }
   ): Promise<{ chunks: number; deduped: number }> {
     const {
       sourceType,
@@ -655,20 +683,43 @@ export class VectorService {
       categoryId,
       embeddingUseDocumentTitle = false,
       embeddingUseClauseId = false,
+      contextualRetrieval = false,
+      wholeDocumentContent,
     } = entry;
 
     if (chunks.length === 0) return { chunks: 0, deduped: 0 };
 
-    // 统一转换为 ParagraphSegment 格式
     const segments: ParagraphSegment[] = chunks.map(c =>
       typeof c === 'string' ? { title: '', content: c } : c
     );
 
-    const textsForEmbedding = segments.map(p => {
+    let contextualMap: Map<number, string> = new Map();
+    if (contextualRetrieval && wholeDocumentContent) {
+      try {
+        const chunkTexts = segments.map(p => p.content);
+        const enhanced = await ContextualRetrievalService.enhanceChunks(wholeDocumentContent, chunkTexts, {
+          enabled: true,
+          concurrency: 3,
+          timeout: 30,
+        });
+        enhanced.forEach((item, idx) => {
+          if (item.contextSummary) {
+            contextualMap.set(idx, item.contextSummary);
+          }
+        });
+        console.log(`[ContextualRetrieval] importChunks: ${contextualMap.size}/${segments.length} chunks 已增强`);
+      } catch (err: any) {
+        console.warn(`[ContextualRetrieval] importChunks 上下文生成失败，继续使用原始内容: ${err.message}`);
+      }
+    }
+
+    const textsForEmbedding = segments.map((p, idx) => {
       const fields: string[] = [];
       if (embeddingUseDocumentTitle && title) fields.push(title);
       if (p.title) fields.push(p.title);
       if (embeddingUseClauseId && clauseId) fields.push(clauseId);
+      const contextSummary = contextualMap.get(idx);
+      if (contextSummary) fields.push(`[${contextSummary}]`);
       fields.push(p.content);
       return fields.filter(Boolean).join('\n');
     });
@@ -696,6 +747,8 @@ export class VectorService {
       const isTable = chunkContent.split('\n').some(l => isSeparatorLine(l));
       const storedContent = para.title ? `${para.title}\n${chunkContent}` : chunkContent;
 
+      const contextSummary = contextualMap.get(i);
+
       await prisma.$executeRawUnsafe(`
         INSERT INTO vector_documents
           (id, "categoryId", source_type, source_id, title, clause_id, content, content_hash, chunk_index, metadata, embedding, vector_status, created_at, updated_at)
@@ -715,6 +768,7 @@ export class VectorService {
           original_source_id: sourceId,
           is_table: isTable,
           heading: para.title || '',
+          ...(contextSummary ? { contextSummary } : {}),
         }),
         embeddingStr,
         'SUCCESS'
@@ -742,7 +796,7 @@ export class VectorService {
       embeddingUseClauseId = false,
     } = entry;
 
-    const { mode = 'auto', maxChars = 3000, overlap = 200 } = chunkConfig || {};
+    const { mode = 'auto', maxChars = 1500, overlap = 300, contextualRetrieval = false } = chunkConfig || {};
     const chunks = this.splitTextIntoChunks(content, { mode, maxChars, overlap });
     const paragraphs: ParagraphSegment[] = chunks.map(chunk => {
       const parts = chunk.split('\n');
@@ -754,12 +808,33 @@ export class VectorService {
 
     if (paragraphs.length === 0) return { chunks: 0 };
 
-    // 先计算 embedding，确保失败时旧数据仍保留
-    const textsForEmbedding = paragraphs.map(p => {
+    let contextualMap: Map<number, string> = new Map();
+    if (contextualRetrieval) {
+      try {
+        const chunkTexts = paragraphs.map(p => p.content);
+        const enhanced = await ContextualRetrievalService.enhanceChunks(content, chunkTexts, {
+          enabled: true,
+          concurrency: 3,
+          timeout: 30,
+        });
+        enhanced.forEach((item, idx) => {
+          if (item.contextSummary) {
+            contextualMap.set(idx, item.contextSummary);
+          }
+        });
+        console.log(`[ContextualRetrieval] replaceDocument: ${contextualMap.size}/${paragraphs.length} chunks 已增强`);
+      } catch (err: any) {
+        console.warn(`[ContextualRetrieval] replaceDocument 上下文生成失败，继续使用原始内容: ${err.message}`);
+      }
+    }
+
+    const textsForEmbedding = paragraphs.map((p, idx) => {
       const fields: string[] = [];
       if (embeddingUseDocumentTitle && title) fields.push(title);
       if (p.title) fields.push(p.title);
       if (embeddingUseClauseId && clauseId) fields.push(clauseId);
+      const contextSummary = contextualMap.get(idx);
+      if (contextSummary) fields.push(`[${contextSummary}]`);
       fields.push(p.content);
       return fields.filter(Boolean).join('\n');
     });
@@ -779,6 +854,8 @@ export class VectorService {
         const isTable = chunkContent.split('\n').some(l => isSeparatorLine(l));
         const storedContent = para.title ? `${para.title}\n${chunkContent}` : chunkContent;
 
+        const contextSummary = contextualMap.get(i);
+
         await tx.$executeRawUnsafe(
           `INSERT INTO vector_documents
             (id, "categoryId", source_type, source_id, title, clause_id, content, content_hash, chunk_index, metadata, embedding, vector_status, created_at, updated_at)
@@ -797,7 +874,8 @@ export class VectorService {
             original_source_id: sourceId,
             is_table: isTable,
             heading: para.title || '',
-            chunkConfigUsed: { mode, maxChars, overlap },
+            chunkConfigUsed: { mode, maxChars, overlap, contextualRetrieval },
+            ...(contextSummary ? { contextSummary } : {}),
           }),
           embeddingStr,
           'SUCCESS'
@@ -949,7 +1027,7 @@ export class VectorService {
     options: { limit: number; sourceTypes?: string[]; categoryId?: string }
   ): Promise<VectorSearchResult[]> {
     const { limit, sourceTypes, categoryId } = options;
-    const terms = this.tokenizeQuery(query);
+    const terms = await this.tokenizeQuery(query);
     if (terms.length === 0) return [];
 
     let sql = `SELECT id, source_type, source_id, title, clause_id, content, content_hash, chunk_index, metadata, 0 as score
@@ -1004,7 +1082,42 @@ export class VectorService {
   }
 
   /**
-   * 合并去重两个搜索结果
+   * RRF（Reciprocal Rank Fusion）加权融合多个召回列表
+   * 参照 FastGPT 的 datasetSearchResultConcat
+   */
+  private static rrfConcat(arr: { weight: number; list: VectorSearchResult[] }[]): VectorSearchResult[] {
+    arr = arr.filter(item => item.list.length > 0);
+    if (arr.length === 0) return [];
+    if (arr.length === 1) return arr[0].list;
+
+    const map = new Map<string, VectorSearchResult & { rrfScore: number }>();
+
+    for (const item of arr) {
+      const weight = item.weight;
+      for (let index = 0; index < item.list.length; index++) {
+        const data = item.list[index];
+        const rank = index + 1;
+        const score = weight * (1 / (60 + rank));
+        const key = data.content_hash || data.source_id || data.id;
+        const record = map.get(key);
+        if (record) {
+          record.rrfScore += score;
+          if (data.score > record.score) {
+            record.score = data.score;
+          }
+        } else {
+          map.set(key, { ...data, rrfScore: score });
+        }
+      }
+    }
+
+    return Array.from(map.values())
+      .sort((a, b) => b.rrfScore - a.rrfScore)
+      .map(({ rrfScore: _, ...result }) => result);
+  }
+
+  /**
+   * 合并去重两个搜索结果（旧逻辑保留给其他方法）
    */
   private static mergeResults(primary: VectorSearchResult[], secondary: VectorSearchResult[], limit: number): VectorSearchResult[] {
     const byHash = new Map<string, VectorSearchResult>();
@@ -1022,26 +1135,42 @@ export class VectorService {
 
   /**
    * 三阶段混合检索：向量 + 关键词 + Rerank
+   * FastGPT 风格增强版：RRF 融合 + jieba 分词 + Rerank 权重融合
    */
   static async hybridSearch(query: string, options: SearchOptions = {}): Promise<VectorSearchResult[]> {
     const { limit = 5, sourceTypes, categoryId, rerank = true } = options;
     const cleanQuery = query.replace(/\s+/g, ' ').trim();
-    const candidateLimit = Math.max(limit * 8, limit);
+    const candidateLimit = Math.max(limit * 8, 80);
 
     // Stage 1: 向量搜索
     const queryVector = await EmbeddingService.embedText(cleanQuery);
-    const vectorResults = await this.vectorSearch(queryVector, { limit: candidateLimit, sourceTypes, categoryId });
+    const vectorResults = await this.vectorSearch(queryVector, { limit: Math.round(candidateLimit * 0.8), sourceTypes, categoryId });
 
-    // Stage 2: 关键词搜索
-    const keywordResults = await this.keywordSearch(cleanQuery, { limit: candidateLimit, sourceTypes, categoryId });
+    // Stage 2: 关键词搜索（jieba 分词）
+    const keywordResults = await this.keywordSearch(cleanQuery, { limit: Math.round(candidateLimit * 0.6), sourceTypes, categoryId });
 
-    // 合并
-    let merged = this.mergeResults(vectorResults, keywordResults, candidateLimit);
+    // Stage 3: RRF 加权融合（向量 70%，关键词 30%）
+    let merged = this.rrfConcat([
+      { weight: 0.7, list: vectorResults },
+      { weight: 0.3, list: keywordResults },
+    ]);
 
-    // Stage 3: Rerank
+    // Stage 4: Rerank 权重融合（原始 RRF 40% + Rerank 60%）
     if (rerank && merged.length > limit) {
-      const reranked = await EmbeddingService.rerankDocuments(cleanQuery, merged, limit);
-      merged = reranked as unknown as VectorSearchResult[];
+      try {
+        const reranked = await EmbeddingService.rerankDocuments(cleanQuery, merged, limit * 2);
+        const rerankList = (reranked as unknown as VectorSearchResult[]).map((r, idx) => ({
+          ...r,
+          rerank_score: r.rerank_score ?? r.score,
+        }));
+
+        merged = this.rrfConcat([
+          { weight: 0.4, list: merged },
+          { weight: 0.6, list: rerankList },
+        ]);
+      } catch (e: any) {
+        console.warn(`[VectorService] Rerank 失败，使用原始 RRF 排序: ${e.message}`);
+      }
     }
 
     return merged.slice(0, limit);
@@ -1109,13 +1238,9 @@ export class VectorService {
 
   // ============ 工具方法 ============
 
-  private static tokenizeQuery(query: string): string[] {
-    const text = query.toLowerCase();
-    const terms = text.match(/[一-龥]{2,}|[a-z0-9]{2,}/g) || [];
-    const stopwords = new Set(['的', '了', '和', '与', '是', '在', '有', '这', '那', '就', '也', '都', '而', '及', '或', '等', '个', '之', '其', '中', '为', '对', '被', '将', '从', '到', '把', '让', '给', '向', '以', '于']);
-    return [...new Set(terms)]
-      .filter(term => !stopwords.has(term) && term.length <= 24)
-      .slice(0, 16);
+  private static async tokenizeQuery(query: string): Promise<string[]> {
+    const terms = await jiebaSplit(query.toLowerCase());
+    return [...new Set(terms)].slice(0, 16);
   }
 
   private static parseMetadata(metadata: any): any {

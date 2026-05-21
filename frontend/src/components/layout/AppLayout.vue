@@ -32,6 +32,20 @@
           <el-icon><ChatDotRound /></el-icon>
           <template #title><span>智能问答</span></template>
         </el-menu-item>
+
+        <div class="menu-divider" v-show="!sidebarCollapsed"></div>
+        <el-menu-item index="/langchain/search">
+          <el-icon><Search /></el-icon>
+          <template #title><span>LC 知识检索</span></template>
+        </el-menu-item>
+        <el-menu-item index="/langchain/qa">
+          <el-icon><ChatDotRound /></el-icon>
+          <template #title><span>LC 智能问答</span></template>
+        </el-menu-item>
+        <el-menu-item index="/langchain/review-compare">
+          <el-icon><Document /></el-icon>
+          <template #title><span>审查 A/B 对比</span></template>
+        </el-menu-item>
         <el-menu-item index="/tasks">
           <el-icon><List /></el-icon>
           <template #title><span>我的任务</span></template>
