@@ -37,6 +37,23 @@
             <el-option label="失败" value="FAILED" />
           </el-select>
         </el-form-item>
+        <el-form-item label="审查模式">
+          <el-select
+            v-model="filters.reviewMode"
+            placeholder="全部模式"
+            clearable
+            @change="fetchTasks"
+            style="width: 150px"
+          >
+            <el-option label="以库审文" value="LIBRARY_REVIEW" />
+            <el-option label="以文审文" value="DOC_REVIEW" />
+            <el-option label="全文一致性" value="CONSISTENCY" />
+            <el-option label="错别字/语法" value="TYPO_GRAMMAR" />
+            <el-option label="多模态识别" value="MULTIMODAL" />
+            <el-option label="自定义规则" value="CUSTOM_RULE" />
+            <el-option label="全面审查" value="FULL_REVIEW" />
+          </el-select>
+        </el-form-item>
         <el-form-item>
           <el-button type="primary" @click="() => fetchTasks()">
             <el-icon><Search /></el-icon> 查询
@@ -265,6 +282,7 @@ const reviewingMap = reactive(new Map<string, boolean>())
 const filters = reactive({
   search: '',
   status: '',
+  reviewMode: '',
   creator: '',
   dateRange: [] as string[],
 })
@@ -273,7 +291,7 @@ const showAdvancedFilter = ref(false)
 
 // 是否有激活的过滤器
 const hasActiveFilters = computed(() => {
-  return !!(filters.search || filters.status || filters.creator || (filters.dateRange && filters.dateRange.length > 0))
+  return !!(filters.search || filters.status || filters.reviewMode || filters.creator || (filters.dateRange && filters.dateRange.length > 0))
 })
 
 const getStatusLabel = getTaskStatusLabel
@@ -291,10 +309,20 @@ const evidenceLabelMap: Record<string, string> = {
   REFERENCE: '参考文件',
 }
 
+const reviewModeLabelMap: Record<string, string> = {
+  LIBRARY_REVIEW: '以库审文',
+  DOC_REVIEW: '以文审文',
+  CONSISTENCY: '全文一致性',
+  TYPO_GRAMMAR: '错别字/语法',
+  MULTIMODAL: '多模态识别',
+  CUSTOM_RULE: '自定义规则',
+  FULL_REVIEW: '全面审查',
+}
+
 const getReviewPlanSummary = (row: any): string => {
   const plan = row?.reviewPlan
   if (!plan || typeof plan !== 'object') {
-    return row?.reviewMode ? `兼容模式：${row.reviewMode}` : '—'
+    return row?.reviewMode ? (reviewModeLabelMap[row.reviewMode] || row.reviewMode) : '—'
   }
 
   const objective = objectiveLabelMap[plan.objective] || plan.objective || '—'
@@ -346,6 +374,7 @@ const fetchTasks = async (silent = false) => {
       page: currentPage.value,
       limit: pageSize.value,
       status: filters.status || undefined,
+      reviewMode: filters.reviewMode || undefined,
       search: filters.search || undefined,
       creator: filters.creator || undefined,
       startDate: filters.dateRange?.[0] || undefined,
@@ -369,6 +398,7 @@ const fetchTasks = async (silent = false) => {
 const resetFilter = () => {
   filters.search = ''
   filters.status = ''
+  filters.reviewMode = ''
   filters.creator = ''
   filters.dateRange = []
   currentPage.value = 1

@@ -89,6 +89,118 @@ interface TreeNode {
   children?: TreeNode[];
 }
 
+const MIN_CHUNK_LENGTH = 180;
+const TARGET_CHUNK_LENGTH = 900;
+const MAX_CHUNK_LENGTH = 1800;
+
+function normalizeForSplit(text: string): string {
+  return String(text || '')
+    .replace(/\r\n/g, '\n')
+    .replace(/\r/g, '\n')
+    .replace(/\0/g, '')
+    .replace(/<br\s*\/?>/gi, '\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .split('\n')
+    .filter(line => {
+      const trimmed = line.trim();
+      if (!trimmed) return true;
+      if (/^[\s.]*$/.test(trimmed)) return false;
+      if (/^\d+\s*$/.test(trimmed)) return false;
+      if (/^第\s*\d+\s*页$/.test(trimmed)) return false;
+      return true;
+    })
+    .join('\n')
+    .trim();
+}
+
+function trimRepeatedPrefix(current: string, previous: string): string {
+  const a = String(previous || '').trim();
+  const b = String(current || '').trim();
+  if (!a || !b) return b;
+  if (a === b) return '';
+
+  const head = b.slice(0, Math.min(a.length, b.length));
+  let matchLen = 0;
+  for (let i = head.length; i >= 20; i--) {
+    if (a.endsWith(head.slice(0, i))) {
+      matchLen = i;
+      break;
+    }
+  }
+  if (matchLen >= 40) {
+    return b.slice(matchLen).trim();
+  }
+  return b;
+}
+
+function mergeShortSegments(segments: ParagraphSegment[]): ParagraphSegment[] {
+  const merged: ParagraphSegment[] = [];
+
+  for (const segment of segments) {
+    const current = {
+      title: String(segment.title || '').replace(/[#\n\r]/g, '').replace(/\s+/g, ' ').trim(),
+      content: String(segment.content || '').trim(),
+    };
+
+    if (!current.content) continue;
+
+    const prev = merged[merged.length - 1];
+    if (!prev) {
+      merged.push(current);
+      continue;
+    }
+
+    const prevTitle = prev.title;
+    const currentTitle = current.title;
+    const sameTitle = prevTitle === currentTitle;
+    const currentTooShort = current.content.length < MIN_CHUNK_LENGTH;
+    const prevTooShort = prev.content.length < TARGET_CHUNK_LENGTH;
+
+    if (sameTitle && (currentTooShort || prevTooShort)) {
+      const deduped = trimRepeatedPrefix(current.content, prev.content);
+      prev.content = [prev.content, deduped].filter(Boolean).join('\n\n').trim();
+      continue;
+    }
+
+    if (sameTitle && current.content.length < TARGET_CHUNK_LENGTH) {
+      const deduped = trimRepeatedPrefix(current.content, prev.content);
+      prev.content = [prev.content, deduped].filter(Boolean).join('\n\n').trim();
+      continue;
+    }
+
+    merged.push(current);
+  }
+
+  return merged.filter(item => item.content.trim().length > 0);
+}
+
+function splitBySoftLimit(text: string, limit: number): string[] {
+  if (text.length <= limit) return [text];
+  const result: string[] = [];
+  let start = 0;
+  while (start < text.length) {
+    let end = Math.min(start + limit, text.length);
+    if (end >= text.length) {
+      result.push(text.slice(start).trim());
+      break;
+    }
+    let split = -1;
+    for (const chars of ['。.!?！？；;\n', '：:', '，,、']) {
+      for (let i = end - 1; i > start + Math.min(120, Math.floor(limit / 4)); i--) {
+        if (chars.includes(text[i])) {
+          split = i + 1;
+          break;
+        }
+      }
+      if (split > start) break;
+    }
+    if (split <= start) split = end;
+    result.push(text.slice(start, split).trim());
+    start = split;
+  }
+  return result.filter(Boolean);
+}
+
 /**
  * 智能分段：在 limit 附近找到自然断句点
  * 策略：从 limit 位置向前搜索，优先在高级标点处断开
@@ -111,8 +223,8 @@ function smartSplitParagraph(content: string, limit: number): string[] {
     '\n',             // 换行
   ];
 
-  // 最小分段长度：limit 的 1/4，避免切出过短的段落
-  const minChunk = Math.max(Math.floor(limit / 4), 50);
+  // 最小分段长度：提高到 1/3，避免切出过短的段落
+  const minChunk = Math.max(Math.floor(limit / 3), MIN_CHUNK_LENGTH);
 
   const result: string[] = [];
   let start = 0;
@@ -271,27 +383,15 @@ export class VectorService {
    * - 没有分块数量限制
    */
   static splitMarkdownIntoParagraphs(text: string, limit: number = 100000): ParagraphSegment[] {
-    const raw = String(text || '');
+    const raw = normalizeForSplit(text);
     if (!raw.trim()) return [];
 
-    // 预处理：与 MaxKB 一致
-    let cleaned = raw
-      .replace(/\r\n/g, '\n')
-      .replace(/\r/g, '\n')
-      .replace(/\0/g, '');
-
-    // 将 <br> 转换为换行
-    cleaned = cleaned.replace(/<br\s*\/?>/gi, '\n');
-    // 移除孤立标点行
-    cleaned = cleaned.split('\n').filter(line => !/^[\s.]*$/.test(line.trim())).join('\n');
-    // 压缩多余空行
-    cleaned = cleaned.replace(/\n{3,}/g, '\n\n').trim();
-
+    const cleaned = raw;
     if (!cleaned) return [];
 
     // 统一使用标题树解析（与 MaxKB SplitModel.parse 一致）
     const tree = parseToTree(cleaned, 0, limit);
-    const result = flattenTree(tree, [], limit);
+    const result = mergeShortSegments(flattenTree(tree, [], limit));
 
     // 后处理：与 MaxKB post_reset_paragraph 一致
     const titleSet = new Set(result.map(p => p.title));
@@ -331,39 +431,35 @@ export class VectorService {
    */
   static splitTextIntoChunks(text: string, config: ChunkingConfig = {}): string[] {
     const { mode = 'auto', maxChars = 3000, overlap = 200 } = config;
-    const raw = String(text || '');
+    const raw = normalizeForSplit(text);
     if (!raw.trim()) return [];
 
-    const withLineBreaks = raw.replace(/<br\s*\/?>/gi, '\n');
-    const cleaned = withLineBreaks
-      .split('\n')
-      .filter(line => !/^[\s.]*$/.test(line.trim()))
-      .join('\n')
-      .replace(/\n{3,}/g, '\n\n')
-      .trim();
+    const cleaned = raw;
     if (!cleaned) return [];
 
     if (mode === 'fixed') {
-      return this.splitFixed(cleaned, maxChars, overlap).filter(c => c.length >= 20);
+      return this.splitFixed(cleaned, maxChars, overlap).filter(c => c.length >= MIN_CHUNK_LENGTH);
     }
 
     if (mode === 'paragraph') {
-      return this.splitByParagraph(cleaned, maxChars, overlap).filter(c => c.length >= 20);
+      return this.splitByParagraph(cleaned, maxChars, overlap).filter(c => c.length >= MIN_CHUNK_LENGTH);
     }
 
     // auto 模式：先 SplitModel，再做段落窗口重叠
     const paragraphs = this.splitMarkdownIntoParagraphs(cleaned, maxChars);
     const chunks = paragraphs.map((p, index) => {
-      const base = p.title ? `${p.title}\n${p.content}` : p.content;
-      if (index === 0 || overlap <= 0) return base;
+      const base = p.content;
+      if (index === 0 || overlap <= 0) return p.title ? `${p.title}\n${base}` : base;
 
       const prev = paragraphs[index - 1];
-      const prevText = prev.title ? `${prev.title}\n${prev.content}` : prev.content;
+      const prevText = prev.content;
       const tail = prevText.slice(Math.max(0, prevText.length - overlap));
-      return `${tail}\n${base}`.trim();
+      const dedupedBase = trimRepeatedPrefix(base, prevText);
+      const body = [tail, dedupedBase].filter(Boolean).join('\n');
+      return p.title ? `${p.title}\n${body}`.trim() : body.trim();
     });
 
-    return chunks.filter(c => c.length >= 20);
+    return chunks.filter(c => c.length >= MIN_CHUNK_LENGTH);
   }
 
   private static splitFixed(text: string, maxChars: number, overlap: number = 0): string[] {
@@ -387,7 +483,7 @@ export class VectorService {
 
     for (let i = 0; i < paragraphs.length; i++) {
       const para = paragraphs[i];
-      const paraChunks = para.length <= maxChars ? [para] : this.splitFixed(para, maxChars, overlap);
+      const paraChunks = para.length <= maxChars ? [para] : splitBySoftLimit(para, maxChars);
 
       for (let j = 0; j < paraChunks.length; j++) {
         const current = paraChunks[j];
@@ -405,7 +501,8 @@ export class VectorService {
           prefix = prevPara.slice(Math.max(0, prevPara.length - overlap));
         }
 
-        chunks.push(prefix ? `${prefix}\n${current}`.trim() : current);
+        const deduped = trimRepeatedPrefix(current, prefix || '');
+        chunks.push(prefix ? `${prefix}\n${deduped}`.trim() : current);
       }
     }
 

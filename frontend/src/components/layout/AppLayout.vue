@@ -1,7 +1,7 @@
 <template>
   <el-container class="layout-container">
     <el-aside :width="sidebarCollapsed ? '64px' : 'var(--corp-sidebar-width)'" class="aside" :class="{ collapsed: sidebarCollapsed, 'sidebar-open': sidebarOpen }">
-      <div class="logo" :class="{ 'logo-collapsed': sidebarCollapsed }">
+      <div class="logo" :class="{ 'logo-collapsed': sidebarCollapsed }" @click="goWorkspace" role="button" tabindex="0" @keydown.enter="goWorkspace" @keydown.space.prevent="goWorkspace">
         <div class="logo-icon-wrap">
           <img src="/logo.jpg" alt="Logo" class="logo-img" />
         </div>
@@ -55,6 +55,12 @@
               <el-icon><Setting /></el-icon>
               <span>管理后台</span>
             </template>
+            <el-menu-item-group title="统一管理">
+              <el-menu-item index="/admin">
+                <el-icon><Grid /></el-icon>
+                <template #title><span>管理面板</span></template>
+              </el-menu-item>
+            </el-menu-item-group>
             <el-menu-item-group title="运营与监控">
               <el-menu-item index="/admin/dashboard">
                 <el-icon><DataBoard /></el-icon>
@@ -294,7 +300,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import type { FormInstance, FormRules } from 'element-plus'
 import {
   DataBoard, DocumentAdd, List, Reading,
-  Setting,
+  Setting, Grid,
   Document, FullScreen, ArrowDown, Lock, SwitchButton,
   Fold, Expand, Search, QuestionFilled, Edit,
   Tools, Operation, WarningFilled, ChatDotRound, ChatLineRound, ChatLineSquare,
@@ -334,6 +340,10 @@ onUnmounted(() => window.removeEventListener('storage', onStorageChange))
 
 const globalSearchRef = ref<InstanceType<typeof GlobalSearch> | null>(null)
 const showShortcutHelp = ref(false)
+
+const goWorkspace = () => {
+  router.push('/workspace')
+}
 
 // 系统公告
 const announcementPopupRef = ref<InstanceType<typeof AnnouncementPopup> | null>(null)
@@ -591,6 +601,15 @@ const submitUsernameChange = async () => {
   flex-shrink: 0;
   gap: 10px;
   background: rgba(255, 255, 255, 0.02);
+}
+
+.logo[role="button"] {
+  cursor: pointer;
+}
+
+.logo[role="button"]:focus-visible {
+  outline: 2px solid rgba(96, 165, 250, 0.85);
+  outline-offset: 2px;
 }
 
 .logo-icon-wrap {
@@ -1123,8 +1142,6 @@ const submitUsernameChange = async () => {
   color: #D1D5DB !important;
 }
 </style>
-
-
 
 
 

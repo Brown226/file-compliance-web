@@ -125,9 +125,9 @@ router.get('/:id/export', exportTaskReport);
 router.get('/:id/export-word', exportTaskReportWord);
 router.get('/:id/review-summary', getReviewSummary);
 
-// 删除接口 - 单个删除和批量删除
-router.delete('/:id', deleteTask);
+// 删除接口 - 批量删除和单个删除（注意顺序：精确匹配必须在参数匹配之前）
 router.delete('/', deleteTasks);
+router.delete('/:id', deleteTask);
 
 // 重新审核
 router.post('/:id/review', reReviewTask);

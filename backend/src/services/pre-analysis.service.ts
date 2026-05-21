@@ -27,6 +27,7 @@ export interface PreAnalysisResult {
     };
   };
   suggestedPerspective?: string;
+  llmAnalyzed?: boolean;  // 新增：标记是否经过真实AI分析
 }
 
 interface LlmPreAnalysis {
@@ -34,6 +35,7 @@ interface LlmPreAnalysis {
   suggestedReviewPoints?: string[];
   suggestedCorePurposes?: string[];
   potentialParties?: string[];
+  __llmAnalyzed?: boolean;
 }
 
 type DocTypeRule = {
@@ -78,44 +80,28 @@ export class PreAnalysisService {
     const matchedCategory = this.matchCategory(categories, docType.type, fileNames);
     const matchedRuleLib = this.matchRuleLibrary(ruleLibs, docType.type);
 
-    // 调用LLM预分析（现在可以正确读取文件了）
-    const llmAnalysis: LlmPreAnalysis = await this.runLlmPreAnalysis(files).catch((error) => {
-      console.error('[PreAnalysis] LLM 分析失败详情:', {
-        error: error.message,
-        fileName: files[0]?.name,
-        filePath: files[0]?.filePath,
-        hasFilePath: !!files[0]?.filePath,
-        timestamp: new Date().toISOString()
-      });
-      return {} as LlmPreAnalysis;
-    });
+    const llmAnalysis: LlmPreAnalysis = await this.runLlmPreAnalysis(files).catch(() => ({} as LlmPreAnalysis));
 
-    // 记录LLM是否真正执行
-    if (Object.keys(llmAnalysis).length > 0) {
-      console.log('[PreAnalysis] ✅ LLM分析成功，结果:', JSON.stringify(llmAnalysis).substring(0, 200));
-    } else {
-      console.warn('[PreAnalysis] ⚠️ LLM分析未返回有效结果，将使用默认配置');
-    }
+    const llmAnalyzed = llmAnalysis.__llmAnalyzed === true;
 
     return {
       documentType: docType.type,
       documentTypeLabel: docType.label,
-      contractType: typeof llmAnalysis.contractType === 'string' && llmAnalysis.contractType.trim()
+      contractType: llmAnalyzed && typeof llmAnalysis.contractType === 'string' && llmAnalysis.contractType.trim()
         ? llmAnalysis.contractType.trim()
         : docType.label,
       noResultReason: matchedCategory
         ? undefined
         : '当前未匹配到更合适的知识库，审查将以通用规则和 AI 推断为主。',
-      potentialParties: Array.isArray(llmAnalysis.potentialParties) ? llmAnalysis.potentialParties : [],
-      suggestedReviewPoints: this.normalizeSuggestions(
-        llmAnalysis.suggestedReviewPoints,
-        this.getDefaultReviewPoints(docType.type),
-      ),
-      suggestedCorePurposes: this.normalizeSuggestions(
-        llmAnalysis.suggestedCorePurposes,
-        this.getDefaultCorePurposes(docType.type),
-      ),
+      potentialParties: llmAnalyzed && Array.isArray(llmAnalysis.potentialParties) ? llmAnalysis.potentialParties : [],
+      suggestedReviewPoints: llmAnalyzed && llmAnalysis.suggestedReviewPoints?.length > 0
+        ? llmAnalysis.suggestedReviewPoints
+        : this.getDefaultReviewPoints(docType.type),
+      suggestedCorePurposes: llmAnalyzed && llmAnalysis.suggestedCorePurposes?.length > 0
+        ? llmAnalysis.suggestedCorePurposes
+        : this.getDefaultCorePurposes(docType.type),
       suggestedPerspective: docType.perspective || 'general',
+      llmAnalyzed,
       recommendations: {
         libraryReview: {
           enabled: !!matchedCategory,
@@ -163,37 +149,31 @@ export class PreAnalysisService {
 
     const fileType = firstFile.name.split('.').pop()?.toLowerCase() || '';
     if (!['doc', 'docx', 'pdf', 'txt', 'xls', 'xlsx'].includes(fileType)) {
-      console.log(`[PreAnalysis] 文件类型 ${fileType} 不支持LLM分析，跳过`);
       return {};
     }
 
-    // 优先使用传入的filePath，否则回退到拼接路径（向后兼容）
     let filePath = firstFile.filePath;
     if (!filePath) {
       filePath = `uploads/${firstFile.name}`;
-      console.warn('[PreAnalysis] 未提供filePath，使用回退路径:', filePath);
     }
 
-    // 转换为绝对路径
     const path = await import('path');
     const absolutePath = path.resolve(filePath);
-
-    // 检查文件是否存在
     const fs = await import('fs');
+    
     if (!fs.existsSync(absolutePath)) {
-      console.error('[PreAnalysis] 文件不存在，无法进行LLM分析:', absolutePath);
       return {};
     }
-
-    console.log(`[PreAnalysis] 📂 正在读取文件进行LLM分析: ${absolutePath}`);
 
     const fileText = await ParserService.parseFile(absolutePath, fileType);
     if (!fileText || fileText.trim().length < 100) {
-      console.warn('[PreAnalysis] 文件文本过短或为空，跳过LLM分析。长度:', fileText?.length || 0);
       return {};
     }
 
-    console.log(`[PreAnalysis] 📝 文件读取成功，长度: ${fileText.length} 字符，开始调用LLM...`);
+    const llmConfig = await LlmService.getLlmConfig();
+    if (!llmConfig) {
+      return {};
+    }
 
     const prompt = `你是文件审查预分析助手。请阅读下面的文件内容，并只输出 JSON：
 {
@@ -213,19 +193,25 @@ export class PreAnalysisService {
 ${fileText.substring(0, 3000)}
 ---`;
 
-    const llmResponse = await LlmService.chat(prompt, { maxTokens: 2048, timeout: 60 });
+    let llmResponse: string;
+    try {
+      llmResponse = await LlmService.chat(prompt, { 
+        maxTokens: llmConfig.maxTokens, 
+        timeout: llmConfig.timeout 
+      });
+    } catch {
+      return {};
+    }
+
     const jsonMatch = llmResponse.match(/\{[\s\S]*\}/);
     if (!jsonMatch) {
-      console.warn('[PreAnalysis] LLM返回格式不匹配，无法解析JSON');
       return {};
     }
 
     try {
       const parsed = JSON.parse(jsonMatch[0]);
-      console.log('[PreAnalysis] ✅ LLM解析成功:', Object.keys(parsed));
-      return typeof parsed === 'object' && parsed ? parsed : {};
-    } catch (parseError) {
-      console.error('[PreAnalysis] JSON解析失败:', parseError);
+      return typeof parsed === 'object' && parsed ? { ...parsed, __llmAnalyzed: true } : {};
+    } catch {
       return {};
     }
   }

@@ -82,15 +82,15 @@
           </div>
         </div>
 
-        <!-- 参考文件上传区域（可选） -->
-        <div class="reference-upload-section">
+        <!-- 参考文件上传区域（仅以文审文显示） -->
+        <div v-if="entryModule === 'DOC_REVIEW'" class="reference-upload-section">
           <h3 class="section-title">
             <el-icon><Link /></el-icon>
             参考文件（用于以文审文）
             <el-tag type="info" size="small">可选</el-tag>
           </h3>
           <p class="section-description">
-            上传参考文件作为审查依据，系统将基于参考文件对待审文件进行智能审查。
+            上传参考文件作为审查依据，系统将基于参考文件对待审文件进行逐项比对。
           </p>
           <el-upload
             ref="referenceUploadRef"
@@ -225,7 +225,25 @@
           
           <!-- 审查点选择 -->
           <div class="review-points-section">
-            <h4 class="section-label">审查点选择 (可多选)</h4>
+            <h4 class="section-label">
+              审查点选择 (可多选)
+              <el-tag 
+                v-if="preAnalysisData.llmAnalyzed" 
+                type="success" 
+                size="small"
+                class="analysis-badge"
+              >
+                AI分析
+              </el-tag>
+              <el-tag 
+                v-else 
+                type="info" 
+                size="small"
+                class="analysis-badge"
+              >
+                默认模板
+              </el-tag>
+            </h4>
             <el-checkbox-group v-model="selectedReviewPoints" class="review-points-group">
               <el-checkbox
                 v-for="point in allSuggestedReviewPoints"
@@ -239,7 +257,25 @@
 
           <!-- 审查核心目的 -->
           <div class="review-purposes-section">
-            <h4 class="section-label">审查核心目的 (可自定义)</h4>
+            <h4 class="section-label">
+              审查核心目的 (可自定义)
+              <el-tag 
+                v-if="preAnalysisData.llmAnalyzed" 
+                type="success" 
+                size="small"
+                class="analysis-badge"
+              >
+                AI分析
+              </el-tag>
+              <el-tag 
+                v-else 
+                type="info" 
+                size="small"
+                class="analysis-badge"
+              >
+                默认模板
+              </el-tag>
+            </h4>
             <div v-for="(purpose, index) in customPurposes" :key="index" class="purpose-row">
               <el-autocomplete
                 v-model="purpose.value"
@@ -363,28 +399,14 @@
                     </el-tag>
                   </div>
                 </div>
-                <div v-if="reviewPlanDraft.objective === 'COMPARE'" class="config-reason config-reason--warning">
+                <div v-if="entryModule === 'DOC_REVIEW' && reviewPlanDraft.objective === 'COMPARE'" class="config-reason config-reason--warning">
                   <el-icon><WarningFilled /></el-icon>
                   参照比对目标强制使用参考文件，未上传参考文件将无法提交。
                 </div>
               </div>
             </template>
 
-            <!-- RULE_ONLY 专属：执行策略 -->
-            <template v-if="entryModule === 'RULE_ONLY'">
-              <div class="config-section">
-                <div class="section-label-with-icon">
-                  <el-icon><Files /></el-icon>
-                  <span>规则执行策略</span>
-                </div>
-                <div class="config-reason config-reason--muted">
-                  <el-icon><InfoFilled /></el-icon>
-                  规则执行策略已由后端自动选择，无需手动配置。
-                </div>
-              </div>
-            </template>
-
-            <template v-if="showExecutionProfileSection">
+            <template v-if="showExecutionProfileSection && entryModule !== 'RULE_ONLY'">
               <div class="config-section">
                 <div class="config-section-label">
                   <span class="section-label-num">4</span>
@@ -393,8 +415,8 @@
                 <div class="execution-options">
                   <div
                     class="execution-option"
-                    :class="{ 'execution-option--active': reviewPlanDraft.execution.profile === 'HYBRID', 'execution-option--disabled': isExecutionProfileLocked }"
-                    @click="!isExecutionProfileLocked && (reviewPlanDraft.execution.profile = 'HYBRID')"
+                    :class="{ 'execution-option--active': reviewPlanDraft.execution.profile === 'HYBRID' }"
+                    @click="reviewPlanDraft.execution.profile = 'HYBRID'"
                   >
                     <el-icon :size="16"><MagicStick /></el-icon>
                     <span>标准执行</span>
@@ -402,17 +424,13 @@
                   </div>
                   <div
                     class="execution-option"
-                    :class="{ 'execution-option--active': reviewPlanDraft.execution.profile === 'RULE_ONLY', 'execution-option--disabled': isExecutionProfileLocked }"
-                    @click="!isExecutionProfileLocked && (reviewPlanDraft.execution.profile = 'RULE_ONLY')"
+                    :class="{ 'execution-option--active': reviewPlanDraft.execution.profile === 'RULE_ONLY' }"
+                    @click="reviewPlanDraft.execution.profile = 'RULE_ONLY'"
                   >
                     <el-icon :size="16"><Check /></el-icon>
                     <span>仅规则执行</span>
                     <span class="execution-option__badge">快速</span>
                   </div>
-                </div>
-                <div v-if="isExecutionProfileLocked" class="config-reason config-reason--muted">
-                  <el-icon><InfoFilled /></el-icon>
-                  当前模块为纯规则（已锁定），不启用 AI 深审。
                 </div>
               </div>
             </template>
@@ -454,44 +472,89 @@
   <el-dialog
     v-model="knowledgeDialogVisible"
     title="选择知识库"
-    width="600px"
+    width="900px"
     :close-on-click-modal="false"
-    class="selection-dialog"
+    class="knowledge-selection-dialog"
   >
-    <div class="dialog-search">
-      <el-input
-        v-model="knowledgeSearchQuery"
-        placeholder="搜索知识库名称..."
-        clearable
-        prefix-icon="Search"
-      />
-    </div>
-    <div class="dialog-list">
-      <div
-        v-for="category in filteredKnowledgeCategories"
-        :key="category.id"
-        class="dialog-list-item"
-        :class="{ 'is-selected': tempSelectedKnowledgeIds.includes(category.id) }"
-        @click="toggleKnowledgeSelection(category.id)"
-      >
-        <div class="list-item-icon">
-          <el-icon><FolderOpened /></el-icon>
+    <div class="knowledge-selection-container">
+      <!-- 左侧：知识库树形列表 -->
+      <div class="knowledge-tree-panel">
+        <div class="panel-header">
+          <span class="panel-title">知识库列表</span>
+          <span class="panel-count">{{ knowledgeTreeData.length }} 个分类</span>
         </div>
-        <div class="list-item-content">
-          <div class="list-item-name">{{ category.name }}</div>
-          <div class="list-item-desc">知识库 ID: {{ category.id }}</div>
+        <div class="panel-search">
+          <el-input
+            v-model="knowledgeSearchQuery"
+            placeholder="搜索知识库..."
+            clearable
+            prefix-icon="Search"
+            size="small"
+          />
         </div>
-        <div class="list-item-check" v-if="tempSelectedKnowledgeIds.includes(category.id)">
-          <el-icon><Check /></el-icon>
+        <div class="tree-container">
+          <el-tree
+                  :data="filteredKnowledgeTree"
+                  :props="{ label: 'name', children: 'children', disabled: (node: any) => !!node.children?.length }"
+                  node-key="id"
+                  :expand-on-click-node="false"
+                  :default-expand-all="false"
+                  highlight-current
+                  show-checkbox
+                  check-strictly
+                  @node-click="handleKnowledgeTreeNodeClick"
+                  ref="knowledgeTreeRef"
+                ></el-tree>
+          <div v-if="filteredKnowledgeTree.length === 0" class="tree-empty">
+            <el-empty description="未找到匹配的知识库" :image-size="60" />
+          </div>
         </div>
       </div>
-      <div v-if="filteredKnowledgeCategories.length === 0" class="empty-state">
-        <el-empty description="未找到匹配的知识库" :image-size="80" />
+
+      <!-- 右侧：已选知识库 -->
+      <div class="selected-panel">
+        <div class="panel-header">
+          <span class="panel-title">已选知识库</span>
+          <span class="panel-count highlight">{{ currentCheckedKnowledgeIds.length }} 个</span>
+        </div>
+        <div class="selected-container">
+          <div v-if="currentCheckedKnowledgeIds.length > 0" class="selected-list">
+            <div
+              v-for="item in currentCheckedKnowledge"
+              :key="item.id"
+              class="selected-item"
+            >
+              <div class="selected-item-icon">
+                <el-icon><FolderOpened /></el-icon>
+              </div>
+              <div class="selected-item-content">
+                <div class="selected-item-name">{{ item.name }}</div>
+                <div class="selected-item-path">{{ getKnowledgePath(item.id) }}</div>
+              </div>
+              <el-button
+                class="selected-item-remove"
+                type="danger"
+                :icon="Delete"
+                circle
+                size="small"
+                @click="removeFromSelection(item.id)"
+              />
+            </div>
+          </div>
+          <div v-else class="selected-empty">
+            <el-icon class="empty-icon"><FolderOpened /></el-icon>
+            <p>尚未选择知识库</p>
+            <span>从左侧列表中选择知识库</span>
+          </div>
+        </div>
+        <div v-if="currentCheckedKnowledgeIds.length > 0" class="selected-actions">
+          <el-button size="small" @click="clearAllSelection">清空全部</el-button>
+        </div>
       </div>
     </div>
     <template #footer>
       <div class="dialog-footer">
-        <span class="dialog-footer-info">已选 {{ tempSelectedKnowledgeIds.length }} 个知识库</span>
+        <span class="dialog-footer-info">已选择 {{ currentCheckedKnowledgeIds.length }} 个知识库</span>
         <div class="dialog-footer-actions">
           <el-button @click="knowledgeDialogVisible = false">取消</el-button>
           <el-button type="primary" @click="confirmKnowledgeSelection">确认选择</el-button>
@@ -592,13 +655,13 @@ import { ElMessage } from 'element-plus'
 import type { UploadFile, FormInstance, FormRules } from 'element-plus'
 import {
   Upload, UploadFilled, Check, MagicStick, InfoFilled, VideoPlay, WarningFilled,
-  RemoveFilled, CirclePlusFilled, Document, Link, FolderAdd, Delete,
+  RemoveFilled, CirclePlusFilled, Document, Link, FolderAdd, Delete, Search,
   Loading, ArrowDown, ArrowUp, EditPen, DataAnalysis, FolderOpened, Files,
   Setting, Connection, Monitor, Picture, CircleCheck, SemiSelect,
 } from '@element-plus/icons-vue'
 import { createTaskApi, preAnalyzeApi, uploadOnlyApi, exportTaskReportApi, exportTaskReportWordApi } from '@/api/task'
 import type { ReviewPlan, ReviewObjective, ReviewEvidenceSource } from '@/types/models'
-import { getAllKnowledgeCategoriesApi } from '@/api/knowledge-category'
+import { getAllKnowledgeCategoriesApi, getKnowledgeTreeApi } from '@/api/knowledge-category'
 import { getRuleLibrariesApi } from '@/api/rule-library'
 import { useUserStore } from '@/stores/user'
 import DwgPreview from '@/components/DwgPreview.vue'
@@ -626,10 +689,6 @@ const dwgParsedDataMap = ref<Record<string, any>>({})
 const totalFileSize = computed(() =>
   fileList.value.reduce((sum, f) => sum + (f.size || 0), 0) +
   refFileList.value.reduce((sum, f) => sum + (f.size || 0), 0)
-)
-
-const dwgPreviewFiles = computed(() =>
-  fileList.value.filter(f => f.name.toLowerCase().endsWith('.dwg') && f.raw)
 )
 
 const handleFileChange = (_file: UploadFile, newFileList: UploadFile[]) => {
@@ -685,6 +744,7 @@ const preAnalysisData = reactive({
   potentialParties: [] as string[],
   suggestedReviewPoints: [] as string[],
   suggestedCorePurposes: [] as string[],
+  llmAnalyzed: false,  // 新增：标记是否经过真实AI分析
 })
 
 let preAnalyzeTimer: ReturnType<typeof setTimeout> | null = null
@@ -720,7 +780,11 @@ const applyPreAnalysisData = (data: any) => {
     contractType: data.contractType,
     documentTypeLabel: data.documentTypeLabel,
     recommendations: data.recommendations,
+    llmAnalyzed: data.llmAnalyzed,
   }, null, 2))
+
+  // 记录是否经过真实AI分析
+  preAnalysisData.llmAnalyzed = !!data.llmAnalyzed
 
   // 应用推荐结果
   if (data.suggestedPerspective) {
@@ -794,27 +858,29 @@ const applyPreAnalysisData = (data: any) => {
     crossFile: rec.generalChecks?.crossFileCheck?.reason,
   }
 
-  // 更新预分析数据
+  // 更新预分析数据（只在真实AI分析成功时更新）
   const suggestedPoints = data.suggestedReviewPoints || []
-  console.log('[SmartReview] suggestedReviewPoints 长度:', suggestedPoints.length, '内容:', suggestedPoints)
-  if (suggestedPoints.length > 0) {
+  console.log('[SmartReview] suggestedReviewPoints 长度:', suggestedPoints.length, '内容:', suggestedPoints, 'llmAnalyzed:', data.llmAnalyzed)
+  
+  if (data.llmAnalyzed && suggestedPoints.length > 0) {
     preAnalysisData.suggestedReviewPoints = suggestedPoints
     allSuggestedReviewPoints.value = [...suggestedPoints]
     selectedReviewPoints.value = [...suggestedPoints]
     console.log('[SmartReview] 已更新审查点为AI生成的值')
-  } else {
-    console.warn('[SmartReview] suggestedReviewPoints 为空，保持默认值')
+  } else if (!data.llmAnalyzed) {
+    console.warn('[SmartReview] LLM分析未执行，使用默认审查点模板')
   }
   
   const suggestedPurposes = data.suggestedCorePurposes || []
-  console.log('[SmartReview] suggestedCorePurposes 长度:', suggestedPurposes.length, '内容:', suggestedPurposes)
-  if (suggestedPurposes.length > 0) {
+  console.log('[SmartReview] suggestedCorePurposes 长度:', suggestedPurposes.length, '内容:', suggestedPurposes, 'llmAnalyzed:', data.llmAnalyzed)
+  
+  if (data.llmAnalyzed && suggestedPurposes.length > 0) {
     preAnalysisData.suggestedCorePurposes = suggestedPurposes
     allSuggestedCorePurposes.value = [...suggestedPurposes]
     customPurposes.value = suggestedPurposes.map((p: string) => ({ value: p }))
     console.log('[SmartReview] 已更新核心目的为AI生成的值')
-  } else {
-    console.warn('[SmartReview] suggestedCorePurposes 为空，保持默认值')
+  } else if (!data.llmAnalyzed) {
+    console.warn('[SmartReview] LLM分析未执行，使用默认核心目的模板')
   }
 }
 
@@ -1014,20 +1080,6 @@ const modeDescriptionMap: Record<EntryModule, { title: string; desc: string; ico
   DOC_REVIEW: { title: '以文审文模式', desc: '将待审文件与参照文件进行AI语义级逐项比对，发现内容遗漏、偏差和冲突。', icon: 'Document' },
 }
 
-const availableModals = [
-  { value: 'text', label: '文本内容', desc: '正文、标题、注释等文字信息', icon: 'Document' },
-  { value: 'table', label: '数据表格', desc: 'Excel表格、嵌入表格等结构化数据', icon: 'DataAnalysis' },
-  { value: 'image', label: '图片内容', desc: '照片、截图、扫描件等图像信息', icon: 'Picture' },
-  { value: 'drawing', label: 'DWG图纸', desc: 'CAD工程图纸的图层和实体识别', icon: 'DataAnalysis' },
-]
-
-const proofreadTypeOptions = [
-  { value: 'typo', label: '错别字检测', desc: '识别并纠正错别字、异体字', icon: 'EditPen' },
-  { value: 'grammar', label: '语法纠错', desc: '修正语法错误、语病问题', icon: 'Document' },
-  { value: 'punctuation', label: '标点规范', desc: '统一标点符号使用规范', icon: 'SemiSelect' },
-  { value: 'format', label: '格式统一', desc: '检查字体、字号、段落格式', icon: 'DataAnalysis' },
-]
-
 const getModeBadgeType = (mode: EntryModule): '' | 'success' | 'warning' | 'danger' | 'info' => {
   const map: Record<EntryModule, '' | 'success' | 'warning' | 'danger' | 'info'> = {
     LIBRARY: '', CONSISTENCY: 'success', PROOFREAD: 'info', RULE_ONLY: 'warning', MULTIMODAL: 'danger', DOC_REVIEW: '',
@@ -1052,9 +1104,10 @@ const entryModuleLabel = computed(() =>
   entryModule.value ? ENTRY_MODULE_LABEL[entryModule.value] : '',
 )
 
-const showEvidenceSection = computed(() =>
-  entryModule.value !== 'PROOFREAD' && entryModule.value !== 'CONSISTENCY',
-)
+const showEvidenceSection = computed(() => {
+  if (!entryModule.value) return true
+  return ['LIBRARY', 'RULE_ONLY', 'MULTIMODAL', 'DOC_REVIEW'].includes(entryModule.value)
+})
 
 const showObjectiveSelector = computed(() =>
   !entryModule.value,
@@ -1063,12 +1116,6 @@ const showObjectiveSelector = computed(() =>
 const showExecutionProfileSection = computed(() =>
   !entryModule.value || entryModule.value === 'RULE_ONLY',
 )
-
-const showRuleReviewSwitch = computed(() => {
-  if (entryModule.value === 'RULE_ONLY') return false
-  if (reviewPlanDraft.objective === 'COMPARE' || reviewPlanDraft.objective === 'PROOFREAD') return false
-  return availableEvidenceSources.value.some(item => item.value === 'RULE_LIBRARY')
-})
 
 const ruleReviewEnabled = computed({
   get: () => reviewPlanDraft.evidence.sources.includes('RULE_LIBRARY'),
@@ -1083,10 +1130,6 @@ const ruleReviewEnabled = computed({
     reviewPlanDraft.evidence.sources = Array.from(current)
   },
 })
-
-const isExecutionProfileLocked = computed(() =>
-  entryModule.value === 'RULE_ONLY',
-)
 
 const isEvidenceLocked = (source: ReviewEvidenceSource) => {
   if (!entryModule.value) return reviewPlanDraft.objective === 'COMPARE'
@@ -1104,7 +1147,7 @@ const applyEntryModulePreset = (module: EntryModule) => {
   if (module === 'LIBRARY') {
     reviewPlanDraft.objective = 'COMPLIANCE'
     reviewPlanDraft.evidence.sources = ['STANDARD']
-    reviewPlanDraft.execution.profile = 'HYBRID'
+    reviewPlanDraft.execution.profile = 'RULE_ONLY'
     return
   }
 
@@ -1113,9 +1156,10 @@ const applyEntryModulePreset = (module: EntryModule) => {
     reviewPlanDraft.evidence.sources = []
     reviewPlanDraft.evidence.ruleLibraryId = null
     reviewPlanDraft.evidence.knowledgeCategoryIds = []
+    reviewPlanDraft.evidence.refFileGroupId = null
     reviewPlanDraft.enhancements.intraFileConsistency = true
     reviewPlanDraft.enhancements.crossFileConsistency = true
-    reviewPlanDraft.execution.profile = 'HYBRID'
+    reviewPlanDraft.execution.profile = 'RULE_ONLY'
     return
   }
 
@@ -1126,7 +1170,7 @@ const applyEntryModulePreset = (module: EntryModule) => {
     reviewPlanDraft.evidence.knowledgeCategoryIds = []
     reviewPlanDraft.enhancements.intraFileConsistency = true
     reviewPlanDraft.enhancements.crossFileConsistency = false
-    reviewPlanDraft.execution.profile = 'HYBRID'
+    reviewPlanDraft.execution.profile = 'RULE_ONLY'
     return
   }
 
@@ -1135,16 +1179,16 @@ const applyEntryModulePreset = (module: EntryModule) => {
     reviewPlanDraft.evidence.sources = ['STANDARD']
     reviewPlanDraft.enhancements.intraFileConsistency = true
     reviewPlanDraft.enhancements.crossFileConsistency = true
-    reviewPlanDraft.execution.profile = 'HYBRID'
+    reviewPlanDraft.execution.profile = 'RULE_ONLY'
     return
   }
 
   if (module === 'DOC_REVIEW') {
     reviewPlanDraft.objective = 'COMPARE'
-    reviewPlanDraft.evidence.sources = ['REFERENCE', 'STANDARD']
+    reviewPlanDraft.evidence.sources = ['REFERENCE']
     reviewPlanDraft.enhancements.intraFileConsistency = true
     reviewPlanDraft.enhancements.crossFileConsistency = true
-    reviewPlanDraft.execution.profile = 'HYBRID'
+    reviewPlanDraft.execution.profile = 'RULE_ONLY'
     return
   }
 
@@ -1169,7 +1213,7 @@ const reviewPlanDraft = reactive<ReviewPlan>({
     crossFileConsistency: false,
   },
   execution: {
-    profile: 'HYBRID',
+    profile: 'RULE_ONLY',
   },
   templateId: 'general',
 })
@@ -1197,11 +1241,6 @@ const MODE_DISPLAY_NAMES: Record<string, string> = {
   MULTIMODAL: '多模态识别',
   CUSTOM_RULE: '自定义规则',
 }
-
-// 是否有图纸文件
-const hasDrawingFiles = computed(() =>
-  fileList.value.some(f => /\.(dwg|dxf)$/i.test(f.name))
-)
 
 // 根据审查项推导审查模式
 const derivedMode = computed(() => {
@@ -1380,19 +1419,112 @@ const filteredRuleLibraries = computed(() => {
   )
 })
 
+// 知识库树形过滤
+const filteredKnowledgeTree = computed(() => {
+  if (!knowledgeSearchQuery.value.trim()) return knowledgeTreeData.value
+  const query = knowledgeSearchQuery.value.toLowerCase()
+  
+  const filterTree = (nodes: any[]): any[] => {
+    return nodes.reduce((acc: any[], node) => {
+      const matches = node.name.toLowerCase().includes(query)
+      const filteredChildren = node.children ? filterTree(node.children) : []
+      
+      if (matches || filteredChildren.length > 0) {
+        acc.push({
+          ...node,
+          children: filteredChildren
+        })
+      }
+      return acc
+    }, [])
+  }
+  
+  return filterTree(knowledgeTreeData.value)
+})
+
+// 已选知识库的详细信息
+const tempSelectedKnowledge = computed(() => {
+  return tempSelectedKnowledgeIds.value.map(id => {
+    const item = findKnowledgeItem(id, knowledgeTreeData.value)
+    return item || { id, name: getKnowledgeCategoryName(id) }
+  }).filter(item => item.name !== undefined)
+})
+
+// 递归查找知识库项
+const findKnowledgeItem = (id: string, items: any[]): any | null => {
+  for (const item of items) {
+    if (item.id === id) return item
+    if (item.children) {
+      const found = findKnowledgeItem(id, item.children)
+      if (found) return found
+    }
+  }
+  return null
+}
+
+// 获取知识库路径
+const getKnowledgePath = (id: string): string => {
+  const paths: string[] = []
+  const findPath = (id: string, items: any[], currentPath: string[]): boolean => {
+    for (const item of items) {
+      const newPath = [...currentPath, item.name]
+      if (item.id === id) {
+        paths.push(newPath.join(' / '))
+        return true
+      }
+      if (item.children && findPath(id, item.children, newPath)) {
+        return true
+      }
+    }
+    return false
+  }
+  findPath(id, knowledgeTreeData.value, [])
+  return paths[0] || '未知路径'
+}
+
+// 处理树节点点击
+const handleKnowledgeTreeNodeClick = () => {
+}
+
+// 切换知识库选择（兼容旧代码）
 const toggleKnowledgeSelection = (id: string) => {
-  const index = tempSelectedKnowledgeIds.value.indexOf(id)
+  const checkedKeys = knowledgeTreeRef.value?.getCheckedKeys() || []
+  const index = checkedKeys.indexOf(id)
   if (index > -1) {
-    tempSelectedKnowledgeIds.value.splice(index, 1)
+    knowledgeTreeRef.value?.setCheckedKeys(checkedKeys.filter(k => k !== id))
   } else {
-    tempSelectedKnowledgeIds.value.push(id)
+    knowledgeTreeRef.value?.setCheckedKeys([...checkedKeys, id])
   }
 }
 
+// 获取当前选中的知识库ID列表
+const currentCheckedKnowledgeIds = computed(() => {
+  return knowledgeTreeRef.value?.getCheckedKeys() || []
+})
+
+// 获取当前选中的知识库详细信息
+const currentCheckedKnowledge = computed(() => {
+  return currentCheckedKnowledgeIds.value.map(id => {
+    const item = findKnowledgeItem(id, knowledgeTreeData.value)
+    return item || { id, name: getKnowledgeCategoryName(id) }
+  }).filter(item => item.name !== undefined)
+})
+
+// 从选择中移除
+const removeFromSelection = (id: string) => {
+  const checkedKeys = knowledgeTreeRef.value?.getCheckedKeys() || []
+  knowledgeTreeRef.value?.setCheckedKeys(checkedKeys.filter(k => k !== id))
+}
+
+// 清空所有选择
+const clearAllSelection = () => {
+  knowledgeTreeRef.value?.setCheckedKeys([])
+}
+
 const confirmKnowledgeSelection = () => {
-  reviewPlanDraft.evidence.knowledgeCategoryIds = [...tempSelectedKnowledgeIds.value]
+  reviewPlanDraft.evidence.knowledgeCategoryIds = [...currentCheckedKnowledgeIds.value]
   knowledgeDialogVisible.value = false
-  ElMessage.success(`已选择 ${tempSelectedKnowledgeIds.value.length} 个知识库`)
+  ElMessage.success(`已选择 ${currentCheckedKnowledgeIds.value.length} 个知识库`)
 }
 
 const confirmRuleLibrarySelection = () => {
@@ -1482,6 +1614,8 @@ watch(() => reviewPlanDraft.objective, (objective) => {
 
 // 知识库子库列表
 const knowledgeCategories = ref<Array<{ id: string; name: string }>>([])
+const knowledgeTreeData = ref<any[]>([])
+const knowledgeTreeRef = ref()
 
 // 规则库列表
 const ruleLibraries = ref<Array<{
@@ -1790,11 +1924,13 @@ onMounted(async () => {
   }
   
   try {
-    const [catRes, libRes] = await Promise.all([
+    const [catRes, treeRes, libRes] = await Promise.all([
       getAllKnowledgeCategoriesApi(),
+      getKnowledgeTreeApi(),
       getRuleLibrariesApi(),
     ])
     knowledgeCategories.value = (catRes.data || []).map((c: any) => ({ id: c.id, name: c.name }))
+    knowledgeTreeData.value = treeRes.data || []
     ruleLibraries.value = (libRes.data || []).map((l: any) => ({
       id: l.id,
       name: l.name,
@@ -1803,6 +1939,8 @@ onMounted(async () => {
       executableCount: l.executableItemCount || 0,
     }))
     
+    console.log('[SmartReview] 知识库列表加载成功:', knowledgeCategories.value.length, '个')
+    console.log('[SmartReview] 知识库树形结构加载成功:', knowledgeTreeData.value.length, '个根节点')
     console.log('[SmartReview] 规则库列表加载成功:', ruleLibraries.value.length, '个')
     console.log('[SmartReview] 规则库详情:', JSON.stringify(ruleLibraries.value, null, 2))
     
@@ -2672,6 +2810,294 @@ onMounted(async () => {
 .selection-dialog :deep(.el-dialog__footer) {
   padding: 16px 24px 20px;
   border-top: 1px solid #E5E7EB;
+}
+
+/* 知识库选择对话框 - 双栏布局 */
+.knowledge-selection-dialog :deep(.el-dialog) {
+  border-radius: 16px;
+  overflow: hidden;
+}
+
+.knowledge-selection-dialog :deep(.el-dialog__header) {
+  padding: 20px 24px 16px;
+  background: linear-gradient(135deg, #F0F5FF 0%, #EFF6FF 100%);
+  border-bottom: 1px solid #E0E7FF;
+}
+
+.knowledge-selection-dialog :deep(.el-dialog__title) {
+  font-size: 18px;
+  font-weight: 700;
+  color: #1E293B;
+}
+
+.knowledge-selection-dialog :deep(.el-dialog__body) {
+  padding: 20px 24px;
+  max-height: 520px;
+  overflow: hidden;
+}
+
+.knowledge-selection-dialog :deep(.el-dialog__footer) {
+  padding: 16px 24px 20px;
+  border-top: 1px solid #E5E7EB;
+}
+
+.knowledge-selection-container {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 20px;
+  height: 450px;
+}
+
+.knowledge-tree-panel,
+.selected-panel {
+  display: flex;
+  flex-direction: column;
+  background: #FAFBFC;
+  border-radius: 12px;
+  border: 1px solid #E2E8F0;
+  overflow: hidden;
+}
+
+.panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px;
+  background: linear-gradient(135deg, #F0F5FF 0%, #EFF6FF 100%);
+  border-bottom: 1px solid #E0E7FF;
+}
+
+.panel-title {
+  font-size: 14px;
+  font-weight: 700;
+  color: #1E293B;
+}
+
+.panel-count {
+  font-size: 12px;
+  color: #64748B;
+  font-weight: 600;
+}
+
+.panel-count.highlight {
+  color: #3B82F6;
+  background: #EFF6FF;
+  padding: 2px 8px;
+  border-radius: 10px;
+  font-size: 11px;
+}
+
+.panel-search {
+  padding: 12px 16px;
+  border-bottom: 1px solid #E2E8F0;
+}
+
+.panel-search :deep(.el-input__wrapper) {
+  border-radius: 8px;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.05);
+}
+
+.tree-container {
+  flex: 1;
+  overflow-y: auto;
+  padding: 12px;
+}
+
+.tree-container::-webkit-scrollbar {
+  width: 6px;
+}
+
+.tree-container::-webkit-scrollbar-thumb {
+  background: #CBD5E1;
+  border-radius: 3px;
+}
+
+.tree-container::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.tree-node-content {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  padding-right: 8px;
+}
+
+.tree-node-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+  min-width: 0;
+}
+
+.tree-folder-icon {
+  color: #F59E0B;
+  font-size: 16px;
+}
+
+.tree-file-icon {
+  color: #3B82F6;
+  font-size: 16px;
+}
+
+.tree-node-label {
+  font-size: 13px;
+  color: #1E293B;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tree-node-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.tree-node-count {
+  font-size: 11px;
+  color: #94A3B8;
+  background: #F1F5F9;
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+
+.tree-node-check {
+  color: #10B981;
+  font-size: 16px;
+  font-weight: 700;
+}
+
+.tree-empty {
+  padding: 40px 20px;
+  text-align: center;
+}
+
+.selected-container {
+  flex: 1;
+  overflow-y: auto;
+  padding: 12px;
+}
+
+.selected-container::-webkit-scrollbar {
+  width: 6px;
+}
+
+.selected-container::-webkit-scrollbar-thumb {
+  background: #CBD5E1;
+  border-radius: 3px;
+}
+
+.selected-container::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.selected-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.selected-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 14px;
+  background: white;
+  border-radius: 8px;
+  border: 1px solid #E2E8F0;
+  transition: all 0.2s ease;
+}
+
+.selected-item:hover {
+  border-color: #3B82F6;
+  box-shadow: 0 2px 8px rgba(59, 130, 246, 0.1);
+}
+
+.selected-item-icon {
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  background: #EFF6FF;
+  color: #3B82F6;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.selected-item-content {
+  flex: 1;
+  min-width: 0;
+}
+
+.selected-item-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: #1E293B;
+  margin-bottom: 2px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.selected-item-path {
+  font-size: 11px;
+  color: #94A3B8;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.selected-item-remove {
+  flex-shrink: 0;
+  opacity: 0.6;
+  transition: opacity 0.2s;
+}
+
+.selected-item-remove:hover {
+  opacity: 1;
+}
+
+.selected-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  text-align: center;
+  color: #94A3B8;
+}
+
+.selected-empty .empty-icon {
+  font-size: 48px;
+  margin-bottom: 12px;
+  opacity: 0.3;
+}
+
+.selected-empty p {
+  font-size: 14px;
+  font-weight: 600;
+  color: #64748B;
+  margin: 0 0 4px 0;
+}
+
+.selected-empty span {
+  font-size: 12px;
+  color: #94A3B8;
+}
+
+.selected-actions {
+  padding: 12px 16px;
+  border-top: 1px solid #E2E8F0;
+  background: #FAFBFC;
+}
+
+.selected-actions .el-button {
+  width: 100%;
 }
 
 .dialog-search {

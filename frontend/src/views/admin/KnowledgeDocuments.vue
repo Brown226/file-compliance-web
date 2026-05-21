@@ -54,6 +54,15 @@
 
     <!-- 工具栏 + 表格 -->
     <el-card class="kd-table-card" shadow="never">
+      <el-alert
+        v-if="activeTasks.some(task => task.status === 'failed')"
+        type="error"
+        show-icon
+        :closable="false"
+        class="kd-task-alert"
+        :title="`有 ${activeTasks.filter(task => task.status === 'failed').length} 个上传任务失败，请查看下方状态原因`"
+      />
+
       <!-- 上传进度条 -->
       <div v-if="activeTasks.length > 0" class="upload-progress-bar">
         <div v-for="task in activeTasks" :key="task.id" class="upload-progress-item">
@@ -849,8 +858,10 @@ const startTaskPolling = () => {
   taskPollTimer = setInterval(async () => {
     try {
       const { data } = await getActiveTasksApi()
-      activeTasks.value = data || []
-      if (activeTasks.value.length === 0) {
+      const freshTasks = data || []
+      const failedTasks = activeTasks.value.filter(task => task.status === 'failed')
+      activeTasks.value = [...freshTasks, ...failedTasks.filter(ft => !freshTasks.some(t => t.id === ft.id))]
+      if (freshTasks.length === 0 && failedTasks.length === 0) {
         stopTaskPolling()
         fetchDocuments()
       }
@@ -876,6 +887,8 @@ const handleUploadComplete = (taskIds?: string[]) => {
   }
   fetchDocuments()
 }
+
+const visibleTasks = computed(() => activeTasks.value)
 
 // ===== 标签管理 =====
 const allTags = ref<Tag[]>([])

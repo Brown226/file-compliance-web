@@ -129,6 +129,7 @@ export const getTasks = async (req: AuthRequest, res: Response): Promise<void> =
     const skip = parseInt(req.query.skip as string) || (page - 1) * limit;
     const take = parseInt(req.query.take as string) || limit;
     const status = req.query.status as TaskStatus | undefined;
+    const reviewMode = req.query.reviewMode as string | undefined;
     const search = req.query.search as string | undefined;
     const creator = req.query.creator as string | undefined;
     const startDate = req.query.startDate as string | undefined;
@@ -138,7 +139,7 @@ export const getTasks = async (req: AuthRequest, res: Response): Promise<void> =
     // RBAC: 根据角色过滤数据可见性
     const roleFilter = mine ? { creatorId: req.user?.id } : await getTaskFilterByRole(req.user);
     
-    const result = await TaskService.getTasks({ skip, take, status, search, creator, startDate, endDate, ...roleFilter });
+    const result = await TaskService.getTasks({ skip, take, status, reviewMode, search, creator, startDate, endDate, ...roleFilter });
     // 映射字段名以匹配前端期望的格式
     const items = result.tasks.map((t: any) => ({
       id: t.id,

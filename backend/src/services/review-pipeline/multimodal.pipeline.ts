@@ -157,29 +157,12 @@ export class MultimodalPipeline extends BasePipeline {
     }
   }
 
-  /** 从数据库获取 LLM 配置 */
+  /** 从数据库获取 LLM 配置（使用统一的 LlmService） */
   private async getLlmConfig(): Promise<{
     apiBaseUrl: string;
     apiKey: string;
     modelName: string;
   } | null> {
-    try {
-      const config = await prisma.systemConfig.findUnique({
-        where: { key: 'llm_chat_model' },
-      });
-      if (config?.value && typeof config.value === 'object') {
-        const v = config.value as any;
-        if (v.apiKey && v.modelName) {
-          return {
-            apiBaseUrl: v.apiBaseUrl || 'https://api.siliconflow.cn/v1',
-            apiKey: v.apiKey,
-            modelName: v.modelName,
-          };
-        }
-      }
-    } catch (e) {
-      console.warn('[Multimodal] 获取 LLM 配置失败:', e);
-    }
-    return null;
+    return LlmService.getLlmConfig();
   }
 }

@@ -7,6 +7,15 @@
     destroy-on-close
     class="preview-dialog"
   >
+    <el-alert
+      v-if="errorMessage"
+      :title="errorMessage"
+      type="error"
+      show-icon
+      :closable="false"
+      class="preview-dialog__alert"
+    />
+
     <!-- 步骤1：上传文件 -->
     <div v-if="step === 'upload'" class="preview-step">
       <el-upload
@@ -34,6 +43,14 @@
     <div v-else-if="step === 'loading'" class="preview-step preview-loading">
       <el-icon class="is-loading" :size="32"><Loading /></el-icon>
       <p>正在解析文档并生成分段...</p>
+    </div>
+
+    <div v-else-if="step === 'error'" class="preview-step preview-error">
+      <el-result icon="error" title="解析失败" :sub-title="errorMessage || '请检查文件格式、文件大小或解析服务状态'">
+        <template #extra>
+          <el-button type="primary" @click="step = 'upload'">重新选择文件</el-button>
+        </template>
+      </el-result>
     </div>
 
     <!-- 步骤3：预览分段结果 -->
@@ -141,6 +158,7 @@ const step = ref<'upload' | 'loading' | 'preview'>('upload')
 const selectedFile = ref<File | null>(null)
 const previewResult = ref<PreviewResult>({ title: '', chunks: [] as ParagraphSegment[], metadata: {} })
 const confirming = ref(false)
+const errorMessage = ref('')
 
 const editingChunkIdx = ref(-1)
 const editingChunkContent = ref('')
@@ -165,6 +183,7 @@ const handleFileChange = (file: any) => {
 const handlePreview = async () => {
   if (!selectedFile.value || !props.categoryId) return
   step.value = 'loading'
+  errorMessage.value = ''
   try {
     const fd = new FormData()
     fd.append('file', selectedFile.value)
@@ -172,8 +191,9 @@ const handlePreview = async () => {
     previewResult.value = res.data
     step.value = 'preview'
   } catch (err: any) {
-    ElMessage.error(err?.response?.data?.message || '预览失败')
-    step.value = 'upload'
+    errorMessage.value = err?.response?.data?.message || err?.message || '预览失败'
+    ElMessage.error(errorMessage.value)
+    step.value = 'error'
   }
 }
 
@@ -197,7 +217,8 @@ const handleConfirm = async () => {
     selectedFile.value = null
     previewResult.value = { title: '', chunks: [] as ParagraphSegment[], metadata: {} }
   } catch (err: any) {
-    ElMessage.error(err?.response?.data?.message || '导入失败')
+    errorMessage.value = err?.response?.data?.message || err?.message || '导入失败'
+    ElMessage.error(errorMessage.value)
   } finally {
     confirming.value = false
   }
@@ -209,6 +230,10 @@ const handleConfirm = async () => {
   padding: var(--space-6) var(--space-8);
   max-height: 60vh;
   overflow-y: auto;
+}
+
+.preview-dialog__alert {
+  margin-bottom: var(--space-4);
 }
 .preview-step {
   min-height: 200px;
@@ -241,6 +266,12 @@ const handleConfirm = async () => {
   justify-content: center;
   gap: 12px;
   color: var(--corp-text-secondary);
+}
+
+.preview-error {
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .preview-stats {

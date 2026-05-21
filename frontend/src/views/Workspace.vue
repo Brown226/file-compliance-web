@@ -262,6 +262,7 @@ onMounted(() => { fetchMyTasks() })
 .workspace-container {
   padding: 0;
   max-width: var(--corp-max-width);
+  margin: 0 auto;
 }
 
 /* ===== 欢迎区域 - 渐变背景 ===== */

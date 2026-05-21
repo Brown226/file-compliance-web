@@ -7,6 +7,15 @@
     destroy-on-close
     class="upload-dialog"
   >
+    <el-alert
+      v-if="lastError"
+      :title="lastError"
+      type="error"
+      show-icon
+      :closable="false"
+      class="upload-dialog__alert"
+    />
+
     <div class="upload-area">
       <el-upload
         ref="uploadRef"
@@ -30,6 +39,22 @@
           </div>
         </div>
       </el-upload>
+    </div>
+
+    <div v-if="uploadStatus.length > 0" class="upload-status">
+      <div class="upload-status__title">最近上传结果</div>
+      <div v-for="item in uploadStatus" :key="item.name" class="upload-status__item">
+        <div class="upload-status__row">
+          <el-icon :size="14" v-if="item.status === 'done'"><CircleCheck /></el-icon>
+          <el-icon :size="14" v-else-if="item.status === 'error'"><CircleClose /></el-icon>
+          <el-icon class="is-loading" :size="14" v-else><Loading /></el-icon>
+          <span class="upload-status__name">{{ item.name }}</span>
+          <el-tag v-if="item.status === 'done'" size="small" type="success" effect="plain">已提交</el-tag>
+          <el-tag v-else-if="item.status === 'error'" size="small" type="danger" effect="plain">失败</el-tag>
+          <el-tag v-else size="small" type="warning" effect="plain">处理中</el-tag>
+        </div>
+        <div v-if="item.message" class="upload-status__message">{{ item.message }}</div>
+      </div>
     </div>
 
     <!-- 上传进度 -->
@@ -68,13 +93,14 @@
 
 <script setup lang="ts">
 import { ref, computed } from 'vue'
-import { UploadFilled, Upload, Document } from '@element-plus/icons-vue'
+import { UploadFilled, Upload, Document, CircleCheck, CircleClose, Loading } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import { uploadDocumentAsyncApi } from '@/api/knowledge-category'
 
 export interface UploadProgressItem {
   name: string
   status: 'pending' | 'done' | 'error'
+  message?: string
 }
 
 const props = withDefaults(defineProps<{
@@ -100,6 +126,8 @@ const uploadRef = ref<any>()
 const fileList = ref<any[]>([])
 const uploading = ref(false)
 const progress = ref<UploadProgressItem[]>([])
+const uploadStatus = ref<UploadProgressItem[]>([])
+const lastError = ref('')
 
 const acceptLabel = computed(() => {
   return props.accept.replace(/\./g, '').toUpperCase().replace(/,/g, '/')
@@ -124,18 +152,31 @@ const handleUpload = async () => {
   }
 
   uploading.value = true
+  lastError.value = ''
 
   try {
     const fd = new FormData()
     fileList.value.forEach(f => fd.append('files', f.raw))
     const { data } = await uploadDocumentAsyncApi(props.targetId, fd)
     ElMessage.success(`${fileList.value.length} 个文件已提交，正在后台处理`)
+    uploadStatus.value = fileList.value.map(f => ({
+      name: f.name,
+      status: 'done' as const,
+      message: `任务已提交，任务ID: ${data.taskIds?.[0] || '-'}`,
+    }))
     emit('uploaded', data.taskIds)
     emit('update:modelValue', false)
     fileList.value = []
     progress.value = []
   } catch (err: any) {
-    ElMessage.error(err?.response?.data?.message || '上传失败')
+    const message = err?.response?.data?.message || err?.message || '上传失败'
+    lastError.value = message
+    uploadStatus.value = fileList.value.map(f => ({
+      name: f.name,
+      status: 'error' as const,
+      message,
+    }))
+    ElMessage.error(message)
   } finally {
     uploading.value = false
   }
@@ -197,6 +238,58 @@ const handleUpload = async () => {
   display: flex;
   flex-direction: column;
   gap: var(--space-2);
+}
+
+.upload-dialog__alert {
+  margin-bottom: var(--space-4);
+}
+
+.upload-status {
+  margin-top: var(--space-4);
+  padding: var(--space-3);
+  border: 1px solid var(--corp-border-light);
+  border-radius: var(--radius-md);
+  background: var(--bg-surface-hover);
+}
+
+.upload-status__title {
+  font-size: var(--text-sm);
+  font-weight: 700;
+  color: var(--corp-text-primary);
+  margin-bottom: var(--space-2);
+}
+
+.upload-status__item {
+  padding: var(--space-2) 0;
+  border-top: 1px solid var(--corp-border-light);
+}
+
+.upload-status__item:first-of-type {
+  border-top: 0;
+}
+
+.upload-status__row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.upload-status__name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--text-sm);
+  color: var(--corp-text-primary);
+}
+
+.upload-status__message {
+  margin-top: 4px;
+  margin-left: 22px;
+  font-size: var(--text-xs);
+  color: var(--corp-text-secondary);
+  line-height: 1.4;
 }
 .upload-progress__item {
   display: flex;

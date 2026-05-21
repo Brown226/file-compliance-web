@@ -384,6 +384,7 @@ export class TaskService {
     skip?: number; 
     take?: number; 
     status?: TaskStatus;
+    reviewMode?: string;
     search?: string;
     creator?: string;
     startDate?: string;
@@ -391,11 +392,14 @@ export class TaskService {
     creatorId?: string;
     [key: string]: any;
   }): Promise<{ total: number; tasks: any[] }> {
-    const { skip = 0, take = 10, status, search, creator, startDate, endDate, creatorId, ...restFilter } = params;
+    const { skip = 0, take = 10, status, reviewMode, search, creator, startDate, endDate, creatorId, ...restFilter } = params;
 
     const where: any = {};
     if (status) {
       where.status = status;
+    }
+    if (reviewMode) {
+      where.reviewMode = reviewMode;
     }
     if (creatorId) {
       where.creatorId = creatorId;

@@ -1,4 +1,4 @@
-﻿/**
+/**
  * LLM 工具服务 — 提供文本分片、审查结果解析和直接 LLM 调用的公共方法
  *
  * 支持 MaxKB 作为优先 AI 引擎，不可用时降级到 LLM 直接调用
@@ -625,6 +625,7 @@ export class LlmService {
     options?: {
       maxTokens?: number;
       timeout?: number;
+      temperature?: number;
       standardContext?: string;
       systemPrompt?: string;
       skipUserTemplate?: boolean;
@@ -654,8 +655,9 @@ export class LlmService {
       }
     }
 
-    const maxTokens = options?.maxTokens || 4096;
-    const timeoutMs = (options?.timeout || 180) * 1000;
+    const maxTokens = options?.maxTokens ?? config.maxTokens;
+    const timeoutMs = (options?.timeout ?? config.timeout) * 1000;
+    const temperature = options?.temperature ?? config.temperature;
 
     // 如果 skipUserTemplate 为 true，直接使用传入的 text 作为 userContent（调用方已自行组装）
     let userContent: string;
@@ -686,6 +688,7 @@ export class LlmService {
       ],
       stream: false,
       max_tokens: maxTokens,
+      temperature,
     };
 
     const controller = new AbortController();
@@ -764,6 +767,9 @@ export class LlmService {
     apiBaseUrl: string;
     apiKey: string;
     modelName: string;
+    maxTokens: number;
+    temperature: number;
+    timeout: number;
   } | null> {
     try {
       const config = await prisma.systemConfig.findUnique({
@@ -776,6 +782,9 @@ export class LlmService {
             apiBaseUrl: v.apiBaseUrl || 'https://api.siliconflow.cn/v1',
             apiKey: v.apiKey,
             modelName: v.modelName,
+            maxTokens: typeof v.maxTokens === 'number' ? v.maxTokens : 8192,
+            temperature: typeof v.temperature === 'number' ? v.temperature : 0.3,
+            timeout: typeof v.timeout === 'number' ? v.timeout : 120,
           };
         }
       }
@@ -793,8 +802,8 @@ export class LlmService {
     const config = await this.getLlmConfig();
     if (!config) return query; // 未配置 LLM 时直接返回原始查询
 
-    const maxTokens = options?.maxTokens || 256;
-    const timeoutMs = (options?.timeout || 15) * 1000;
+    const maxTokens = options?.maxTokens ?? config.maxTokens;
+    const timeoutMs = (options?.timeout ?? config.timeout) * 1000;
 
     const body = {
       model: config.modelName,
@@ -817,6 +826,7 @@ export class LlmService {
       ],
       stream: false,
       max_tokens: maxTokens,
+      temperature: config.temperature,
     };
 
     try {
@@ -853,15 +863,16 @@ export class LlmService {
   /**
    * 通用聊天接口 - 用于 AI 正则表达式生成等场景
    */
-  static async chat(prompt: string, options?: { systemPrompt?: string; maxTokens?: number; timeout?: number }): Promise<string> {
+  static async chat(prompt: string, options?: { systemPrompt?: string; maxTokens?: number; timeout?: number; temperature?: number }): Promise<string> {
     const config = await this.getLlmConfig();
     if (!config) {
       throw new Error('LLM 未配置，请在系统配置中设置 LLM API');
     }
 
     const systemPrompt = options?.systemPrompt || '你是一个正则表达式专家，擅长根据用户需求生成准确的正则表达式。请只输出正则表达式，不要输出其他解释文字。';
-    const maxTokens = options?.maxTokens || 1024;
-    const timeoutMs = (options?.timeout || 60) * 1000;
+    const maxTokens = options?.maxTokens ?? config.maxTokens;
+    const timeoutMs = (options?.timeout ?? config.timeout) * 1000;
+    const temperature = options?.temperature ?? config.temperature;
 
     const body = {
       model: config.modelName,
@@ -871,6 +882,7 @@ export class LlmService {
       ],
       stream: false,
       max_tokens: maxTokens,
+      temperature,
     };
 
     const controller = new AbortController();

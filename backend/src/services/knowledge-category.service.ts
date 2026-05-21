@@ -264,14 +264,12 @@ export class KnowledgeCategoryService {
       maxChars: category.maxChars || 3000,
       overlap: category.overlap || 120,
     };
-    const chunks = VectorService.splitTextIntoChunks(content, chunkConfig);
-    const paragraphs = chunks.map(chunk => {
-      const parts = chunk.split('\n');
-      if (parts.length > 1) {
-        return { title: parts[0].trim(), content: parts.slice(1).join('\n').trim() };
-      }
-      return { title: '', content: chunk.trim() };
-    }).filter(p => p.content.length > 0);
+    const paragraphs = VectorService.splitMarkdownIntoParagraphs(content, chunkConfig.maxChars)
+      .map(paragraph => ({
+        title: paragraph.title,
+        content: paragraph.content,
+      }))
+      .filter(p => p.content.length > 0);
 
     return {
       title,
@@ -299,6 +297,8 @@ export class KnowledgeCategoryService {
     const ext = path.extname(fileName).toLowerCase().replace('.', '');
     const fileType = ext === 'doc' ? 'docx' : ext;
 
+    console.info('[KB][uploadDocument] start', { categoryId, fileName, fileType, filePath });
+
     // 解析文件内容
     await ParserService.parseFile(filePath, fileType);
     // 优先使用Markdown格式（保留表格结构），回退到纯文本
@@ -306,12 +306,21 @@ export class KnowledgeCategoryService {
     const text = ParserService.getLastParseResult()?.text || '';
     const content = (markdown && markdown.trim().length > 10) ? markdown : text;
 
+    console.info('[KB][uploadDocument] parsed', {
+      categoryId,
+      fileName,
+      contentLength: content.length,
+      hasMarkdown: Boolean(markdown),
+      textLength: text.length,
+    });
+
     if (!content || content.trim().length < 10) {
       throw new Error('文件内容过少或解析失败');
     }
 
     const parseResult = ParserService.getLastParseResult();
     const parseQuality = this.buildParseQualityReport(content);
+    console.info('[KB][uploadDocument] quality', { categoryId, fileName, score: parseQuality.score, passed: parseQuality.passed, reasons: parseQuality.reasons });
     if (!parseQuality.passed) {
       throw new AppError(400, `解析质量未通过：${parseQuality.reasons.join('；')}`);
     }
@@ -336,6 +345,8 @@ export class KnowledgeCategoryService {
         page_count: parseResult?.metadata?.page_count || null,
       },
     });
+
+    console.info('[KB][uploadDocument] imported', { categoryId, fileName, chunks: result.chunks });
 
     return { chunks: result.chunks };
   }

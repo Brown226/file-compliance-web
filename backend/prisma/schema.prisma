@@ -508,7 +508,7 @@ model VectorDocument {
   contentHash     String?             @map("content_hash")    // SHA-256 去重
   chunkIndex      Int                 @default(0) @map("chunk_index")
   metadata        Json?                                       // 附加元数据
-  embedding       Unsupported("vector(1024)")?               // pgvector 向量
+  embedding       Unsupported("vector(4096)")?               // pgvector 向量
   vectorStatus    String              @default("PENDING") @map("vector_status") // PENDING/STARTED/SUCCESS/FAILURE
   createdAt       DateTime            @default(now()) @map("created_at")
   updatedAt       DateTime            @updatedAt @map("updated_at")

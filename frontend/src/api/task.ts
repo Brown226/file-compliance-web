@@ -16,6 +16,7 @@ export function getTasksApi(params?: {
   page?: number
   limit?: number
   status?: string
+  reviewMode?: string
   search?: string
   creator?: string
   startDate?: string

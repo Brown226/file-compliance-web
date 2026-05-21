@@ -79,6 +79,12 @@ const routes: Array<RouteRecordRaw> = [
 
       // ===== 管理员路由（ADMIN/MANAGER 可见）=====
       {
+        path: 'admin',
+        name: 'UnifiedPanel',
+        component: () => import('../views/UnifiedPanel.vue'),
+        meta: { title: '统一管理面板', requiresAdminOrManager: true }
+      },
+      {
         path: 'admin/dashboard',
         name: 'AdminDashboard',
         component: () => import('../views/Dashboard.vue'),

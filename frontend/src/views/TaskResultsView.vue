@@ -240,7 +240,7 @@
                   <span class="summary-value">{{ reviewPlanSummary.enhancements }}</span>
                 </div>
                 <div class="summary-card sub">
-                  <span class="summary-label">兼容模式</span>
+                  <span class="summary-label">审查模式</span>
                   <span class="summary-value">{{ reviewPlanSummary.legacyMode }}</span>
                 </div>
                 <div class="summary-card">

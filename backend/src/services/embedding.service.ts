@@ -7,7 +7,7 @@
 
 import prisma from '../config/db';
 
-const EMBEDDING_DIM = 1024;
+const EMBEDDING_DIM = 4096;
 const EMBEDDING_BATCH_SIZE = 32;
 
 interface EmbeddingConfig {
@@ -93,7 +93,7 @@ export class EmbeddingService {
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${config.apiKey}`,
       },
-      body: JSON.stringify({ model: config.model, input: texts }),
+      body: JSON.stringify({ model: config.model, input: texts, encoding_format: 'float' }),
       signal: AbortSignal.timeout(60000),
     });
 
