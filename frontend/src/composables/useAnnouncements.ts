@@ -11,29 +11,70 @@ import {
   markAllAnnouncementsReadApi,
 } from '@/api/announcement'
 
+const SESSION_DISMISS_KEY = 'announcement_dismissed_session'
+const SESSION_READ_IDS_KEY = 'announcement_read_ids_session'
+
 // 模块级单例状态 - 所有使用此 composable 的组件共享
 const unreadCount = ref(0)
 const showAnnouncementPopup = ref(false)
 const unreadAnnouncements = ref<SystemAnnouncement[]>([])
 const urgentAnnouncements = ref<SystemAnnouncement[]>([])
 
+function getSessionDismissed(): boolean {
+  return sessionStorage.getItem(SESSION_DISMISS_KEY) === 'true'
+}
+
+function setSessionDismissed(value: boolean): void {
+  if (value) {
+    sessionStorage.setItem(SESSION_DISMISS_KEY, 'true')
+  } else {
+    sessionStorage.removeItem(SESSION_DISMISS_KEY)
+  }
+}
+
+function getSessionReadIds(): Set<string> {
+  const raw = sessionStorage.getItem(SESSION_READ_IDS_KEY)
+  if (!raw) return new Set()
+  try {
+    return new Set(JSON.parse(raw))
+  } catch {
+    return new Set()
+  }
+}
+
+function addSessionReadId(id: string): void {
+  const ids = getSessionReadIds()
+  ids.add(id)
+  sessionStorage.setItem(SESSION_READ_IDS_KEY, JSON.stringify([...ids]))
+}
+
 export function useAnnouncements() {
   /**
    * 检查未读公告并显示弹窗
+   * 如果用户在本次会话中已关闭过弹窗，则不再自动显示
    */
   async function checkAndShow() {
+    if (getSessionDismissed()) {
+      await refreshCount()
+      return
+    }
+
     try {
       const res = await getUnreadAnnouncementsApi()
-      const announcements = res.data
+      let announcements = res.data
+
+      // 过滤掉本次会话中已阅读过的公告
+      const sessionReadIds = getSessionReadIds()
+      if (sessionReadIds.size > 0 && announcements?.length) {
+        announcements = announcements.filter((a: SystemAnnouncement) => !sessionReadIds.has(a.id))
+      }
 
       if (announcements && announcements.length > 0) {
         unreadAnnouncements.value = announcements
         unreadCount.value = announcements.length
 
-        // 分离紧急公告和普通公告
         urgentAnnouncements.value = announcements.filter(a => a.urgency === 'URGENT')
 
-        // 如果有未读公告，显示弹窗
         showAnnouncementPopup.value = true
       } else {
         unreadCount.value = 0
@@ -46,9 +87,6 @@ export function useAnnouncements() {
     }
   }
 
-  /**
-   * 刷新未读数量
-   */
   async function refreshCount() {
     try {
       const res = await getUnreadAnnouncementsApi()
@@ -59,12 +97,11 @@ export function useAnnouncements() {
     }
   }
 
-  /**
-   * 标记单条公告为已读
-   */
   async function markRead(id: string, confirmed?: boolean) {
     try {
       await markAnnouncementReadApi(id, { confirmed })
+
+      addSessionReadId(id)
 
       unreadAnnouncements.value = unreadAnnouncements.value.filter(a => a.id !== id)
       urgentAnnouncements.value = urgentAnnouncements.value.filter(a => a.id !== id)
@@ -79,14 +116,13 @@ export function useAnnouncements() {
     }
   }
 
-  /**
-   * 批量标记公告为已读
-   */
   async function markAllRead(ids: string[]) {
     if (ids.length === 0) return
 
     try {
       await markAllAnnouncementsReadApi({ announcementIds: ids })
+
+      ids.forEach(id => addSessionReadId(id))
 
       unreadAnnouncements.value = []
       urgentAnnouncements.value = []
@@ -100,11 +136,18 @@ export function useAnnouncements() {
     }
   }
 
-  /**
-   * 关闭弹窗
-   */
   function closePopup() {
     showAnnouncementPopup.value = false
+    setSessionDismissed(true)
+  }
+
+  function dismissForSession() {
+    closePopup()
+  }
+
+  function resetSessionState() {
+    setSessionDismissed(false)
+    sessionStorage.removeItem(SESSION_READ_IDS_KEY)
   }
 
   return {
@@ -117,5 +160,7 @@ export function useAnnouncements() {
     markRead,
     markAllRead,
     closePopup,
+    dismissForSession,
+    resetSessionState,
   }
 }

@@ -56,11 +56,12 @@ export const getStandards = async (req: Request, res: Response): Promise<void> =
     const page = parseInt(req.query.page as string) || 1;
     const limit = parseInt(req.query.limit as string) || 10;
     const search = req.query.search as string | undefined;
+    const standardStatus = req.query.standardStatus as string | undefined;
     const folderId = req.query.folderId as string | undefined;
     const includeSubFolders = req.query.includeSubFolders === 'true';
 
     const skip = (page - 1) * limit;
-    const result = await StandardService.getStandards({ skip, take: limit, search, folderId, includeSubFolders });
+    const result = await StandardService.getStandards({ skip, take: limit, search, standardStatus, folderId, includeSubFolders });
     paginated(res, result.standards, result.total);
   } catch (err) {
     console.error('Get Standards Error:', err);
@@ -96,11 +97,35 @@ export const getStandardDetail = async (req: Request, res: Response): Promise<vo
 export const updateStandard = async (req: Request, res: Response): Promise<void> => {
   try {
     const id = req.params.id as string;
-    const { title, version, isActive, folderId } = req.body;
+    const {
+      title,
+      version,
+      isActive,
+      folderId,
+      standardNo,
+      standardName,
+      standardIdent,
+      standardStatus,
+      publishDate,
+      implementDate,
+      abolishDate,
+    } = req.body;
     const existing = await StandardService.getStandardById(id);
     if (!existing) { error(res, '未找到该标准', 404); return; }
 
-    const standard = await StandardService.updateStandard(id, { title, version, isActive, folderId });
+    const standard = await StandardService.updateStandard(id, {
+      title,
+      version,
+      isActive,
+      folderId,
+      standardNo,
+      standardName,
+      standardIdent,
+      standardStatus,
+      publishDate,
+      implementDate,
+      abolishDate,
+    });
     success(res, standard, '标准更新成功');
   } catch (err) {
     console.error('Update Standard Error:', err);

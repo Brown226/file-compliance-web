@@ -41,6 +41,15 @@ e2e/
 test-results/
 playwright.config.js
 
+# Playwright MCP artifacts
+.playwright-mcp/
+
+# Generated types
+backend/src/types/
+
+# Local sub-repo / vendor checkout
+opencode2api/
+
 # Root-level stray files (likely generated in wrong location)
 /package.json
 /package-lock.json
@@ -153,3 +162,24 @@ backend/startup-*.sh
 # Frontend optimization reports (not source code)
 frontend/src/views/*OPTIMIZATION*.md
 frontend/src/views/*SUMMARY*.md
+
+# AI Agent workspace (Trae AI agent)
+.trae/
+
+# Benchmark data (large generated files)
+backend/benchmarks/
+
+# Temporary scripts
+backend/scripts/
+
+# Debug log files
+debug-*.md
+
+# Project documentation (keep separately)
+V2.0*/
+
+# Prisma temp files
+backend/_tmp_prisma_check.js
+
+# Parser temp scripts
+backend/src/services/parser

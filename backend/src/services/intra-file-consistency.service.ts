@@ -78,13 +78,12 @@ export class IntraFileConsistencyService {
         taskId,
         fileId,
         issueType: 'INTRA_CONSISTENCY',
-        severity: 'WARNING' as const,
+        severity: 'warning' as const,
         ruleCode: 'INTRA_CONSIST_001',
+        reviewSource: 'RULE_ENGINE' as const,
         originalText: context,
         suggestedText: `参数"${inc.paramName}"存在多个不同值: ${values}，请核实并统一`,
         description: `文件内"${inc.paramName}"在不同位置出现了不一致的值`,
-        location: `多处出现`,
-        source: 'rule_engine' as const,
       };
     });
 

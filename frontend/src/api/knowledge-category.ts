@@ -12,6 +12,12 @@ export interface KnowledgeCategory {
   chunkMode?: 'auto' | 'fixed' | 'paragraph'
   maxChars?: number
   overlap?: number
+  minSimilarity?: number
+  directReturnThreshold?: number
+  maxReferenceChars?: number
+  enableRerank?: boolean
+  embeddingUseDocumentTitle?: boolean
+  embeddingUseClauseId?: boolean
   createdAt: string
 }
 
@@ -19,8 +25,17 @@ export interface KnowledgeTreeNode {
   id: string
   name: string
   type: 'folder' | 'knowledge'
+  parentId?: string | null
   documentCount?: number
   children?: KnowledgeTreeNode[]
+}
+
+export interface DocumentTagSummary {
+  id: string
+  key: string
+  value: string
+  categoryId?: string
+  createdAt: string | Date
 }
 
 export interface GroupedDocument {
@@ -31,8 +46,10 @@ export interface GroupedDocument {
   chunk_range: { min: number; max: number }
   embedded_count: number
   is_fully_embedded: boolean
+  vector_status: 'PENDING' | 'STARTED' | 'SUCCESS' | 'FAILURE'
   create_time: string
   update_time: string
+  tags: DocumentTagSummary[]
 }
 
 export interface DocumentParagraph {
@@ -87,6 +104,13 @@ export const updateKnowledgeCategoryApi = (id: string, data: {
   chunkMode?: string
   maxChars?: number
   overlap?: number
+  minSimilarity?: number
+  directReturnThreshold?: number
+  maxReferenceChars?: number
+  enableRerank?: boolean
+  embeddingUseDocumentTitle?: boolean
+  embeddingUseClauseId?: boolean
+  parentId?: string | null
 }) => request.put<KnowledgeCategory>(`/knowledge-categories/${id}`, data)
 
 export const deleteKnowledgeCategoryApi = (id: string) =>
@@ -96,7 +120,7 @@ export const deleteKnowledgeCategoryApi = (id: string) =>
 
 export const getGroupedDocumentsApi = (
   categoryId: string,
-  params?: { page?: number; pageSize?: number; query?: string; status?: string }
+  params?: { page?: number; pageSize?: number; query?: string }
 ) =>
   request.get<{ page: number; pageSize: number; total: number; items: GroupedDocument[] }>(
     `/knowledge-categories/${categoryId}/grouped-documents`,
@@ -107,7 +131,7 @@ export const getGroupedDocumentsApi = (
 
 export const updateDocumentApi = (
   categoryId: string,
-  data: { oldTitle: string; newTitle?: string; isActive?: boolean }
+  data: { oldTitle: string; newTitle: string }
 ) =>
   request.put<{ updatedCount: number }>(`/knowledge-categories/${categoryId}/documents`, data)
 
@@ -193,6 +217,20 @@ export interface PreviewResult {
   title: string
   chunks: ParagraphSegment[]
   metadata: Record<string, any>
+  parseQuality: {
+    passed: boolean
+    score: number
+    reasons: string[]
+    metrics: {
+      textLength: number
+      visibleCharRatio: number
+      duplicateLineRatio: number
+      headingDensity: number
+      tableSeparatorRatio: number
+      mojibakeRatio: number
+    }
+  }
+  canImport: boolean
 }
 
 export const previewDocumentApi = (categoryId: string, formData: FormData) =>
@@ -210,6 +248,7 @@ export const confirmImportApi = (categoryId: string, data: {
 
 export interface HitTestResult {
   originalQuery: string
+  rewrittenQuery?: string
   results: Array<{
     id: string
     title: string | null
@@ -223,11 +262,21 @@ export interface HitTestResult {
     isTable: boolean
     metadata: any
   }>
+  usedConfig: {
+    minSimilarity: number
+    directReturnThreshold: number
+    maxReferenceChars: number
+    enableRerank: boolean
+  }
+  rerankApplied: boolean
+  directReturnHit: boolean
+  filteredBySimilarity: number
   stats: {
     totalCandidates: number
     afterDedup: number
     afterRerank: number
     searchTimeMs: number
+    queryRewriteTimeMs?: number
   }
 }
 
@@ -237,6 +286,7 @@ export const hitTestApi = (data: {
   sourceTypes?: string[]
   topNumber?: number
   searchMode?: 'vector' | 'keyword' | 'hybrid'
+  enableQueryRewrite?: boolean
 }) => request.post<HitTestResult>('/knowledge-categories/hit-test', data)
 
 // ===== 标签管理 =====

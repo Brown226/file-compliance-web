@@ -67,7 +67,6 @@ export abstract class BasePipeline {
   get scene(): string {
     const modeMap: Record<string, string> = {
       LIBRARY_REVIEW: 'library_review',
-      FULL_REVIEW: 'library_review',
       CONSISTENCY: 'consistency',
       TYPO_GRAMMAR: 'typo_grammar',
       DOC_REVIEW: 'doc_review',
@@ -191,6 +190,14 @@ export abstract class BasePipeline {
     );
   }
 
+  protected decorateRuleIssues(ctx: PipelineContext, issues: RuleIssue[]): RuleIssue[] {
+    if (ctx.ruleSource !== 'RULE_LIBRARY') return issues;
+    return issues.map((issue) => ({
+      ...issue,
+      ruleCode: issue.ruleCode,
+    }));
+  }
+
   // ==================== AI 审查实现 ====================
 
   /**
@@ -310,12 +317,15 @@ export abstract class BasePipeline {
       (async () => {
         if (!this.capabilities.rules) return [];
         if (!this.shouldRunStage(ctx, 'rules')) return [];
-        const prefixes = this.getEffectiveRulePrefixes(ctx, this.rulePrefixes);
+        const prefixes = ctx.ruleSource === 'RULE_LIBRARY' && ctx.rulePlan?.enabledPrefixes?.length
+          ? ctx.rulePlan.enabledPrefixes
+          : this.getEffectiveRulePrefixes(ctx, this.rulePrefixes);
         const baseIssues = await this.runRules(ctx, prefixes);
-        return [...baseIssues, ...extraRuleIssues];
+        return this.decorateRuleIssues(ctx, [...baseIssues, ...extraRuleIssues]);
       })(),
       // 标准引用检查（受 capabilities.standardRef + stages.stdRef 控制）
       (async () => {
+        if (ctx.ruleSource === 'RULE_LIBRARY') return [];
         if (this.capabilities.standardRef === 'off') return [];
         if (!this.shouldRunStage(ctx, 'stdRef') || !text.trim()) return [];
         return this.runStandardRefCheck(ctx, text);

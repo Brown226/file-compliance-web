@@ -1,114 +1,196 @@
 <template>
   <div class="qa-page">
     <div class="qa-shell">
-      <!-- 头部 -->
-      <div class="qa-header">
-        <div class="qa-header-left">
-          <h2>智能问答</h2>
-          <p class="qa-subtitle">基于知识库的标准规范、法律法规和审查规则回答您的问题</p>
-        </div>
-        <div class="qa-header-right">
-          <el-button type="primary" link @click="createSession">
-            <el-icon><Plus /></el-icon> 新对话
+      <aside class="session-panel">
+        <div class="session-panel__header">
+          <h2>会话管理</h2>
+          <el-button class="new-session-btn" type="primary" plain @click="createSession">
+            <el-icon><Plus /></el-icon>
+            新建会话
           </el-button>
         </div>
-      </div>
 
-      <div class="qa-body">
-        <!-- 侧边会话列表 -->
-        <div class="session-sidebar">
-          <div class="session-list">
-            <div
-              v-for="session in sessions"
-              :key="session.id"
-              :class="['session-item', { active: currentSessionId === session.id }]"
-              @click="switchSession(session.id)"
-            >
-              <span class="session-title">{{ session.title || '新对话' }}</span>
-              <el-button
-                type="danger"
-                link
-                size="small"
-                class="session-delete"
-                @click.stop="deleteSession(session.id)"
-              >
-                <el-icon><Delete /></el-icon>
-              </el-button>
+        <div v-if="sessions.length > 0" class="session-list">
+          <button
+            v-for="session in sessions"
+            :key="session.id"
+            type="button"
+            :class="['session-item', { active: currentSessionId === session.id }]"
+            @click="switchSession(session.id)"
+          >
+            <div class="session-item__accent">
+              <el-icon><ChatDotRound /></el-icon>
             </div>
-            <div v-if="sessions.length === 0" class="session-empty">暂无会话</div>
+            <div class="session-item__content">
+              <div class="session-item__top">
+                <span class="session-title">{{ session.title || '新对话' }}</span>
+                <el-button
+                  type="danger"
+                  link
+                  size="small"
+                  class="session-delete"
+                  @click.stop="deleteSession(session.id)"
+                >
+                  <el-icon><Delete /></el-icon>
+                </el-button>
+              </div>
+              <div class="session-item__meta">
+                <span>{{ getSessionMessageCount(session) }}</span>
+                <span>{{ formatSessionTime(session.updatedAt) }}</span>
+              </div>
+            </div>
+          </button>
+        </div>
+
+        <div v-else class="session-empty">
+          <div class="session-empty__icon">
+            <el-icon><Document /></el-icon>
+          </div>
+          <h3>暂无会话</h3>
+          <p>先新建一个会话，再开始提问。</p>
+          <el-button class="session-empty__action" type="primary" @click="createSession">
+            新建会话
+          </el-button>
+        </div>
+      </aside>
+
+      <section class="chat-panel">
+        <div class="chat-panel__header">
+          <div>
+            <h2>{{ activeSessionTitle }}</h2>
+            <p class="chat-panel__subtitle">{{ messages.length }} 条消息</p>
           </div>
         </div>
 
-        <!-- 聊天区域 -->
-        <div class="chat-area">
-          <div ref="chatContainer" class="chat-messages">
-            <div v-if="messages.length === 0" class="chat-empty">
-              <p class="chat-empty-title">输入一个具体问题</p>
-              <p>例如：GB/T 50265 中对泵站厂房有什么要求？核电站防火设计有哪些规范？</p>
-            </div>
-
-            <div v-for="(msg, index) in messages" :key="index" :class="['message-row', msg.role]">
-              <div class="message-bubble">
-                <p class="role-label">{{ msg.role === 'user' ? '你' : 'AI 助手' }}</p>
-                <div class="message-content" v-html="renderMarkdown(msg.content || '正在生成...')"></div>
+        <div ref="chatContainer" class="chat-messages">
+          <div v-if="!hasMessages" class="chat-empty-stage">
+            <div class="chat-empty-card">
+              <h3>先写清标准编号与核查对象</h3>
+              <p>问题越具体，回答越稳定。建议直接写明标准编号、专业对象和核查目标。</p>
+              <div class="chat-empty-grid">
+                <button
+                  v-for="prompt in examplePrompts"
+                  :key="prompt"
+                  type="button"
+                  class="prompt-card"
+                  @click="selectExamplePrompt(prompt)"
+                >
+                  {{ prompt }}
+                </button>
               </div>
-            </div>
-
-            <div v-if="isLoading" class="stream-indicator">
-              <span></span><span></span><span></span>
-              <p>正在检索知识库并生成回答...</p>
             </div>
           </div>
 
-          <!-- 输入框 -->
-          <div class="composer">
+          <div v-else class="message-list">
+            <div class="message-stage">
+              <div
+                v-for="(msg, index) in messages"
+                :key="msg.id || index"
+                :class="['message-row', msg.role === 'user' ? 'user' : 'assistant']"
+              >
+                <div class="message-avatar">
+                  {{ msg.role === 'user' ? '问' : 'AI' }}
+                </div>
+
+                <div class="message-card">
+                  <div class="message-card__meta">
+                    <span class="message-author">
+                      {{ msg.role === 'user' ? '您的提问' : 'AI 助手回答' }}
+                    </span>
+                    <span class="message-separator"></span>
+                    <span class="message-index">第 {{ index + 1 }} 条</span>
+                  </div>
+
+                  <div
+                    class="message-content"
+                    v-html="renderMarkdown(msg.content || '正在生成回答...')"
+                  ></div>
+                </div>
+              </div>
+
+              <div v-if="isLoading" class="stream-indicator">
+                <span></span>
+                <span></span>
+                <span></span>
+                <p>正在检索知识库并持续生成回答</p>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <footer class="composer-panel">
+          <div class="composer-panel__body">
             <el-input
               v-model="inputQuestion"
               type="textarea"
-              :rows="2"
-              placeholder="输入问题，Enter 发送，Shift + Enter 换行"
+              :autosize="{ minRows: 3, maxRows: 6 }"
+              placeholder="请输入具体问题，例如：GB/T 50265 中对泵站厂房的防火分区和疏散要求有哪些？"
               resize="none"
               :disabled="isLoading"
-              @keydown.enter.prevent="handleEnter"
+              @keydown.enter="handleEnter"
             />
+
             <el-button
+              class="send-btn"
               type="primary"
-              :disabled="!inputQuestion.trim() || isLoading"
+              :disabled="!canSend"
               :loading="isLoading"
               @click="askQuestion"
             >
+              <el-icon><Position /></el-icon>
               发送
             </el-button>
           </div>
-        </div>
-      </div>
+        </footer>
+      </section>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, nextTick } from 'vue'
-import { Plus, Delete } from '@element-plus/icons-vue'
+import { computed, nextTick, onMounted, ref } from 'vue'
+import { ChatDotRound, Delete, Document, Plus, Position } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import { useUserStore } from '@/stores/user'
 import { useMarkdown } from '@/composables/useMarkdown'
 import {
-  getQASessionsApi,
   createQASessionApi,
   deleteQASessionApi,
   getQAHistoryApi,
+  getQASessionsApi,
   getQAStreamUrl,
+  type QAMessage,
+  type QASession,
 } from '@/api/qa'
 
+type ChatMessage = Partial<QAMessage> & {
+  role: 'user' | 'assistant' | 'system'
+  content: string
+}
+
 const userStore = useUserStore()
+const { renderMarkdown } = useMarkdown()
+
 const inputQuestion = ref('')
-const messages = ref<any[]>([])
+const messages = ref<ChatMessage[]>([])
 const isLoading = ref(false)
-const sessions = ref<any[]>([])
+const sessions = ref<QASession[]>([])
 const currentSessionId = ref('')
 const chatContainer = ref<HTMLElement | null>(null)
 
-const { renderMarkdown } = useMarkdown()
+const examplePrompts = [
+  'GB/T 50265 中对泵站厂房的防火分区和疏散要求有哪些？',
+  '核电站防火设计中，电缆竖井和电缆夹层应重点核查哪些条款？',
+]
+
+const hasMessages = computed(() => messages.value.length > 0)
+const canSend = computed(() => Boolean(inputQuestion.value.trim()) && !isLoading.value)
+
+const activeSession = computed(() =>
+  sessions.value.find(session => session.id === currentSessionId.value) || null,
+)
+
+const activeSessionTitle = computed(() => activeSession.value?.title || '新对话')
 
 const scrollToBottom = async () => {
   await nextTick()
@@ -117,33 +199,64 @@ const scrollToBottom = async () => {
   }
 }
 
+const formatSessionTime = (time: string) => {
+  const date = new Date(time)
+  if (Number.isNaN(date.getTime())) return '--'
+  return date.toLocaleString('zh-CN', {
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+  })
+}
+
+const getSessionMessageCount = (session: QASession) => {
+  const count = session._count?.messages ?? 0
+  return count > 0 ? `${count} 条消息` : '等待提问'
+}
+
 const loadSessions = async () => {
   try {
     const { data } = await getQASessionsApi()
     sessions.value = data || []
-  } catch (e) {
-    console.error(e)
+
+    const hasCurrentSession = sessions.value.some(session => session.id === currentSessionId.value)
+    if (!hasCurrentSession) {
+      if (sessions.value.length > 0) {
+        await switchSession(sessions.value[0].id)
+      } else {
+        currentSessionId.value = ''
+        messages.value = []
+      }
+    }
+  } catch (error) {
+    console.error(error)
   }
 }
 
 const createSession = async () => {
   try {
     const { data } = await createQASessionApi()
-    sessions.value.unshift(data)
+    sessions.value = [data, ...sessions.value.filter(session => session.id !== data.id)]
     currentSessionId.value = data.id
     messages.value = []
-  } catch (e) {
-    ElMessage.error('创建会话失败')
+    await scrollToBottom()
+    return data
+  } catch (error) {
+    ElMessage.error('创建会话失败，请稍后重试')
+    return null
   }
 }
 
 const switchSession = async (sessionId: string) => {
+  if (!sessionId) return
   currentSessionId.value = sessionId
+
   try {
     const { data } = await getQAHistoryApi(sessionId)
-    messages.value = data || []
-    scrollToBottom()
-  } catch (e) {
+    messages.value = (data || []) as ChatMessage[]
+    await scrollToBottom()
+  } catch (error) {
     messages.value = []
   }
 }
@@ -151,28 +264,51 @@ const switchSession = async (sessionId: string) => {
 const deleteSession = async (sessionId: string) => {
   try {
     await deleteQASessionApi(sessionId)
-    sessions.value = sessions.value.filter(s => s.id !== sessionId)
+    sessions.value = sessions.value.filter(session => session.id !== sessionId)
+
     if (currentSessionId.value === sessionId) {
-      currentSessionId.value = ''
-      messages.value = []
+      if (sessions.value.length > 0) {
+        await switchSession(sessions.value[0].id)
+      } else {
+        currentSessionId.value = ''
+        messages.value = []
+      }
     }
-  } catch (e) {
-    ElMessage.error('删除失败')
+  } catch (error) {
+    ElMessage.error('删除会话失败，请稍后重试')
   }
 }
 
-const buildRequestHistory = () => messages.value
-  .filter(m => ['user', 'assistant'].includes(m.role) && String(m.content || '').trim())
-  .slice(-12)
-  .map(m => ({ role: m.role, content: String(m.content || '').slice(0, 4000) }))
+const selectExamplePrompt = (prompt: string) => {
+  inputQuestion.value = prompt
+}
+
+const buildRequestHistory = () =>
+  messages.value
+    .filter(message => ['user', 'assistant'].includes(message.role) && String(message.content || '').trim())
+    .slice(-12)
+    .map(message => ({
+      role: message.role,
+      content: String(message.content || '').slice(0, 4000),
+    }))
 
 const parseSseEvent = (eventText: string) => {
   const eventLine = eventText.split('\n').find(line => line.startsWith('event:'))
-  const dataLines = eventText.split('\n').filter(line => line.startsWith('data:')).map(line => line.replace('data:', '').trim())
+  const dataLines = eventText
+    .split('\n')
+    .filter(line => line.startsWith('data:'))
+    .map(line => line.replace('data:', '').trim())
+
   if (!dataLines.length) return null
-  return {
-    event: eventLine?.replace('event:', '').trim(),
-    data: JSON.parse(dataLines.join('\n')),
+
+  try {
+    return {
+      event: eventLine?.replace('event:', '').trim(),
+      data: JSON.parse(dataLines.join('\n')),
+    }
+  } catch (error) {
+    console.error('Failed to parse SSE event:', error)
+    return null
   }
 }
 
@@ -183,13 +319,16 @@ const askQuestion = async () => {
   const history = buildRequestHistory()
   inputQuestion.value = ''
 
-  // 如果没有会话，先创建
   if (!currentSessionId.value) {
-    await createSession()
+    const createdSession = await createSession()
+    if (!createdSession) {
+      inputQuestion.value = question
+      return
+    }
   }
 
   messages.value.push({ role: 'user', content: question })
-  const assistantMessage = { role: 'assistant', content: '' }
+  const assistantMessage: ChatMessage = { role: 'assistant', content: '' }
   messages.value.push(assistantMessage)
   await scrollToBottom()
 
@@ -200,7 +339,7 @@ const askQuestion = async () => {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${token}`,
+        Authorization: `Bearer ${token}`,
       },
       body: JSON.stringify({
         question,
@@ -218,6 +357,7 @@ const askQuestion = async () => {
     while (true) {
       const { value, done } = await reader.read()
       if (done) break
+
       buffer += decoder.decode(value, { stream: true })
       const events = buffer.split('\n\n')
       buffer = events.pop() || ''
@@ -226,33 +366,34 @@ const askQuestion = async () => {
         const parsed = parseSseEvent(eventText)
         if (!parsed) continue
 
-        if (parsed.event === 'meta' && parsed.data.sessionId) {
-          currentSessionId.value = parsed.data.sessionId
+        if (parsed.event === 'chunk') {
+          assistantMessage.content = parsed.data?.content || assistantMessage.content || ''
+        } else if (parsed.event === 'done') {
+          assistantMessage.content = parsed.data?.answer || assistantMessage.content || ''
+        } else if (parsed.event === 'error') {
+          throw new Error(parsed.data?.message || 'STREAM_ERROR')
         }
-        if (parsed.event === 'delta') {
-          assistantMessage.content += parsed.data.content || ''
-          scrollToBottom()
-        }
-        if (parsed.event === 'done' && parsed.data.answer) {
-          assistantMessage.content = parsed.data.answer
-        }
-        if (parsed.event === 'error') throw new Error(parsed.data.error || 'STREAM_FAILED')
       }
+
+      await scrollToBottom()
     }
 
-    if (!assistantMessage.content.trim()) assistantMessage.content = '未收到有效回答。'
-    loadSessions() // 刷新会话列表（标题可能更新了）
-  } catch (e) {
+    if (!assistantMessage.content) {
+      assistantMessage.content = '暂未返回有效回答，请稍后重试。'
+    }
+  } catch (error) {
     ElMessage.error('问答请求失败，请稍后重试')
-    assistantMessage.content = '抱歉，我现在无法回答您的问题。'
+    assistantMessage.content = '抱歉，我暂时无法完成这次问答。请稍后重试，或补充更具体的标准编号与审查场景。'
   } finally {
     isLoading.value = false
-    scrollToBottom()
+    await scrollToBottom()
   }
 }
 
 const handleEnter = (event: KeyboardEvent) => {
-  if (!event.shiftKey) askQuestion()
+  if (event.shiftKey) return
+  event.preventDefault()
+  askQuestion()
 }
 
 onMounted(() => {
@@ -262,83 +403,132 @@ onMounted(() => {
 
 <style scoped>
 .qa-page {
-  height: calc(100vh - 120px);
-  min-height: 500px;
+  height: calc(100vh - 92px);
+  min-height: calc(100vh - 92px);
+  color: var(--corp-text-primary);
+  overflow: hidden;
+  background: #f6f8fc;
 }
 
 .qa-shell {
   height: 100%;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: 280px minmax(0, 1fr);
+  gap: 16px;
+  padding: 16px;
+}
+
+.session-panel,
+.chat-panel {
+  min-height: 0;
+  border: 1px solid rgba(226, 232, 240, 0.9);
+  border-radius: 20px;
+  background: #fff;
+}
+
+.session-panel {
   display: flex;
   flex-direction: column;
-  gap: 16px;
-}
-
-.qa-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
-}
-
-.qa-header-left h2 {
-  font-size: 18px;
-  font-weight: 600;
-  margin: 0 0 4px;
-  color: var(--corp-text-primary);
-}
-
-.qa-subtitle {
-  font-size: 13px;
-  color: var(--corp-text-secondary);
-  margin: 0;
-}
-
-.qa-body {
-  flex: 1;
-  display: flex;
-  gap: 16px;
-  min-height: 0;
-}
-
-/* 侧边栏 */
-.session-sidebar {
-  width: 220px;
-  flex-shrink: 0;
-  background: #fff;
-  border: 1px solid #e2e8f0;
-  border-radius: 8px;
+  padding: 16px;
   overflow: hidden;
 }
 
-.session-list {
-  height: 100%;
-  overflow-y: auto;
-  padding: 8px;
-}
-
-.session-item {
+.session-panel__header,
+.chat-panel__header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 8px 10px;
-  border-radius: 6px;
+  gap: 12px;
+  padding-bottom: 14px;
+  margin-bottom: 14px;
+  border-bottom: 1px solid rgba(226, 232, 240, 0.8);
+}
+
+.session-panel__header h2,
+.chat-panel__header h2 {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 700;
+  line-height: 1.3;
+}
+
+.chat-panel__subtitle {
+  margin: 6px 0 0;
+  color: var(--corp-text-secondary);
+  font-size: 12px;
+}
+
+.new-session-btn {
+  flex-shrink: 0;
+  border-radius: 999px;
+}
+
+.session-list {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding-right: 2px;
+}
+
+.session-item {
+  width: 100%;
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid var(--color-gray-200);
+  border-radius: 16px;
+  background: #fff;
+  text-align: left;
   cursor: pointer;
-  font-size: 13px;
-  color: var(--corp-text-primary);
-  transition: background 0.15s;
+  transition:
+    border-color var(--corp-transition-base),
+    box-shadow var(--corp-transition-base);
 }
 
-.session-item:hover {
-  background: #f1f5f9;
-}
-
+.session-item:hover,
 .session-item.active {
-  background: var(--color-primary-50);
-  color: var(--corp-primary);
-  font-weight: 500;
+  border-color: rgba(37, 99, 235, 0.24);
+  box-shadow: 0 10px 22px rgba(15, 23, 42, 0.06);
+}
+
+.session-item__accent {
+  width: 36px;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  border-radius: 12px;
+  background: #eff6ff;
+  color: var(--color-primary-700);
+}
+
+.session-item.active .session-item__accent {
+  background: #2563eb;
+  color: #fff;
+}
+
+.session-item__content {
+  min-width: 0;
+  flex: 1;
+}
+
+.session-item__top {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
 }
 
 .session-title {
   flex: 1;
+  min-width: 0;
+  font-size: 14px;
+  font-weight: 600;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -349,139 +539,464 @@ onMounted(() => {
   flex-shrink: 0;
 }
 
-.session-item:hover .session-delete {
+.session-item:hover .session-delete,
+.session-item.active .session-delete {
   opacity: 1;
 }
 
-.session-empty {
-  text-align: center;
-  color: #94a3b8;
-  font-size: 13px;
-  padding: 24px 0;
-}
-
-/* 聊天区域 */
-.chat-area {
-  flex: 1;
+.session-item__meta {
   display: flex;
-  flex-direction: column;
-  background: #fff;
-  border: 1px solid #e2e8f0;
-  border-radius: 8px;
-  min-width: 0;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 6px;
+  font-size: 12px;
+  color: var(--corp-text-secondary);
 }
 
-.chat-messages {
+.session-empty {
   flex: 1;
-  overflow-y: auto;
-  padding: 16px;
-}
-
-.chat-empty {
-  height: 100%;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  color: #94a3b8;
+  gap: 10px;
+  min-height: 220px;
+  padding: 20px;
+  border: 1px dashed rgba(148, 163, 184, 0.6);
+  border-radius: 18px;
+  background: #f8fafc;
+  text-align: center;
 }
 
-.chat-empty-title {
-  font-size: 18px;
-  font-weight: 600;
-  color: var(--corp-text-primary);
+.session-empty__icon {
+  width: 52px;
+  height: 52px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 16px;
+  background: #fff;
+  color: var(--color-primary-600);
+  font-size: 22px;
+  box-shadow: 0 8px 18px rgba(15, 23, 42, 0.06);
+}
+
+.session-empty h3 {
+  margin: 0;
+  font-size: 16px;
+}
+
+.session-empty p {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.7;
+  color: var(--corp-text-secondary);
+}
+
+.chat-panel {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.chat-panel__header {
+  display: block;
+  padding: 16px 18px 14px;
+}
+
+.chat-panel__subtitle {
+  margin-top: 6px;
+}
+
+.chat-messages {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 18px;
+  background: #f8fafc;
+}
+
+.chat-empty-stage {
+  min-height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.chat-empty-card {
+  width: min(720px, 100%);
+  padding: 20px;
+  border-radius: 18px;
+  border: 1px solid rgba(226, 232, 240, 0.96);
+  background: #fff;
+}
+
+.chat-empty-card h3 {
   margin: 0 0 8px;
+  font-size: 20px;
+  line-height: 1.32;
+}
+
+.chat-empty-card > p {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.7;
+  color: var(--corp-text-secondary);
+}
+
+.chat-empty-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 16px;
+}
+
+.prompt-card {
+  min-height: 84px;
+  padding: 14px;
+  border: 1px solid rgba(226, 232, 240, 0.96);
+  border-radius: 14px;
+  background: #fff;
+  color: var(--corp-text-primary);
+  font-size: 13px;
+  line-height: 1.7;
+  text-align: left;
+  cursor: pointer;
+}
+
+.prompt-card:hover {
+  border-color: rgba(96, 165, 250, 0.72);
+}
+
+.message-list {
+  width: 100%;
+  max-width: none;
+  margin: 0;
+  padding: 0;
+}
+
+.message-stage {
+  min-height: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
 }
 
 .message-row {
-  margin-bottom: 16px;
   display: flex;
+  align-items: flex-start;
+  gap: 12px;
 }
 
 .message-row.user {
-  justify-content: flex-end;
+  flex-direction: row-reverse;
 }
 
-.message-row.assistant {
-  justify-content: flex-start;
+.message-avatar {
+  width: 36px;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  border-radius: 12px;
+  font-size: 12px;
+  font-weight: 700;
 }
 
-.message-bubble {
-  max-width: min(720px, 80%);
-  border-radius: 8px;
-  padding: 10px 14px;
-  font-size: 13px;
-  line-height: 1.6;
-}
-
-.message-row.user .message-bubble {
-  background: var(--corp-primary);
+.message-row.user .message-avatar {
+  background: #111827;
   color: #fff;
 }
 
-.message-row.assistant .message-bubble {
-  background: #f8fafc;
-  border: 1px solid #e2e8f0;
-  color: var(--corp-text-primary);
+.message-row.assistant .message-avatar {
+  background: #dbeafe;
+  color: var(--color-primary-700);
 }
 
-.role-label {
-  margin: 0 0 4px;
-  font-size: 11px;
-  font-weight: 600;
-  opacity: 0.7;
+.message-card {
+  width: min(100%, 1080px);
+  max-width: calc(100% - 48px);
+  padding: 14px 16px;
+  border-radius: 16px;
+  border: 1px solid rgba(226, 232, 240, 0.94);
+  background: #fff;
 }
 
-.message-content :deep(code) {
-  background: rgba(0, 0, 0, 0.06);
-  padding: 1px 4px;
-  border-radius: 3px;
+.message-row.user .message-card {
+  background: #eff6ff;
+  border-color: rgba(96, 165, 250, 0.18);
+}
+
+.message-card__meta {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 10px;
   font-size: 12px;
+  color: var(--corp-text-secondary);
+}
+
+.message-row.user .message-card__meta {
+  color: var(--color-primary-700);
+}
+
+.message-author {
+  font-weight: 600;
+}
+
+.message-separator {
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: currentColor;
+  opacity: 0.4;
+}
+
+.message-content {
+  font-size: 15px;
+  line-height: 1.8;
+  word-break: break-word;
+}
+
+.message-content :deep(*) {
+  max-width: 100%;
+}
+
+.message-content :deep(p) {
+  margin: 0 0 12px;
+}
+
+.message-content :deep(p:last-child) {
+  margin-bottom: 0;
+}
+
+.message-content :deep(ul),
+.message-content :deep(ol) {
+  margin: 0 0 12px;
+  padding-left: 20px;
+}
+
+.message-content :deep(li + li) {
+  margin-top: 6px;
 }
 
 .message-content :deep(strong) {
+  font-weight: 700;
+}
+
+.message-content :deep(blockquote) {
+  margin: 12px 0;
+  padding: 10px 14px;
+  border-left: 3px solid rgba(37, 99, 235, 0.36);
+  background: rgba(239, 246, 255, 0.7);
+  border-radius: 0 12px 12px 0;
+}
+
+.message-content :deep(code) {
+  padding: 2px 6px;
+  border-radius: 6px;
+  background: rgba(15, 23, 42, 0.06);
+  font-size: 13px;
+  font-family: var(--font-mono);
+}
+
+.message-content :deep(pre) {
+  margin: 12px 0;
+  padding: 14px 16px;
+  overflow-x: auto;
+  border-radius: 14px;
+  background: #0f172a;
+  color: #f8fafc;
+}
+
+.message-content :deep(pre code) {
+  padding: 0;
+  background: transparent;
+  color: inherit;
+}
+
+.message-content :deep(table) {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 14px 0;
+  overflow: hidden;
+  border-radius: 12px;
+}
+
+.message-content :deep(th),
+.message-content :deep(td) {
+  padding: 10px 12px;
+  border: 1px solid rgba(226, 232, 240, 0.95);
+  text-align: left;
+}
+
+.message-content :deep(th) {
+  background: rgba(248, 250, 252, 0.96);
   font-weight: 600;
 }
 
 .stream-indicator {
-  display: flex;
+  display: inline-flex;
   align-items: center;
-  gap: 6px;
-  padding: 8px 0;
-  color: #94a3b8;
+  gap: 8px;
+  width: fit-content;
+  margin-left: 48px;
+  padding: 10px 14px;
+  border-radius: 999px;
+  background: #fff7ed;
+  color: #9a3412;
   font-size: 12px;
 }
 
 .stream-indicator span {
-  width: 6px;
-  height: 6px;
+  width: 7px;
+  height: 7px;
   border-radius: 50%;
-  background: var(--corp-primary);
-  animation: pulse 1s infinite ease-in-out;
+  background: currentColor;
+  animation: qa-pulse 1s infinite ease-in-out;
 }
 
-.stream-indicator span:nth-child(2) { animation-delay: 0.15s; }
-.stream-indicator span:nth-child(3) { animation-delay: 0.3s; }
-
-@keyframes pulse {
-  0%, 100% { transform: translateY(0); opacity: 0.35; }
-  50% { transform: translateY(-3px); opacity: 1; }
+.stream-indicator span:nth-child(2) {
+  animation-delay: 0.15s;
 }
 
-.composer {
+.stream-indicator span:nth-child(3) {
+  animation-delay: 0.3s;
+}
+
+@keyframes qa-pulse {
+  0%,
+  100% {
+    transform: translateY(0);
+    opacity: 0.35;
+  }
+
+  50% {
+    transform: translateY(-3px);
+    opacity: 1;
+  }
+}
+
+.composer-panel {
+  margin: 0 18px 18px;
+  padding: 14px 16px;
+  border-top: none;
+  border-radius: 18px;
+  background: #fff;
+  box-shadow: inset 0 0 0 1px rgba(226, 232, 240, 0.9);
+}
+
+.composer-panel__body {
   display: flex;
-  gap: 8px;
-  padding: 12px 16px;
-  border-top: 1px solid #e2e8f0;
   align-items: flex-end;
+  gap: 14px;
 }
 
-.composer .el-textarea {
+.composer-panel__body :deep(.el-textarea) {
   flex: 1;
 }
 
+.composer-panel__body :deep(.el-textarea__inner) {
+  min-height: 108px !important;
+  padding: 16px 16px;
+  border: none;
+  border-radius: 16px;
+  background: #f8fafc;
+  box-shadow: inset 0 0 0 1px rgba(209, 213, 219, 0.8);
+  font-size: 14px;
+  line-height: 1.8;
+  color: var(--corp-text-primary);
+}
+
+.composer-panel__body :deep(.el-textarea__inner:focus) {
+  box-shadow:
+    inset 0 0 0 1px rgba(37, 99, 235, 0.8),
+    0 0 0 4px rgba(59, 130, 246, 0.1);
+}
+
+.send-btn {
+  flex-shrink: 0;
+  width: 132px;
+  height: 56px;
+  border: none;
+  border-radius: 16px;
+  background: linear-gradient(135deg, #111827 0%, #1d4ed8 100%);
+}
+
+.send-btn:hover,
+.send-btn:focus {
+  transform: translateY(-1px);
+}
+
+.send-btn.is-disabled,
+.send-btn.is-disabled:hover {
+  transform: none;
+  box-shadow: none;
+}
+
+@media (max-width: 1200px) {
+  .qa-shell {
+    grid-template-columns: 260px minmax(0, 1fr);
+  }
+
+  .message-card {
+    width: 100%;
+    max-width: calc(100% - 48px);
+  }
+}
+
+@media (max-width: 1024px) {
+  .qa-shell {
+    grid-template-columns: 240px minmax(0, 1fr);
+  }
+}
+
 @media (max-width: 768px) {
-  .session-sidebar { display: none; }
-  .qa-page { height: auto; min-height: calc(100vh - 120px); }
+  .qa-page {
+    height: auto;
+    min-height: auto;
+    overflow: visible;
+  }
+
+  .qa-shell {
+    grid-template-columns: 1fr;
+    padding: 12px;
+  }
+
+  .session-panel,
+  .chat-panel {
+    border-radius: 18px;
+  }
+
+  .session-list {
+    max-height: 260px;
+  }
+
+  .chat-panel__header,
+  .chat-messages,
+  .composer-panel {
+    padding-left: 14px;
+    padding-right: 14px;
+  }
+
+  .chat-empty-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .message-card {
+    max-width: calc(100% - 44px);
+    padding: 13px 14px;
+  }
+
+  .composer-panel__body {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .send-btn {
+    width: 100%;
+  }
 }
 </style>

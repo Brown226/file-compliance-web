@@ -108,6 +108,7 @@ model Task {
   reviewPlan         Json?          @map("review_plan")         // 审查方案
   knowledgeCategoryId String?       // 关联的知识子库 ID
   ruleLibraryId      String?        // 关联的规则库 ID
+  ruleLibrary        RuleLibrary?   @relation(fields: [ruleLibraryId], references: [id])
   files              TaskFile[]
   details            TaskDetail[]
   taskStandards      TaskStandard[]
@@ -191,6 +192,8 @@ model TaskDetail {
   issueType     String    // TYPO, VIOLATION, NAMING, ENCODING, ATTRIBUTE, HEADER, PAGE, SCAN, TEMPLATE
   ruleCode      String?   // 规则错误代码: NAME_001, CODE_001, UNIT_001, ATTR_001, HEADER_001, PAGE_001, SCAN_001 等
   severity      String    @default("warning") // error, warning, info
+  reviewSource  String?   @default("RULE_ENGINE") @map("review_source") // RULE_ENGINE, RULE_LIBRARY, STANDARD_REF, AI
+  ruleLibraryItemId String? @map("rule_library_item_id")
   originalText  String
   suggestedText String?
   description   String?
@@ -474,6 +477,12 @@ model KnowledgeCategory {
   chunkMode       String            @default("auto") @map("chunk_mode")  // auto, fixed, paragraph, table-aware
   maxChars        Int               @default(900) @map("max_chars")       // 分块最大字符数
   overlap         Int               @default(120) @map("overlap")         // 分块重叠字符数
+  minSimilarity   Float             @default(0.6) @map("min_similarity")
+  directReturnThreshold Float       @default(0.9) @map("direct_return_threshold")
+  maxReferenceChars Int             @default(5000) @map("max_reference_chars")
+  enableRerank    Boolean           @default(true) @map("enable_rerank")
+  embeddingUseDocumentTitle Boolean @default(true) @map("embedding_use_document_title")
+  embeddingUseClauseId Boolean      @default(false) @map("embedding_use_clause_id")
   createdAt       DateTime          @default(now())
   updatedAt       DateTime          @updatedAt
 
@@ -500,6 +509,7 @@ model VectorDocument {
   chunkIndex      Int                 @default(0) @map("chunk_index")
   metadata        Json?                                       // 附加元数据
   embedding       Unsupported("vector(1024)")?               // pgvector 向量
+  vectorStatus    String              @default("PENDING") @map("vector_status") // PENDING/STARTED/SUCCESS/FAILURE
   createdAt       DateTime            @default(now()) @map("created_at")
   updatedAt       DateTime            @updatedAt @map("updated_at")
 
@@ -549,6 +559,7 @@ model RuleLibrary {
   sourceFileName  String?             @map("source_file_name") // 上传的源文件名
   status          RuleLibraryStatus   @default(DRAFT)    // 草稿/已发布/归档
   createdBy       String                                // 创建人
+  tasks           Task[]
   items           RuleLibraryItem[]
   createdAt       DateTime            @default(now())
   updatedAt       DateTime            @updatedAt
@@ -572,8 +583,16 @@ model RuleLibraryItem {
   description     String?       @db.Text               // 规则描述
   checkMethod     String?       @map("check_method") @db.Text // 检查方法
   severity        String?       @default("warning")     // 严重度
+  executionType   String?       @default("BUILTIN_PREFIX") @map("execution_type") // BUILTIN_PREFIX/REGEX/KEYWORD_REQUIRED/KEYWORD_FORBIDDEN/MANUAL
+  builtinPrefix   String?       @map("builtin_prefix")
+  targetScope     String?       @default("TEXT") @map("target_scope") // FILE_NAME/TEXT/HEADER/TABLE/DWG
+  params          Json?
+  messageTemplate String?       @map("message_template") @db.Text
+  sourceQuote     String?       @map("source_quote") @db.Text
+  sourceLocation  String?       @map("source_location")
   enabled         Boolean       @default(true)
   createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
 
   @@index([libraryId])
   @@map("rule_library_items")

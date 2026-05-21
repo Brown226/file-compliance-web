@@ -71,9 +71,9 @@ export const listSessions = async (req: AuthRequest, res: Response): Promise<voi
 export const createSession = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const userId = req.user!.id;
-    const { title, taskId } = req.body;
+    const { title, taskId } = (req.body || {}) as { title?: string; taskId?: string | null };
     const session = await prisma.qASession.create({
-      data: { userId, title: title || '新对话', taskId },
+      data: { userId, title: title || '新对话', taskId: taskId || null },
     });
     success(res, session);
   } catch (err) {
@@ -146,25 +146,40 @@ export const askStream = async (req: AuthRequest, res: Response): Promise<void> 
     const searchQuery = [recentQuestions, question].filter(Boolean).join('\n');
 
     // 使用 SearchService 检索（支持查询优化）
-    const knowledgeResults = await SearchService.search(searchQuery, {
-      limit: 8,
-      sourceTypes: ['standard', 'law', 'rule', 'reference'],
-      rerank: true,
-    });
+    let knowledgeResults: any[] = [];
+    let ragEnabled = true;
 
-    send('meta', { tools: [{ name: 'knowledge_search', status: `completed:${knowledgeResults.length}` }] });
+    try {
+      knowledgeResults = await SearchService.search(searchQuery, {
+        limit: 8,
+        sourceTypes: ['standard', 'law', 'rule', 'reference'],
+        rerank: true,
+      });
+    } catch (searchError: any) {
+      console.warn(`[QnA] 知识库检索失败，降级为无RAG模式: ${searchError.message}`);
+      ragEnabled = false;
+      knowledgeResults = [];
+    }
+
+    send('meta', { tools: [{ name: 'knowledge_search', status: `completed:${knowledgeResults.length}${ragEnabled ? '' : ':degraded'}` }] });
 
     // 构建 LLM 消息
     const knowledgeContext = knowledgeResults.map((item, i) =>
       `[K${i + 1}] ${item.title || ''}${item.clause_id ? ` ${item.clause_id}` : ''}: ${item.content}`
     ).join('\n');
 
-    const evidencePrompt = [
-      '知识库检索结果:',
-      knowledgeContext || '未检索到相关内容。',
-      '',
-      '请基于以上知识库内容回答用户问题。如果知识库中没有足够依据，请如实告知。',
-    ].join('\n');
+    const evidencePrompt = ragEnabled
+      ? [
+          '知识库检索结果:',
+          knowledgeContext || '未检索到相关内容。',
+          '',
+          '请基于以上知识库内容回答用户问题。如果知识库中没有足够依据，请如实告知。',
+        ].join('\n')
+      : [
+          '[系统提示] 当前知识库检索服务不可用，将以通用模式回答问题。',
+          '',
+          '请基于你的专业知识回答用户问题。如果你知道相关的标准规范或法规要求，可以引用；如果不确定，请明确说明。',
+        ].join('\n');
 
     const llmMessages = [
       { role: 'system' as const, content: buildSystemPrompt() },

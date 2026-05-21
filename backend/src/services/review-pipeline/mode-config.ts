@@ -2,7 +2,7 @@
  * 审查模式能力配置（数据驱动）
  *
  * 重构说明（2026-04-19）：
- * 原先 7 个 Pipeline 类中有 4 个（LIBRARY_REVIEW / CONSISTENCY / FULL_REVIEW / CUSTOM_RULE）
+ * 原先 7 个 Pipeline 类中有 3 个（LIBRARY_REVIEW / CONSISTENCY / CUSTOM_RULE）
  * 的 execute() / runFastPhase() / runSlowPhase() 逻辑几乎一模一样，
  * 仅在"是否启用 AI / 标准引用 / 跨文件检查"上有差异。
  *
@@ -39,7 +39,6 @@ export interface ModeCapabilities {
  * - TYPO_GRAMMAR （错别字）  = 规则 + AI(纯LLM) + 术语过滤          → 轻量模式
  * - MULTIMODAL   （多模态）  = 规则 + 表格/公式 + 多模态LLM         → 图表专家模式
  * - CUSTOM_RULE  （自定义）  = 仅规则引擎                           → 纯规则模式
- * - FULL_REVIEW  （全量审查）= 规则 + 标准引用 + AI + 跨文件         → 最完整 = CONSISTENCY
  */
 export const MODE_CAPABILITIES: Record<ReviewModeType, ModeCapabilities> = {
   LIBRARY_REVIEW: {
@@ -86,16 +85,8 @@ export const MODE_CAPABILITIES: Record<ReviewModeType, ModeCapabilities> = {
     rules: true,
     standardRef: 'config',
     ai: false,
-    aiStrategy: 'standard',  // ai=false 时此字段无意义，保留占位
-    crossFile: false,
-    needsRefFiles: false,
-  },
-  FULL_REVIEW: {
-    rules: true,
-    standardRef: 'on',
-    ai: true,
     aiStrategy: 'standard',
-    crossFile: true,
+    crossFile: false,
     needsRefFiles: false,
   },
 };

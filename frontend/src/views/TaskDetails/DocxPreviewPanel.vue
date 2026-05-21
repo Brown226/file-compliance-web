@@ -18,11 +18,19 @@ import { Loading, WarningFilled } from '@element-plus/icons-vue'
 import request from '@/utils/request'
 import mammoth from 'mammoth'
 
+const reportDebug = (event: string, data: Record<string, any>) => {
+  void fetch('/api/debug/log', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ scope: 'docx-locate', event, data, ts: Date.now() }),
+  }).catch(() => {})
+}
+
 const props = defineProps<{
   taskId: string
   fileId: string | null
   fileUrl?: string
-  locateTarget?: { originalText: string; locateCandidates?: string[]; locateHint?: string } | null
+  locateTarget?: { originalText: string; locateCandidates?: string[]; locateMeta?: any; locateHint?: string } | null
 }>()
 
 const emit = defineEmits<{
@@ -33,6 +41,8 @@ const loading = ref(false)
 const error = ref('')
 const renderedHtml = ref('')
 const contentRef = ref<HTMLElement | null>(null)
+const lastLocateTriggerId = ref('')
+const HIGHLIGHT_CLASS = 'docx-highlight-yellow'
 
 const loadDocx = async () => {
   if (!props.fileId && !props.fileUrl) return
@@ -94,17 +104,34 @@ const getLocateTerms = (): string[] => {
   const target = props.locateTarget
   if (!target) return []
   const list = Array.isArray(target.locateCandidates) ? target.locateCandidates : []
-  const terms = [...list, target.originalText]
+  const quote = target.locateMeta?.quote?.text ? [target.locateMeta.quote.text] : []
+  const context = [
+    target.locateMeta?.context?.prefix || '',
+    target.locateMeta?.context?.suffix || '',
+  ].filter(Boolean)
+  const terms = [...quote, ...list, target.originalText, ...context]
     .map(s => String(s || '').trim())
     .filter(Boolean)
   return [...new Set(terms)]
 }
 
 const highlightAndScroll = (): boolean => {
-  if (!contentRef.value) return false
+  if (!contentRef.value) {
+    reportDebug('highlight-skip', { reason: 'missing-content-ref' })
+    return false
+  }
+
+  const currentTriggerId = props.locateTarget?.triggerId || ''
+  if (currentTriggerId && currentTriggerId === lastLocateTriggerId.value) {
+    reportDebug('highlight-skip', { reason: 'duplicate-trigger', triggerId: currentTriggerId })
+    return true
+  }
+
+  const startedAt = performance.now()
 
   // 清除旧高亮
-  contentRef.value.querySelectorAll('.docx-highlight').forEach(el => {
+  const oldHighlights = contentRef.value.querySelectorAll(`.${HIGHLIGHT_CLASS}`)
+  oldHighlights.forEach(el => {
     const parent = el.parentNode
     if (parent) {
       parent.replaceChild(document.createTextNode(el.textContent || ''), el)
@@ -113,12 +140,18 @@ const highlightAndScroll = (): boolean => {
   })
 
   const locateTerms = getLocateTerms()
-  if (!locateTerms.length) return false
+  if (!locateTerms.length) {
+    reportDebug('highlight-skip', { reason: 'no-locate-terms', elapsedMs: Number((performance.now() - startedAt).toFixed(2)) })
+    return false
+  }
 
   // 在 DOM 中查找并高亮文本
   const walker = document.createTreeWalker(contentRef.value, NodeFilter.SHOW_TEXT)
   let found = false
+  let visitedNodes = 0
+  let hitCount = 0
   while (walker.nextNode()) {
+    visitedNodes++
     const node = walker.currentNode as Text
 
     let hitTerm = ''
@@ -137,14 +170,16 @@ const highlightAndScroll = (): boolean => {
       range.setStart(node, idx)
       range.setEnd(node, idx + hitTerm.length)
       const mark = document.createElement('mark')
-      mark.className = 'docx-highlight'
+      mark.className = HIGHLIGHT_CLASS
       range.surroundContents(mark)
+      hitCount++
 
       if (!found) {
         mark.scrollIntoView({ behavior: 'smooth', block: 'center' })
         found = true
+        if (currentTriggerId) lastLocateTriggerId.value = currentTriggerId
+        break
       }
-      continue
     }
 
     if (!found && locateTerms.some(term => includesLoose(node.data, term)) && node.data.trim()) {
@@ -152,12 +187,24 @@ const highlightAndScroll = (): boolean => {
       range.setStart(node, 0)
       range.setEnd(node, node.data.length)
       const mark = document.createElement('mark')
-      mark.className = 'docx-highlight'
+      mark.className = HIGHLIGHT_CLASS
       range.surroundContents(mark)
       mark.scrollIntoView({ behavior: 'smooth', block: 'center' })
+      hitCount++
       found = true
+      if (currentTriggerId) lastLocateTriggerId.value = currentTriggerId
+      break
     }
   }
+
+  reportDebug('highlight-finish', {
+    found,
+    visitedNodes,
+    hitCount,
+    locateTermsCount: locateTerms.length,
+    oldHighlights: oldHighlights.length,
+    elapsedMs: Number((performance.now() - startedAt).toFixed(2)),
+  })
 
   return found
 }
@@ -167,6 +214,11 @@ watch(() => props.locateTarget, () => {
   nextTick(() => {
     const target = props.locateTarget
     if (!target?.originalText?.trim()) return
+    reportDebug('locate-trigger', {
+      originalTextLength: target.originalText.length,
+      locateCandidatesCount: Array.isArray(target.locateCandidates) ? target.locateCandidates.length : 0,
+      hasLocateMeta: !!target.locateMeta,
+    })
     const found = highlightAndScroll()
     emit('locateResult', {
       success: found,
@@ -235,9 +287,9 @@ watch(() => props.locateTarget, () => {
 }
 
 /* 高亮标记 */
-.docx-content :deep(.docx-highlight) {
-  background: rgba(239, 68, 68, 0.2);
-  border-bottom: 2px solid #EF4444;
+.docx-content :deep(.docx-highlight-yellow) {
+  background: rgba(250, 204, 21, 0.35);
+  border-bottom: 2px solid #EAB308;
   padding: 1px 2px;
   border-radius: 3px;
   scroll-margin: 100px;

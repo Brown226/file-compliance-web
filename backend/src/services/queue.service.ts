@@ -75,8 +75,19 @@ export function initQueueProcessors(): void {
 
 /** 添加审查任务到队列 */
 export async function addReviewJob(taskId: string): Promise<Bull.Job<ReviewJobData>> {
+  const jobId = `review:${taskId}`;
+  const existingJob = await reviewQueue.getJob(jobId);
+  if (existingJob) {
+    const state = await existingJob.getState().catch(() => 'unknown');
+    const replaceableStates = new Set(['completed', 'failed', 'delayed', 'waiting', 'paused']);
+    if (replaceableStates.has(state)) {
+      await existingJob.remove().catch(() => { /* ignore */ });
+    } else {
+      return existingJob;
+    }
+  }
   const job = await reviewQueue.add('review', { taskId }, {
-    jobId: `review:${taskId}`,
+    jobId,
   });
   console.log(`[Queue] 审查任务已入队: ${taskId} (jobId=${job.id})`);
   return job;

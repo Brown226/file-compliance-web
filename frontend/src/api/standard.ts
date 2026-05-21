@@ -11,6 +11,7 @@ export function getStandardsApi(params?: {
   title?: string
   search?: string
   isActive?: boolean
+  standardStatus?: 'CURRENT' | 'UPCOMING' | 'ABOLISHED'
   folderId?: string
   includeSubFolders?: boolean
 }) {

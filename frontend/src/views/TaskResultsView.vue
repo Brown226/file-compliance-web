@@ -1,7 +1,7 @@
 <template>
   <div class="task-results-view">
-    <!-- 步骤条头部 -->
-    <div class="step-header">
+    <!-- 步骤条头部（仅在新任务流程中显示；本组件专用于 /review/:id 历史记录入口，故默认隐藏） -->
+    <!-- <div class="step-header">
       <div class="step-item" :class="{ active: currentStep >= 0, completed: currentStep > 0 }">
         <div class="step-circle">
           <span v-if="currentStep > 0">✓</span>
@@ -22,7 +22,7 @@
         <div class="step-circle">3</div>
         <span class="step-label">查看并编辑结果</span>
       </div>
-    </div>
+    </div> -->
 
     <!-- 加载状态（仅首屏加载时显示，不阻塞审查中结果页） -->
     <div v-if="loading && !reviewing" class="loading-overlay">
@@ -33,7 +33,7 @@
     <!-- 主内容区：左右分栏 -->
     <div class="main-content">
       <!-- 左侧：文件预览 -->
-      <div class="left-panel">
+      <div class="left-panel" :style="leftPanelStyle" ref="leftPanel">
         <div class="panel-header">
           <!-- 文件切换 Tab -->
           <div class="file-tabs" v-if="files.length > 1">
@@ -93,8 +93,20 @@
         </div>
       </div>
 
+      <!-- 可拖拽分割条 -->
+      <div
+        class="resize-divider"
+        :class="{ active: isResizing }"
+        @mousedown="startResize"
+      >
+        <div class="divider-line"></div>
+        <div class="divider-handle">
+          <span class="handle-dots">⋮</span>
+        </div>
+      </div>
+
       <!-- 右侧：AI审查报告面板 -->
-      <div class="right-panel">
+      <div class="right-panel" :style="rightPanelStyle">
         <!-- 面板头部 -->
         <div class="panel-header">
           <div class="header-left">
@@ -208,12 +220,28 @@
               </div>
             </div>
 
-            <div v-if="filteredDetails.length === 0" class="review-summary">
+            <div v-if="issueDetails.length === 0" class="review-summary">
               <h3 class="summary-title">审查摘要</h3>
               <div v-if="reviewSummary" class="summary-cards">
                 <div class="summary-card">
-                  <span class="summary-label">审查模式</span>
-                  <span class="summary-value">{{ getModeLabel(reviewSummary.reviewMode) }}</span>
+                  <span class="summary-label">审查目标</span>
+                  <span class="summary-value">{{ reviewPlanSummary.objective }}</span>
+                </div>
+                <div class="summary-card">
+                  <span class="summary-label">审查依据</span>
+                  <span class="summary-value">{{ reviewPlanSummary.evidence }}</span>
+                </div>
+                <div class="summary-card">
+                  <span class="summary-label">执行强度</span>
+                  <span class="summary-value">{{ reviewPlanSummary.execution }}</span>
+                </div>
+                <div class="summary-card" v-if="reviewPlanSummary.enhancements !== '无'">
+                  <span class="summary-label">增强项</span>
+                  <span class="summary-value">{{ reviewPlanSummary.enhancements }}</span>
+                </div>
+                <div class="summary-card sub">
+                  <span class="summary-label">兼容模式</span>
+                  <span class="summary-value">{{ reviewPlanSummary.legacyMode }}</span>
                 </div>
                 <div class="summary-card">
                   <span class="summary-label">审查文件</span>
@@ -252,7 +280,7 @@
           <!-- Tab 2: 问题明细（核心功能） -->
           <div v-if="activeTab === 'suggestions'" class="tab-pane">
             <!-- 批量操作工具栏 -->
-            <div v-if="filteredDetails.length > 0" class="batch-toolbar">
+            <div v-if="issueDetails.length > 0" class="batch-toolbar">
               <el-checkbox
                 v-model="selectAll"
                 @change="handleSelectAll"
@@ -273,9 +301,20 @@
             </div>
 
             <!-- 问题卡片列表 -->
-            <div v-if="filteredDetails.length > 0" class="suggestions-list">
+            <div v-if="noResultReasons.length > 0" class="explanation-panel">
+              <div class="explanation-title">审查说明</div>
+              <p
+                v-for="(reason, idx) in noResultReasons"
+                :key="`reason-${idx}`"
+                class="explanation-text"
+              >
+                {{ reason }}
+              </p>
+            </div>
+
+            <div v-if="issueDetails.length > 0" class="suggestions-list">
               <div
-                v-for="(item, index) in filteredDetails"
+                v-for="(item, index) in issueDetails"
                 :key="item.id || index"
                 :class="['suggestion-card', { adopted: item.adopted }]"
               >
@@ -366,7 +405,7 @@
               </div>
             </div>
 
-            <el-empty v-else description="未发现修改建议" />
+            <el-empty v-else :description="noResultReasons.length > 0 ? '当前无可直接修改的问题项' : '未发现修改建议'" />
           </div>
 
           <!-- Tab 3: 依据（标准引用/法律法条） -->
@@ -651,6 +690,54 @@ let unsubscribeWs: (() => void) | null = null
 const currentStep = ref(2)
 const activeTab = ref('suggestions')
 const showPlainLanguage = ref(false)
+const leftPanel = ref<HTMLDivElement | null>(null)
+
+// ===== 可拖拽分割条相关 =====
+const isResizing = ref(false)
+const leftPanelWidth = ref(localStorage.getItem('reviewLeftPanelWidth') ? Number(localStorage.getItem('reviewLeftPanelWidth')) : 55) // 默认左侧占55%
+
+const startResize = (e: MouseEvent) => {
+  e.preventDefault()
+  isResizing.value = true
+
+  const startX = e.clientX
+  const startWidth = leftPanel.value?.offsetWidth || 0
+  const containerWidth = (e.currentTarget as HTMLElement).parentElement?.offsetWidth || window.innerWidth
+
+  const onMouseMove = (moveEvent: MouseEvent) => {
+    if (!isResizing.value) return
+
+    const deltaX = moveEvent.clientX - startX
+    const newWidthPercent = ((startWidth + deltaX) / containerWidth) * 100
+
+    // 限制范围：20% - 80%
+    leftPanelWidth.value = Math.max(20, Math.min(80, newWidthPercent))
+  }
+
+  const onMouseUp = () => {
+    isResizing.value = false
+    document.removeEventListener('mousemove', onMouseMove)
+    document.removeEventListener('mouseup', onMouseUp)
+
+    // 保存用户偏好
+    localStorage.setItem('reviewLeftPanelWidth', String(leftPanelWidth.value))
+  }
+
+  document.addEventListener('mousemove', onMouseMove)
+  document.addEventListener('mouseup', onMouseUp)
+}
+
+// 左侧面板的动态样式
+const leftPanelStyle = computed(() => ({
+  flex: 'none',
+  width: `${leftPanelWidth.value}%`,
+}))
+
+// 右侧面板的动态样式
+const rightPanelStyle = computed(() => ({
+  flex: 'none',
+  width: `${100 - leftPanelWidth.value}%`,
+}))
 
 // ===== 文件预览相关 =====
 const selectedFileId = ref<string | null>(null)
@@ -674,7 +761,7 @@ const switchToFileContext = (
   if (options?.locate) {
     // 先清空再设置，确保重复点击同一问题也会触发子预览组件定位
     locateTarget.value = null
-    nextTick(() => {
+    setTimeout(() => {
       locateTarget.value = {
         originalText: options.locate!.originalText || '',
         locateCandidates: options.locate!.locateCandidates || [],
@@ -684,7 +771,7 @@ const switchToFileContext = (
         locateHint: options.locate!.locateHint,
         triggerId: `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
       }
-    })
+    }, 0)
   }
 }
 
@@ -833,6 +920,24 @@ const reviewSummary = computed(() => {
   return null
 })
 
+const objectiveLabelMap: Record<string, string> = {
+  COMPLIANCE: '合规审查',
+  COMPARE: '参照比对',
+  PROOFREAD: '文本校对',
+  STRUCTURED: '结构化审查',
+}
+
+const evidenceLabelMap: Record<string, string> = {
+  STANDARD: '标准知识库',
+  RULE_LIBRARY: '规则库',
+  REFERENCE: '参考文件',
+}
+
+const executionLabelMap: Record<string, string> = {
+  HYBRID: '混合执行（规则 + AI）',
+  RULE_ONLY: '仅规则执行',
+}
+
 const getModeLabel = (mode: string) => {
   const map: Record<string, string> = {
     LIBRARY_REVIEW: '以库审文',
@@ -841,21 +946,81 @@ const getModeLabel = (mode: string) => {
     TYPO_GRAMMAR: '错别字/语法',
     MULTIMODAL: '多模态识别',
     CUSTOM_RULE: '自定义规则',
-    FULL_REVIEW: '全量审查',
   }
   return map[mode] || mode
 }
+
+const reviewPlanSummary = computed(() => {
+  const plan = (task.value as any)?.reviewPlan
+  const legacyMode = reviewSummary.value?.reviewMode || (task.value as any)?.reviewMode || '-'
+
+  if (!plan || typeof plan !== 'object') {
+    return {
+      module: getModeLabel(legacyMode),
+      objective: '—',
+      evidence: '—',
+      execution: '—',
+      enhancements: '无',
+      proofreadingEnhancement: '—',
+      legacyMode: getModeLabel(legacyMode),
+    }
+  }
+
+  const sources = Array.isArray(plan.evidence?.sources) ? plan.evidence.sources : []
+  const evidence = sources.length > 0
+    ? sources.map((item: string) => evidenceLabelMap[item] || item).join(' + ')
+    : '无外部依据'
+
+  const enhancements: string[] = []
+  if (plan.enhancements?.intraFileConsistency) enhancements.push('文件内一致性')
+  if (plan.enhancements?.crossFileConsistency) enhancements.push('跨文件一致性')
+
+  const module = (() => {
+    if (plan.objective === 'COMPARE') return '一致性审查（对照）'
+    if (plan.objective === 'PROOFREAD') return '基础校对审查'
+    if (plan.objective === 'STRUCTURED') return '多模态审查'
+    if (plan.execution?.profile === 'RULE_ONLY' && sources.includes('RULE_LIBRARY')) return '规则库审查'
+    if (sources.includes('RULE_LIBRARY') && sources.includes('STANDARD')) return '以库审文'
+    if (sources.includes('RULE_LIBRARY')) return '规则库审查'
+    return '以库审文'
+  })()
+
+  const proofreadingEnhancement = plan.execution?.profile === 'RULE_ONLY'
+    ? '关闭（纯规则）'
+    : (plan.enhancements?.intraFileConsistency ? '开启' : '关闭')
+
+  return {
+    module,
+    objective: objectiveLabelMap[plan.objective] || plan.objective || '—',
+    evidence,
+    execution: executionLabelMap[plan.execution?.profile] || plan.execution?.profile || '—',
+    enhancements: enhancements.length > 0 ? enhancements.join(' + ') : '无',
+    proofreadingEnhancement,
+    legacyMode: getModeLabel(legacyMode),
+  }
+})
 
 const filteredDetails = computed(() => {
   let details = allDetails.value.filter((d: any) => d.issueType !== 'REVIEW_SUMMARY')
   if (filterFileId.value) details = details.filter((d: any) => d.fileId === filterFileId.value)
   return details
 })
-const totalIssuesExclSummary = computed(() => filteredDetails.value.length)
-const errorIssues = computed(() => filteredDetails.value.filter((d: any) => d.severity === 'error'))
-const warningIssues = computed(() => filteredDetails.value.filter((d: any) => d.severity === 'warning'))
-const infoIssues = computed(() => filteredDetails.value.filter((d: any) => d.severity === 'info'))
-const standardRefIssues = computed(() => filteredDetails.value.filter((d: any) => d.standardRef || d.standardRefId))
+const noResultEntries = computed(() =>
+  filteredDetails.value.filter((d: any) => d.ruleCode === 'NO_RESULT')
+)
+const issueDetails = computed(() =>
+  filteredDetails.value.filter((d: any) => d.ruleCode !== 'NO_RESULT')
+)
+const noResultReasons = computed(() =>
+  noResultEntries.value
+    .map((d: any) => d.description)
+    .filter(Boolean)
+)
+const totalIssuesExclSummary = computed(() => issueDetails.value.length)
+const errorIssues = computed(() => issueDetails.value.filter((d: any) => d.severity === 'error'))
+const warningIssues = computed(() => issueDetails.value.filter((d: any) => d.severity === 'warning'))
+const infoIssues = computed(() => issueDetails.value.filter((d: any) => d.severity === 'info'))
+const standardRefIssues = computed(() => issueDetails.value.filter((d: any) => d.standardRef || d.standardRefId))
 
 // ===== 工作台功能 =====
 const focusedReviewText = ref('')
@@ -883,8 +1048,36 @@ const preAnalysisData = reactive({
 })
 
 // ===== 工具函数 =====
-const getIssueTitle = (item: TaskDetail, index: number): string => {
-  return item.description?.slice(0, 50) || `问题 ${index + 1}`
+const getIssueTitle = (item: any, index: number): string => {
+  if (item.originalText && item.originalText.trim()) {
+    const text = item.originalText.trim().slice(0, 45)
+    return text.length < item.originalText.trim().length ? `${text}...` : text
+  }
+  if (item.suggestedText && item.suggestedText.trim()) {
+    const text = item.suggestedText.trim().slice(0, 45)
+    return text.length < item.suggestedText.trim().length ? `${text}...` : text
+  }
+  if (item.description && item.description.trim()) {
+    return `问题 ${index + 1}：${item.description.trim().slice(0, 35)}`
+  }
+  return `问题 ${index + 1}`
+}
+
+const getConfidenceLabel = (confidence?: string | null): string => {
+  const map: Record<string, string> = {
+    RULE_EXACT: '规则命中',
+    STD_MATCH: '标准比对',
+    AI_INFERRED: 'AI推断',
+    NO_RESULT: '无问题说明',
+  }
+  return confidence ? (map[confidence] || confidence) : ''
+}
+
+const getConfidenceTagType = (confidence?: string | null): 'success' | 'warning' | 'info' | 'danger' => {
+  if (confidence === 'RULE_EXACT') return 'danger'
+  if (confidence === 'STD_MATCH') return 'success'
+  if (confidence === 'AI_INFERRED') return 'warning'
+  return 'info'
 }
 
 const getStandardRefTitle = (item: TaskDetail): string => {
@@ -1028,6 +1221,8 @@ const fetchData = async (silent = false) => {
       issueType: d.issueType,
       ruleCode: d.ruleCode,
       severity: d.severity,
+      reviewSource: d.reviewSource || null,
+      ruleLibraryItemId: d.ruleLibraryItemId || null,
       originalText: d.originalText,
       suggestedText: d.suggestedText,
       description: d.description,
@@ -1035,6 +1230,8 @@ const fetchData = async (silent = false) => {
       cadHandleId: d.cadHandleId,
       textPosition: d.textPosition || null,
       locateMeta: d.locateMeta || null,
+      confidence: d.confidence || null,
+      confidenceSource: d.confidenceSource || null,
       diffRanges: d.diffRanges || null,
       sourceReferences: d.sourceReferences || null,
       standardRefId: d.standardRefId,
@@ -1521,10 +1718,14 @@ onUnmounted(() => {
 
 <style scoped>
 .task-results-view {
-  height: 100%;
+  /* 使用视口高度精确计算：
+   * 100vh - header(52px) - main-content上下padding(12px*2=24px)
+   * 不依赖flex链路，确保任何情况下都填满可用空间 */
+  height: calc(100vh - 76px);
   display: flex;
   flex-direction: column;
   background: #F5F7FA;
+  overflow: hidden;
 }
 
 /* 步骤条 */
@@ -1662,14 +1863,14 @@ onUnmounted(() => {
   margin: 0;
 }
 
-/* 主内容区 */
+/* 主内容区（紧凑模式：最大化核心内容展示） */
 .main-content {
   flex: 1;
   display: flex;
-  gap: 16px;
-  padding: 16px;
+  gap: 12px;
+  padding: 8px;
   overflow: hidden;
-  min-height: 0;
+  min-height: 0; /* 关键：允许flex子项收缩到小于内容高度 */
 }
 
 /* 左侧面板 */
@@ -1678,14 +1879,14 @@ onUnmounted(() => {
   display: flex;
   flex-direction: column;
   background: white;
-  border-radius: 8px;
+  border-radius: 6px;
   border: 1px solid #E5E7EB;
   overflow: hidden;
-  min-height: 0;
+  min-height: 0; /* 关键：允许在flex容器中正确收缩 */
 }
 
 .panel-header {
-  padding: 12px 16px;
+  padding: 8px 12px;
   border-bottom: 1px solid #E5E7EB;
   background: #F9FAFB;
 }
@@ -1771,7 +1972,7 @@ onUnmounted(() => {
 
 .adopt-preview-panel {
   border-top: 1px solid #E5E7EB;
-  padding: 12px 16px;
+  padding: 8px 12px;
   max-height: 180px;
   overflow-y: auto;
   background: #F9FAFB;
@@ -1828,16 +2029,17 @@ onUnmounted(() => {
   display: flex;
   flex-direction: column;
   background: white;
-  border-radius: 8px;
+  border-radius: 6px;
   border: 1px solid #E5E7EB;
   overflow: hidden;
+  min-height: 0; /* 关键：允许在flex容器中正确收缩 */
 }
 
 .panel-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 12px 16px;
+  padding: 8px 12px;
   border-bottom: 1px solid #E5E7EB;
 }
 
@@ -2576,6 +2778,192 @@ onUnmounted(() => {
 
   .analytics-overview {
     grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+/* ==================== 可拖拽分割条 ==================== */
+.resize-divider {
+  flex: none;
+  width: 8px;
+  cursor: col-resize;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  transition: background-color 0.2s ease;
+  position: relative;
+  user-select: none; /* 防止拖拽时选中文本 */
+  z-index: 10;
+}
+
+.resize-divider:hover {
+  background-color: rgba(59, 130, 246, 0.08);
+}
+
+.resize-divider.active {
+  background-color: rgba(59, 130, 246, 0.12);
+}
+
+.divider-line {
+  width: 2px;
+  height: 100%;
+  background-color: #E5E7EB;
+  border-radius: 1px;
+  transition: background-color 0.2s ease, width 0.2s ease;
+}
+
+.resize-divider:hover .divider-line,
+.resize-divider.active .divider-line {
+  background-color: #3B82F6;
+  width: 3px;
+}
+
+.divider-handle {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  opacity: 0;
+  transition: opacity 0.2s ease;
+}
+
+.resize-divider:hover .divider-handle,
+.resize-divider.active .divider-handle {
+  opacity: 1;
+}
+
+.handle-dots {
+  font-size: 14px;
+  color: #3B82F6;
+  font-weight: bold;
+  letter-spacing: -1px;
+  writing-mode: vertical-rl;
+  text-orientation: mixed;
+}
+
+/* 拖拽时的全局样式（禁用文本选择） */
+.resizing-active * {
+  cursor: col-resize !important;
+  user-select: none !important;
+}
+
+/* ==================== 响应式布局优化 ==================== */
+
+/*
+ * 断点设计：
+ * - ≥ 1200px：大屏桌面，左右分栏（文件预览 55% : AI审查 45%）
+ * - 768px - 1199px：中屏/平板/小窗口，左右分栏但比例调整（40% : 60%）
+ * - < 768px：小屏/手机，上下堆叠（AI审查优先显示在上）
+ */
+
+/* 中等屏幕（768px - 1199px）：优化窗口缩小时的体验 */
+@media (max-width: 1199px) and (min-width: 769px) {
+  .main-content {
+    flex-direction: row;
+    gap: 8px;
+    padding: 6px;
+    /* 继承父元素高度，不使用height:auto */
+  }
+
+  /* 左侧面板缩小，给右侧AI报告更多空间 */
+  .left-panel {
+    flex: none; /* 不覆盖动态样式的width设置 */
+    min-width: 280px;
+    max-width: 45%;
+  }
+
+  /* 右侧AI审查报告优先扩展 */
+  .right-panel {
+    flex: none; /* 不覆盖动态样式的width设置 */
+    min-width: 320px;
+  }
+
+  /* 面板头部更紧凑 */
+  .panel-header {
+    padding: 6px 10px;
+  }
+
+  /* 分割条保持可见但更窄 */
+  .resize-divider {
+    width: 6px;
+  }
+}
+
+/* 小屏幕（< 768px）：完全切换为上下堆叠布局 */
+@media (max-width: 768px) {
+  .main-content {
+    flex-direction: column;      /* 关键：改为上下堆叠 */
+    gap: 8px;
+    padding: 6px;
+    /* 不设置height:auto，保持flex填充 */
+  }
+
+  /* 隐藏分割条（上下堆叠时不需要） */
+  .resize-divider {
+    display: none;
+  }
+
+  /* 左侧文件预览区：限制最大高度，可滚动 */
+  .left-panel {
+    flex: none;                  /* 取消flex伸缩 */
+    width: 100%;
+    height: 40vh;               /* 占据40%视口高度 */
+    min-height: 200px;
+    max-height: 350px;
+  }
+
+  /* 右侧AI审查报告：优先显示，占据剩余空间（使用calc确保填满） */
+  .right-panel {
+    flex: none;
+    width: 100%;
+    height: calc(60vh - 16px); /* 减去gap(8px)*2 */
+    min-height: 300px;
+  }
+
+  /* 面板头部超紧凑 */
+  .panel-header {
+    padding: 6px 8px;
+  }
+
+  .hint-text {
+    font-size: 11px;
+  }
+
+  /* 文件Tab适配小屏 */
+  .file-tab-name {
+    max-width: 80px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+}
+
+/* 超小屏幕（< 480px）：极致紧凑模式 */
+@media (max-width: 480px) {
+  .main-content {
+    gap: 4px;
+    padding: 4px;
+  }
+
+  .left-panel {
+    height: 35vh;
+    min-height: 200px;
+    border-radius: 4px;
+  }
+
+  .right-panel {
+    height: calc(65vh - 12px);
+    min-height: 350px;
+    border-radius: 4px;
+  }
+
+  .panel-header {
+    padding: 4px 6px;
+  }
+
+  .file-tab {
+    padding: 3px 6px;
+    font-size: 11px;
   }
 }
 </style>

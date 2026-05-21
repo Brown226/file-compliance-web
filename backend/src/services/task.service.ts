@@ -6,8 +6,177 @@ import { ReviewService } from './review.service';
 import { addReviewJob } from './queue.service';
 import FalsePositiveLibraryService from './falsePositiveLibrary.service';
 import { ParserService } from './parser.service';
+import { ReviewPlan, normalizeEvidenceSources, isReviewObjective } from '../types/review-plan';
 
 export class TaskService {
+  static planToLegacyMode(plan: ReviewPlan): string {
+    if (plan.objective === 'COMPARE') return 'DOC_REVIEW';
+    if (plan.objective === 'PROOFREAD') return 'TYPO_GRAMMAR';
+    if (plan.objective === 'STRUCTURED') return 'MULTIMODAL';
+    if (plan.execution.profile === 'RULE_ONLY' && plan.evidence.sources.includes('RULE_LIBRARY')) {
+      return 'CUSTOM_RULE';
+    }
+    if (plan.enhancements.crossFileConsistency) {
+      return 'CONSISTENCY';
+    }
+    if (plan.enhancements.intraFileConsistency) {
+      return 'CONSISTENCY';
+    }
+    return 'LIBRARY_REVIEW';
+  }
+
+  static legacyModeToPlan(reviewMode?: string, input?: any): ReviewPlan {
+    const normalizedSources = normalizeEvidenceSources(input?.evidence?.sources);
+    const baseSources = normalizedSources.length > 0 ? normalizedSources : ['STANDARD'];
+    switch (reviewMode) {
+      case 'DOC_REVIEW':
+        return {
+          objective: 'COMPARE',
+          evidence: {
+            sources: baseSources.includes('REFERENCE') ? baseSources : ['REFERENCE'],
+            knowledgeCategoryIds: Array.isArray(input?.evidence?.knowledgeCategoryIds) ? input.evidence.knowledgeCategoryIds : [],
+            ruleLibraryId: input?.evidence?.ruleLibraryId || null,
+            refFileGroupId: input?.evidence?.refFileGroupId || null,
+          },
+          enhancements: {
+            intraFileConsistency: !!input?.enhancements?.intraFileConsistency,
+            crossFileConsistency: !!input?.enhancements?.crossFileConsistency,
+          },
+          execution: {
+            profile: input?.execution?.profile === 'RULE_ONLY' ? 'RULE_ONLY' : 'HYBRID',
+          },
+          templateId: input?.templateId,
+        };
+      case 'TYPO_GRAMMAR':
+        return {
+          objective: 'PROOFREAD',
+          evidence: {
+            sources: baseSources.filter((item) => item !== 'REFERENCE'),
+            knowledgeCategoryIds: Array.isArray(input?.evidence?.knowledgeCategoryIds) ? input.evidence.knowledgeCategoryIds : [],
+            ruleLibraryId: input?.evidence?.ruleLibraryId || null,
+            refFileGroupId: null,
+          },
+          enhancements: {
+            intraFileConsistency: !!input?.enhancements?.intraFileConsistency,
+            crossFileConsistency: false,
+          },
+          execution: {
+            profile: input?.execution?.profile === 'RULE_ONLY' ? 'RULE_ONLY' : 'HYBRID',
+          },
+          templateId: input?.templateId,
+        };
+      case 'MULTIMODAL':
+        return {
+          objective: 'STRUCTURED',
+          evidence: {
+            sources: baseSources,
+            knowledgeCategoryIds: Array.isArray(input?.evidence?.knowledgeCategoryIds) ? input.evidence.knowledgeCategoryIds : [],
+            ruleLibraryId: input?.evidence?.ruleLibraryId || null,
+            refFileGroupId: null,
+          },
+          enhancements: {
+            intraFileConsistency: !!input?.enhancements?.intraFileConsistency,
+            crossFileConsistency: !!input?.enhancements?.crossFileConsistency,
+          },
+          execution: {
+            profile: input?.execution?.profile === 'RULE_ONLY' ? 'RULE_ONLY' : 'HYBRID',
+          },
+          templateId: input?.templateId,
+        };
+      case 'CUSTOM_RULE':
+        return {
+          objective: 'COMPLIANCE',
+          evidence: {
+            sources: ['RULE_LIBRARY'],
+            knowledgeCategoryIds: [],
+            ruleLibraryId: input?.evidence?.ruleLibraryId || null,
+            refFileGroupId: null,
+          },
+          enhancements: {
+            intraFileConsistency: !!input?.enhancements?.intraFileConsistency,
+            crossFileConsistency: !!input?.enhancements?.crossFileConsistency,
+          },
+          execution: {
+            profile: 'RULE_ONLY',
+          },
+          templateId: input?.templateId,
+        };
+      case 'CONSISTENCY':
+        return {
+          objective: 'COMPLIANCE',
+          evidence: {
+            sources: baseSources,
+            knowledgeCategoryIds: Array.isArray(input?.evidence?.knowledgeCategoryIds) ? input.evidence.knowledgeCategoryIds : [],
+            ruleLibraryId: input?.evidence?.ruleLibraryId || null,
+            refFileGroupId: null,
+          },
+          enhancements: {
+            intraFileConsistency: !!input?.enhancements?.intraFileConsistency,
+            crossFileConsistency: true,
+          },
+          execution: {
+            profile: input?.execution?.profile === 'RULE_ONLY' ? 'RULE_ONLY' : 'HYBRID',
+          },
+          templateId: input?.templateId,
+        };
+      case 'LIBRARY_REVIEW':
+      default:
+        return {
+          objective: 'COMPLIANCE',
+          evidence: {
+            sources: baseSources,
+            knowledgeCategoryIds: Array.isArray(input?.evidence?.knowledgeCategoryIds) ? input.evidence.knowledgeCategoryIds : [],
+            ruleLibraryId: input?.evidence?.ruleLibraryId || null,
+            refFileGroupId: null,
+          },
+          enhancements: {
+            intraFileConsistency: !!input?.enhancements?.intraFileConsistency,
+            crossFileConsistency: !!input?.enhancements?.crossFileConsistency,
+          },
+          execution: {
+            profile: input?.execution?.profile === 'RULE_ONLY' ? 'RULE_ONLY' : 'HYBRID',
+          },
+          templateId: input?.templateId,
+        };
+    }
+  }
+
+  static normalizeReviewPlan(input: any, legacyReviewMode?: string): ReviewPlan {
+    if (input && isReviewObjective(input.objective)) {
+      const objective = input.objective;
+      const sources = normalizeEvidenceSources(input?.evidence?.sources);
+      const normalizedSources = sources.length > 0
+        ? sources
+        : (objective === 'COMPARE' ? ['REFERENCE'] : objective === 'PROOFREAD' ? [] : ['STANDARD']);
+
+      return {
+        objective,
+        evidence: {
+          sources: objective === 'COMPARE'
+            ? (normalizedSources.includes('REFERENCE') ? normalizedSources : ['REFERENCE'])
+            : normalizedSources,
+          knowledgeCategoryIds: Array.isArray(input?.evidence?.knowledgeCategoryIds) ? input.evidence.knowledgeCategoryIds : [],
+          ruleLibraryId: typeof input?.evidence?.ruleLibraryId === 'string' && input.evidence.ruleLibraryId.trim()
+            ? input.evidence.ruleLibraryId.trim()
+            : null,
+          refFileGroupId: typeof input?.evidence?.refFileGroupId === 'string' && input.evidence.refFileGroupId.trim()
+            ? input.evidence.refFileGroupId.trim()
+            : null,
+        },
+        enhancements: {
+          intraFileConsistency: !!input?.enhancements?.intraFileConsistency,
+          crossFileConsistency: !!input?.enhancements?.crossFileConsistency,
+        },
+        execution: {
+          profile: input?.execution?.profile === 'RULE_ONLY' ? 'RULE_ONLY' : 'HYBRID',
+        },
+        templateId: typeof input?.templateId === 'string' && input.templateId.trim() ? input.templateId.trim() : undefined,
+      };
+    }
+
+    return this.legacyModeToPlan(legacyReviewMode, input);
+  }
+
   /**
    * 解码文件名：处理浏览器传输中文文件名时的编码问题
    * 某些浏览器（如 Chrome）会将非 ASCII 字符以 latin1 编码传输
@@ -35,8 +204,10 @@ export class TaskService {
     reviewMode?: string;
     knowledgeCategoryId?: string;  // 用户选择的知识库ID
     knowledgeCategoryIds?: string[];  // 用户选择的多个知识库ID
+    ruleLibraryId?: string;
     perspective?: string;  // 审查立场
     preAnalysisData?: any;  // 预分析完整数据
+    reviewPlan?: any;       // 审查方案
     reviewPoints?: string[];  // 用户选中的审查点
     corePurposes?: string[];  // 用户自定义的核心目的
     selectedTemplateId?: string;  // 选择的审查模板ID
@@ -45,12 +216,29 @@ export class TaskService {
     dwgParsedData?: Record<string, any>;  // 前端 WASM 解析的 DWG 数据（按文件名映射）
   }): Promise<Task> {
     const { title, description, creatorId, standardId, standardIds = [], reviewMode, knowledgeCategoryId, knowledgeCategoryIds,
-      perspective, preAnalysisData, reviewPoints, corePurposes, selectedTemplateId, intraFileConsistency,
+      ruleLibraryId, perspective, preAnalysisData, reviewPlan, reviewPoints, corePurposes, selectedTemplateId, intraFileConsistency,
       files = [], dwgParsedData } = data;
 
     // 合并标准 ID：保留单选兼容，同时写入多选
     const allStandardIds = [...new Set([standardId, ...standardIds].filter((id): id is string => Boolean(id)))];
-    const resolvedReviewMode = reviewMode || 'FULL_REVIEW';
+    const normalizedReviewPlan = this.normalizeReviewPlan(reviewPlan, reviewMode);
+
+    // 服务端兜底校验：防止前端绕过约束
+    if (normalizedReviewPlan.objective === 'COMPARE' && files.length > 0 && !data.files?.length) {
+      throw new Error('参照比对模式缺少待审文件');
+    }
+    if (normalizedReviewPlan.objective === 'COMPARE' && !normalizedReviewPlan.evidence.sources.includes('REFERENCE')) {
+      throw new Error('参照比对模式必须使用参考文件作为审查依据');
+    }
+    if (normalizedReviewPlan.execution.profile === 'RULE_ONLY') {
+      if (!normalizedReviewPlan.evidence.sources.includes('RULE_LIBRARY')) {
+        throw new Error('仅规则执行模式必须启用规则库依据');
+      }
+      if (!normalizedReviewPlan.evidence.ruleLibraryId && !ruleLibraryId) {
+        throw new Error('仅规则执行模式必须指定规则库');
+      }
+    }
+    const resolvedReviewMode = reviewMode || this.planToLegacyMode(normalizedReviewPlan);
     const shouldDelayReview = resolvedReviewMode === 'DOC_REVIEW';
 
     // 知识库 ID：多选优先，回退到单选
@@ -78,26 +266,35 @@ export class TaskService {
           intraFileConsistency: !!intraFileConsistency,
         } : undefined;
 
+    normalizedReviewPlan.evidence.knowledgeCategoryIds = knowledgeCategoryIds || normalizedReviewPlan.evidence.knowledgeCategoryIds || [];
+    if (ruleLibraryId) normalizedReviewPlan.evidence.ruleLibraryId = ruleLibraryId;
+    if (intraFileConsistency !== undefined) normalizedReviewPlan.enhancements.intraFileConsistency = !!intraFileConsistency;
+
+    const shouldBindRuleLibrary = normalizedReviewPlan.evidence.sources.includes('RULE_LIBRARY') && !!normalizedReviewPlan.evidence.ruleLibraryId;
+    const effectiveStandardIds = shouldBindRuleLibrary ? [] : allStandardIds;
+
     // 创建任务
     const task = await prisma.task.create({
       data: {
         title,
         description,
         creatorId,
-        standardId: standardId || allStandardIds[0] || null,
+        standardId: shouldBindRuleLibrary ? null : (standardId || effectiveStandardIds[0] || null),
         reviewMode: resolvedReviewMode as any,
         knowledgeCategoryId: knowledgeIdForDb,
+        ruleLibraryId: shouldBindRuleLibrary ? normalizedReviewPlan.evidence.ruleLibraryId || null : null,
         perspective: perspective || null,
         preAnalysisData: preAnalysisJson || undefined,
+        reviewPlan: normalizedReviewPlan,
         // DOC_REVIEW 需要先上传参照文件，创建时先保持 PENDING，待 ref-files 上传后再触发
         status: files.length > 0 && !shouldDelayReview ? 'PROCESSING' : 'PENDING',
       },
     });
 
     // 创建多标准关联
-    if (allStandardIds.length > 0) {
+    if (effectiveStandardIds.length > 0) {
       await prisma.taskStandard.createMany({
-        data: allStandardIds.map(sid => ({
+        data: effectiveStandardIds.map(sid => ({
           taskId: task.id,
           standardId: sid,
         })),
@@ -334,7 +531,28 @@ export class TaskService {
         }
       },
       orderBy: { createdAt: 'desc' }
-    });
+    }).then((details) => details.map((detail: any) => ({
+      ...detail,
+      reviewSource: detail.reviewSource || (detail.ruleCode?.startsWith('STD_')
+        ? 'STANDARD_REF'
+        : detail.ruleCode
+          ? 'RULE_ENGINE'
+          : 'AI'),
+      confidence: detail.confidence || (detail.ruleCode === 'NO_RESULT'
+        ? 'NO_RESULT'
+        : detail.ruleCode?.startsWith('STD_')
+          ? 'STD_MATCH'
+          : detail.ruleCode
+            ? 'RULE_EXACT'
+            : 'AI_INFERRED'),
+      confidenceSource: detail.confidenceSource || (detail.ruleCode === 'NO_RESULT'
+        ? 'system_summary'
+        : detail.ruleCode?.startsWith('STD_')
+          ? 'standard_ref'
+          : detail.ruleCode
+            ? 'rule_engine'
+            : (detail.sourceReferences ? 'ai_with_sources' : 'ai_only')),
+    })));
   }
 
   /**
@@ -815,6 +1033,11 @@ export class TaskService {
 
     // 误报统计
     const falsePositiveCount = details.filter((d) => d.isFalsePositive).length;
+    const noResultReasons = details
+      .filter((d) => d.ruleCode === 'NO_RESULT')
+      .map((d) => d.description)
+      .filter((d): d is string => Boolean(d));
+    const effectiveDetails = details.filter((d) => d.ruleCode !== 'NO_RESULT');
 
     return {
       task: {
@@ -822,6 +1045,9 @@ export class TaskService {
         title: task.title,
         status: task.status,
         reviewMode: task.reviewMode,
+        ruleLibraryId: (task as any).ruleLibraryId || null,
+        reviewPlan: (task as any).reviewPlan || null,
+        ruleLibrary: (task as any).ruleLibrary || null,
         perspective: task.perspective,
         preAnalysisData: task.preAnalysisData,
         createdAt: task.createdAt,
@@ -829,11 +1055,12 @@ export class TaskService {
         creator: task.creator,
       },
       overview: {
-        totalIssues: details.length,
+        totalIssues: effectiveDetails.length,
         falsePositives: falsePositiveCount,
-        effectiveIssues: details.length - falsePositiveCount,
+        effectiveIssues: effectiveDetails.length - falsePositiveCount,
         severityCounts,
       },
+      noResultReasons,
       issueTypeCounts,
       fileIssueCounts,
       topRuleCodes,

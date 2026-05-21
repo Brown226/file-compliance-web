@@ -21,7 +21,7 @@ export const getQASessionsApi = () =>
   request.get<QASession[]>('/qa/sessions')
 
 export const createQASessionApi = (data?: { title?: string; taskId?: string }) =>
-  request.post<QASession>('/qa/sessions', data)
+  request.post<QASession>('/qa/sessions', data ?? {})
 
 export const deleteQASessionApi = (sessionId: string) =>
   request.delete(`/qa/sessions/${sessionId}`)

@@ -2,7 +2,7 @@
  * 审查模式能力配置管理
  *
  * 从 systemConfig 表读取/写入 pipeline_mode_capabilities 配置
- * standardRef 统一使用 boolean：前端开关 true/false，后端存储 'on'/'off'
+ * standardRef 保留三态枚举：'on' | 'off' | 'config'
  */
 import prisma from '../../config/db';
 import { ReviewModeType } from './types';
@@ -10,8 +10,7 @@ import { MODE_CAPABILITIES } from './mode-config';
 
 const CONFIG_KEY = 'pipeline_mode_capabilities';
 
-// 后端标准引用格式: 'on' | 'off'
-type StandardRefValue = 'on' | 'off';
+type StandardRefValue = 'on' | 'off' | 'config';
 
 export interface ModeConfigOverride {
   enabled?: boolean;
@@ -26,11 +25,11 @@ export interface ModeCapabilitiesConfig {
   [mode: string]: ModeConfigOverride;
 }
 
-/** 加载模式配置（合并默认配置，standardRef 转换为 boolean 供前端使用） */
+/** 加载模式配置（合并默认配置，保留 standardRef 三态） */
 export async function getModeCapabilitiesConfig(): Promise<Record<ReviewModeType, {
   enabled: boolean;
   rules: boolean;
-  standardRef: boolean;  // true='on', false='off'
+  standardRef: StandardRefValue;
   ai: boolean;
   aiStrategy: 'standard' | 'llmOnly' | 'refCompare' | 'multimodal';
   crossFile: boolean;
@@ -41,7 +40,7 @@ export async function getModeCapabilitiesConfig(): Promise<Record<ReviewModeType
     result[mode] = {
       enabled: true,
       rules: cap.rules,
-      standardRef: cap.standardRef === 'on',
+      standardRef: cap.standardRef,
       ai: cap.ai,
       aiStrategy: cap.aiStrategy,
       crossFile: cap.crossFile,
@@ -65,7 +64,7 @@ export async function getModeCapabilitiesConfig(): Promise<Record<ReviewModeType
         const cfg = override as ModeConfigOverride | undefined;
         if (result[mode] && cfg) {
           if (cfg.standardRef !== undefined) {
-            result[mode].standardRef = cfg.standardRef === 'on';
+            result[mode].standardRef = cfg.standardRef;
           }
           if (cfg.enabled !== undefined) result[mode].enabled = cfg.enabled;
           if (cfg.rules !== undefined) result[mode].rules = cfg.rules;
@@ -83,18 +82,17 @@ export async function getModeCapabilitiesConfig(): Promise<Record<ReviewModeType
   return result as Record<ReviewModeType, any>;
 }
 
-/** 保存模式配置（standardRef boolean 转换为 'on'/'off'） */
+/** 保存模式配置（standardRef 保留三态） */
 export async function saveModeCapabilitiesConfig(config: Record<string, any>): Promise<void> {
   console.log('[ModeConfig] 接收到的配置:', JSON.stringify(config, null, 2));
   
-  // 转换 standardRef: boolean → 'on'/'off'
   const toSave: ModeCapabilitiesConfig = {};
   for (const [mode, cfg] of Object.entries(config)) {
     const c = cfg as any;
     toSave[mode] = {
       enabled: c.enabled,
       rules: c.rules,
-      standardRef: c.standardRef === true ? 'on' : 'off',
+      standardRef: c.standardRef === 'config' ? 'config' : (c.standardRef === 'off' ? 'off' : 'on'),
       ai: c.ai,
       aiStrategy: c.aiStrategy,
       crossFile: c.crossFile,

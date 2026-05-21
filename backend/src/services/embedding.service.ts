@@ -1,11 +1,10 @@
 /**
  * Embedding + Reranking 服务
  *
- * 使用 OpenAI 兼容 API 进行文本向量化和重排序
- * 支持 hash fallback（API 不可用时降级）
+ * 使用 OpenAI 兼容 API 进行文本向量化和重排序。
+ * Embedding 失败时必须硬失败，禁止写入伪向量。
  */
 
-import crypto from 'crypto';
 import prisma from '../config/db';
 
 const EMBEDDING_DIM = 1024;
@@ -65,23 +64,6 @@ export class EmbeddingService {
     return null;
   }
 
-  // ============ Hash Fallback ============
-
-  private static hashFallbackEmbedding(text: string): number[] {
-    const vector = new Array(EMBEDDING_DIM).fill(0);
-    const normalized = String(text || '').toLowerCase().replace(/\s+/g, ' ').trim();
-    const tokens = normalized.match(/[一-龥]|[a-z0-9]+/g) || [];
-    const grams: string[] = [...tokens];
-    for (let i = 0; i < tokens.length - 1; i++) grams.push(`${tokens[i]}${tokens[i + 1]}`);
-    for (const token of grams) {
-      const digest = crypto.createHash('sha256').update(token).digest();
-      const index = digest.readUInt32BE(0) % EMBEDDING_DIM;
-      vector[index] += digest[4] % 2 === 0 ? 1 : -1;
-    }
-    const norm = Math.sqrt(vector.reduce((s, v) => s + v * v, 0));
-    return norm ? vector.map(v => Number((v / norm).toFixed(6))) : vector;
-  }
-
   // ============ 核心方法 ============
 
   /**
@@ -102,32 +84,35 @@ export class EmbeddingService {
 
     const config = await this.getEmbeddingConfig();
     if (!config) {
-      console.warn('[Embedding] 未配置 Embedding API，使用本地 hash 向量');
-      return texts.map(t => this.hashFallbackEmbedding(t));
+      throw new Error('Embedding 模型未配置，禁止降级为本地伪向量');
     }
 
-    try {
-      const response = await fetch(`${config.baseUrl.replace(/\/$/, '')}/embeddings`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${config.apiKey}`,
-        },
-        body: JSON.stringify({ model: config.model, input: texts }),
-        signal: AbortSignal.timeout(60000),
-      });
+    const response = await fetch(`${config.baseUrl.replace(/\/$/, '')}/embeddings`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${config.apiKey}`,
+      },
+      body: JSON.stringify({ model: config.model, input: texts }),
+      signal: AbortSignal.timeout(60000),
+    });
 
-      if (!response.ok) {
-        const errText = await response.text();
-        throw new Error(`Embedding API 错误 (${response.status}): ${errText}`);
+    if (!response.ok) {
+      const errText = await response.text();
+      throw new Error(`Embedding API 错误 (${response.status}): ${errText}`);
+    }
+
+    const data = await response.json() as any;
+    const embeddings = (data.data || []).map((item: any) => item.embedding);
+    if (!Array.isArray(embeddings) || embeddings.length !== texts.length) {
+      throw new Error(`Embedding 返回数量异常: expected=${texts.length}, actual=${embeddings.length}`);
+    }
+    for (const embedding of embeddings) {
+      if (!Array.isArray(embedding) || embedding.length !== EMBEDDING_DIM) {
+        throw new Error(`Embedding 维度异常: expected=${EMBEDDING_DIM}, actual=${Array.isArray(embedding) ? embedding.length : 'invalid'}`);
       }
-
-      const data = await response.json() as any;
-      return (data.data || []).map((item: any) => item.embedding);
-    } catch (error: any) {
-      console.warn(`[Embedding] API 调用失败: ${error.message}，降级为本地 hash 向量`);
-      return texts.map(t => this.hashFallbackEmbedding(t));
     }
+    return embeddings;
   }
 
   /**

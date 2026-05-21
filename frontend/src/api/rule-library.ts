@@ -9,6 +9,9 @@ export interface RuleLibrary {
   createdBy: string
   items?: RuleLibraryItem[]
   _count?: { items: number }
+  executableItemCount?: number
+  enabledExecutableItemCount?: number
+  pendingStructuredItemCount?: number
   createdAt: string
 }
 
@@ -21,12 +24,38 @@ export interface RuleLibraryItem {
   description?: string
   checkMethod?: string
   severity?: string
+  executionType?: 'BUILTIN_PREFIX' | 'REGEX' | 'KEYWORD_REQUIRED' | 'KEYWORD_FORBIDDEN' | 'MANUAL'
+  builtinPrefix?: string
+  targetScope?: 'FILE_NAME' | 'TEXT' | 'HEADER' | 'TABLE' | 'DWG'
+  params?: any
+  messageTemplate?: string
+  sourceQuote?: string
+  sourceLocation?: string
   enabled: boolean
   createdAt: string
+  updatedAt?: string
 }
 
-export const getRuleLibrariesApi = () =>
-  request.get<RuleLibrary[]>('/rule-libraries')
+export interface RuleLibraryPreviewItem {
+  ruleCode?: string | null
+  ruleName: string
+  category?: string | null
+  description?: string | null
+  checkMethod?: string | null
+  severity?: string | null
+  executionType: 'BUILTIN_PREFIX' | 'REGEX' | 'KEYWORD_REQUIRED' | 'KEYWORD_FORBIDDEN' | 'MANUAL'
+  builtinPrefix?: string | null
+  targetScope: 'FILE_NAME' | 'TEXT' | 'HEADER' | 'TABLE' | 'DWG'
+  params?: any
+  messageTemplate?: string | null
+  sourceQuote?: string | null
+  sourceLocation?: string | null
+  executable: boolean
+  duplicate: boolean
+}
+
+export const getRuleLibrariesApi = (params?: { selectableOnly?: boolean }) =>
+  request.get<RuleLibrary[]>('/rule-libraries', { params })
 
 export const getRuleLibraryApi = (id: string) =>
   request.get<RuleLibrary>(`/rule-libraries/${id}`)
@@ -48,6 +77,16 @@ export const parseRulesFromFileApi = (libraryId: string, formData: FormData) =>
     headers: { 'Content-Type': 'multipart/form-data' },
   })
 
+export const parseRulesPreviewApi = (libraryId: string, formData: FormData) =>
+  request.post<{ items: RuleLibraryPreviewItem[]; sourceFileName?: string }>(`/rule-libraries/${libraryId}/parse-preview`, formData, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+  })
+
+export const importRulePreviewItemsApi = (
+  libraryId: string,
+  data: { items: RuleLibraryPreviewItem[]; mode?: 'merge' | 'replace'; sourceFileName?: string },
+) => request.post<{ count: number }>(`/rule-libraries/${libraryId}/import`, data)
+
 export const addRuleItemApi = (libraryId: string, data: {
   ruleCode?: string
   ruleName: string
@@ -55,6 +94,13 @@ export const addRuleItemApi = (libraryId: string, data: {
   description?: string
   checkMethod?: string
   severity?: string
+  executionType?: 'BUILTIN_PREFIX' | 'REGEX' | 'KEYWORD_REQUIRED' | 'KEYWORD_FORBIDDEN' | 'MANUAL'
+  builtinPrefix?: string
+  targetScope?: 'FILE_NAME' | 'TEXT' | 'HEADER' | 'TABLE' | 'DWG'
+  params?: any
+  messageTemplate?: string
+  sourceQuote?: string
+  sourceLocation?: string
 }) => request.post<RuleLibraryItem>(`/rule-libraries/${libraryId}/items`, data)
 
 export const updateRuleItemApi = (libraryId: string, itemId: string, data: {
@@ -65,6 +111,13 @@ export const updateRuleItemApi = (libraryId: string, itemId: string, data: {
   checkMethod?: string
   severity?: string
   enabled?: boolean
+  executionType?: 'BUILTIN_PREFIX' | 'REGEX' | 'KEYWORD_REQUIRED' | 'KEYWORD_FORBIDDEN' | 'MANUAL'
+  builtinPrefix?: string | null
+  targetScope?: 'FILE_NAME' | 'TEXT' | 'HEADER' | 'TABLE' | 'DWG'
+  params?: any
+  messageTemplate?: string | null
+  sourceQuote?: string | null
+  sourceLocation?: string | null
 }) => request.put<RuleLibraryItem>(`/rule-libraries/${libraryId}/items/${itemId}`, data)
 
 export const deleteRuleItemApi = (libraryId: string, itemId: string) =>

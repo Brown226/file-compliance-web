@@ -1,5 +1,6 @@
 import axios from 'axios';
 import prisma from '../config/db';
+import { FileTypeService } from './file-type.service';
 
 export interface ParseResult {
   text: string;
@@ -110,9 +111,7 @@ export class PythonParserService {
     form.append('file', fileBuffer, fileName);
     form.append('file_type', fileType.toLowerCase());
 
-    // DWG 文件不再通过 Python 服务解析，由前端 WASM 方案处理
-    // 如果后端仍收到 DWG 解析请求，直接返回空结果
-    if (['dwg', 'dxf'].includes(fileType.toLowerCase())) {
+    if (FileTypeService.isCadFile(fileType)) {
       return {
         text: '',
         pages: [],

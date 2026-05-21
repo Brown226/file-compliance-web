@@ -129,6 +129,7 @@ const {
   markRead,
   markAllRead,
   closePopup,
+  dismissForSession,
 } = useAnnouncements()
 
 // 紧急公告状态
@@ -310,6 +311,7 @@ async function handleMarkAllRead() {
  */
 function closePanel() {
   showNormalPanel.value = false
+  dismissForSession()
 }
 
 /**

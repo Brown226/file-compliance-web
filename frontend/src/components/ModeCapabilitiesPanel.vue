@@ -20,73 +20,98 @@
       </el-button>
     </div>
 
-    <!-- 能力配置表格 -->
-    <el-table :data="modeList" border stripe class="matrix-table" v-loading="loading">
-      <el-table-column label="审查模式" min-width="160">
-        <template #default="{ row }">
-          <div class="mode-cell">
-            <el-icon :size="16" :color="row.color"><component :is="row.icon" /></el-icon>
-            <div class="mode-info">
-              <span class="mode-name">{{ row.displayName }}</span>
-              <span class="mode-code">{{ row.mode }}</span>
+    <!-- 产品配置层 -->
+    <div class="section-block">
+      <div class="section-title">产品配置层（用户可见语义）</div>
+      <el-table :data="modeList" border stripe class="matrix-table" v-loading="loading">
+        <el-table-column label="审查模式" min-width="180">
+          <template #default="{ row }">
+            <div class="mode-cell">
+              <el-icon :size="16" :color="row.color"><component :is="row.icon" /></el-icon>
+              <div class="mode-info">
+                <span class="mode-name">{{ row.displayName }}</span>
+                <span class="mode-code">{{ row.mode }}</span>
+              </div>
             </div>
-          </div>
-        </template>
-      </el-table-column>
+          </template>
+        </el-table-column>
 
-      <el-table-column label="启用" width="80" align="center">
-        <template #default="{ row, $index }">
-          <el-switch v-model="row.enabled" @change="onChange($index)" />
-        </template>
-      </el-table-column>
+        <el-table-column label="用户可用" width="100" align="center">
+          <template #default="{ row, $index }">
+            <el-switch v-model="row.enabled" @change="onChange($index)" />
+          </template>
+        </el-table-column>
 
-      <el-table-column label="规则引擎" width="100" align="center">
-        <template #default="{ row, $index }">
-          <el-switch v-model="row.rules" :disabled="!row.enabled" @change="onChange($index)" />
-        </template>
-      </el-table-column>
+        <el-table-column label="产品说明" min-width="220">
+          <template #default="{ row }">
+            <span class="desc-text">{{ row.description }}</span>
+          </template>
+        </el-table-column>
+      </el-table>
+    </div>
 
-      <el-table-column label="标准引用" width="100" align="center">
-        <template #default="{ row, $index }">
-          <el-switch v-model="row.standardRef" :disabled="!row.enabled" @change="onChange($index)" />
-        </template>
-      </el-table-column>
+    <!-- 引擎配置层 -->
+    <div class="section-block">
+      <div class="section-title">引擎配置层（执行参数）</div>
+      <el-table :data="modeList" border stripe class="matrix-table" v-loading="loading">
+        <el-table-column label="审查模式" min-width="160">
+          <template #default="{ row }">
+            <span class="mode-name">{{ row.displayName }}</span>
+          </template>
+        </el-table-column>
 
-      <el-table-column label="AI 审查" width="100" align="center">
-        <template #default="{ row, $index }">
-          <el-switch v-model="row.ai" :disabled="!row.enabled" @change="onChange($index)" />
-        </template>
-      </el-table-column>
+        <el-table-column label="规则引擎" width="100" align="center">
+          <template #default="{ row, $index }">
+            <el-switch v-model="row.rules" :disabled="!row.enabled" @change="onChange($index)" />
+          </template>
+        </el-table-column>
 
-      <el-table-column label="AI 策略" width="110" align="center">
-        <template #default="{ row, $index }">
-          <el-select
-            v-model="row.aiStrategy"
-            size="small"
-            style="width: 100px"
-            :disabled="!row.enabled || !row.ai"
-            @change="onChange($index)"
-          >
-            <el-option label="标准AI" value="standard" />
-            <el-option label="纯LLM" value="llmOnly" />
-            <el-option label="参照比对" value="refCompare" />
-            <el-option label="多模态" value="multimodal" />
-          </el-select>
-        </template>
-      </el-table-column>
+        <el-table-column label="标准引用" width="110" align="center">
+          <template #default="{ row, $index }">
+            <el-select
+              v-model="row.standardRef"
+              size="small"
+              style="width: 92px"
+              :disabled="!row.enabled"
+              @change="onChange($index)"
+            >
+              <el-option label="开启" value="on" />
+              <el-option label="关闭" value="off" />
+              <el-option label="配置" value="config" />
+            </el-select>
+          </template>
+        </el-table-column>
 
-      <el-table-column label="跨文件" width="100" align="center">
-        <template #default="{ row, $index }">
-          <el-switch v-model="row.crossFile" :disabled="!row.enabled" @change="onChange($index)" />
-        </template>
-      </el-table-column>
+        <el-table-column label="AI 审查" width="100" align="center">
+          <template #default="{ row, $index }">
+            <el-switch v-model="row.ai" :disabled="!row.enabled" @change="onChange($index)" />
+          </template>
+        </el-table-column>
 
-      <el-table-column label="说明" min-width="160">
-        <template #default="{ row }">
-          <span class="desc-text">{{ row.description }}</span>
-        </template>
-      </el-table-column>
-    </el-table>
+        <el-table-column label="AI 策略" width="120" align="center">
+          <template #default="{ row, $index }">
+            <el-select
+              v-model="row.aiStrategy"
+              size="small"
+              style="width: 104px"
+              :disabled="!row.enabled || !row.ai"
+              @change="onChange($index)"
+            >
+              <el-option label="标准AI" value="standard" />
+              <el-option label="纯LLM" value="llmOnly" />
+              <el-option label="参照比对" value="refCompare" />
+              <el-option label="多模态" value="multimodal" />
+            </el-select>
+          </template>
+        </el-table-column>
+
+        <el-table-column label="跨文件" width="100" align="center">
+          <template #default="{ row, $index }">
+            <el-switch v-model="row.crossFile" :disabled="!row.enabled" @change="onChange($index)" />
+          </template>
+        </el-table-column>
+      </el-table>
+    </div>
 
     <!-- 重置按钮 -->
     <div class="panel-footer">
@@ -111,18 +136,16 @@ const modeMeta: Record<string, { displayName: string; description: string; icon:
   TYPO_GRAMMAR: { displayName: '错别字/语法', description: '轻量级错别字和语法检查', icon: EditPen, color: '#EF4444' },
   MULTIMODAL: { displayName: '多模态识别', description: '表格结构化、公式识别、图纸智能分析', icon: PictureFilled, color: '#6366F1' },
   CUSTOM_RULE: { displayName: '自定义规则', description: '用户自定义规则审查（仅执行启用的规则）', icon: Setting, color: '#6B7280' },
-  FULL_REVIEW: { displayName: '全量审查', description: '执行所有规则和AI审查', icon: Check, color: '#1D4ED8' },
 }
 
-// 默认配置（standardRef 为 boolean）
+// 默认配置（standardRef 为三态枚举）
 const defaultConfig: Record<string, any> = {
-  LIBRARY_REVIEW: { enabled: true, rules: true, standardRef: true, ai: true, aiStrategy: 'standard', crossFile: false },
-  DOC_REVIEW: { enabled: true, rules: true, standardRef: true, ai: true, aiStrategy: 'refCompare', crossFile: false },
-  CONSISTENCY: { enabled: true, rules: true, standardRef: true, ai: true, aiStrategy: 'standard', crossFile: true },
-  TYPO_GRAMMAR: { enabled: true, rules: true, standardRef: false, ai: true, aiStrategy: 'llmOnly', crossFile: false },
-  MULTIMODAL: { enabled: true, rules: true, standardRef: false, ai: true, aiStrategy: 'multimodal', crossFile: false },
-  CUSTOM_RULE: { enabled: true, rules: true, standardRef: false, ai: false, aiStrategy: 'standard', crossFile: false },
-  FULL_REVIEW: { enabled: true, rules: true, standardRef: true, ai: true, aiStrategy: 'standard', crossFile: true },
+  LIBRARY_REVIEW: { enabled: true, rules: true, standardRef: 'on', ai: true, aiStrategy: 'standard', crossFile: false },
+  DOC_REVIEW: { enabled: true, rules: true, standardRef: 'on', ai: true, aiStrategy: 'refCompare', crossFile: false },
+  CONSISTENCY: { enabled: true, rules: true, standardRef: 'on', ai: true, aiStrategy: 'standard', crossFile: true },
+  TYPO_GRAMMAR: { enabled: true, rules: true, standardRef: 'config', ai: true, aiStrategy: 'llmOnly', crossFile: false },
+  MULTIMODAL: { enabled: true, rules: true, standardRef: 'config', ai: true, aiStrategy: 'multimodal', crossFile: false },
+  CUSTOM_RULE: { enabled: true, rules: true, standardRef: 'off', ai: false, aiStrategy: 'standard', crossFile: false },
 }
 
 // 原始数据（用于比较是否有修改）
@@ -156,7 +179,7 @@ async function fetchData() {
         color: modeMeta[mode]?.color || '#6B7280',
         enabled: cfg.enabled !== false,
         rules: cfg.rules !== false,
-        standardRef: cfg.standardRef === true || cfg.standardRef === 'on',
+        standardRef: cfg.standardRef || 'off',
         ai: cfg.ai !== false,
         aiStrategy: cfg.aiStrategy || 'standard',
         crossFile: cfg.crossFile === true,
@@ -189,7 +212,7 @@ async function handleSave() {
       config[m.mode] = {
         enabled: m.enabled,
         rules: m.rules,
-        standardRef: m.standardRef === true,  // 确保是 boolean 类型
+        standardRef: m.standardRef,
         ai: m.ai,
         aiStrategy: m.aiStrategy,
         crossFile: m.crossFile,
@@ -239,6 +262,20 @@ onMounted(() => { fetchData() })
 .panel-alert {
   flex: 1;
   border-radius: 8px;
+}
+
+.section-block {
+  border: 1px solid var(--el-border-color-light);
+  border-radius: 8px;
+  padding: 12px;
+  background: var(--el-bg-color-page);
+}
+
+.section-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--el-text-color-primary);
+  margin-bottom: 6px;
 }
 
 .matrix-table {

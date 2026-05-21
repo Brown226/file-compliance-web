@@ -8,9 +8,9 @@
 
     <!-- 统计卡片 -->
     <div class="kb-stats">
-      <StatsCard :value="treeStats.totalCategories" label="知识子库" :icon="FolderOpened" variant="primary" />
+      <StatsCard :value="treeStats.totalFolders" label="目录节点" :icon="FolderOpened" variant="primary" />
+      <StatsCard :value="treeStats.totalKnowledgeBases" label="知识子库" :icon="Collection" variant="info" />
       <StatsCard :value="treeStats.totalDocuments" label="向量片段" :icon="DataAnalysis" variant="success" />
-      <StatsCard :value="treeStats.activeCategories" label="启用子库" :icon="CircleCheck" variant="info" />
     </div>
 
     <!-- 主体：左右分栏 -->
@@ -71,7 +71,7 @@
                     <template #dropdown>
                       <el-dropdown-menu>
                         <el-dropdown-item command="create">
-                          <el-icon><Plus /></el-icon> 新建子库
+                          <el-icon><Plus /></el-icon> 新建子节点
                         </el-dropdown-item>
                         <el-dropdown-item command="edit">
                           <el-icon><Edit /></el-icon> 编辑
@@ -111,9 +111,9 @@
             </div>
             <div class="kb-content__actions">
               <el-button type="primary" size="small" @click="showCreateDialog(currentTreeNode)">
-                <el-icon><Plus /></el-icon> 新建子库
+                <el-icon><Plus /></el-icon> 新建子节点
               </el-button>
-              <el-button v-if="currentTreeNode.id" size="small" @click="showUploadDialog(currentTreeNode)">
+              <el-button v-if="currentTreeNode.type === 'knowledge'" size="small" @click="showUploadDialog(currentTreeNode)">
                 <el-icon><Upload /></el-icon> 上传文档
               </el-button>
             </div>
@@ -130,7 +130,7 @@
                 <div class="kb-card" @click="handleCardClick(cat)">
                   <div class="kb-card__header">
                     <div class="kb-card__icon">
-                      <el-icon :size="20"><Collection /></el-icon>
+                      <el-icon :size="20"><FolderOpened v-if="hasChildren(cat)" /><Collection v-else /></el-icon>
                     </div>
                     <div class="kb-card__info">
                       <div class="kb-card__name" :title="cat.name">{{ cat.name }}</div>
@@ -147,10 +147,13 @@
                       <el-icon class="kb-card__more"><MoreFilled /></el-icon>
                       <template #dropdown>
                         <el-dropdown-menu>
-                          <el-dropdown-item command="upload">
+                          <el-dropdown-item command="create">
+                            <el-icon><Plus /></el-icon> 新建子节点
+                          </el-dropdown-item>
+                          <el-dropdown-item command="upload" :disabled="hasChildren(cat)">
                             <el-icon><Upload /></el-icon> 上传文档
                           </el-dropdown-item>
-                          <el-dropdown-item command="documents">
+                          <el-dropdown-item command="documents" :disabled="hasChildren(cat)">
                             <el-icon><Document /></el-icon> 查看文档
                           </el-dropdown-item>
                           <el-dropdown-item command="edit">
@@ -170,8 +173,8 @@
                     </div>
                     <div class="kb-card__divider"></div>
                     <div class="kb-card__stat">
-                      <el-icon :size="13"><CircleCheck v-if="cat.status === 'ACTIVE'" /><CircleClose v-else /></el-icon>
-                      <span>{{ cat.status === 'ACTIVE' ? '启用' : '归档' }}</span>
+                      <el-icon :size="13"><FolderOpened v-if="hasChildren(cat)" /><Collection v-else /></el-icon>
+                      <span>{{ hasChildren(cat) ? `${cat.children?.length || 0} 个子节点` : '叶子知识库' }}</span>
                     </div>
                   </div>
                 </div>
@@ -179,7 +182,7 @@
             </el-row>
           </div>
           <div v-else class="kb-card-empty">
-            <el-empty description="此目录下暂无知识库，点击上方按钮新建" :image-size="80" />
+            <el-empty description="此节点下暂无子节点，点击上方按钮新建" :image-size="80" />
           </div>
         </template>
       </div>
@@ -188,7 +191,7 @@
     <!-- 新建/编辑对话框 -->
     <el-dialog
       v-model="dialogVisible"
-      :title="isEdit ? '编辑知识库' : '新建知识库'"
+      :title="isEdit ? '编辑节点' : '新建节点'"
       width="560px"
       destroy-on-close
     >
@@ -213,14 +216,14 @@
             v-model="formData.description"
             type="textarea"
             :rows="3"
-            placeholder="子库用途说明"
+            placeholder="节点用途说明"
             maxlength="200"
             show-word-limit
           />
         </el-form-item>
         <el-form-item label="文档类型">
           <el-input v-model="formData.documentTypes" placeholder="standard,law,reference（逗号分隔）" />
-          <div class="form-tip">不同类型用英文逗号分隔，用于标识此知识库收录的文档类别</div>
+          <div class="form-tip">不同类型用英文逗号分隔，仅对叶子知识库收录文档时生效</div>
         </el-form-item>
       </el-form>
       <template #footer>
@@ -247,7 +250,7 @@ import { useRouter } from 'vue-router'
 import {
   Plus, Upload, Edit, Delete, Search,
   FolderOpened, Collection, Document, MoreFilled,
-  CircleCheck, CircleClose, DataAnalysis, DArrowLeft, DArrowRight,
+  DataAnalysis, DArrowLeft, DArrowRight,
 } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import StatsCard from './components/StatsCard.vue'
@@ -272,9 +275,9 @@ const sidebarCollapsed = ref(false)
 
 // ===== 统计数据 =====
 const treeStats = reactive({
-  totalCategories: 0,
+  totalFolders: 0,
+  totalKnowledgeBases: 0,
   totalDocuments: 0,
-  activeCategories: 0,
 })
 
 // ===== 目录树 =====
@@ -298,19 +301,24 @@ const fetchTree = async () => {
     const { data } = await getKnowledgeTreeApi()
     treeData.value = data || []
 
-    let totalCategories = 0, totalDocuments = 0, activeCategories = 0
+    let totalFolders = 0
+    let totalKnowledgeBases = 0
+    let totalDocuments = 0
     const countNodes = (nodes: KnowledgeTreeNode[]) => {
       for (const node of nodes) {
-        totalCategories++
+        if (node.type === 'folder') {
+          totalFolders++
+        } else {
+          totalKnowledgeBases++
+        }
         totalDocuments += node.documentCount || 0
-        activeCategories++
         if (node.children) countNodes(node.children)
       }
     }
     countNodes(treeData.value)
-    treeStats.totalCategories = totalCategories
+    treeStats.totalFolders = totalFolders
+    treeStats.totalKnowledgeBases = totalKnowledgeBases
     treeStats.totalDocuments = totalDocuments
-    treeStats.activeCategories = activeCategories
 
     try {
       const stats = await getVectorStatsApi()
@@ -341,6 +349,10 @@ const handleNodeCommand = (cmd: string, data: KnowledgeTreeNode) => {
 
 // ===== 子分类 =====
 const childCategories = ref<KnowledgeCategory[]>([])
+
+const hasChildren = (cat: Partial<KnowledgeCategory>) => {
+  return Boolean(cat.children && cat.children.length > 0)
+}
 
 // 展平树形结构为一维数组
 const flattenTree = (nodes: KnowledgeCategory[]): KnowledgeCategory[] => {
@@ -376,13 +388,25 @@ const goToDocuments = (cat: KnowledgeCategory) => {
 }
 
 const handleCardClick = (cat: KnowledgeCategory) => {
+  if (hasChildren(cat)) {
+    currentTreeNode.value = {
+      id: cat.id,
+      name: cat.name,
+      parentId: cat.parentId || null,
+      type: 'folder',
+      documentCount: cat._count?.vectorDocuments || 0,
+      children: [],
+    }
+    return
+  }
   goToDocuments(cat)
 }
 
 const handleCardCommand = (cmd: string, cat: KnowledgeCategory) => {
   switch (cmd) {
-    case 'upload': showUploadDialog(cat); break
-    case 'documents': goToDocuments(cat); break
+    case 'create': showCreateDialog(cat); break
+    case 'upload': if (!hasChildren(cat)) showUploadDialog(cat); break
+    case 'documents': if (!hasChildren(cat)) goToDocuments(cat); break
     case 'edit': showEditDialog(cat); break
     case 'delete': handleDelete(cat.id); break
   }
@@ -454,7 +478,7 @@ const handleSubmit = async () => {
 
 const handleDeleteNode = async (node: KnowledgeTreeNode) => {
   try {
-    await ElMessageBox.confirm('确认删除此节点及所有关联数据？此操作不可撤销。', '删除确认', {
+    await ElMessageBox.confirm('仅允许删除空节点。若该节点下还有子节点或文档，系统将拒绝删除。', '删除确认', {
       confirmButtonText: '确认删除',
       cancelButtonText: '取消',
       type: 'warning',
@@ -472,8 +496,8 @@ const handleDelete = async (id: string) => {
     }
     await fetchTree()
     await fetchFlatCategories()
-  } catch (e) {
-    ElMessage.error('删除失败')
+  } catch (e: any) {
+    ElMessage.error(e?.message || '删除失败')
   }
 }
 

@@ -11,7 +11,8 @@ import { success, error, paginated } from '../utils/response';
 export const createTask = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const { title, description, standardId, standardIds, reviewMode, knowledgeCategoryId, knowledgeCategoryIds,
-      perspective, preAnalysisData, reviewPoints, corePurposes, selectedTemplateId, intraFileConsistency } = req.body;
+      perspective, preAnalysisData, reviewPoints, corePurposes, selectedTemplateId, intraFileConsistency,
+      reviewPlan, ruleLibraryId } = req.body;
     const creatorId = req.user?.id;
     const files = req.files as Express.Multer.File[];
 
@@ -66,6 +67,14 @@ export const createTask = async (req: AuthRequest, res: Response): Promise<void>
       parsedPreAnalysisData = preAnalysisData;
     }
 
+    let parsedReviewPlan: any = undefined;
+    if (typeof reviewPlan === 'string') {
+      try { parsedReviewPlan = JSON.parse(reviewPlan); }
+      catch { /* 忽略解析错误 */ }
+    } else if (typeof reviewPlan === 'object' && reviewPlan !== null) {
+      parsedReviewPlan = reviewPlan;
+    }
+
     // 解析 reviewPoints（通过 FormData 传 JSON 字符串）
     let parsedReviewPoints: string[] | undefined;
     if (typeof reviewPoints === 'string') {
@@ -97,6 +106,8 @@ export const createTask = async (req: AuthRequest, res: Response): Promise<void>
       dwgParsedData: parsedDwgData,
       perspective,
       preAnalysisData: parsedPreAnalysisData,
+      reviewPlan: parsedReviewPlan,
+      ruleLibraryId: typeof ruleLibraryId === 'string' && ruleLibraryId.trim() ? ruleLibraryId.trim() : undefined,
       reviewPoints: parsedReviewPoints,
       corePurposes: parsedCorePurposes,
       selectedTemplateId,
@@ -225,6 +236,9 @@ function mapTaskForFrontend(task: any) {
     ...task,
     user: task.creator ? { nick_name: task.creator.name, username: task.creator.username } : null,
     create_time: task.createdAt,
+    ruleLibraryId: task.ruleLibraryId || null,
+    reviewPlan: task.reviewPlan || null,
+    ruleLibrary: task.ruleLibrary || null,
     files: (task.files || []).map(mapFileForFrontend),
   };
 }
@@ -610,7 +624,24 @@ export const preAnalyze = async (req: Request, res: Response): Promise<void> => 
       return;
     }
 
+    // 记录请求详情（便于调试）
+    console.log('[PreAnalysis API] 收到预分析请求:', {
+      fileCount: files.length,
+      fileNames: files.map((f: any) => f.name),
+      hasFilePath: files.some((f: any) => !!f.filePath),
+      timestamp: new Date().toISOString()
+    });
+
     const result = await PreAnalysisService.analyzeFiles(files);
+
+    // 记录结果摘要
+    console.log('[PreAnalysis API] 预分析完成:', {
+      documentType: result.documentType,
+      hasContractType: !!result.contractType,
+      reviewPointsCount: result.suggestedReviewPoints?.length || 0,
+      corePurposesCount: result.suggestedCorePurposes?.length || 0,
+    });
+
     success(res, result);
   } catch (err) {
     console.error('PreAnalyze Error:', err);

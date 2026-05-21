@@ -8,7 +8,7 @@
  * - 引擎策略（RAG/LLM）是 Pipeline 运行时决策，不污染提示词分类
  *
  * 场景 → Pipeline 映射：
- * - library_review  → LIBRARY_REVIEW, FULL_REVIEW
+ * - library_review  → LIBRARY_REVIEW, CONSISTENCY
  * - consistency     → CONSISTENCY
  * - typo_grammar    → TYPO_GRAMMAR
  * - doc_review      → DOC_REVIEW
@@ -49,7 +49,7 @@ const MODULE_LABELS: Record<string, string> = {
 
 const BUILTIN_TEMPLATES: PromptTemplateData[] = [
   // ==========================================
-  // 以库审文（library_review）— LIBRARY_REVIEW / FULL_REVIEW
+  // 以库审文（library_review）— LIBRARY_REVIEW / CONSISTENCY
   // ==========================================
   {
     key: 'library_review_system',

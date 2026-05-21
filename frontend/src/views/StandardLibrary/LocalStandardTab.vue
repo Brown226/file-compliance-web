@@ -68,7 +68,7 @@
         </el-table-column>
         <el-table-column prop="standardName" label="标准名称" min-width="200" show-overflow-tooltip>
           <template #default="{ row }">
-            <span class="standard-name">{{ row.standardName || '-' }}</span>
+            <span class="standard-name">{{ row.standardName || row.title || '-' }}</span>
           </template>
         </el-table-column>
         <el-table-column prop="standardIdent" label="标识符" width="80">
@@ -277,7 +277,7 @@ const fetchTableData = async () => {
       params.search = searchKeyword.value
     }
     if (filterStatus.value) {
-      params.isActive = filterStatus.value === 'CURRENT' ? true : filterStatus.value
+      params.standardStatus = filterStatus.value
     }
     const { data } = await getStandardsApi(params)
     tableData.value = data?.items || []
@@ -336,7 +336,7 @@ const editForm = reactive({
 const handleEdit = (row: Standard) => {
   currentEditId.value = row.id
   editForm.standardNo = row.standardNo || ''
-  editForm.standardName = row.title || row.standardName || ''
+  editForm.standardName = row.standardName || row.title || ''
   editForm.standardIdent = row.standardIdent || ''
   editForm.standardStatus = row.standardStatus || 'CURRENT'
   editForm.publishDate = row.publishDate ? formatDateToStr(row.publishDate) : ''
@@ -359,6 +359,7 @@ const handleSubmitEdit = async () => {
   try {
     await updateStandardApi(currentEditId.value, {
       title: editForm.standardName,
+      standardName: editForm.standardName,
       standardNo: editForm.standardNo,
       standardIdent: editForm.standardIdent || undefined,
       standardStatus: editForm.standardStatus,

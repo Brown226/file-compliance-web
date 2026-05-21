@@ -6,6 +6,7 @@ import { success, error } from '../utils/response';
 import path from 'path';
 import fs from 'fs';
 import { v4 as uuidv4 } from 'uuid';
+import { FileTypeService } from '../services/file-type.service';
 
 const UPLOAD_DIR = path.join(__dirname, '../../uploads/rule-libraries');
 if (!fs.existsSync(UPLOAD_DIR)) fs.mkdirSync(UPLOAD_DIR, { recursive: true });
@@ -13,7 +14,8 @@ if (!fs.existsSync(UPLOAD_DIR)) fs.mkdirSync(UPLOAD_DIR, { recursive: true });
 /** 获取规则库列表 */
 export const listLibraries = async (_req: AuthRequest, res: Response): Promise<void> => {
   try {
-    const libraries = await RuleLibraryService.list();
+    const selectableOnly = _req.query.selectableOnly === 'true';
+    const libraries = await RuleLibraryService.list({ selectableOnly });
     success(res, libraries);
   } catch (err) {
     console.error('List RuleLibraries Error:', err);
@@ -79,7 +81,7 @@ export const parseRulesFromFile = async (req: AuthRequest, res: Response): Promi
     const savedPath = path.join(UPLOAD_DIR, savedName);
     fs.renameSync(file.path, savedPath);
 
-    const fileType = ext.replace('.', '') === 'doc' ? 'docx' : ext.replace('.', '');
+    const fileType = FileTypeService.getStandardizedType(ext);
     const text = await ParserService.parseFile(savedPath, fileType);
     if (!text || text.trim().length < 10) {
       error(res, '文件内容过少或解析失败', 400); return;
@@ -90,6 +92,52 @@ export const parseRulesFromFile = async (req: AuthRequest, res: Response): Promi
   } catch (err: any) {
     console.error('Parse Rules Error:', err);
     error(res, err.message || '解析失败', 500);
+  }
+};
+
+/** 上传文件解析规则预览 */
+export const parseRulesPreview = async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const file = req.file;
+    if (!file) { error(res, '请选择文件', 400); return; }
+
+    const ext = path.extname(file.originalname).toLowerCase();
+    const savedName = `${uuidv4()}${ext}`;
+    const savedPath = path.join(UPLOAD_DIR, savedName);
+    fs.renameSync(file.path, savedPath);
+
+    const fileType = FileTypeService.getStandardizedType(ext);
+    const text = await ParserService.parseFile(savedPath, fileType);
+    if (!text || text.trim().length < 10) {
+      error(res, '文件内容过少或解析失败', 400); return;
+    }
+
+    const preview = await RuleLibraryService.previewRulesFromText((req.params.id as string), text, file.originalname);
+    success(res, preview, `成功解析 ${preview.items.length} 条候选规则`);
+  } catch (err: any) {
+    console.error('Parse Rules Preview Error:', err);
+    error(res, err.message || '解析预览失败', 500);
+  }
+};
+
+/** 导入规则预览结果 */
+export const importPreviewItems = async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const { items, mode, sourceFileName } = req.body || {};
+    if (!Array.isArray(items)) {
+      error(res, 'items 必须为数组', 400); return;
+    }
+
+    const result = await RuleLibraryService.importPreviewItems(
+      req.params.id as string,
+      items,
+      mode === 'replace' ? 'replace' : 'merge',
+      typeof sourceFileName === 'string' ? sourceFileName : undefined,
+    );
+    success(res, result, `成功导入 ${result.count} 条规则`);
+  } catch (err: any) {
+    console.error('Import Preview Items Error:', err);
+    error(res, err.message || '导入失败', 500);
   }
 };
 

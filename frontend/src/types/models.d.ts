@@ -36,6 +36,9 @@ export interface Task {
   title: string
   status: TaskStatus
   reviewMode?: string
+  ruleLibraryId?: string | null
+  reviewPlan?: ReviewPlan | null
+  ruleLibrary?: { id: string; name: string; status: 'DRAFT' | 'PUBLISHED' | 'ARCHIVED' } | null
   createdAt: string
   updatedAt: string
   completedAt?: string | null
@@ -72,6 +75,8 @@ export interface TaskDetail {
   issueType: IssueCategory
   ruleCode?: string
   severity: IssueSeverity
+  reviewSource?: 'RULE_ENGINE' | 'RULE_LIBRARY' | 'STANDARD_REF' | 'AI'
+  ruleLibraryItemId?: string | null
   originalText: string
   suggestedText: string
   description: string
@@ -94,6 +99,8 @@ export interface TaskDetail {
   /** 文本位置信息 - 用于前端定位 */
   textPosition?: TextPosition
   locateMeta?: LocateMeta | null
+  confidence?: ReviewConfidence | null
+  confidenceSource?: string | null
   /** DWG 解析元数据 */
   dwgMetadata?: DwgMetadata
   /** 标记建议是否已采纳 */
@@ -118,6 +125,30 @@ export interface LocateMeta {
   chunk?: { index: number; start: number; end: number; total: number }
   hint?: { fileId?: string; pageHint?: number; lineHint?: number; cadHandleId?: string }
 }
+
+export type ReviewObjective = 'COMPLIANCE' | 'COMPARE' | 'PROOFREAD' | 'STRUCTURED'
+export type ReviewEvidenceSource = 'STANDARD' | 'RULE_LIBRARY' | 'REFERENCE'
+export type ReviewExecutionProfile = 'HYBRID' | 'RULE_ONLY'
+
+export interface ReviewPlan {
+  objective: ReviewObjective
+  evidence: {
+    sources: ReviewEvidenceSource[]
+    knowledgeCategoryIds?: string[]
+    ruleLibraryId?: string | null
+    refFileGroupId?: string | null
+  }
+  enhancements: {
+    intraFileConsistency: boolean
+    crossFileConsistency: boolean
+  }
+  execution: {
+    profile: ReviewExecutionProfile
+  }
+  templateId?: string
+}
+
+export type ReviewConfidence = 'RULE_EXACT' | 'STD_MATCH' | 'AI_INFERRED' | 'NO_RESULT'
 
 export interface DiffRange {
   start: number

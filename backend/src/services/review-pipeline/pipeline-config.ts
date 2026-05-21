@@ -47,6 +47,9 @@ export function shouldRunStage(
   capabilities: ModeCapabilities,
   stageName: 'rules' | 'ai' | 'stdRef',
 ): boolean {
+  if (ctx.executionOverrides?.stages && stageName in ctx.executionOverrides.stages) {
+    return ctx.executionOverrides.stages[stageName] !== false;
+  }
   const config = getEffectiveConfig(ctx);
   const modeConfig = config.modes?.[ctx.reviewMode as ReviewModeType];
   if (!modeConfig?.stages) {

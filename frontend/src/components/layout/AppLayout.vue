@@ -1,4 +1,4 @@
-﻿<template>
+<template>
   <el-container class="layout-container">
     <el-aside :width="sidebarCollapsed ? '64px' : 'var(--corp-sidebar-width)'" class="aside" :class="{ collapsed: sidebarCollapsed, 'sidebar-open': sidebarOpen }">
       <div class="logo" :class="{ 'logo-collapsed': sidebarCollapsed }">
@@ -532,6 +532,14 @@ const submitUsernameChange = async () => {
   background-color: var(--bg-body);
 }
 
+/* 内层容器：确保填充侧边栏右侧的所有空间 */
+.layout-container > .el-container {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
 /* ===== 渚ц竟鏍?鈥?Near-black with subtle depth ===== */
 .aside {
   background:
@@ -1022,12 +1030,13 @@ const submitUsernameChange = async () => {
   line-height: 1.3;
 }
 
-/* 涓诲唴瀹瑰尯 */
+/* 主内容区（紧凑模式：为内容页最大化展示空间，使用flex填充剩余高度） */
 .main-content {
   background-color: #F5F5F5;
-  padding: 20px;
-  overflow-y: auto;
-  min-height: calc(100vh - var(--corp-header-height));
+  padding: 12px;
+  overflow-y: auto; /* 允许内容滚动 */
+  flex: 1; /* 关键：使用flex填充el-container的剩余空间 */
+  min-height: 0; /* 允许在flex容器中正确收缩 */
 }
 
 @media (max-width: 1024px) {

@@ -11,6 +11,7 @@ import { RAGService } from '../rag.service';
 import { VectorService } from '../vector.service';
 import { PromptTemplateService } from '../prompt-template.service';
 import { StandardTraceabilityService } from '../standard-traceability.service';
+import { SearchService } from '../search.service';
 
 export class AiReviewService {
   // ==================== AI 审查实现 ====================
@@ -84,10 +85,9 @@ export class AiReviewService {
 
     for (const catId of categoryIds) {
       try {
-        const results = await VectorService.hybridSearch(text.slice(0, 2000), {
+        const results = await SearchService.search(text.slice(0, 2000), {
           limit: 10,
           categoryId: catId,
-          rerank: false,
         });
         if (results.length > 0) {
           const context = results.map(r => r.content).join('\n\n');
@@ -366,7 +366,6 @@ export class AiReviewService {
   private static resolveScene(ctx: PipelineContext): string {
     const modeMap: Record<string, string> = {
       LIBRARY_REVIEW: 'library_review',
-      FULL_REVIEW: 'library_review',
       CONSISTENCY: 'consistency',
       TYPO_GRAMMAR: 'typo_grammar',
       DOC_REVIEW: 'doc_review',

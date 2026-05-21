@@ -53,7 +53,7 @@ const props = defineProps<{
   fileId: string | null
   fileType?: string
   fileName?: string
-  locateTarget?: { originalText: string; locateCandidates?: string[]; textPosition?: any; cadHandleId?: string; locateHint?: string; triggerId?: string } | null
+  locateTarget?: { originalText: string; locateCandidates?: string[]; textPosition?: any; locateMeta?: any; cadHandleId?: string; locateHint?: string; triggerId?: string } | null
 }>()
 
 const emit = defineEmits<{

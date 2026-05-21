@@ -108,11 +108,9 @@
             <span class="task-name-cell">{{ row.title }}</span>
           </template>
         </el-table-column>
-        <el-table-column prop="reviewMode" label="模式" width="110">
+        <el-table-column label="审查摘要" min-width="220" show-overflow-tooltip>
           <template #default="{ row }">
-            <span :class="['mode-tag', `mode-${(row.reviewMode || '').toLowerCase()}`]">
-              {{ getReviewModeLabel(row.reviewMode) }}
-            </span>
+            <span class="plan-summary-cell">{{ getReviewPlanSummary(row) }}</span>
           </template>
         </el-table-column>
         <el-table-column prop="status" label="状态" width="160">
@@ -280,17 +278,47 @@ const hasActiveFilters = computed(() => {
 
 const getStatusLabel = getTaskStatusLabel
 
-const getReviewModeLabel = (mode: string) => {
-  const map: Record<string, string> = {
-    FULL_REVIEW: '全面审查',
-    LIBRARY_REVIEW: '标准库审查',
-    DOC_REVIEW: '以文审文',
-    CONSISTENCY: '一致性检查',
-    TYPO_GRAMMAR: '错别字审查',
-    MULTIMODAL: '多模态审查',
-    CUSTOM_RULE: '自定义规则',
+const objectiveLabelMap: Record<string, string> = {
+  COMPLIANCE: '合规审查',
+  COMPARE: '参照比对',
+  PROOFREAD: '文本校对',
+  STRUCTURED: '结构化审查',
+}
+
+const evidenceLabelMap: Record<string, string> = {
+  STANDARD: '标准知识库',
+  RULE_LIBRARY: '规则库',
+  REFERENCE: '参考文件',
+}
+
+const getReviewPlanSummary = (row: any): string => {
+  const plan = row?.reviewPlan
+  if (!plan || typeof plan !== 'object') {
+    return row?.reviewMode ? `兼容模式：${row.reviewMode}` : '—'
   }
-  return map[mode] || mode || '-'
+
+  const objective = objectiveLabelMap[plan.objective] || plan.objective || '—'
+  const sources = Array.isArray(plan.evidence?.sources) ? plan.evidence.sources : []
+  const evidence = sources.length > 0
+    ? sources.map((s: string) => evidenceLabelMap[s] || s).join('+')
+    : '无外部依据'
+  const profile = plan.execution?.profile === 'RULE_ONLY' ? '仅规则' : '混合执行'
+
+  const moduleLabel = (() => {
+    if (plan.objective === 'COMPARE') return '一致性审查（对照）'
+    if (plan.objective === 'PROOFREAD') return '基础校对审查'
+    if (plan.objective === 'STRUCTURED') return '多模态审查'
+    if (plan.execution?.profile === 'RULE_ONLY' && sources.includes('RULE_LIBRARY')) return '规则库审查'
+    if (sources.includes('RULE_LIBRARY') && sources.includes('STANDARD')) return '以库审文'
+    if (sources.includes('RULE_LIBRARY')) return '规则库审查'
+    return '以库审文'
+  })()
+
+  const proofreadingEnhancement = plan.execution?.profile === 'RULE_ONLY'
+    ? '基础校对增强：关闭'
+    : `基础校对增强：${plan.enhancements?.intraFileConsistency ? '开启' : '关闭'}`
+
+  return `${moduleLabel}｜${objective}｜${evidence}｜${profile}｜${proofreadingEnhancement}`
 }
 
 

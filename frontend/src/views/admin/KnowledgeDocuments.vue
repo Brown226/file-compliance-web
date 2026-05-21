@@ -277,16 +277,6 @@
           </template>
         </el-table-column>
         <el-table-column prop="paragraph_count" label="段落数" width="80" align="right" sortable />
-        <el-table-column label="启用" width="80" align="center">
-          <template #default="{ row }">
-            <el-switch
-              v-model="row._isActive"
-              size="small"
-              @change="toggleDocActive(row)"
-              @click.stop
-            />
-          </template>
-        </el-table-column>
         <el-table-column prop="create_time" label="创建时间" width="170" sortable>
           <template #default="{ row }">
             {{ formatTime(row.create_time) }}
@@ -596,7 +586,6 @@ import {
   getTagsApi,
   createTagApi,
   deleteTagApi,
-  getDocumentTagsApi,
   addDocumentTagApi,
   removeDocumentTagApi,
   generateQuestionsApi,
@@ -644,7 +633,7 @@ const saveChunkConfig = async () => {
 
 // ===== 文档列表 =====
 const loading = ref(false)
-const documentList = ref<Array<GroupedDocument & { _isActive: boolean }>>([])
+const documentList = ref<GroupedDocument[]>([])
 const searchQuery = ref('')
 const tableRef = ref<any>(null)
 const selectedDocs = ref<any[]>([])
@@ -696,15 +685,10 @@ const fetchDocuments = async () => {
       pageSize: pagination.page_size,
       query: searchQuery.value || undefined,
     })
-    documentList.value = (data?.items || []).map(d => ({
-      ...d,
-      _isActive: true,
-    }))
+    documentList.value = data?.items || []
     pagination.total = data?.total || 0
 
-    // 加载标签数据
     await fetchAllTags()
-    await fetchAllDocumentTags()
 
     const hasPending = documentList.value.some(d => !d.is_fully_embedded)
     if (hasPending && !pollTimer) {
@@ -770,17 +754,6 @@ const finishEditDoc = async (row: any, event: Event) => {
 }
 
 const cancelEdit = () => { editingDoc.value = null; fetchDocuments() }
-
-// ===== 启用/禁用 =====
-const toggleDocActive = async (row: any) => {
-  try {
-    await updateDocumentApi(categoryId, { oldTitle: row.title, isActive: row._isActive })
-    ElMessage.success(row._isActive ? '已启用' : '已禁用')
-  } catch {
-    row._isActive = !row._isActive
-    ElMessage.error('操作失败')
-  }
-}
 
 // ===== 向量化 =====
 const vectorizeDoc = async (row: any) => {
@@ -906,7 +879,6 @@ const handleUploadComplete = (taskIds?: string[]) => {
 
 // ===== 标签管理 =====
 const allTags = ref<Tag[]>([])
-const documentTagsMap = ref<Record<string, Tag[]>>({})
 const tagPopoverVisible = ref<Record<string, boolean>>({})
 const tagFilterValue = ref<string[]>([])
 const newTagKey = ref('')
@@ -919,12 +891,7 @@ const fetchAllTags = async () => {
   } catch (_) {}
 }
 
-const fetchDocumentTags = async (title: string) => {
-  try {
-    const { data } = await getDocumentTagsApi(categoryId, title)
-    documentTagsMap.value[title] = data || []
-  } catch (_) {}
-}
+const getDocRow = (title: string) => documentList.value.find(doc => doc.title === title)
 
 const toggleTagPopover = async (title: string) => {
   const visible = !tagPopoverVisible.value[title]
@@ -933,23 +900,23 @@ const toggleTagPopover = async (title: string) => {
     tagPopoverVisible.value[key] = false
   }
   tagPopoverVisible.value[title] = visible
-  if (visible && !documentTagsMap.value[title]) {
-    await fetchDocumentTags(title)
-  }
 }
 
 const isTagApplied = (title: string, tagId: string): boolean => {
-  return documentTagsMap.value[title]?.some(t => t.id === tagId) || false
+  return getDocRow(title)?.tags?.some(t => t.id === tagId) || false
 }
 
 const toggleDocumentTag = async (title: string, tag: Tag) => {
+  const row = getDocRow(title)
+  if (!row) return
   try {
     if (isTagApplied(title, tag.id)) {
       await removeDocumentTagApi(categoryId, { tagId: tag.id, documentTitle: title })
+      row.tags = row.tags.filter(t => t.id !== tag.id)
     } else {
       await addDocumentTagApi(categoryId, { tagId: tag.id, documentTitle: title })
+      row.tags = [...(row.tags || []), tag]
     }
-    await fetchDocumentTags(title)
   } catch { ElMessage.error('标签操作失败') }
 }
 
@@ -963,7 +930,8 @@ const handleCreateTag = async (title: string) => {
     })
     allTags.value.push(data)
     await addDocumentTagApi(categoryId, { tagId: data.id, documentTitle: title })
-    await fetchDocumentTags(title)
+    const row = getDocRow(title)
+    if (row) row.tags = [...(row.tags || []), data]
     newTagKey.value = ''
     newTagValue.value = ''
   } catch (err: any) {
@@ -975,30 +943,22 @@ const handleDeleteTag = async (tagId: string) => {
   try {
     await deleteTagApi(tagId)
     allTags.value = allTags.value.filter(t => t.id !== tagId)
-    // Remove from all document tag maps
-    for (const title of Object.keys(documentTagsMap.value)) {
-      documentTagsMap.value[title] = documentTagsMap.value[title].filter(t => t.id !== tagId)
+    for (const doc of documentList.value) {
+      doc.tags = (doc.tags || []).filter(t => t.id !== tagId)
     }
   } catch { ElMessage.error('删除标签失败') }
 }
 
 /** 获取文档标签（优先从缓存，否则请求） */
 const getDocTags = (title: string): Tag[] => {
-  return documentTagsMap.value[title] || []
-}
-
-// 预加载所有文档的标签
-const fetchAllDocumentTags = async () => {
-  for (const doc of documentList.value) {
-    await fetchDocumentTags(doc.title)
-  }
+  return (getDocRow(title)?.tags || []) as Tag[]
 }
 
 /** 过滤后的文档列表（按标签） */
 const filteredDocumentList = computed(() => {
   if (tagFilterValue.value.length === 0) return documentList.value
   return documentList.value.filter(doc => {
-    const tags = documentTagsMap.value[doc.title] || []
+    const tags = doc.tags || []
     return tagFilterValue.value.some(tagId => tags.some(t => t.id === tagId))
   })
 })

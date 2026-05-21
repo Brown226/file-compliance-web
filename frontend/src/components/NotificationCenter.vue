@@ -1,112 +1,175 @@
 <template>
   <Teleport to="body">
-    <div v-if="visible" class="notification-center" @click.self="close">
-      <div class="notification-panel">
-        <div class="panel-header">
-          <h3>通知中心</h3>
-          <div class="header-actions">
-            <el-button size="small" link type="primary" @click="handleMarkAllRead">全部已读</el-button>
-            <el-button size="small" text @click="close"><el-icon><Close /></el-icon></el-button>
-          </div>
-        </div>
-
-        <el-tabs v-model="activeTab" @tab-click="handleTabClick">
-          <el-tab-pane :label="`通知 (${notificationTotal})`" name="notifications" />
-          <el-tab-pane :label="`公告 (${announcementUnread})`" name="announcements" />
-        </el-tabs>
-
-        <!-- 通知列表 Tab -->
-        <div v-if="activeTab === 'notifications'" class="notification-list">
-          <div v-if="filteredNotifications.length === 0" class="empty-state">
-            <el-icon :size="48" color="#d1d5db"><Bell /></el-icon>
-            <p>暂无通知</p>
-          </div>
-
-          <div
-            v-for="item in filteredNotifications"
-            :key="item.id"
-            class="notification-item"
-            :class="{ unread: !item.read }"
-            @click="handleRead(item)"
-          >
-            <div class="item-dot" v-if="!item.read"></div>
-            <div class="item-icon" :style="{ background: typeColor(item.type) }">
-              <el-icon :size="16"><component :is="typeIcon(item.type)" /></el-icon>
-            </div>
-            <div class="item-body">
-              <div class="item-title">{{ item.title }}</div>
-              <div class="item-desc">{{ item.description }}</div>
-              <div class="item-time">{{ formatTimeAgo(item.createdAt) }}</div>
-            </div>
-            <el-button size="small" link type="danger" @click.stop="deleteNotification(item.id)">
-              <el-icon><Delete /></el-icon>
-            </el-button>
-          </div>
-        </div>
-
-        <!-- 系统公告 Tab -->
-        <div v-else class="announcement-list">
-          <div v-if="announcementLoading" class="loading-state">
-            <el-icon :size="32" class="is-loading"><Loading /></el-icon>
-            <p>加载中...</p>
-          </div>
-
-          <div v-else-if="announcementHistory.length === 0" class="empty-state">
-            <el-icon :size="48" color="#d1d5db"><Bell /></el-icon>
-            <p>暂无公告</p>
-          </div>
-
-          <div
-            v-for="item in announcementHistory"
-            :key="item.id"
-            class="announcement-item"
-            :class="{ unread: !item.isRead }"
-            @click="showAnnouncementDetail(item)"
-          >
-            <div class="item-dot" v-if="!item.isRead"></div>
-            <div class="item-icon" :style="{ background: urgencyColor(item.urgency) }">
-              <el-icon :size="16"><component :is="urgencyIcon(item.urgency)" /></el-icon>
-            </div>
-            <div class="item-body">
-              <div class="item-header">
-                <el-tag
-                  :type="urgencyTagType(item.urgency)"
-                  effect="light"
-                  size="small"
-                >
-                  {{ urgencyLabel(item.urgency) }}
-                </el-tag>
-                <span class="item-time">{{ formatTimeAgoStr(item.publishAt) }}</span>
+    <Transition name="nc-fade">
+      <div v-if="visible" class="notification-center" @click.self="close">
+        <Transition name="nc-slide" appear>
+          <div class="notification-panel" v-show="visible">
+            <div class="panel-header">
+              <h3>通知中心</h3>
+              <div class="header-actions">
+                <el-button size="small" link type="primary" @click="handleMarkAllRead">全部已读</el-button>
+                <el-button size="small" text @click="close"><el-icon><Close /></el-icon></el-button>
               </div>
-              <div class="item-title">{{ item.title }}</div>
-              <div class="item-desc">{{ truncateContent(item.content) }}</div>
             </div>
-            <el-button
-              v-if="!item.isRead"
-              size="small"
-              link
-              type="primary"
-              @click.stop="markAnnouncementRead(item.id)"
-            >
-              标记已读
-            </el-button>
-          </div>
 
-          <!-- 分页 -->
-          <div v-if="announcementTotal > announcementLimit" class="pagination-wrap">
-            <el-pagination
-              size="small"
-              :current-page="announcementPage"
-              :page-size="announcementLimit"
-              :total="announcementTotal"
-              layout="prev, pager, next"
-              @current-change="handlePageChange"
-            />
+            <el-tabs v-model="activeTab" @tab-click="handleTabClick" class="nc-tabs">
+              <el-tab-pane :label="`通知 (${unreadCount})`" name="notifications" />
+              <el-tab-pane :label="`公告 (${announcementUnread})`" name="announcements" />
+            </el-tabs>
+
+            <!-- 通知列表 Tab -->
+            <div v-if="activeTab === 'notifications'" class="notification-list" ref="notifListRef">
+              <TransitionGroup name="nc-list" tag="div">
+                <div
+                  v-for="item in filteredNotifications"
+                  :key="item.id"
+                  class="notification-item"
+                  :class="{ unread: !item.read, 'has-action': !!item.action }"
+                  @click="handleItemClick(item)"
+                >
+                  <div class="item-indicator" :class="{ pulse: !item.read }">
+                    <span v-if="!item.read" class="indicator-dot"></span>
+                    <div class="item-icon" :style="{ background: typeConfig(item.type).color }">
+                      <el-icon :size="14"><component :is="typeConfig(item.type).icon" /></el-icon>
+                    </div>
+                  </div>
+                  <div class="item-body">
+                    <div class="item-title-row">
+                      <span class="item-title">{{ item.title }}</span>
+                      <el-tag v-if="item.tag" size="small" :type="tagType(item.tag)" effect="plain" round>{{ item.tag }}</el-tag>
+                    </div>
+                    <p class="item-desc">{{ item.description }}</p>
+                    <div class="item-meta">
+                      <span class="item-time">{{ formatTimeAgo(item.createdAt) }}</span>
+                      <span v-if="item.action" class="item-action-hint">{{ actionLabel(item.action) }} →</span>
+                    </div>
+                  </div>
+                  <el-button
+                    class="item-delete-btn"
+                    size="small"
+                    link
+                    type="danger"
+                    @click.stop="deleteNotification(item.id)"
+                  >
+                    <el-icon><Delete /></el-icon>
+                  </el-button>
+                </div>
+              </TransitionGroup>
+
+              <div v-if="filteredNotifications.length === 0" class="empty-state">
+                <div class="empty-illustration">
+                  <el-icon :size="40" color="#d1d5db"><Bell /></el-icon>
+                </div>
+                <p class="empty-text">暂无通知</p>
+                <p class="empty-subtext">新通知将在此处显示</p>
+              </div>
+            </div>
+
+            <!-- 系统公告 Tab -->
+            <div v-else class="announcement-list">
+              <div v-if="announcementLoading" class="loading-state">
+                <el-icon :size="28" class="is-loading" color="#409eff"><Loading /></el-icon>
+                <p>加载中...</p>
+              </div>
+
+              <div v-else-if="announcementHistory.length === 0" class="empty-state">
+                <div class="empty-illustration">
+                  <el-icon :size="40" color="#d1d5db"><Document /></el-icon>
+                </div>
+                <p class="empty-text">暂无公告</p>
+                <p class="empty-subtext">系统公告将在此处展示</p>
+              </div>
+
+              <TransitionGroup v-else name="nc-list" tag="div">
+                <div
+                  v-for="item in announcementHistory"
+                  :key="item.id"
+                  class="announcement-item"
+                  :class="{ unread: !item.isRead }"
+                  @click="showAnnouncementDetail(item)"
+                >
+                  <div class="item-indicator">
+                    <span v-if="!item.isRead" class="indicator-dot urgent-dot"></span>
+                    <div class="item-icon" :style="{ background: urgencyColor(item.urgency) }">
+                      <el-icon :size="14"><component :is="urgencyIcon(item.urgency)" /></el-icon>
+                    </div>
+                  </div>
+                  <div class="item-body">
+                    <div class="item-header">
+                      <el-tag :type="urgencyTagType(item.urgency)" effect="light" size="small" round>
+                        {{ urgencyLabel(item.urgency) }}
+                      </el-tag>
+                      <span class="item-time">{{ formatTimeAgoStr(item.publishAt) }}</span>
+                    </div>
+                    <p class="item-title">{{ item.title }}</p>
+                    <p class="item-desc">{{ truncateContent(item.content) }}</p>
+                  </div>
+                  <el-button
+                    v-if="!item.isRead"
+                    size="small"
+                    link
+                    type="primary"
+                    class="item-read-btn"
+                    @click.stop="markAnnouncementRead(item.id)"
+                  >
+                    标记已读
+                  </el-button>
+                </div>
+              </TransitionGroup>
+
+              <div v-if="announcementTotal > announcementLimit" class="pagination-wrap">
+                <el-pagination
+                  small
+                  :current-page="announcementPage"
+                  :page-size="announcementLimit"
+                  :total="announcementTotal"
+                  layout="prev, pager, next"
+                  @current-change="handlePageChange"
+                />
+              </div>
+            </div>
           </div>
-        </div>
+        </Transition>
+      </div>
+    </Transition>
+  </Teleport>
+
+  <!-- 通知详情对话框 -->
+  <el-dialog
+    v-model="notifDetailVisible"
+    :title="currentNotifItem?.title || '通知详情'"
+    width="480px"
+    destroy-on-close
+    class="notif-detail-dialog"
+  >
+    <template #header>
+      <div class="detail-header">
+        <el-tag v-if="currentNotifItem" :type="tagType(currentNotifItem.tag || '')" effect="light" size="small">
+          {{ currentNotifItem?.tag || '通知' }}
+        </el-tag>
+        <span class="detail-time">{{ currentNotifItem ? formatTimeAgo(currentNotifItem.createdAt) : '' }}</span>
+      </div>
+    </template>
+
+    <div class="notif-detail-content" v-if="currentNotifItem">
+      <p class="detail-desc">{{ currentNotifItem.description }}</p>
+      <div v-if="currentNotifItem.content" class="detail-extra">
+        <h4>详情</h4>
+        <p>{{ currentNotifItem.content }}</p>
       </div>
     </div>
-  </Teleport>
+
+    <template #footer>
+      <el-button @click="notifDetailVisible = false">关闭</el-button>
+      <el-button
+        v-if="currentNotifItem && currentNotifItem.action"
+        type="primary"
+        @click="handleAction(currentNotifItem)"
+      >
+        {{ actionLabel(currentNotifItem.action!) }}
+      </el-button>
+    </template>
+  </el-dialog>
 
   <!-- 公告详情对话框 -->
   <el-dialog
@@ -114,22 +177,18 @@
     :title="detailItem?.title || '公告详情'"
     width="700px"
     destroy-on-close
+    class="announce-detail-dialog"
   >
     <template #header>
       <div class="detail-header">
-        <el-tag
-          v-if="detailItem"
-          :type="urgencyTagType(detailItem.urgency)"
-          effect="light"
-          size="small"
-        >
+        <el-tag v-if="detailItem" :type="urgencyTagType(detailItem.urgency)" effect="light" size="small">
           {{ urgencyLabel(detailItem.urgency) }}
         </el-tag>
         <span class="detail-time">{{ formatTimeAgoStr(detailItem?.publishAt) }}</span>
       </div>
     </template>
 
-    <div class="markdown-body" v-if="detailItem" v-html="renderedContent(detailItem.content)"></div>
+    <div class="markdown-body announce-content" v-if="detailItem" v-html="renderedContent(detailItem.content)"></div>
 
     <template #footer>
       <el-button @click="detailVisible = false">关闭</el-button>
@@ -141,8 +200,12 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, watch } from 'vue'
-import { Bell, Close, Delete, Check, Warning, InfoFilled, ChatDotRound, Loading, Document } from '@element-plus/icons-vue'
+import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
+import { useRouter } from 'vue-router'
+import {
+  Bell, Close, Delete, Check, Warning, InfoFilled,
+  ChatDotRound, Loading, Document, Tickets, Setting,
+} from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import type { SystemAnnouncement } from '@/types/models'
 import { useMarkdown } from '@/composables/useMarkdown'
@@ -152,44 +215,40 @@ import {
   markAllAnnouncementsReadApi,
 } from '@/api/announcement'
 
+const router = useRouter()
 const { renderMarkdown } = useMarkdown()
 
-interface NotificationItem {
+export interface NotificationItem {
   id: string
-  type: 'task' | 'warning' | 'info' | 'message'
+  type: 'task' | 'warning' | 'info' | 'message' | 'system' | 'success'
   title: string
   description: string
+  content?: string
   read: boolean
-  createdAt: Date
+  createdAt: Date | string
+  tag?: string
+  action?: 'view_task' | 'view_settings' | 'view_standards' | 'navigate' | null
+  actionPayload?: Record<string, any>
+  avatar?: string
+  persistent?: boolean
 }
 
 const visible = ref(false)
 const activeTab = ref('notifications')
 
-// 通知列表（模拟数据，后续可接 API）
-const notifications = ref<NotificationItem[]>([
-  {
-    id: '1', type: 'task', title: '审查任务完成',
-    description: '任务「2024年度报告审查」已完成，发现 3 个问题',
-    read: false, createdAt: new Date(Date.now() - 300000),
-  },
-  {
-    id: '2', type: 'warning', title: 'LLM 接口响应慢',
-    description: 'OpenAI API 平均响应时间超过 10s，请检查配置',
-    read: false, createdAt: new Date(Date.now() - 1800000),
-  },
-  {
-    id: '3', type: 'info', title: '标准库更新',
-    description: '新增 5 条企业标准规范，请及时查看',
-    read: true, createdAt: new Date(Date.now() - 3600000),
-  },
-])
+// 模块级状态（全局共享）
+const notifications = ref<NotificationItem[]>([])
+const notifListRef = ref<HTMLElement | null>(null)
 
-const notificationTotal = computed(() => notifications.value.length)
-const notificationUnreadCount = computed(() => notifications.value.filter(n => !n.read).length)
+const unreadCount = computed(() => notifications.value.filter(n => !n.read).length)
 
 const filteredNotifications = computed(() => {
-  return notifications.value
+  return notifications.value.sort((a, b) => {
+    const aTime = new Date(a.createdAt).getTime()
+    const bTime = new Date(b.createdAt).getTime()
+    if (a.read !== b.read) return a.read ? 1 : -1
+    return bTime - aTime
+  })
 })
 
 // 公告列表状态
@@ -202,34 +261,141 @@ const announcementUnread = computed(() =>
   announcementHistory.value.filter(a => !a.isRead).length
 )
 
-// 详情对话框
+// 详情对话框 - 通知
+const notifDetailVisible = ref(false)
+const currentNotifItem = ref<NotificationItem | null>(null)
+
+// 详情对话框 - 公告
 const detailVisible = ref(false)
 const detailItem = ref<SystemAnnouncement | null>(null)
 
+// 自动刷新定时器
+let refreshTimer: ReturnType<typeof setInterval> | null = null
+
 function open() {
   visible.value = true
+  loadNotifications()
   if (activeTab.value === 'announcements') {
     loadAnnouncements()
   }
+  startAutoRefresh()
 }
-function close() { visible.value = false }
-function toggle() { visible.value = !visible.value }
+
+function close() {
+  visible.value = false
+  stopAutoRefresh()
+}
+
+function toggle() { visible.value ? close() : open() }
+
+async function loadNotifications() {
+  try {
+    // TODO: 替换为实际 API 调用
+    // const res = await getNotificationsApi()
+    // notifications.value = res.data
+
+    notifications.value = [
+      {
+        id: '1', type: 'task', title: '审查任务完成',
+        description: '任务「2024年度报告审查」已完成，发现 3 个问题需要处理',
+        read: false, createdAt: new Date(Date.now() - 300000),
+        tag: '任务', action: 'view_task', actionPayload: { taskId: 'task_001' },
+      },
+      {
+        id: '2', type: 'warning', title: 'LLM 接口响应慢',
+        description: 'OpenAI API 平均响应时间超过 10s，可能影响审查效率',
+        content: '建议检查网络连接或切换到备用模型配置',
+        read: false, createdAt: new Date(Date.now() - 1800000),
+        tag: '警告', action: 'view_settings', actionPayload: { section: 'ai-engine' },
+      },
+      {
+        id: '3', type: 'success', title: '标准库更新',
+        description: '新增 5 条企业标准规范，已自动同步到知识库',
+        read: true, createdAt: new Date(Date.now() - 3600000),
+        tag: '更新', action: 'view_standards',
+      },
+      {
+        id: '4', type: 'info', title: '系统维护通知',
+        description: '系统将于今晚 22:00-06:00 进行例行维护升级',
+        read: false, createdAt: new Date(Date.now() - 7200000),
+        tag: '系统', persistent: true,
+      },
+      {
+        id: '5', type: 'message', title: '协作邀请',
+        description: '张三 邀请您加入「Q2合规检查」项目组',
+        read: false, createdAt: new Date(Date.now() - 86400000),
+        tag: '消息',
+      },
+    ]
+  } catch (error) {
+    console.error('加载通知失败:', error)
+  }
+}
+
+function handleItemClick(item: NotificationItem) {
+  markAsRead(item)
+
+  if (item.action) {
+    handleAction(item)
+  } else if (item.content || item.description.length > 60) {
+    showNotificationDetail(item)
+  }
+}
+
+function handleAction(item: NotificationItem) {
+  switch (item.action) {
+    case 'view_task':
+      if (item.actionPayload?.taskId) {
+        router.push(`/review/${item.actionPayload.taskId}`)
+        close()
+      }
+      break
+    case 'view_settings':
+      router.push('/admin/ai-engine')
+      close()
+      break
+    case 'view_standards':
+      router.push('/admin/standards')
+      close()
+      break
+    case 'navigate':
+      if (item.actionPayload?.path) {
+        router.push(item.actionPayload.path)
+        close()
+      }
+      break
+    default:
+      showNotificationDetail(item)
+  }
+}
+
+function showNotificationDetail(item: NotificationItem) {
+  currentNotifItem.value = item
+  notifDetailVisible.value = true
+}
+
+function markAsRead(item: NotificationItem) {
+  const target = notifications.value.find(n => n.id === item.id)
+  if (target) {
+    target.read = true
+  }
+}
 
 function handleRead(item: NotificationItem) {
-  item.read = true
+  markAsRead(item)
 }
 
 function handleMarkAllRead() {
   if (activeTab.value === 'notifications') {
+    const unreadCountBefore = unreadCount.value
     notifications.value.forEach(n => n.read = true)
-    ElMessage.success('已全部标记为已读')
+    ElMessage.success(`已将 ${unreadCountBefore} 条通知标记为已读`)
   } else {
-    // 公告批量标记已读
     const ids = announcementHistory.value.filter(a => !a.isRead).map(a => a.id)
     if (ids.length > 0) {
       markAllAnnouncementsReadApi({ announcementIds: ids }).then(() => {
         announcementHistory.value.forEach(a => a.isRead = true)
-        ElMessage.success('已全部标记为已读')
+        ElMessage.success(`已将 ${ids.length} 条公告标记为已读`)
       }).catch(() => {
         ElMessage.error('操作失败')
       })
@@ -238,50 +404,68 @@ function handleMarkAllRead() {
 }
 
 function deleteNotification(id: string) {
-  notifications.value = notifications.value.filter(n => n.id !== id)
+  const idx = notifications.value.findIndex(n => n.id === id)
+  if (idx !== -1) {
+    const item = notifications.value[idx]
+    if (!item.persistent) {
+      notifications.value.splice(idx, 1)
+      ElMessage.success('已删除')
+    } else {
+      ElMessage.warning('该通知为系统重要通知，无法删除')
+    }
+  }
 }
 
-function formatTimeAgo(date: Date) {
-  const diff = Date.now() - date.getTime()
+function formatTimeAgo(date: Date | string): string {
+  const d = new Date(date)
+  const diff = Date.now() - d.getTime()
   const minutes = Math.floor(diff / 60000)
   if (minutes < 1) return '刚刚'
   if (minutes < 60) return `${minutes} 分钟前`
   const hours = Math.floor(minutes / 60)
   if (hours < 24) return `${hours} 小时前`
-  return `${Math.floor(hours / 24)} 天前`
+  const days = Math.floor(hours / 24)
+  if (days < 30) return `${days} 天前`
+  return d.toLocaleDateString('zh-CN')
 }
 
 function formatTimeAgoStr(dateStr: string | null): string {
   if (!dateStr) return '刚刚'
-  const date = new Date(dateStr)
-  const diff = Date.now() - date.getTime()
-  const minutes = Math.floor(diff / 60000)
-  if (minutes < 1) return '刚刚'
-  if (minutes < 60) return `${minutes} 分钟前`
-  const hours = Math.floor(minutes / 60)
-  if (hours < 24) return `${hours} 小时前`
-  return `${Math.floor(hours / 24)} 天前`
+  return formatTimeAgo(dateStr)
 }
 
-const typeColor = (type: string) => {
+const typeConfig = (type: string) => {
+  const map: Record<string, { color: string; icon: any }> = {
+    task: { color: '#409eff', icon: Tickets },
+    warning: { color: '#e6a23c', icon: Warning },
+    info: { color: '#909399', icon: InfoFilled },
+    message: { color: '#67c23a', icon: ChatDotRound },
+    system: { color: '#f56c6c', icon: Setting },
+    success: { color: '#67c23a', icon: Check },
+  }
+  return map[type] || { color: '#909399', icon: InfoFilled }
+}
+
+const typeColor = (type: string) => typeConfig(type).color
+const typeIcon = (type: string) => typeConfig(type).icon
+
+function tagType(tag: string): '' | 'success' | 'warning' | 'danger' | 'info' {
+  const map: Record<string, '' | 'success' | 'warning' | 'danger' | 'info'> = {
+    '任务': '', '警告': 'warning', '更新': 'success', '系统': 'danger', '消息': 'info',
+  }
+  return map[tag] || 'info'
+}
+
+function actionLabel(action: string): string {
   const map: Record<string, string> = {
-    task: '#409eff', warning: '#e6a23c', info: '#909399', message: '#67c23a',
+    view_task: '查看任务', view_settings: '前往设置',
+    view_standards: '查看标准', navigate: '查看详情',
   }
-  return map[type] || '#909399'
-}
-
-const typeIcon = (type: string) => {
-  const map: Record<string, any> = {
-    task: Check, warning: Warning, info: InfoFilled, message: ChatDotRound,
-  }
-  return map[type] || InfoFilled
+  return map[action] || '查看详情'
 }
 
 // ===== 系统公告相关方法 =====
 
-/**
- * 加载公告历史
- */
 async function loadAnnouncements() {
   announcementLoading.value = true
   try {
@@ -299,39 +483,26 @@ async function loadAnnouncements() {
   }
 }
 
-/**
- * Tab 切换时加载数据
- */
 function handleTabClick(tab: any) {
   if (tab.props.name === 'announcements') {
     loadAnnouncements()
   }
 }
 
-/**
- * 分页切换
- */
 function handlePageChange(page: number) {
   announcementPage.value = page
   loadAnnouncements()
 }
 
-/**
- * 显示公告详情
- */
 function showAnnouncementDetail(item: SystemAnnouncement) {
   detailItem.value = item
   detailVisible.value = true
 }
 
-/**
- * 详情对话框确认
- */
 async function handleDetailConfirm() {
   if (detailItem.value) {
     await markAnnouncementReadApi(detailItem.value.id)
     detailItem.value.isRead = true
-    // 同步更新列表
     const idx = announcementHistory.value.findIndex(a => a.id === detailItem.value!.id)
     if (idx !== -1) {
       announcementHistory.value[idx].isRead = true
@@ -341,9 +512,6 @@ async function handleDetailConfirm() {
   detailVisible.value = false
 }
 
-/**
- * 标记单条公告为已读
- */
 async function markAnnouncementRead(id: string) {
   try {
     await markAnnouncementReadApi(id)
@@ -357,9 +525,6 @@ async function markAnnouncementRead(id: string) {
   }
 }
 
-/**
- * 紧急程度对应的颜色
- */
 function urgencyColor(urgency: string): string {
   switch (urgency) {
     case 'URGENT': return '#f56c6c'
@@ -368,9 +533,6 @@ function urgencyColor(urgency: string): string {
   }
 }
 
-/**
- * 紧急程度对应的图标
- */
 function urgencyIcon(urgency: string) {
   switch (urgency) {
     case 'URGENT': return Warning
@@ -379,9 +541,6 @@ function urgencyIcon(urgency: string) {
   }
 }
 
-/**
- * 紧急程度对应的 Tag 类型
- */
 function urgencyTagType(urgency: string): 'success' | 'warning' | 'danger' | 'info' {
   switch (urgency) {
     case 'URGENT': return 'danger'
@@ -390,9 +549,6 @@ function urgencyTagType(urgency: string): 'success' | 'warning' | 'danger' | 'in
   }
 }
 
-/**
- * 紧急程度对应的中文标签
- */
 function urgencyLabel(urgency: string): string {
   switch (urgency) {
     case 'URGENT': return '紧急'
@@ -401,23 +557,45 @@ function urgencyLabel(urgency: string): string {
   }
 }
 
-/**
- * 截断内容用于预览
- */
 function truncateContent(content: string): string {
   if (!content) return ''
   const plainText = content.replace(/[#*`\[\]()]/g, '').trim()
   return plainText.length > 80 ? plainText.substring(0, 80) + '...' : plainText
 }
 
-/**
- * 渲染 Markdown 内容
- */
 function renderedContent(content: string): string {
   return renderMarkdown(content)
 }
 
-defineExpose({ open, close, toggle, notificationUnreadCount, announcementUnread })
+// 自动刷新（每 60 秒）
+function startAutoRefresh() {
+  stopAutoRefresh()
+  refreshTimer = setInterval(() => {
+    if (visible.value) {
+      loadNotifications()
+    }
+  }, 60000)
+}
+
+function stopAutoRefresh() {
+  if (refreshTimer) {
+    clearInterval(refreshTimer)
+    refreshTimer = null
+  }
+}
+
+onUnmounted(() => {
+  stopAutoRefresh()
+})
+
+defineExpose({
+  open,
+  close,
+  toggle,
+  notificationUnreadCount: unreadCount,
+  announcementUnread,
+  loadNotifications,
+})
 </script>
 
 <style scoped>
@@ -425,18 +603,21 @@ defineExpose({ open, close, toggle, notificationUnreadCount, announcementUnread 
   position: fixed;
   inset: 0;
   z-index: 9999;
-  background: rgba(0, 0, 0, 0.3);
+  background: rgba(0, 0, 0, 0.25);
+  backdrop-filter: blur(4px);
   display: flex;
   justify-content: flex-end;
-  padding: 60px 24px 24px;
+  padding: 56px 16px 16px;
 }
 
 .notification-panel {
   width: 420px;
-  max-height: calc(100vh - 108px);
+  max-height: calc(100vh - 72px);
   background: #fff;
-  border-radius: 12px;
-  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.12);
+  border-radius: 16px;
+  box-shadow:
+    0 20px 60px rgba(0, 0, 0, 0.15),
+    0 0 1px rgba(0, 0, 0, 0.08);
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -446,7 +627,8 @@ defineExpose({ open, close, toggle, notificationUnreadCount, announcementUnread 
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 16px 20px 8px;
+  padding: 18px 20px 12px;
+  border-bottom: 1px solid #f3f4f6;
 }
 
 .panel-header h3 {
@@ -454,12 +636,26 @@ defineExpose({ open, close, toggle, notificationUnreadCount, announcementUnread 
   font-size: 16px;
   font-weight: 600;
   color: #111827;
+  letter-spacing: -0.01em;
 }
 
 .header-actions {
   display: flex;
-  gap: 4px;
+  gap: 2px;
   align-items: center;
+}
+
+.nc-tabs {
+  padding: 0 16px;
+}
+
+.nc-tabs :deep(.el-tabs__header) {
+  margin-bottom: 0;
+}
+
+.nc-tabs :deep(.el-tabs__item) {
+  font-size: 13px;
+  font-weight: 500;
 }
 
 .notification-list,
@@ -467,48 +663,93 @@ defineExpose({ open, close, toggle, notificationUnreadCount, announcementUnread 
   flex: 1;
   overflow-y: auto;
   padding: 8px 0;
+  scrollbar-width: thin;
+  scrollbar-color: #e5e7eb transparent;
 }
 
+.notification-list::-webkit-scrollbar,
+.announcement-list::-webkit-scrollbar {
+  width: 5px;
+}
+
+.notification-list::-webkit-scrollbar-thumb,
+.announcement-list::-webkit-scrollbar-thumb {
+  background: #e5e7eb;
+  border-radius: 3px;
+}
+
+/* 通知项 */
 .notification-item,
 .announcement-item {
   display: flex;
   align-items: flex-start;
-  padding: 12px 20px;
+  padding: 14px 18px;
   gap: 12px;
   cursor: pointer;
-  transition: background 0.1s;
+  transition: all 0.15s ease;
   position: relative;
+  border-left: 3px solid transparent;
 }
 
 .notification-item:hover,
 .announcement-item:hover {
   background: #f9fafb;
+  border-left-color: #d1d5db;
 }
 
 .notification-item.unread,
 .announcement-item.unread {
-  background: #f0f7ff;
+  background: linear-gradient(135deg, #f0f7ff 0%, #fafbff 100%);
+  border-left-color: #409eff;
 }
 
-.item-dot {
+.notification-item.unread:hover,
+.announcement-item.unread:hover {
+  background: linear-gradient(135deg, #e8f4fd 0%, #f5f8ff 100%);
+}
+
+.item-indicator {
+  position: relative;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.indicator-dot {
   position: absolute;
-  left: 8px;
-  top: 18px;
-  width: 6px;
-  height: 6px;
+  top: -2px;
+  right: -2px;
+  width: 8px;
+  height: 8px;
   border-radius: 50%;
   background: #409eff;
+  box-shadow: 0 0 0 2px #fff;
+  z-index: 1;
+}
+
+.indicator-dot.pulse {
+  animation: nc-pulse 2s ease-in-out infinite;
+}
+
+.indicator-dot.urgent-dot {
+  background: #f56c6c;
+}
+
+@keyframes nc-pulse {
+  0%, 100% { transform: scale(1); opacity: 1; }
+  50% { transform: scale(1.3); opacity: 0.7; }
 }
 
 .item-icon {
-  flex-shrink: 0;
-  width: 32px;
-  height: 32px;
-  border-radius: 8px;
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
   display: flex;
   align-items: center;
   justify-content: center;
   color: white;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12);
 }
 
 .item-body {
@@ -516,105 +757,330 @@ defineExpose({ open, close, toggle, notificationUnreadCount, announcementUnread 
   min-width: 0;
 }
 
-.item-header {
+.item-title-row {
   display: flex;
-  justify-content: space-between;
   align-items: center;
-  margin-bottom: 6px;
+  gap: 8px;
+  margin-bottom: 3px;
 }
 
 .item-title {
-  font-size: 13px;
-  font-weight: 500;
+  font-size: 13.5px;
+  font-weight: 600;
   color: #111827;
-  margin-bottom: 4px;
+  line-height: 1.3;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .item-desc {
-  font-size: 12px;
+  margin: 4px 0 0;
+  font-size: 12.5px;
   color: #6b7280;
-  line-height: 1.4;
+  line-height: 1.45;
   display: -webkit-box;
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow: hidden;
 }
 
+.item-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 8px;
+  gap: 8px;
+}
+
 .item-time {
-  font-size: 11px;
+  font-size: 11.5px;
+  color: #9ca3af;
+  white-space: nowrap;
+}
+
+.item-action-hint {
+  font-size: 11.5px;
+  color: #409eff;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.item-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 4px;
+}
+
+.item-delete-btn,
+.item-read-btn {
+  opacity: 0;
+  transition: opacity 0.15s ease;
+  flex-shrink: 0;
+}
+
+.notification-item:hover .item-delete-btn,
+.announcement-item:hover .item-read-btn {
+  opacity: 1;
+}
+
+/* 空状态 */
+.empty-state {
+  padding: 48px 20px;
+  text-align: center;
+}
+
+.empty-illustration {
+  width: 72px;
+  height: 72px;
+  margin: 0 auto 16px;
+  border-radius: 50%;
+  background: #f9fafb;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.empty-text {
+  margin: 0 0 4px;
+  font-size: 14px;
+  font-weight: 500;
+  color: #6b7280;
+}
+
+.empty-subtext {
+  margin: 0;
+  font-size: 12.5px;
   color: #9ca3af;
 }
 
-.empty-state,
 .loading-state {
-  padding: 40px 16px;
+  padding: 48px 20px;
   text-align: center;
   color: #9ca3af;
 }
 
-.empty-state p,
 .loading-state p {
   margin-top: 12px;
-  font-size: 14px;
+  font-size: 13px;
 }
 
 .pagination-wrap {
-  padding: 12px 20px;
+  padding: 12px 18px;
   display: flex;
   justify-content: center;
-  border-top: 1px solid #f0f0f0;
+  border-top: 1px solid #f3f4f6;
 }
 
 /* 详情对话框 */
 .detail-header {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 10px;
 }
 
 .detail-time {
   font-size: 12px;
-  color: #909399;
+  color: #9ca3af;
+}
+
+.notif-detail-content .detail-desc {
+  font-size: 14px;
+  color: #374151;
+  line-height: 1.65;
+  margin: 0 0 16px;
+}
+
+.detail-extra h4 {
+  margin: 0 0 8px;
+  font-size: 13px;
+  font-weight: 600;
+  color: #6b7280;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.detail-extra p {
+  margin: 0;
+  font-size: 14px;
+  color: #4b5563;
+  line-height: 1.6;
+  background: #f9fafb;
+  padding: 12px 16px;
+  border-radius: 8px;
+}
+
+.announce-content {
+  max-height: 50vh;
+  overflow-y: auto;
 }
 
 /* Markdown 渲染样式 */
 .markdown-body :deep(h1),
 .markdown-body :deep(h2),
 .markdown-body :deep(h3) {
-  margin-top: 16px;
-  margin-bottom: 8px;
+  margin-top: 18px;
+  margin-bottom: 10px;
+  font-weight: 600;
+  color: #111827;
 }
 
 .markdown-body :deep(p) {
   margin-bottom: 12px;
-  line-height: 1.6;
+  line-height: 1.7;
+  color: #374151;
 }
 
 .markdown-body :deep(ul),
 .markdown-body :deep(ol) {
-  padding-left: 24px;
-  margin-bottom: 12px;
+  padding-left: 22px;
+  margin-bottom: 14px;
+}
+
+.markdown-body :deep(li) {
+  margin-bottom: 4px;
+  line-height: 1.6;
 }
 
 .markdown-body :deep(blockquote) {
-  margin: 12px 0;
-  padding: 8px 16px;
+  margin: 14px 0;
+  padding: 10px 18px;
   border-left: 4px solid #409eff;
   background: #f5f7fa;
-  color: #606266;
+  border-radius: 0 8px 8px 0;
+  color: #4b5563;
 }
 
 .markdown-body :deep(code) {
-  background: #f5f7fa;
-  padding: 2px 6px;
+  background: #f3f4f6;
+  padding: 2px 7px;
   border-radius: 4px;
-  font-size: 0.9em;
+  font-size: 0.88em;
+  font-family: 'SF Mono', Consolas, monospace;
 }
 
 .markdown-body :deep(pre) {
-  background: #f5f7fa;
-  padding: 12px;
-  border-radius: 6px;
+  background: #1f2937;
+  padding: 16px;
+  border-radius: 8px;
   overflow-x: auto;
+  color: #e5e7eb;
+}
+
+.markdown-body :deep(pre code) {
+  background: transparent;
+  padding: 0;
+  color: inherit;
+}
+
+/* 动画 */
+.nc-fade-enter-active,
+.nc-fade-leave-active {
+  transition: opacity 0.2s ease;
+}
+.nc-fade-enter-from,
+.nc-fade-leave-to {
+  opacity: 0;
+}
+
+.nc-slide-enter-active {
+  transition: transform 0.3s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.nc-slide-leave-active {
+  transition: transform 0.2s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.nc-slide-enter-from {
+  transform: translateX(100%);
+}
+.nc-slide-leave-to {
+  transform: translateX(100%);
+}
+
+.nc-list-enter-active {
+  transition: all 0.25s ease-out;
+}
+.nc-list-leave-active {
+  transition: all 0.2s ease-in;
+}
+.nc-list-enter-from {
+  opacity: 0;
+  transform: translateX(-12px);
+}
+.nc-list-leave-to {
+  opacity: 0;
+  transform: translateX(12px);
+}
+.nc-list-move {
+  transition: transform 0.25s ease;
+}
+
+/* 响应式设计 */
+@media (max-width: 640px) {
+  .notification-center {
+    padding: 0;
+    align-items: flex-end;
+  }
+
+  .notification-panel {
+    width: 100%;
+    max-height: 75vh;
+    border-radius: 20px 20px 0 0;
+  }
+
+  .panel-header {
+    padding: 16px 18px 10px;
+  }
+
+  .notification-item,
+  .announcement-item {
+    padding: 12px 16px;
+    gap: 10px;
+  }
+
+  .item-icon {
+    width: 34px;
+    height: 34px;
+    border-radius: 9px;
+  }
+
+  .item-title {
+    font-size: 13px;
+  }
+
+  .item-desc {
+    font-size: 12px;
+    -webkit-line-clamp: 1;
+  }
+
+  .item-delete-btn,
+  .item-read-btn {
+    opacity: 1;
+  }
+
+  .empty-state {
+    padding: 32px 16px;
+  }
+}
+
+@media (max-width: 400px) {
+  .notification-panel {
+    max-height: 80vh;
+  }
+
+  .item-meta {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 2px;
+  }
+
+  .item-action-hint {
+    display: none;
+  }
+}
+
+/* 深色模式支持（预留） */
+@media (prefers-color-scheme: dark) {
+  /* 可后续扩展深色模式 */
 }
 </style>

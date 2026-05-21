@@ -1,4 +1,4 @@
-﻿import prisma from '../config/db';
+import prisma from '../config/db';
 import { ParserService } from './parser.service';
 import { LlmService, ReviewIssue } from './llm.service';
 import { createPipelineAsync, PipelineContext } from './review-pipeline';
@@ -6,7 +6,10 @@ import { CrossFileConsistencyService } from './cross-file-consistency.service';
 import { IntraFileConsistencyService } from './intra-file-consistency.service';
 import { WebSocketService } from './websocket.service';
 import { ConcurrencyService } from './concurrency.service';
+import { RuleLibraryService } from './rule-library.service';
 import path from 'path';
+import { ReviewPlan } from '../types/review-plan';
+import { TaskService } from './task.service';
 
 /**
  * 审查编排服务 - 两阶段分批并发编排
@@ -20,6 +23,89 @@ import path from 'path';
  * - 使用内存 Map 追踪：Map<userId, { processingCount, pendingQueue }>
  */
 export class ReviewService {
+  private static adaptReviewPlanForExecution(task: any): {
+    plan: ReviewPlan;
+    reviewMode: string;
+    ruleSource: 'STANDARD' | 'RULE_LIBRARY';
+    ruleLibraryId?: string;
+    knowledgeCategoryIds: string[];
+    refFileGroupRequired: boolean;
+    intraFileConsistency: boolean;
+    crossFileConsistency: boolean;
+    executionOverrides?: {
+      crossFileConsistency?: boolean;
+      stages?: {
+        rules?: boolean;
+        ai?: boolean;
+        stdRef?: boolean;
+      };
+    };
+  } {
+    const plan = TaskService.normalizeReviewPlan(task?.reviewPlan, task?.reviewMode);
+    const reviewMode = TaskService.planToLegacyMode(plan);
+    const ruleSource = plan.evidence.sources.includes('RULE_LIBRARY') ? 'RULE_LIBRARY' : 'STANDARD';
+    const stages =
+      plan.execution.profile === 'RULE_ONLY'
+        ? { ai: false, rules: true, stdRef: false }
+        : undefined;
+    const crossFileConsistency = !!plan.enhancements.crossFileConsistency;
+
+    return {
+      plan,
+      reviewMode,
+      ruleSource,
+      ruleLibraryId: ruleSource === 'RULE_LIBRARY' ? plan.evidence.ruleLibraryId || undefined : undefined,
+      knowledgeCategoryIds: Array.isArray(plan.evidence.knowledgeCategoryIds) ? plan.evidence.knowledgeCategoryIds : [],
+      refFileGroupRequired: plan.objective === 'COMPARE' || plan.evidence.sources.includes('REFERENCE'),
+      intraFileConsistency: !!plan.enhancements.intraFileConsistency,
+      crossFileConsistency,
+      executionOverrides: stages || plan.enhancements.intraFileConsistency || crossFileConsistency
+        ? {
+            crossFileConsistency,
+            stages,
+          }
+        : undefined,
+    };
+  }
+
+  private static getConfidence(issue: {
+    ruleCode?: string | null;
+    issueType?: string;
+    sourceReferences?: any;
+  }): { confidence: string; confidenceSource: string } {
+    if (issue.ruleCode?.startsWith('STD_')) {
+      return { confidence: 'STD_MATCH', confidenceSource: 'standard_ref' };
+    }
+    if (issue.ruleCode) {
+      return { confidence: 'RULE_EXACT', confidenceSource: 'rule_engine' };
+    }
+    return {
+      confidence: issue.sourceReferences ? 'AI_INFERRED' : 'AI_INFERRED',
+      confidenceSource: issue.sourceReferences ? 'ai_with_sources' : 'ai_only',
+    };
+  }
+
+  private static stripDbUnsupportedFields<T extends Record<string, any>>(data: T): T {
+    const { confidence, confidenceSource, ...rest } = data;
+    return rest as T;
+  }
+
+  private static async createNoResultDetail(taskId: string, fileId: string, fileName: string, reason: string) {
+    await prisma.taskDetail.create({
+      data: this.stripDbUnsupportedFields({
+        taskId,
+        fileId,
+        issueType: 'VIOLATION',
+        ruleCode: 'NO_RESULT',
+        severity: 'info',
+        originalText: fileName,
+        description: reason,
+        confidence: 'NO_RESULT',
+        confidenceSource: 'system_summary',
+      } as any),
+    }).catch(() => { /* ignore */ });
+  }
+
   // 用户级别并发控制：追踪每个用户正在进行的 AI 审查文件数量
   private static userConcurrencyMap = new Map<string, number>();
 
@@ -165,7 +251,7 @@ export class ReviewService {
    *  3. 批量入库: 所有规则结果 + WebSocket 推送
    *  4. 阶段2: 分批并发 AI 审查（受 maxConcurrentReviews 限制）
    *  5. 批量入库: 所有 AI 结果 + WebSocket 推送
-   *  6. 跨文件一致性检查（CONSISTENCY / FULL_REVIEW）
+   *  6. 跨文件一致性检查（CONSISTENCY）
    *  7. 更新任务状态 + 最终推送
    */
   static async processTask(taskId: string): Promise<void> {
@@ -212,16 +298,29 @@ export class ReviewService {
         timestamp: Date.now(),
       });
 
-      const reviewMode = (task as any).reviewMode || 'FULL_REVIEW';
+      const executionPlan = this.adaptReviewPlanForExecution(task);
+      const reviewMode = executionPlan.reviewMode || (task as any).reviewMode || 'CONSISTENCY';
       const knowledgeCategoryId = (task as any).knowledgeCategoryId || undefined;
+      const ruleLibraryId = executionPlan.ruleLibraryId;
+      const ruleExecutionPlan = ruleLibraryId
+        ? await RuleLibraryService.getExecutionPlan(ruleLibraryId).catch((error) => {
+            console.warn('[Review] 规则库执行计划加载失败:', error);
+            return null;
+          })
+        : null;
 
       // 从 preAnalysisData 读取文件内一致性开关
       const taskPreAnalysis = (task as any).preAnalysisData;
-      const intraFileConsistency = !!(taskPreAnalysis && typeof taskPreAnalysis === 'object' && taskPreAnalysis.intraFileConsistency);
+      const intraFileConsistency = !!(
+        executionPlan.intraFileConsistency
+        || (taskPreAnalysis && typeof taskPreAnalysis === 'object' && taskPreAnalysis.intraFileConsistency)
+      );
 
       // 解析多知识子库 ID
       let knowledgeCategoryIds: string[] | undefined;
-      if (knowledgeCategoryId) {
+      if (executionPlan.knowledgeCategoryIds.length > 0) {
+        knowledgeCategoryIds = executionPlan.knowledgeCategoryIds;
+      } else if (knowledgeCategoryId) {
         knowledgeCategoryIds = [knowledgeCategoryId];
       }
 
@@ -240,7 +339,7 @@ export class ReviewService {
 
       // ===== 一次性加载参照文件（以文审文模式） =====
       let refFileGroupCtx: PipelineContext['refFileGroup'] | undefined;
-      if (reviewMode === 'DOC_REVIEW') {
+      if (executionPlan.refFileGroupRequired || reviewMode === 'DOC_REVIEW') {
         const groups = await prisma.refFileGroup.findMany({
           where: { taskId },
           include: { refFiles: true },
@@ -274,9 +373,19 @@ export class ReviewService {
           fileType: file.fileType,
           extractedText: '',
           reviewMode: reviewMode as any,
-          knowledgeCategoryId: knowledgeCategoryId || undefined,
-          knowledgeCategoryIds: knowledgeCategoryIds || undefined,
+          ruleSource: executionPlan.ruleSource,
+          ruleLibraryId,
+          rulePlan: ruleExecutionPlan ? {
+            enabledPrefixes: ruleExecutionPlan.enabledPrefixes,
+            itemIds: ruleExecutionPlan.executableItems.map((item) => item.id),
+          } : undefined,
+          standardIds: executionPlan.ruleSource === 'STANDARD'
+            ? task.taskStandards.map((item: any) => item.standardId)
+            : [],
+          knowledgeCategoryId: executionPlan.ruleSource === 'STANDARD' ? (knowledgeCategoryId || undefined) : undefined,
+          knowledgeCategoryIds: executionPlan.ruleSource === 'STANDARD' ? (knowledgeCategoryIds || undefined) : undefined,
           pipelineConfig,
+          executionOverrides: executionPlan.executionOverrides,
           refFileGroup: refFileGroupCtx,
           intraFileConsistency,
         };
@@ -552,7 +661,7 @@ export class ReviewService {
 
       // ===== 跨文件一致性检查 =====
       // 使用 capabilities.crossFile 判断（能力驱动，替代原先硬编码模式列表）
-      const crossFileNeeded = pipeline.capabilities.crossFile && totalFiles >= 2;
+      const crossFileNeeded = (executionPlan.crossFileConsistency || pipeline.capabilities.crossFile) && totalFiles >= 2;
       if (crossFileNeeded) {
         WebSocketService.emitTaskProgress(taskId, {
           type: 'cross_file_check',
@@ -727,9 +836,12 @@ export class ReviewService {
 
     if (fastResult.ruleIssues.length > 0) {
       const ruleData = fastResult.ruleIssues.map((issue) => ({
+        ...this.getConfidence(issue),
         taskId, fileId: file.id,
         issueType: issue.issueType, ruleCode: issue.ruleCode,
         severity: issue.severity,
+        reviewSource: ctx.ruleSource === 'RULE_LIBRARY' ? 'RULE_LIBRARY' : 'RULE_ENGINE',
+        ruleLibraryItemId: null,
         originalText: issue.originalText,
         suggestedText: issue.suggestedText || null,
         description: issue.description,
@@ -741,16 +853,23 @@ export class ReviewService {
         ),
         locateMeta: this.buildLocateMeta(ctx.extractedText, issue, { fileId: file.id }),
       }));
-      await prisma.taskDetail.createMany({ data: ruleData }).catch(() => { /* ignore */ });
+      await prisma.taskDetail.createMany({
+        data: ruleData.map((item) => this.stripDbUnsupportedFields(item)),
+      }).catch((error) => {
+        console.error('[Review] 规则结果写入失败:', error);
+      });
       allFastIssues.push(...ruleData);
     }
 
     if (fastResult.stdRefIssues.length > 0) {
       const stdRefData = fastResult.stdRefIssues.map((issue) => ({
+        ...this.getConfidence(issue),
         taskId, fileId: file.id,
         issueType: issue.issueType,
         ruleCode: issue.ruleCode || null,
         severity: issue.severity || 'warning',
+        reviewSource: 'STANDARD_REF',
+        ruleLibraryItemId: null,
         originalText: issue.originalText,
         suggestedText: issue.suggestedText || null,
         description: issue.description || null,
@@ -764,7 +883,11 @@ export class ReviewService {
         ),
         locateMeta: this.buildLocateMeta(ctx.extractedText, issue, { fileId: file.id }),
       }));
-      await prisma.taskDetail.createMany({ data: stdRefData }).catch(() => { /* ignore */ });
+      await prisma.taskDetail.createMany({
+        data: stdRefData.map((item) => this.stripDbUnsupportedFields(item)),
+      }).catch((error) => {
+        console.error('[Review] 标准引用结果写入失败:', error);
+      });
       allFastIssues.push(...stdRefData);
     }
 
@@ -781,6 +904,13 @@ export class ReviewService {
             : '文件内容无法提取。可能是扫描件或图片型 PDF，且 OCR 识别未能成功获取文字。建议人工审查。',
         },
       }).catch(() => { /* ignore */ });
+    } else if (fastResult.textLength > 0 && allFastIssues.length === 0) {
+      await this.createNoResultDetail(
+        taskId,
+        file.id,
+        file.fileName,
+        '规则审查和标准引用检查均未命中问题。该结果不代表完全合规，仅表示当前规则库与标准库未发现明确问题。',
+      );
     }
 
     // DWG 文件特殊处理：保存尺寸标注和标准引用（含 cadHandleId）
@@ -874,11 +1004,14 @@ export class ReviewService {
       // 2. 该分片有问题时立即写入 DB
       if (issues && issues.length > 0) {
         const aiData = issues.map((issue) => ({
+          ...this.getConfidence(issue),
           taskId,
           fileId: file.id,
           issueType: issue.issueType,
           ruleCode: issue.ruleCode || null,
           severity: issue.severity || (['TYPO', 'FORMAT', 'NAMING', 'ENCODING', 'HEADER', 'PAGE'].includes(issue.issueType) ? 'warning' : 'error'),
+          reviewSource: 'AI',
+          ruleLibraryItemId: null,
           originalText: issue.originalText,
           suggestedText: issue.suggestedText || null,
           description: issue.description || null,
@@ -899,7 +1032,9 @@ export class ReviewService {
         }));
 
         try {
-          await prisma.taskDetail.createMany({ data: aiData });
+          await prisma.taskDetail.createMany({
+            data: aiData.map((item) => this.stripDbUnsupportedFields(item)),
+          });
           console.log(`[Review] 分片 ${chunkIndex}/${totalChunks} 写入 ${aiData.length} 条`);
         } catch (e) {
           console.error(`[Review] 分片写入失败:`, e);
@@ -941,11 +1076,14 @@ export class ReviewService {
         if (existing === 0) {
           // 极端保底：从未写入过，一次性写入全部
           const aiData = slowResult.aiIssues.map((issue) => ({
+            ...this.getConfidence(issue),
             taskId,
             fileId: file.id,
             issueType: issue.issueType,
             ruleCode: issue.ruleCode || null,
             severity: issue.severity || (['TYPO', 'FORMAT', 'NAMING', 'ENCODING', 'HEADER', 'PAGE'].includes(issue.issueType) ? 'warning' : 'error'),
+            reviewSource: 'AI',
+            ruleLibraryItemId: null,
             originalText: issue.originalText,
             suggestedText: issue.suggestedText || null,
             description: issue.description || null,
@@ -964,7 +1102,9 @@ export class ReviewService {
             locateMeta: issue.locateMeta
               || this.buildLocateMeta(ctx.extractedText, issue, { fileId: file.id }),
           }));
-          await prisma.taskDetail.createMany({ data: aiData as any });
+          await prisma.taskDetail.createMany({
+            data: aiData.map((item) => this.stripDbUnsupportedFields(item)) as any,
+          });
           console.log(`[Review] 兜底写入 ${aiData.length} 条`);
         }
       } catch (e) {
@@ -973,6 +1113,24 @@ export class ReviewService {
     }
 
     const skippedNoText = !ctx.extractedText || ctx.extractedText.trim().length === 0;
+    if (!skippedNoText && slowResult.aiIssues.length === 0) {
+      const existingIssueCount = await prisma.taskDetail.count({
+        where: {
+          taskId,
+          fileId: file.id,
+          ruleCode: { not: 'NO_RESULT' },
+        },
+      }).catch(() => 0);
+
+      if (existingIssueCount === 0) {
+        await this.createNoResultDetail(
+          taskId,
+          file.id,
+          file.fileName,
+          'AI 审查未发现明确问题；当前文件未命中规则、标准引用或 AI 风险项。请结合规则覆盖范围和标准库覆盖情况人工复核。',
+        );
+      }
+    }
     if (skippedNoText) {
       WebSocketService.emitTaskProgress(taskId, {
         type: 'file_skipped_no_text',
@@ -1030,7 +1188,12 @@ export class ReviewService {
    * 更新文件的错误计数
    */
   private static async updateFileErrorCount(fileId: string): Promise<void> {
-    const count = await prisma.taskDetail.count({ where: { fileId } });
+    const count = await prisma.taskDetail.count({
+      where: {
+        fileId,
+        ruleCode: { not: 'NO_RESULT' },
+      },
+    });
     await prisma.taskFile.update({
       where: { id: fileId },
       data: { errorCount: count },
@@ -1045,7 +1208,7 @@ export class ReviewService {
   static async processFile(
     taskId: string,
     file: { id: string; fileName: string; filePath: string; fileType: string },
-    reviewMode: string = 'FULL_REVIEW',
+    reviewMode: string = 'CONSISTENCY',
     knowledgeCategoryId?: string,
     knowledgeCategoryIds?: string[],
     onProgress?: (chunkProgress: number) => void,

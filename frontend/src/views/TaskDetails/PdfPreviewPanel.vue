@@ -27,7 +27,7 @@ const props = defineProps<{
   taskId: string
   fileId: string | null
   fileUrl?: string
-  locateTarget?: { originalText: string; locateCandidates?: string[]; locateHint?: string } | null
+  locateTarget?: { originalText: string; locateCandidates?: string[]; locateMeta?: any; locateHint?: string } | null
 }>()
 
 const emit = defineEmits<{
@@ -43,7 +43,8 @@ const iframeRef = ref<HTMLIFrameElement | null>(null)
 const effectivePdfUrl = computed(() => {
   if (!pdfUrl.value) return ''
   const candidates = props.locateTarget?.locateCandidates || []
-  const primary = (candidates.find(s => String(s || '').trim()) || props.locateTarget?.originalText || '').trim()
+  const quote = props.locateTarget?.locateMeta?.quote?.text || ''
+  const primary = (quote || candidates.find(s => String(s || '').trim()) || props.locateTarget?.originalText || '').trim()
   if (!primary) return pdfUrl.value
   const base = pdfUrl.value.split('#')[0]
   return `${base}#search=${encodeURIComponent(primary)}`
@@ -84,7 +85,7 @@ watch(() => props.fileId, () => loadPdf(), { immediate: true })
 
 watch(() => props.locateTarget, (target) => {
   if (!target?.originalText?.trim()) return
-  const kw = (target.locateCandidates?.[0] || target.originalText || '').trim()
+  const kw = (target.locateMeta?.quote?.text || target.locateCandidates?.[0] || target.originalText || '').trim()
   emit('locateResult', {
     success: false,
     mode: 'fallback',

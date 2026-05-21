@@ -74,10 +74,29 @@
         查询优化 {{ result.stats.queryRewriteTimeMs }}ms
       </el-tag>
       <el-tag type="info" effect="plain">候选 {{ result.stats.totalCandidates }} 条</el-tag>
+      <el-tag type="warning" effect="plain">裁剪 {{ result.filteredBySimilarity }} 条</el-tag>
+      <el-tag :type="result.rerankApplied ? 'success' : 'info'" effect="plain">
+        Rerank {{ result.rerankApplied ? '已启用' : '未启用' }}
+      </el-tag>
+      <el-tag :type="result.directReturnHit ? 'success' : 'info'" effect="plain">
+        Direct Return {{ result.directReturnHit ? '命中' : '未命中' }}
+      </el-tag>
       <el-tag v-if="result.rewrittenQuery" type="warning" effect="plain">
         优化查询: {{ result.rewrittenQuery }}
       </el-tag>
     </div>
+
+    <el-card v-if="result" class="query-card" shadow="never">
+      <template #header>本次检索配置摘要</template>
+      <div class="config-grid">
+        <el-tag effect="plain">minSimilarity: {{ result.usedConfig.minSimilarity }}</el-tag>
+        <el-tag effect="plain">directReturnThreshold: {{ result.usedConfig.directReturnThreshold }}</el-tag>
+        <el-tag effect="plain">maxReferenceChars: {{ result.usedConfig.maxReferenceChars }}</el-tag>
+        <el-tag :type="result.usedConfig.enableRerank ? 'success' : 'info'" effect="plain">
+          enableRerank: {{ result.usedConfig.enableRerank }}
+        </el-tag>
+      </div>
+    </el-card>
 
     <!-- 结果列表 -->
     <div v-if="result" class="results-list">

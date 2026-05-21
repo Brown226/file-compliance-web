@@ -39,6 +39,9 @@ interface ImportEntry {
   categoryId?: string;
   /** 分块配置，不传则使用默认值 */
   chunkConfig?: ChunkingConfig;
+  /** embedding 输入控制（按知识库配置） */
+  embeddingUseDocumentTitle?: boolean;
+  embeddingUseClauseId?: boolean;
 }
 
 export interface ChunkingConfig {
@@ -341,39 +344,71 @@ export class VectorService {
     if (!cleaned) return [];
 
     if (mode === 'fixed') {
-      return this.splitFixed(cleaned, maxChars).filter(c => c.length >= 20);
+      return this.splitFixed(cleaned, maxChars, overlap).filter(c => c.length >= 20);
     }
 
     if (mode === 'paragraph') {
-      return this.splitByParagraph(cleaned, maxChars).filter(c => c.length >= 20);
+      return this.splitByParagraph(cleaned, maxChars, overlap).filter(c => c.length >= 20);
     }
 
-    // auto 模式：使用 SplitModel
+    // auto 模式：先 SplitModel，再做段落窗口重叠
     const paragraphs = this.splitMarkdownIntoParagraphs(cleaned, maxChars);
-    return paragraphs
-      .map(p => p.title ? `${p.title}\n${p.content}` : p.content)
-      .filter(c => c.length >= 20);
+    const chunks = paragraphs.map((p, index) => {
+      const base = p.title ? `${p.title}\n${p.content}` : p.content;
+      if (index === 0 || overlap <= 0) return base;
+
+      const prev = paragraphs[index - 1];
+      const prevText = prev.title ? `${prev.title}\n${prev.content}` : prev.content;
+      const tail = prevText.slice(Math.max(0, prevText.length - overlap));
+      return `${tail}\n${base}`.trim();
+    });
+
+    return chunks.filter(c => c.length >= 20);
   }
 
-  private static splitFixed(text: string, maxChars: number): string[] {
+  private static splitFixed(text: string, maxChars: number, overlap: number = 0): string[] {
     const chunks: string[] = [];
-    for (let i = 0; i < text.length; i += maxChars) {
-      const chunk = text.slice(i, i + maxChars).trim();
+    if (maxChars <= 0) return chunks;
+
+    const safeOverlap = Math.max(0, Math.min(overlap, maxChars - 1));
+    const step = Math.max(1, maxChars - safeOverlap);
+
+    for (let start = 0; start < text.length; start += step) {
+      const chunk = text.slice(start, start + maxChars).trim();
       if (chunk) chunks.push(chunk);
+      if (start + maxChars >= text.length) break;
     }
     return chunks;
   }
 
-  private static splitByParagraph(text: string, maxChars: number): string[] {
+  private static splitByParagraph(text: string, maxChars: number, overlap: number = 0): string[] {
     const paragraphs = text.split(/\n{2,}/).map(p => p.trim()).filter(p => p.length > 0);
     const chunks: string[] = [];
-    for (const para of paragraphs) {
-      if (para.length <= maxChars) {
-        chunks.push(para);
-      } else {
-        chunks.push(...this.splitFixed(para, maxChars));
+
+    for (let i = 0; i < paragraphs.length; i++) {
+      const para = paragraphs[i];
+      const paraChunks = para.length <= maxChars ? [para] : this.splitFixed(para, maxChars, overlap);
+
+      for (let j = 0; j < paraChunks.length; j++) {
+        const current = paraChunks[j];
+        if (overlap <= 0) {
+          chunks.push(current);
+          continue;
+        }
+
+        let prefix = '';
+        if (j > 0) {
+          const prevChunk = paraChunks[j - 1];
+          prefix = prevChunk.slice(Math.max(0, prevChunk.length - overlap));
+        } else if (i > 0) {
+          const prevPara = paragraphs[i - 1];
+          prefix = prevPara.slice(Math.max(0, prevPara.length - overlap));
+        }
+
+        chunks.push(prefix ? `${prefix}\n${current}`.trim() : current);
       }
     }
+
     return chunks;
   }
 
@@ -415,15 +450,38 @@ export class VectorService {
    * title 字段始终存原始文档名，标题链存入 metadata.heading
    */
   static async importDocument(entry: ImportEntry): Promise<{ chunks: number; deduped: number }> {
-    const { sourceType, title, content, clauseId, category, metadata, categoryId, chunkConfig } = entry;
-    const { maxChars = 3000 } = chunkConfig || {};
+    const {
+      sourceType,
+      title,
+      content,
+      clauseId,
+      category,
+      metadata,
+      categoryId,
+      chunkConfig,
+      embeddingUseDocumentTitle = false,
+      embeddingUseClauseId = false,
+    } = entry;
+    const { mode = 'auto', maxChars = 3000, overlap = 200 } = chunkConfig || {};
 
-    const paragraphs = this.splitMarkdownIntoParagraphs(content, maxChars);
+    const chunks = this.splitTextIntoChunks(content, { mode, maxChars, overlap });
+    const paragraphs: ParagraphSegment[] = chunks.map(chunk => {
+      const parts = chunk.split('\n');
+      if (parts.length > 1) {
+        return { title: parts[0].trim(), content: parts.slice(1).join('\n').trim() };
+      }
+      return { title: '', content: chunk.trim() };
+    }).filter(p => p.content.length > 0);
+
     if (paragraphs.length === 0) return { chunks: 0, deduped: 0 };
 
-    // 构建带元数据的待向量化文本（文档名 + 标题上下文 + content），过滤空字段避免稀释embedding信号
     const textsForEmbedding = paragraphs.map(p => {
-      return [title, p.title, category, clauseId, p.content].filter(Boolean).join('\n');
+      const fields: string[] = [];
+      if (embeddingUseDocumentTitle && title) fields.push(title);
+      if (p.title) fields.push(p.title);
+      if (embeddingUseClauseId && clauseId) fields.push(clauseId);
+      fields.push(p.content);
+      return fields.filter(Boolean).join('\n');
     });
 
     const embeddings = await EmbeddingService.embedTexts(textsForEmbedding);
@@ -454,20 +512,27 @@ export class VectorService {
 
       await prisma.$executeRawUnsafe(`
         INSERT INTO vector_documents
-          (id, "categoryId", source_type, source_id, title, clause_id, content, content_hash, chunk_index, metadata, embedding, created_at, updated_at)
+          (id, "categoryId", source_type, source_id, title, clause_id, content, content_hash, chunk_index, metadata, embedding, vector_status, created_at, updated_at)
         VALUES
-          (gen_random_uuid(), $1, $2, $3, $4, $5, $6, $7, $8, $9::jsonb, $10::vector, NOW(), NOW())
+          (gen_random_uuid(), $1, $2, $3, $4, $5, $6, $7, $8, $9::jsonb, $10::vector, $11, NOW(), NOW())
       `,
         categoryId || null,
         sourceType,
         paragraphs.length > 1 ? `${sourceId}:chunk:${i}` : sourceId,
-        title,          // ← 始终存原始文档名
+        title,
         chunkClauseId,
         storedContent,
         contentHash,
         i,
-        JSON.stringify({ ...metadata, original_source_id: sourceId, is_table: isTable, heading: para.title || '' }),
-        embeddingStr
+        JSON.stringify({
+          ...metadata,
+          original_source_id: sourceId,
+          is_table: isTable,
+          heading: para.title || '',
+          chunkConfigUsed: { mode, maxChars, overlap },
+        }),
+        embeddingStr,
+        'SUCCESS'
       );
     }
 
@@ -484,7 +549,16 @@ export class VectorService {
     chunks: Array<string | ParagraphSegment>,
     entry: Omit<ImportEntry, 'content' | 'chunkConfig'>
   ): Promise<{ chunks: number; deduped: number }> {
-    const { sourceType, title, clauseId, category, metadata, categoryId } = entry;
+    const {
+      sourceType,
+      title,
+      clauseId,
+      category,
+      metadata,
+      categoryId,
+      embeddingUseDocumentTitle = false,
+      embeddingUseClauseId = false,
+    } = entry;
 
     if (chunks.length === 0) return { chunks: 0, deduped: 0 };
 
@@ -494,7 +568,12 @@ export class VectorService {
     );
 
     const textsForEmbedding = segments.map(p => {
-      return [title, p.title, category, clauseId, p.content].filter(Boolean).join('\n');
+      const fields: string[] = [];
+      if (embeddingUseDocumentTitle && title) fields.push(title);
+      if (p.title) fields.push(p.title);
+      if (embeddingUseClauseId && clauseId) fields.push(clauseId);
+      fields.push(p.content);
+      return fields.filter(Boolean).join('\n');
     });
 
     const embeddings = await EmbeddingService.embedTexts(textsForEmbedding);
@@ -522,24 +601,114 @@ export class VectorService {
 
       await prisma.$executeRawUnsafe(`
         INSERT INTO vector_documents
-          (id, "categoryId", source_type, source_id, title, clause_id, content, content_hash, chunk_index, metadata, embedding, created_at, updated_at)
+          (id, "categoryId", source_type, source_id, title, clause_id, content, content_hash, chunk_index, metadata, embedding, vector_status, created_at, updated_at)
         VALUES
-          (gen_random_uuid(), $1, $2, $3, $4, $5, $6, $7, $8, $9::jsonb, $10::vector, NOW(), NOW())
+          (gen_random_uuid(), $1, $2, $3, $4, $5, $6, $7, $8, $9::jsonb, $10::vector, $11, NOW(), NOW())
       `,
         categoryId || null,
         sourceType,
         segments.length > 1 ? `${sourceId}:chunk:${i}` : sourceId,
-        title,          // ← 始终存原始文档名
+        title,
         chunkClauseId,
         storedContent,
         contentHash,
         i,
-        JSON.stringify({ ...metadata, original_source_id: sourceId, is_table: isTable, heading: para.title || '' }),
-        embeddingStr
+        JSON.stringify({
+          ...metadata,
+          original_source_id: sourceId,
+          is_table: isTable,
+          heading: para.title || '',
+        }),
+        embeddingStr,
+        'SUCCESS'
       );
     }
 
     return { chunks: segments.length, deduped };
+  }
+
+  /**
+   * 原子替换单文档向量：先完成分块与向量计算，成功后再事务替换旧数据
+   * 失败时不删除旧向量，满足 fail-closed。
+   */
+  static async replaceDocumentAtomically(entry: ImportEntry & { categoryId: string; title: string }): Promise<{ chunks: number }> {
+    const {
+      sourceType,
+      title,
+      content,
+      clauseId,
+      category,
+      metadata,
+      categoryId,
+      chunkConfig,
+      embeddingUseDocumentTitle = false,
+      embeddingUseClauseId = false,
+    } = entry;
+
+    const { mode = 'auto', maxChars = 3000, overlap = 200 } = chunkConfig || {};
+    const chunks = this.splitTextIntoChunks(content, { mode, maxChars, overlap });
+    const paragraphs: ParagraphSegment[] = chunks.map(chunk => {
+      const parts = chunk.split('\n');
+      if (parts.length > 1) {
+        return { title: parts[0].trim(), content: parts.slice(1).join('\n').trim() };
+      }
+      return { title: '', content: chunk.trim() };
+    }).filter(p => p.content.length > 0);
+
+    if (paragraphs.length === 0) return { chunks: 0 };
+
+    // 先计算 embedding，确保失败时旧数据仍保留
+    const textsForEmbedding = paragraphs.map(p => {
+      const fields: string[] = [];
+      if (embeddingUseDocumentTitle && title) fields.push(title);
+      if (p.title) fields.push(p.title);
+      if (embeddingUseClauseId && clauseId) fields.push(clauseId);
+      fields.push(p.content);
+      return fields.filter(Boolean).join('\n');
+    });
+    const embeddings = await EmbeddingService.embedTexts(textsForEmbedding);
+
+    await prisma.$transaction(async (tx) => {
+      await tx.vectorDocument.deleteMany({ where: { categoryId, title } });
+
+      for (let i = 0; i < paragraphs.length; i++) {
+        const para = paragraphs[i];
+        const chunkContent = para.content;
+        const extractedClause = this.extractClauseId(chunkContent);
+        const chunkClauseId = extractedClause || clauseId || String(i + 1);
+        const contentHash = this.sourceHash([sourceType, title, category || '', chunkClauseId, chunkContent]);
+        const sourceId = entry.sourceId || `${sourceType}:${this.sourceHash([title, category || '', chunkClauseId, contentHash])}`;
+        const embeddingStr = `[${embeddings[i].join(',')}]`;
+        const isTable = chunkContent.split('\n').some(l => isSeparatorLine(l));
+        const storedContent = para.title ? `${para.title}\n${chunkContent}` : chunkContent;
+
+        await tx.$executeRawUnsafe(
+          `INSERT INTO vector_documents
+            (id, "categoryId", source_type, source_id, title, clause_id, content, content_hash, chunk_index, metadata, embedding, vector_status, created_at, updated_at)
+          VALUES
+            (gen_random_uuid(), $1, $2, $3, $4, $5, $6, $7, $8, $9::jsonb, $10::vector, $11, NOW(), NOW())`,
+          categoryId,
+          sourceType,
+          paragraphs.length > 1 ? `${sourceId}:chunk:${i}` : sourceId,
+          title,
+          chunkClauseId,
+          storedContent,
+          contentHash,
+          i,
+          JSON.stringify({
+            ...metadata,
+            original_source_id: sourceId,
+            is_table: isTable,
+            heading: para.title || '',
+            chunkConfigUsed: { mode, maxChars, overlap },
+          }),
+          embeddingStr,
+          'SUCCESS'
+        );
+      }
+    });
+
+    return { chunks: paragraphs.length };
   }
 
   /**

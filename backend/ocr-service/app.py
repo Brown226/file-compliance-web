@@ -49,23 +49,45 @@ def extract_text_from_result(result: Any) -> str:
 def infer_file_type(file_type: str | None, file_name: str | None = None) -> str:
     value = (file_type or "").strip().lower()
     name = (file_name or "").strip().lower()
+
     if value.startswith('data:image/'):
         return 'image'
-    if value in {'application/pdf', 'pdf'} or value.endswith('.pdf') or name.endswith('.pdf'):
-        return 'pdf'
-    if 'jpeg' in value or value.endswith('.jpg') or value.endswith('.jpeg') or name.endswith(('.jpg', '.jpeg')):
-        return 'jpg'
-    if 'png' in value or value.endswith('.png') or name.endswith('.png'):
-        return 'png'
-    if 'gif' in value or value.endswith('.gif') or name.endswith('.gif'):
-        return 'gif'
-    if 'webp' in value or value.endswith('.webp') or name.endswith('.webp'):
-        return 'webp'
-    if 'bmp' in value or value.endswith('.bmp') or name.endswith('.bmp'):
-        return 'bmp'
-    if 'tiff' in value or value.endswith('.tif') or value.endswith('.tiff') or name.endswith(('.tif', '.tiff')):
-        return 'tiff'
-    return value or name
+
+    FILE_TYPE_MAP = {
+        'application/pdf': 'pdf',
+        'pdf': 'pdf',
+        'application/msword': 'doc',
+        'doc': 'doc',
+        'application/vnd.openxmlformats-officedocument.wordprocessingml.document': 'docx',
+        'docx': 'docx',
+        'image/jpeg': 'jpg',
+        'image/jpg': 'jpg',
+        'jpg': 'jpg',
+        'jpeg': 'jpeg',
+        'image/png': 'png',
+        'png': 'png',
+        'image/gif': 'gif',
+        'gif': 'gif',
+        'image/webp': 'webp',
+        'webp': 'webp',
+        'image/bmp': 'bmp',
+        'bmp': 'bmp',
+        'image/tiff': 'tiff',
+        'tiff': 'tiff',
+    }
+
+    SPECIAL_TYPE_MAPPING = {
+        'doc': 'docx',
+    }
+
+    normalized_type = FILE_TYPE_MAP.get(value, value)
+
+    if normalized_type == value:
+        ext = name.split('.')[-1] if '.' in name else ''
+        if ext:
+            normalized_type = FILE_TYPE_MAP.get(ext, ext)
+
+    return SPECIAL_TYPE_MAPPING.get(normalized_type, normalized_type)
 
 
 def load_source_images(file_bytes: bytes, file_type: str | None, file_name: str | None = None) -> List[Image.Image]:

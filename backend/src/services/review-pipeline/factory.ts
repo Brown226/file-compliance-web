@@ -2,7 +2,7 @@
  * 审查流水线工厂（重构后）
  *
  * 重构说明（2026-04-19）：
- * - LIBRARY_REVIEW / CONSISTENCY / FULL_REVIEW / CUSTOM_RULE 统一使用 StandardPipeline
+ * - LIBRARY_REVIEW / CONSISTENCY / CUSTOM_RULE 统一使用 StandardPipeline
  * - DocReviewPipeline / TypoGrammarPipeline / MultimodalPipeline 保留为独立子类
  *   （它们有独特的 AI 策略，需覆盖 runAIStrategy 等钩子方法）
  * - 已删除的文件：library-review.pipeline.ts, consistency.pipeline.ts,
@@ -74,7 +74,7 @@ export function clearCapabilitiesCache(): void {
 
 /**
  * 工厂函数映射
- * - 使用 StandardPipeline 的模式：LIBRARY_REVIEW / CONSISTENCY / FULL_REVIEW / CUSTOM_RULE
+ * - 使用 StandardPipeline 的模式：LIBRARY_REVIEW / CONSISTENCY / CUSTOM_RULE
  * - 使用独立 Pipeline 的模式：DOC_REVIEW / TYPO_GRAMMAR / MULTIMODAL
  */
 const PIPELINE_MAP: Record<ReviewModeType, (runtimeCaps?: ModeCapabilities) => ReviewPipeline> = {
@@ -84,7 +84,6 @@ const PIPELINE_MAP: Record<ReviewModeType, (runtimeCaps?: ModeCapabilities) => R
   TYPO_GRAMMAR: (caps) => new TypoGrammarPipeline(caps),
   MULTIMODAL: (caps) => new MultimodalPipeline(caps),
   CUSTOM_RULE: (caps) => new StandardPipeline('CUSTOM_RULE', caps),
-  FULL_REVIEW: (caps) => new StandardPipeline('FULL_REVIEW', caps),
 };
 
 /** 获取所有可用的审查模式信息（根据 DB 配置过滤禁用模式） */

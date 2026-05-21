@@ -11,6 +11,7 @@ import { success, error } from '../utils/response';
 import path from 'path';
 import fs from 'fs';
 import { v4 as uuidv4 } from 'uuid';
+import { AppError } from '../middlewares/error.middleware';
 
 const UPLOAD_DIR = path.join(__dirname, '../../uploads/knowledge');
 if (!fs.existsSync(UPLOAD_DIR)) fs.mkdirSync(UPLOAD_DIR, { recursive: true });
@@ -44,9 +45,9 @@ export const createCategory = async (req: AuthRequest, res: Response): Promise<v
     if (!name?.trim()) { error(res, '名称不能为空', 400); return; }
     const category = await KnowledgeCategoryService.create({ name: name.trim(), description, documentTypes, parentId });
     success(res, category, '创建成功');
-  } catch (err) {
+  } catch (err: any) {
     console.error('Create KnowledgeCategory Error:', err);
-    error(res, '创建失败', 500);
+    error(res, err?.message || '创建失败', err instanceof AppError ? err.statusCode : 500);
   }
 };
 
@@ -56,9 +57,9 @@ export const updateCategory = async (req: AuthRequest, res: Response): Promise<v
     const id = req.params.id as string;
     const category = await KnowledgeCategoryService.update(id, req.body);
     success(res, category, '更新成功');
-  } catch (err) {
+  } catch (err: any) {
     console.error('Update KnowledgeCategory Error:', err);
-    error(res, '更新失败', 500);
+    error(res, err?.message || '更新失败', err instanceof AppError ? err.statusCode : 500);
   }
 };
 
@@ -68,9 +69,9 @@ export const deleteCategory = async (req: AuthRequest, res: Response): Promise<v
     const id = req.params.id as string;
     await KnowledgeCategoryService.delete(id);
     success(res, null, '删除成功');
-  } catch (err) {
+  } catch (err: any) {
     console.error('Delete KnowledgeCategory Error:', err);
-    error(res, '删除失败', 500);
+    error(res, err?.message || '删除失败', err instanceof AppError ? err.statusCode : 500);
   }
 };
 
@@ -80,6 +81,8 @@ export const uploadDocument = async (req: AuthRequest, res: Response): Promise<v
     const id = req.params.id as string;
     const file = req.file;
     if (!file) { error(res, '请选择文件', 400); return; }
+
+    await KnowledgeCategoryService.ensureLeafCategory(id);
 
     // 解码中文文件名（Chrome 将非ASCII字符以latin1编码传输）
     const originalName = Buffer.from(file.originalname, 'latin1').toString('utf8');
@@ -94,7 +97,7 @@ export const uploadDocument = async (req: AuthRequest, res: Response): Promise<v
     success(res, result, `上传成功，已分块 ${result.chunks} 个向量片段`);
   } catch (err: any) {
     console.error('Upload Document Error:', err);
-    error(res, err.message || '上传失败', 500);
+    error(res, err.message || '上传失败', err instanceof AppError ? err.statusCode : 500);
   }
 };
 
@@ -106,6 +109,8 @@ export const uploadDocumentAsync = async (req: AuthRequest, res: Response): Prom
     const id = req.params.id as string;
     const files = req.files as Express.Multer.File[];
     if (!files?.length) { error(res, '请选择文件', 400); return; }
+
+    await KnowledgeCategoryService.ensureLeafCategory(id);
 
     const taskIds: string[] = [];
 
@@ -144,7 +149,7 @@ export const uploadDocumentAsync = async (req: AuthRequest, res: Response): Prom
     success(res, { taskIds }, '文件已接收，正在后台处理');
   } catch (err: any) {
     console.error('Upload Async Error:', err);
-    error(res, err.message || '上传失败', 500);
+    error(res, err.message || '上传失败', err instanceof AppError ? err.statusCode : 500);
   }
 };
 
@@ -181,6 +186,8 @@ export const previewDocument = async (req: AuthRequest, res: Response): Promise<
     const file = req.file;
     if (!file) { error(res, '请选择文件', 400); return; }
 
+    await KnowledgeCategoryService.ensureLeafCategory(id);
+
     const originalName = Buffer.from(file.originalname, 'latin1').toString('utf8');
 
     // 移动到临时目录
@@ -194,7 +201,7 @@ export const previewDocument = async (req: AuthRequest, res: Response): Promise<
     success(res, preview, `预览完成，共 ${preview.chunks.length} 个分段`);
   } catch (err: any) {
     console.error('Preview Document Error:', err);
-    error(res, err.message || '预览失败', 500);
+    error(res, err.message || '预览失败', err instanceof AppError ? err.statusCode : 500);
   }
 };
 
@@ -207,17 +214,29 @@ export const confirmImport = async (req: AuthRequest, res: Response): Promise<vo
     if (!title?.trim()) { error(res, '文档标题不能为空', 400); return; }
     if (!chunks?.length) { error(res, '分段列表不能为空', 400); return; }
 
+    const parseQuality = metadata?.parseQuality;
+    if (parseQuality && parseQuality.passed === false) {
+      const reasons = Array.isArray(parseQuality.reasons) ? parseQuality.reasons.join('；') : '解析质量未通过';
+      error(res, `解析质量未通过：${reasons}`, 400);
+      return;
+    }
+
+    await KnowledgeCategoryService.ensureLeafCategory(id);
+
+    const category = await prisma.knowledgeCategory.findUnique({ where: { id } });
     const result = await VectorService.importChunks(chunks, {
       sourceType: 'standard',
       title: title.trim(),
       categoryId: id,
+      embeddingUseDocumentTitle: category?.embeddingUseDocumentTitle ?? false,
+      embeddingUseClauseId: category?.embeddingUseClauseId ?? false,
       metadata: metadata || {},
     });
 
     success(res, { chunks: result.chunks, deduped: result.deduped }, `导入成功，${result.chunks} 个分段，${result.deduped} 个去重`);
   } catch (err: any) {
     console.error('Confirm Import Error:', err);
-    error(res, err.message || '导入失败', 500);
+    error(res, err.message || '导入失败', err instanceof AppError ? err.statusCode : 500);
   }
 };
 
@@ -287,7 +306,7 @@ export const getTree = async (_req: AuthRequest, res: Response): Promise<void> =
 export const listGroupedDocuments = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const categoryId = req.params.id as string;
-    const { page, pageSize, query, status } = req.query;
+    const { page, pageSize, query } = req.query;
     const pageNum = Number(page) || 1;
     const pageSizeNum = Number(pageSize) || 10;
     const offset = (pageNum - 1) * pageSizeNum;
@@ -333,6 +352,29 @@ export const listGroupedDocuments = async (req: AuthRequest, res: Response): Pro
       offset
     );
 
+    const titles = rows.map(row => row.title).filter(Boolean);
+    const tagRows = titles.length > 0
+      ? await prisma.documentTag.findMany({
+          where: {
+            categoryId,
+            documentTitle: { in: titles },
+          },
+          include: { tag: true },
+        })
+      : [];
+
+    const tagMap = tagRows.reduce<Record<string, Array<{ id: string; key: string; value: string; categoryId?: string; createdAt: Date }>>>((acc, row) => {
+      if (!acc[row.documentTitle]) acc[row.documentTitle] = [];
+      acc[row.documentTitle].push({
+        id: row.tag.id,
+        key: row.tag.key,
+        value: row.tag.value,
+        categoryId: row.tag.categoryId || undefined,
+        createdAt: row.tag.createdAt,
+      });
+      return acc;
+    }, {});
+
     const items = rows.map(row => ({
       title: row.title,
       categoryId: row.categoryId,
@@ -343,6 +385,7 @@ export const listGroupedDocuments = async (req: AuthRequest, res: Response): Pro
       is_fully_embedded: Number(row.embedded_count) === Number(row.paragraph_count),
       create_time: row.create_time,
       update_time: row.update_time,
+      tags: tagMap[row.title] || [],
     }));
 
     success(res, { page: pageNum, pageSize: pageSizeNum, total, items });
@@ -358,22 +401,25 @@ export const listGroupedDocuments = async (req: AuthRequest, res: Response): Pro
 export const updateDocument = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const categoryId = req.params.id as string;
-    const { oldTitle, newTitle, isActive } = req.body;
+    const { oldTitle, newTitle } = req.body;
+    const normalizedTitle = newTitle?.trim();
 
     if (!oldTitle) { error(res, '原文档名称不能为空', 400); return; }
-    if (!newTitle && isActive === undefined) { error(res, '请提供要更新的字段', 400); return; }
+    if (!normalizedTitle) { error(res, '新文档名称不能为空', 400); return; }
 
     // 更新该分类下所有同标题的向量文档
-    const updateData: any = {};
-    if (newTitle) updateData.title = newTitle;
-    if (isActive !== undefined) {
-      // isActive 存储在 metadata 中
-      updateData.metadata = { isActive };
-    }
+    const result = await prisma.$transaction(async (tx) => {
+      const updated = await tx.vectorDocument.updateMany({
+        where: { categoryId, title: oldTitle },
+        data: { title: normalizedTitle },
+      });
 
-    const result = await prisma.vectorDocument.updateMany({
-      where: { categoryId, title: oldTitle },
-      data: updateData,
+      await tx.documentTag.updateMany({
+        where: { categoryId, documentTitle: oldTitle },
+        data: { documentTitle: normalizedTitle },
+      });
+
+      return updated;
     });
 
     success(res, { updatedCount: result.count }, '更新成功');
@@ -490,19 +536,11 @@ export const batchVectorize = async (req: AuthRequest, res: Response): Promise<v
       // 1. 获取该文档所有段落的原始内容（从第一个段落的 metadata 中获取原始文件信息）
       const paragraphs = await prisma.vectorDocument.findMany({
         where: { categoryId, title },
-        select: { id: true, content: true, metadata: true },
+        select: { content: true, metadata: true },
         orderBy: { chunkIndex: 'asc' },
       });
 
       if (paragraphs.length === 0) continue;
-
-      // 2. 删除旧的向量文档
-      await VectorService.deleteDocuments({ categoryId, title });
-
-      // 3. 从段落内容重建完整文本（去掉标题前缀，用原始内容）
-      // 优先从 metadata.original_file 找到原始文件信息
-      const firstMeta = (paragraphs[0].metadata as Record<string, any>) || {};
-      const originalFile = firstMeta.original_file;
 
       // 获取知识库分类配置
       const category = await prisma.knowledgeCategory.findUnique({ where: { id: categoryId } });
@@ -516,20 +554,24 @@ export const batchVectorize = async (req: AuthRequest, res: Response): Promise<v
       const fullContent = paragraphs.map(p => {
         const content = p.content as string;
         const meta = (p.metadata as Record<string, any>) || {};
-        // 如果有 heading metadata，去掉 content 中的 heading 前缀
         if (meta.heading && content.startsWith(meta.heading)) {
           return content.slice(meta.heading.length).trim();
         }
         return content;
       }).join('\n\n');
 
-      // 4. 重新导入（使用新的 SplitModel 分段 + 向量化）
-      const result = await VectorService.importDocument({
+      const firstMeta = (paragraphs[0].metadata as Record<string, any>) || {};
+      const originalFile = firstMeta.original_file;
+
+      // 2. 原子替换：先完成 embedding，再事务替换旧数据
+      const result = await VectorService.replaceDocumentAtomically({
         sourceType: 'standard',
         title,
         content: fullContent,
         categoryId,
         chunkConfig,
+        embeddingUseDocumentTitle: category?.embeddingUseDocumentTitle ?? false,
+        embeddingUseClauseId: category?.embeddingUseClauseId ?? false,
         metadata: { original_file: originalFile || title, revectorized: true },
       });
 
@@ -537,9 +579,9 @@ export const batchVectorize = async (req: AuthRequest, res: Response): Promise<v
     }
 
     success(res, { updatedCount: totalUpdated }, `重新向量化完成，共 ${totalUpdated} 个段落`);
-  } catch (err) {
+  } catch (err: any) {
     console.error('Batch Vectorize Error:', err);
-    error(res, '批量向量化失败', 500);
+    error(res, err?.message || '批量向量化失败', 500);
   }
 };
 

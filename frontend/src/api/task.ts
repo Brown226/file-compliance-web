@@ -1,5 +1,5 @@
 import request from '@/utils/request'
-import type { Task, TaskDetail, TaskFile } from '@/types/models'
+import type { Task, TaskDetail, TaskFile, ReviewPlan } from '@/types/models'
 import type { PaginatedResponse } from '@/types/api'
 
 // ==================== 合规审查任务 ====================
@@ -92,7 +92,7 @@ export function getModeCapabilitiesApi() {
   return request.get<Record<string, {
     enabled: boolean;
     rules: boolean;
-    standardRef: boolean;
+    standardRef: 'on' | 'off' | 'config';
     ai: boolean;
     aiStrategy: 'standard' | 'llmOnly' | 'refCompare' | 'multimodal';
     crossFile: boolean;
@@ -134,8 +134,12 @@ export function uploadOnlyApi(formData: FormData) {
   })
 }
 
-// 预分析 — 智能推荐审查方案
-export function preAnalyzeApi(files: Array<{ name: string; size: number }>) {
+// 预分析 — 智能推荐审查方案（增强版：支持传入实际文件路径）
+export function preAnalyzeApi(files: Array<{
+  name: string;
+  size: number;
+  filePath?: string;  // 新增：实际文件路径（uploadOnly返回）
+}>) {
   return request.post<{
     documentType: string;
     documentTypeLabel: string;
@@ -161,6 +165,7 @@ export function getReviewSummaryApi(id: string) {
   return request.get<{
     task: any;
     overview: { totalIssues: number; falsePositives: number; effectiveIssues: number; severityCounts: { error: number; warning: number; info: number } };
+    noResultReasons?: string[];
     issueTypeCounts: Array<{ type: string; count: number }>;
     fileIssueCounts: Array<{ fileId: string; fileName: string; fileType: string; errorCount: number; totalIssues: number }>;
     topRuleCodes: Array<{ code: string; count: number; severity: string }>;

@@ -66,7 +66,7 @@ import * as XLSX from 'xlsx'
 const props = defineProps<{
   taskId: string
   fileId: string | null
-  locateTarget?: { originalText: string; locateCandidates?: string[]; locateHint?: string } | null
+  locateTarget?: { originalText: string; locateCandidates?: string[]; locateMeta?: any; locateHint?: string } | null
 }>()
 
 const emit = defineEmits<{
@@ -106,7 +106,12 @@ const getLocateTerms = (): string[] => {
   const target = props.locateTarget
   if (!target) return []
   const list = Array.isArray(target.locateCandidates) ? target.locateCandidates : []
-  const terms = [...list, target.originalText]
+  const quote = target.locateMeta?.quote?.text ? [target.locateMeta.quote.text] : []
+  const context = [
+    target.locateMeta?.context?.prefix || '',
+    target.locateMeta?.context?.suffix || '',
+  ].filter(Boolean)
+  const terms = [...quote, ...list, target.originalText, ...context]
     .map(s => String(s || '').trim())
     .filter(Boolean)
   return [...new Set(terms)]

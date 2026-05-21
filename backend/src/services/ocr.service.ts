@@ -1,6 +1,7 @@
 import prisma from '../config/db';
 import fs from 'fs';
 import path from 'path';
+import { FileTypeService } from './file-type.service';
 
 interface OcrConfig {
   apiBaseUrl: string;
@@ -44,7 +45,7 @@ export class OcrService {
   static async recognizeFile(filePath: string, fileType: string): Promise<string> {
     const config = await this.getOcrConfig();
     const base64Data = fs.readFileSync(filePath).toString('base64');
-    const normalizedFileType = this.normalizeFileType(fileType);
+    const normalizedFileType = FileTypeService.normalizeFileType(fileType, path.basename(filePath));
     const requestBody: Record<string, unknown> = {
       image: base64Data,
       fileType: normalizedFileType,
@@ -81,19 +82,6 @@ export class OcrService {
     }
   }
 
-  private static normalizeFileType(fileType: string): string {
-    const value = (fileType || '').trim().toLowerCase();
-    if (value.startsWith('application/pdf') || value.endsWith('.pdf')) return 'pdf';
-    if (value.startsWith('data:image/')) return 'image';
-    if (value.includes('jpeg') || value.endsWith('.jpg') || value.endsWith('.jpeg')) return 'jpg';
-    if (value.includes('png') || value.endsWith('.png')) return 'png';
-    if (value.includes('gif') || value.endsWith('.gif')) return 'gif';
-    if (value.includes('webp') || value.endsWith('.webp')) return 'webp';
-    if (value.includes('bmp') || value.endsWith('.bmp')) return 'bmp';
-    if (value.includes('tiff') || value.endsWith('.tif') || value.endsWith('.tiff')) return 'tiff';
-    return value;
-  }
-
   // ========== 后处理 ==========
 
   static postProcessOcrText(text: string): string {
@@ -106,7 +94,6 @@ export class OcrService {
   }
 
   static isOcrSupported(fileType: string): boolean {
-    const supported = ['pdf', 'png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'tiff'];
-    return supported.includes(fileType.toLowerCase());
+    return FileTypeService.isOcrSupported(fileType);
   }
 }

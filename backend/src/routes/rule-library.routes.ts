@@ -10,6 +10,8 @@ import {
   updateLibrary,
   deleteLibrary,
   parseRulesFromFile,
+  parseRulesPreview,
+  importPreviewItems,
   addItem,
   updateItem,
   deleteItem,
@@ -29,6 +31,8 @@ router.delete('/:id', requireRole('ADMIN', 'MANAGER'), deleteLibrary);
 
 // 上传文件解析规则
 router.post('/:id/parse', requireRole('ADMIN', 'MANAGER'), upload.single('file'), parseRulesFromFile);
+router.post('/:id/parse-preview', requireRole('ADMIN', 'MANAGER'), upload.single('file'), parseRulesPreview);
+router.post('/:id/import', requireRole('ADMIN', 'MANAGER'), importPreviewItems);
 
 // 规则条目管理
 router.post('/:id/items', requireRole('ADMIN', 'MANAGER'), addItem);

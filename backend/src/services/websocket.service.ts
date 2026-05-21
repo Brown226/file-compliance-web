@@ -136,6 +136,8 @@ export class WebSocketService {
       issueType: string;
       ruleCode: string | null;
       severity: string;
+      confidence?: string | null;
+      confidenceSource?: string | null;
       originalText: string;
       suggestedText: string | null;
       description: string | null;
@@ -188,6 +190,7 @@ export class WebSocketService {
     stdRefCount?: number;  // 阶段1标准引用问题数
     aiCount?: number;      // 阶段2 AI 问题数
     usedEngine?: string;   // 阶段2使用引擎
+    currentFileIssueCount?: number;
     timestamp?: number;
   }) {
     const subscribers = this.taskSubscribers.get(taskId);
@@ -203,6 +206,12 @@ export class WebSocketService {
       fileName: data.fileName,
       errorCount: data.errorCount,
       result: data.result,
+      phase: data.phase,
+      ruleCount: data.ruleCount,
+      stdRefCount: data.stdRefCount,
+      aiCount: data.aiCount,
+      usedEngine: data.usedEngine,
+      currentFileIssueCount: data.currentFileIssueCount,
       timestamp: data.timestamp || Date.now(),
     });
 

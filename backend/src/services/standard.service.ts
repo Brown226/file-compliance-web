@@ -118,8 +118,15 @@ export class StandardService {
     return standard;
   }
 
-  static async getStandards(params: { skip?: number; take?: number; search?: string; folderId?: string; includeSubFolders?: boolean }): Promise<{ total: number; standards: any[] }> {
-    const { skip = 0, take = 10, search, folderId, includeSubFolders } = params;
+  static async getStandards(params: {
+    skip?: number;
+    take?: number;
+    search?: string;
+    standardStatus?: string;
+    folderId?: string;
+    includeSubFolders?: boolean;
+  }): Promise<{ total: number; standards: any[] }> {
+    const { skip = 0, take = 10, search, standardStatus, folderId, includeSubFolders } = params;
 
     const conditions: any[] = [];
 
@@ -131,6 +138,10 @@ export class StandardService {
           { standardName: { contains: search, mode: 'insensitive' as const } },
         ]
       });
+    }
+
+    if (standardStatus) {
+      conditions.push({ standardStatus: standardStatus as any });
     }
 
     if (folderId === 'unclassified') {
@@ -214,6 +225,11 @@ export class StandardService {
     }>
   ): Promise<Standard> {
     const updateData: any = { ...data }
+    const normalizedName = data.standardName?.trim() || data.title?.trim()
+    if (normalizedName) {
+      updateData.title = normalizedName
+      updateData.standardName = normalizedName
+    }
     // folderId 显式设为 null 时清除文件夹关联
     if (data.folderId !== undefined) {
       updateData.folderId = data.folderId || null
@@ -334,9 +350,9 @@ export class StandardService {
 
       await prisma.standard.create({
         data: {
-          title,
+          title: standardName || title,
           standardNo,
-          standardName,
+          standardName: standardName || title,
           version,
           isActive: true,
           folderId,
@@ -885,6 +901,7 @@ export class StandardService {
               await prisma.standard.update({
                 where: { id: existing.id },
                 data: {
+                  title: standardName || existing.title,
                   standardName: standardName || existing.standardName,
                   standardIdent: standardIdent || existing.standardIdent,
                   standardStatus: mappedStatus,
@@ -900,13 +917,13 @@ export class StandardService {
           } else {
             // 创建新标准
             await prisma.standard.create({
-              data: {
-                title: standardNo,
-                version: 'v1.0',
-                isActive: mappedStatus !== 'ABOLISHED',
-                standardNo,
-                standardName: standardName || null,
-                standardIdent: standardIdent || null,
+                data: {
+                  title: standardName || standardNo,
+                  version: 'v1.0',
+                  isActive: mappedStatus !== 'ABOLISHED',
+                  standardNo,
+                  standardName: standardName || standardNo,
+                  standardIdent: standardIdent || null,
                 standardStatus: mappedStatus,
                 publishDate,
                 implementDate,

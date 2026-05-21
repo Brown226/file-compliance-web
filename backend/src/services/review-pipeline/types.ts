@@ -12,14 +12,13 @@ export type ReviewModeType =
   | 'CONSISTENCY'
   | 'TYPO_GRAMMAR'
   | 'MULTIMODAL'
-  | 'CUSTOM_RULE'
-  | 'FULL_REVIEW';
+  | 'CUSTOM_RULE';
 
 /** Pipeline 阶段开关配置 */
 export interface PipelineStageConfig {
   rules: boolean;      // 是否执行规则引擎
   ai: boolean;         // 是否执行 AI 审查
-  stdRef?: boolean;    // 是否执行标准引用检查（仅 LIBRARY_REVIEW / FULL_REVIEW）
+  stdRef?: boolean;    // 是否执行标准引用检查（仅 LIBRARY_REVIEW / CONSISTENCY）
 }
 
 /** Pipeline 模式配置 */
@@ -87,6 +86,12 @@ export interface PipelineContext {
   extractedText: string;
   pdfPages?: string[];
   reviewMode: ReviewModeType;
+  ruleSource?: 'STANDARD' | 'RULE_LIBRARY';
+  ruleLibraryId?: string;
+  rulePlan?: {
+    enabledPrefixes: string[];
+    itemIds: string[];
+  };
   standardIds?: string[];           // 关联标准ID
   knowledgeCategoryId?: string;     // 关联的知识子库 ID
   knowledgeCategoryIds?: string[];  // 关联的多个知识子库 ID
@@ -102,6 +107,14 @@ export interface PipelineContext {
     }>;
   };
   pipelineConfig?: PipelineReviewConfig;  // 审查流水线配置
+  executionOverrides?: {
+    crossFileConsistency?: boolean;
+    stages?: {
+      rules?: boolean;
+      ai?: boolean;
+      stdRef?: boolean;
+    };
+  };
   /**
    * 每完成一个 AI 分片审查后回调
    * @param chunkLength 该分片处理的字符数（用于更新 processedLength 进度）

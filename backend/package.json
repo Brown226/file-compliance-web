@@ -8,6 +8,7 @@
     "build": "tsc",
     "start": "node dist/index.js",
     "seed": "ts-node src/seed.ts",
+    "benchmark:knowledge": "tsx scripts/run-knowledge-benchmark.ts",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [],

@@ -28,6 +28,7 @@ export interface KnowledgeTreeNode {
   name: string;
   type: 'folder' | 'knowledge';
   documentCount?: number;
+  parentId?: string | null;
   children?: KnowledgeTreeNode[];
 }
 
@@ -228,47 +229,58 @@ export class RAGService {
   static async getKnowledgeTree(): Promise<KnowledgeTreeNode[]> {
     const categories = await prisma.knowledgeCategory.findMany({
       where: { status: 'ACTIVE' },
-      include: {
-        _count: { select: { vectorDocuments: true } },
-        children: {
-          where: { status: 'ACTIVE' },
-          include: { _count: { select: { vectorDocuments: true } } },
-        },
-      },
+      include: { _count: { select: { vectorDocuments: true } } },
       orderBy: { name: 'asc' },
     });
 
+    const map = new Map<string, KnowledgeTreeNode>();
     const roots: KnowledgeTreeNode[] = [];
 
     for (const cat of categories) {
-      if (cat.parentId) continue; // 跳过子级，由父级处理
-      const node: KnowledgeTreeNode = {
+      map.set(cat.id, {
         id: cat.id,
         name: cat.name,
-        type: 'folder',
+        parentId: cat.parentId,
+        type: 'knowledge',
         documentCount: cat._count.vectorDocuments,
         children: [],
-      };
-
-      for (const child of cat.children) {
-        node.children!.push({
-          id: child.id,
-          name: child.name,
-          type: 'knowledge',
-          documentCount: child._count.vectorDocuments,
-        });
-      }
-
-      // 如果没有子分类，直接作为叶子节点
-      if (node.children!.length === 0) {
-        node.type = 'knowledge';
-        delete node.children;
-      }
-
-      roots.push(node);
+      });
     }
 
-    return roots;
+    for (const node of map.values()) {
+      if (node.parentId && map.has(node.parentId)) {
+        const parent = map.get(node.parentId)!;
+        parent.children!.push(node);
+        parent.type = 'folder';
+      } else {
+        roots.push(node);
+      }
+    }
+
+    const normalize = (node: KnowledgeTreeNode): KnowledgeTreeNode => {
+      const children = (node.children || []).sort((a, b) => a.name.localeCompare(b.name, 'zh-CN'));
+      if (children.length === 0) {
+        return {
+          id: node.id,
+          name: node.name,
+          parentId: node.parentId,
+          type: 'knowledge',
+          documentCount: node.documentCount,
+        };
+      }
+      return {
+        id: node.id,
+        name: node.name,
+        parentId: node.parentId,
+        type: 'folder',
+        documentCount: node.documentCount,
+        children: children.map(normalize),
+      };
+    };
+
+    return roots
+      .sort((a, b) => a.name.localeCompare(b.name, 'zh-CN'))
+      .map(normalize);
   }
 
   /**
@@ -277,11 +289,13 @@ export class RAGService {
   static async getFlatKnowledgeList(): Promise<Array<{ id: string; name: string; documentCount?: number }>> {
     const categories = await prisma.knowledgeCategory.findMany({
       where: { status: 'ACTIVE' },
-      include: { _count: { select: { vectorDocuments: true } } },
+      include: { _count: { select: { vectorDocuments: true, children: true } } },
       orderBy: { name: 'asc' },
     });
 
-    return categories.map(cat => ({
+    return categories
+      .filter(cat => cat._count.children === 0)
+      .map(cat => ({
       id: cat.id,
       name: cat.name,
       documentCount: cat._count.vectorDocuments,

@@ -1,12 +1,8 @@
 /**
  * 检索服务 — 混合检索、命中测试
- *
- * 在 VectorService 之上提供应用级检索能力：
- * - 混合检索：向量 + 关键词 + Rerank
- * - 命中测试：专门的检索效果测试接口
- * - 相似度阈值过滤：高置信度结果直接返回
  */
 
+import prisma from '../config/db';
 import { VectorService, VectorSearchResult } from './vector.service';
 
 export interface SearchOptions {
@@ -14,7 +10,6 @@ export interface SearchOptions {
   sourceTypes?: string[];
   categoryId?: string;
   rerank?: boolean;
-  /** 相似度阈值：超过此值的结果视为高置信度 */
   directReturnThreshold?: number;
 }
 
@@ -23,32 +18,33 @@ export interface HitTestOptions {
   categoryId?: string;
   sourceTypes?: string[];
   topNumber?: number;
-  /** 搜索模式：vector / keyword / hybrid */
   searchMode?: 'vector' | 'keyword' | 'hybrid';
 }
 
 export interface HitTestResult {
-  /** 原始查询 */
   originalQuery: string;
-  /** 检索结果列表 */
   results: Array<{
     id: string;
     title: string | null;
     clauseId: string | null;
     content: string;
-    /** 向量相似度 */
     vectorScore: number;
-    /** 关键词匹配分 */
-  keywordScore: number;
-    /** Rerank 分数 */
+    keywordScore: number;
     rerankScore?: number;
-    /** 综合评分 */
     comprehensiveScore: number;
     chunkIndex: number;
     isTable: boolean;
     metadata: any;
   }>;
-  /** 检索统计 */
+  usedConfig: {
+    minSimilarity: number;
+    directReturnThreshold: number;
+    maxReferenceChars: number;
+    enableRerank: boolean;
+  };
+  rerankApplied: boolean;
+  directReturnHit: boolean;
+  filteredBySimilarity: number;
   stats: {
     totalCandidates: number;
     afterDedup: number;
@@ -58,50 +54,72 @@ export interface HitTestResult {
 }
 
 export class SearchService {
+  private static async getCategoryRetrievalConfig(categoryId?: string): Promise<{
+    minSimilarity: number;
+    directReturnThreshold: number;
+    maxReferenceChars: number;
+    enableRerank: boolean;
+  }> {
+    if (!categoryId) {
+      return {
+        minSimilarity: 0.6,
+        directReturnThreshold: 0.9,
+        maxReferenceChars: 5000,
+        enableRerank: true,
+      };
+    }
 
-  /**
-   * 混合检索（供问答等业务调用）
-   */
+    const category = await prisma.knowledgeCategory.findUnique({
+      where: { id: categoryId },
+      select: {
+        minSimilarity: true,
+        directReturnThreshold: true,
+        maxReferenceChars: true,
+        enableRerank: true,
+      },
+    });
+
+    return {
+      minSimilarity: category?.minSimilarity ?? 0.6,
+      directReturnThreshold: category?.directReturnThreshold ?? 0.9,
+      maxReferenceChars: category?.maxReferenceChars ?? 5000,
+      enableRerank: category?.enableRerank ?? true,
+    };
+  }
+
   static async search(query: string, options: SearchOptions = {}): Promise<VectorSearchResult[]> {
-    const {
-      limit = 5,
-      sourceTypes,
-      categoryId,
-      rerank = true,
-    } = options;
+    const { limit = 5, sourceTypes, categoryId } = options;
+    const cfg = await this.getCategoryRetrievalConfig(categoryId);
 
-    return VectorService.hybridSearch(query, {
-      limit,
+    const candidateLimit = Math.max(limit * 8, limit);
+    const rerank = options.rerank ?? cfg.enableRerank;
+
+    const candidates = await VectorService.hybridSearch(query, {
+      limit: candidateLimit,
       sourceTypes,
       categoryId,
       rerank,
     });
+
+    const filtered = candidates.filter(r => r.score >= cfg.minSimilarity);
+    return filtered.slice(0, limit);
   }
 
-  /**
-   * 高置信度直接返回 — 相似度超过阈值时跳过 LLM
-   */
   static async searchWithDirectReturn(
     query: string,
     options: SearchOptions & { directReturnThreshold?: number } = {},
   ): Promise<{ results: VectorSearchResult[]; isDirectReturn: boolean }> {
-    const threshold = options.directReturnThreshold ?? 0.85;
+    const cfg = await this.getCategoryRetrievalConfig(options.categoryId);
+    const threshold = options.directReturnThreshold ?? cfg.directReturnThreshold;
     const results = await this.search(query, options);
 
     if (results.length > 0 && results[0].score >= threshold) {
-      console.log(`[Search] 高置信度命中 (score=${results[0].score.toFixed(4)} >= ${threshold})，直接返回`);
       return { results: [results[0]], isDirectReturn: true };
     }
 
     return { results, isDirectReturn: false };
   }
 
-  /**
-   * 命中测试 — 专门的检索效果测试接口
-   * 向量模式：仅向量相似度搜索
-   * 关键词模式：仅关键词ILIKE搜索
-   * 混合模式：向量+关键词+Rerank
-   */
   static async hitTest(options: HitTestOptions): Promise<HitTestResult> {
     const startTime = Date.now();
     const {
@@ -112,37 +130,48 @@ export class SearchService {
       searchMode = 'hybrid',
     } = options;
 
-    let results: VectorSearchResult[];
+    const cfg = await this.getCategoryRetrievalConfig(categoryId);
+    const candidateLimit = Math.max(topNumber * 8, topNumber);
+
+    let candidates: VectorSearchResult[];
+    let rerankApplied = false;
 
     switch (searchMode) {
       case 'vector':
-        results = await VectorService.vectorSearchByQuery(query, {
-          limit: topNumber,
+        candidates = await VectorService.vectorSearchByQuery(query, {
+          limit: candidateLimit,
           sourceTypes,
           categoryId,
         });
         break;
       case 'keyword':
-        results = await VectorService.keywordSearchByQuery(query, {
-          limit: topNumber,
+        candidates = await VectorService.keywordSearchByQuery(query, {
+          limit: candidateLimit,
           sourceTypes,
           categoryId,
         });
         break;
       case 'hybrid':
       default:
-        results = await VectorService.hybridSearch(query, {
-          limit: topNumber,
+        rerankApplied = cfg.enableRerank;
+        candidates = await VectorService.hybridSearch(query, {
+          limit: candidateLimit,
           sourceTypes,
           categoryId,
-          rerank: true,
+          rerank: cfg.enableRerank,
         });
         break;
     }
 
-    const afterDedup = results.length;
+    const totalCandidates = candidates.length;
+    const filteredCandidates = candidates.filter(r => r.score >= cfg.minSimilarity);
+    const filteredBySimilarity = totalCandidates - filteredCandidates.length;
 
-    const searchResults = results.slice(0, topNumber).map((r) => ({
+    const directReturnHit = filteredCandidates.length > 0
+      && filteredCandidates[0].score >= cfg.directReturnThreshold;
+
+    const limited = filteredCandidates.slice(0, topNumber);
+    const searchResults = limited.map((r) => ({
       id: r.id,
       title: r.title,
       clauseId: r.clause_id,
@@ -159,10 +188,14 @@ export class SearchService {
     return {
       originalQuery: query,
       results: searchResults,
+      usedConfig: cfg,
+      rerankApplied,
+      directReturnHit,
+      filteredBySimilarity,
       stats: {
-        totalCandidates: afterDedup,
-        afterDedup,
-        afterRerank: afterDedup,
+        totalCandidates,
+        afterDedup: filteredCandidates.length,
+        afterRerank: searchResults.length,
         searchTimeMs: Date.now() - startTime,
       },
     };
