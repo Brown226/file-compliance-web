@@ -678,10 +678,14 @@ export class VectorService {
   }
 
   /**
-   * 直接导入已分块的内容（不重新分块）
+   * 直接导入已分块的内容（不重新分块）- 带事务保护
    * 用于分段预览确认后的导入，保证用户的分段编辑生效
    * 支持两种格式：string[]（兼容旧版）和 ParagraphSegment[]（新版）
    * title 字段始终存原始文档名，标题链存入 metadata.heading
+   *
+   * 事务保护：
+   * - 所有向量入库操作在一个事务中执行
+   * - 失败时自动回滚，保证数据一致性
    */
   static async importChunks(
     chunks: Array<string | ParagraphSegment>,
@@ -745,7 +749,19 @@ export class VectorService {
     });
 
     const embeddings = await EmbeddingService.embedTexts(textsForEmbedding);
+
     let deduped = 0;
+    const toInsert: Array<{
+      para: ParagraphSegment;
+      chunkContent: string;
+      chunkClauseId: string;
+      contentHash: string;
+      sourceId: string;
+      embeddingStr: string;
+      isTable: boolean;
+      storedContent: string;
+      contextSummary?: string;
+    }> = [];
 
     for (let i = 0; i < segments.length; i++) {
       const para = segments[i];
@@ -766,33 +782,53 @@ export class VectorService {
       const embeddingStr = `[${embeddings[i].join(',')}]`;
       const isTable = chunkContent.split('\n').some(l => isSeparatorLine(l));
       const storedContent = para.title ? `${para.title}\n${chunkContent}` : chunkContent;
-
       const contextSummary = contextualMap.get(i);
 
-      await prisma.$executeRawUnsafe(`
-        INSERT INTO vector_documents
-          (id, "categoryId", source_type, source_id, title, clause_id, content, content_hash, chunk_index, metadata, embedding, vector_status, created_at, updated_at)
-        VALUES
-          (gen_random_uuid(), $1, $2, $3, $4, $5, $6, $7, $8, $9::jsonb, $10::vector, $11, NOW(), NOW())
-      `,
-        categoryId || null,
-        sourceType,
-        segments.length > 1 ? `${sourceId}:chunk:${i}` : sourceId,
-        title,
+      toInsert.push({
+        para,
+        chunkContent,
         chunkClauseId,
-        storedContent,
         contentHash,
-        i,
-        JSON.stringify({
-          ...metadata,
-          original_source_id: sourceId,
-          is_table: isTable,
-          heading: para.title || '',
-          ...(contextSummary ? { contextSummary } : {}),
-        }),
+        sourceId,
         embeddingStr,
-        'SUCCESS'
-      );
+        isTable,
+        storedContent,
+        contextSummary,
+      });
+    }
+
+    if (toInsert.length > 0) {
+      await prisma.$transaction(async (tx) => {
+        for (let i = 0; i < toInsert.length; i++) {
+          const item = toInsert[i];
+          const paraIndex = segments.findIndex(p => p === item.para);
+
+          await tx.$executeRawUnsafe(`
+            INSERT INTO vector_documents
+              (id, "categoryId", source_type, source_id, title, clause_id, content, content_hash, chunk_index, metadata, embedding, vector_status, created_at, updated_at)
+            VALUES
+              (gen_random_uuid(), $1, $2, $3, $4, $5, $6, $7, $8, $9::jsonb, $10::vector, $11, NOW(), NOW())
+          `,
+            categoryId || null,
+            sourceType,
+            toInsert.length > 1 ? `${item.sourceId}:chunk:${paraIndex}` : item.sourceId,
+            title,
+            item.chunkClauseId,
+            item.storedContent,
+            item.contentHash,
+            paraIndex,
+            JSON.stringify({
+              ...metadata,
+              original_source_id: item.sourceId,
+              is_table: item.isTable,
+              heading: item.para.title || '',
+              ...(item.contextSummary ? { contextSummary: item.contextSummary } : {}),
+            }),
+            item.embeddingStr,
+            'SUCCESS'
+          );
+        }
+      });
     }
 
     return { chunks: segments.length, deduped };

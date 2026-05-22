@@ -3,12 +3,18 @@
  *
  * 使用 OpenAI 兼容 API 进行文本向量化和重排序。
  * Embedding 失败时必须硬失败，禁止写入伪向量。
+ *
+ * 缓存优化：
+ * - 使用 CacheService 缓存重复的 Embedding 查询
+ * - 避免重复调用 API，节省成本和延迟
  */
 
 import prisma from '../config/db';
+import { CacheService } from './cache.service';
 
 const EMBEDDING_DIM = 4096;
 const EMBEDDING_BATCH_SIZE = 32;
+const EMBEDDING_CACHE_TTL = 3600;
 
 interface EmbeddingConfig {
   baseUrl: string;
@@ -66,8 +72,12 @@ export class EmbeddingService {
 
   // ============ 核心方法 ============
 
+  private static computeCacheKey(texts: string[]): string {
+    return CacheService.generateKey('embedding', ...texts);
+  }
+
   /**
-   * 批量文本向量化
+   * 批量文本向量化（带缓存）
    */
   static async embedTexts(texts: string[]): Promise<number[][]> {
     if (texts.length === 0) return [];
@@ -82,11 +92,19 @@ export class EmbeddingService {
       return results;
     }
 
+    const cacheKey = this.computeCacheKey(texts);
+    const cached = CacheService.get<number[][]>(cacheKey);
+    if (cached !== null) {
+      console.log(`[Embedding] Cache hit for ${texts.length} texts`);
+      return cached;
+    }
+
     const config = await this.getEmbeddingConfig();
     if (!config) {
       throw new Error('Embedding 模型未配置，禁止降级为本地伪向量');
     }
 
+    const startTime = Date.now();
     const response = await fetch(`${config.baseUrl.replace(/\/$/, '')}/embeddings`, {
       method: 'POST',
       headers: {
@@ -112,6 +130,11 @@ export class EmbeddingService {
         throw new Error(`Embedding 维度异常: expected=${EMBEDDING_DIM}, actual=${Array.isArray(embedding) ? embedding.length : 'invalid'}`);
       }
     }
+
+    const latency = Date.now() - startTime;
+    console.log(`[Embedding] API call completed in ${latency}ms for ${texts.length} texts`);
+
+    CacheService.set(cacheKey, embeddings, EMBEDDING_CACHE_TTL);
     return embeddings;
   }
 

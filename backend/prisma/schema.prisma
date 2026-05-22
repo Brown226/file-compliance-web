@@ -473,6 +473,7 @@ model KnowledgeCategory {
   children        KnowledgeCategory[] @relation("KnowledgeCategoryToKnowledgeCategory")
   isLeaf          Boolean                      @default(true)    @map("is_leaf")         // 是否为叶子节点（知识库容器）
   vectorDocuments VectorDocument[]
+  documents       Document[]
   tags            Tag[]
   chunkMode       String            @default("auto") @map("chunk_mode")  // auto, fixed, paragraph, table-aware
   maxChars        Int               @default(900) @map("max_chars")       // 分块最大字符数
@@ -526,25 +527,102 @@ enum CategoryPermission {
   ADMIN
 }
 
-// ===== 向量文档（pgvector） =====
+// ===== 文档实体（与向量分离，支持版本管理） =====
+
+model Document {
+  id                    String              @id @default(uuid())
+  categoryId            String?
+  category              KnowledgeCategory?  @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  
+  title                 String                                  // 文档标题（同一分类下唯一）
+  sourceFile            String?             @map("source_file")  // 原始文件名
+  sourceType            String              @default("standard")  @map("source_type") // standard, law, reference, rule
+  status                DocumentStatus      @default(ACTIVE)
+  
+  totalChunks           Int                 @default(0)  @map("total_chunks")
+  totalChars            Int                 @default(0)  @map("total_chars")
+  
+  isVectorized          Boolean             @default(false) @map("is_vectorized")
+  vectorStatus          String?             @map("vector_status") // PENDING/STARTED/SUCCESS/FAILURE
+  
+  parseScore            Int?                @map("parse_score")
+  parseReport           Json?               @map("parse_report")
+  
+  metadata              Json?
+  
+  currentVersion        Int                 @default(1) @map("current_version")
+  createdBy             String?             @map("created_by")
+  
+  createdAt             DateTime            @default(now()) @map("created_at")
+  updatedAt             DateTime            @updatedAt @map("updated_at")
+  
+  chunks                VectorDocument[]
+  versions              DocumentVersion[]
+  tags                  DocumentTag[]
+  
+  @@unique([categoryId, title])
+  @@index([categoryId])
+  @@index([status])
+  @@index([createdAt])
+  @@map("documents")
+}
+
+enum DocumentStatus {
+  ACTIVE    // 正常/已发布
+  DRAFT     // 草稿（解析中）
+  ARCHIVED  // 已归档
+  DELETED   // 已删除（软删除）
+}
+
+// ===== 文档版本历史 =====
+
+model DocumentVersion {
+  id              String    @id @default(uuid())
+  documentId      String
+  document        Document  @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  version         Int
+  
+  content         String    @db.Text  // Markdown 内容
+  chunkCount      Int       @map("chunk_count")
+  totalChars      Int       @map("total_chars")
+  
+  sourceFile      String?   @map("source_file")
+  parseScore      Int?      @map("parse_score")
+  parseReport     Json?     @map("parse_report")
+  
+  createdBy       String?   @map("created_by")
+  createdAt       DateTime  @default(now()) @map("created_at")
+  
+  @@unique([documentId, version])
+  @@index([documentId])
+  @@map("document_versions")
+}
+
+// ===== 向量文档（段落级，与 Document 关联） =====
 
 model VectorDocument {
   id              String              @id @default(uuid())
+  documentId      String?             @map("document_id")      // 关联文档
+  document        Document?           @relation(fields: [documentId], references: [id], onDelete: Cascade)
   categoryId      String?
   category        KnowledgeCategory?  @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  
   sourceType      String              @map("source_type")     // standard, law, reference, rule
   sourceId        String?             @map("source_id")       // 来源标识
-  title           String?                                    // 文档/标准标题
+  title           String?                                    // 所属文档标题（冗余存储，便于检索）
   clauseId        String?             @map("clause_id")       // 条文编号
   content         String              @db.Text                // 文本内容
   contentHash     String?             @map("content_hash")    // SHA-256 去重
   chunkIndex      Int                 @default(0) @map("chunk_index")
   metadata        Json?                                       // 附加元数据
+  
   embedding       Unsupported("vector(4096)")?               // pgvector 向量
   vectorStatus    String              @default("PENDING") @map("vector_status") // PENDING/STARTED/SUCCESS/FAILURE
+  
   createdAt       DateTime            @default(now()) @map("created_at")
   updatedAt       DateTime            @updatedAt @map("updated_at")
 
+  @@index([documentId])
   @@index([categoryId])
   @@index([sourceType, sourceId])
   @@index([contentHash])
@@ -573,12 +651,12 @@ model DocumentTag {
   id          String      @id @default(uuid())
   tagId       String      @map("tag_id")
   tag         Tag         @relation(fields: [tagId], references: [id], onDelete: Cascade)
-  documentTitle String   @map("document_title")  // 关联的文档标题
-  categoryId  String      @map("category_id")
+  documentId  String      @map("document_id")  // 关联 Document
+  document    Document    @relation(fields: [documentId], references: [id], onDelete: Cascade)
   createdAt   DateTime    @default(now()) @map("created_at")
 
-  @@unique([tagId, documentTitle, categoryId])
-  @@index([categoryId, documentTitle])
+  @@unique([tagId, documentId])
+  @@index([documentId])
   @@map("document_tags")
 }
 

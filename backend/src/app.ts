@@ -28,6 +28,8 @@ import ruleFolderRoutes from './routes/rule-folder.routes';
 import qaRoutes from './routes/qa.routes';
 import onlyofficeRoutes from './routes/onlyoffice.routes';
 import langchainRoutes from './routes/langchain.routes';
+import documentRoutes from './routes/document.routes';
+import healthRoutes from './routes/health.routes';
 
 // 定时清理孤立文件（每天凌晨2点执行）
 import './services/scheduler.service';
@@ -76,6 +78,8 @@ app.use('/api/rule-folders', ruleFolderRoutes);
 app.use('/api/qa', qaRoutes);
 app.use('/api/onlyoffice', onlyofficeRoutes);
 app.use('/api/langchain', langchainRoutes);
+app.use('/api/documents', documentRoutes);
+app.use('/api', healthRoutes);
 app.get('/health', (req: Request, res: Response) => {
   res.status(200).json({ status: 'OK', message: 'Server is running' });
 });
