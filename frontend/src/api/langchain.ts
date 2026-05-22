@@ -69,6 +69,7 @@ export const langchainAskApi = (data: {
   topK?: number
   enableMultiQuery?: boolean
   enableHyDE?: boolean
+  enableCompression?: boolean
 }) => request.post<LangChainAskResult>('/langchain/ask', data)
 
 export const langchainReviewApi = (data: {

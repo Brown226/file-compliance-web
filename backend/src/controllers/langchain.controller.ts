@@ -59,7 +59,7 @@ export const langchainHitTest = async (req: AuthRequest, res: Response): Promise
 
 export const langchainAskQuestion = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
-    const { question, categoryIds, history, topK, enableMultiQuery, enableHyDE } = req.body;
+    const { question, categoryIds, history, topK, enableMultiQuery, enableHyDE, enableCompression } = req.body;
 
     if (!question) {
       error(res, '请输入问题', 400);
@@ -75,6 +75,7 @@ export const langchainAskQuestion = async (req: AuthRequest, res: Response): Pro
       topK: topK ?? 8,
       enableMultiQuery: enableMultiQuery ?? true,
       enableHyDE: enableHyDE ?? true,
+      enableCompression: enableCompression ?? true,
     });
 
     success(res, result);
@@ -85,29 +86,30 @@ export const langchainAskQuestion = async (req: AuthRequest, res: Response): Pro
 };
 
 export const langchainAskStream = async (req: AuthRequest, res: Response): Promise<void> => {
-  const { question, categoryIds, history = [], topK, enableMultiQuery, enableHyDE } = req.body;
+  const { question, categoryIds, history = [], topK, enableMultiQuery, enableHyDE, enableCompression } = req.body
 
-  if (!question) { error(res, '请输入问题', 400); return; }
-  if (!categoryIds || categoryIds.length === 0) { error(res, '请选择知识库', 400); return; }
+  if (!question) { error(res, '请输入问题', 400); return }
+  if (!categoryIds || categoryIds.length === 0) { error(res, '请选择知识库', 400); return }
 
-  res.setHeader('Content-Type', 'text/event-stream; charset=utf-8');
-  res.setHeader('Cache-Control', 'no-cache, no-transform');
-  res.setHeader('Connection', 'keep-alive');
-  (res as any).flushHeaders?.();
+  res.setHeader('Content-Type', 'text/event-stream; charset=utf-8')
+  res.setHeader('Cache-Control', 'no-cache, no-transform')
+  res.setHeader('Connection', 'keep-alive')
+  (res as any).flushHeaders?.()
 
   const send = (event: string, data: any) => {
-    res.write(`event: ${event}\n`);
-    res.write(`data: ${JSON.stringify(data)}\n\n`);
-  };
+    res.write(`event: ${event}\n`)
+    res.write(`data: ${JSON.stringify(data)}\n\n`)
+  }
 
   try {
-    send('status', { message: '正在检索知识库...' });
+    send('status', { message: '正在检索知识库...' })
 
     const searchResult = await LangChainRAGService.askQuestion(question, categoryIds, history, {
       topK: topK ?? 8,
       enableMultiQuery: enableMultiQuery ?? true,
       enableHyDE: enableHyDE ?? true,
-    });
+      enableCompression: enableCompression ?? true,
+    })
 
     send('sources', { sources: searchResult.sources, debug: searchResult.debug });
 

@@ -27,15 +27,75 @@
         </div>
 
         <div class="lc-qa-sidebar__section">
-          <label class="lc-label">检索增强</label>
+          <div class="lc-qa-section-header">
+            <label class="lc-label">检索参数</label>
+            <el-button type="primary" link size="small" @click="resetSearchParams">重置默认</el-button>
+          </div>
+          <div class="lc-params-group">
+            <div class="lc-param-item">
+              <div class="lc-param-row">
+                <span class="lc-param-label">返回结果数</span>
+                <el-input-number
+                  v-model="searchParams.topK"
+                  :min="1"
+                  :max="30"
+                  size="small"
+                  controls-position="right"
+                />
+              </div>
+              <div class="lc-param-hint">设置检索时返回的文档片段数</div>
+            </div>
+            <div class="lc-param-item">
+              <div class="lc-param-row">
+                <span class="lc-param-label">最小相似度</span>
+                <span class="lc-param-value">{{ (searchParams.minSimilarity * 100).toFixed(0) }}%</span>
+              </div>
+              <el-slider
+                v-model="searchParams.minSimilarity"
+                :min="0.1"
+                :max="0.9"
+                :step="0.05"
+                size="small"
+                :format-tooltip="(v: number) => `${(v * 100).toFixed(0)}%`"
+              />
+              <div class="lc-param-hint">低于此相似度的结果将被过滤</div>
+            </div>
+            <div class="lc-param-item">
+              <div class="lc-param-row">
+                <span class="lc-param-label">搜索模式</span>
+                <el-radio-group v-model="searchParams.searchMode" size="small">
+                  <el-radio-button value="hybrid">混合</el-radio-button>
+                  <el-radio-button value="vector">向量</el-radio-button>
+                  <el-radio-button value="keyword">关键词</el-radio-button>
+                </el-radio-group>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="lc-qa-sidebar__section">
+          <label class="lc-label">高级检索增强</label>
           <div class="lc-toggle-group">
             <div class="lc-toggle-item">
-              <el-switch v-model="enableMultiQuery" size="small" />
-              <span>多查询扩展</span>
+              <el-switch v-model="searchParams.enableMultiQuery" size="small" />
+              <div class="lc-toggle-text">
+                <span>多查询扩展</span>
+                <span class="lc-toggle-hint">生成多个查询变体提高召回</span>
+              </div>
             </div>
             <div class="lc-toggle-item">
-              <el-switch v-model="enableHyDE" size="small" />
-              <span>假设性文档</span>
+              <el-switch v-model="searchParams.enableHyDE" size="small" />
+              <div class="lc-toggle-text">
+                <span>假设性文档</span>
+                <span class="lc-toggle-hint">先生成假设答案再检索</span>
+              </div>
+            </div>
+            <div class="lc-toggle-item">
+              <el-switch v-model="searchParams.enableCompression" size="small" />
+              <div class="lc-toggle-text">
+                <span>上下文压缩</span>
+                <span class="lc-toggle-hint">压缩检索结果减少 token</span>
+              </div>
             </div>
           </div>
         </div>
@@ -109,6 +169,38 @@
                     </el-tag>
                   </div>
                 </div>
+                <div v-if="msg.debug && Object.keys(msg.debug).length > 0" class="lc-qa-message__debug">
+                  <el-collapse class="lc-debug-collapse">
+                    <el-collapse-item title="检索诊断">
+                      <div class="lc-debug-info">
+                        <div v-if="msg.debug.retrievedCount" class="lc-debug-row">
+                          <span class="lc-debug-label">检索到片段</span>
+                          <span class="lc-debug-value">{{ msg.debug.retrievedCount }}</span>
+                        </div>
+                        <div v-if="msg.debug.afterCompressionCount" class="lc-debug-row">
+                          <span class="lc-debug-label">压缩后</span>
+                          <span class="lc-debug-value">{{ msg.debug.afterCompressionCount }}</span>
+                        </div>
+                        <div class="lc-debug-row">
+                          <span class="lc-debug-label">重排序</span>
+                          <span class="lc-debug-value">{{ msg.debug.rerankApplied ? '已启用' : '未启用' }}</span>
+                        </div>
+                        <div v-if="msg.debug.multiQueryVariants?.length" class="lc-debug-section">
+                          <span class="lc-debug-section-label">多查询变体</span>
+                          <div class="lc-debug-tags">
+                            <el-tag v-for="(v, vi) in msg.debug.multiQueryVariants" :key="vi" size="small" type="warning" effect="light">
+                              {{ v }}
+                            </el-tag>
+                          </div>
+                        </div>
+                        <div v-if="msg.debug.hydeAnswer" class="lc-debug-section">
+                          <span class="lc-debug-section-label">HyDE 假设答案</span>
+                          <div class="lc-debug-hyde">{{ msg.debug.hydeAnswer }}</div>
+                        </div>
+                      </div>
+                    </el-collapse-item>
+                  </el-collapse>
+                </div>
               </div>
             </div>
 
@@ -161,6 +253,31 @@ interface ChatMessage {
   role: 'user' | 'assistant'
   content: string
   sources?: Array<{ content: string; document_name: string; similarity: number }>
+  debug?: {
+    multiQueryVariants?: string[]
+    hydeAnswer?: string
+    retrievedCount?: number
+    afterCompressionCount?: number
+    rerankApplied?: boolean
+  }
+}
+
+interface SearchParams {
+  topK: number
+  minSimilarity: number
+  searchMode: 'hybrid' | 'vector' | 'keyword'
+  enableMultiQuery: boolean
+  enableHyDE: boolean
+  enableCompression: boolean
+}
+
+const DEFAULT_SEARCH_PARAMS: SearchParams = {
+  topK: 8,
+  minSimilarity: 0.3,
+  searchMode: 'hybrid',
+  enableMultiQuery: true,
+  enableHyDE: true,
+  enableCompression: true,
 }
 
 const userStore = useUserStore()
@@ -170,8 +287,7 @@ const inputQuestion = ref('')
 const messages = ref<ChatMessage[]>([])
 const isLoading = ref(false)
 const selectedCategoryIds = ref<string[]>([])
-const enableMultiQuery = ref(true)
-const enableHyDE = ref(true)
+const searchParams = ref<SearchParams>({ ...DEFAULT_SEARCH_PARAMS })
 const chatContainer = ref<HTMLElement | null>(null)
 const categoryTree = ref<KnowledgeTreeNode[]>([])
 
@@ -183,6 +299,11 @@ const examplePrompts = [
 ]
 
 const canSend = computed(() => inputQuestion.value.trim() && !isLoading.value && selectedCategoryIds.value.length > 0)
+
+const resetSearchParams = () => {
+  searchParams.value = { ...DEFAULT_SEARCH_PARAMS }
+  ElMessage.success('已重置为默认参数')
+}
 
 const scrollToBottom = async () => {
   await nextTick()
@@ -251,8 +372,10 @@ const askQuestion = async () => {
           .filter(m => ['user', 'assistant'].includes(m.role) && m.content.trim())
           .slice(-12)
           .map(m => ({ role: m.role, content: m.content.slice(0, 4000) })),
-        enableMultiQuery: enableMultiQuery.value,
-        enableHyDE: enableHyDE.value,
+        topK: searchParams.value.topK,
+        enableMultiQuery: searchParams.value.enableMultiQuery,
+        enableHyDE: searchParams.value.enableHyDE,
+        enableCompression: searchParams.value.enableCompression,
       }),
     })
 
@@ -276,6 +399,7 @@ const askQuestion = async () => {
 
         if (parsed.event === 'sources') {
           assistantMsg.sources = parsed.data?.sources
+          assistantMsg.debug = parsed.data?.debug
         } else if (parsed.event === 'delta') {
           assistantMsg.content += parsed.data?.content || ''
         } else if (parsed.event === 'done') {
@@ -393,17 +517,132 @@ onMounted(async () => {
   width: 100%;
 }
 
+.lc-qa-section-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.lc-params-group {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.lc-param-item {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.lc-param-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.lc-param-label {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--corp-text-secondary);
+}
+
+.lc-param-value {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--corp-text-primary);
+}
+
+.lc-param-hint {
+  font-size: 11px;
+  color: var(--corp-text-tertiary);
+}
+
 .lc-toggle-group {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.lc-toggle-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.lc-toggle-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.lc-toggle-hint {
+  font-size: 11px;
+  color: var(--corp-text-tertiary);
+}
+
+.lc-qa-message__debug {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid rgba(226, 232, 240, 0.8);
+}
+
+.lc-debug-collapse :deep(.el-collapse-item__header) {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--corp-text-tertiary);
+}
+
+.lc-debug-info {
   display: flex;
   flex-direction: column;
   gap: 10px;
 }
 
-.lc-toggle-item {
+.lc-debug-row {
   display: flex;
+  justify-content: space-between;
   align-items: center;
-  gap: 8px;
-  font-size: 13px;
+}
+
+.lc-debug-label {
+  font-size: 12px;
+  color: var(--corp-text-tertiary);
+}
+
+.lc-debug-value {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--corp-text-primary);
+}
+
+.lc-debug-section {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding-top: 8px;
+}
+
+.lc-debug-section-label {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--corp-text-secondary);
+}
+
+.lc-debug-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.lc-debug-hyde {
+  font-size: 12px;
+  color: var(--corp-text-secondary);
+  padding: 10px;
+  background: rgba(226, 232, 240, 0.4);
+  border-radius: 8px;
+  line-height: 1.6;
 }
 
 .lc-qa-sidebar__footer {
