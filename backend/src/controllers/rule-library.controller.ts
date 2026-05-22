@@ -15,7 +15,11 @@ if (!fs.existsSync(UPLOAD_DIR)) fs.mkdirSync(UPLOAD_DIR, { recursive: true });
 export const listLibraries = async (_req: AuthRequest, res: Response): Promise<void> => {
   try {
     const selectableOnly = _req.query.selectableOnly === 'true';
-    const libraries = await RuleLibraryService.list({ selectableOnly });
+    const options: Record<string, any> = { selectableOnly };
+    if (_req.query.folderId) options.folderId = String(_req.query.folderId);
+    if (_req.query.keyword) options.keyword = String(_req.query.keyword);
+    if (_req.query.status) options.status = String(_req.query.status);
+    const libraries = await RuleLibraryService.list(options);
     success(res, libraries);
   } catch (err) {
     console.error('List RuleLibraries Error:', err);

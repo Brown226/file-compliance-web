@@ -4,7 +4,6 @@ export interface KnowledgeCategory {
   id: string
   name: string
   description?: string
-  documentTypes?: string
   status: 'ACTIVE' | 'ARCHIVED'
   parentId?: string
   children?: KnowledgeCategory[]
@@ -18,9 +17,6 @@ export interface KnowledgeCategory {
   enableRerank?: boolean
   embeddingUseDocumentTitle?: boolean
   embeddingUseClauseId?: boolean
-  scopeType?: 'DEPARTMENT' | 'DOMAIN' | 'STANDARD' | 'PROJECT' | 'CUSTOM'
-  accessLevel?: 'PUBLIC' | 'DEPARTMENT' | 'PRIVATE' | 'APPROVAL_REQUIRED'
-  inheritPermission?: boolean
   isLeaf?: boolean
   createdAt: string
 }
@@ -28,6 +24,7 @@ export interface KnowledgeCategory {
 export interface KnowledgeTreeNode {
   id: string
   name: string
+  isLeaf: boolean
   type: 'folder' | 'knowledge'
   parentId?: string | null
   documentCount?: number
@@ -96,17 +93,13 @@ export const getAllKnowledgeCategoriesApi = () =>
 export const createKnowledgeCategoryApi = (data: {
   name: string
   description?: string
-  documentTypes?: string
   parentId?: string
-  scopeType?: string
-  accessLevel?: string
-  inheritPermission?: boolean
+  isLeaf?: boolean
 }) => request.post<KnowledgeCategory>('/knowledge-categories', data)
 
 export const updateKnowledgeCategoryApi = (id: string, data: {
   name?: string
   description?: string
-  documentTypes?: string
   status?: string
   chunkMode?: string
   maxChars?: number
@@ -118,9 +111,6 @@ export const updateKnowledgeCategoryApi = (id: string, data: {
   embeddingUseDocumentTitle?: boolean
   embeddingUseClauseId?: boolean
   parentId?: string | null
-  scopeType?: string
-  accessLevel?: string
-  inheritPermission?: boolean
   isLeaf?: boolean
 }) => request.put<KnowledgeCategory>(`/knowledge-categories/${id}`, data)
 
@@ -250,11 +240,10 @@ export const previewDocumentApi = (categoryId: string, formData: FormData) =>
   })
 
 export const confirmImportApi = (categoryId: string, data: {
-  title: string
-  chunks: Array<string | ParagraphSegment>
+  documents?: Array<{ title: string; chunks: Array<{ title?: string; content: string }> }>
   metadata?: Record<string, any>
-}) => request.post<{ chunks: number; deduped: number }>(`/knowledge-categories/${categoryId}/confirm-import`, data, {
-  timeout: 300000, // 5分钟超时，向量化大文件需要更多时间
+}) => request.post<{ imported: number; deduped: number }>(`/knowledge-categories/${categoryId}/confirm-import`, data, {
+  timeout: 300000,
 })
 
 // ===== 命中测试 =====

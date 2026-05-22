@@ -1,77 +1,51 @@
 <template>
   <div class="kb-page">
-    <!-- 面包屑导航 -->
-    <el-breadcrumb separator="/" class="kb-breadcrumb">
-      <el-breadcrumb-item :to="{ path: '/admin/knowledge-categories' }">知识库管理</el-breadcrumb-item>
-      <el-breadcrumb-item v-if="currentTreeNode">{{ currentTreeNode.name }}</el-breadcrumb-item>
-    </el-breadcrumb>
-
-    <!-- 统计卡片 -->
-    <div class="kb-stats">
-      <StatsCard :value="treeStats.totalFolders" label="目录节点" :icon="FolderOpened" variant="primary" />
-      <StatsCard :value="treeStats.totalKnowledgeBases" label="知识子库" :icon="Collection" variant="info" />
-      <StatsCard :value="treeStats.totalDocuments" label="向量片段" :icon="DataAnalysis" variant="success" />
-    </div>
-
-    <!-- 主体：左右分栏 -->
-    <div class="kb-main">
-      <!-- 左侧目录树面板 -->
-      <div class="kb-sidebar" :class="{ 'kb-sidebar--collapsed': sidebarCollapsed }">
-        <div class="kb-sidebar__header">
-          <span class="kb-sidebar__title">目录结构</span>
-          <div class="kb-sidebar__actions">
-            <el-tooltip content="新建根目录" placement="top">
-              <el-button type="primary" link size="small" @click="showCreateDialog(null)">
-                <el-icon><Plus /></el-icon>
-              </el-button>
-            </el-tooltip>
-            <el-tooltip :content="sidebarCollapsed ? '展开' : '收起'" placement="top">
-              <el-button link size="small" @click="sidebarCollapsed = !sidebarCollapsed">
-                <el-icon><DArrowLeft v-if="!sidebarCollapsed" /><DArrowRight v-else /></el-icon>
-              </el-button>
-            </el-tooltip>
-          </div>
+    <div class="kb-layout">
+      <!-- 左侧：目录树（完全照搬 MaxKB folder-tree） -->
+      <aside class="kb-sidebar">
+        <div class="kb-sidebar__head">
+          <span class="kb-sidebar__title">知识库</span>
+          <el-button type="primary" link size="small" @click="showCreateFolderDialog">
+            <el-icon><Plus /></el-icon>
+          </el-button>
         </div>
 
-        <template v-if="!sidebarCollapsed">
-          <div class="kb-sidebar__search">
-            <el-input
-              v-model="treeFilterText"
-              placeholder="搜索目录..."
-              size="small"
-              clearable
-              :prefix-icon="Search"
-            />
-          </div>
-          <div class="kb-sidebar__tree">
-            <el-tree
-              ref="treeRef"
-              :data="treeData"
-              :props="treeProps"
-              node-key="id"
-              :filter-node-method="filterTreeNode"
-              :highlight-current="true"
-              :expand-on-click-node="false"
-              :default-expand-all="true"
-              @node-click="handleTreeNodeClick"
-            >
-              <template #default="{ node, data }">
-                <div class="tree-node">
-                  <el-icon class="tree-node__icon" :size="14">
-                    <FolderOpened v-if="data.type === 'folder'" />
-                    <Collection v-else />
-                  </el-icon>
-                  <span class="tree-node__label">{{ node.label }}</span>
-                  <span v-if="data.documentCount !== undefined" class="tree-node__badge">
-                    {{ data.documentCount }}
-                  </span>
-                  <!-- 节点操作下拉 -->
-                  <el-dropdown trigger="click" @command="(cmd: string) => handleNodeCommand(cmd, data)" class="tree-node__actions">
-                    <el-icon class="tree-node__more" @click.stop><MoreFilled /></el-icon>
+        <div class="kb-sidebar__search">
+          <el-input
+            v-model="filterText"
+            placeholder="搜索..."
+            size="small"
+            clearable
+            :prefix-icon="Search"
+          />
+        </div>
+
+        <el-scrollbar class="kb-sidebar__tree-wrap">
+          <el-tree
+            ref="treeRef"
+            :data="treeData"
+            :props="{ children: 'children', label: 'name', isLeaf: (data: any) => Boolean(data.isLeaf) }"
+            node-key="id"
+            :filter-node-method="filterNode"
+            :default-expanded-keys="expandedKeys"
+            :current-node-key="currentNodeId"
+            highlight-current
+            @node-click="handleNodeClick"
+            v-loading="treeLoading"
+          >
+            <template #default="{ node, data }">
+              <div class="kb-tree-node">
+                <el-icon class="kb-tree-node__icon" :size="18">
+                  <FolderOpened v-if="!data.isLeaf" /><Collection v-else />
+                </el-icon>
+                <span class="kb-tree-node__label" :title="node.label">{{ node.label }}</span>
+                <div class="kb-tree-node__actions" @click.stop>
+                  <el-dropdown trigger="click" @command="(cmd: string) => handleTreeCommand(cmd, data)">
+                    <el-icon class="kb-tree-node__more"><MoreFilled /></el-icon>
                     <template #dropdown>
                       <el-dropdown-menu>
-                        <el-dropdown-item command="create">
-                          <el-icon><Plus /></el-icon> 新建子节点
+                        <el-dropdown-item command="createFolder">
+                          <el-icon><Plus /></el-icon> 新建子文件夹
                         </el-dropdown-item>
                         <el-dropdown-item command="edit">
                           <el-icon><Edit /></el-icon> 编辑
@@ -83,159 +57,149 @@
                     </template>
                   </el-dropdown>
                 </div>
-              </template>
-            </el-tree>
-          </div>
-        </template>
-      </div>
+              </div>
+            </template>
+          </el-tree>
+        </el-scrollbar>
+      </aside>
 
-      <!-- 右侧内容区 -->
-      <div class="kb-content">
-        <!-- 未选中节点 -->
-        <div v-if="!currentTreeNode" class="kb-empty-state">
-          <div class="kb-empty-state__icon">
-            <el-icon :size="56"><FolderOpened /></el-icon>
+      <!-- 右侧：内容区 -->
+      <main class="kb-main">
+        <div class="kb-main__header">
+          <h2 class="kb-main__title">我的知识库</h2>
+          <div class="kb-main__header-actions">
+            <el-input
+              v-model="filterText"
+              placeholder="知识库名称"
+              size="default"
+              clearable
+              :prefix-icon="Search"
+              style="width: 240px"
+            />
+            <el-button type="primary" @click="showCreateKbDialog">
+              <el-icon><Plus /></el-icon> 新建
+            </el-button>
           </div>
-          <h3 class="kb-empty-state__title">知识库管理</h3>
-          <p class="kb-empty-state__desc">请从左侧目录树选择一个目录查看其下的知识库</p>
-          <p class="kb-empty-state__hint">点击节点右侧 <el-icon><MoreFilled /></el-icon> 可新建子库、编辑或删除</p>
         </div>
 
-        <!-- 选中节点：显示内容 -->
-        <template v-else>
-          <div class="kb-content__header">
-            <div class="kb-content__title-group">
-              <h3 class="kb-content__title">{{ currentTreeNode.name }}</h3>
-              <el-tag v-if="currentTreeNode.type === 'folder'" type="primary" size="small" effect="plain">目录</el-tag>
-              <el-tag v-else type="success" size="small" effect="plain">知识库</el-tag>
+        <!-- 卡片网格 -->
+        <div v-if="displayItems.length > 0" class="kb-grid">
+          <div
+            v-for="item in displayItems"
+            :key="item.id"
+            class="kb-card"
+            @click="handleCardClick(item)"
+          >
+            <div class="kb-card__top">
+              <div class="kb-card__avatar kb-card__avatar--kb">
+                <el-icon :size="18"><Collection /></el-icon>
+              </div>
+              <div class="kb-card__name-row">
+                <span class="kb-card__name">{{ item.name }}</span>
+                <span class="kb-card__tag">知识库</span>
+              </div>
+              <div class="kb-card__more-wrap" @click.stop>
+                <el-dropdown trigger="click" @command="(cmd: string) => handleCardCommand(cmd, item)">
+                  <div class="kb-card__more-btn">
+                    <el-icon :size="14"><MoreFilled /></el-icon>
+                  </div>
+                  <template #dropdown>
+                      <el-dropdown-menu>
+                        <el-dropdown-item command="upload">
+                          <el-icon><Upload /></el-icon> 上传文档
+                        </el-dropdown-item>
+                        <el-dropdown-item command="documents">
+                          <el-icon><Document /></el-icon> 查看文档
+                        </el-dropdown-item>
+                        <el-dropdown-item command="edit">
+                          <el-icon><Edit /></el-icon> 编辑信息
+                        </el-dropdown-item>
+                        <el-dropdown-item command="move" divided>
+                          <el-icon><FolderOpened /></el-icon> 移动
+                        </el-dropdown-item>
+                        <el-dropdown-item command="permission">
+                          <el-icon><Lock /></el-icon> 权限
+                        </el-dropdown-item>
+                        <el-dropdown-item command="export">
+                          <el-icon><Document /></el-icon> 导出
+                        </el-dropdown-item>
+                        <el-dropdown-item command="delete" divided>
+                          <el-icon><Delete /></el-icon> 删除
+                        </el-dropdown-item>
+                      </el-dropdown-menu>
+                  </template>
+                </el-dropdown>
+              </div>
             </div>
-            <div class="kb-content__actions">
-              <el-button type="primary" size="small" @click="showCreateDialog(currentTreeNode)">
-                <el-icon><Plus /></el-icon> 新建子节点
-              </el-button>
-              <el-button v-if="currentTreeNode.type === 'knowledge'" size="small" @click="showUploadDialog(currentTreeNode)">
-                <el-icon><Upload /></el-icon> 上传文档
-              </el-button>
-            </div>
-          </div>
 
-          <!-- 知识库卡片网格 - 响应式 -->
-          <div v-if="childCategories.length > 0" class="kb-card-grid">
-            <el-row :gutter="16">
-              <el-col
-                v-for="cat in childCategories"
-                :key="cat.id"
-                :xs="24" :sm="12" :md="12" :lg="8" :xl="6"
-              >
-                <div class="kb-card" @click="handleCardClick(cat)">
-                  <div class="kb-card__header">
-                    <div class="kb-card__icon">
-                      <el-icon :size="20"><FolderOpened v-if="hasChildren(cat)" /><Collection v-else /></el-icon>
-                    </div>
-                    <div class="kb-card__info">
-                      <div class="kb-card__name" :title="cat.name">{{ cat.name }}</div>
-                      <div class="kb-card__desc" v-if="cat.description" :title="cat.description">
-                        {{ cat.description }}
-                      </div>
-                    </div>
-                    <el-dropdown
-                      trigger="click"
-                      @command="(cmd: string) => handleCardCommand(cmd, cat)"
-                      @click.stop
-                      class="kb-card__menu"
-                    >
-                      <el-icon class="kb-card__more"><MoreFilled /></el-icon>
-                      <template #dropdown>
-                        <el-dropdown-menu>
-                          <el-dropdown-item command="create">
-                            <el-icon><Plus /></el-icon> 新建子节点
-                          </el-dropdown-item>
-                          <el-dropdown-item command="upload" :disabled="hasChildren(cat)">
-                            <el-icon><Upload /></el-icon> 上传文档
-                          </el-dropdown-item>
-                          <el-dropdown-item command="documents" :disabled="hasChildren(cat)">
-                            <el-icon><Document /></el-icon> 查看文档
-                          </el-dropdown-item>
-                          <el-dropdown-item command="edit">
-                            <el-icon><Edit /></el-icon> 编辑
-                          </el-dropdown-item>
-                          <el-dropdown-item command="delete" divided>
-                            <el-icon><Delete /></el-icon> 删除
-                          </el-dropdown-item>
-                        </el-dropdown-menu>
-                      </template>
-                    </el-dropdown>
-                  </div>
-                  <div class="kb-card__footer">
-                    <div class="kb-card__stat">
-                      <el-icon :size="13"><Document /></el-icon>
-                      <span>{{ cat._count?.vectorDocuments || 0 }} 文档</span>
-                    </div>
-                    <div class="kb-card__divider"></div>
-                    <div class="kb-card__stat">
-                      <el-icon :size="13"><FolderOpened v-if="hasChildren(cat)" /><Collection v-else /></el-icon>
-                      <span>{{ hasChildren(cat) ? `${cat.children?.length || 0} 个子节点` : '叶子知识库' }}</span>
-                    </div>
-                    <div class="kb-card__divider"></div>
-                    <div class="kb-card__stat">
-                      <el-tag v-if="cat.scopeType && cat.scopeType !== 'CUSTOM'" size="small" effect="plain" style="font-size: 10px; padding: 0 6px; height: 20px; line-height: 18px;">
-                        {{ scopeTypeLabel(cat.scopeType) }}
-                      </el-tag>
-                      <el-tag v-else size="small" type="info" effect="plain" style="font-size: 10px; padding: 0 6px; height: 20px; line-height: 18px;">
-                        {{ accessLevelLabel(cat.accessLevel) }}
-                      </el-tag>
-                    </div>
-                  </div>
-                  <div class="kb-card__actions">
-                    <el-tooltip content="编辑" placement="top">
-                      <el-button type="primary" link size="small" @click.stop="handleCardCommand('edit', cat)">
-                        <el-icon><Edit /></el-icon>
-                      </el-button>
-                    </el-tooltip>
-                    <el-popconfirm title="确认删除此节点？" @confirm="handleCardCommand('delete', cat)">
-                      <template #reference>
-                        <el-button type="danger" link size="small" @click.stop>
-                          <el-icon><Delete /></el-icon>
-                        </el-button>
-                      </template>
-                    </el-popconfirm>
-                  </div>
-                </div>
-              </el-col>
-            </el-row>
+            <div class="kb-card__desc">
+              {{ item.description || '暂无描述' }}
+            </div>
+
+            <div class="kb-card__bottom">
+              <span class="kb-card__meta">
+                <el-icon :size="12"><Document /></el-icon>
+                {{ item._count?.vectorDocuments || 0 }} 文档
+              </span>
+            </div>
+
+            <div class="kb-card__tags">
+              <span class="kb-card__perm-tag kb-card__perm-tag--member">
+                <el-icon :size="12"><User /></el-icon> Member
+              </span>
+              <span class="kb-card__perm-tag kb-card__perm-tag--private">
+                <el-icon :size="12"><Lock /></el-icon> 私有
+              </span>
+            </div>
           </div>
-          <div v-else class="kb-card-empty">
-            <el-empty description="此节点下暂无子节点，点击上方按钮新建" :image-size="80" />
+        </div>
+
+        <!-- 空状态 -->
+        <div v-else class="kb-empty">
+          <div class="kb-empty__icon">
+            <el-icon :size="48" color="#c0c4cc"><FolderOpened /></el-icon>
           </div>
-        </template>
-      </div>
+          <p class="kb-empty__text">{{ currentNodeId ? '此目录下暂无知识库' : '暂无知识库' }}</p>
+          <el-button type="primary" @click="showCreateKbDialog">
+            <el-icon><Plus /></el-icon> 新建知识库
+          </el-button>
+        </div>
+      </main>
     </div>
 
-    <!-- 新建/编辑对话框 -->
+    <!-- 新建/编辑对话框（照搬 MaxKB CreateFolderDialog） -->
     <el-dialog
       v-model="dialogVisible"
-      :title="isEdit ? '编辑节点' : '新建节点'"
-      width="480px"
+      :title="dialogTitle"
+      width="440px"
       destroy-on-close
+      :close-on-click-modal="false"
     >
-      <el-form :model="formData" label-position="top" require-asterisk-position="right">
-        <el-form-item label="名称" required>
-          <el-input v-model="formData.name" placeholder="请输入节点名称" maxlength="50" show-word-limit />
+      <el-form ref="formRef" :model="formData" :rules="formRules" label-position="top" require-asterisk-position="right">
+        <el-form-item label="名称" prop="name">
+          <el-input
+            v-model="formData.name"
+            placeholder="请输入名称"
+            maxlength="64"
+            show-word-limit
+            @blur="formData.name = formData.name.trim()"
+          />
         </el-form-item>
-        <el-form-item label="描述">
+        <el-form-item label="描述" prop="description">
           <el-input
             v-model="formData.description"
             type="textarea"
-            :rows="3"
-            placeholder="可选，节点用途说明"
-            maxlength="200"
+            placeholder="可选，简要描述用途"
+            maxlength="128"
             show-word-limit
+            :autosize="{ minRows: 3, maxRows: 6 }"
+            @blur="formData.description = formData.description.trim()"
           />
         </el-form-item>
       </el-form>
       <template #footer>
         <el-button @click="dialogVisible = false">取消</el-button>
-        <el-button type="primary" @click="handleSubmit" :loading="submitting">确定</el-button>
+        <el-button type="primary" @click="handleSubmit" :loading="submitting">{{ isEdit ? '确定' : '添加' }}</el-button>
       </template>
     </el-dialog>
 
@@ -252,15 +216,15 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, onMounted, watch } from 'vue'
+import { ref, reactive, computed, onMounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import {
   Plus, Upload, Edit, Delete, Search,
   FolderOpened, Collection, Document, MoreFilled,
-  DataAnalysis, DArrowLeft, DArrowRight,
+  User, Lock,
 } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import StatsCard from './components/StatsCard.vue'
+import type { FormInstance, FormRules, TreeInstance } from 'element-plus'
 import UploadDialog from './components/UploadDialog.vue'
 import {
   getKnowledgeCategoriesApi,
@@ -269,733 +233,374 @@ import {
   deleteKnowledgeCategoryApi,
   uploadKnowledgeDocumentApi,
   getKnowledgeTreeApi,
-  getVectorStatsApi,
   type KnowledgeCategory,
   type KnowledgeTreeNode,
 } from '@/api/knowledge-category'
 
 const router = useRouter()
-const treeRef = ref<any>(null)
 
-// ===== 侧边栏状态 =====
-const sidebarCollapsed = ref(false)
+// ===== 树 =====
+const treeRef = ref<TreeInstance>()
+const treeData = ref<KnowledgeTreeNode[]>([])
+const allCategories = ref<KnowledgeCategory[]>([])
+const filterText = ref('')
+const currentNodeId = ref<string>('')
+const treeLoading = ref(false)
 
-// ===== 统计数据 =====
-const treeStats = reactive({
-  totalFolders: 0,
-  totalKnowledgeBases: 0,
-  totalDocuments: 0,
+const expandedKeys = computed(() => {
+  const keys: string[] = []
+  const collect = (nodes: KnowledgeTreeNode[]) => {
+    for (const n of nodes) { keys.push(n.id); if (n.children?.length) collect(n.children) }
+  }
+  collect(treeData.value)
+  return keys
 })
 
-// ===== 目录树 =====
-const treeData = ref<KnowledgeTreeNode[]>([])
-const treeProps = { children: 'children', label: 'name' }
-const treeFilterText = ref('')
-const currentTreeNode = ref<KnowledgeTreeNode | null>(null)
+const currentNodeName = computed(() => {
+  if (!currentNodeId.value) return ''
+  const find = (nodes: KnowledgeTreeNode[]): string | null => {
+    for (const n of nodes) { if (n.id === currentNodeId.value) return n.name; if (n.children?.length) { const r = find(n.children); if (r) return r } }
+    return null
+  }
+  return find(treeData.value)
+})
 
-const filterTreeNode = (value: string, data: KnowledgeTreeNode) => {
+const flatCategories = computed(() => {
+  const result: KnowledgeCategory[] = []
+  const flatten = (items: KnowledgeCategory[]) => {
+    for (const item of items) {
+      result.push(item)
+      if (item.children?.length) flatten(item.children)
+    }
+  }
+  flatten(allCategories.value)
+  return result
+})
+
+const displayItems = computed(() => {
+  if (!currentNodeId.value) return flatCategories.value.filter(c => !c.parentId && c.isLeaf)
+  const descendantIds = new Set<string>()
+  const collect = (parentId: string) => {
+    descendantIds.add(parentId)
+    for (const c of flatCategories.value) {
+      if (c.parentId === parentId) collect(c.id)
+    }
+  }
+  collect(currentNodeId.value)
+  return flatCategories.value.filter(c => c.isLeaf && descendantIds.has(c.parentId || ''))
+})
+
+// ===== 工具函数 =====
+const filterNode = (value: string, data: any) => {
   if (!value) return true
   return (data.name || '').toLowerCase().includes(value.toLowerCase())
 }
 
-watch(treeFilterText, (val) => {
-  treeRef.value?.filter(val)
-})
+watch(filterText, (val) => { treeRef.value?.filter(val.trim()) })
 
 // ===== 加载数据 =====
 const fetchTree = async () => {
-  try {
-    const { data } = await getKnowledgeTreeApi()
-    treeData.value = data || []
-
-    let totalFolders = 0
-    let totalKnowledgeBases = 0
-    let totalDocuments = 0
-    const countNodes = (nodes: KnowledgeTreeNode[]) => {
-      for (const node of nodes) {
-        if (node.type === 'folder') {
-          totalFolders++
-        } else {
-          totalKnowledgeBases++
-        }
-        totalDocuments += node.documentCount || 0
-        if (node.children) countNodes(node.children)
-      }
-    }
-    countNodes(treeData.value)
-    treeStats.totalFolders = totalFolders
-    treeStats.totalKnowledgeBases = totalKnowledgeBases
-    treeStats.totalDocuments = totalDocuments
-
-    try {
-      const stats = await getVectorStatsApi()
-      treeStats.totalDocuments = stats.data?.totalCount || totalDocuments
-    } catch (_) {}
-  } catch (e) {
-    console.error('获取目录树失败', e)
-  }
+  treeLoading.value = true
+  try { const { data } = await getKnowledgeTreeApi(); treeData.value = data || [] }
+  catch (_) {}
+  finally { treeLoading.value = false }
 }
 
-// ===== 树节点操作 =====
-const handleTreeNodeClick = (data: KnowledgeTreeNode) => {
-  if (data.type === 'knowledge') {
-    // 叶子节点（知识库）→ 直接跳转到文档管理页
+const fetchCategories = async () => {
+  try { const { data } = await getKnowledgeCategoriesApi(); allCategories.value = data || [] }
+  catch (_) {}
+}
+
+// ===== 树交互 =====
+const handleNodeClick = (data: KnowledgeTreeNode) => {
+  currentNodeId.value = data.id
+  if (data.isLeaf) {
     router.push(`/admin/knowledge-categories/${data.id}/documents`)
-    return
   }
-  currentTreeNode.value = data
 }
 
-const handleNodeCommand = (cmd: string, data: KnowledgeTreeNode) => {
+const handleTreeCommand = (cmd: string, data: KnowledgeTreeNode) => {
   switch (cmd) {
-    case 'create': showCreateDialog(data); break
+    case 'createFolder': showCreateFolderDialog(data); break
     case 'edit': showEditDialog(data); break
-    case 'delete': handleDeleteNode(data); break
+    case 'delete':
+      ElMessageBox.confirm(`确认删除「${data.name}」？`, '删除确认', { type: 'warning' })
+        .then(() => handleDelete(data.id)).catch(() => {})
+      break
   }
 }
 
-// ===== 子分类 =====
-const childCategories = ref<KnowledgeCategory[]>([])
-
-const hasChildren = (cat: Partial<KnowledgeCategory>) => {
-  return Boolean(cat.children && cat.children.length > 0)
-}
-
-const scopeTypeLabel = (type?: string) => {
-  const labels: Record<string, string> = {
-    DEPARTMENT: '部门',
-    DOMAIN: '专业域',
-    STANDARD: '标准',
-    PROJECT: '项目',
-    CUSTOM: '自定义',
-  }
-  return labels[type || 'CUSTOM'] || '自定义'
-}
-
-const accessLevelLabel = (level?: string) => {
-  const labels: Record<string, string> = {
-    PUBLIC: '公开',
-    DEPARTMENT: '部门可见',
-    PRIVATE: '私有',
-    APPROVAL_REQUIRED: '需审批',
-  }
-  return labels[level || 'PUBLIC'] || '公开'
-}
-
-// 展平树形结构为一维数组
-const flattenTree = (nodes: KnowledgeCategory[]): KnowledgeCategory[] => {
-  const result: KnowledgeCategory[] = []
-  for (const node of nodes) {
-    result.push(node)
-    if (node.children) result.push(...flattenTree(node.children))
-  }
-  return result
-}
-
-watch(currentTreeNode, async (node) => {
-  if (!node) {
-    childCategories.value = []
-    return
-  }
-  try {
-    const { data } = await getKnowledgeCategoriesApi()
-    const allCats = flattenTree(data || [])
-    if (node.type === 'folder') {
-      childCategories.value = allCats.filter(cat => cat.parentId === node.id)
-    } else {
-      childCategories.value = []
-    }
-  } catch (e) {
-    console.error('获取子分类失败', e)
-  }
-})
-
-// ===== 卡片操作 =====
-const goToDocuments = (cat: KnowledgeCategory) => {
-  router.push(`/admin/knowledge-categories/${cat.id}/documents`)
-}
-
+// ===== 卡片交互 =====
 const handleCardClick = (cat: KnowledgeCategory) => {
-  if (hasChildren(cat)) {
-    currentTreeNode.value = {
-      id: cat.id,
-      name: cat.name,
-      parentId: cat.parentId || null,
-      type: 'folder',
-      documentCount: cat._count?.vectorDocuments || 0,
-      children: [],
-    }
-    return
-  }
-  goToDocuments(cat)
+  router.push(`/admin/knowledge-categories/${cat.id}/documents`)
 }
 
 const handleCardCommand = (cmd: string, cat: KnowledgeCategory) => {
   switch (cmd) {
-    case 'create': showCreateDialog(cat); break
-    case 'upload': if (!hasChildren(cat)) showUploadDialog(cat); break
-    case 'documents': if (!hasChildren(cat)) goToDocuments(cat); break
+    case 'upload': showUploadDialog(cat); break
+    case 'documents': router.push(`/admin/knowledge-categories/${cat.id}/documents`); break
     case 'edit': showEditDialog(cat); break
-    case 'delete': handleDelete(cat.id); break
+    case 'move':
+      ElMessage.info('移动功能开发中')
+      break
+    case 'permission':
+      ElMessage.info('权限管理功能开发中')
+      break
+    case 'export':
+      ElMessage.info('导出功能开发中')
+      break
+    case 'delete':
+      ElMessageBox.confirm(`确认删除「${cat.name}」？`, '删除确认', { type: 'warning' })
+        .then(() => handleDelete(cat.id)).catch(() => {})
+      break
   }
 }
 
-// ===== 树形选择器数据 =====
-const treeSelectData = ref<KnowledgeCategory[]>([])
-
-const fetchFlatCategories = async () => {
-  try {
-    const { data } = await getKnowledgeCategoriesApi()
-    treeSelectData.value = data || []
-  } catch (_) {}
-}
-
-// ===== 新建/编辑对话框 =====
+// ===== 对话框（照搬 MaxKB CreateFolderDialog） =====
 const dialogVisible = ref(false)
+const formRef = ref<FormInstance>()
 const isEdit = ref(false)
 const editId = ref('')
-const formData = reactive({
-  name: '', description: '', documentTypes: '',
-  parentId: '' as string | undefined,
-  scopeType: 'CUSTOM' as string,
-  accessLevel: 'PUBLIC' as string,
-  inheritPermission: true,
-})
 const submitting = ref(false)
+const dialogMode = ref<'kb' | 'folder'>('kb')
 
-const showCreateDialog = (parentNode: KnowledgeTreeNode | KnowledgeCategory | null) => {
-  isEdit.value = false
-  editId.value = ''
-  formData.name = ''
-  formData.description = ''
-  formData.documentTypes = ''
-  formData.parentId = parentNode?.id || undefined
-  formData.scopeType = 'CUSTOM'
-  formData.accessLevel = 'PUBLIC'
-  formData.inheritPermission = true
+const dialogTitle = computed(() => {
+  if (isEdit.value) return '编辑'
+  return dialogMode.value === 'kb' ? '新建知识库' : '新建文件夹'
+})
+
+const formData = reactive({ name: '', description: '', parentId: '' as string | undefined })
+
+const formRules: FormRules = {
+  name: [{ required: true, message: '请输入名称', trigger: 'blur' }],
+}
+
+const showCreateKbDialog = () => {
+  isEdit.value = false; editId.value = ''
+  dialogMode.value = 'kb'
+  formData.name = ''; formData.description = ''
+  formData.parentId = currentNodeId.value || undefined
+  dialogVisible.value = true
+}
+
+const showCreateFolderDialog = (parent?: KnowledgeTreeNode | KnowledgeCategory | null) => {
+  isEdit.value = false; editId.value = ''
+  dialogMode.value = 'folder'
+  formData.name = ''; formData.description = ''
+  formData.parentId = parent?.id || currentNodeId.value || undefined
   dialogVisible.value = true
 }
 
 const showEditDialog = (node: KnowledgeTreeNode | KnowledgeCategory) => {
-  isEdit.value = true
-  editId.value = node.id
+  isEdit.value = true; editId.value = node.id
   const cat = node as any
-  formData.name = cat.name || ''
-  formData.description = cat.description || ''
-  formData.documentTypes = cat.documentTypes || ''
+  formData.name = cat.name || ''; formData.description = cat.description || ''
   formData.parentId = cat.parentId || undefined
-  formData.scopeType = cat.scopeType || 'CUSTOM'
-  formData.accessLevel = cat.accessLevel || 'PUBLIC'
-  formData.inheritPermission = cat.inheritPermission !== undefined ? cat.inheritPermission : true
   dialogVisible.value = true
 }
 
 const handleSubmit = async () => {
-  if (!formData.name.trim()) { ElMessage.warning('请输入名称'); return }
-  submitting.value = true
-  try {
-    if (isEdit.value) {
-      await updateKnowledgeCategoryApi(editId.value, formData)
-      ElMessage.success('更新成功')
-    } else {
-      await createKnowledgeCategoryApi({
-        name: formData.name.trim(),
-        description: formData.description,
-        documentTypes: formData.documentTypes,
-        parentId: formData.parentId || undefined,
-        scopeType: formData.scopeType,
-        accessLevel: formData.accessLevel,
-        inheritPermission: formData.inheritPermission,
-      })
-      ElMessage.success('创建成功')
-    }
-    dialogVisible.value = false
-    await fetchTree()
-    await fetchFlatCategories()
-  } catch (e) {
-    ElMessage.error('操作失败')
-  } finally {
-    submitting.value = false
-  }
-}
-
-const handleDeleteNode = async (node: KnowledgeTreeNode) => {
-  try {
-    await ElMessageBox.confirm('仅允许删除空节点。若该节点下还有子节点或文档，系统将拒绝删除。', '删除确认', {
-      confirmButtonText: '确认删除',
-      cancelButtonText: '取消',
-      type: 'warning',
-    })
-  } catch { return }
-  await handleDelete(node.id)
+  if (!formRef.value) return
+  await formRef.value.validate(async (valid) => {
+    if (!valid) return
+    submitting.value = true
+    try {
+      if (isEdit.value) {
+        await updateKnowledgeCategoryApi(editId.value, formData)
+        ElMessage.success('编辑成功')
+      } else {
+        await createKnowledgeCategoryApi({
+          name: formData.name.trim(),
+          description: formData.description,
+          parentId: formData.parentId,
+          isLeaf: dialogMode.value === 'kb',
+        })
+        ElMessage.success('创建成功')
+      }
+      dialogVisible.value = false
+      await Promise.all([fetchTree(), fetchCategories()])
+    } catch (_) { ElMessage.error('操作失败') }
+    finally { submitting.value = false }
+  })
 }
 
 const handleDelete = async (id: string) => {
   try {
     await deleteKnowledgeCategoryApi(id)
-    ElMessage.success('删除成功')
-    if (currentTreeNode.value?.id === id) {
-      currentTreeNode.value = null
-    }
-    await fetchTree()
-    await fetchFlatCategories()
-  } catch (e: any) {
-    ElMessage.error(e?.message || '删除失败')
-  }
+    ElMessage.success('已删除')
+    if (currentNodeId.value === id) currentNodeId.value = ''
+    await Promise.all([fetchTree(), fetchCategories()])
+  } catch (e: any) { ElMessage.error(e?.message || '删除失败') }
 }
 
-// ===== 上传对话框 =====
+// ===== 上传 =====
 const uploadDialogVisible = ref(false)
-const uploadTarget = ref<KnowledgeCategory | KnowledgeTreeNode | null>(null)
+const uploadTarget = ref<KnowledgeCategory | null>(null)
 
-const showUploadDialog = (target: KnowledgeCategory | KnowledgeTreeNode) => {
-  uploadTarget.value = target
-  uploadDialogVisible.value = true
-}
+const showUploadDialog = (cat: KnowledgeCategory) => { uploadTarget.value = cat; uploadDialogVisible.value = true }
 
-const onUploadDone = async () => {
-  await fetchTree()
-  await fetchFlatCategories()
-}
+const onUploadDone = async () => { await Promise.all([fetchTree(), fetchCategories()]) }
 
 // ===== 生命周期 =====
-onMounted(async () => {
-  await fetchTree()
-  await fetchFlatCategories()
-})
+onMounted(async () => { await Promise.all([fetchTree(), fetchCategories()]) })
 </script>
 
 <style scoped>
-.kb-page {
-  padding: 0;
-  animation: page-enter 0.3s ease;
-}
-@keyframes page-enter {
-  from { opacity: 0; transform: translateY(6px); }
-  to { opacity: 1; transform: translateY(0); }
-}
-
-/* 面包屑 */
-.kb-breadcrumb {
-  margin-bottom: var(--space-5);
-}
-.kb-breadcrumb :deep(.el-breadcrumb__inner) {
-  font-weight: 500;
-  color: var(--corp-text-tertiary);
-  font-size: var(--text-sm);
-}
-.kb-breadcrumb :deep(.el-breadcrumb__item:last-child .el-breadcrumb__inner) {
-  color: var(--corp-text-primary);
-  font-weight: 700;
-}
-.kb-breadcrumb :deep(.el-breadcrumb__separator) {
-  color: var(--corp-text-tertiary);
-  margin: 0 var(--space-1);
-}
-
-/* 统计卡片 */
-.kb-stats {
+/* 布局 */
+.kb-page { height: calc(100vh - 84px); margin: 0 auto; }
+.kb-layout {
   display: flex;
-  gap: var(--space-4);
-  margin-bottom: var(--space-5);
-}
-
-/* 主体分栏 */
-.kb-main {
-  display: flex;
-  background: var(--bg-surface);
-  border-radius: var(--radius-lg);
-  box-shadow: var(--shadow-card);
-  min-height: calc(100vh - 320px);
+  height: 100%;
+  background: #fff;
+  border-radius: 10px;
+  border: 1px solid #e8eaed;
   overflow: hidden;
-  border: 1px solid var(--corp-border-light);
 }
 
-/* 左侧边栏 */
+/* 左侧树栏（MaxKB 风格） */
 .kb-sidebar {
-  width: 280px;
-  min-width: 280px;
-  border-right: 1px solid var(--corp-border-light);
-  background: linear-gradient(180deg, #FAFBFD 0%, #F5F6FA 50%, #F2F3F8 100%);
-  display: flex;
-  flex-direction: column;
-  transition: width var(--corp-transition-base), min-width var(--corp-transition-base);
-  position: relative;
+  width: 248px; min-width: 248px;
+  display: flex; flex-direction: column;
+  border-right: 1px solid #f0f0f2;
+  background: #fafbfc;
 }
-.kb-sidebar::after {
-  content: '';
-  position: absolute;
-  top: 0;
-  right: -1px;
-  bottom: 0;
-  width: 1px;
-  background: linear-gradient(180deg, rgba(59, 130, 246, 0.08) 0%, transparent 40%, transparent 60%, rgba(59, 130, 246, 0.08) 100%);
+.kb-sidebar__head {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 16px 16px 12px;
 }
-.kb-sidebar--collapsed {
-  width: 48px;
-  min-width: 48px;
-}
-
-.kb-sidebar__header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: var(--space-5) var(--space-4) var(--space-3);
-  border-bottom: 1px solid var(--corp-border-light);
-}
-.kb-sidebar__title {
-  font-size: 10px;
-  font-weight: 700;
-  color: var(--corp-text-tertiary);
-  text-transform: uppercase;
-  letter-spacing: 1.5px;
-}
-.kb-sidebar__actions {
-  display: flex;
-  gap: var(--space-1);
-}
-
-.kb-sidebar__search {
-  padding: var(--space-3) var(--space-3);
-}
-
-.kb-sidebar__tree {
-  flex: 1;
-  overflow-y: auto;
-  padding: var(--space-2) var(--space-2);
-}
+.kb-sidebar__title { font-size: 15px; font-weight: 700; color: #1f2937; }
+.kb-sidebar__search { padding: 0 16px 10px; }
+.kb-sidebar__search :deep(.el-input__wrapper) { border-radius: 6px; box-shadow: 0 0 0 1px #e5e7eb inset; }
+.kb-sidebar__tree-wrap { flex: 1; overflow: hidden; }
+.kb-sidebar__tree-wrap :deep(.el-scrollbar) { height: 100%; }
 
 /* 树节点 */
-.tree-node {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  flex: 1;
-  width: 0;
-  padding-right: var(--space-1);
+.kb-tree-node {
+  display: flex; align-items: center; gap: 8px;
+  width: 100%; padding: 3px 4px 3px 0; box-sizing: content-box;
 }
-.tree-node__icon {
-  color: var(--corp-text-tertiary);
-  flex-shrink: 0;
-  transition: color var(--corp-transition-fast), transform var(--corp-transition-fast);
+.kb-tree-node__icon { color: #9ca3af; flex-shrink: 0; transition: color 0.15s; }
+.kb-tree-node:hover .kb-tree-node__icon { color: #3b82f6; }
+.kb-tree-node__label {
+  flex: 1; font-size: 13px; font-weight: 500; color: #374151;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; line-height: 1.5;
 }
-.tree-node:hover .tree-node__icon {
-  color: var(--corp-primary);
-  transform: scale(1.1);
+.kb-tree-node__actions { flex-shrink: 0; opacity: 0; transition: opacity 0.15s; }
+.kb-tree-node:hover .kb-tree-node__actions { opacity: 1; }
+.kb-tree-node__more {
+  cursor: pointer; padding: 3px; border-radius: 4px;
+  color: #9ca3af; font-size: 13px; transition: background 0.15s, color 0.15s;
 }
-.tree-node__label {
-  flex: 1;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-size: 13px;
-  font-weight: 500;
-  color: var(--corp-text-primary);
-}
-.tree-node__badge {
-  font-size: 10px;
-  font-weight: 600;
-  color: var(--corp-text-tertiary);
-  background: var(--bg-surface);
-  border: 1px solid var(--corp-border-light);
-  border-radius: var(--radius-full);
-  padding: 0 6px;
-  min-width: 22px;
-  height: 18px;
-  line-height: 16px;
-  text-align: center;
-  flex-shrink: 0;
-  font-variant-numeric: tabular-nums;
-  transition: all var(--corp-transition-fast);
-}
-.tree-node:hover .tree-node__badge {
-  border-color: var(--color-primary-200);
-  color: var(--color-primary-600);
-  background: var(--color-primary-50);
-}
-.tree-node__actions {
-  opacity: 0;
-  transition: opacity var(--corp-transition-fast);
-  flex-shrink: 0;
-}
-.tree-node:hover .tree-node__actions {
-  opacity: 1;
-}
-.tree-node__more {
-  color: var(--corp-text-tertiary);
-  cursor: pointer;
-  padding: 2px;
-  border-radius: var(--radius-sm);
-  transition: all var(--corp-transition-fast);
-}
-.tree-node__more:hover {
-  color: var(--corp-primary);
-  background: var(--color-primary-50);
-}
+.kb-tree-node__more:hover { background: #e5e7eb; color: #374151; }
 
-/* 右侧内容区 */
-.kb-content {
-  flex: 1;
-  overflow-y: auto;
-  padding: var(--space-6) var(--space-8);
-}
+/* 树覆盖 */
+:deep(.el-tree) { background: transparent; padding: 4px 12px; }
+:deep(.el-tree-node__content) { height: 36px; border-radius: 6px; transition: background 0.15s; }
+:deep(.el-tree-node__content:hover) { background: rgba(59, 130, 246, 0.06); }
+:deep(.el-tree-node.is-current > .el-tree-node__content) { background: rgba(59, 130, 246, 0.08); font-weight: 600; }
+:deep(.el-tree-node.is-current > .el-tree-node__content .kb-tree-node__icon) { color: #3b82f6; }
+:deep(.el-tree-node.is-current > .el-tree-node__content .kb-tree-node__label) { color: #1d4ed8; }
+:deep(.el-tree-node__expand-icon) { color: #9ca3af; }
 
-/* 空状态 */
-.kb-empty-state {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  padding: 100px var(--space-8);
-  text-align: center;
+/* 右侧主区域 */
+.kb-main {
+  flex: 1; overflow-y: auto;
+  padding: 24px 28px; display: flex; flex-direction: column;
 }
-.kb-empty-state__icon {
-  width: 72px;
-  height: 72px;
-  border-radius: 50%;
-  background: linear-gradient(135deg, var(--color-primary-50) 0%, var(--color-primary-100) 100%);
+.kb-main__header {
   display: flex;
   align-items: center;
-  justify-content: center;
-  color: var(--color-primary-300);
-  margin-bottom: var(--space-6);
-  box-shadow: 0 4px 16px rgba(59, 130, 246, 0.08);
-}
-.kb-empty-state__title {
-  font-size: var(--text-lg);
-  font-weight: 700;
-  color: var(--corp-text-primary);
-  margin: 0 0 var(--space-2);
-}
-.kb-empty-state__desc {
-  font-size: var(--text-base);
-  color: var(--corp-text-tertiary);
-  margin: 0;
-  max-width: 320px;
-  line-height: 1.6;
-}
-.kb-empty-state__hint {
-  font-size: var(--text-sm);
-  color: var(--corp-text-secondary);
-  margin-top: var(--space-5);
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  padding: var(--space-2) var(--space-4);
-  background: var(--bg-surface-hover);
-  border-radius: var(--radius-full);
-  border: 1px solid var(--corp-border-light);
-}
-
-/* 内容区头部 */
-.kb-content__header {
-  display: flex;
   justify-content: space-between;
-  align-items: center;
-  margin-bottom: var(--space-6);
-  padding-bottom: var(--space-4);
-  border-bottom: 1px solid var(--corp-border-light);
+  margin-bottom: 20px;
 }
-.kb-content__title-group {
+.kb-main__header-actions {
   display: flex;
   align-items: center;
-  gap: var(--space-3);
+  gap: 12px;
 }
-.kb-content__title {
-  font-size: 17px;
-  font-weight: 700;
-  margin: 0;
-  color: var(--corp-text-primary);
-  letter-spacing: -0.3px;
-}
-.kb-content__actions {
-  display: flex;
-  gap: var(--space-2);
-}
+.kb-main__title { font-size: 18px; font-weight: 700; margin: 0; color: #1a1a2e; letter-spacing: -0.3px; }
+
+/* 卡片网格 */
+.kb-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+@media (max-width: 1100px) { .kb-grid { grid-template-columns: repeat(2, 1fr); } }
+@media (max-width: 720px) { .kb-grid { grid-template-columns: 1fr; } .kb-main { padding: 16px; } .kb-sidebar { display: none; } }
 
 /* 卡片 */
 .kb-card {
-  background: var(--bg-surface);
-  border-radius: var(--radius-lg);
-  box-shadow: var(--shadow-surface);
-  padding: var(--space-5);
-  cursor: pointer;
-  transition: box-shadow var(--corp-transition-base), transform var(--corp-transition-base);
-  margin-bottom: var(--space-4);
-  border: 1px solid var(--corp-border-light);
-  border-left: 3px solid transparent;
-  position: relative;
-  overflow: hidden;
+  display: flex; flex-direction: column;
+  background: #fff; border: 1.5px solid #e8eaed; border-radius: 10px;
+  padding: 18px 16px 14px; cursor: pointer; min-height: 148px;
+  transition: border-color 0.2s, box-shadow 0.2s; position: relative;
 }
-.kb-card::before {
-  content: '';
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  height: 2px;
-  background: linear-gradient(90deg, var(--color-primary-400) 0%, var(--color-primary-200) 100%);
-  opacity: 0;
-  transition: opacity var(--corp-transition-base);
-}
-.kb-card:hover {
-  box-shadow: var(--shadow-card);
-  transform: translateY(-2px);
-  border-left-color: var(--color-primary-400);
-}
-.kb-card:hover::before {
-  opacity: 1;
-}
+.kb-card:hover { border-color: #93c5fd; box-shadow: 0 1px 6px rgba(0, 0, 0, 0.06); }
+.kb-card:hover .kb-card__more-wrap { opacity: 1; }
 
-.kb-card__header {
-  display: flex;
-  align-items: flex-start;
-  gap: var(--space-3);
-  margin-bottom: var(--space-3);
+.kb-card__top { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }
+.kb-card__avatar {
+  width: 30px; height: 30px; border-radius: 7px;
+  background: linear-gradient(135deg, #f3f4f6 0%, #e5e7eb 100%);
+  color: #6b7280; display: flex; align-items: center; justify-content: center; flex-shrink: 0;
 }
-.kb-card__icon {
-  width: 40px;
-  height: 40px;
-  border-radius: var(--radius-md);
-  background: linear-gradient(135deg, var(--color-primary-50) 0%, var(--color-primary-100) 100%);
-  color: var(--color-primary-600);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-  transition: transform var(--corp-transition-fast), box-shadow var(--corp-transition-fast);
-  box-shadow: 0 2px 6px rgba(59, 130, 246, 0.08);
+.kb-card__avatar--kb {
+  background: linear-gradient(135deg, #dbeafe 0%, #eff6ff 100%);
+  color: #3b82f6;
 }
-.kb-card:hover .kb-card__icon {
-  transform: scale(1.08);
-  box-shadow: 0 4px 12px rgba(59, 130, 246, 0.15);
+.kb-card__name-row { flex: 1; min-width: 0; display: flex; align-items: center; gap: 8px; }
+.kb-card__name { font-size: 14px; font-weight: 600; color: #1f2937; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; line-height: 1.4; }
+.kb-card__tag {
+  font-size: 11px; font-weight: 500; color: #3b82f6;
+  background: #eff6ff; padding: 1px 8px; border-radius: 4px;
+  flex-shrink: 0; white-space: nowrap;
 }
-.kb-card__info {
-  flex: 1;
-  min-width: 0;
+.kb-card__more-wrap { opacity: 0; transition: opacity 0.2s; flex-shrink: 0; }
+.kb-card__more-btn {
+  width: 24px; height: 24px; display: flex; align-items: center; justify-content: center;
+  border-radius: 6px; color: #9ca3af; cursor: pointer; transition: background 0.15s, color 0.15s;
 }
-.kb-card__name {
-  font-size: 14px;
-  font-weight: 700;
-  color: var(--corp-text-primary);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  line-height: 1.4;
-}
+.kb-card__more-btn:hover { background: #f3f4f6; color: #374151; }
 .kb-card__desc {
-  font-size: var(--text-sm);
-  color: var(--corp-text-secondary);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  margin-top: 3px;
-  line-height: 1.4;
+  flex: 1; font-size: 12px; color: #9ca3af; line-height: 1.6;
+  overflow: hidden; display: -webkit-box; -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical; word-break: break-word; margin-bottom: 12px;
 }
-.kb-card__menu {
-  flex-shrink: 0;
-  opacity: 0;
-  transition: opacity var(--corp-transition-fast);
+.kb-card__bottom {
+  display: flex; align-items: center; gap: 14px;
+  font-size: 12px; color: #9ca3af; padding-top: 10px; border-top: 1px solid #f3f4f6;
 }
-.kb-card:hover .kb-card__menu {
-  opacity: 1;
-}
-.kb-card__more {
-  color: var(--corp-text-tertiary);
-  cursor: pointer;
-  padding: 4px;
-  border-radius: var(--radius-sm);
-  transition: all var(--corp-transition-fast);
-}
-.kb-card__more:hover {
-  color: var(--corp-primary);
-  background: var(--color-primary-50);
-}
+.kb-card__meta { display: flex; align-items: center; gap: 4px; }
 
-.kb-card__footer {
+.kb-card__tags {
   display: flex;
   align-items: center;
-  gap: var(--space-3);
-  padding-top: var(--space-3);
-  border-top: 1px solid var(--corp-border-light);
+  gap: 8px;
+  padding-top: 8px;
 }
-.kb-card__stat {
-  display: flex;
+.kb-card__perm-tag {
+  display: inline-flex;
   align-items: center;
-  gap: 4px;
-  font-size: var(--text-sm);
-  color: var(--corp-text-secondary);
+  gap: 3px;
+  font-size: 11px;
+  padding: 1px 8px;
+  border-radius: 10px;
   font-weight: 500;
+  line-height: 20px;
 }
-.kb-card__stat span {
-  font-variant-numeric: tabular-nums;
+.kb-card__perm-tag--member {
+  background: #ecfdf5;
+  color: #059669;
 }
-.kb-card__divider {
-  width: 1px;
-  height: 12px;
-  background: var(--corp-border-light);
-}
-.kb-card__actions {
-  display: flex;
-  align-items: center;
-  gap: var(--space-1);
-  padding-top: var(--space-2);
-  visibility: hidden;
-  opacity: 0;
-  transition: opacity var(--corp-transition-fast), visibility var(--corp-transition-fast);
-}
-.kb-card:hover .kb-card__actions {
-  visibility: visible;
-  opacity: 1;
+.kb-card__perm-tag--private {
+  background: #f0f4ff;
+  color: #4f6ef7;
 }
 
-.kb-card-empty {
-  padding: var(--space-12);
-  display: flex;
-  justify-content: center;
-}
+/* 空状态 */
+.kb-empty { display: flex; flex-direction: column; align-items: center; justify-content: center; flex: 1; }
+.kb-empty__icon { margin-bottom: 16px; opacity: 0.45; }
+.kb-empty__text { font-size: 14px; color: #9ca3af; margin: 0 0 20px; }
 
-/* 表单提示 */
-.form-tip {
-  font-size: var(--text-xs);
-  color: var(--corp-text-tertiary);
-  margin-top: var(--space-1);
-  line-height: 1.5;
-}
-
-/* 树组件覆盖 */
-:deep(.el-tree) {
-  background: transparent;
-}
-:deep(.el-tree-node__content) {
-  height: 34px;
-  padding-right: 4px;
-  border-radius: var(--radius-sm);
-  margin-bottom: 1px;
-  transition: background var(--corp-transition-fast);
-}
-:deep(.el-tree-node__content:hover) {
-  background: rgba(59, 130, 246, 0.05);
-}
-:deep(.el-tree-node.is-current > .el-tree-node__content) {
-  background: var(--color-primary-50);
-  font-weight: 600;
-  box-shadow: inset 0 0 0 1px rgba(59, 130, 246, 0.12);
-}
-:deep(.el-tree-node.is-current > .el-tree-node__content .tree-node__icon) {
-  color: var(--corp-primary);
-}
-:deep(.el-tree-node.is-current > .el-tree-node__content .tree-node__badge) {
-  background: var(--color-primary-100);
-  color: var(--color-primary-700);
-  border-color: var(--color-primary-200);
-}
-:deep(.el-tree-node__expand-icon) {
-  color: var(--corp-text-tertiary);
-  font-size: 12px;
-  transition: transform var(--corp-transition-fast);
-}
-:deep(.el-tree-node__expand-icon.is-leaf) {
-  color: transparent;
-}
+/* 对话框 */
+:deep(.el-dialog__header) { padding: 20px 24px 0; }
+:deep(.el-dialog__body) { padding: 16px 24px; }
+:deep(.el-dialog__footer) { padding: 0 24px 20px; }
 </style>

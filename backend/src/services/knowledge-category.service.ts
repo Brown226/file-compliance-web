@@ -10,6 +10,16 @@ import { LlmService } from './llm.service';
 import { AppError } from '../middlewares/error.middleware';
 import { FileTypeService } from './file-type.service';
 
+interface KnowledgeTreeNode {
+  id: string;
+  name: string;
+  isLeaf: boolean;
+  type: 'folder' | 'knowledge';
+  documentCount?: number;
+  parentId?: string | null;
+  children?: KnowledgeTreeNode[];
+}
+
 interface ParseQualityReport {
   passed: boolean;
   score: number;
@@ -126,14 +136,6 @@ export class KnowledgeCategoryService {
       throw new AppError(409, '不能将节点设为自己的子节点');
     }
 
-    if (parent.isLeaf) {
-      throw new AppError(409, '该节点是叶子知识库，不能创建子节点');
-    }
-
-    if (parent._count.vectorDocuments > 0) {
-      throw new AppError(409, '该节点下已有文档，不能创建子节点');
-    }
-
     return parent;
   }
 
@@ -175,11 +177,8 @@ export class KnowledgeCategoryService {
   static async create(data: {
     name: string;
     description?: string;
-    documentTypes?: string;
     parentId?: string;
-    scopeType?: string;
-    accessLevel?: string;
-    inheritPermission?: boolean;
+    isLeaf?: boolean;
   }) {
     if (data.parentId) {
       await this.assertParentAcceptsChildren(data.parentId);
@@ -189,16 +188,12 @@ export class KnowledgeCategoryService {
       data: {
         name: data.name,
         description: data.description,
-        documentTypes: data.documentTypes,
         parentId: data.parentId || null,
-        scopeType: (data.scopeType as any) || 'CUSTOM',
-        accessLevel: (data.accessLevel as any) || 'PUBLIC',
-        inheritPermission: data.inheritPermission ?? true,
-        isLeaf: true,
+        isLeaf: data.isLeaf ?? false,
       },
     });
 
-    // 如果父节点之前是 leaf，需标记为非 leaf
+    // 有子节点时，父节点标记为非叶子
     if (data.parentId) {
       await prisma.knowledgeCategory.update({
         where: { id: data.parentId },
@@ -212,15 +207,11 @@ export class KnowledgeCategoryService {
   static async update(id: string, data: {
     name?: string;
     description?: string;
-    documentTypes?: string;
     status?: 'ACTIVE' | 'ARCHIVED';
     chunkMode?: string;
     maxChars?: number;
     overlap?: number;
     parentId?: string | null;
-    scopeType?: string;
-    accessLevel?: string;
-    inheritPermission?: boolean;
     isLeaf?: boolean;
   }) {
     const existing = await prisma.knowledgeCategory.findUnique({ where: { id } });
@@ -240,15 +231,11 @@ export class KnowledgeCategoryService {
       data: {
         ...(data.name !== undefined && { name: data.name }),
         ...(data.description !== undefined && { description: data.description }),
-        ...(data.documentTypes !== undefined && { documentTypes: data.documentTypes }),
         ...(data.status !== undefined && { status: data.status }),
         ...(data.chunkMode !== undefined && { chunkMode: data.chunkMode }),
         ...(data.maxChars !== undefined && { maxChars: data.maxChars }),
         ...(data.overlap !== undefined && { overlap: data.overlap }),
         ...(data.parentId !== undefined && { parentId: data.parentId || null }),
-        ...(data.scopeType !== undefined && { scopeType: data.scopeType as any }),
-        ...(data.accessLevel !== undefined && { accessLevel: data.accessLevel as any }),
-        ...(data.inheritPermission !== undefined && { inheritPermission: data.inheritPermission }),
         ...(data.isLeaf !== undefined && { isLeaf: data.isLeaf }),
       },
     });
@@ -284,7 +271,18 @@ export class KnowledgeCategoryService {
    * 预览文档分段：解析文件 → 分块，返回预览结果但不入库
    * 返回 MaxKB 格式的 {title, content} 段落数组
    */
-  static async previewDocument(categoryId: string, filePath: string, fileName: string): Promise<{
+  static async previewDocument(
+    categoryId: string,
+    filePath: string,
+    fileName: string,
+    userConfig?: {
+      chunkMode?: string;
+      maxChars?: number;
+      overlap?: number;
+      embeddingUseDocumentTitle?: boolean;
+      contextualRetrieval?: boolean;
+    },
+  ): Promise<{
     title: string;
     chunks: Array<{ title: string; content: string }>;
     metadata: Record<string, any>;
@@ -309,18 +307,28 @@ export class KnowledgeCategoryService {
     const parseQuality = this.buildParseQualityReport(content);
     const title = fileName.replace(/\.\w+$/, '');
 
-    // 使用与正式入库一致的分块策略与参数
-    const chunkConfig = {
-      mode: (category.chunkMode as 'auto' | 'fixed' | 'paragraph') || 'auto',
-      maxChars: category.maxChars || 3000,
-      overlap: category.overlap || 120,
-    };
-    const paragraphs = VectorService.splitMarkdownIntoParagraphs(content, chunkConfig.maxChars)
-      .map(paragraph => ({
+    // 使用前端传入的配置覆盖DB默认值
+    const effectiveMode = (userConfig?.chunkMode as 'auto' | 'fixed' | 'paragraph') ||
+      (category.chunkMode as 'auto' | 'fixed' | 'paragraph') || 'auto';
+    const effectiveMaxChars = userConfig?.maxChars ?? category.maxChars ?? 900;
+    const effectiveOverlap = userConfig?.overlap ?? category.overlap ?? 120;
+
+    // 根据模式选择不同的分段策略
+    let paragraphs: Array<{ title: string; content: string }>;
+    if (effectiveMode === 'fixed') {
+      const chunks = VectorService.splitTextIntoChunks(content, { mode: 'fixed', maxChars: effectiveMaxChars, overlap: effectiveOverlap });
+      paragraphs = chunks.map(chunk => ({ title: '', content: chunk.trim() })).filter(p => p.content.length > 0);
+    } else if (effectiveMode === 'paragraph') {
+      const rawParagraphs = VectorService.splitTextIntoChunks(content, { mode: 'paragraph', maxChars: effectiveMaxChars, overlap: effectiveOverlap });
+      paragraphs = rawParagraphs.map(p => ({ title: '', content: typeof p === 'string' ? p : p.content || '' }))
+        .filter(p => p.content.length > 0);
+    } else {
+      const parsed = VectorService.splitMarkdownIntoParagraphs(content, effectiveMaxChars);
+      paragraphs = parsed.map(paragraph => ({
         title: paragraph.title,
         content: paragraph.content,
-      }))
-      .filter(p => p.content.length > 0);
+      })).filter(p => p.content.length > 0);
+    }
 
     return {
       title,
@@ -332,7 +340,12 @@ export class KnowledgeCategoryService {
         has_tables: parseResult?.metadata?.has_tables || false,
         has_images: parseResult?.metadata?.has_images || false,
         page_count: parseResult?.metadata?.page_count || null,
-        chunkConfigUsed: chunkConfig,
+        chunkConfigUsed: {
+          mode: effectiveMode,
+          maxChars: effectiveMaxChars,
+          overlap: effectiveOverlap,
+          contextualRetrieval: userConfig?.contextualRetrieval ?? category.contextualRetrieval,
+        },
         parseQuality,
       },
     };
@@ -451,5 +464,64 @@ export class KnowledgeCategoryService {
     }
 
     return { totalChunks: paragraphs.length, generatedCount };
+  }
+
+  static async getKnowledgeTree(): Promise<KnowledgeTreeNode[]> {
+    const categories = await prisma.knowledgeCategory.findMany({
+      where: { status: 'ACTIVE' },
+      include: { _count: { select: { vectorDocuments: true } } },
+      orderBy: { name: 'asc' },
+    });
+
+    const map = new Map<string, KnowledgeTreeNode>();
+    const roots: KnowledgeTreeNode[] = [];
+
+    for (const cat of categories) {
+      map.set(cat.id, {
+        id: cat.id,
+        name: cat.name,
+        parentId: cat.parentId,
+        isLeaf: cat.isLeaf,
+        type: cat.isLeaf ? 'knowledge' : 'folder',
+        documentCount: cat._count.vectorDocuments,
+        children: [],
+      });
+    }
+
+    for (const node of map.values()) {
+      if (node.parentId && map.has(node.parentId)) {
+        const parent = map.get(node.parentId)!;
+        parent.children!.push(node);
+      } else {
+        roots.push(node);
+      }
+    }
+
+    const normalize = (node: KnowledgeTreeNode): KnowledgeTreeNode => {
+      const children = (node.children || []).sort((a, b) => a.name.localeCompare(b.name, 'zh-CN'));
+      if (children.length === 0) {
+        return {
+          id: node.id,
+          name: node.name,
+          parentId: node.parentId,
+          isLeaf: node.isLeaf,
+          type: node.isLeaf ? 'knowledge' : 'folder',
+          documentCount: node.documentCount,
+        };
+      }
+      return {
+        id: node.id,
+        name: node.name,
+        parentId: node.parentId,
+        isLeaf: node.isLeaf,
+        type: node.isLeaf ? 'knowledge' : 'folder',
+        documentCount: node.documentCount,
+        children: children.map(normalize),
+      };
+    };
+
+    return roots
+      .sort((a, b) => a.name.localeCompare(b.name, 'zh-CN'))
+      .map(normalize);
   }
 }

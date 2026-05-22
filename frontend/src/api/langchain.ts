@@ -13,33 +13,6 @@ export interface LangChainSearchResult {
   source?: string
 }
 
-export interface CompareReviewResult {
-  input: {
-    textLength: number
-    categoryIds: string[]
-    chunkSize?: number
-    topK?: number
-    scene?: string
-  }
-  oldSystem: {
-    engine: string
-    elapsedMs: number
-    issueCount: number
-    sourceCount: number
-    issues: any[]
-    sources: any[]
-  }
-  langchainSystem: {
-    engine: string
-    elapsedMs: number
-    issueCount: number
-    sourceCount: number
-    issues: any[]
-    sources: any[]
-    debug?: any
-  }
-}
-
 export interface LangChainHitTestResult {
   originalQuery: string
   multiQueryVariants?: string[]
@@ -108,17 +81,6 @@ export const langchainReviewApi = (data: {
   enableHyDE?: boolean
   enableCompression?: boolean
 }) => request.post('/langchain/review', data)
-
-export const compareReviewApi = (data: {
-  text: string
-  categoryIds: string[]
-  chunkSize?: number
-  topK?: number
-  scene?: string
-  enableMultiQuery?: boolean
-  enableHyDE?: boolean
-  enableCompression?: boolean
-}) => request.post<CompareReviewResult>('/langchain/review-compare', data)
 
 export const getLangChainStreamUrl = () => {
   const base = request.defaults?.baseURL || '/api'

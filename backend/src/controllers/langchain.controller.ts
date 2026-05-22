@@ -3,7 +3,6 @@ import { AuthRequest } from '../middlewares/auth.middleware';
 import { LangChainSearchService } from '../services/langchain/langchain-search.service';
 import { LangChainRAGService } from '../services/langchain/langchain-rag.service';
 import { SearchMode } from '../services/langchain/langchain-retriever';
-import { RAGService } from '../services/rag.service';
 import { success, error } from '../utils/response';
 
 export const langchainSearch = async (req: AuthRequest, res: Response): Promise<void> => {
@@ -242,71 +241,4 @@ export const langchainReviewWithKnowledge = async (req: AuthRequest, res: Respon
   }
 };
 
-export const compareReviewWithKnowledge = async (req: AuthRequest, res: Response): Promise<void> => {
-  try {
-    const { text, categoryIds, chunkSize, topK, llmMaxTokens, llmTimeout, scene, enableMultiQuery, enableHyDE, enableCompression } = req.body;
 
-    if (!text) {
-      error(res, '请输入待审查文本', 400);
-      return;
-    }
-
-    if (!categoryIds || categoryIds.length === 0) {
-      error(res, '请选择知识库', 400);
-      return;
-    }
-
-    const oldStart = Date.now();
-    const oldResult = await RAGService.reviewWithKnowledge(text, categoryIds, {
-      chunkSize,
-      topK,
-      llmMaxTokens,
-      llmTimeout,
-      scene,
-    });
-    const oldElapsedMs = Date.now() - oldStart;
-
-    const newStart = Date.now();
-    const newResult = await LangChainRAGService.reviewWithKnowledge(text, categoryIds, {
-      chunkSize,
-      topK,
-      llmMaxTokens,
-      llmTimeout,
-      scene,
-      enableMultiQuery: enableMultiQuery ?? true,
-      enableHyDE: enableHyDE ?? true,
-      enableCompression: enableCompression ?? true,
-    });
-    const newElapsedMs = Date.now() - newStart;
-
-    success(res, {
-      input: {
-        textLength: String(text).length,
-        categoryIds,
-        chunkSize,
-        topK,
-        scene,
-      },
-      oldSystem: {
-        engine: 'legacy-rag',
-        elapsedMs: oldElapsedMs,
-        issueCount: oldResult.issues.length,
-        sourceCount: oldResult.sourceReferences.length,
-        issues: oldResult.issues,
-        sources: oldResult.sourceReferences,
-      },
-      langchainSystem: {
-        engine: 'langchain-rag',
-        elapsedMs: newElapsedMs,
-        issueCount: newResult.issues.length,
-        sourceCount: newResult.sourceReferences.length,
-        issues: newResult.issues,
-        sources: newResult.sourceReferences,
-        debug: newResult.debug,
-      },
-    });
-  } catch (err: any) {
-    console.error('[LangChain] A/B 审查对比失败:', err);
-    error(res, err.message || 'A/B 审查对比失败', 500);
-  }
-};

@@ -64,7 +64,7 @@ router.post('/:id/documents', requireRole('ADMIN', 'MANAGER'), upload.single('fi
 router.post('/:id/upload-async', requireRole('ADMIN', 'MANAGER'), upload.array('files', 10), uploadDocumentAsync);
 
 // 分段预览确认
-router.post('/:id/preview', requireRole('ADMIN', 'MANAGER'), upload.single('file'), previewDocument);
+router.post('/:id/preview', requireRole('ADMIN', 'MANAGER'), upload.array('file', 10), previewDocument);
 router.post('/:id/confirm-import', requireRole('ADMIN', 'MANAGER'), confirmImport);
 
 // 单文档操作

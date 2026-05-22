@@ -44,6 +44,8 @@ interface ImportEntry {
   /** embedding 输入控制（按知识库配置） */
   embeddingUseDocumentTitle?: boolean;
   embeddingUseClauseId?: boolean;
+  /** 预分好的段落（传入时跳过重新分块） */
+  preChunkedParagraphs?: Array<{ title: string; content: string }>;
 }
 
 export interface ChunkingConfig {
@@ -565,14 +567,18 @@ export class VectorService {
     } = entry;
     const { mode = 'auto', maxChars = 1500, overlap = 300, contextualRetrieval = false } = chunkConfig || {};
 
-    const chunks = this.splitTextIntoChunks(content, { mode, maxChars, overlap });
-    const paragraphs: ParagraphSegment[] = chunks.map(chunk => {
-      const parts = chunk.split('\n');
-      if (parts.length > 1) {
-        return { title: parts[0].trim(), content: parts.slice(1).join('\n').trim() };
-      }
-      return { title: '', content: chunk.trim() };
-    }).filter(p => p.content.length > 0);
+    const paragraphs: ParagraphSegment[] = entry.preChunkedParagraphs?.length
+      ? entry.preChunkedParagraphs.filter(p => p.content.length > 0)
+      : (() => {
+          const chunks = this.splitTextIntoChunks(content, { mode, maxChars, overlap });
+          return chunks.map(chunk => {
+            const parts = chunk.split('\n');
+            if (parts.length > 1) {
+              return { title: parts[0].trim(), content: parts.slice(1).join('\n').trim() };
+            }
+            return { title: '', content: chunk.trim() };
+          }).filter(p => p.content.length > 0);
+        })();
 
     if (paragraphs.length === 0) return { chunks: 0, deduped: 0 };
 
@@ -597,6 +603,8 @@ export class VectorService {
       }
     }
 
+    const MAX_EMBED_CHARS = 6000;
+
     const textsForEmbedding = paragraphs.map((p, idx) => {
       const fields: string[] = [];
       if (embeddingUseDocumentTitle && title) fields.push(title);
@@ -605,7 +613,12 @@ export class VectorService {
       const contextSummary = contextualMap.get(idx);
       if (contextSummary) fields.push(`[${contextSummary}]`);
       fields.push(p.content);
-      return fields.filter(Boolean).join('\n');
+      let text = fields.filter(Boolean).join('\n');
+      if (text.length > MAX_EMBED_CHARS) {
+        console.warn(`[VectorService] chunk ${idx} 超长(${text.length}字符)，截断至 ${MAX_EMBED_CHARS}`);
+        text = text.slice(0, MAX_EMBED_CHARS);
+      }
+      return text;
     });
 
     const embeddings = await EmbeddingService.embedTexts(textsForEmbedding);
@@ -713,6 +726,8 @@ export class VectorService {
       }
     }
 
+    const MAX_EMBED_CHARS = 6000;
+
     const textsForEmbedding = segments.map((p, idx) => {
       const fields: string[] = [];
       if (embeddingUseDocumentTitle && title) fields.push(title);
@@ -721,7 +736,12 @@ export class VectorService {
       const contextSummary = contextualMap.get(idx);
       if (contextSummary) fields.push(`[${contextSummary}]`);
       fields.push(p.content);
-      return fields.filter(Boolean).join('\n');
+      let text = fields.filter(Boolean).join('\n');
+      if (text.length > MAX_EMBED_CHARS) {
+        console.warn(`[VectorService] importChunks chunk ${idx} 超长(${text.length}字符)，截断至 ${MAX_EMBED_CHARS}`);
+        text = text.slice(0, MAX_EMBED_CHARS);
+      }
+      return text;
     });
 
     const embeddings = await EmbeddingService.embedTexts(textsForEmbedding);
@@ -828,6 +848,8 @@ export class VectorService {
       }
     }
 
+    const MAX_EMBED_CHARS = 6000;
+
     const textsForEmbedding = paragraphs.map((p, idx) => {
       const fields: string[] = [];
       if (embeddingUseDocumentTitle && title) fields.push(title);
@@ -836,7 +858,12 @@ export class VectorService {
       const contextSummary = contextualMap.get(idx);
       if (contextSummary) fields.push(`[${contextSummary}]`);
       fields.push(p.content);
-      return fields.filter(Boolean).join('\n');
+      let text = fields.filter(Boolean).join('\n');
+      if (text.length > MAX_EMBED_CHARS) {
+        console.warn(`[VectorService] replaceDocument chunk ${idx} 超长(${text.length}字符)，截断至 ${MAX_EMBED_CHARS}`);
+        text = text.slice(0, MAX_EMBED_CHARS);
+      }
+      return text;
     });
     const embeddings = await EmbeddingService.embedTexts(textsForEmbedding);
 
@@ -889,19 +916,26 @@ export class VectorService {
   /**
    * 批量导入多个文档
    */
-  static async importDocuments(entries: ImportEntry[]): Promise<{ imported: number; totalChunks: number; deduped: number }> {
+  static async importDocuments(entries: ImportEntry[]): Promise<{ imported: number; totalChunks: number; deduped: number; errors: string[] }> {
     let imported = 0;
     let totalChunks = 0;
     let deduped = 0;
+    const errors: string[] = [];
 
     for (const entry of entries) {
-      const result = await this.importDocument(entry);
-      totalChunks += result.chunks;
-      deduped += result.deduped;
-      imported++;
+      try {
+        const result = await this.importDocument(entry);
+        totalChunks += result.chunks;
+        deduped += result.deduped;
+        imported++;
+      } catch (err: any) {
+        const msg = `文档 "${entry.title}" 导入失败: ${err.message}`;
+        console.error(`[VectorService] importDocuments: ${msg}`);
+        errors.push(msg);
+      }
     }
 
-    return { imported, totalChunks, deduped };
+    return { imported, totalChunks, deduped, errors };
   }
 
   // ============ 文档删除 ============

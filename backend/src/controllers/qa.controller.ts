@@ -3,7 +3,6 @@ import { AuthRequest } from '../middlewares/auth.middleware';
 import prisma from '../config/db';
 import { VectorService } from '../services/vector.service';
 import { LlmService } from '../services/llm.service';
-import { SearchService } from '../services/search.service';
 import { success, error } from '../utils/response';
 
 const MAX_HISTORY_MESSAGES = 12;
@@ -150,9 +149,8 @@ export const askStream = async (req: AuthRequest, res: Response): Promise<void> 
     let ragEnabled = true;
 
     try {
-      knowledgeResults = await SearchService.search(searchQuery, {
+      knowledgeResults = await VectorService.hybridSearch(searchQuery, {
         limit: 8,
-        sourceTypes: ['standard', 'law', 'rule', 'reference'],
         rerank: true,
       });
     } catch (searchError: any) {

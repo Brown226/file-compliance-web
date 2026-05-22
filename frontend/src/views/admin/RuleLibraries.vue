@@ -13,30 +13,6 @@
         
         <!-- 目录树 -->
         <div class="folder-section">
-          <div class="section-header">
-            <div class="section-title">
-              <el-icon class="section-icon"><FolderOpened /></el-icon>
-              <span>规则目录</span>
-            </div>
-            <el-button 
-              size="small" 
-              aria-label="移动目录"
-              @click="showMoveFolderDialog" 
-              :disabled="!selectedFolders.length"
-              title="移动目录"
-            >
-              <el-icon><ArrowRight /></el-icon>
-            </el-button>
-            <el-button 
-              size="small" 
-              aria-label="合并目录"
-              @click="showMergeFolderDialog" 
-              :disabled="selectedFolders.length < 2"
-              title="合并目录"
-            >
-              <el-icon><Grid /></el-icon>
-            </el-button>
-          </div>
           <el-tree
             :data="folderTree"
             :props="treeProps"
@@ -98,106 +74,45 @@
 
       <!-- 右侧主内容区 -->
       <main class="rl-main">
-        <!-- 顶部英雄面板 -->
-        <section class="hero-panel">
-          <div class="hero-copy">
-            <div class="hero-eyebrow">RULE LIBRARIES</div>
-            <h2>规则库管理</h2>
-            <p class="subtitle">把规范文档沉淀成可发布、可筛选、可提审的结构化规则资产。</p>
-            <div class="hero-metrics">
-              <div class="metric-card">
-                <div class="metric-icon bg-blue">
-                  <el-icon><FolderOpened /></el-icon>
-                </div>
-                <div class="metric-info">
-                  <span class="metric-value">{{ libraries.length }}</span>
-                  <span class="metric-label">规则库总数</span>
-                </div>
-              </div>
-              <div class="metric-card">
-                <div class="metric-icon bg-green">
-                  <el-icon><CircleCheck /></el-icon>
-                </div>
-                <div class="metric-info">
-                  <span class="metric-value">{{ publishedCount }}</span>
-                  <span class="metric-label">已发布</span>
-                </div>
-              </div>
-              <div class="metric-card">
-                <div class="metric-icon bg-purple">
-                  <el-icon><Refresh /></el-icon>
-                </div>
-                <div class="metric-info">
-                  <span class="metric-value">{{ executableCount }}</span>
-                  <span class="metric-label">可执行规则</span>
-                </div>
-              </div>
+        <!-- 顶部工具栏 -->
+        <section class="toolbar">
+          <div class="toolbar-left">
+            <div class="toolbar-stats">
+              <span class="stat-item"><strong>{{ libraries.length }}</strong> 个规则库</span>
+              <span class="stat-sep">·</span>
+              <span class="stat-item"><strong>{{ publishedCount }}</strong> 已发布</span>
+              <span class="stat-sep">·</span>
+              <span class="stat-item"><strong>{{ executableCount }}</strong> 条可执行</span>
+            </div>
+            <div v-if="activeFolderId" class="active-filter-tag">
+              <el-tag closable @close="clearFolderFilter" size="small" type="info">
+                当前目录: {{ activeFolderLabel }}
+              </el-tag>
             </div>
           </div>
-          <div class="hero-actions">
-            <div class="view-toggle">
-              <button 
-                :class="{ active: viewMode === 'grid' }" 
-                @click="viewMode = 'grid'"
-                title="网格视图"
-                type="button"
-                aria-label="切换到网格视图"
-              >
-                <el-icon><Grid /></el-icon>
-              </button>
-              <button 
-                :class="{ active: viewMode === 'list' }" 
-                @click="viewMode = 'list'"
-                title="列表视图"
-                type="button"
-                aria-label="切换到列表视图"
-              >
-                <el-icon><List /></el-icon>
-              </button>
-            </div>
-            <el-button type="primary" class="create-button" @click="showCreateDialog">
+          <div class="toolbar-right">
+            <el-input
+              v-model="searchKeyword"
+              placeholder="搜索规则库名称/描述..."
+              clearable
+              prefix-icon="Search"
+              class="search-input"
+              @keyup.enter="fetchLibraries"
+              @clear="fetchLibraries"
+            />
+            <el-select v-model="statusFilter" placeholder="状态筛选" clearable class="status-filter" @change="fetchLibraries">
+              <el-option label="草稿" value="DRAFT" />
+              <el-option label="已发布" value="PUBLISHED" />
+              <el-option label="归档" value="ARCHIVED" />
+            </el-select>
+            <el-button type="primary" @click="showCreateDialog">
               <el-icon><Plus /></el-icon> 新建规则库
             </el-button>
           </div>
         </section>
 
-        <!-- 规则库列表 -->
-        <div v-if="viewMode === 'grid'" class="library-grid">
-          <div 
-            v-for="lib in libraries" 
-            :key="lib.id" 
-            class="library-card"
-            @click="showDetail(lib)"
-          >
-            <div class="card-header">
-              <div class="card-icon" :class="getStatusClass(lib.status)">
-                <el-icon>{{ getStatusIcon(lib.status) }}</el-icon>
-              </div>
-              <el-tag :type="getStatusTagType(lib.status)" size="small" class="card-status">
-                {{ getStatusLabel(lib.status) }}
-              </el-tag>
-            </div>
-            <h3 class="card-title">{{ lib.name }}</h3>
-            <p class="card-desc">{{ lib.description || '暂无描述' }}</p>
-            <div class="card-meta">
-              <div class="meta-item">
-                <el-icon><FileText /></el-icon>
-                <span>{{ lib._count?.items || 0 }} 规则</span>
-              </div>
-              <div class="meta-item">
-                <el-icon><Zap /></el-icon>
-                <span>{{ lib.enabledExecutableItemCount || 0 }} 可执行</span>
-              </div>
-            </div>
-            <div class="card-actions">
-              <el-button size="small" @click.stop="showDetail(lib)">查看规则</el-button>
-              <el-button size="small" @click.stop="showUploadRules(lib)">AI解析</el-button>
-            </div>
-          </div>
-        </div>
-
         <!-- 规则库表格 -->
-        <el-card v-else shadow="never" class="rl-card rl-table-card">
+        <el-card shadow="never" class="rl-card rl-table-card">
           <el-table :data="libraries" v-loading="loading" empty-text="暂无规则库">
             <el-table-column prop="name" label="规则库名称" min-width="180">
               <template #default="{ row }">
@@ -231,43 +146,35 @@
                 </el-tag>
               </template>
             </el-table-column>
-            <el-table-column label="操作" width="420" fixed="right">
+            <el-table-column label="操作" width="200" fixed="right">
               <template #default="{ row }">
                 <el-button type="primary" link size="small" @click="showDetail(row)">查看规则</el-button>
-                <el-button type="primary" link size="small" @click="showUploadRules(row)">AI 解析</el-button>
                 <el-button type="primary" link size="small" @click="showEditDialog(row)">编辑</el-button>
-                <el-button
-                  v-if="row.status !== 'PUBLISHED'"
-                  type="success"
-                  link
-                  size="small"
-                  @click="changeStatus(row, 'PUBLISHED')"
-                >
-                  发布
-                </el-button>
-                <el-button
-                  v-if="row.status !== 'DRAFT'"
-                  type="warning"
-                  link
-                  size="small"
-                  @click="changeStatus(row, 'DRAFT')"
-                >
-                  撤回
-                </el-button>
-                <el-button
-                  v-if="row.status !== 'ARCHIVED'"
-                  type="info"
-                  link
-                  size="small"
-                  @click="changeStatus(row, 'ARCHIVED')"
-                >
-                  归档
-                </el-button>
-                <el-popconfirm title="确认删除此规则库？" @confirm="handleDelete(row.id)">
-                  <template #reference>
-                    <el-button type="danger" link size="small">删除</el-button>
+                <el-dropdown trigger="click" @command="(cmd: string) => handleRowCommand(cmd, row)">
+                  <el-button type="primary" link size="small">
+                    更多<el-icon class="el-icon--right"><ArrowDown /></el-icon>
+                  </el-button>
+                  <template #dropdown>
+                    <el-dropdown-menu>
+                      <el-dropdown-item command="ai-parse">
+                        <el-icon><UploadFilled /></el-icon> AI 解析
+                      </el-dropdown-item>
+                      <el-dropdown-item command="publish" :disabled="row.status === 'PUBLISHED' || (row.enabledExecutableItemCount || 0) === 0">
+                        <el-icon><CircleCheck /></el-icon> 发布
+                        <span v-if="(row.enabledExecutableItemCount || 0) === 0" class="publish-hint">（无可执行规则）</span>
+                      </el-dropdown-item>
+                      <el-dropdown-item command="draft" :disabled="row.status === 'DRAFT'">
+                        <el-icon><Edit /></el-icon> 撤回草稿
+                      </el-dropdown-item>
+                      <el-dropdown-item command="archive" :disabled="row.status === 'ARCHIVED'">
+                        <el-icon><Folder /></el-icon> 归档
+                      </el-dropdown-item>
+                      <el-dropdown-item command="delete" divided>
+                        <span style="color: #f56c6c;"><el-icon><Delete /></el-icon> 删除</span>
+                      </el-dropdown-item>
+                    </el-dropdown-menu>
                   </template>
-                </el-popconfirm>
+                </el-dropdown>
               </template>
             </el-table-column>
           </el-table>
@@ -560,7 +467,7 @@
 import { computed, onMounted, reactive, ref } from 'vue'
 import { 
   Plus, UploadFilled, Folder, FolderOpened, ArrowRight, 
-  CircleCheck, Grid, List, Edit, Delete, ArrowDown, ArrowUp, Refresh, Files
+  CircleCheck, Edit, Delete, ArrowDown, ArrowUp, Files
 } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox, ElTree } from 'element-plus'
 import {
@@ -588,9 +495,6 @@ import {
   type RuleFolderTreeNode,
 } from '@/api/rule-folder'
 
-// 视图模式
-const viewMode = ref<'grid' | 'list'>('list')
-
 // 加载状态
 const loading = ref(false)
 const submitting = ref(false)
@@ -612,7 +516,15 @@ const treeProps = {
   label: 'label',
 }
 
-// 选中的目录
+// 选中的目录（用于联动过滤）
+const activeFolderId = ref<string | null>(null)
+const activeFolderLabel = ref<string>('')
+
+// 搜索与筛选
+const searchKeyword = ref('')
+const statusFilter = ref<string>('')
+
+// 选中的目录（用于批量移动/合并）
 const selectedFolders = computed(() => checkedFolderKeys.value)
 
 // 编辑目录对话框
@@ -694,9 +606,6 @@ const filteredItems = computed(() => {
   return items
 })
 
-// 文件夹相关常量
-const FOLDER_COUNT = computed(() => folderTree.value.length)
-
 // 获取状态相关方法
 const getStatusClass = (status: string) => {
   const map: Record<string, string> = {
@@ -725,15 +634,6 @@ const getStatusLabel = (status: string) => {
   return map[status] || status
 }
 
-const getStatusIcon = (status: string) => {
-  const map: Record<string, any> = {
-    DRAFT: List,
-    PUBLISHED: CircleCheck,
-    ARCHIVED: Folder,
-  }
-  return map[status] || List
-}
-
 // 获取目录树
 const fetchFolders = async () => {
   try {
@@ -749,7 +649,23 @@ const fetchFolders = async () => {
 }
 
 const handleFolderClick = (data: any) => {
-  // 点击目录可以过滤规则库（未来扩展）
+  if (activeFolderId.value === data.id) {
+    // 再次点击取消选择
+    clearFolderFilter()
+  } else {
+    activeFolderId.value = data.id
+    activeFolderLabel.value = data.label
+    fetchLibraries()
+  }
+}
+
+const clearFolderFilter = () => {
+  activeFolderId.value = null
+  activeFolderLabel.value = ''
+  if (folderTreeRef.value) {
+    folderTreeRef.value.setCurrentKey(null)
+  }
+  fetchLibraries()
 }
 
 const handleFolderCheck = (_data: any, _checked: boolean) => {
@@ -886,7 +802,11 @@ const resetItemForm = () => {
 const fetchLibraries = async () => {
   loading.value = true
   try {
-    const { data } = await getRuleLibrariesApi()
+    const params: Record<string, any> = {}
+    if (activeFolderId.value) params.folderId = activeFolderId.value
+    if (searchKeyword.value.trim()) params.keyword = searchKeyword.value.trim()
+    if (statusFilter.value) params.status = statusFilter.value
+    const { data } = await getRuleLibrariesApi(params)
     libraries.value = data || []
   } catch (e: any) {
     ElMessage.error(e?.response?.data?.message || '获取规则库列表失败')
@@ -968,6 +888,28 @@ const changeStatus = async (row: RuleLibrary, status: 'DRAFT' | 'PUBLISHED' | 'A
     if (selectedLibrary.value?.id === row.id) await refreshSelectedLibrary()
   } catch (e: any) {
     ElMessage.error(e?.response?.data?.message || '状态更新失败')
+  }
+}
+
+const handleRowCommand = (cmd: string, row: RuleLibrary) => {
+  switch (cmd) {
+    case 'ai-parse':
+      showUploadRules(row)
+      break
+    case 'publish':
+      changeStatus(row, 'PUBLISHED')
+      break
+    case 'draft':
+      changeStatus(row, 'DRAFT')
+      break
+    case 'archive':
+      changeStatus(row, 'ARCHIVED')
+      break
+    case 'delete':
+      ElMessageBox.confirm('确认删除此规则库？', '删除', { type: 'warning' })
+        .then(() => handleDelete(row.id))
+        .catch(() => {})
+      break
   }
 }
 
@@ -1155,13 +1097,12 @@ onMounted(() => {
   display: flex;
   gap: 24px;
   padding: 24px;
-  max-width: 1800px;
-  margin: 0 auto;
+  width: 100%;
 }
 
 /* 左侧边栏 */
 .rl-sidebar {
-  width: 280px;
+  width: 360px;
   flex-shrink: 0;
   background: linear-gradient(180deg, #f8fafc 0%, #eef2f7 100%);
   border-radius: 16px;
@@ -1191,24 +1132,6 @@ onMounted(() => {
   gap: 8px;
 }
 
-.section-title {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 13px;
-  font-weight: 500;
-  color: #334155;
-  margin-bottom: 12px;
-  padding: 8px 10px;
-  background: rgba(255, 255, 255, 0.72);
-  border-radius: 8px;
-}
-
-.section-icon {
-  font-size: 14px;
-}
-
-.category-section,
 .folder-section {
   margin-bottom: 24px;
 }
@@ -1219,60 +1142,10 @@ onMounted(() => {
   gap: 4px;
 }
 
-.category-item {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 10px 12px;
-  border-radius: 10px;
-  cursor: pointer;
-  transition: all 0.2s ease;
-  background: rgba(255, 255, 255, 0.55);
-  border: 1px solid transparent;
-}
-
-.category-item:hover {
-  background: rgba(255, 255, 255, 0.92);
-  border-color: #cbd5e1;
-}
-
-.category-item.active {
-  background: linear-gradient(90deg, #dbeafe 0%, #eff6ff 100%);
-  border-color: #93c5fd;
-}
-
-.category-icon {
-  font-size: 14px;
-  color: #0369a1;
-}
-
-.category-name {
-  flex: 1;
-  font-size: 14px;
-  color: #0f172a;
-  font-weight: 500;
-}
-
-.category-count {
-  font-size: 12px;
-  color: #475569;
-  background: rgba(255, 255, 255, 0.75);
-  padding: 2px 8px;
-  border-radius: 999px;
-}
-
-.category-actions {
-  opacity: 0;
-  transition: opacity 0.2s;
-}
-
-.category-item:hover .category-actions {
-  opacity: 1;
-}
-
 .folder-tree {
   font-size: 14px;
-  max-height: 350px;
+  max-height: calc(100vh - 320px);
+  min-height: 400px;
   overflow-y: auto;
   color: #0f172a;
 }
@@ -1339,56 +1212,6 @@ onMounted(() => {
   min-width: auto;
 }
 
-.view-toggle button {
-  outline: none;
-}
-
-.view-toggle button:focus-visible {
-  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.35);
-}
-
-.view-toggle button:hover {
-  color: #0f172a;
-}
-
-.view-toggle button.active:hover {
-  background: #ffffff;
-}
-
-.section-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 12px;
-}
-
-.section-tools {
-  display: flex;
-  gap: 4px;
-}
-
-.section-tools :deep(.el-button:disabled) {
-  opacity: 0.65;
-  background: rgba(255, 255, 255, 0.9);
-  border-color: #dbe4ee;
-  color: #94a3b8;
-}
-
-.section-tools :deep(.el-button) {
-  width: 34px;
-  height: 34px;
-  padding: 0;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.section-tools :deep(.el-button:hover:not(:disabled)) {
-  background: #eff6ff;
-  border-color: #93c5fd;
-  color: #1d4ed8;
-}
-
 .dialog-tip {
   display: flex;
   align-items: center;
@@ -1411,302 +1234,68 @@ onMounted(() => {
   min-width: 0;
 }
 
-/* 英雄面板 */
-.hero-panel {
+/* 工具栏 */
+.toolbar {
   display: flex;
   justify-content: space-between;
-  gap: 24px;
-  align-items: stretch;
-  padding: 32px;
-  margin-bottom: 24px;
-  border-radius: 20px;
-  background: linear-gradient(135deg, #1e293b 0%, #334155 50%, #475569 100%);
-  box-shadow: 0 20px 60px rgba(30, 41, 59, 0.3);
-  position: relative;
-  overflow: hidden;
-}
-
-.hero-panel::before {
-  content: '';
-  position: absolute;
-  top: -50%;
-  right: -20%;
-  width: 60%;
-  height: 100%;
-  background: radial-gradient(circle, rgba(14, 165, 233, 0.15) 0%, transparent 70%);
-  border-radius: 50%;
-  pointer-events: none;
-}
-
-.hero-panel::after {
-  content: '';
-  position: absolute;
-  bottom: -30%;
-  left: -10%;
-  width: 40%;
-  height: 80%;
-  background: radial-gradient(circle, rgba(139, 92, 246, 0.1) 0%, transparent 70%);
-  border-radius: 50%;
-  pointer-events: none;
-}
-
-.hero-copy {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-
-.hero-eyebrow {
-  font-size: 11px;
-  letter-spacing: 0.2em;
-  color: #94a3b8;
-  font-weight: 700;
-}
-
-.hero-panel h2 {
-  font-size: 32px;
-  line-height: 1.1;
-  margin: 0;
-  color: #ffffff;
-  font-weight: 700;
-}
-
-.subtitle {
-  font-size: 14px;
-  color: #cbd5e1;
-  margin: 0;
-  max-width: 600px;
-}
-
-.hero-metrics {
-  display: flex;
-  gap: 16px;
-  margin-top: 12px;
-}
-
-.metric-card {
-  display: flex;
   align-items: center;
-  gap: 12px;
-  padding: 14px 20px;
-  background: rgba(255, 255, 255, 0.1);
-  border-radius: 14px;
-  backdrop-filter: blur(10px);
-}
-
-.metric-icon {
-  width: 42px;
-  height: 42px;
+  padding: 16px 20px;
+  margin-bottom: 16px;
+  background: #ffffff;
   border-radius: 12px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 20px;
-}
-
-.metric-icon.bg-blue {
-  background: rgba(59, 130, 246, 0.2);
-  color: #60a5fa;
-}
-
-.metric-icon.bg-green {
-  background: rgba(16, 185, 129, 0.2);
-  color: #34d399;
-}
-
-.metric-icon.bg-purple {
-  background: rgba(139, 92, 246, 0.2);
-  color: #a78bfa;
-}
-
-.metric-icon.bg-orange {
-  background: rgba(249, 115, 22, 0.2);
-  color: #fb923c;
-}
-
-.metric-info {
-  display: flex;
-  flex-direction: column;
-}
-
-.metric-value {
-  font-size: 24px;
-  font-weight: 700;
-  color: #ffffff;
-  line-height: 1;
-}
-
-.metric-label {
-  font-size: 12px;
-  color: #94a3b8;
-}
-
-.hero-actions {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-end;
-  gap: 16px;
-}
-
-.view-toggle {
-  display: flex;
-  gap: 4px;
-  padding: 6px;
-  background: rgba(255, 255, 255, 0.1);
-  border-radius: 10px;
-}
-
-.view-toggle button {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 36px;
-  height: 36px;
-  border: none;
-  background: transparent;
-  border-radius: 8px;
-  cursor: pointer;
-  color: #94a3b8;
-  transition: all 0.2s;
-}
-
-.view-toggle button:hover {
-  background: rgba(255, 255, 255, 0.1);
-}
-
-.view-toggle button.active {
-  background: #ffffff;
-  color: #1e293b;
-}
-
-.create-button {
-  min-width: 148px;
-  border-radius: 14px;
-  background: linear-gradient(135deg, #0ea5e9 0%, #0284c7 100%);
-  border: none;
-  box-shadow: 0 8px 24px rgba(14, 165, 233, 0.3);
-  position: relative;
-  z-index: 10;
-}
-
-/* 网格视图 */
-.library-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-  gap: 20px;
-}
-
-.library-card {
-  background: #ffffff;
-  border-radius: 16px;
-  padding: 20px;
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.06);
-  cursor: pointer;
-  transition: all 0.35s cubic-bezier(0.4, 0, 0.2, 1);
   border: 1px solid #e2e8f0;
-  position: relative;
-  overflow: hidden;
+  gap: 16px;
+  flex-wrap: wrap;
 }
 
-.library-card::before {
-  content: '';
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  height: 3px;
-  background: linear-gradient(90deg, #0ea5e9, #8b5cf6);
-  transform: scaleX(0);
-  transition: transform 0.35s cubic-bezier(0.4, 0, 0.2, 1);
-}
-
-.library-card:hover {
-  transform: translateY(-4px);
-  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.12);
-  border-color: #cbd5e1;
-}
-
-.library-card:hover::before {
-  transform: scaleX(1);
-}
-
-.card-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 14px;
-}
-
-.card-icon {
-  width: 44px;
-  height: 44px;
-  border-radius: 12px;
+.toolbar-left {
   display: flex;
   align-items: center;
-  justify-content: center;
-  font-size: 20px;
+  gap: 12px;
+  flex-wrap: wrap;
 }
 
-.card-icon.status-draft {
-  background: #fef3c7;
-  color: #d97706;
+.toolbar-right {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
 }
 
-.card-icon.status-published {
-  background: #dcfce7;
-  color: #16a34a;
+.search-input {
+  width: 280px;
 }
 
-.card-icon.status-archived {
-  background: #e0e7ff;
-  color: #6366f1;
+.status-filter {
+  width: 140px;
 }
 
-.card-status {
+.active-filter-tag {
+  display: flex;
+  align-items: center;
+}
+
+.publish-hint {
   font-size: 11px;
+  color: #909399;
+  margin-left: 4px;
 }
 
-.card-title {
-  font-size: 16px;
-  font-weight: 600;
-  color: #1e293b;
-  margin: 0 0 8px 0;
-}
-
-.card-desc {
+.toolbar-stats {
+  display: flex;
+  align-items: center;
+  gap: 8px;
   font-size: 13px;
   color: #64748b;
-  margin: 0 0 14px 0;
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
 }
 
-.card-meta {
-  display: flex;
-  gap: 16px;
-  margin-bottom: 16px;
+.toolbar-stats .stat-item strong {
+  color: #1e293b;
+  font-weight: 700;
 }
 
-.meta-item {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 12px;
-  color: #94a3b8;
-}
-
-.card-actions {
-  display: flex;
-  gap: 8px;
-  padding-top: 14px;
-  border-top: 1px solid #f1f5f9;
-}
-
-.card-actions :deep(.el-button) {
-  font-size: 12px;
-  padding: 4px 12px;
+.stat-sep {
+  color: #cbd5e1;
 }
 
 /* 卡片样式 */
@@ -1858,37 +1447,6 @@ onMounted(() => {
     max-width: 100%;
   }
   
-  .hero-panel {
-    flex-direction: column;
-    padding: 24px;
-    gap: 20px;
-  }
-  
-  .hero-copy {
-    order: 1;
-  }
-  
-  .hero-actions {
-    order: 2;
-    align-items: flex-start;
-    flex-direction: row;
-    flex-wrap: wrap;
-    gap: 12px;
-  }
-  
-  .hero-panel h2 {
-    font-size: 26px;
-  }
-  
-  .hero-metrics {
-    flex-wrap: wrap;
-  }
-  
-  .metric-card {
-    min-width: 140px;
-    flex: 1;
-  }
-  
   .filters {
     flex-wrap: wrap;
     gap: 12px;
@@ -1914,33 +1472,6 @@ onMounted(() => {
     padding: 16px;
   }
   
-  .hero-panel {
-    padding: 20px;
-  }
-  
-  .hero-panel h2 {
-    font-size: 22px;
-  }
-  
-  .hero-metrics {
-    flex-wrap: wrap;
-    gap: 12px;
-  }
-  
-  .metric-card {
-    flex: 1;
-    min-width: calc(50% - 6px);
-  }
-  
-  .library-grid {
-    grid-template-columns: 1fr;
-    gap: 12px;
-  }
-  
-  .library-card {
-    padding: 16px;
-  }
-  
   .filters {
     padding: 12px;
     gap: 10px;
@@ -1961,7 +1492,6 @@ onMounted(() => {
     gap: 12px;
   }
   
-  .category-actions,
   .tree-node-actions {
     opacity: 1;
   }
@@ -1972,53 +1502,10 @@ onMounted(() => {
     padding: 8px;
   }
   
-  .hero-panel {
-    padding: 16px;
-  }
-  
-  .hero-panel h2 {
-    font-size: 18px;
-  }
-  
-  .hero-eyebrow {
-    font-size: 10px;
-  }
-  
-  .metric-card {
-    min-width: 100%;
-  }
-  
   .lib-name-cell {
     flex-direction: column;
     align-items: flex-start;
     gap: 4px;
-  }
-}
-
-@supports (-webkit-backdrop-filter: none) or (backdrop-filter: none) {
-  .metric-card {
-    backdrop-filter: blur(10px);
-    -webkit-backdrop-filter: blur(10px);
-  }
-}
-
-@-moz-document url-prefix() {
-  .metric-card {
-    background: rgba(255, 255, 255, 0.2);
-  }
-  
-  .hero-panel::before,
-  .hero-panel::after {
-    opacity: 0.5;
-  }
-}
-
-@media screen and (-webkit-min-device-pixel-ratio: 0) {
-  .card-desc {
-    display: -webkit-box;
-    -webkit-line-clamp: 2;
-    -webkit-box-orient: vertical;
-    overflow: hidden;
   }
 }
 </style>

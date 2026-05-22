@@ -2,9 +2,7 @@ import { Response } from 'express';
 import { AuthRequest } from '../middlewares/auth.middleware';
 import { KnowledgeCategoryService } from '../services/knowledge-category.service';
 import { VectorService } from '../services/vector.service';
-import { RAGService } from '../services/rag.service';
-
-import { SearchService } from '../services/search.service';
+import { LangChainSearchService } from '../services/langchain/langchain-search.service';
 import { UploadTaskService } from '../services/upload-task.service';
 import prisma from '../config/db';
 import { success, error } from '../utils/response';
@@ -41,16 +39,14 @@ export const listAllCategories = async (_req: AuthRequest, res: Response): Promi
 /** 创建知识子库 */
 export const createCategory = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
-    const { name, description, documentTypes, parentId, scopeType, accessLevel, inheritPermission } = req.body;
+    const { name, description, parentId, isLeaf } = req.body;
+    console.log('[DEBUG] createCategory isLeaf =', isLeaf, 'parentId =', parentId);
     if (!name?.trim()) { error(res, '名称不能为空', 400); return; }
     const category = await KnowledgeCategoryService.create({
       name: name.trim(),
       description,
-      documentTypes,
       parentId,
-      scopeType,
-      accessLevel,
-      inheritPermission,
+      isLeaf,
     });
     success(res, category, '创建成功');
   } catch (err: any) {
@@ -191,22 +187,40 @@ export const getActiveTasks = async (_req: AuthRequest, res: Response): Promise<
 export const previewDocument = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const id = req.params.id as string;
-    const file = req.file;
-    if (!file) { error(res, '请选择文件', 400); return; }
+    const files = req.files as Express.Multer.File[];
+    if (!files || files.length === 0) { error(res, '请选择文件', 400); return; }
 
     await KnowledgeCategoryService.ensureLeafCategory(id);
 
-    const originalName = Buffer.from(file.originalname, 'latin1').toString('utf8');
+    const userConfig = {
+      chunkMode: (req.body.chunkMode as string) || undefined,
+      maxChars: req.body.maxChars ? Number(req.body.maxChars) : undefined,
+      overlap: req.body.overlap ? Number(req.body.overlap) : undefined,
+      embeddingUseDocumentTitle: req.body.embeddingUseDocumentTitle === 'true',
+      contextualRetrieval: req.body.contextualRetrieval === 'true',
+    };
 
-    // 移动到临时目录
-    const ext = path.extname(originalName);
-    const savedName = `${uuidv4()}${ext}`;
-    const savedPath = path.join(UPLOAD_DIR, savedName);
-    fs.renameSync(file.path, savedPath);
+    const fileTasks = files.map(async (file) => {
+      const originalName = Buffer.from(file.originalname, 'latin1').toString('utf8');
+      const ext = path.extname(originalName);
+      const savedName = `${uuidv4()}${ext}`;
+      const savedPath = path.join(UPLOAD_DIR, savedName);
+      fs.renameSync(file.path, savedPath);
 
-    // 解析文件但不入库
-    const preview = await KnowledgeCategoryService.previewDocument(id, savedPath, originalName);
-    success(res, preview, `预览完成，共 ${preview.chunks.length} 个分段`);
+      const preview = await KnowledgeCategoryService.previewDocument(id, savedPath, originalName, userConfig);
+      return { name: originalName, title: preview.title, chunks: preview.chunks, canImport: preview.canImport };
+    });
+
+    const fileResults = await Promise.all(fileTasks);
+    const totalChunks = fileResults.reduce((s, f) => s + f.chunks.length, 0);
+    const canImport = fileResults.every(f => f.canImport);
+
+    success(res, {
+      files: fileResults,
+      totalChunks,
+      parseQuality: { passed: canImport, reasons: [] },
+      canImport,
+    }, `预览完成，共 ${totalChunks} 个分段`);
   } catch (err: any) {
     console.error('Preview Document Error:', err);
     error(res, err.message || '预览失败', err instanceof AppError ? err.statusCode : 500);
@@ -217,33 +231,44 @@ export const previewDocument = async (req: AuthRequest, res: Response): Promise<
 export const confirmImport = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const id = req.params.id as string;
-    const { title, chunks, metadata } = req.body;
+    const { documents, metadata } = req.body;
 
-    if (!title?.trim()) { error(res, '文档标题不能为空', 400); return; }
-    if (!chunks?.length) { error(res, '分段列表不能为空', 400); return; }
-
-    const parseQuality = metadata?.parseQuality;
-    if (parseQuality && parseQuality.passed === false) {
-      const reasons = Array.isArray(parseQuality.reasons) ? parseQuality.reasons.join('；') : '解析质量未通过';
-      error(res, `解析质量未通过：${reasons}`, 400);
-      return;
-    }
+    if (!documents?.length) { error(res, '文档列表不能为空', 400); return; }
 
     await KnowledgeCategoryService.ensureLeafCategory(id);
 
     const category = await prisma.knowledgeCategory.findUnique({ where: { id } });
-    const result = await VectorService.importChunks(chunks, {
-      sourceType: 'standard',
-      title: title.trim(),
+    const baseConfig = {
+      sourceType: 'standard' as const,
       categoryId: id,
-      embeddingUseDocumentTitle: category?.embeddingUseDocumentTitle ?? false,
+      embeddingUseDocumentTitle: metadata?.embeddingUseDocumentTitle ?? category?.embeddingUseDocumentTitle ?? false,
       embeddingUseClauseId: category?.embeddingUseClauseId ?? false,
-      contextualRetrieval: category?.contextualRetrieval ?? false,
-      wholeDocumentContent: chunks.map((c: any) => typeof c === 'string' ? c : c.content || '').join('\n\n'),
+      contextualRetrieval: metadata?.contextualRetrieval ?? category?.contextualRetrieval ?? false,
       metadata: metadata || {},
-    });
+    };
 
-    success(res, { chunks: result.chunks, deduped: result.deduped }, `导入成功，${result.chunks} 个分段，${result.deduped} 个去重`);
+    const entries = documents.map((doc: any) => ({
+      ...baseConfig,
+      title: (doc.title || '').trim(),
+      content: (doc.chunks || []).map((c: any) => typeof c === 'string' ? c : c.content || '').join('\n\n'),
+      preChunkedParagraphs: (doc.chunks || []).map((c: any) => {
+        const text = typeof c === 'string' ? c : (c.content || '');
+        const title = c.title || '';
+        return { title, content: text };
+      }).filter((p: any) => p.content.length > 0),
+      chunkConfig: {
+        mode: metadata?.chunkMode || 'auto',
+        maxChars: metadata?.maxChars || undefined,
+        overlap: metadata?.overlap || undefined,
+        contextualRetrieval: baseConfig.contextualRetrieval,
+      },
+    }));
+
+    const result = await VectorService.importDocuments(entries);
+    if (result.errors?.length) {
+      console.warn(`[ConfirmImport] ${result.errors.length} 个文档导入失败:`, result.errors);
+    }
+    success(res, { imported: result.imported, deduped: result.deduped, errors: result.errors }, `导入完成：${result.imported} 成功，${result.errors.length} 失败`);
   } catch (err: any) {
     console.error('Confirm Import Error:', err);
     error(res, err.message || '导入失败', err instanceof AppError ? err.statusCode : 500);
@@ -302,7 +327,7 @@ export const getStats = async (_req: AuthRequest, res: Response): Promise<void> 
 /** 获取知识库树形结构 */
 export const getTree = async (_req: AuthRequest, res: Response): Promise<void> => {
   try {
-    const tree = await RAGService.getKnowledgeTree();
+    const tree = await KnowledgeCategoryService.getKnowledgeTree();
     success(res, tree);
   } catch (err) {
     console.error('Get KnowledgeTree Error:', err);
@@ -726,7 +751,7 @@ export const hitTest = async (req: AuthRequest, res: Response): Promise<void> =>
 
     if (!query?.trim()) { error(res, '请输入测试查询', 400); return; }
 
-    const result = await SearchService.hitTest({
+    const result = await LangChainSearchService.hitTest({
       query: query.trim(),
       categoryId,
       sourceTypes,

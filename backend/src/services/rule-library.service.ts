@@ -214,10 +214,24 @@ function buildFallbackPreviewItems(text: string, sourceFileName?: string): RuleP
 }
 
 export class RuleLibraryService {
-  static async list(options?: { selectableOnly?: boolean }) {
+  static async list(options?: { selectableOnly?: boolean; folderId?: string; keyword?: string; status?: string }) {
     const selectableOnly = !!options?.selectableOnly;
+    const where: any = selectableOnly ? { status: 'PUBLISHED' } : {};
+    if (options?.folderId) {
+      where.folderId = options.folderId;
+    }
+    if (options?.status && ['DRAFT', 'PUBLISHED', 'ARCHIVED'].includes(options.status)) {
+      where.status = options.status;
+    }
+    if (options?.keyword?.trim()) {
+      const kw = options.keyword.trim();
+      where.OR = [
+        { name: { contains: kw, mode: 'insensitive' } },
+        { description: { contains: kw, mode: 'insensitive' } },
+      ];
+    }
     const libraries = await prisma.ruleLibrary.findMany({
-      where: selectableOnly ? { status: 'PUBLISHED' } : undefined,
+      where,
       include: {
         items: {
           orderBy: { createdAt: 'asc' },

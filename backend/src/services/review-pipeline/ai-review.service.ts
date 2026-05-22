@@ -7,11 +7,10 @@
 
 import { PipelineContext, PipelineReviewConfig } from './types';
 import { ReviewIssue, SourceReference, LlmService } from '../llm.service';
-import { RAGService } from '../rag.service';
+import { LangChainRAGService } from '../langchain/langchain-rag.service';
 import { VectorService } from '../vector.service';
 import { PromptTemplateService } from '../prompt-template.service';
 import { StandardTraceabilityService } from '../standard-traceability.service';
-import { SearchService } from '../search.service';
 
 export class AiReviewService {
   // ==================== AI 审查实现 ====================
@@ -43,7 +42,7 @@ export class AiReviewService {
     console.log(`[Pipeline] 启动自建 RAG 审查: kbs=[${knowledgeIds.join(',')}], text_len=${text.length}`);
 
     try {
-      const result = await RAGService.reviewWithKnowledge(text, knowledgeIds, {
+      const result = await LangChainRAGService.reviewWithKnowledge(text, knowledgeIds, {
         chunkSize: config.chunkSize || 4000,
         topK: 5,
         llmMaxTokens: config.llmMaxTokens || 4096,
@@ -85,7 +84,7 @@ export class AiReviewService {
 
     for (const catId of categoryIds) {
       try {
-        const results = await SearchService.search(text.slice(0, 2000), {
+        const results = await VectorService.hybridSearch(text.slice(0, 2000), {
           limit: 10,
           categoryId: catId,
         });

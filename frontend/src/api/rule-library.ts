@@ -54,8 +54,12 @@ export interface RuleLibraryPreviewItem {
   duplicate: boolean
 }
 
-export const getRuleLibrariesApi = (params?: { selectableOnly?: boolean }) =>
-  request.get<RuleLibrary[]>('/rule-libraries', { params })
+export const getRuleLibrariesApi = (params?: {
+  selectableOnly?: boolean
+  folderId?: string
+  keyword?: string
+  status?: string
+}) => request.get<RuleLibrary[]>('/rule-libraries', { params })
 
 export const getRuleLibraryApi = (id: string) =>
   request.get<RuleLibrary>(`/rule-libraries/${id}`)

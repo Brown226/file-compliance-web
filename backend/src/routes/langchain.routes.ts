@@ -6,7 +6,6 @@ import {
   langchainAskQuestion,
   langchainAskStream,
   langchainReviewWithKnowledge,
-  compareReviewWithKnowledge,
 } from '../controllers/langchain.controller';
 
 const router = Router();
@@ -22,6 +21,5 @@ router.post('/ask', langchainAskQuestion);
 router.post('/ask-stream', langchainAskStream);
 
 router.post('/review', langchainReviewWithKnowledge);
-router.post('/review-compare', compareReviewWithKnowledge);
 
 export default router;

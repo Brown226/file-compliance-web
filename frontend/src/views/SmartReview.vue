@@ -24,129 +24,15 @@
       </div>
     </div>
 
-    <!-- Step 0: 上传区域（参考项目设计） -->
-    <div v-if="currentStep === 0" class="upload-step">
-      <div class="step-title">
-        <h1 class="page-title">智能文件审查</h1>
-        <p class="page-subtitle">上传您的文件，AI 将为您深度分析、识别风险、守护合规。</p>
-      </div>
-
-      <div class="upload-container">
-        <!-- 待审文件上传区域（必选） -->
-        <div class="primary-upload-section">
-          <h3 class="section-title">
-            <el-icon><Document /></el-icon>
-            待审文件
-            <el-tag type="danger" size="small">必选</el-tag>
-          </h3>
-          <el-upload
-            ref="uploadRef"
-            class="upload-dragger"
-            drag
-            multiple
-            :auto-upload="false"
-            :limit="10"
-            :on-change="handleFileChange"
-            :on-remove="handleFileRemove"
-            :on-exceed="handleExceed"
-            accept=".dwg,.doc,.docx,.xls,.xlsx,.pdf,.ppt,.pptx,.jpg,.png,.jpeg,.txt"
-            :show-file-list="false"
-          >
-            <div class="upload-content">
-              <el-icon :size="48" class="upload-icon"><UploadFilled /></el-icon>
-              <div class="upload-text">
-                <span class="upload-link">点击上传</span>
-                <span>或将文件拖到此处</span>
-              </div>
-              <p class="upload-hint">支持 .docx .pdf .dwg .xls .ppt 格式</p>
-            </div>
-          </el-upload>
-
-          <!-- 已选待审文件列表 -->
-          <div v-if="fileList.length > 0" class="file-list-section">
-            <div class="file-list">
-              <div v-for="(file, index) in fileList" :key="index" class="file-item">
-                <el-icon class="file-icon"><Document /></el-icon>
-                <span class="file-name">{{ file.name }}</span>
-                <span class="file-size">{{ formatFileSize(file.size || 0) }}</span>
-                <el-button
-                  type="danger"
-                  text
-                  size="small"
-                  @click="removeFile(index)"
-                >
-                  <el-icon><Delete /></el-icon>
-                </el-button>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <!-- 参考文件上传区域（仅以文审文显示） -->
-        <div v-if="entryModule === 'DOC_REVIEW'" class="reference-upload-section">
-          <h3 class="section-title">
-            <el-icon><Link /></el-icon>
-            参考文件（用于以文审文）
-            <el-tag type="info" size="small">可选</el-tag>
-          </h3>
-          <p class="section-description">
-            上传参考文件作为审查依据，系统将基于参考文件对待审文件进行逐项比对。
-          </p>
-          <el-upload
-            ref="referenceUploadRef"
-            class="reference-upload"
-            drag
-            multiple
-            :auto-upload="false"
-            :limit="5"
-            :on-change="handleReferenceFileChange"
-            :on-remove="handleReferenceFileRemove"
-            accept=".dwg,.doc,.docx,.xls,.xlsx,.pdf,.ppt,.pptx,.txt"
-            :show-file-list="false"
-          >
-            <div class="upload-content">
-              <el-icon :size="36" class="upload-icon"><FolderAdd /></el-icon>
-              <div class="upload-text">
-                <span class="upload-link">选择参考文件</span>
-                <span>或拖到此处</span>
-              </div>
-              <p class="upload-hint">支持 .docx .pdf .dwg 等格式，最多 5 个文件</p>
-            </div>
-          </el-upload>
-
-          <!-- 已选参考文件列表 -->
-          <div v-if="refFileList.length > 0" class="file-list-section">
-            <div class="file-list">
-              <div v-for="(file, index) in refFileList" :key="index" class="file-item reference-file">
-                <el-icon class="file-icon"><Document /></el-icon>
-                <span class="file-name">{{ file.name }}</span>
-                <span class="file-size">{{ formatFileSize(file.size || 0) }}</span>
-                <el-button
-                  type="danger"
-                  text
-                  size="small"
-                  @click="removeReferenceFile(index)"
-                >
-                  <el-icon><Delete /></el-icon>
-                </el-button>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <!-- 下一步按钮 -->
-        <div class="step-actions">
-          <el-button
-            type="primary"
-            size="large"
-            :disabled="fileList.length === 0"
-            @click="goToStep1"
-          >
-            下一步：确认信息并分析
-          </el-button>
-        </div>
-      </div>
-    </div>
+    <!-- Step 0: 上传区域 -->
+    <SmartReviewUploadStep
+      v-if="currentStep === 0"
+      v-model:file-list="fileList"
+      v-model:ref-file-list="refFileList"
+      :entry-module="entryModule"
+      :dwg-parsed-data-map="dwgParsedDataMap"
+      @next="goToStep1"
+    />
 
     <!-- Step 1: 预审配置 - 参考项目左右分栏布局 -->
     <div v-if="currentStep === 1" class="confirm-step">
@@ -469,167 +355,19 @@
   </div>
 
   <!-- 知识库选择对话框 -->
-  <el-dialog
-    v-model="knowledgeDialogVisible"
-    title="选择知识库"
-    width="900px"
-    :close-on-click-modal="false"
-    class="knowledge-selection-dialog"
-  >
-    <div class="knowledge-selection-container">
-      <!-- 左侧：知识库树形列表 -->
-      <div class="knowledge-tree-panel">
-        <div class="panel-header">
-          <span class="panel-title">知识库列表</span>
-          <span class="panel-count">{{ knowledgeTreeData.length }} 个分类</span>
-        </div>
-        <div class="panel-search">
-          <el-input
-            v-model="knowledgeSearchQuery"
-            placeholder="搜索知识库..."
-            clearable
-            prefix-icon="Search"
-            size="small"
-          />
-        </div>
-        <div class="tree-container">
-          <el-tree
-                  :data="filteredKnowledgeTree"
-                  :props="{ label: 'name', children: 'children', disabled: (node: any) => !!node.children?.length }"
-                  node-key="id"
-                  :expand-on-click-node="false"
-                  :default-expand-all="false"
-                  highlight-current
-                  show-checkbox
-                  check-strictly
-                  @node-click="handleKnowledgeTreeNodeClick"
-                  ref="knowledgeTreeRef"
-                ></el-tree>
-          <div v-if="filteredKnowledgeTree.length === 0" class="tree-empty">
-            <el-empty description="未找到匹配的知识库" :image-size="60" />
-          </div>
-        </div>
-      </div>
-
-      <!-- 右侧：已选知识库 -->
-      <div class="selected-panel">
-        <div class="panel-header">
-          <span class="panel-title">已选知识库</span>
-          <span class="panel-count highlight">{{ currentCheckedKnowledgeIds.length }} 个</span>
-        </div>
-        <div class="selected-container">
-          <div v-if="currentCheckedKnowledgeIds.length > 0" class="selected-list">
-            <div
-              v-for="item in currentCheckedKnowledge"
-              :key="item.id"
-              class="selected-item"
-            >
-              <div class="selected-item-icon">
-                <el-icon><FolderOpened /></el-icon>
-              </div>
-              <div class="selected-item-content">
-                <div class="selected-item-name">{{ item.name }}</div>
-                <div class="selected-item-path">{{ getKnowledgePath(item.id) }}</div>
-              </div>
-              <el-button
-                class="selected-item-remove"
-                type="danger"
-                :icon="Delete"
-                circle
-                size="small"
-                @click="removeFromSelection(item.id)"
-              />
-            </div>
-          </div>
-          <div v-else class="selected-empty">
-            <el-icon class="empty-icon"><FolderOpened /></el-icon>
-            <p>尚未选择知识库</p>
-            <span>从左侧列表中选择知识库</span>
-          </div>
-        </div>
-        <div v-if="currentCheckedKnowledgeIds.length > 0" class="selected-actions">
-          <el-button size="small" @click="clearAllSelection">清空全部</el-button>
-        </div>
-      </div>
-    </div>
-    <template #footer>
-      <div class="dialog-footer">
-        <span class="dialog-footer-info">已选择 {{ currentCheckedKnowledgeIds.length }} 个知识库</span>
-        <div class="dialog-footer-actions">
-          <el-button @click="knowledgeDialogVisible = false">取消</el-button>
-          <el-button type="primary" @click="confirmKnowledgeSelection">确认选择</el-button>
-        </div>
-      </div>
-    </template>
-  </el-dialog>
+  <SmartReviewKnowledgeDialog
+    v-model:visible="knowledgeDialogVisible"
+    :knowledge-tree-data="knowledgeTreeData"
+    :current-checked-knowledge-ids="reviewPlanDraft.evidence.knowledgeCategoryIds"
+    @confirm="handleKnowledgeConfirm"
+  />
 
   <!-- 规则库选择对话框 -->
-  <el-dialog
-    v-model="ruleLibraryDialogVisible"
-    title="选择规则库"
-    width="600px"
-    :close-on-click-modal="false"
-    class="selection-dialog"
-  >
-    <div class="dialog-search">
-      <el-input
-        v-model="ruleLibrarySearchQuery"
-        placeholder="搜索规则库名称..."
-        clearable
-        prefix-icon="Search"
-      />
-    </div>
-    <div class="dialog-list">
-      <div
-        v-for="library in filteredRuleLibraries"
-        :key="library.id"
-        class="dialog-list-item rule-library-item"
-        :class="{ 'is-selected': tempSelectedRuleLibraryId === library.id, 'status-draft': library.status === 'draft' }"
-        @click="tempSelectedRuleLibraryId = library.id"
-      >
-        <div class="list-item-icon rule-icon">
-          <el-icon><Files /></el-icon>
-        </div>
-        <div class="list-item-content">
-          <div class="list-item-name-row">
-            <span class="list-item-name">{{ library.name }}</span>
-            <el-tag
-              :type="getStatusTagType(library.status)"
-              size="small"
-              class="status-tag"
-            >
-              {{ getStatusLabel(library.status) }}
-            </el-tag>
-          </div>
-          <div class="list-item-meta">
-            <span class="meta-item" :class="{ 'meta-item--empty': library.ruleCount === 0 }">
-              <el-icon><Document /></el-icon>
-              {{ library.ruleCount }} 条规则
-            </span>
-            <span class="meta-item" v-if="library.executableCount > 0">
-              <el-icon><Check /></el-icon>
-              {{ library.executableCount }} 可执行
-            </span>
-          </div>
-        </div>
-        <div class="list-item-check" v-if="tempSelectedRuleLibraryId === library.id">
-          <el-icon><Check /></el-icon>
-        </div>
-      </div>
-      <div v-if="filteredRuleLibraries.length === 0" class="empty-state">
-        <el-empty description="未找到匹配的规则库" :image-size="80" />
-      </div>
-    </div>
-    <template #footer>
-      <div class="dialog-footer">
-        <span class="dialog-footer-info">{{ tempSelectedRuleLibraryId ? '已选择 1 个规则库' : '未选择' }}</span>
-        <div class="dialog-footer-actions">
-          <el-button @click="ruleLibraryDialogVisible = false">取消</el-button>
-          <el-button type="primary" :disabled="!tempSelectedRuleLibraryId" @click="confirmRuleLibrarySelection">确认选择</el-button>
-        </div>
-      </div>
-    </template>
-  </el-dialog>
+  <SmartReviewRuleLibraryDialog
+    v-model:visible="ruleLibraryDialogVisible"
+    :rule-libraries="ruleLibraries"
+    @confirm="handleRuleLibraryConfirm"
+  />
 
   <!-- 浮动操作按钮 - 固定在右下角 -->
   <div v-if="currentStep === 1" class="floating-actions">
@@ -654,17 +392,19 @@ import { useRouter, useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import type { UploadFile, FormInstance, FormRules } from 'element-plus'
 import {
-  Upload, UploadFilled, Check, MagicStick, InfoFilled, VideoPlay, WarningFilled,
-  RemoveFilled, CirclePlusFilled, Document, Link, FolderAdd, Delete, Search,
-  Loading, ArrowDown, ArrowUp, EditPen, DataAnalysis, FolderOpened, Files,
-  Setting, Connection, Monitor, Picture, CircleCheck, SemiSelect,
+  Check, MagicStick, WarningFilled,
+  RemoveFilled, CirclePlusFilled, Document, Link,
+  Loading, ArrowUp, EditPen, DataAnalysis, FolderOpened, Files,
+  Connection, Monitor,
 } from '@element-plus/icons-vue'
 import { createTaskApi, preAnalyzeApi, uploadOnlyApi, exportTaskReportApi, exportTaskReportWordApi } from '@/api/task'
 import type { ReviewPlan, ReviewObjective, ReviewEvidenceSource } from '@/types/models'
 import { getAllKnowledgeCategoriesApi, getKnowledgeTreeApi } from '@/api/knowledge-category'
 import { getRuleLibrariesApi } from '@/api/rule-library'
 import { useUserStore } from '@/stores/user'
-import DwgPreview from '@/components/DwgPreview.vue'
+import SmartReviewUploadStep from './components/SmartReviewUploadStep.vue'
+import SmartReviewKnowledgeDialog from './components/SmartReviewKnowledgeDialog.vue'
+import SmartReviewRuleLibraryDialog from './components/SmartReviewRuleLibraryDialog.vue'
 
 const router = useRouter()
 const route = useRoute()
@@ -681,50 +421,14 @@ const currentStep = ref(0) // 0: 上传, 1: 确认, 2: 审查中
 
 // ===== 文件上传 =====
 const fileList = ref<UploadFile[]>([])
-const uploadRef = ref()
 const refFileList = ref<UploadFile[]>([])
-const referenceUploadRef = ref()
 const dwgParsedDataMap = ref<Record<string, any>>({})
-
-const totalFileSize = computed(() =>
-  fileList.value.reduce((sum, f) => sum + (f.size || 0), 0) +
-  refFileList.value.reduce((sum, f) => sum + (f.size || 0), 0)
-)
-
-const handleFileChange = (_file: UploadFile, newFileList: UploadFile[]) => {
-  fileList.value = newFileList
-}
-const handleFileRemove = (_file: UploadFile, newFileList: UploadFile[]) => {
-  fileList.value = newFileList
-}
-const handleExceed = (files: File[], fileList: File[]) => {
-  ElMessage.warning(`最多只能选择 10 个待审文件。当前已选择 ${fileList.length} 个文件。`)
-}
-const removeFile = (index: number) => {
-  fileList.value.splice(index, 1)
-}
-
-const handleReferenceFileChange = (_file: UploadFile, newFileList: UploadFile[]) => {
-  refFileList.value = newFileList
-}
-const handleReferenceFileRemove = (_file: UploadFile, newFileList: UploadFile[]) => {
-  refFileList.value = newFileList
-}
-const removeReferenceFile = (index: number) => {
-  refFileList.value.splice(index, 1)
-}
 
 const onDwgParsed = (fileName: string, data: any) => {
   dwgParsedDataMap.value[fileName] = data
 }
 const onDwgParseError = (fileName: string, _err: any) => {
   console.warn('[SmartReview] DWG parse error:', fileName)
-}
-
-const formatFileSize = (bytes: number) => {
-  if (bytes < 1024) return bytes + ' B'
-  if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB'
-  return (bytes / (1024 * 1024)).toFixed(1) + ' MB'
 }
 
 // ===== 表单 =====
@@ -952,6 +656,13 @@ const goToStep1 = async () => {
 
 // 带取消信号的预分析（用于解决竞态问题）
 let currentPreAnalysisAbortController: AbortController | null = null
+
+const handleKnowledgeConfirm = (selectedIds: string[]) => {
+  reviewPlanDraft.evidence.knowledgeCategoryIds = selectedIds
+}
+const handleRuleLibraryConfirm = (libraryId: string | null) => {
+  reviewPlanDraft.evidence.ruleLibraryId = libraryId
+}
 
 const runPreAnalysisWithSignal = async (files: Array<{ name: string; size: number }>, signal?: AbortSignal) => {
   preAnalyzing.value = true
@@ -1360,10 +1071,6 @@ const toggleEvidenceSource = (source: ReviewEvidenceSource) => {
 // ===== 选择对话框相关 =====
 const knowledgeDialogVisible = ref(false)
 const ruleLibraryDialogVisible = ref(false)
-const knowledgeSearchQuery = ref('')
-const ruleLibrarySearchQuery = ref('')
-const tempSelectedKnowledgeIds = ref<string[]>([])
-const tempSelectedRuleLibraryId = ref<string | null>(null)
 
 const handleEvidenceCardClick = (source: ReviewEvidenceSource) => {
   if (isEvidenceLocked(source)) return
@@ -1388,149 +1095,11 @@ const handleEvidenceCardClick = (source: ReviewEvidenceSource) => {
 }
 
 const openKnowledgeDialog = () => {
-  tempSelectedKnowledgeIds.value = [...reviewPlanDraft.evidence.knowledgeCategoryIds]
-  knowledgeSearchQuery.value = ''
   knowledgeDialogVisible.value = true
 }
 
 const openRuleLibraryDialog = () => {
-  tempSelectedRuleLibraryId.value = reviewPlanDraft.evidence.ruleLibraryId
-  ruleLibrarySearchQuery.value = ''
   ruleLibraryDialogVisible.value = true
-  
-  console.log('[SmartReview] 打开规则库选择对话框')
-  console.log('[SmartReview] 规则库列表:', ruleLibraries.value)
-  console.log('[SmartReview] 过滤后列表:', filteredRuleLibraries.value)
-}
-
-const filteredKnowledgeCategories = computed(() => {
-  if (!knowledgeSearchQuery.value.trim()) return knowledgeCategories.value
-  const query = knowledgeSearchQuery.value.toLowerCase()
-  return knowledgeCategories.value.filter(cat =>
-    cat.name.toLowerCase().includes(query) || cat.id.toLowerCase().includes(query)
-  )
-})
-
-const filteredRuleLibraries = computed(() => {
-  if (!ruleLibrarySearchQuery.value.trim()) return ruleLibraries.value
-  const query = ruleLibrarySearchQuery.value.toLowerCase()
-  return ruleLibraries.value.filter(lib =>
-    lib.name.toLowerCase().includes(query) || lib.id.toLowerCase().includes(query)
-  )
-})
-
-// 知识库树形过滤
-const filteredKnowledgeTree = computed(() => {
-  if (!knowledgeSearchQuery.value.trim()) return knowledgeTreeData.value
-  const query = knowledgeSearchQuery.value.toLowerCase()
-  
-  const filterTree = (nodes: any[]): any[] => {
-    return nodes.reduce((acc: any[], node) => {
-      const matches = node.name.toLowerCase().includes(query)
-      const filteredChildren = node.children ? filterTree(node.children) : []
-      
-      if (matches || filteredChildren.length > 0) {
-        acc.push({
-          ...node,
-          children: filteredChildren
-        })
-      }
-      return acc
-    }, [])
-  }
-  
-  return filterTree(knowledgeTreeData.value)
-})
-
-// 已选知识库的详细信息
-const tempSelectedKnowledge = computed(() => {
-  return tempSelectedKnowledgeIds.value.map(id => {
-    const item = findKnowledgeItem(id, knowledgeTreeData.value)
-    return item || { id, name: getKnowledgeCategoryName(id) }
-  }).filter(item => item.name !== undefined)
-})
-
-// 递归查找知识库项
-const findKnowledgeItem = (id: string, items: any[]): any | null => {
-  for (const item of items) {
-    if (item.id === id) return item
-    if (item.children) {
-      const found = findKnowledgeItem(id, item.children)
-      if (found) return found
-    }
-  }
-  return null
-}
-
-// 获取知识库路径
-const getKnowledgePath = (id: string): string => {
-  const paths: string[] = []
-  const findPath = (id: string, items: any[], currentPath: string[]): boolean => {
-    for (const item of items) {
-      const newPath = [...currentPath, item.name]
-      if (item.id === id) {
-        paths.push(newPath.join(' / '))
-        return true
-      }
-      if (item.children && findPath(id, item.children, newPath)) {
-        return true
-      }
-    }
-    return false
-  }
-  findPath(id, knowledgeTreeData.value, [])
-  return paths[0] || '未知路径'
-}
-
-// 处理树节点点击
-const handleKnowledgeTreeNodeClick = () => {
-}
-
-// 切换知识库选择（兼容旧代码）
-const toggleKnowledgeSelection = (id: string) => {
-  const checkedKeys = knowledgeTreeRef.value?.getCheckedKeys() || []
-  const index = checkedKeys.indexOf(id)
-  if (index > -1) {
-    knowledgeTreeRef.value?.setCheckedKeys(checkedKeys.filter(k => k !== id))
-  } else {
-    knowledgeTreeRef.value?.setCheckedKeys([...checkedKeys, id])
-  }
-}
-
-// 获取当前选中的知识库ID列表
-const currentCheckedKnowledgeIds = computed(() => {
-  return knowledgeTreeRef.value?.getCheckedKeys() || []
-})
-
-// 获取当前选中的知识库详细信息
-const currentCheckedKnowledge = computed(() => {
-  return currentCheckedKnowledgeIds.value.map(id => {
-    const item = findKnowledgeItem(id, knowledgeTreeData.value)
-    return item || { id, name: getKnowledgeCategoryName(id) }
-  }).filter(item => item.name !== undefined)
-})
-
-// 从选择中移除
-const removeFromSelection = (id: string) => {
-  const checkedKeys = knowledgeTreeRef.value?.getCheckedKeys() || []
-  knowledgeTreeRef.value?.setCheckedKeys(checkedKeys.filter(k => k !== id))
-}
-
-// 清空所有选择
-const clearAllSelection = () => {
-  knowledgeTreeRef.value?.setCheckedKeys([])
-}
-
-const confirmKnowledgeSelection = () => {
-  reviewPlanDraft.evidence.knowledgeCategoryIds = [...currentCheckedKnowledgeIds.value]
-  knowledgeDialogVisible.value = false
-  ElMessage.success(`已选择 ${currentCheckedKnowledgeIds.value.length} 个知识库`)
-}
-
-const confirmRuleLibrarySelection = () => {
-  reviewPlanDraft.evidence.ruleLibraryId = tempSelectedRuleLibraryId.value
-  ruleLibraryDialogVisible.value = false
-  ElMessage.success('规则库选择成功')
 }
 
 const removeKnowledgeCategory = (id: string) => {
@@ -1548,24 +1117,6 @@ const getKnowledgeCategoryName = (id: string) => {
 const getRuleLibraryName = (id: string) => {
   const library = ruleLibraries.value.find(l => l.id === id)
   return library?.name || id
-}
-
-const getStatusLabel = (status: string) => {
-  const statusMap: Record<string, string> = {
-    draft: '草稿',
-    published: '已发布',
-    archived: '已归档',
-  }
-  return statusMap[status] || status || '未知'
-}
-
-const getStatusTagType = (status: string): '' | 'success' | 'warning' | 'info' | 'danger' => {
-  const typeMap: Record<string, '' | 'success' | 'warning' | 'info' | 'danger'> = {
-    draft: 'warning',
-    published: 'success',
-    archived: 'info',
-  }
-  return typeMap[status] || 'info'
 }
 
 const evidenceSourceOptions: Record<ReviewObjective, Array<{ value: ReviewEvidenceSource; label: string }>> = {
@@ -1615,7 +1166,6 @@ watch(() => reviewPlanDraft.objective, (objective) => {
 // 知识库子库列表
 const knowledgeCategories = ref<Array<{ id: string; name: string }>>([])
 const knowledgeTreeData = ref<any[]>([])
-const knowledgeTreeRef = ref()
 
 // 规则库列表
 const ruleLibraries = ref<Array<{
@@ -2031,191 +1581,7 @@ onMounted(async () => {
   min-height: calc(100vh - 140px);
 }
 
-/* 上传步骤 */
-.upload-step {
-  text-align: center;
-}
 
-.step-title {
-  margin-bottom: 20px;
-}
-
-.page-title {
-  font-size: 28px;
-  font-weight: 800;
-  color: #111827;
-  margin: 0 0 6px;
-}
-
-.page-subtitle {
-  font-size: 14px;
-  color: #6B7280;
-  margin: 0;
-}
-
-.upload-container {
-  max-width: 800px;
-  margin: 0 auto;
-}
-
-/* 待审文件上传区域 */
-.primary-upload-section {
-  margin-bottom: 20px;
-}
-
-/* 参考文件上传区域 */
-.reference-upload-section {
-  margin-top: 20px;
-  padding-top: 20px;
-  border-top: 2px dashed #E5E7EB;
-}
-
-/* 区域标题 */
-.section-title {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 16px;
-  font-weight: 700;
-  color: #111827;
-  margin: 0 0 12px;
-}
-
-.section-description {
-  font-size: 13px;
-  color: #6B7280;
-  margin: 0 0 12px;
-  line-height: 1.5;
-}
-
-/* 参考文件上传区 */
-.reference-upload :deep(.el-upload-dragger) {
-  padding: 24px 20px;
-  border-radius: 10px;
-  border: 2px dashed #D1D5DB;
-  background: #F9FAFB;
-  transition: all 0.15s;
-}
-
-.reference-upload :deep(.el-upload-dragger:hover) {
-  border-color: #10B981;
-  background: #F0FDF4;
-}
-
-.reference-upload .upload-icon {
-  color: #6B7280;
-}
-
-/* 文件列表区域 */
-.file-list-section {
-  margin-top: 12px;
-}
-
-.file-list {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
-.file-item {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 8px 12px;
-  background: white;
-  border-radius: 6px;
-  border: 1px solid #E5E7EB;
-  transition: all 0.15s;
-}
-
-.file-item:hover {
-  border-color: #3B82F6;
-  box-shadow: 0 2px 8px rgba(59, 130, 246, 0.1);
-}
-
-.file-item.reference-file {
-  background: #F9FAFB;
-  border-color: #D1D5DB;
-}
-
-.file-item.reference-file:hover {
-  border-color: #10B981;
-  box-shadow: 0 2px 8px rgba(16, 185, 129, 0.1);
-}
-
-.file-icon {
-  color: #3B82F6;
-  font-size: 18px;
-}
-
-.file-item.reference-file .file-icon {
-  color: #10B981;
-}
-
-.file-name {
-  flex: 1;
-  font-size: 13px;
-  font-weight: 600;
-  color: #111827;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.file-size {
-  font-size: 11px;
-  color: #9CA3AF;
-  flex-shrink: 0;
-}
-
-/* 步骤操作按钮 */
-.step-actions {
-  margin-top: 20px;
-  display: flex;
-  justify-content: center;
-}
-
-/* 上传拖拽区 */
-.upload-dragger :deep(.el-upload-dragger) {
-  padding: 36px 20px;
-  border-radius: 10px;
-  border: 2px dashed #E5E7EB;
-  background: #FAFAFA;
-  transition: all 0.15s;
-}
-
-.upload-dragger :deep(.el-upload-dragger:hover) {
-  border-color: #3B82F6;
-  background: #EFF6FF;
-}
-
-.upload-content {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 8px;
-}
-
-.upload-icon {
-  color: #9CA3AF;
-}
-
-.upload-text {
-  font-size: 15px;
-  color: #6B7280;
-}
-
-.upload-link {
-  font-weight: 700;
-  color: #3B82F6;
-  cursor: pointer;
-}
-
-.upload-hint {
-  font-size: 12px;
-  color: #9CA3AF;
-  margin: 0;
-}
 
 /* 确认步骤 */
 .confirm-step {
@@ -2785,510 +2151,11 @@ onMounted(async () => {
   display: flex;
 }
 
-/* 选择对话框样式 */
-.selection-dialog :deep(.el-dialog) {
-  border-radius: 16px;
-  overflow: hidden;
-}
 
-.selection-dialog :deep(.el-dialog__header) {
-  padding: 20px 24px 16px;
-  background: linear-gradient(135deg, #F0F5FF 0%, #EFF6FF 100%);
-  border-bottom: 1px solid #E0E7FF;
-}
 
-.selection-dialog :deep(.el-dialog__title) {
-  font-size: 18px;
-  font-weight: 700;
-  color: #1E293B;
-}
 
-.selection-dialog :deep(.el-dialog__body) {
-  padding: 20px 24px;
-}
 
-.selection-dialog :deep(.el-dialog__footer) {
-  padding: 16px 24px 20px;
-  border-top: 1px solid #E5E7EB;
-}
 
-/* 知识库选择对话框 - 双栏布局 */
-.knowledge-selection-dialog :deep(.el-dialog) {
-  border-radius: 16px;
-  overflow: hidden;
-}
-
-.knowledge-selection-dialog :deep(.el-dialog__header) {
-  padding: 20px 24px 16px;
-  background: linear-gradient(135deg, #F0F5FF 0%, #EFF6FF 100%);
-  border-bottom: 1px solid #E0E7FF;
-}
-
-.knowledge-selection-dialog :deep(.el-dialog__title) {
-  font-size: 18px;
-  font-weight: 700;
-  color: #1E293B;
-}
-
-.knowledge-selection-dialog :deep(.el-dialog__body) {
-  padding: 20px 24px;
-  max-height: 520px;
-  overflow: hidden;
-}
-
-.knowledge-selection-dialog :deep(.el-dialog__footer) {
-  padding: 16px 24px 20px;
-  border-top: 1px solid #E5E7EB;
-}
-
-.knowledge-selection-container {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 20px;
-  height: 450px;
-}
-
-.knowledge-tree-panel,
-.selected-panel {
-  display: flex;
-  flex-direction: column;
-  background: #FAFBFC;
-  border-radius: 12px;
-  border: 1px solid #E2E8F0;
-  overflow: hidden;
-}
-
-.panel-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 12px 16px;
-  background: linear-gradient(135deg, #F0F5FF 0%, #EFF6FF 100%);
-  border-bottom: 1px solid #E0E7FF;
-}
-
-.panel-title {
-  font-size: 14px;
-  font-weight: 700;
-  color: #1E293B;
-}
-
-.panel-count {
-  font-size: 12px;
-  color: #64748B;
-  font-weight: 600;
-}
-
-.panel-count.highlight {
-  color: #3B82F6;
-  background: #EFF6FF;
-  padding: 2px 8px;
-  border-radius: 10px;
-  font-size: 11px;
-}
-
-.panel-search {
-  padding: 12px 16px;
-  border-bottom: 1px solid #E2E8F0;
-}
-
-.panel-search :deep(.el-input__wrapper) {
-  border-radius: 8px;
-  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.05);
-}
-
-.tree-container {
-  flex: 1;
-  overflow-y: auto;
-  padding: 12px;
-}
-
-.tree-container::-webkit-scrollbar {
-  width: 6px;
-}
-
-.tree-container::-webkit-scrollbar-thumb {
-  background: #CBD5E1;
-  border-radius: 3px;
-}
-
-.tree-container::-webkit-scrollbar-track {
-  background: transparent;
-}
-
-.tree-node-content {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  width: 100%;
-  padding-right: 8px;
-}
-
-.tree-node-left {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  flex: 1;
-  min-width: 0;
-}
-
-.tree-folder-icon {
-  color: #F59E0B;
-  font-size: 16px;
-}
-
-.tree-file-icon {
-  color: #3B82F6;
-  font-size: 16px;
-}
-
-.tree-node-label {
-  font-size: 13px;
-  color: #1E293B;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.tree-node-right {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  flex-shrink: 0;
-}
-
-.tree-node-count {
-  font-size: 11px;
-  color: #94A3B8;
-  background: #F1F5F9;
-  padding: 2px 6px;
-  border-radius: 4px;
-}
-
-.tree-node-check {
-  color: #10B981;
-  font-size: 16px;
-  font-weight: 700;
-}
-
-.tree-empty {
-  padding: 40px 20px;
-  text-align: center;
-}
-
-.selected-container {
-  flex: 1;
-  overflow-y: auto;
-  padding: 12px;
-}
-
-.selected-container::-webkit-scrollbar {
-  width: 6px;
-}
-
-.selected-container::-webkit-scrollbar-thumb {
-  background: #CBD5E1;
-  border-radius: 3px;
-}
-
-.selected-container::-webkit-scrollbar-track {
-  background: transparent;
-}
-
-.selected-list {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.selected-item {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 10px 14px;
-  background: white;
-  border-radius: 8px;
-  border: 1px solid #E2E8F0;
-  transition: all 0.2s ease;
-}
-
-.selected-item:hover {
-  border-color: #3B82F6;
-  box-shadow: 0 2px 8px rgba(59, 130, 246, 0.1);
-}
-
-.selected-item-icon {
-  width: 32px;
-  height: 32px;
-  border-radius: 8px;
-  background: #EFF6FF;
-  color: #3B82F6;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-}
-
-.selected-item-content {
-  flex: 1;
-  min-width: 0;
-}
-
-.selected-item-name {
-  font-size: 13px;
-  font-weight: 600;
-  color: #1E293B;
-  margin-bottom: 2px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.selected-item-path {
-  font-size: 11px;
-  color: #94A3B8;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.selected-item-remove {
-  flex-shrink: 0;
-  opacity: 0.6;
-  transition: opacity 0.2s;
-}
-
-.selected-item-remove:hover {
-  opacity: 1;
-}
-
-.selected-empty {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  height: 100%;
-  text-align: center;
-  color: #94A3B8;
-}
-
-.selected-empty .empty-icon {
-  font-size: 48px;
-  margin-bottom: 12px;
-  opacity: 0.3;
-}
-
-.selected-empty p {
-  font-size: 14px;
-  font-weight: 600;
-  color: #64748B;
-  margin: 0 0 4px 0;
-}
-
-.selected-empty span {
-  font-size: 12px;
-  color: #94A3B8;
-}
-
-.selected-actions {
-  padding: 12px 16px;
-  border-top: 1px solid #E2E8F0;
-  background: #FAFBFC;
-}
-
-.selected-actions .el-button {
-  width: 100%;
-}
-
-.dialog-search {
-  margin-bottom: 16px;
-}
-
-.dialog-search :deep(.el-input__wrapper) {
-  border-radius: 10px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
-  transition: all 0.25s ease;
-}
-
-.dialog-search :deep(.el-input__wrapper:hover) {
-  box-shadow: 0 4px 12px rgba(59, 130, 246, 0.12);
-}
-
-.dialog-list {
-  max-height: 360px;
-  overflow-y: auto;
-  border-radius: 12px;
-  border: 1px solid #E2E8F0;
-  background: #FAFBFC;
-}
-
-.dialog-list::-webkit-scrollbar {
-  width: 6px;
-}
-
-.dialog-list::-webkit-scrollbar-thumb {
-  background: #CBD5E1;
-  border-radius: 3px;
-}
-
-.dialog-list::-webkit-scrollbar-track {
-  background: transparent;
-}
-
-.dialog-list-item {
-  display: flex;
-  align-items: center;
-  gap: 14px;
-  padding: 14px 18px;
-  cursor: pointer;
-  transition: all 0.2s ease;
-  border-bottom: 1px solid #F1F5F9;
-}
-
-.dialog-list-item:last-child {
-  border-bottom: none;
-}
-
-.dialog-list-item:hover {
-  background: white;
-}
-
-.dialog-list-item.is-selected {
-  background: linear-gradient(135deg, #EFF6FF 0%, #F0F4FF 100%);
-}
-
-.list-item-icon {
-  width: 40px;
-  height: 40px;
-  border-radius: 10px;
-  background: linear-gradient(135deg, #DBEAFE, #BFDBFE);
-  color: #3B82F6;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-  font-size: 18px;
-}
-
-.list-item-icon.rule-icon {
-  background: linear-gradient(135deg, #EDE9FE, #DDD6FE);
-  color: #7C3AED;
-}
-
-.dialog-list-item.is-selected .list-item-icon {
-  background: linear-gradient(135deg, #3B82F6, #6366F1);
-  color: white;
-  box-shadow: 0 4px 12px rgba(59, 130, 246, 0.3);
-}
-
-.dialog-list-item.is-selected .list-item-icon.rule-icon {
-  background: linear-gradient(135deg, #7C3AED, #A855F7);
-}
-
-.list-item-content {
-  flex: 1;
-  min-width: 0;
-}
-
-.list-item-name {
-  font-size: 14px;
-  font-weight: 600;
-  color: #1E293B;
-  margin-bottom: 2px;
-}
-
-.list-item-desc {
-  font-size: 12px;
-  color: #94A3B8;
-}
-
-.list-item-check {
-  width: 22px;
-  height: 22px;
-  border-radius: 50%;
-  background: linear-gradient(135deg, #3B82F6, #6366F1);
-  color: white;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 12px;
-  animation: checkPop 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-  flex-shrink: 0;
-}
-
-.empty-state {
-  padding: 40px 20px;
-}
-
-.dialog-footer {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-}
-
-.dialog-footer-info {
-  font-size: 13px;
-  color: #64748B;
-  font-weight: 500;
-}
-
-.dialog-footer-actions {
-  display: flex;
-  gap: 10px;
-}
-
-/* 规则库列表项增强样式 */
-.rule-library-item.status-draft {
-  opacity: 0.85;
-  border-left: 3px solid #F59E0B;
-}
-
-.rule-library-item.status-draft:hover {
-  opacity: 1;
-}
-
-.list-item-name-row {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  margin-bottom: 4px;
-}
-
-.list-item-name-row .list-item-name {
-  margin-bottom: 0;
-}
-
-.status-tag {
-  font-size: 11px;
-  font-weight: 600;
-  letter-spacing: 0.02em;
-}
-
-.list-item-meta {
-  display: flex;
-  gap: 16px;
-}
-
-.meta-item {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  font-size: 12px;
-  color: #94A3B8;
-}
-
-.meta-item .el-icon {
-  font-size: 13px;
-}
-
-.meta-item--empty {
-  color: #F59E0B;
-  font-weight: 600;
-}
-
-.meta-item--empty .el-icon {
-  color: #F59E0B;
-}
 
 /* ========== 模式说明横幅 ========== */
 .mode-banner {
@@ -4189,68 +3056,6 @@ onMounted(async () => {
   font-size: 12px;
   color: #6B7280;
   margin: 4px 0 0;
-}
-
-/* 采纳预览对话框 */
-.preview-compare {
-  display: flex;
-  align-items: flex-start;
-  gap: 16px;
-}
-
-.preview-panel {
-  flex: 1;
-  border-radius: 8px;
-  overflow: hidden;
-  border: 1px solid #E5E7EB;
-}
-
-.preview-panel-header {
-  padding: 8px 12px;
-  background: #F9FAFB;
-  border-bottom: 1px solid #E5E7EB;
-}
-
-.preview-badge {
-  font-size: 12px;
-  font-weight: 600;
-  padding: 2px 10px;
-  border-radius: 4px;
-}
-
-.badge-before {
-  background: #FEF2F2;
-  color: #DC2626;
-}
-
-.badge-after {
-  background: #F0FDF4;
-  color: #16A34A;
-}
-
-.preview-panel-body {
-  padding: 14px;
-  font-size: 14px;
-  line-height: 1.7;
-  color: #374151;
-}
-
-.preview-before .preview-panel-body {
-  background: #FEF2F2;
-}
-
-.preview-after .preview-panel-body {
-  background: #F0FDF4;
-}
-
-.preview-arrow {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 24px;
-  color: #9CA3AF;
-  min-width: 40px;
-  padding-top: 40px;
 }
 
 /* 浮动操作按钮 - 固定右下角 */
