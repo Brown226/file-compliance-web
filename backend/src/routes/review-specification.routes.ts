@@ -12,7 +12,7 @@ import {
   updateItem,
   deleteItem,
 } from '../controllers/review-specification.controller';
-import { authMiddleware } from '../middlewares/auth.middleware';
+import { authenticate } from '../middlewares/auth.middleware';
 import multer from 'multer';
 import path from 'path';
 
@@ -23,7 +23,7 @@ const storage = multer.diskStorage({
 });
 const upload = multer({ storage, limits: { fileSize: 50 * 1024 * 1024 } });
 
-router.use(authMiddleware);
+router.use(authenticate);
 
 router.get('/', listSpecifications);
 router.get('/:id', getSpecification);

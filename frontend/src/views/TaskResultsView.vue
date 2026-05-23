@@ -652,7 +652,6 @@ import {
   exportTaskReportWordApi,
   toggleFalsePositiveApi,
 } from '@/api/task'
-import { replaceTextApi } from '@/api/onlyoffice'
 import { useWebSocket, type WsMessage } from '@/composables/useWebSocket'
 import request from '@/utils/request'
 import type { Task, TaskDetail, TaskFile } from '@/types/models'
@@ -1367,30 +1366,14 @@ const handleAdoptSuggestion = async (item: TaskDetail) => {
     return
   }
 
-  try {
-    const res = await replaceTextApi(item.fileId, {
-      originalText: item.originalText,
-      suggestedText: item.suggestedText,
-    })
-
-    const result = res.data
-    if (result.replacements > 0) {
-      item.adopted = true
-      ElMessage.success(`已采纳建议（替换了 ${result.replacements} 处）`)
-
-      // 更新采纳预览
-      selectedSuggestionPreview.value = {
-        before: item.originalText,
-        after: item.suggestedText,
-        status: 'success',
-      }
-    } else {
-      ElMessage.warning('未找到匹配的文本，请手动替换')
-    }
-  } catch (e: any) {
-    const msg = e?.response?.data?.message || '采纳建议失败'
-    ElMessage.error(msg)
+  // 已移除 OnlyOffice 文本替换功能，仅展示采纳预览
+  item.adopted = true
+  selectedSuggestionPreview.value = {
+    before: item.originalText,
+    after: item.suggestedText,
+    status: 'success',
   }
+  ElMessage.success('已标记为采纳')
 }
 
 const handlePreviewSuggestion = (item: TaskDetail) => {
@@ -1596,45 +1579,13 @@ const applyFocusedSuggestion = async () => {
   const originalText = focusedReviewText.value
   const suggestedText = focusedReviewResult.value.suggested_text
 
-  try {
-    // 尝试通过后端 API 替换文本
-    if (selectedFileId.value && originalText) {
-      const res = await replaceTextApi(selectedFileId.value, {
-        originalText,
-        suggestedText,
-      })
-      const result = res.data
-      if (result.replacements > 0) {
-        selectedSuggestionPreview.value = {
-          before: originalText,
-          after: suggestedText,
-          status: '专项审查建议已替换',
-        }
-        focusedReviewText.value = suggestedText
-        ElMessage.success('专项审查建议已更新')
-      } else {
-        selectedSuggestionPreview.value = {
-          before: originalText,
-          after: suggestedText,
-          status: '未匹配到原文，建议已展示在预览区',
-        }
-        ElMessage.warning('未在文档中匹配到原文，请手动替换')
-      }
-    } else {
-      selectedSuggestionPreview.value = {
-        before: originalText,
-        after: suggestedText,
-        status: '建议已展示在预览区',
-      }
-    }
-  } catch (e: any) {
-    selectedSuggestionPreview.value = {
-      before: originalText,
-      after: suggestedText,
-      status: e?.response?.data?.message || e?.message || '应用建议失败',
-    }
-    ElMessage.error(e?.response?.data?.message || '应用建议失败，请手动替换')
+  // 已移除 OnlyOffice 文本替换功能，仅展示预览
+  selectedSuggestionPreview.value = {
+    before: originalText,
+    after: suggestedText,
+    status: '建议已展示在预览区',
   }
+  ElMessage.success('建议已展示在预览区')
 }
 
 // ===== 重审表单功能 =====

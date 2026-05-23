@@ -724,6 +724,71 @@ model ReviewSpecificationItem {
   @@map("review_specification_items")
 }
 
+// ===== 规则目录 =====
+
+model RuleFolder {
+  id        String        @id @default(uuid())
+  name      String
+  parentId  String?
+  parent    RuleFolder?   @relation("RuleFolderTree", fields: [parentId], references: [id])
+  children  RuleFolder[]  @relation("RuleFolderTree")
+  libraries RuleLibrary[]
+  sortOrder Int           @default(0)
+  createdAt DateTime      @default(now())
+  updatedAt DateTime      @updatedAt
+
+  @@map("rule_folders")
+}
+
+// ===== 规则库 =====
+
+enum RuleLibraryStatus {
+  DRAFT
+  PUBLISHED
+  ARCHIVED
+}
+
+model RuleLibrary {
+  id              String              @id @default(uuid())
+  name            String
+  description     String?             @db.Text
+  sourceFileName  String?             @map("source_file_name")
+  status          RuleLibraryStatus   @default(DRAFT)
+  createdBy       String
+  folderId        String?
+  folder          RuleFolder?         @relation(fields: [folderId], references: [id], onDelete: SetNull)
+  items           RuleLibraryItem[]
+  createdAt       DateTime            @default(now())
+  updatedAt       DateTime            @updatedAt
+
+  @@map("rule_libraries")
+}
+
+model RuleLibraryItem {
+  id              String        @id @default(uuid())
+  libraryId       String
+  library         RuleLibrary   @relation(fields: [libraryId], references: [id], onDelete: Cascade)
+  ruleCode        String?       @map("rule_code")
+  ruleName        String?       @map("rule_name")
+  category        String?
+  description     String?       @db.Text
+  checkMethod     String?       @map("check_method") @db.Text
+  severity        String?       @default("warning")
+  executionType   String?       @default("BUILTIN_PREFIX") @map("execution_type")
+  builtinPrefix   String?       @map("builtin_prefix")
+  targetScope     String?       @default("TEXT") @map("target_scope")
+  params          Json?
+  messageTemplate String?       @map("message_template") @db.Text
+  sourceQuote     String?       @map("source_quote") @db.Text
+  sourceLocation  String?       @map("source_location")
+  enabled         Boolean       @default(true)
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  @@index([libraryId])
+  @@map("rule_library_items")
+}
+
 // ===== 智能问答 =====
 
 model QASession {

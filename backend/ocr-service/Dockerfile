@@ -17,7 +17,7 @@ RUN sed -i 's/deb.debian.org/mirrors.tuna.tsinghua.edu.cn/g' /etc/apt/sources.li
 
 RUN pip install --no-cache-dir \
     paddlepaddle==3.3.1 \
-    paddleocr==2.9.1 \
+    paddleocr==3.5.0 \
     fastapi==0.104.1 \
     uvicorn==0.24.0.post1 \
     python-multipart==0.0.6 \

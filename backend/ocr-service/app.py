@@ -3,16 +3,19 @@ from __future__ import annotations
 import base64
 import io
 import json
+import os
+import tempfile
 from typing import Any, Dict, List
 from urllib import error, request
 
 import numpy as np
 from fastapi import FastAPI, File, HTTPException, UploadFile
 from pdf2image import convert_from_bytes
-from paddleocr import PaddleOCR
+from paddleocr import PaddleOCR, PPStructureV3
 from PIL import Image
 
 ocr = PaddleOCR(use_angle_cls=True, lang='ch')
+_layout_pipeline = None
 
 app = FastAPI(title="PaddleOCR Service", version="1.0")
 
@@ -107,6 +110,83 @@ def image_to_data_url(image: Image.Image) -> str:
 def log_to_file(message: str) -> None:
     with open('/app/ocr_logs.txt', 'a', encoding='utf-8') as f:
         f.write(message + '\n')
+
+
+def get_layout_pipeline() -> PPStructureV3:
+    global _layout_pipeline
+    if _layout_pipeline is None:
+        _layout_pipeline = PPStructureV3()
+    return _layout_pipeline
+
+
+def analyze_layout(file_bytes: bytes, file_type: str | None, file_name: str | None = None) -> dict:
+    pipeline = get_layout_pipeline()
+
+    ext = '.pdf' if file_type == 'pdf' or (file_name and file_name.lower().endswith('.pdf')) else '.png'
+    with tempfile.NamedTemporaryFile(suffix=ext, delete=False) as f:
+        f.write(file_bytes)
+        temp_path = f.name
+
+    try:
+        output = pipeline.predict(input=temp_path)
+        layout_blocks = []
+        markdown_texts = []
+
+        for page_res in output:
+            md_info = getattr(page_res, 'markdown', None)
+            if isinstance(md_info, dict):
+                md_text = md_info.get('markdown_text', '')
+                if md_text:
+                    markdown_texts.append(md_text)
+
+            page_data = getattr(page_res, 'res', None)
+            if not isinstance(page_data, list):
+                continue
+
+            for block in page_data:
+                if not isinstance(block, dict):
+                    continue
+                layout_blocks.append({
+                    'type': block.get('type', 'unknown'),
+                    'bbox': block.get('bbox', [0, 0, 0, 0]),
+                    'confidence': block.get('confidence', 0.0),
+                    'content': _extract_block_content(block),
+                })
+
+        result = {'layout': layout_blocks}
+        if markdown_texts:
+            result['markdown'] = '\n'.join(markdown_texts)
+        return result
+    except Exception as e:
+        log_to_file(f'Layout analysis failed: {str(e)}')
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        os.unlink(temp_path)
+
+
+def _extract_block_content(block: dict) -> Any:
+    raw = block.get('res')
+    if raw is None:
+        return None
+
+    if isinstance(raw, dict):
+        html = raw.get('html')
+        if html:
+            return {'html': html}
+        return raw
+
+    if isinstance(raw, list):
+        texts = []
+        for item in raw:
+            if isinstance(item, (list, tuple)) and len(item) >= 2:
+                second = item[1]
+                if isinstance(second, (list, tuple)) and second:
+                    texts.append(str(second[0]))
+                else:
+                    texts.append(str(second))
+        return '\n'.join(texts) if texts else None
+
+    return str(raw)
 
 
 def recognize_via_paddleocr(file_bytes: bytes, file_type: str | None, file_name: str | None = None) -> str:
@@ -256,7 +336,44 @@ async def health_check():
 
 @app.get('/models')
 async def get_models():
-    return {'models': ['PaddleOCR-v3.3.1 (ch)']}
+    return {
+        'models': ['PaddleOCR-v3.3.1 (ch)'],
+        'pipelines': ['PP-StructureV3 (layout+table+formula+markdown)'],
+    }
+
+
+@app.post('/api/layout')
+async def layout_analysis(file: UploadFile = File(...)):
+    contents = await file.read()
+    try:
+        return analyze_layout(contents, file.content_type or file.filename, file.filename)
+    except HTTPException:
+        raise
+    except Exception as e:
+        log_to_file(f'Layout error: {str(e)}')
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post('/api/layout/base64')
+async def layout_analysis_base64(data: dict):
+    base64_data = data.get('image', '')
+    file_type = data.get('fileType', 'pdf')
+    file_name = data.get('fileName', '')
+
+    if not base64_data:
+        raise HTTPException(status_code=400, detail='缺少图片数据')
+
+    try:
+        if 'data:image/' in base64_data:
+            base64_data = base64_data.split(',', 1)[1]
+
+        file_bytes = base64.b64decode(base64_data)
+        return analyze_layout(file_bytes, file_type, file_name)
+    except HTTPException:
+        raise
+    except Exception as e:
+        log_to_file(f'Layout error: {str(e)}')
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 if __name__ == '__main__':

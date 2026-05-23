@@ -26,9 +26,10 @@ import knowledgeCategoryRoutes from './routes/knowledge-category.routes';
 import reviewSpecificationRoutes from './routes/review-specification.routes';
 import specificationFolderRoutes from './routes/specification-folder.routes';
 import qaRoutes from './routes/qa.routes';
-import onlyofficeRoutes from './routes/onlyoffice.routes';
 import langchainRoutes from './routes/langchain.routes';
 import documentRoutes from './routes/document.routes';
+import ruleFolderRoutes from './routes/rule-folder.routes';
+import ruleLibraryRoutes from './routes/rule-library.routes';
 import healthRoutes from './routes/health.routes';
 
 // 定时清理孤立文件（每天凌晨2点执行）
@@ -64,6 +65,8 @@ app.use('/api/dashboard', dashboardRoutes);
 app.use('/api/audit-logs', auditRoutes);
 app.use('/api/system-config', systemConfigRoutes);
 app.use('/api/rules', ruleRoutes);
+app.use('/api/rule-folders', ruleFolderRoutes);
+app.use('/api/rule-libraries', ruleLibraryRoutes);
 
 app.use('/api/terminology', terminologyRoutes);
 app.use('/api/prompt-templates', promptTemplateRoutes);
@@ -76,7 +79,6 @@ app.use('/api/knowledge-categories', knowledgeCategoryRoutes);
 app.use('/api/review-specifications', reviewSpecificationRoutes);
 app.use('/api/specification-folders', specificationFolderRoutes);
 app.use('/api/qa', qaRoutes);
-app.use('/api/onlyoffice', onlyofficeRoutes);
 app.use('/api/langchain', langchainRoutes);
 app.use('/api/documents', documentRoutes);
 app.use('/api', healthRoutes);

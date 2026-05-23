@@ -4,11 +4,11 @@
 
 import { Router } from 'express';
 import { DocumentController } from '../controllers/document.controller';
-import { authMiddleware } from '../middleware/auth';
+import { authenticate } from '../middlewares/auth.middleware';
 
 const router = Router();
 
-router.use(authMiddleware);
+router.use(authenticate);
 
 router.get('/', DocumentController.listDocuments);
 router.get('/stats', DocumentController.getStats);
