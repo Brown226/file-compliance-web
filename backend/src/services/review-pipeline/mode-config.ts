@@ -32,50 +32,54 @@ export interface ModeCapabilities {
 /**
  * 各审查模式的能力配置
  *
- * 模式关系梳理：
- * - LIBRARY_REVIEW（以库审文）= 规则 + 标准引用 + AI(RAG/LLM)     → 标准模式
- * - DOC_REVIEW   （以文审文）= 规则 + 标准引用 + 参照比对           → 有参照时比对，无参照降级标准AI
- * - CONSISTENCY  （一致性）  = 规则 + 标准引用 + AI + 跨文件         → LIBRARY + 跨文件
- * - TYPO_GRAMMAR （错别字）  = 规则 + AI(纯LLM) + 术语过滤          → 轻量模式
- * - MULTIMODAL   （多模态）  = 规则 + 表格/公式 + 多模态LLM         → 图表专家模式
- * - CUSTOM_RULE  （自定义）  = 仅规则引擎                           → 纯规则模式
+ * 模式关系梳理（简化版）：
+ * - LIBRARY_REVIEW（以库审文）= 仅 AI(RAG/LLM)                     → 标准AI模式
+ * - DOC_REVIEW   （以文审文）= 仅 AI(参照比对)                      → 有参照时比对，无参照降级标准AI
+ * - CONSISTENCY  （一致性）  = 仅 AI + 跨文件                        → 标准AI + 跨文件
+ * - TYPO_GRAMMAR （错别字）  = 仅 AI(纯LLM)                        → 纯LLM模式
+ * - MULTIMODAL   （多模态）  = 仅 AI(多模态)                        → 多模态LLM模式
+ * - CUSTOM_RULE  （自定义）  = 规则引擎 + 标准引用检查               → 仅规则模式（保留原有逻辑）
+ *
+ * 配置说明：
+ * - 除 CUSTOM_RULE 外，其他模式均关闭规则和标准引用检查，只保留 AI 审查
+ * - CUSTOM_RULE 保持规则和标准引用检查开启，无 AI 审查
  */
 export const MODE_CAPABILITIES: Record<ReviewModeType, ModeCapabilities> = {
   LIBRARY_REVIEW: {
-    rules: true,
-    standardRef: 'on',
+    rules: false,
+    standardRef: 'off',
     ai: true,
     aiStrategy: 'standard',
     crossFile: false,
     needsRefFiles: false,
   },
   DOC_REVIEW: {
-    rules: true,
-    standardRef: 'on',
+    rules: false,
+    standardRef: 'off',
     ai: true,
     aiStrategy: 'refCompare',
     crossFile: false,
     needsRefFiles: true,
   },
   CONSISTENCY: {
-    rules: true,
-    standardRef: 'on',
+    rules: false,
+    standardRef: 'off',
     ai: true,
     aiStrategy: 'standard',
     crossFile: true,
     needsRefFiles: false,
   },
   TYPO_GRAMMAR: {
-    rules: true,
-    standardRef: 'config',
+    rules: false,
+    standardRef: 'off',
     ai: true,
     aiStrategy: 'llmOnly',
     crossFile: false,
     needsRefFiles: false,
   },
   MULTIMODAL: {
-    rules: true,
-    standardRef: 'config',
+    rules: false,
+    standardRef: 'off',
     ai: true,
     aiStrategy: 'multimodal',
     crossFile: false,
@@ -83,7 +87,7 @@ export const MODE_CAPABILITIES: Record<ReviewModeType, ModeCapabilities> = {
   },
   CUSTOM_RULE: {
     rules: true,
-    standardRef: 'config',
+    standardRef: 'on',
     ai: false,
     aiStrategy: 'standard',
     crossFile: false,

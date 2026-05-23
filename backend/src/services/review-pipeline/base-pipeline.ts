@@ -191,7 +191,7 @@ export abstract class BasePipeline {
   }
 
   protected decorateRuleIssues(ctx: PipelineContext, issues: RuleIssue[]): RuleIssue[] {
-    if (ctx.ruleSource !== 'RULE_LIBRARY') return issues;
+    if (ctx.ruleSource !== 'REVIEW_SPECIFICATION') return issues;
     return issues.map((issue) => ({
       ...issue,
       ruleCode: issue.ruleCode,
@@ -317,7 +317,7 @@ export abstract class BasePipeline {
       (async () => {
         if (!this.capabilities.rules) return [];
         if (!this.shouldRunStage(ctx, 'rules')) return [];
-        const prefixes = ctx.ruleSource === 'RULE_LIBRARY' && ctx.rulePlan?.enabledPrefixes?.length
+        const prefixes = ctx.ruleSource === 'REVIEW_SPECIFICATION' && ctx.rulePlan?.enabledPrefixes?.length
           ? ctx.rulePlan.enabledPrefixes
           : this.getEffectiveRulePrefixes(ctx, this.rulePrefixes);
         const baseIssues = await this.runRules(ctx, prefixes);
@@ -325,7 +325,7 @@ export abstract class BasePipeline {
       })(),
       // 标准引用检查（受 capabilities.standardRef + stages.stdRef 控制）
       (async () => {
-        if (ctx.ruleSource === 'RULE_LIBRARY') return [];
+        if (ctx.ruleSource === 'REVIEW_SPECIFICATION') return [];
         if (this.capabilities.standardRef === 'off') return [];
         if (!this.shouldRunStage(ctx, 'stdRef') || !text.trim()) return [];
         return this.runStandardRefCheck(ctx, text);

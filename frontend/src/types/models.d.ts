@@ -36,9 +36,9 @@ export interface Task {
   title: string
   status: TaskStatus
   reviewMode?: string
-  ruleLibraryId?: string | null
+  reviewSpecificationId?: string | null
   reviewPlan?: ReviewPlan | null
-  ruleLibrary?: { id: string; name: string; status: 'DRAFT' | 'PUBLISHED' | 'ARCHIVED' } | null
+  reviewSpecification?: { id: string; name: string; status: 'DRAFT' | 'PUBLISHED' | 'ARCHIVED' } | null
   createdAt: string
   updatedAt: string
   completedAt?: string | null
@@ -127,7 +127,7 @@ export interface LocateMeta {
 }
 
 export type ReviewObjective = 'COMPLIANCE' | 'COMPARE' | 'PROOFREAD' | 'STRUCTURED'
-export type ReviewEvidenceSource = 'STANDARD' | 'RULE_LIBRARY' | 'REFERENCE'
+export type ReviewEvidenceSource = 'STANDARD' | 'REVIEW_SPECIFICATION' | 'REFERENCE'
 export type ReviewExecutionProfile = 'HYBRID' | 'RULE_ONLY'
 
 export interface ReviewPlan {
@@ -135,7 +135,7 @@ export interface ReviewPlan {
   evidence: {
     sources: ReviewEvidenceSource[]
     knowledgeCategoryIds?: string[]
-    ruleLibraryId?: string | null
+    reviewSpecificationId?: string | null
     refFileGroupId?: string | null
   }
   enhancements: {

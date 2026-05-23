@@ -274,14 +274,14 @@
                     </el-tag>
                   </div>
                 </div>
-                <div v-if="reviewPlanDraft.evidence.sources.includes('RULE_LIBRARY')" class="selected-items-display">
+                <div v-if="reviewPlanDraft.evidence.sources.includes('REVIEW_SPECIFICATION')" class="selected-items-display">
                   <div class="selected-items-header">
-                    <span class="selected-items-count">{{ reviewPlanDraft.evidence.ruleLibraryId ? '已选择' : '未选择' }}规则库</span>
-                    <el-button type="primary" link size="small" @click="openRuleLibraryDialog">选择规则库</el-button>
+                    <span class="selected-items-count">{{ reviewPlanDraft.evidence.reviewSpecificationId ? '已选择' : '未选择' }}审查规范集</span>
+                    <el-button type="primary" link size="small" @click="openReviewSpecificationDialog">选择审查规范集</el-button>
                   </div>
-                  <div v-if="reviewPlanDraft.evidence.ruleLibraryId" class="selected-item-single">
-                    <el-tag closable type="info" size="small" @close="reviewPlanDraft.evidence.ruleLibraryId = null">
-                      {{ getRuleLibraryName(reviewPlanDraft.evidence.ruleLibraryId) }}
+                  <div v-if="reviewPlanDraft.evidence.reviewSpecificationId" class="selected-item-single">
+                    <el-tag closable type="info" size="small" @close="reviewPlanDraft.evidence.reviewSpecificationId = null">
+                      {{ getReviewSpecificationName(reviewPlanDraft.evidence.reviewSpecificationId) }}
                     </el-tag>
                   </div>
                 </div>
@@ -362,11 +362,11 @@
     @confirm="handleKnowledgeConfirm"
   />
 
-  <!-- 规则库选择对话框 -->
-  <SmartReviewRuleLibraryDialog
-    v-model:visible="ruleLibraryDialogVisible"
-    :rule-libraries="ruleLibraries"
-    @confirm="handleRuleLibraryConfirm"
+  <!-- 审查规范集选择对话框 -->
+  <SmartReviewReviewSpecificationDialog
+    v-model:visible="reviewSpecificationDialogVisible"
+    :specifications="reviewSpecifications"
+    @confirm="handleReviewSpecificationConfirm"
   />
 
   <!-- 浮动操作按钮 - 固定在右下角 -->
@@ -400,11 +400,11 @@ import {
 import { createTaskApi, preAnalyzeApi, uploadOnlyApi, exportTaskReportApi, exportTaskReportWordApi } from '@/api/task'
 import type { ReviewPlan, ReviewObjective, ReviewEvidenceSource } from '@/types/models'
 import { getAllKnowledgeCategoriesApi, getKnowledgeTreeApi } from '@/api/knowledge-category'
-import { getRuleLibrariesApi } from '@/api/rule-library'
+import { getReviewSpecificationsApi } from '@/api/review-specification'
 import { useUserStore } from '@/stores/user'
 import SmartReviewUploadStep from './components/SmartReviewUploadStep.vue'
 import SmartReviewKnowledgeDialog from './components/SmartReviewKnowledgeDialog.vue'
-import SmartReviewRuleLibraryDialog from './components/SmartReviewRuleLibraryDialog.vue'
+import SmartReviewReviewSpecificationDialog from './components/SmartReviewReviewSpecificationDialog.vue'
 
 const router = useRouter()
 const route = useRoute()
@@ -533,11 +533,11 @@ const applyPreAnalysisData = (data: any) => {
     reviewItems.typoCheck.enabled = true
   }
 
-  // 规则库检查
-  reviewItems.ruleLibrary.recommended = !!rec.ruleLibrary?.enabled
-  reviewItems.ruleLibrary.reason = rec.ruleLibrary?.reason || ''
-  if (rec.ruleLibrary?.libraryId) {
-    reviewItems.ruleLibrary.ruleLibraryId = rec.ruleLibrary.libraryId
+  // 审查规范集检查
+  reviewItems.reviewSpecification.recommended = !!rec.reviewSpecification?.enabled
+  reviewItems.reviewSpecification.reason = rec.reviewSpecification?.reason || ''
+  if (rec.reviewSpecification?.specificationId) {
+    reviewItems.reviewSpecification.reviewSpecificationId = rec.reviewSpecification.specificationId
   }
 
   // 新流程(ReviewPlanDraft)同步填充：确保预分析推荐同时作用于新版配置面板
@@ -547,17 +547,17 @@ const applyPreAnalysisData = (data: any) => {
       ids.push(rec.libraryReview.categoryId)
     }
   }
-  if (rec.ruleLibrary?.libraryId) {
-    reviewPlanDraft.evidence.ruleLibraryId = rec.ruleLibrary.libraryId
-    if (!reviewPlanDraft.evidence.sources.includes('RULE_LIBRARY')) {
-      reviewPlanDraft.evidence.sources.push('RULE_LIBRARY')
+  if (rec.reviewSpecification?.specificationId) {
+    reviewPlanDraft.evidence.reviewSpecificationId = rec.reviewSpecification.specificationId
+    if (!reviewPlanDraft.evidence.sources.includes('REVIEW_SPECIFICATION')) {
+      reviewPlanDraft.evidence.sources.push('REVIEW_SPECIFICATION')
     }
   }
 
   // 保存推荐理由
   preAnalysisReasons.value = {
     library: rec.libraryReview?.reason,
-    ruleLibrary: rec.ruleLibrary?.reason,
+    reviewSpecification: rec.reviewSpecification?.reason,
     typo: rec.generalChecks?.typoCheck?.reason,
     crossFile: rec.generalChecks?.crossFileCheck?.reason,
   }
@@ -660,8 +660,8 @@ let currentPreAnalysisAbortController: AbortController | null = null
 const handleKnowledgeConfirm = (selectedIds: string[]) => {
   reviewPlanDraft.evidence.knowledgeCategoryIds = selectedIds
 }
-const handleRuleLibraryConfirm = (libraryId: string | null) => {
-  reviewPlanDraft.evidence.ruleLibraryId = libraryId
+const handleReviewSpecificationConfirm = (specificationId: string | null) => {
+  reviewPlanDraft.evidence.reviewSpecificationId = specificationId
 }
 
 const runPreAnalysisWithSignal = async (files: Array<{ name: string; size: number }>, signal?: AbortSignal) => {
@@ -829,14 +829,14 @@ const showExecutionProfileSection = computed(() =>
 )
 
 const ruleReviewEnabled = computed({
-  get: () => reviewPlanDraft.evidence.sources.includes('RULE_LIBRARY'),
+  get: () => reviewPlanDraft.evidence.sources.includes('REVIEW_SPECIFICATION'),
   set: (enabled: boolean) => {
     const current = new Set(reviewPlanDraft.evidence.sources)
     if (enabled) {
-      current.add('RULE_LIBRARY')
+      current.add('REVIEW_SPECIFICATION')
     } else {
-      current.delete('RULE_LIBRARY')
-      reviewPlanDraft.evidence.ruleLibraryId = null
+      current.delete('REVIEW_SPECIFICATION')
+      reviewPlanDraft.evidence.reviewSpecificationId = null
     }
     reviewPlanDraft.evidence.sources = Array.from(current)
   },
@@ -844,7 +844,7 @@ const ruleReviewEnabled = computed({
 
 const isEvidenceLocked = (source: ReviewEvidenceSource) => {
   if (!entryModule.value) return reviewPlanDraft.objective === 'COMPARE'
-  if (entryModule.value === 'RULE_ONLY') return source !== 'RULE_LIBRARY'
+  if (entryModule.value === 'RULE_ONLY') return source !== 'REVIEW_SPECIFICATION'
   if (entryModule.value === 'PROOFREAD') return true
   if (entryModule.value === 'CONSISTENCY' && reviewPlanDraft.objective === 'COMPARE') {
     return source !== 'REFERENCE'
@@ -865,7 +865,7 @@ const applyEntryModulePreset = (module: EntryModule) => {
   if (module === 'CONSISTENCY') {
     reviewPlanDraft.objective = 'COMPLIANCE'
     reviewPlanDraft.evidence.sources = []
-    reviewPlanDraft.evidence.ruleLibraryId = null
+    reviewPlanDraft.evidence.reviewSpecificationId = null
     reviewPlanDraft.evidence.knowledgeCategoryIds = []
     reviewPlanDraft.evidence.refFileGroupId = null
     reviewPlanDraft.enhancements.intraFileConsistency = true
@@ -877,7 +877,7 @@ const applyEntryModulePreset = (module: EntryModule) => {
   if (module === 'PROOFREAD') {
     reviewPlanDraft.objective = 'PROOFREAD'
     reviewPlanDraft.evidence.sources = []
-    reviewPlanDraft.evidence.ruleLibraryId = null
+    reviewPlanDraft.evidence.reviewSpecificationId = null
     reviewPlanDraft.evidence.knowledgeCategoryIds = []
     reviewPlanDraft.enhancements.intraFileConsistency = true
     reviewPlanDraft.enhancements.crossFileConsistency = false
@@ -904,7 +904,7 @@ const applyEntryModulePreset = (module: EntryModule) => {
   }
 
   reviewPlanDraft.objective = 'COMPLIANCE'
-  reviewPlanDraft.evidence.sources = ['RULE_LIBRARY']
+  reviewPlanDraft.evidence.sources = ['REVIEW_SPECIFICATION']
   reviewPlanDraft.evidence.knowledgeCategoryIds = []
   reviewPlanDraft.enhancements.intraFileConsistency = false
   reviewPlanDraft.enhancements.crossFileConsistency = false
@@ -916,7 +916,7 @@ const reviewPlanDraft = reactive<ReviewPlan>({
   evidence: {
     sources: ['STANDARD'],
     knowledgeCategoryIds: [],
-    ruleLibraryId: null,
+    reviewSpecificationId: null,
     refFileGroupId: null,
   },
   enhancements: {
@@ -936,7 +936,7 @@ const reviewItems = reactive({
   intraFileConsistency: { enabled: false, recommended: false },
   typoCheck: { enabled: false, recommended: false },
   drawingRecognition: { enabled: false },
-  ruleLibrary: { enabled: false, ruleLibraryId: '', recommended: false, reason: '' },
+  reviewSpecification: { enabled: false, reviewSpecificationId: '', recommended: false, reason: '' },
 })
 
 // 高级选项
@@ -976,8 +976,8 @@ const derivedMode = computed(() => {
   return 'CONSISTENCY'
 })
 
-const ruleSource = computed<'STANDARD' | 'RULE_LIBRARY'>(() =>
-  reviewItems.ruleLibrary.enabled ? 'RULE_LIBRARY' : 'STANDARD',
+const ruleSource = computed<'STANDARD' | 'REVIEW_SPECIFICATION'>(() =>
+  reviewItems.reviewSpecification.enabled ? 'REVIEW_SPECIFICATION' : 'STANDARD',
 )
 
 const reviewPlanPayload = computed<ReviewPlan>(() => {
@@ -988,7 +988,7 @@ const reviewPlanPayload = computed<ReviewPlan>(() => {
         ...reviewPlanDraft.evidence,
         knowledgeCategoryIds: [...(reviewPlanDraft.evidence.knowledgeCategoryIds || [])],
         sources: [...(reviewPlanDraft.evidence.sources || [])],
-        ruleLibraryId: reviewPlanDraft.evidence.ruleLibraryId || null,
+        reviewSpecificationId: reviewPlanDraft.evidence.reviewSpecificationId || null,
         refFileGroupId: reviewPlanDraft.evidence.refFileGroupId || null,
       },
       enhancements: {
@@ -1012,7 +1012,7 @@ const reviewPlanPayload = computed<ReviewPlan>(() => {
 
   const sources: ReviewEvidenceSource[] = []
   if (reviewItems.standardReview.enabled) sources.push('STANDARD')
-  if (reviewItems.ruleLibrary.enabled) sources.push('RULE_LIBRARY')
+  if (reviewItems.reviewSpecification.enabled) sources.push('REVIEW_SPECIFICATION')
   if (reviewItems.docCompare.enabled) sources.push('REFERENCE')
 
   return {
@@ -1020,7 +1020,7 @@ const reviewPlanPayload = computed<ReviewPlan>(() => {
     evidence: {
       sources: objective === 'COMPARE' ? ['REFERENCE'] : sources,
       knowledgeCategoryIds: reviewItems.standardReview.enabled ? [...reviewItems.standardReview.knowledgeCategoryIds] : [],
-      ruleLibraryId: reviewItems.ruleLibrary.enabled ? (reviewItems.ruleLibrary.ruleLibraryId || null) : null,
+      reviewSpecificationId: reviewItems.reviewSpecification.enabled ? (reviewItems.reviewSpecification.reviewSpecificationId || null) : null,
       refFileGroupId: null,
     },
     enhancements: {
@@ -1028,7 +1028,7 @@ const reviewPlanPayload = computed<ReviewPlan>(() => {
       crossFileConsistency: derivedMode.value === 'CONSISTENCY',
     },
     execution: {
-      profile: reviewItems.ruleLibrary.enabled && !reviewItems.standardReview.enabled ? 'RULE_ONLY' : 'HYBRID',
+      profile: reviewItems.reviewSpecification.enabled && !reviewItems.standardReview.enabled ? 'RULE_ONLY' : 'HYBRID',
     },
     templateId: 'general',
   }
@@ -1052,7 +1052,7 @@ const objectiveIconMap: Record<string, any> = {
 
 const evidenceIconMap: Record<string, any> = {
   STANDARD: 'FolderOpened',
-  RULE_LIBRARY: 'Files',
+  REVIEW_SPECIFICATION: 'Files',
   REFERENCE: 'Link',
 }
 
@@ -1061,7 +1061,7 @@ const toggleEvidenceSource = (source: ReviewEvidenceSource) => {
   const current = new Set(reviewPlanDraft.evidence.sources)
   if (current.has(source)) {
     current.delete(source)
-    if (source === 'RULE_LIBRARY') reviewPlanDraft.evidence.ruleLibraryId = null
+    if (source === 'REVIEW_SPECIFICATION') reviewPlanDraft.evidence.reviewSpecificationId = null
   } else {
     current.add(source)
   }
@@ -1070,7 +1070,7 @@ const toggleEvidenceSource = (source: ReviewEvidenceSource) => {
 
 // ===== 选择对话框相关 =====
 const knowledgeDialogVisible = ref(false)
-const ruleLibraryDialogVisible = ref(false)
+const reviewSpecificationDialogVisible = ref(false)
 
 const handleEvidenceCardClick = (source: ReviewEvidenceSource) => {
   if (isEvidenceLocked(source)) return
@@ -1082,13 +1082,13 @@ const handleEvidenceCardClick = (source: ReviewEvidenceSource) => {
       reviewPlanDraft.evidence.sources = Array.from(current)
     }
     openKnowledgeDialog()
-  } else if (source === 'RULE_LIBRARY') {
+  } else if (source === 'REVIEW_SPECIFICATION') {
     const current = new Set(reviewPlanDraft.evidence.sources)
     if (!current.has(source)) {
       current.add(source)
       reviewPlanDraft.evidence.sources = Array.from(current)
     }
-    openRuleLibraryDialog()
+    openReviewSpecificationDialog()
   } else {
     toggleEvidenceSource(source)
   }
@@ -1098,8 +1098,8 @@ const openKnowledgeDialog = () => {
   knowledgeDialogVisible.value = true
 }
 
-const openRuleLibraryDialog = () => {
-  ruleLibraryDialogVisible.value = true
+const openReviewSpecificationDialog = () => {
+  reviewSpecificationDialogVisible.value = true
 }
 
 const removeKnowledgeCategory = (id: string) => {
@@ -1114,15 +1114,15 @@ const getKnowledgeCategoryName = (id: string) => {
   return category?.name || id
 }
 
-const getRuleLibraryName = (id: string) => {
-  const library = ruleLibraries.value.find(l => l.id === id)
-  return library?.name || id
+const getReviewSpecificationName = (id: string) => {
+  const specification = reviewSpecifications.value.find(l => l.id === id)
+  return specification?.name || id
 }
 
 const evidenceSourceOptions: Record<ReviewObjective, Array<{ value: ReviewEvidenceSource; label: string }>> = {
   COMPLIANCE: [
     { value: 'STANDARD', label: '标准知识库' },
-    { value: 'RULE_LIBRARY', label: '规则库' },
+    { value: 'REVIEW_SPECIFICATION', label: '审查规范集' },
   ],
   COMPARE: [
     { value: 'REFERENCE', label: '参考文件' },
@@ -1130,7 +1130,7 @@ const evidenceSourceOptions: Record<ReviewObjective, Array<{ value: ReviewEviden
   PROOFREAD: [],
   STRUCTURED: [
     { value: 'STANDARD', label: '标准知识库' },
-    { value: 'RULE_LIBRARY', label: '规则库' },
+    { value: 'REVIEW_SPECIFICATION', label: '审查规范集' },
   ],
 }
 
@@ -1143,7 +1143,7 @@ watch(() => reviewPlanDraft.objective, (objective) => {
     reviewPlanDraft.execution.profile = 'HYBRID'
   } else if (objective === 'PROOFREAD') {
     reviewPlanDraft.evidence.sources = []
-    reviewPlanDraft.evidence.ruleLibraryId = null
+    reviewPlanDraft.evidence.reviewSpecificationId = null
     reviewPlanDraft.evidence.knowledgeCategoryIds = []
     reviewPlanDraft.evidence.refFileGroupId = null
     reviewPlanDraft.execution.profile = 'HYBRID'
@@ -1152,8 +1152,8 @@ watch(() => reviewPlanDraft.objective, (objective) => {
     reviewPlanDraft.evidence.sources = next.length > 0 ? next : (allowed.has('STANDARD') ? ['STANDARD'] : [])
   }
 
-  if (!reviewPlanDraft.evidence.sources.includes('RULE_LIBRARY')) {
-    reviewPlanDraft.evidence.ruleLibraryId = null
+  if (!reviewPlanDraft.evidence.sources.includes('REVIEW_SPECIFICATION')) {
+    reviewPlanDraft.evidence.reviewSpecificationId = null
   }
   if (!reviewPlanDraft.evidence.sources.includes('STANDARD')) {
     reviewPlanDraft.evidence.knowledgeCategoryIds = []
@@ -1167,12 +1167,12 @@ watch(() => reviewPlanDraft.objective, (objective) => {
 const knowledgeCategories = ref<Array<{ id: string; name: string }>>([])
 const knowledgeTreeData = ref<any[]>([])
 
-// 规则库列表
-const ruleLibraries = ref<Array<{
+// 审查规范集列表
+const reviewSpecifications = ref<Array<{
   id: string
   name: string
   status: string
-  ruleCount: number
+  itemCount: number
   executableCount: number
 }>>([])
 
@@ -1187,7 +1187,7 @@ watch(refFileList, (newList) => {
   reviewItems.docCompare.enabled = newList.length > 0
 })
 
-watch(() => reviewItems.ruleLibrary.enabled, (enabled) => {
+watch(() => reviewItems.reviewSpecification.enabled, (enabled) => {
   if (enabled) {
     reviewItems.standardReview.enabled = false
     reviewItems.standardReview.knowledgeCategoryIds = []
@@ -1196,8 +1196,8 @@ watch(() => reviewItems.ruleLibrary.enabled, (enabled) => {
 
 watch(() => reviewItems.standardReview.enabled, (enabled) => {
   if (enabled) {
-    reviewItems.ruleLibrary.enabled = false
-    reviewItems.ruleLibrary.ruleLibraryId = ''
+    reviewItems.reviewSpecification.enabled = false
+    reviewItems.reviewSpecification.reviewSpecificationId = ''
   }
 })
 
@@ -1258,18 +1258,18 @@ const startAnalysis = async () => {
     if (useNewFlow.value) {
       if (reviewPlanDraft.objective === 'COMPARE' && refFileList.value.length === 0)
         reasons.push('以文审文/参照比对模式需要上传参照文件（在参考文件区上传）')
-      if (reviewPlanDraft.evidence.sources.includes('RULE_LIBRARY') && !reviewPlanDraft.evidence.ruleLibraryId)
-        reasons.push('规则库审查模式需要选择具体的规则库')
+      if (reviewPlanDraft.evidence.sources.includes('REVIEW_SPECIFICATION') && !reviewPlanDraft.evidence.reviewSpecificationId)
+        reasons.push('审查规范集模式需要选择具体的审查规范集')
       const allowEmptySources = ['PROOFREAD'].includes(reviewPlanDraft.objective) || entryModule.value === 'CONSISTENCY'
       if (!allowEmptySources && reviewPlanDraft.evidence.sources.length === 0)
-        reasons.push('请至少选择一项审查依据（标准库/知识库/规则库/参照文件）')
+        reasons.push('请至少选择一项审查依据（标准库/知识库/审查规范集/参照文件）')
     } else {
       const hasActiveItem = Object.values(reviewItems).some((v: any) => v.enabled)
       if (!hasActiveItem) reasons.push('请至少启用一项审查项')
       if ((reviewItems as any).docCompare?.enabled && refFileList.value.length === 0)
         reasons.push('参照比对需要上传参考文件')
-      if ((reviewItems as any).ruleLibrary?.enabled && !(reviewItems as any).ruleLibrary?.ruleLibraryId)
-        reasons.push('规则库检查需要选择具体规则库')
+      if ((reviewItems as any).reviewSpecification?.enabled && !(reviewItems as any).reviewSpecification?.reviewSpecificationId)
+        reasons.push('审查规范集检查需要选择具体审查规范集')
     }
     ElMessage.warning(reasons.length > 0 ? reasons[0] : '请完善审查配置后再开始分析')
     return
@@ -1296,7 +1296,7 @@ const canSubmit = computed(() => {
   if (!form.title.trim()) return false
   if (useNewFlow.value) {
     if (reviewPlanDraft.objective === 'COMPARE' && refFileList.value.length === 0) return false
-    if (reviewPlanDraft.evidence.sources.includes('RULE_LIBRARY') && !reviewPlanDraft.evidence.ruleLibraryId) return false
+    if (reviewPlanDraft.evidence.sources.includes('REVIEW_SPECIFICATION') && !reviewPlanDraft.evidence.reviewSpecificationId) return false
     // PROOFREAD、CONSISTENCY 等模式允许无审查依据; 其他模式至少需要选一项
     const allowEmptySources = ['PROOFREAD'].includes(reviewPlanDraft.objective) || entryModule.value === 'CONSISTENCY'
     if (!allowEmptySources && reviewPlanDraft.evidence.sources.length === 0) return false
@@ -1307,8 +1307,8 @@ const canSubmit = computed(() => {
   if (!hasActiveItem) return false
   // 参照比对需要参照文件
   if (reviewItems.docCompare.enabled && refFileList.value.length === 0) return false
-  // 规则库检查需要选择规则库
-  if (reviewItems.ruleLibrary.enabled && !reviewItems.ruleLibrary.ruleLibraryId) return false
+  // 审查规范集检查需要选择审查规范集
+  if (reviewItems.reviewSpecification.enabled && !reviewItems.reviewSpecification.reviewSpecificationId) return false
   return true
 })
 
@@ -1343,18 +1343,18 @@ const submitTask = async () => {
       }
     }
 
-    if (submitPlan.evidence.sources.includes('RULE_LIBRARY') && !submitPlan.evidence.ruleLibraryId) {
-      ElMessage.warning('已选择规则库依据，请先选择具体规则库')
+    if (submitPlan.evidence.sources.includes('REVIEW_SPECIFICATION') && !submitPlan.evidence.reviewSpecificationId) {
+      ElMessage.warning('已选择审查规范集依据，请先选择具体规范集')
       return
     }
 
     if (submitPlan.execution.profile === 'RULE_ONLY') {
-      if (!submitPlan.evidence.sources.includes('RULE_LIBRARY')) {
-        ElMessage.warning('仅规则执行必须选择规则库作为审查依据')
+      if (!submitPlan.evidence.sources.includes('REVIEW_SPECIFICATION')) {
+        ElMessage.warning('仅规则执行必须选择审查规范集作为审查依据')
         return
       }
-      if (!submitPlan.evidence.ruleLibraryId) {
-        ElMessage.warning('仅规则执行必须选择具体规则库')
+      if (!submitPlan.evidence.reviewSpecificationId) {
+        ElMessage.warning('仅规则执行必须选择具体审查规范集')
         return
       }
     }
@@ -1371,7 +1371,7 @@ const submitTask = async () => {
           if (submitPlan.objective === 'COMPARE') return 'DOC_REVIEW'
           if (submitPlan.objective === 'PROOFREAD') return 'TYPO_GRAMMAR'
           if (submitPlan.objective === 'STRUCTURED') return 'MULTIMODAL'
-          if (submitPlan.execution.profile === 'RULE_ONLY' && submitPlan.evidence.sources.includes('RULE_LIBRARY')) return 'CUSTOM_RULE'
+          if (submitPlan.execution.profile === 'RULE_ONLY' && submitPlan.evidence.sources.includes('REVIEW_SPECIFICATION')) return 'CUSTOM_RULE'
           if (submitPlan.enhancements.crossFileConsistency) return 'CONSISTENCY'
           return 'LIBRARY_REVIEW'
         })()
@@ -1385,10 +1385,10 @@ const submitTask = async () => {
       fd.append('knowledgeCategoryIds', JSON.stringify(reviewItems.standardReview.knowledgeCategoryIds))
     }
 
-    if (useNewFlow.value && submitPlan.evidence.sources.includes('RULE_LIBRARY') && submitPlan.evidence.ruleLibraryId) {
-      fd.append('ruleLibraryId', submitPlan.evidence.ruleLibraryId)
-    } else if (reviewItems.ruleLibrary.enabled && reviewItems.ruleLibrary.ruleLibraryId) {
-      fd.append('ruleLibraryId', reviewItems.ruleLibrary.ruleLibraryId)
+    if (useNewFlow.value && submitPlan.evidence.sources.includes('REVIEW_SPECIFICATION') && submitPlan.evidence.reviewSpecificationId) {
+      fd.append('reviewSpecificationId', submitPlan.evidence.reviewSpecificationId)
+    } else if (reviewItems.reviewSpecification.enabled && reviewItems.reviewSpecification.reviewSpecificationId) {
+      fd.append('reviewSpecificationId', reviewItems.reviewSpecification.reviewSpecificationId)
     }
 
     // 预分析数据（完整对象，包含文件类型、签约方等）
@@ -1474,28 +1474,28 @@ onMounted(async () => {
   }
   
   try {
-    const [catRes, treeRes, libRes] = await Promise.all([
+    const [catRes, treeRes, specRes] = await Promise.all([
       getAllKnowledgeCategoriesApi(),
       getKnowledgeTreeApi(),
-      getRuleLibrariesApi(),
+      getReviewSpecificationsApi(),
     ])
     knowledgeCategories.value = (catRes.data || []).map((c: any) => ({ id: c.id, name: c.name }))
     knowledgeTreeData.value = treeRes.data || []
-    ruleLibraries.value = (libRes.data || []).map((l: any) => ({
+    reviewSpecifications.value = (specRes.data || []).map((l: any) => ({
       id: l.id,
       name: l.name,
-      status: (l.status || 'unknown').toLowerCase(),
-      ruleCount: l._count?.items || l.items?.length || 0,
+      status: l.status || 'DRAFT',
+      itemCount: l._count?.items || l.items?.length || 0,
       executableCount: l.executableItemCount || 0,
     }))
     
     console.log('[SmartReview] 知识库列表加载成功:', knowledgeCategories.value.length, '个')
     console.log('[SmartReview] 知识库树形结构加载成功:', knowledgeTreeData.value.length, '个根节点')
-    console.log('[SmartReview] 规则库列表加载成功:', ruleLibraries.value.length, '个')
-    console.log('[SmartReview] 规则库详情:', JSON.stringify(ruleLibraries.value, null, 2))
+    console.log('[SmartReview] 审查规范集列表加载成功:', reviewSpecifications.value.length, '个')
+    console.log('[SmartReview] 审查规范集详情:', JSON.stringify(reviewSpecifications.value, null, 2))
     
   } catch (e) {
-    console.warn('[SmartReview] 加载知识库/规则库列表失败:', e)
+    console.warn('[SmartReview] 加载知识库/审查规范集列表失败:', e)
   }
 })
 </script>

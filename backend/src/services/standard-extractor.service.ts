@@ -20,24 +20,72 @@ export interface ExtractedStandard {
 export class StandardExtractorService {
   /**
    * OCR 字符纠正 - 修复 OCR 识别中常见的混淆字符
-   * 移植自旧系统 Normative 的字符纠正逻辑
+   * 移植自旧系统 Normative 的字符纠正逻辑，并增强支持更多混淆场景
    * 
    * 纠正规则：
    *   — (U+2014 长破折号) → - (U+002D 连字符)
    *   一 (U+4E00 中文"一") → - (U+002D 连字符) — 仅在数字上下文中
    *   － (U+FF0D 全角减号) → - (U+002D 连字符)
+   *   O (字母) → 0 (数字) — 在编号上下文中
+   *   I (大写i) → 1 (数字) — 在编号上下文中
+   *   l (小写L) → 1 (数字) — 在编号上下文中
+   *   全角括号 → 半角括号
+   *   中文数字年份 → 阿拉伯数字（如"二〇一七"→"2017"）
    */
   static normalizeOcrChars(text: string): string {
     if (!text) return text;
+    
+    let r = text;
+    
+    // ========== 全角字符转换 ==========
     // 全角减号 → 半角连字符
-    let r = text.replace(/－/g, '-');
+    r = r.replace(/－/g, '-');
     // 长破折号 → 半角连字符
     r = r.replace(/—/g, '-');
+    // 全角括号 → 半角括号
+    r = r.replace(/（/g, '(');
+    r = r.replace(/）/g, ')');
+    // 全角冒号 → 半角冒号
+    r = r.replace(/：/g, ':');
+    // 全角逗号 → 半角逗号
+    r = r.replace(/，/g, ',');
+    
+    // ========== OCR常见混淆字符 ==========
+    // O (字母) → 0 (数字) — 在数字上下文中（如 GB/T 5O001 → GB/T 50001）
+    // 模式：数字/字母后紧跟O再跟数字
+    r = r.replace(/([\dA-Za-z/])O(\d)/gi, '$10$2');
+    // I (大写i) → 1 (数字) — 在编号上下文中（如 GB/T I5001 → GB/T 15001）
+    r = r.replace(/([\dA-Za-z/])I(\d)/gi, '$11$2');
+    // l (小写L) → 1 (数字) — 在编号上下文中（如 GB/T l5001 → GB/T 15001）
+    r = r.replace(/([\dA-Za-z/])l(\d)/gi, '$11$2');
+    
+    // ========== 中文"一"转换 ==========
     // 中文"一" → 半角连字符（仅在数字上下文中：数字-一-数字 或 编号前缀后）
     // 例如: "GB/T 50001一2017" → "GB/T 50001-2017"
     r = r.replace(/(\d)一(\d)/g, '$1-$2');
     // 编号前缀后的"一": "GB/T一50001" → "GB/T-50001"（罕见但可能）
     r = r.replace(/([A-Za-z/])一(\d)/g, '$1-$2');
+    
+    // ========== 中文数字年份转换 ==========
+    // 处理中文数字年份（如"二〇一七"→"2017"，"贰零贰零"→"2020"）
+    const chineseNumMap: Record<string, string> = {
+      '〇': '0', '零': '0', 'O': '0',
+      '一': '1', '壹': '1', 'I': '1', 'i': '1',
+      '二': '2', '贰': '2',
+      '三': '3', '叁': '3',
+      '四': '4', '肆': '4',
+      '五': '5', '伍': '5',
+      '六': '6', '陆': '6',
+      '七': '7', '柒': '7',
+      '八': '8', '捌': '8',
+      '九': '9', '玖': '9',
+    };
+    
+    // 匹配连续4个中文数字（年份格式）
+    r = r.replace(/([〇零一二三四五六七八九十壹贰叁肆伍陆柒捌玖OI]{4})/g, (match) => {
+      return match.split('').map(c => chineseNumMap[c] || c).join('');
+    });
+    
     return r;
   }
 
@@ -46,7 +94,7 @@ export class StandardExtractorService {
    * 移植自旧系统 DocHandleBase.GetDocStandards
    * 
    * @param text 文档文本内容
-   * @param docType 文档类型（xlsx/xls 使用 CODE_ONLY_PATTERN，其他使用 STANDARD_REF_PATTERN）
+   * @param docType 文档类型
    * @returns 提取到的标准引用列表（已去重）
    */
   static extractFromText(text: string, docType: string = ''): ExtractedStandard[] {
@@ -55,49 +103,64 @@ export class StandardExtractorService {
     // OCR 字符纠正（在正则匹配前修复混淆字符）
     text = StandardExtractorService.normalizeOcrChars(text);
 
-    const isExcelType = docType === 'xlsx' || docType === 'xls';
-    const pattern = isExcelType ? CODE_ONLY_PATTERN : STANDARD_REF_PATTERN;
-    
     const results: ExtractedStandard[] = [];
     const seen = new Set<string>(); // 用于去重
 
+    // ========== 阶段1：匹配 《标准名称》标准编号 格式 ==========
+    STANDARD_REF_PATTERN.lastIndex = 0;
     let match: RegExpExecArray | null;
-    // 需要重置正则的 lastIndex
-    pattern.lastIndex = 0;
     
-    while ((match = pattern.exec(text)) !== null) {
+    while ((match = STANDARD_REF_PATTERN.exec(text)) !== null) {
       const fullMatch = match[0];
       
       // 去重
       if (seen.has(fullMatch)) continue;
       seen.add(fullMatch);
 
-      let standardNo = '';
-      let standardName = '';
-
-      if (isExcelType) {
-        // Excel 类型只提取编号，不提取名称
-        standardNo = match[0].trim();
-        standardName = '';
-      } else {
-        // 从《标准名称》标准编号 格式中分离
-        const bookTitleEnd = fullMatch.indexOf('》');
-        if (bookTitleEnd >= 0) {
-          const bookTitleStart = fullMatch.indexOf('《');
-          standardName = fullMatch.substring(bookTitleStart + 1, bookTitleEnd).trim();
-          standardNo = fullMatch.substring(bookTitleEnd + 1).trim();
-        } else {
-          standardNo = fullMatch.trim();
-        }
-      }
+      // 从《标准名称》标准编号 格式中分离
+      const bookTitleEnd = fullMatch.indexOf('》');
+      const bookTitleStart = fullMatch.indexOf('《');
+      const standardName = bookTitleEnd >= 0 && bookTitleStart >= 0
+        ? fullMatch.substring(bookTitleStart + 1, bookTitleEnd).trim()
+        : '';
+      const standardNo = bookTitleEnd >= 0
+        ? fullMatch.substring(bookTitleEnd + 1).trim()
+        : fullMatch.trim();
 
       // 清理编号中的括号
-      standardNo = standardNo.replace(/^[\s\(（]+|[\s\)）]+$/g, '');
+      const cleanedNo = standardNo.replace(/^[\s\(（]+|[\s\)）]+$/g, '');
+
+      if (cleanedNo) {
+        results.push({
+          standardNo: cleanedNo,
+          standardName,
+          standardIdent: StandardExtractorService.getIdent(cleanedNo),
+          fullMatch,
+        });
+      }
+    }
+
+    // ========== 阶段2：匹配纯编号格式（所有文档类型都支持） ==========
+    // 覆盖以下场景：
+    // - 普通文档中的纯编号引用（如正文提到"参见GB/T 50001-2017"）
+    // - 表格中的标准编号（无书名号）
+    // - 列表形式的标准引用
+    CODE_ONLY_PATTERN.lastIndex = 0;
+    
+    while ((match = CODE_ONLY_PATTERN.exec(text)) !== null) {
+      const fullMatch = match[0];
+      
+      // 去重（可能与阶段1的结果重复）
+      if (seen.has(fullMatch)) continue;
+      seen.add(fullMatch);
+
+      // 清理编号中的括号和空格
+      const standardNo = fullMatch.replace(/^[\s\(（]+|[\s\)）]+$/g, '').trim();
 
       if (standardNo) {
         results.push({
           standardNo,
-          standardName,
+          standardName: '',
           standardIdent: StandardExtractorService.getIdent(standardNo),
           fullMatch,
         });

@@ -13,7 +13,7 @@ export class TaskService {
     if (plan.objective === 'COMPARE') return 'DOC_REVIEW';
     if (plan.objective === 'PROOFREAD') return 'TYPO_GRAMMAR';
     if (plan.objective === 'STRUCTURED') return 'MULTIMODAL';
-    if (plan.execution.profile === 'RULE_ONLY' && plan.evidence.sources.includes('RULE_LIBRARY')) {
+    if (plan.execution.profile === 'RULE_ONLY' && plan.evidence.sources.includes('REVIEW_SPECIFICATION')) {
       return 'CUSTOM_RULE';
     }
     if (plan.enhancements.crossFileConsistency) {
@@ -35,7 +35,7 @@ export class TaskService {
           evidence: {
             sources: baseSources.includes('REFERENCE') ? baseSources : ['REFERENCE'],
             knowledgeCategoryIds: Array.isArray(input?.evidence?.knowledgeCategoryIds) ? input.evidence.knowledgeCategoryIds : [],
-            ruleLibraryId: input?.evidence?.ruleLibraryId || null,
+            reviewSpecificationId: input?.evidence?.reviewSpecificationId || input?.evidence?.ruleLibraryId || null,
             refFileGroupId: input?.evidence?.refFileGroupId || null,
           },
           enhancements: {
@@ -53,7 +53,7 @@ export class TaskService {
           evidence: {
             sources: baseSources.filter((item) => item !== 'REFERENCE'),
             knowledgeCategoryIds: Array.isArray(input?.evidence?.knowledgeCategoryIds) ? input.evidence.knowledgeCategoryIds : [],
-            ruleLibraryId: input?.evidence?.ruleLibraryId || null,
+            reviewSpecificationId: input?.evidence?.reviewSpecificationId || input?.evidence?.ruleLibraryId || null,
             refFileGroupId: null,
           },
           enhancements: {
@@ -71,7 +71,7 @@ export class TaskService {
           evidence: {
             sources: baseSources,
             knowledgeCategoryIds: Array.isArray(input?.evidence?.knowledgeCategoryIds) ? input.evidence.knowledgeCategoryIds : [],
-            ruleLibraryId: input?.evidence?.ruleLibraryId || null,
+            reviewSpecificationId: input?.evidence?.reviewSpecificationId || input?.evidence?.ruleLibraryId || null,
             refFileGroupId: null,
           },
           enhancements: {
@@ -87,9 +87,9 @@ export class TaskService {
         return {
           objective: 'COMPLIANCE',
           evidence: {
-            sources: ['RULE_LIBRARY'],
+            sources: ['REVIEW_SPECIFICATION'],
             knowledgeCategoryIds: [],
-            ruleLibraryId: input?.evidence?.ruleLibraryId || null,
+            reviewSpecificationId: input?.evidence?.reviewSpecificationId || input?.evidence?.ruleLibraryId || null,
             refFileGroupId: null,
           },
           enhancements: {
@@ -107,7 +107,7 @@ export class TaskService {
           evidence: {
             sources: baseSources,
             knowledgeCategoryIds: Array.isArray(input?.evidence?.knowledgeCategoryIds) ? input.evidence.knowledgeCategoryIds : [],
-            ruleLibraryId: input?.evidence?.ruleLibraryId || null,
+            reviewSpecificationId: input?.evidence?.reviewSpecificationId || input?.evidence?.ruleLibraryId || null,
             refFileGroupId: null,
           },
           enhancements: {
@@ -126,7 +126,7 @@ export class TaskService {
           evidence: {
             sources: baseSources,
             knowledgeCategoryIds: Array.isArray(input?.evidence?.knowledgeCategoryIds) ? input.evidence.knowledgeCategoryIds : [],
-            ruleLibraryId: input?.evidence?.ruleLibraryId || null,
+            reviewSpecificationId: input?.evidence?.reviewSpecificationId || input?.evidence?.ruleLibraryId || null,
             refFileGroupId: null,
           },
           enhancements: {
@@ -156,9 +156,11 @@ export class TaskService {
             ? (normalizedSources.includes('REFERENCE') ? normalizedSources : ['REFERENCE'])
             : normalizedSources,
           knowledgeCategoryIds: Array.isArray(input?.evidence?.knowledgeCategoryIds) ? input.evidence.knowledgeCategoryIds : [],
-          ruleLibraryId: typeof input?.evidence?.ruleLibraryId === 'string' && input.evidence.ruleLibraryId.trim()
-            ? input.evidence.ruleLibraryId.trim()
-            : null,
+          reviewSpecificationId: typeof input?.evidence?.reviewSpecificationId === 'string' && input.evidence.reviewSpecificationId.trim()
+            ? input.evidence.reviewSpecificationId.trim()
+            : (typeof input?.evidence?.ruleLibraryId === 'string' && input.evidence.ruleLibraryId.trim()
+              ? input.evidence.ruleLibraryId.trim()
+              : null),
           refFileGroupId: typeof input?.evidence?.refFileGroupId === 'string' && input.evidence.refFileGroupId.trim()
             ? input.evidence.refFileGroupId.trim()
             : null,
@@ -204,7 +206,7 @@ export class TaskService {
     reviewMode?: string;
     knowledgeCategoryId?: string;  // 用户选择的知识库ID
     knowledgeCategoryIds?: string[];  // 用户选择的多个知识库ID
-    ruleLibraryId?: string;
+    reviewSpecificationId?: string;
     perspective?: string;  // 审查立场
     preAnalysisData?: any;  // 预分析完整数据
     reviewPlan?: any;       // 审查方案
@@ -216,7 +218,7 @@ export class TaskService {
     dwgParsedData?: Record<string, any>;  // 前端 WASM 解析的 DWG 数据（按文件名映射）
   }): Promise<Task> {
     const { title, description, creatorId, standardId, standardIds = [], reviewMode, knowledgeCategoryId, knowledgeCategoryIds,
-      ruleLibraryId, perspective, preAnalysisData, reviewPlan, reviewPoints, corePurposes, selectedTemplateId, intraFileConsistency,
+      reviewSpecificationId, perspective, preAnalysisData, reviewPlan, reviewPoints, corePurposes, selectedTemplateId, intraFileConsistency,
       files = [], dwgParsedData } = data;
 
     // 合并标准 ID：保留单选兼容，同时写入多选
@@ -231,11 +233,11 @@ export class TaskService {
       throw new Error('参照比对模式必须使用参考文件作为审查依据');
     }
     if (normalizedReviewPlan.execution.profile === 'RULE_ONLY') {
-      if (!normalizedReviewPlan.evidence.sources.includes('RULE_LIBRARY')) {
-        throw new Error('仅规则执行模式必须启用规则库依据');
+      if (!normalizedReviewPlan.evidence.sources.includes('REVIEW_SPECIFICATION') && !normalizedReviewPlan.evidence.sources.includes('RULE_LIBRARY')) {
+        throw new Error('仅规则执行模式必须启用审查规范集依据');
       }
-      if (!normalizedReviewPlan.evidence.ruleLibraryId && !ruleLibraryId) {
-        throw new Error('仅规则执行模式必须指定规则库');
+      if (!normalizedReviewPlan.evidence.reviewSpecificationId && !reviewSpecificationId) {
+        throw new Error('仅规则执行模式必须指定审查规范集');
       }
     }
     const resolvedReviewMode = reviewMode || this.planToLegacyMode(normalizedReviewPlan);
@@ -267,10 +269,10 @@ export class TaskService {
         } : undefined;
 
     normalizedReviewPlan.evidence.knowledgeCategoryIds = knowledgeCategoryIds || normalizedReviewPlan.evidence.knowledgeCategoryIds || [];
-    if (ruleLibraryId) normalizedReviewPlan.evidence.ruleLibraryId = ruleLibraryId;
+    if (reviewSpecificationId) normalizedReviewPlan.evidence.reviewSpecificationId = reviewSpecificationId;
     if (intraFileConsistency !== undefined) normalizedReviewPlan.enhancements.intraFileConsistency = !!intraFileConsistency;
 
-    const shouldBindRuleLibrary = normalizedReviewPlan.evidence.sources.includes('RULE_LIBRARY') && !!normalizedReviewPlan.evidence.ruleLibraryId;
+    const shouldBindRuleLibrary = (normalizedReviewPlan.evidence.sources.includes('REVIEW_SPECIFICATION') || normalizedReviewPlan.evidence.sources.includes('RULE_LIBRARY')) && !!normalizedReviewPlan.evidence.reviewSpecificationId;
     const effectiveStandardIds = shouldBindRuleLibrary ? [] : allStandardIds;
 
     // 创建任务
@@ -282,7 +284,7 @@ export class TaskService {
         standardId: shouldBindRuleLibrary ? null : (standardId || effectiveStandardIds[0] || null),
         reviewMode: resolvedReviewMode as any,
         knowledgeCategoryId: knowledgeIdForDb,
-        ruleLibraryId: shouldBindRuleLibrary ? normalizedReviewPlan.evidence.ruleLibraryId || null : null,
+        reviewSpecificationId: shouldBindRuleLibrary ? normalizedReviewPlan.evidence.reviewSpecificationId || null : null,
         perspective: perspective || null,
         preAnalysisData: preAnalysisJson || undefined,
         reviewPlan: normalizedReviewPlan,
@@ -1049,9 +1051,9 @@ export class TaskService {
         title: task.title,
         status: task.status,
         reviewMode: task.reviewMode,
-        ruleLibraryId: (task as any).ruleLibraryId || null,
+        reviewSpecificationId: (task as any).reviewSpecificationId || null,
         reviewPlan: (task as any).reviewPlan || null,
-        ruleLibrary: (task as any).ruleLibrary || null,
+        reviewSpecification: (task as any).reviewSpecification || null,
         perspective: task.perspective,
         preAnalysisData: task.preAnalysisData,
         createdAt: task.createdAt,

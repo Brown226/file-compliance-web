@@ -6,7 +6,7 @@ import { CrossFileConsistencyService } from './cross-file-consistency.service';
 import { IntraFileConsistencyService } from './intra-file-consistency.service';
 import { WebSocketService } from './websocket.service';
 import { ConcurrencyService } from './concurrency.service';
-import { RuleLibraryService } from './rule-library.service';
+import { ReviewSpecificationService } from './review-specification.service';
 import path from 'path';
 import { ReviewPlan } from '../types/review-plan';
 import { TaskService } from './task.service';
@@ -26,8 +26,8 @@ export class ReviewService {
   private static adaptReviewPlanForExecution(task: any): {
     plan: ReviewPlan;
     reviewMode: string;
-    ruleSource: 'STANDARD' | 'RULE_LIBRARY';
-    ruleLibraryId?: string;
+    ruleSource: 'STANDARD' | 'REVIEW_SPECIFICATION';
+    reviewSpecificationId?: string;
     knowledgeCategoryIds: string[];
     refFileGroupRequired: boolean;
     intraFileConsistency: boolean;
@@ -43,7 +43,7 @@ export class ReviewService {
   } {
     const plan = TaskService.normalizeReviewPlan(task?.reviewPlan, task?.reviewMode);
     const reviewMode = TaskService.planToLegacyMode(plan);
-    const ruleSource = plan.evidence.sources.includes('RULE_LIBRARY') ? 'RULE_LIBRARY' : 'STANDARD';
+    const ruleSource = plan.evidence.sources.includes('REVIEW_SPECIFICATION') || plan.evidence.sources.includes('RULE_LIBRARY') ? 'REVIEW_SPECIFICATION' : 'STANDARD';
     const stages =
       plan.execution.profile === 'RULE_ONLY'
         ? { ai: false, rules: true, stdRef: false }
@@ -54,7 +54,7 @@ export class ReviewService {
       plan,
       reviewMode,
       ruleSource,
-      ruleLibraryId: ruleSource === 'RULE_LIBRARY' ? plan.evidence.ruleLibraryId || undefined : undefined,
+      reviewSpecificationId: ruleSource === 'REVIEW_SPECIFICATION' ? plan.evidence.reviewSpecificationId || undefined : undefined,
       knowledgeCategoryIds: Array.isArray(plan.evidence.knowledgeCategoryIds) ? plan.evidence.knowledgeCategoryIds : [],
       refFileGroupRequired: plan.objective === 'COMPARE' || plan.evidence.sources.includes('REFERENCE'),
       intraFileConsistency: !!plan.enhancements.intraFileConsistency,
@@ -301,10 +301,10 @@ export class ReviewService {
       const executionPlan = this.adaptReviewPlanForExecution(task);
       const reviewMode = executionPlan.reviewMode || (task as any).reviewMode || 'CONSISTENCY';
       const knowledgeCategoryId = (task as any).knowledgeCategoryId || undefined;
-      const ruleLibraryId = executionPlan.ruleLibraryId;
-      const ruleExecutionPlan = ruleLibraryId
-        ? await RuleLibraryService.getExecutionPlan(ruleLibraryId).catch((error) => {
-            console.warn('[Review] 规则库执行计划加载失败:', error);
+      const reviewSpecificationId = executionPlan.reviewSpecificationId;
+      const ruleExecutionPlan = reviewSpecificationId
+        ? await ReviewSpecificationService.getExecutionPlan(reviewSpecificationId).catch((error) => {
+            console.warn('[Review] 审查规范集执行计划加载失败:', error);
             return null;
           })
         : null;
@@ -374,7 +374,7 @@ export class ReviewService {
           extractedText: '',
           reviewMode: reviewMode as any,
           ruleSource: executionPlan.ruleSource,
-          ruleLibraryId,
+          reviewSpecificationId: executionPlan.reviewSpecificationId,
           rulePlan: ruleExecutionPlan ? {
             enabledPrefixes: ruleExecutionPlan.enabledPrefixes,
             itemIds: ruleExecutionPlan.executableItems.map((item) => item.id),
@@ -840,7 +840,7 @@ export class ReviewService {
         taskId, fileId: file.id,
         issueType: issue.issueType, ruleCode: issue.ruleCode,
         severity: issue.severity,
-        reviewSource: ctx.ruleSource === 'RULE_LIBRARY' ? 'RULE_LIBRARY' : 'RULE_ENGINE',
+        reviewSource: ctx.ruleSource === 'REVIEW_SPECIFICATION' ? 'RULE_LIBRARY' : 'RULE_ENGINE',
         ruleLibraryItemId: null,
         originalText: issue.originalText,
         suggestedText: issue.suggestedText || null,

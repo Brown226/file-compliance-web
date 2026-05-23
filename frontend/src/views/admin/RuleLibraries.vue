@@ -36,6 +36,14 @@
                 <span class="tree-node-actions" @click.stop>
                   <el-button 
                     size="small" 
+                    :icon="Plus" 
+                    @click="showCreateLibraryUnderFolder(data)" 
+                    title="在此目录下新建规则库"
+                    aria-label="在此目录下新建规则库"
+                    class="action-btn-create-lib"
+                  />
+                  <el-button 
+                    size="small" 
                     :icon="Edit" 
                     @click="showEditFolderDialog(data)" 
                     title="编辑"
@@ -829,6 +837,14 @@ const showCreateDialog = () => {
   console.debug('[RuleLibraries] dialogVisible set to:', dialogVisible.value)
 }
 
+const showCreateLibraryUnderFolder = (folderData: any) => {
+  isEdit.value = false
+  resetLibraryForm()
+  formData.folderId = folderData.id
+  dialogVisible.value = true
+  ElMessage.info(`将在目录 "${folderData.label}" 下创建规则库`)
+}
+
 const showEditDialog = (row: RuleLibrary) => {
   isEdit.value = true
   editId.value = row.id
@@ -1205,6 +1221,16 @@ onMounted(() => {
 
 .tree-node:hover .tree-node-actions {
   opacity: 1;
+}
+
+.action-btn-create-lib {
+  color: #10b981 !important;
+  background: rgba(16, 185, 129, 0.1) !important;
+}
+
+.action-btn-create-lib:hover {
+  color: #059669 !important;
+  background: rgba(16, 185, 129, 0.2) !important;
 }
 
 .tree-node-actions :deep(.el-button) {

@@ -6,6 +6,7 @@ export interface RuleIssue {
   issueType: string;       // NAMING | ENCODING | ATTRIBUTE | HEADER | PAGE
                            // + FORMAT | COMPLETENESS | CONSISTENCY | LAYOUT | TYPO(确定性)
                            // + DWG (DWG 图纸专用)
+                           // + FLUENCY (语句通顺性) | CROSS_REFERENCE (交叉项目引用)
   ruleCode: string;        // NAME_001, CODE_001, ..., FORMAT_001, COMPL_001, CONSIST_001, LAYOUT_001, TYPO_001
                            // + DWG_TITLE_001, DWG_LAYER_001, DWG_DIM_001, DWG_STDREF_001, DWG_SCALE_001, DWG_OVERLAP_001
   severity: 'error' | 'warning' | 'info';

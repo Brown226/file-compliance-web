@@ -164,7 +164,8 @@ export class StandardCheckService {
       }
     }
 
-    // Level 8: Levenshtein 相似度（旧系统注释掉的功能，建议激活）
+    // Level 8: Levenshtein 相似度
+    // 阈值从0.6提高到0.8，减少误匹配（只有相似度80%以上才认为匹配）
     let bestSimilarity = 0;
     let bestMatch: StandardCheckItem | null = null;
 
@@ -182,7 +183,8 @@ export class StandardCheckService {
       }
     }
 
-    if (bestSimilarity >= 0.6 && bestMatch) {
+    // 提高阈值至0.8，要求更高的相似度才认为匹配，减少误匹配
+    if (bestSimilarity >= 0.8 && bestMatch) {
       return { matched: true, matchLevel: 8, matchedItem: bestMatch, similarity: bestSimilarity, isExactMatch: false };
     }
 

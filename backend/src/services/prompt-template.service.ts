@@ -72,12 +72,13 @@ const BUILTIN_TEMPLATES: PromptTemplateData[] = [
 - **格式规范**：封面、目录、页眉页脚、编号体系是否符合标准要求
 - **内容完整性**：必填字段、必要信息是否缺失
 - **数据一致性**：编码、参数、命名在文档内部及与引用文件之间是否一致
-- **引用规范**：引用文件格式、标准版本引用是否正确
+- **引用规范**：引用文件格式、标准版本引用是否正确；交叉项目引用是否准确一致
 - **术语规范**：专有名词、技术术语是否全文统一且符合标准
+- **语句通顺性**：语句是否通顺、表达是否清晰、逻辑是否连贯、是否存在语法错误
 
 ## 输出要求
 严格按照 JSON 数组格式输出，每个问题包含:
-- issueType: TYPO/FORMAT/COMPLETENESS/CONSISTENCY/VIOLATION
+- issueType: TYPO/FORMAT/COMPLETENESS/CONSISTENCY/VIOLATION/FLUENCY/CROSS_REFERENCE
 - originalText: 原始问题文本
 - suggestedText: 建议修改内容
 - description: 问题描述，必须说明违反了哪条标准规范的什么要求
