@@ -1,73 +1,7 @@
 <template>
   <div class="rl-page">
-    <!-- 主布局：左侧目录树 + 右侧内容区 -->
-    <div class="rl-layout">
-      <!-- 左侧分类/目录面板 -->
-      <aside class="rl-sidebar" :class="{ 'rl-sidebar--collapsed': sidebarCollapsed }">
-        <div class="sidebar-header">
-          <h3 v-if="!sidebarCollapsed" class="sidebar-title">规则目录</h3>
-          <div class="sidebar-actions">
-            <el-button v-if="!sidebarCollapsed" size="small" icon="FolderPlus" @click="showCreateFolderDialog">新建目录</el-button>
-            <button class="sidebar-collapse-btn" :title="sidebarCollapsed ? '展开目录' : '收起目录'" @click="sidebarCollapsed = !sidebarCollapsed">
-              <el-icon :size="14"><ArrowRight /></el-icon>
-            </button>
-          </div>
-        </div>
-
-        <!-- 目录树 -->
-        <div v-if="!sidebarCollapsed" class="folder-section">
-          <el-tree
-            :data="folderTree"
-            :props="treeProps"
-            :default-expanded-keys="expandedFolderKeys"
-            node-key="id"
-            class="folder-tree"
-            ref="folderTreeRef"
-            @node-click="handleFolderClick"
-          >
-            <template #default="{ node, data }">
-              <span class="tree-node">
-                <el-icon v-if="data.children && data.children.length > 0" class="expand-icon">
-                  <ArrowRight />
-                </el-icon>
-                <el-icon v-else size="14"><Files /></el-icon>
-                <span class="node-label">{{ data.label }}</span>
-                <span v-if="data.count !== undefined" class="tree-count">{{ data.count }}</span>
-                <span class="tree-node-actions" @click.stop>
-                  <el-button
-                    size="small"
-                    :icon="Plus"
-                    @click="showCreateLibraryUnderFolder(data)"
-                    title="在此目录下新建规则库"
-                    aria-label="在此目录下新建规则库"
-                    class="action-btn-create-lib"
-                  />
-                  <el-button
-                    size="small"
-                    :icon="Edit"
-                    @click="showEditFolderDialog(data)"
-                    title="编辑"
-                    aria-label="编辑目录"
-                  />
-                  <el-button
-                    size="small"
-                    :icon="Delete"
-                    type="danger"
-                    @click="handleDeleteFolder(data.id)"
-                    title="删除"
-                    aria-label="删除目录"
-                  />
-                </span>
-              </span>
-            </template>
-          </el-tree>
-        </div>
-      </aside>
-
-      <!-- 右侧主内容区 -->
-      <main class="rl-main">
-        <!-- 顶部工具栏 -->
-        <section class="toolbar">
+      <!-- 顶部工具栏 -->
+      <section class="toolbar">
           <div class="toolbar-left">
             <div class="toolbar-stats">
               <span class="stat-item"><strong>{{ libraries.length }}</strong> 个规则库</span>
@@ -75,11 +9,6 @@
               <span class="stat-item"><strong>{{ publishedCount }}</strong> 已发布</span>
               <span class="stat-sep">·</span>
               <span class="stat-item"><strong>{{ executableCount }}</strong> 条可执行</span>
-            </div>
-            <div v-if="activeFolderId" class="active-filter-tag">
-              <el-tag closable @close="clearFolderFilter" size="small" type="info">
-                当前目录: {{ activeFolderLabel }}
-              </el-tag>
             </div>
           </div>
           <div class="toolbar-right">
@@ -265,7 +194,6 @@
             </el-table-column>
           </el-table>
         </el-card>
-      </main>
     </div>
 
     <!-- 新建/编辑规则库对话框 -->
@@ -277,93 +205,10 @@
         <el-form-item label="描述">
           <el-input v-model="formData.description" type="textarea" :rows="3" placeholder="规则库用途说明" />
         </el-form-item>
-        <el-form-item label="所属目录">
-          <el-tree-select
-            :data="folderTreeData"
-            :props="treeProps"
-            v-model="formData.folderId"
-            placeholder="选择目录（可选）"
-            clearable
-            check-strictly
-          />
-        </el-form-item>
       </el-form>
       <template #footer>
         <el-button @click="dialogVisible = false">取消</el-button>
         <el-button type="primary" @click="handleSubmit" :loading="submitting">确定</el-button>
-      </template>
-    </el-dialog>
-
-    <!-- 新建目录对话框 -->
-    <el-dialog v-model="folderDialogVisible" title="新建目录" width="400px">
-      <el-form :model="folderForm" label-width="60px">
-        <el-form-item label="名称" required>
-          <el-input v-model="folderForm.name" placeholder="目录名称" />
-        </el-form-item>
-        <el-form-item label="上级目录">
-          <el-tree-select
-            :data="folderTree"
-            :props="treeProps"
-            v-model="folderForm.parentId"
-            placeholder="选择上级目录"
-          />
-        </el-form-item>
-      </el-form>
-      <template #footer>
-        <el-button @click="folderDialogVisible = false">取消</el-button>
-        <el-button type="primary" @click="handleSaveFolder" :loading="submitting">确定</el-button>
-      </template>
-    </el-dialog>
-
-    <!-- 编辑目录对话框 -->
-    <el-dialog v-model="editFolderDialogVisible" title="编辑目录" width="400px">
-      <el-form :model="editFolderForm" label-width="60px">
-        <el-form-item label="名称" required>
-          <el-input v-model="editFolderForm.name" placeholder="目录名称" />
-        </el-form-item>
-      </el-form>
-      <template #footer>
-        <el-button @click="editFolderDialogVisible = false">取消</el-button>
-        <el-button type="primary" @click="handleEditFolder" :loading="submitting">确定</el-button>
-      </template>
-    </el-dialog>
-
-    <!-- 移动目录对话框 -->
-    <el-dialog v-model="moveFolderDialogVisible" title="移动目录" width="400px">
-      <div class="dialog-tip">
-        <el-icon><ArrowRight /></el-icon>
-        <span>将选中的 {{ selectedFolders.length }} 个目录移动到目标位置</span>
-      </div>
-      <el-form :model="moveFolderForm" label-width="80px">
-        <el-form-item label="目标目录" required>
-          <el-tree-select
-            :data="folderTree"
-            :props="treeProps"
-            v-model="moveFolderForm.targetId"
-            placeholder="选择目标目录"
-          />
-        </el-form-item>
-      </el-form>
-      <template #footer>
-        <el-button @click="moveFolderDialogVisible = false">取消</el-button>
-        <el-button type="primary" @click="handleMoveFolder" :loading="submitting">确定移动</el-button>
-      </template>
-    </el-dialog>
-
-    <!-- 合并目录对话框 -->
-    <el-dialog v-model="mergeFolderDialogVisible" title="合并目录" width="400px">
-      <div class="dialog-tip">
-        <el-icon><Grid /></el-icon>
-        <span>将选中的 {{ selectedFolders.length }} 个目录合并为一个新目录</span>
-      </div>
-      <el-form :model="mergeFolderForm" label-width="80px">
-        <el-form-item label="新目录名称" required>
-          <el-input v-model="mergeFolderForm.name" placeholder="合并后的目录名称" />
-        </el-form-item>
-      </el-form>
-      <template #footer>
-        <el-button @click="mergeFolderDialogVisible = false">取消</el-button>
-        <el-button type="primary" @click="handleMergeFolder" :loading="submitting">确定合并</el-button>
       </template>
     </el-dialog>
 
@@ -494,16 +339,14 @@
         <el-button type="primary" @click="handleSaveItem" :loading="submitting">保存</el-button>
       </template>
     </el-dialog>
-  </div>
 </template>
 
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from 'vue'
 import {
-  Plus, UploadFilled, Folder, FolderOpened, ArrowRight,
-  CircleCheck, Edit, Delete, ArrowDown, ArrowUp, Files, Loading
+  Plus, UploadFilled, CircleCheck, Edit, Delete, ArrowDown, Loading
 } from '@element-plus/icons-vue'
-import { ElMessage, ElMessageBox, ElTree } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import {
   getRuleLibrariesApi,
   getRuleLibraryApi,
@@ -519,70 +362,26 @@ import {
   type RuleLibraryItem,
   type RuleLibraryPreviewItem,
 } from '@/api/rule-library'
-import {
-  getRuleFoldersApi,
-  createRuleFolderApi,
-  updateRuleFolderApi,
-  deleteRuleFolderApi,
-  moveRuleFoldersApi,
-  mergeRuleFoldersApi,
-  type RuleFolderTreeNode,
-} from '@/api/rule-folder'
 
 // 加载状态
 const loading = ref(false)
 const submitting = ref(false)
 const parsing = ref(false)
 const importing = ref(false)
-const sidebarCollapsed = ref(false)
 
 // 数据
 const libraries = ref<RuleLibrary[]>([])
 const selectedLibrary = ref<RuleLibrary | null>(null)
 
-// 目录树
-const folderTreeRef = ref<InstanceType<typeof ElTree> | null>(null)
-const folderTree = ref<RuleFolderTreeNode[]>([])
-const folderTreeData = ref<RuleFolderTreeNode[]>([]) // for tree-select (flat compatible)
-const expandedFolderKeys = ref<string[]>([])
-const checkedFolderKeys = ref<string[]>([])
-const treeProps = {
-  children: 'children',
-  label: 'label',
-}
-
-// 选中的目录（用于联动过滤）
-const activeFolderId = ref<string | null>(null)
-const activeFolderLabel = ref<string>('')
-
 // 搜索与筛选
 const searchKeyword = ref('')
 const statusFilter = ref<string>('')
-
-// 选中的目录（用于批量移动/合并）
-const selectedFolders = computed(() => checkedFolderKeys.value)
-
-// 编辑目录对话框
-const editFolderDialogVisible = ref(false)
-const editingFolder = ref<any>(null)
-const editFolderForm = reactive({ name: '' })
-
-// 移动目录对话框
-const moveFolderDialogVisible = ref(false)
-const moveFolderForm = reactive({ targetId: '' })
-
-// 合并目录对话框
-const mergeFolderDialogVisible = ref(false)
-const mergeFolderForm = reactive({ name: '' })
 
 // 对话框状态
 const dialogVisible = ref(false)
 const isEdit = ref(false)
 const editId = ref('')
-const formData = reactive({ name: '', description: '', folderId: '' as string | null })
-
-const folderDialogVisible = ref(false)
-const folderForm = reactive({ name: '', parentId: '' })
+const formData = reactive({ name: '', description: '' })
 
 const parseDialogVisible = ref(false)
 const previewDialogVisible = ref(false)
@@ -670,156 +469,9 @@ const getStatusLabel = (status: string) => {
   return map[status] || status
 }
 
-// 获取目录树
-const fetchFolders = async () => {
-  try {
-    const { data } = await getRuleFoldersApi()
-    folderTree.value = data || []
-    // For tree-select, clone and add a virtual root
-    folderTreeData.value = data?.length ? data : []
-    // Auto-expand first level
-    expandedFolderKeys.value = (data || []).map((f: RuleFolderTreeNode) => f.id)
-  } catch (e: any) {
-    console.error('获取目录树失败:', e)
-  }
-}
-
-const handleFolderClick = (data: any) => {
-  if (activeFolderId.value === data.id) {
-    // 再次点击取消选择
-    clearFolderFilter()
-  } else {
-    activeFolderId.value = data.id
-    activeFolderLabel.value = data.label
-    fetchLibraries()
-  }
-}
-
-const clearFolderFilter = () => {
-  activeFolderId.value = null
-  activeFolderLabel.value = ''
-  if (folderTreeRef.value) {
-    folderTreeRef.value.setCurrentKey(null)
-  }
-  fetchLibraries()
-}
-
-const handleFolderCheck = (_data: any, _checked: boolean) => {
-  // checkbox 选中状态通过 checkedFolderKeys 自动同步
-}
-
-  // 编辑目录
-  const showEditFolderDialog = (data: any) => {
-    editingFolder.value = data
-    editFolderForm.name = data.label
-    editFolderDialogVisible.value = true
-  }
-
-  const handleEditFolder = async () => {
-    if (!editFolderForm.name.trim()) {
-      ElMessage.warning('请输入目录名称')
-      return
-    }
-    if (!editingFolder.value?.id) return
-    submitting.value = true
-    try {
-      await updateRuleFolderApi(editingFolder.value.id, { name: editFolderForm.name.trim() })
-      ElMessage.success('目录名称更新成功')
-      editFolderDialogVisible.value = false
-      await fetchFolders()
-    } catch (e: any) {
-      ElMessage.error(e?.response?.data?.message || '更新失败')
-    } finally {
-      submitting.value = false
-    }
-  }
-
-  // 删除目录
-  const handleDeleteFolder = (folderId: string) => {
-    ElMessageBox.confirm(
-      '确认删除此目录？目录下的子目录将移到上级，关联的规则库将解除目录绑定。',
-      '删除目录',
-      {
-        confirmButtonText: '确定删除',
-        cancelButtonText: '取消',
-        type: 'warning',
-      }
-    ).then(async () => {
-      try {
-        await deleteRuleFolderApi(folderId)
-        checkedFolderKeys.value = checkedFolderKeys.value.filter(id => id !== folderId)
-        ElMessage.success('删除成功')
-        await fetchFolders()
-        await fetchLibraries()
-      } catch (e: any) {
-        ElMessage.error(e?.response?.data?.message || '删除失败')
-      }
-    }).catch(() => {})
-  }
-
-  // 移动目录对话框
-  const showMoveFolderDialog = () => {
-    moveFolderForm.targetId = ''
-    moveFolderDialogVisible.value = true
-  }
-
-  const handleMoveFolder = async () => {
-    if (!moveFolderForm.targetId) {
-      ElMessage.warning('请选择目标目录')
-      return
-    }
-    if (selectedFolders.value.length === 0) {
-      ElMessage.warning('请勾选要移动的目录')
-      return
-    }
-    submitting.value = true
-    try {
-      await moveRuleFoldersApi(selectedFolders.value, moveFolderForm.targetId)
-      ElMessage.success('移动成功')
-      moveFolderDialogVisible.value = false
-      checkedFolderKeys.value = []
-      await fetchFolders()
-    } catch (e: any) {
-      ElMessage.error(e?.response?.data?.message || '移动失败')
-    } finally {
-      submitting.value = false
-    }
-  }
-
-  // 合并目录对话框
-  const showMergeFolderDialog = () => {
-    mergeFolderForm.name = ''
-    mergeFolderDialogVisible.value = true
-  }
-
-  const handleMergeFolder = async () => {
-    if (!mergeFolderForm.name.trim()) {
-      ElMessage.warning('请输入合并后的目录名称')
-      return
-    }
-    if (selectedFolders.value.length < 2) {
-      ElMessage.warning('至少勾选 2 个目录进行合并')
-      return
-    }
-    submitting.value = true
-    try {
-      await mergeRuleFoldersApi(selectedFolders.value, mergeFolderForm.name.trim())
-      ElMessage.success('合并成功')
-      mergeFolderDialogVisible.value = false
-      checkedFolderKeys.value = []
-      await fetchFolders()
-      await fetchLibraries()
-    } catch (e: any) {
-      ElMessage.error(e?.response?.data?.message || '合并失败')
-    } finally {
-      submitting.value = false
-    }
-  }
-
 const resetLibraryForm = () => {
   formData.name = ''
   formData.description = ''
-  formData.folderId = null
 }
 
 const resetItemForm = () => {
@@ -839,7 +491,6 @@ const fetchLibraries = async () => {
   loading.value = true
   try {
     const params: Record<string, any> = {}
-    if (activeFolderId.value) params.folderId = activeFolderId.value
     if (searchKeyword.value.trim()) params.keyword = searchKeyword.value.trim()
     if (statusFilter.value) params.status = statusFilter.value
     const { data } = await getRuleLibrariesApi(params)
@@ -865,20 +516,11 @@ const showCreateDialog = () => {
   console.debug('[RuleLibraries] dialogVisible set to:', dialogVisible.value)
 }
 
-const showCreateLibraryUnderFolder = (folderData: any) => {
-  isEdit.value = false
-  resetLibraryForm()
-  formData.folderId = folderData.id
-  dialogVisible.value = true
-  ElMessage.info(`将在目录 "${folderData.label}" 下创建规则库`)
-}
-
 const showEditDialog = (row: RuleLibrary) => {
   isEdit.value = true
   editId.value = row.id
   formData.name = row.name
   formData.description = row.description || ''
-  formData.folderId = (row as any).folderId || null
   dialogVisible.value = true
 }
 
@@ -893,19 +535,16 @@ const handleSubmit = async () => {
       await updateRuleLibraryApi(editId.value, {
         name: formData.name.trim(),
         description: formData.description || '',
-        folderId: formData.folderId || null,
       })
     } else {
       await createRuleLibraryApi({
         name: formData.name.trim(),
         description: formData.description || '',
-        folderId: formData.folderId || null,
       })
     }
     ElMessage.success(isEdit.value ? '更新成功' : '创建成功')
     dialogVisible.value = false
     await fetchLibraries()
-    await fetchFolders()
   } catch (e: any) {
     ElMessage.error(e?.response?.data?.message || '操作失败')
   } finally {
@@ -1132,36 +771,8 @@ const handleDeleteItem = async (itemId: string) => {
   }
 }
 
-const showCreateFolderDialog = () => {
-  folderForm.name = ''
-  folderForm.parentId = ''
-  folderDialogVisible.value = true
-}
-
-const handleSaveFolder = async () => {
-  if (!folderForm.name.trim()) {
-    ElMessage.warning('请输入目录名称')
-    return
-  }
-  submitting.value = true
-  try {
-    await createRuleFolderApi({
-      name: folderForm.name.trim(),
-      parentId: folderForm.parentId || null,
-    })
-    ElMessage.success('目录创建成功')
-    folderDialogVisible.value = false
-    await fetchFolders()
-  } catch (e: any) {
-    ElMessage.error(e?.response?.data?.message || '创建失败')
-  } finally {
-    submitting.value = false
-  }
-}
-
 onMounted(() => {
   fetchLibraries()
-  fetchFolders()
 })
 </script>
 
@@ -1170,187 +781,6 @@ onMounted(() => {
   padding: 0;
   min-height: 100vh;
   background: var(--bg-body);
-}
-
-.rl-layout {
-  display: flex;
-  gap: var(--space-8);
-  padding: var(--space-8);
-  width: 100%;
-}
-
-/* 左侧边栏 */
-.rl-sidebar {
-  width: 260px;
-  flex-shrink: 0;
-  background: var(--bg-surface);
-  border-radius: var(--radius-xl);
-  padding: var(--space-6);
-  border: 1px solid var(--corp-border-light);
-  box-shadow: var(--shadow-card);
-  transition: width 0.25s ease, padding 0.25s ease, opacity 0.2s ease;
-  overflow: hidden;
-}
-
-.rl-sidebar--collapsed {
-  width: 48px;
-  padding: var(--space-4) var(--space-3);
-}
-
-.sidebar-collapse-btn {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 28px;
-  height: 28px;
-  border: 1px solid var(--corp-border-light);
-  border-radius: var(--radius-md);
-  background: var(--bg-surface);
-  cursor: pointer;
-  color: var(--corp-text-secondary);
-  transition: all 0.15s;
-  flex-shrink: 0;
-}
-.sidebar-collapse-btn:hover {
-  border-color: var(--corp-primary);
-  color: var(--corp-primary);
-  background: var(--color-primary-50);
-}
-.rl-sidebar--collapsed .sidebar-collapse-btn .el-icon {
-  transform: rotate(180deg);
-}
-
-.sidebar-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: var(--space-6);
-  padding-bottom: var(--space-5);
-  border-bottom: 1px solid var(--corp-border-light);
-}
-
-.sidebar-title {
-  font-size: var(--text-lg);
-  font-weight: 600;
-  color: var(--corp-text-primary);
-  margin: 0;
-}
-
-.sidebar-actions {
-  display: flex;
-  gap: 8px;
-}
-
-.folder-section {
-  margin-bottom: var(--space-6);
-}
-
-.category-list {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-1);
-}
-
-.folder-tree {
-  font-size: var(--text-base);
-  max-height: calc(100vh - 300px);
-  min-height: 380px;
-  overflow-y: auto;
-  color: var(--corp-text-primary);
-}
-
-.folder-tree :deep(.el-tree-node__content) {
-  height: auto;
-  padding: var(--space-2) var(--space-3);
-  border-radius: var(--radius-md);
-}
-
-.folder-tree :deep(.el-tree-node:hover > .el-tree-node__content) {
-  background: var(--bg-surface-hover);
-}
-
-.folder-tree :deep(.el-tree-node.is-selected > .el-tree-node__content) {
-  background: var(--corp-primary-lighter);
-}
-
-.folder-tree :deep(.el-checkbox__inner) {
-  border-radius: 4px;
-}
-
-.tree-node {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  padding: var(--space-1) 0;
-  width: 100%;
-}
-
-.expand-icon {
-  font-size: var(--text-xs);
-  color: var(--corp-text-secondary);
-}
-
-.node-label {
-  flex: 1;
-  color: var(--corp-text-primary);
-  font-size: var(--text-sm);
-  font-weight: 500;
-}
-
-.tree-count {
-  font-size: var(--text-xs);
-  color: var(--corp-text-secondary);
-  background: var(--bg-surface-hover);
-  padding: 2px var(--space-2);
-  border-radius: var(--radius-full);
-}
-
-.tree-node-actions {
-  display: flex;
-  gap: var(--space-1);
-  opacity: 0;
-  transition: opacity var(--corp-transition-base);
-}
-
-.tree-node:hover .tree-node-actions {
-  opacity: 1;
-}
-
-.action-btn-create-lib {
-  color: var(--corp-success) !important;
-  background: var(--corp-success-light) !important;
-}
-
-.action-btn-create-lib:hover {
-  color: var(--corp-success) !important;
-  background: rgba(16, 185, 129, 0.2) !important;
-}
-
-.tree-node-actions :deep(.el-button) {
-  padding: var(--space-1);
-  min-width: auto;
-}
-
-.dialog-tip {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  padding: var(--space-4) var(--space-5);
-  margin-bottom: var(--space-5);
-  background: var(--corp-info-light);
-  border-radius: var(--radius-lg);
-  font-size: var(--text-base);
-  color: var(--corp-info-text);
-}
-
-.dialog-tip :deep(.el-icon) {
-  font-size: 16px;
-}
-
-/* 右侧主内容 */
-.rl-main {
-  flex: 1;
-  min-width: 0;
 }
 
 /* 工具栏 */
@@ -1387,11 +817,6 @@ onMounted(() => {
 
 .status-filter {
   width: 120px;
-}
-
-.active-filter-tag {
-  display: flex;
-  align-items: center;
 }
 
 .publish-hint {
@@ -1615,80 +1040,44 @@ onMounted(() => {
 }
 
 @media (max-width: 1200px) {
-  .rl-layout {
-    flex-direction: column;
-    gap: var(--space-6);
-  }
-
-  .rl-sidebar {
-    width: 100%;
-    max-width: 100%;
-  }
-
-  .rl-sidebar--collapsed {
-    width: 100%;
-    padding: var(--space-5);
-  }
-
-  .sidebar-collapse-btn {
-    display: none;
-  }
-  
   .filters {
     flex-wrap: wrap;
     gap: var(--space-4);
   }
-  
+
   .filter-input {
     width: 100%;
     max-width: 300px;
   }
-  
+
   .filter-select {
     width: 140px;
   }
 }
 
 @media (max-width: 768px) {
-  .rl-layout {
-    padding: var(--space-5);
-    gap: var(--space-4);
-  }
-  
-  .rl-sidebar {
-    padding: var(--space-5);
-  }
-  
   .filters {
     padding: var(--space-4);
     gap: var(--space-3);
   }
-  
+
   .filter-input {
     width: 100%;
     max-width: 100%;
   }
-  
+
   .filter-select {
     width: calc(50% - var(--space-2));
   }
-  
+
   .detail-header {
     flex-direction: column;
     align-items: flex-start;
     gap: var(--space-4);
   }
-  
-  .tree-node-actions {
-    opacity: 1;
-  }
 }
 
 @media (max-width: 480px) {
-  .rl-layout {
-    padding: var(--space-3);
-  }
-  
   .lib-name-cell {
     flex-direction: column;
     align-items: flex-start;

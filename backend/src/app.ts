@@ -28,7 +28,6 @@ import specificationFolderRoutes from './routes/specification-folder.routes';
 import qaRoutes from './routes/qa.routes';
 import langchainRoutes from './routes/langchain.routes';
 import documentRoutes from './routes/document.routes';
-import ruleFolderRoutes from './routes/rule-folder.routes';
 import ruleLibraryRoutes from './routes/rule-library.routes';
 import healthRoutes from './routes/health.routes';
 import selfCheckRoutes from './routes/self-check.routes';
@@ -66,7 +65,6 @@ app.use('/api/dashboard', dashboardRoutes);
 app.use('/api/audit-logs', auditRoutes);
 app.use('/api/system-config', systemConfigRoutes);
 app.use('/api/rules', ruleRoutes);
-app.use('/api/rule-folders', ruleFolderRoutes);
 app.use('/api/rule-libraries', ruleLibraryRoutes);
 
 app.use('/api/terminology', terminologyRoutes);

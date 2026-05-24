@@ -16,7 +16,6 @@ export const listLibraries = async (_req: AuthRequest, res: Response): Promise<v
   try {
     const selectableOnly = _req.query.selectableOnly === 'true';
     const options: Record<string, any> = { selectableOnly };
-    if (_req.query.folderId) options.folderId = String(_req.query.folderId);
     if (_req.query.keyword) options.keyword = String(_req.query.keyword);
     if (_req.query.status) options.status = String(_req.query.status);
     const libraries = await RuleLibraryService.list(options);
@@ -42,12 +41,11 @@ export const getLibrary = async (req: AuthRequest, res: Response): Promise<void>
 /** 创建规则库 */
 export const createLibrary = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
-    const { name, description, folderId } = req.body;
+    const { name, description } = req.body;
     if (!name?.trim()) { error(res, '名称不能为空', 400); return; }
     const library = await RuleLibraryService.create({
       name: name.trim(),
       description,
-      folderId: folderId || null,
       createdBy: req.user!.id,
     });
     success(res, library, '创建成功');

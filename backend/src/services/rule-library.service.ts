@@ -214,12 +214,9 @@ function buildFallbackPreviewItems(text: string, sourceFileName?: string): RuleP
 }
 
 export class RuleLibraryService {
-  static async list(options?: { selectableOnly?: boolean; folderId?: string; keyword?: string; status?: string }) {
+  static async list(options?: { selectableOnly?: boolean; keyword?: string; status?: string }) {
     const selectableOnly = !!options?.selectableOnly;
     const where: any = selectableOnly ? { status: 'PUBLISHED' } : {};
-    if (options?.folderId) {
-      where.folderId = options.folderId;
-    }
     if (options?.status && ['DRAFT', 'PUBLISHED', 'ARCHIVED'].includes(options.status)) {
       where.status = options.status;
     }
@@ -272,18 +269,17 @@ export class RuleLibraryService {
     };
   }
 
-  static async create(data: { name: string; description?: string; folderId?: string | null; createdBy: string }) {
+  static async create(data: { name: string; description?: string; createdBy: string }) {
     return prisma.ruleLibrary.create({
       data: {
         name: data.name,
         description: data.description,
-        folderId: data.folderId ?? null,
         createdBy: data.createdBy,
       },
     });
   }
 
-  static async update(id: string, data: { name?: string; description?: string; folderId?: string | null; status?: 'DRAFT' | 'PUBLISHED' | 'ARCHIVED' }) {
+  static async update(id: string, data: { name?: string; description?: string; status?: 'DRAFT' | 'PUBLISHED' | 'ARCHIVED' }) {
     if (data.status === 'PUBLISHED') {
       await this.assertPublishable(id);
     }

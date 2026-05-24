@@ -730,22 +730,6 @@ model ReviewSpecificationItem {
   @@map("review_specification_items")
 }
 
-// ===== 规则目录 =====
-
-model RuleFolder {
-  id        String        @id @default(uuid())
-  name      String
-  parentId  String?
-  parent    RuleFolder?   @relation("RuleFolderTree", fields: [parentId], references: [id])
-  children  RuleFolder[]  @relation("RuleFolderTree")
-  libraries RuleLibrary[]
-  sortOrder Int           @default(0)
-  createdAt DateTime      @default(now())
-  updatedAt DateTime      @updatedAt
-
-  @@map("rule_folders")
-}
-
 // ===== 规则库 =====
 
 enum RuleLibraryStatus {
@@ -761,8 +745,6 @@ model RuleLibrary {
   sourceFileName  String?             @map("source_file_name")
   status          RuleLibraryStatus   @default(DRAFT)
   createdBy       String
-  folderId        String?
-  folder          RuleFolder?         @relation(fields: [folderId], references: [id], onDelete: SetNull)
   items           RuleLibraryItem[]
   createdAt       DateTime            @default(now())
   updatedAt       DateTime            @updatedAt
