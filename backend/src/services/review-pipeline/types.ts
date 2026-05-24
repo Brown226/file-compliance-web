@@ -133,6 +133,20 @@ export interface PipelineContext {
   onFastResult?: (fastResult: { ruleIssues: RuleIssue[]; stdRefIssues: ReviewIssue[] }) => void;
   /** 是否启用文件内一致性检查 */
   intraFileConsistency?: boolean;
+  /** 语义规范库条目（从 ReviewSpecification 加载，用于 AI 语义审查） */
+  semanticItems?: Array<{
+    ruleCode: string;
+    ruleName: string;
+    category?: string;
+    description?: string;
+    severity?: string;
+  }>;
+  /** 用户选择的审查点（用于指导 AI 审查方向） */
+  reviewPoints?: string[];
+  /** 用户定义的核心目的（用于指导 AI 审查重点） */
+  corePurposes?: string[];
+  /** 内部使用的语义规范库提示词上下文（由 AI 服务构建） */
+  _semanticPromptContext?: string;
   /** Python 解析服务的结构化结果（可能为 null） */
   parseResult?: import('../python-parser.service').ParseResult | null;
   /** Word 文档结构化数据 */

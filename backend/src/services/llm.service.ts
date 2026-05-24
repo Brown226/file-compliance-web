@@ -107,13 +107,21 @@ export class LlmService {
         jsonStr = jsonStr.replace(/^```(?:json)?\n?/, '').replace(/\n?```$/, '');
       }
 
-      // 尝试从文本中找到 JSON 数组（可能被包裹在其他文本中）
-      const jsonMatch = jsonStr.match(/\[[\s\S]*\]/);
-      if (jsonMatch) {
-        jsonStr = jsonMatch[0];
+      // 优先直接解析；失败则提取首个完整 JSON 数组
+      let parsed: any;
+      try {
+        parsed = JSON.parse(jsonStr);
+      } catch {
+        // 找到第一个 [ 和最后一个 ]，提取中间内容作为候选 JSON 数组
+        const firstBracket = jsonStr.indexOf('[');
+        const lastBracket = jsonStr.lastIndexOf(']');
+        if (firstBracket !== -1 && lastBracket > firstBracket) {
+          const candidate = jsonStr.substring(firstBracket, lastBracket + 1);
+          parsed = JSON.parse(candidate);
+        } else {
+          throw new Error('No JSON array found');
+        }
       }
-
-      const parsed = JSON.parse(jsonStr);
 
       if (Array.isArray(parsed)) {
         return parsed
@@ -375,12 +383,21 @@ export class LlmService {
     const chunks: string[] = [];
     const chunkInfos: TextChunk[] = [];
     const paragraphs = text.split('\n');
+
+    // 预计算每个段落在原文中的起始位置（避免 indexOf 在重复段落时出错）
+    const paraOffsets: number[] = [];
+    let offset = 0;
+    for (let i = 0; i < paragraphs.length; i++) {
+      paraOffsets.push(offset);
+      offset += paragraphs[i].length + 1; // +1 for '\n'
+    }
+
     let currentChunk = '';
     let currentStartIndex = 0;
 
     for (let i = 0; i < paragraphs.length; i++) {
       const para = paragraphs[i];
-      const paraStartInOriginal = text.indexOf(para, currentStartIndex);
+      const paraStart = paraOffsets[i];
 
       if (currentChunk.length + para.length + 1 > maxChars) {
         if (currentChunk) {
@@ -395,14 +412,12 @@ export class LlmService {
             });
           }
           currentChunk = '';
-          // 下一个 chunk 从当前位置继续
-          currentStartIndex = paraStartInOriginal >= 0 ? paraStartInOriginal : currentStartIndex + (currentChunk.length > 0 ? currentChunk.length + 1 : 0);
         }
         // 如果单个段落超过 maxChars，按句子再分割
         if (para.length > maxChars) {
           const sentences = para.split(/(?<=[。！？；，、])/);
           let sentenceChunk = '';
-          let sentenceStartIndex = paraStartInOriginal >= 0 ? paraStartInOriginal : currentStartIndex;
+          let sentenceStartIndex = paraStart;
 
           for (const sentence of sentences) {
             if (sentenceChunk.length + sentence.length > maxChars) {
@@ -430,13 +445,13 @@ export class LlmService {
           }
         } else {
           currentChunk = para;
-          currentStartIndex = paraStartInOriginal >= 0 ? paraStartInOriginal : currentStartIndex;
+          currentStartIndex = paraStart;
         }
       } else {
-        currentChunk += (currentChunk ? '\n' : '') + para;
-        if (currentStartIndex === 0 && i === 0) {
-          currentStartIndex = paraStartInOriginal >= 0 ? paraStartInOriginal : 0;
+        if (!currentChunk) {
+          currentStartIndex = paraStart;
         }
+        currentChunk += (currentChunk ? '\n' : '') + para;
       }
     }
 

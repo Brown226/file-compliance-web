@@ -20,11 +20,12 @@ export class TextExtractionService {
 
     let text = '';
     try {
-      text = await ParserService.parseFile(ctx.filePath, ctx.fileType);
+      const parsed = await ParserService.parseFileWithResult(ctx.filePath, ctx.fileType);
+      text = parsed.text;
       if (!text || text.trim().length === 0) {
         console.warn(`[Pipeline] 文件解析返回空文本: ${ctx.fileName}, fileType=${ctx.fileType}`);
       }
-      ctx.parseResult = ParserService.getLastParseResult();
+      ctx.parseResult = parsed.result;
     } catch (e) {
       console.warn(`[Pipeline] 文件解析失败: ${ctx.fileName}, fileType=${ctx.fileType}, error=${(e as Error).message || e}`);
     }
@@ -45,7 +46,10 @@ export class TextExtractionService {
     const normalizedFileType = FileTypeService.normalizeFileType(ctx.fileType);
     if (normalizedFileType !== 'pdf') return undefined;
     try {
-      return await ParserService.parsePdfPages(ctx.filePath);
+      const { pages, result } = await ParserService.parsePdfPagesWithResult(ctx.filePath);
+      // 同步更新 ctx.parseResult，确保并发安全
+      if (result) ctx.parseResult = result;
+      return pages;
     } catch (e) {
       console.warn(`[Pipeline] PDF逐页提取失败: ${ctx.fileName}`, e);
       return undefined;

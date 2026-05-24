@@ -153,6 +153,7 @@ const pagination = reactive({
 
 const issueTypes = [
   { value: 'TYPO', label: '错别字' },
+  { value: 'FLUENCY', label: '语句通顺性' },
   { value: 'VIOLATION', label: '合规违规' },
   { value: 'NAMING', label: '命名规范' },
   { value: 'ENCODING', label: '编码一致性' },

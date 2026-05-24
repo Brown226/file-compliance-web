@@ -626,7 +626,7 @@ export const getReviewSummary = async (req: Request, res: Response): Promise<voi
 /** 预分析 — 根据文件信息智能推荐审查方案 */
 export const preAnalyze = async (req: Request, res: Response): Promise<void> => {
   try {
-    const { files } = req.body;
+    const { files, reviewMode } = req.body;
     if (!Array.isArray(files) || files.length === 0) {
       error(res, '请提供文件列表', 400);
       return;
@@ -637,10 +637,11 @@ export const preAnalyze = async (req: Request, res: Response): Promise<void> => 
       fileCount: files.length,
       fileNames: files.map((f: any) => f.name),
       hasFilePath: files.some((f: any) => !!f.filePath),
+      reviewMode: reviewMode || '未指定',
       timestamp: new Date().toISOString()
     });
 
-    const result = await PreAnalysisService.analyzeFiles(files);
+    const result = await PreAnalysisService.analyzeFiles(files, reviewMode);
 
     // 记录结果摘要
     console.log('[PreAnalysis API] 预分析完成:', {

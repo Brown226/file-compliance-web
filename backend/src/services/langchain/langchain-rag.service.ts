@@ -317,17 +317,18 @@ export class LangChainRAGService {
     question: string,
     categoryIds: string[],
     history: Array<{ role: string; content: string }> = [],
-    options?: { topK?: number; enableMultiQuery?: boolean; enableHyDE?: boolean },
+    options?: { topK?: number; enableMultiQuery?: boolean; enableHyDE?: boolean; enableCompression?: boolean },
   ): Promise<{ answer: string; sources: SourceReference[]; debug: LangChainRAGResult['debug'] }> {
     const topK = options?.topK ?? 8;
     const enableMultiQuery = options?.enableMultiQuery ?? true;
     const enableHyDE = options?.enableHyDE ?? true;
+    const enableCompression = options?.enableCompression ?? true;
 
     const llm = await SystemConfigChatModel.create();
 
     const { documents, debug } = await this.enhancedRetrieve(
       llm, question, categoryIds, topK,
-      { enableMultiQuery, enableHyDE, enableCompression: true, multiQueryCount: 3 },
+      { enableMultiQuery, enableHyDE, enableCompression, multiQueryCount: 3 },
     );
 
     const knowledgeContext = this.formatContext(documents);

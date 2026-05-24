@@ -108,10 +108,15 @@ export class AiReviewService {
 
     // 按场景加载系统提示词
     const scene = AiReviewService.resolveScene(ctx);
-    const systemPrompt = await PromptTemplateService.getPromptByScene(
+    const sceneFallbacks: Record<string, string> = {
+      multimodal: '你是核电工程文件多模态审查专家。请重点检查表格数据的完整性和一致性、数值数据的合理性、公式和计算的正确性。严格按照 JSON 数组格式输出。',
+      typo_grammar: '你是核电工程文件文字校对专家。请检查错别字、语法错误和术语一致性问题。严格按照 JSON 数组格式输出。',
+    };
+    const rawSystemPrompt = await PromptTemplateService.getPromptByScene(
       scene, 'system', 'default',
-      '你是文件合规审查专家。请检查文本中的问题，严格按照 JSON 数组格式输出。',
+      sceneFallbacks[scene] || '你是文件合规审查专家。请检查文本中的问题，严格按照 JSON 数组格式输出。',
     );
+    const systemPrompt = AiReviewService.injectSemanticContext(rawSystemPrompt, ctx);
 
     for (const chunk of chunks) {
       try {
@@ -237,14 +242,31 @@ export class AiReviewService {
     const llmTimeout = config.llmTimeout || 180;
     const issues: ReviewIssue[] = [];
 
+    // 按场景提供匹配的回退提示词（DB 模板不存在时使用）
+    const SCENE_FALLBACKS: Record<string, { system: string; user: string }> = {
+      multimodal: {
+        system: '你是核电工程文件多模态审查专家。请重点检查表格数据的完整性和一致性、数值数据的合理性（单位、量级）、公式和计算的正确性。严格按照 JSON 数组格式输出。',
+        user: '【待审查文本】\n${text}\n\n请重点检查以上文本中表格数据、数值和公式的正确性。',
+      },
+      typo_grammar: {
+        system: '你是核电工程文件文字校对专家。请检查错别字、语法错误和术语一致性问题。不要报告合规性或格式问题。严格按照 JSON 数组格式输出。',
+        user: '【待审查文本】\n${text}\n\n请检查以上文本中的错别字、语法错误和术语一致性问题。',
+      },
+    };
+    const fallbacks = SCENE_FALLBACKS[scene] || {
+      system: '你是文件审查专家。请检查文本中的问题，严格按照 JSON 数组格式输出。',
+      user: '【待审查文本】\n${text}\n\n请检查以上文本的合规性问题。',
+    };
+
     try {
-      const systemPrompt = await PromptTemplateService.getPromptByScene(
+      const rawSystemPrompt = await PromptTemplateService.getPromptByScene(
         scene, 'system', 'default',
-        '你是文件审查专家。请检查文本中的问题，严格按照 JSON 数组格式输出。',
+        fallbacks.system,
       );
+      const systemPrompt = AiReviewService.injectSemanticContext(rawSystemPrompt, ctx);
       const userTpl = await PromptTemplateService.getPromptByScene(
         scene, 'user', 'no_context',
-        `【待审查文本】\n\n请检查以上文本的合规性问题。`,
+        fallbacks.user,
       );
 
       const chunks = LlmService.splitText(text, chunkSize, true);
@@ -307,11 +329,24 @@ export class AiReviewService {
     const llmMaxTokens = config.llmMaxTokens || 4096;
     const llmTimeout = config.llmTimeout || 180;
 
+    // 按场景提供匹配的回退提示词
+    const SCENE_FALLBACKS: Record<string, { system: string; user: string }> = {
+      typo_grammar: {
+        system: '你是核电工程文件文字校对专家。请检查错别字、语法错误和术语一致性问题。不要报告合规性或格式问题。严格按照 JSON 数组格式输出。',
+        user: '【待审查文本】\n${text}\n\n请检查以上文本中的错别字、语法错误和术语一致性问题。',
+      },
+    };
+    const fallbacks = SCENE_FALLBACKS[scene] || {
+      system: '你是文件审查专家。请检查文本中的问题，严格按照 JSON 数组格式输出。',
+      user: '【待审查文本】\n${text}\n\n请检查以上文本的问题。',
+    };
+
     try {
-      const systemPrompt = await PromptTemplateService.getPromptByScene(
+      const rawSystemPrompt = await PromptTemplateService.getPromptByScene(
         scene, 'system', 'default',
-        '你是文件审查专家。请检查文本中的问题，严格按照 JSON 数组格式输出。',
+        fallbacks.system,
       );
+      const systemPrompt = AiReviewService.injectSemanticContext(rawSystemPrompt, ctx);
 
       const chunks = LlmService.splitText(text, chunkSize, true);
       const totalChunks = chunks.length;
@@ -320,7 +355,7 @@ export class AiReviewService {
         try {
           const userTpl = await PromptTemplateService.getPromptByScene(
             scene, 'user', 'default',
-            `【待审查文本】\n${chunk.text}\n\n请检查以上文本的问题。`,
+            fallbacks.user,
           );
           const userContent = userTpl.replace(/\$\{text\}/g, chunk.text);
 
@@ -356,13 +391,180 @@ export class AiReviewService {
     return result.issues;
   }
 
+  // ==================== 参照文件比对策略 ====================
+
+  /**
+   * 参照文件比对策略（以文审文模式）
+   * 将待审文件与参照文件进行 LLM 语义级逐项比对
+   * 无参照文件时降级到标准 AI 审查
+   */
+  static async runRefCompareStrategy(
+    text: string,
+    ctx: PipelineContext,
+    scene: string,
+    config: PipelineReviewConfig,
+  ): Promise<{ issues: ReviewIssue[]; engine: string; sources?: SourceReference[] }> {
+    // 无参照文件时降级到标准 AI 审查（切换 scene 为通用合规审查，避免使用比对类提示词）
+    if (!ctx.refFileGroup || ctx.refFileGroup.refFiles.length === 0) {
+      console.log('[AiReview] 无参照文件，降级到标准 AI 审查');
+      return AiReviewService.runAIReview(text, ctx, 'library_review', config);
+    }
+
+    // 解析参照文件文本
+    const { ParserService } = await import('../parser.service');
+    const refTexts: string[] = [];
+    for (const refFile of ctx.refFileGroup.refFiles) {
+      if (refFile.extractedText) {
+        refTexts.push(refFile.extractedText);
+      } else {
+        try {
+          const refText = await ParserService.parseFile(refFile.filePath, refFile.fileType);
+          if (refText) refTexts.push(refText);
+        } catch (e) {
+          console.warn(`[AiReview] 参照文件解析失败: ${refFile.fileName}`, e);
+        }
+      }
+    }
+
+    if (refTexts.length === 0) {
+      console.warn('[AiReview] 参照文件均无文本内容，降级到标准 AI 审查');
+      return AiReviewService.runAIReview(text, ctx, 'library_review', config);
+    }
+
+    const llmMaxTokens = config.llmMaxTokens || 4096;
+    const llmTimeout = config.llmTimeout || 180;
+    const chunkSize = config.chunkSize || 4000;
+
+    try {
+      // 截断参照文本，防止超出 LLM 上下文窗口
+      const MAX_REF_CHARS = 12000;
+      const rawRefTextsJoined = refTexts.join('\n---\n');
+      const refTextsJoined = rawRefTextsJoined.length > MAX_REF_CHARS
+        ? rawRefTextsJoined.substring(0, MAX_REF_CHARS) + '\n...(参照文件内容过长，已截断)'
+        : rawRefTextsJoined;
+      if (rawRefTextsJoined.length > MAX_REF_CHARS) {
+        console.warn(`[AiReview] 参照文本已截断至 ${MAX_REF_CHARS} 字符（原始 ${rawRefTextsJoined.length} 字符）`);
+      }
+
+      // 按场景加载比对系统提示词
+      const rawComparePrompt = await PromptTemplateService.getPromptByScene(
+        scene, 'system', 'default',
+        `你是核电工程文件比对专家。请比较【待审文件】与【参照文件】之间的差异，找出待审文件中可能存在的错误或不一致。
+
+## 参照文件内容
+${refTextsJoined}
+
+## 输出要求
+严格按照 JSON 数组格式输出，每个问题包含:
+- issueType: VIOLATION/FORMAT/COMPLETENESS/CONSISTENCY
+- originalText: 待审文件中的问题文本
+- suggestedText: 建议修改内容（参照文件中的对应内容）
+- description: 问题描述和差异说明
+- ruleCode: 问题类型编码
+- standardRef: 违反的具体标准规范引用，如果无法确定则写null
+
+如果没有发现差异问题，输出空数组 []
+不要输出任何其他文字说明`,
+      );
+      const comparePrompt = AiReviewService.injectSemanticContext(
+        rawComparePrompt.replace(/\$\{refTexts\}/g, refTextsJoined), ctx
+      );
+
+      const chunks = LlmService.splitText(text, chunkSize, true);
+      const totalChunks = chunks.length;
+      const allIssues: ReviewIssue[] = [];
+      let failedChunks = 0;
+      const errors: string[] = [];
+
+      for (const chunk of chunks) {
+        try {
+          const userContentTpl = await PromptTemplateService.getPromptByScene(
+            scene, 'user', 'comparison',
+            `【待审文件】\n${chunk.text}\n\n请与参照文件比对，找出差异和问题。`,
+          );
+          const userContent = userContentTpl.replace(/\$\{text\}/g, chunk.text);
+
+          const issues = await LlmService.reviewText(userContent, {
+            maxTokens: llmMaxTokens,
+            timeout: llmTimeout,
+            systemPrompt: comparePrompt,
+            skipUserTemplate: true,
+            positionInfo: {
+              chunkIndex: chunk.chunkIndex,
+              chunkStartIndex: chunk.startIndex,
+              totalChunks,
+            },
+          });
+
+          allIssues.push(...issues);
+          ctx.onChunkProgress?.(chunk.text.length, issues, chunk.chunkIndex, totalChunks, 'llm-ref-compare');
+        } catch (e: any) {
+          failedChunks++;
+          errors.push(e.message);
+          console.warn(`[AiReview] 分片 ${chunk.chunkIndex + 1}/${totalChunks} 比对失败:`, e.message);
+        }
+      }
+
+      if (failedChunks === totalChunks && totalChunks > 0) {
+        throw new Error(`所有 ${totalChunks} 个分片比对均失败: ${errors[0]}`);
+      }
+
+      return { issues: allIssues, engine: 'llm-ref-compare' };
+    } catch (e: any) {
+      if (e.name === 'AbortError') {
+        console.warn('[AiReview] LLM 请求超时，降级到标准 AI 审查');
+      } else {
+        console.error('[AiReview] LLM 比对失败:', e);
+      }
+      return AiReviewService.runAIReview(text, ctx, 'library_review', config);
+    }
+  }
+
   // ==================== 内部辅助方法 ====================
+
+  /**
+   * 将语义规范库条目格式化为 AI 提示词上下文
+   */
+  static formatSemanticItems(items: NonNullable<PipelineContext['semanticItems']>): string {
+    if (!items || items.length === 0) return '';
+    const lines = items.map((item, i) => {
+      const parts = [`${i + 1}. [${item.ruleCode}] ${item.ruleName}`];
+      if (item.description) parts.push(`   内容: ${item.description}`);
+      if (item.category) parts.push(`   分类: ${item.category}`);
+      return parts.join('\n');
+    });
+    return `\n\n## 语义规范库条文（审查依据）\n以下是本次审查必须依据的规范条文，请逐条检查文件是否违反：\n${lines.join('\n')}\n\n输出时，每条问题的 ruleCode 必须引用上述条文编号（如 [条文编号]），description 中必须说明违反了哪条具体条文。`;
+  }
+
+  /**
+   * 将语义规范库上下文、审查点和核心目的注入系统提示词
+   */
+  static injectSemanticContext(systemPrompt: string, ctx: PipelineContext): string {
+    let enhancedPrompt = systemPrompt;
+
+    // 注入语义规范库上下文
+    if (ctx._semanticPromptContext) {
+      enhancedPrompt += ctx._semanticPromptContext;
+    }
+
+    // 注入用户选择的审查点
+    if (ctx.reviewPoints && ctx.reviewPoints.length > 0) {
+      enhancedPrompt += `\n\n【用户关注的审查点】\n请重点关注以下方面：\n${ctx.reviewPoints.map((p, i) => `${i + 1}. ${p}`).join('\n')}`;
+    }
+
+    // 注入用户定义的核心目的
+    if (ctx.corePurposes && ctx.corePurposes.length > 0) {
+      enhancedPrompt += `\n\n【审查核心目的】\n本次审查的核心目标：\n${ctx.corePurposes.map((p, i) => `${i + 1}. ${p}`).join('\n')}`;
+    }
+
+    return enhancedPrompt;
+  }
 
   /**
    * 从 PipelineContext 推断审查场景（用于 PromptTemplateService 加载提示词）
    * 对应 BasePipeline.scene getter 的逻辑
    */
-  private static resolveScene(ctx: PipelineContext): string {
+  static resolveScene(ctx: PipelineContext): string {
     const modeMap: Record<string, string> = {
       LIBRARY_REVIEW: 'library_review',
       CONSISTENCY: 'consistency',

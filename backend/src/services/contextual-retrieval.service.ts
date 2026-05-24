@@ -71,10 +71,6 @@ export class ContextualRetrievalService {
     const concurrency = options.concurrency || 3;
     const timeout = options.timeout || 30;
 
-    const truncatedDoc = wholeDocument.length > 8000
-      ? wholeDocument.substring(0, 8000) + '\n...(文档过长，已截断)'
-      : wholeDocument;
-
     const results: ChunkWithContext[] = new Array(chunks.length);
 
     const batches: number[][] = [];
@@ -84,11 +80,15 @@ export class ContextualRetrievalService {
       );
     }
 
+    // 预计算每个 chunk 在原文档中的大致位置，用于动态窗口截取
+    const chunkPositions = this.estimateChunkPositions(wholeDocument, chunks);
+
     for (const batch of batches) {
       const promises = batch.map(async (index) => {
         const chunk = chunks[index];
         try {
-          const summary = await this.generateContextSummary(truncatedDoc, chunk, timeout);
+          const localContext = this.extractLocalContext(wholeDocument, chunkPositions[index]);
+          const summary = await this.generateContextSummary(localContext, chunk, timeout);
           results[index] = {
             originalContent: chunk,
             contextSummary: summary,
@@ -108,6 +108,60 @@ export class ContextualRetrievalService {
     }
 
     return results;
+  }
+
+  /**
+   * 估算每个 chunk 在原文档中的大致字符位置
+   */
+  private static estimateChunkPositions(
+    wholeDocument: string,
+    chunks: string[]
+  ): Array<{ start: number; end: number }> {
+    const positions: Array<{ start: number; end: number }> = [];
+    let searchFrom = 0;
+    for (const chunk of chunks) {
+      // 取 chunk 前50字符作为搜索锚点，避免因微小差异导致定位失败
+      const anchor = chunk.slice(0, 50).trim();
+      const idx = wholeDocument.indexOf(anchor, searchFrom);
+      if (idx >= 0) {
+        positions.push({ start: idx, end: idx + chunk.length });
+        searchFrom = idx + chunk.length;
+      } else {
+        // 找不到时用上一个 chunk 结尾作为起点
+        const fallback = positions.length > 0 ? positions[positions.length - 1].end : 0;
+        positions.push({ start: fallback, end: fallback + chunk.length });
+      }
+    }
+    return positions;
+  }
+
+  /**
+   * 根据 chunk 位置提取局部上下文（前后各取 2000 字符）
+   * 比截断前 8000 字符更精准，确保每个 chunk 获得相关上下文
+   */
+  private static extractLocalContext(
+    wholeDocument: string,
+    position: { start: number; end: number },
+    contextSize: number = 2000
+  ): string {
+    const docLen = wholeDocument.length;
+    if (docLen <= contextSize * 2.5) {
+      // 文档较短，直接返回全文
+      return wholeDocument;
+    }
+
+    const start = Math.max(0, position.start - contextSize);
+    const end = Math.min(docLen, position.end + contextSize);
+
+    let context = wholeDocument.slice(start, end);
+    if (start > 0) context = '...(前文省略)\n' + context;
+    if (end < docLen) context = context + '\n...(后文省略)';
+
+    // 限制总长度不超过 8000
+    if (context.length > 8000) {
+      context = context.slice(0, 8000) + '\n...(已截断)';
+    }
+    return context;
   }
 
   /**

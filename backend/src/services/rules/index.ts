@@ -34,6 +34,17 @@ import { checkDwgRules } from './dwg.rule';
 
 import prisma from '../../config/db';
 
+// ===== 规则配置缓存 =====
+const RULE_CONFIG_CACHE_TTL_MS = 60_000; // 60秒缓存
+let ruleConfigCache: Map<string, { enabled: boolean; severity: string; config?: any }> | null = null;
+let ruleConfigCacheTimestamp = 0;
+
+/** 使规则配置缓存失效（规则配置变更时调用） */
+export function invalidateRuleConfigCache(): void {
+  ruleConfigCache = null;
+  ruleConfigCacheTimestamp = 0;
+}
+
 /**
  * 规则前缀 → 规则执行函数 的映射
  * 每个规则前缀对应一个检查函数，函数接受 (ctx, config?) 参数
@@ -157,10 +168,15 @@ const RULE_REGISTRY: RuleEntry[] = [
 ];
 
 /**
- * 从数据库加载规则配置
+ * 从数据库加载规则配置（带缓存，60秒TTL）
  * 返回 Map<ruleCode前缀, { enabled, severity, config }>
  */
 async function loadRuleConfigsFromDB(): Promise<Map<string, { enabled: boolean; severity: string; config?: any }>> {
+  const now = Date.now();
+  if (ruleConfigCache && (now - ruleConfigCacheTimestamp) < RULE_CONFIG_CACHE_TTL_MS) {
+    return ruleConfigCache;
+  }
+
   const configMap = new Map<string, { enabled: boolean; severity: string; config?: any }>();
 
   try {
@@ -190,6 +206,9 @@ async function loadRuleConfigsFromDB(): Promise<Map<string, { enabled: boolean; 
         });
       }
     }
+
+    ruleConfigCache = configMap;
+    ruleConfigCacheTimestamp = now;
   } catch (e) {
     console.warn('[规则引擎] 加载数据库规则配置失败，使用默认值:', e);
   }

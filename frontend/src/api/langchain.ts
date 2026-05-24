@@ -1,32 +1,5 @@
 import request from '@/utils/request'
 
-export interface LangChainSearchResult {
-  id: string
-  title: string | null
-  clauseId: string | null
-  content: string
-  score: number
-  rerankScore?: number
-  chunkIndex: number
-  isTable: boolean
-  metadata: any
-  source?: string
-}
-
-export interface LangChainHitTestResult {
-  originalQuery: string
-  multiQueryVariants?: string[]
-  hydeAnswer?: string
-  results: LangChainSearchResult[]
-  stats: {
-    totalCandidates: number
-    afterRerank: number
-    searchTimeMs: number
-    multiQueryTimeMs?: number
-    hydeTimeMs?: number
-  }
-}
-
 export interface LangChainAskResult {
   answer: string
   sources: Array<{
@@ -43,24 +16,35 @@ export interface LangChainAskResult {
   }
 }
 
-export const langchainSearchApi = (data: {
-  query: string
-  categoryId?: string
-  sourceTypes?: string[]
-  limit?: number
-  enableMultiQuery?: boolean
-  enableHyDE?: boolean
-  minSimilarity?: number
-}) => request.post<LangChainSearchResult[]>('/langchain/search', data)
+export interface Conversation {
+  id: string
+  title: string
+  messageCount: number
+  createdAt: string
+  updatedAt: string
+}
 
-export const langchainHitTestApi = (data: {
-  query: string
-  categoryId?: string
-  sourceTypes?: string[]
-  topNumber?: number
-  enableMultiQuery?: boolean
-  enableHyDE?: boolean
-}) => request.post<LangChainHitTestResult>('/langchain/hit-test', data)
+export interface ConversationDetail extends Conversation {
+  messages: Array<{
+    id: string
+    role: 'user' | 'assistant' | 'system'
+    content: string
+    status?: string
+    sources?: any
+    debug?: any
+    createdAt: string
+  }>
+}
+
+export interface MessageStatus {
+  id: string
+  content: string
+  status: 'processing' | 'completed' | 'failed'
+  sources?: any
+  debug?: any
+  createdAt: string
+  updatedAt: string
+}
 
 export const langchainAskApi = (data: {
   question: string
@@ -87,3 +71,46 @@ export const getLangChainStreamUrl = () => {
   const base = request.defaults?.baseURL || '/api'
   return `${base}/langchain/ask-stream`
 }
+
+// 后台问答 API
+export const langchainAskBackgroundApi = (data: {
+  question: string
+  categoryIds: string[]
+  sessionId?: string
+  history?: Array<{ role: string; content: string }>
+  topK?: number
+  enableMultiQuery?: boolean
+  enableHyDE?: boolean
+  enableCompression?: boolean
+}) => request.post<{
+  sessionId: string
+  userMessageId: string
+  assistantMessageId: string
+}>('/langchain/ask-background', data)
+
+// 获取消息状态
+export const getMessageStatusApi = (messageId: string) =>
+  request.get<MessageStatus>(`/langchain/messages/${messageId}/status`)
+
+// 批量获取消息状态
+export const getMessagesStatusApi = (messageIds: string[]) =>
+  request.post<MessageStatus[]>('/langchain/messages/status', { messageIds })
+
+// 对话记录管理 API
+export const getConversationsApi = () =>
+  request.get<Conversation[]>('/langchain/conversations')
+
+export const getConversationApi = (id: string) =>
+  request.get<ConversationDetail>(`/langchain/conversations/${id}`)
+
+export const createConversationApi = (title?: string) =>
+  request.post<Conversation>('/langchain/conversations', { title })
+
+export const updateConversationApi = (id: string, title: string) =>
+  request.put<Conversation>(`/langchain/conversations/${id}`, { title })
+
+export const deleteConversationApi = (id: string) =>
+  request.delete(`/langchain/conversations/${id}`)
+
+export const saveMessageApi = (sessionId: string, role: string, content: string) =>
+  request.post(`/langchain/conversations/${sessionId}/messages`, { role, content })

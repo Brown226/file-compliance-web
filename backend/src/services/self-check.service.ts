@@ -77,11 +77,13 @@ export class SelfCheckService {
    * @param filePaths 待检文件路径列表 [{path, originalName}]
    * @param standardFolderId 标准库文件夹ID（null表示全部标准）
    * @param onProgress 进度回调（currentFile / totalFiles / message）
+   * @param dwgParsedData 前端传来的DWG解析数据（key为文件名，value含text字段）
    */
   static async execute(
     filePaths: Array<{ path: string; originalName: string; fileType: string }>,
     standardFolderId: string | null,
-    onProgress?: (progress: { current: number; total: number; message: string }) => void
+    onProgress?: (progress: { current: number; total: number; message: string }) => void,
+    dwgParsedData?: Record<string, { text: string }> | null
   ): Promise<SelfCheckReport> {
     const reportId = `SC-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     const allItems: SelfCheckItem[] = [];
@@ -98,8 +100,13 @@ export class SelfCheckService {
       onProgress?.({ current: i + 1, total: totalFiles, message: `正在检查: ${file.originalName}` });
 
       try {
-        // 2a. 解析文件文本
-        const text = await ParserService.parseFile(file.path, file.fileType);
+        // 2a. 解析文件文本（DWG 使用前端传来的预解析数据）
+        let text: string;
+        if (file.fileType === 'dwg' && dwgParsedData?.[file.originalName]?.text) {
+          text = dwgParsedData[file.originalName].text;
+        } else {
+          text = await ParserService.parseFile(file.path, file.fileType);
+        }
         if (!text || text.trim().length < 5) {
           // 文件内容过短或解析失败，跳过
           continue;
@@ -166,25 +173,29 @@ export class SelfCheckService {
       errorTypes.push('NO_MATCH');
     } else if (matchResult.matchedItem) {
       const lib = matchResult.matchedItem;
+      const matchLevel = matchResult.matchLevel;
 
-      // 检查编号差异
-      if (ref.standardNo && lib.standardNo && ref.standardNo !== lib.standardNo) {
-        errorTypes.push('NUMBER_MISMATCH');
+      // 仅在精确匹配（级别1-2）时报告编号/名称差异
+      // 级别3-8的匹配本身就意味着格式不同，不应重复报告为错误
+      if (matchLevel <= 2) {
+        // 检查编号差异
+        if (ref.standardNo && lib.standardNo && ref.standardNo !== lib.standardNo) {
+          errorTypes.push('NUMBER_MISMATCH');
+        }
+        // 检查名称差异
+        if (ref.standardName && lib.standardName && ref.standardName.trim() !== lib.standardName.trim()) {
+          errorTypes.push('NAME_MISMATCH');
+        }
       }
 
-      // 检查名称差异
-      if (ref.standardName && lib.standardName && ref.standardName.trim() !== lib.standardName.trim()) {
-        errorTypes.push('NAME_MISMATCH');
-      }
-
-      // 检查标准状态
+      // 检查标准状态（所有匹配级别都检查）
       if (lib.standardStatus === 'ABOLISHED') {
         errorTypes.push('ABOLISHED');
       } else if (lib.standardStatus === 'UPCOMING') {
         errorTypes.push('UPCOMING');
       }
 
-      // 检查版本号（从编号中提取年份比对）
+      // 检查版本号（从编号中提取年份比对，所有匹配级别都检查）
       if (ref.standardNo && lib.standardNo) {
         const docYear = SelfCheckService.extractYear(ref.standardNo);
         const libYear = SelfCheckService.extractYear(lib.standardNo);
@@ -313,11 +324,18 @@ export class SelfCheckService {
 
   /**
    * 从标准编号中提取年份
-   * 例: "GB/T 50001-2017" → "2017"
+   * 取最后一个连字符后的4位数字（标准编号的年份总在末尾）
+   * 例: "GB/T 50001-2017" → "2017", "NB/T 20292-2014" → "2014"
+   * 支持带括号版本: "GB 50001-2017(2023年版)" → "2023"
    */
   private static extractYear(standardNo: string): string | null {
-    const match = standardNo.match(/(\d{4})(?:\D|$)/);
-    return match ? match[1] : null;
+    // 匹所有4位数字序列，取最后一个（年份总在编号末尾）
+    const matches = standardNo.match(/\d{4}/g);
+    if (!matches || matches.length === 0) return null;
+    const last = matches[matches.length - 1];
+    // 年份必须是合理的（1900-2099）
+    const year = parseInt(last, 10);
+    return (year >= 1900 && year <= 2099) ? last : null;
   }
 
   /**

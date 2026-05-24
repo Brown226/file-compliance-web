@@ -1,6 +1,7 @@
 import { Request, Response } from 'express';
 import prisma from '../config/db';
 import { success, error } from '../utils/response';
+import { invalidateRuleConfigCache } from '../services/rules';
 
 /**
  * 获取审查模式控制面板数据
@@ -101,6 +102,7 @@ export async function toggleRulesByPrefix(req: Request, res: Response): Promise<
     }
 
     console.log(`[RulePanel] 批量${enabled ? '启用' : '禁用'}规则: prefixes=[${prefixes.join(',')}], affected=${result.count}`);
+    invalidateRuleConfigCache();
     success(res, {
       updatedCount: result.count,
       prefixes,
@@ -205,6 +207,7 @@ export async function updateRule(req: Request, res: Response): Promise<void> {
       data: updateData,
     });
 
+    invalidateRuleConfigCache();
     success(res, rule, '规则更新成功');
   } catch (err: any) {
     error(res, err.message || '更新规则失败', 500);
@@ -231,6 +234,7 @@ export async function toggleRule(req: Request, res: Response): Promise<void> {
       data: { enabled: !existing.enabled },
     });
 
+    invalidateRuleConfigCache();
     success(res, rule, rule.enabled ? '已启用' : '已禁用');
   } catch (err: any) {
     error(res, err.message || '切换失败', 500);
@@ -271,6 +275,7 @@ export async function batchToggleRules(req: Request, res: Response): Promise<voi
       data: { enabled },
     });
 
+    invalidateRuleConfigCache();
     success(res, { updatedCount: result.count }, `已${enabled ? '启用' : '禁用'} ${result.count} 条规则`);
   } catch (err: any) {
     error(res, err.message || '批量操作失败', 500);
@@ -320,6 +325,7 @@ export async function resetRulesToDefault(_req: Request, res: Response): Promise
       }
     }
 
+    invalidateRuleConfigCache();
     success(res, { resetCount }, `已重置 ${resetCount} 条规则为默认配置`);
   } catch (err: any) {
     error(res, err.message || '重置失败', 500);
@@ -366,6 +372,7 @@ export async function createRule(req: Request, res: Response): Promise<void> {
       },
     });
 
+    invalidateRuleConfigCache();
     success(res, rule, '规则创建成功');
   } catch (err: any) {
     error(res, err.message || '创建规则失败', 500);
@@ -391,6 +398,7 @@ export async function deleteRule(req: Request, res: Response): Promise<void> {
       where: { id: existing.id },
     });
 
+    invalidateRuleConfigCache();
     success(res, null, '规则删除成功');
   } catch (err: any) {
     error(res, err.message || '删除规则失败', 500);

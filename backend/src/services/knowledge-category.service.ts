@@ -294,16 +294,16 @@ export class KnowledgeCategoryService {
     const ext = path.extname(fileName).toLowerCase().replace('.', '');
     const fileType = FileTypeService.getStandardizedType(ext);
 
-    await ParserService.parseFile(filePath, fileType);
-    const markdown = ParserService.getLastMarkdown();
-    const text = ParserService.getLastParseResult()?.text || '';
+    const parsed = await ParserService.parseFileWithResult(filePath, fileType);
+    const markdown = parsed.result?.markdown || '';
+    const text = parsed.text || '';
     const content = (markdown && markdown.trim().length > 10) ? markdown : text;
 
     if (!content || content.trim().length < 10) {
       throw new Error('文件内容过少或解析失败');
     }
 
-    const parseResult = ParserService.getLastParseResult();
+    const parseResult = parsed.result;
     const parseQuality = this.buildParseQualityReport(content);
     const title = fileName.replace(/\.\w+$/, '');
 
@@ -364,10 +364,10 @@ export class KnowledgeCategoryService {
     console.info('[KB][uploadDocument] start', { categoryId, fileName, fileType, filePath });
 
     // 解析文件内容
-    await ParserService.parseFile(filePath, fileType);
+    const parsed = await ParserService.parseFileWithResult(filePath, fileType);
     // 优先使用Markdown格式（保留表格结构），回退到纯文本
-    const markdown = ParserService.getLastMarkdown();
-    const text = ParserService.getLastParseResult()?.text || '';
+    const markdown = parsed.result?.markdown || '';
+    const text = parsed.text || '';
     const content = (markdown && markdown.trim().length > 10) ? markdown : text;
 
     console.info('[KB][uploadDocument] parsed', {
@@ -382,7 +382,7 @@ export class KnowledgeCategoryService {
       throw new Error('文件内容过少或解析失败');
     }
 
-    const parseResult = ParserService.getLastParseResult();
+    const parseResult = parsed.result;
     const parseQuality = this.buildParseQualityReport(content);
     console.info('[KB][uploadDocument] quality', { categoryId, fileName, score: parseQuality.score, passed: parseQuality.passed, reasons: parseQuality.reasons });
     if (!parseQuality.passed) {

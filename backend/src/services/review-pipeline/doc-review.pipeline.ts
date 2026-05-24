@@ -90,7 +90,15 @@ export class DocReviewPipeline extends BasePipeline {
     const chunkSize = config.chunkSize || 4000;
 
     try {
-      const refTextsJoined = refTexts.join('\n---\n');
+      // 截断参照文本，防止超出 LLM 上下文窗口（预留 ~12000 字符 ≈ 4000-6000 tokens）
+      const MAX_REF_CHARS = 12000;
+      const rawRefTextsJoined = refTexts.join('\n---\n');
+      const refTextsJoined = rawRefTextsJoined.length > MAX_REF_CHARS
+        ? rawRefTextsJoined.substring(0, MAX_REF_CHARS) + '\n...(参照文件内容过长，已截断)'
+        : rawRefTextsJoined;
+      if (rawRefTextsJoined.length > MAX_REF_CHARS) {
+        console.warn(`[DocReview] 参照文本已截断至 ${MAX_REF_CHARS} 字符（原始 ${rawRefTextsJoined.length} 字符）`);
+      }
 
       // 按场景加载比对系统提示词
       const comparePromptTpl = await PromptTemplateService.getPromptByScene(
@@ -118,6 +126,8 @@ ${refTextsJoined}
       const chunks = LlmService.splitText(text, chunkSize, true);
       const totalChunks = chunks.length;
       const allIssues: ReviewIssue[] = [];
+      let failedChunks = 0;
+      const errors: string[] = [];
 
       for (const chunk of chunks) {
         try {
@@ -143,8 +153,19 @@ ${refTextsJoined}
           allIssues.push(...issues);
           ctx.onChunkProgress?.(chunk.text.length, issues, chunk.chunkIndex, totalChunks, 'llm-ref-compare');
         } catch (e: any) {
+          failedChunks++;
+          errors.push(e.message);
           console.warn(`[DocReview] 分片 ${chunk.chunkIndex + 1}/${totalChunks} 比对失败:`, e.message);
         }
+      }
+
+      // 所有分片都失败时，抛出错误让上层降级处理
+      if (failedChunks === totalChunks && totalChunks > 0) {
+        throw new Error(`所有 ${totalChunks} 个分片比对均失败: ${errors[0]}`);
+      }
+
+      if (failedChunks > 0) {
+        console.warn(`[DocReview] ${failedChunks}/${totalChunks} 个分片比对失败，已跳过`);
       }
 
       return { issues: allIssues, engine: 'llm-ref-compare' };

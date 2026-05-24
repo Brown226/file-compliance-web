@@ -177,10 +177,13 @@ async function generateSvg(file: File) {
     const result: DwgSvgResult = await dwgToSvg(file)
 
     // 安全过滤 SVG（保留 data-handle 和 data-entity-type 属性）
-    svgContent.value = DOMPurify.sanitize(result.svg, {
+    const rawSvg = result.svg
+    console.log('[DwgPreview] 原始 SVG 长度:', rawSvg.length, '前200字符:', rawSvg.slice(0, 200))
+    svgContent.value = DOMPurify.sanitize(rawSvg, {
       ADD_TAGS: ['svg', 'path', 'g', 'circle', 'ellipse', 'line', 'polyline', 'polygon', 'rect', 'text', 'defs', 'use', 'clippath', 'lineargradient', 'radialgradient', 'stop', 'title', 'desc', 'marker'],
-      ADD_ATTR: ['d', 'cx', 'cy', 'r', 'rx', 'ry', 'x', 'y', 'width', 'height', 'x1', 'y1', 'x2', 'y2', 'points', 'transform', 'fill', 'stroke', 'stroke-width', 'stroke-dasharray', 'stroke-linecap', 'stroke-linejoin', 'opacity', 'font-size', 'font-family', 'text-anchor', 'dominant-baseline', 'viewbox', 'preserveaspectratio', 'xmlns', 'id', 'class', 'style', 'data-handle', 'data-entity-type', 'href', 'clip-path', 'offset', 'stop-color', 'stop-opacity', 'marker-start', 'marker-end', 'ref-x', 'ref-y', 'marker-width', 'marker-height', 'orient', 'markerunits'],
+      ADD_ATTR: ['d', 'cx', 'cy', 'r', 'rx', 'ry', 'x', 'y', 'width', 'height', 'x1', 'y1', 'x2', 'y2', 'points', 'transform', 'fill', 'stroke', 'stroke-width', 'stroke-dasharray', 'stroke-linecap', 'stroke-linejoin', 'opacity', 'font-size', 'font-family', 'text-anchor', 'dominant-baseline', 'viewBox', 'viewbox', 'preserveAspectRatio', 'preserveaspectratio', 'xmlns', 'id', 'class', 'style', 'data-handle', 'data-entity-type', 'href', 'clip-path', 'offset', 'stop-color', 'stop-opacity', 'marker-start', 'marker-end', 'ref-x', 'ref-y', 'marker-width', 'marker-height', 'orient', 'markerunits'],
     })
+    console.log('[DwgPreview] 清洗后 SVG 长度:', svgContent.value.length, '前200字符:', svgContent.value.slice(0, 200))
     handleMap.value = result.handleMap
 
     // SVG 生成后检查是否有待定位的图元（locateTarget 可能在解析期间被设置）
@@ -195,7 +198,12 @@ async function generateSvg(file: File) {
   } catch (e: any) {
     console.error('[DwgPreviewPanel] SVG 生成失败:', e)
     error.value = true
-    errorMsg.value = e?.message || '未知错误'
+    const msg = e?.message || ''
+    if (msg.includes('R2004') || msg.includes('decompress') || msg.includes('Assertion')) {
+      errorMsg.value = 'DWG R2004/R2007 压缩编码不兼容，请用 AutoCAD 另存为 R18 (2010) 或 R21 (2013) 格式后重试'
+    } else {
+      errorMsg.value = msg || '未知错误'
+    }
     parseFailed.value = true
   } finally {
     if (fallbackTimeoutId) {
@@ -253,30 +261,38 @@ function fitToWindow() {
 
   const vpRect = viewportRef.value.getBoundingClientRect()
   const svgEl = canvasRef.value.querySelector('svg')
-  if (!svgEl) return
+  if (!svgEl) {
+    console.warn('[DwgPreview] fitToWindow: SVG 元素未找到')
+    return
+  }
 
-  // 获取 SVG 视图框
-  const vb = svgEl.getAttribute('viewBox')
+  // 获取 SVG 视图框（兼容 viewBox/viewBox 大小写）
+  const vb = svgEl.getAttribute('viewBox') || svgEl.getAttribute('viewbox')
   let svgW: number, svgH: number
 
   if (vb) {
     const parts = vb.split(/[\s,]+/).map(Number)
-    svgW = parts[2] || 800
-    svgH = parts[3] || 600
+    svgW = Math.abs(parts[2]) || 800
+    svgH = Math.abs(parts[3]) || 600
   } else {
     svgW = parseFloat(svgEl.getAttribute('width') || '800')
     svgH = parseFloat(svgEl.getAttribute('height') || '600')
   }
 
+  console.log('[DwgPreview] fitToWindow:', { vb, svgW, svgH, vpW: vpRect.width, vpH: vpRect.height })
+
   const vpW = vpRect.width - 20  // 留边距
   const vpH = vpRect.height - 20
   const scaleX = vpW / svgW
   const scaleY = vpH / svgH
-  scale.value = Math.min(scaleX, scaleY, 2) // 不超过 200%
+  // 最小缩放 0.01（防止内容太大导致缩放值过小不可见），最大 200%
+  scale.value = Math.min(scaleX, scaleY, 2) || 0.1
 
   // 居中
   translateX.value = (vpRect.width - svgW * scale.value) / 2
   translateY.value = (vpRect.height - svgH * scale.value) / 2
+
+  console.log('[DwgPreview] fitToWindow 结果:', { scale: scale.value, tx: translateX.value, ty: translateY.value })
 }
 
 function onWheel(e: WheelEvent) {

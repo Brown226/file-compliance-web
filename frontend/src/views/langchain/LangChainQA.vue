@@ -1,265 +1,230 @@
 <template>
-  <div class="lc-qa-page">
-    <div class="lc-qa-shell">
-      <aside class="lc-qa-sidebar">
-        <div class="lc-qa-sidebar__header">
-          <div class="lc-badge">LC</div>
-          <div>
-            <h2>智能问答</h2>
-            <p class="lc-qa-sidebar__subtitle">LangChain RAG 引擎</p>
+  <div class="qa-page">
+    <!-- 左侧边栏：对话历史 -->
+    <aside class="qa-sidebar">
+      <div class="qa-sidebar__header">
+        <el-button type="primary" class="new-chat-btn" @click="createNewConversation">
+          <el-icon><Plus /></el-icon>
+          新建对话
+        </el-button>
+      </div>
+
+      <div class="qa-sidebar__list">
+        <div
+          v-for="conv in conversations"
+          :key="conv.id"
+          :class="['qa-sidebar__item', { active: currentConversationId === conv.id }]"
+          @click="switchConversation(conv.id)"
+        >
+          <div class="qa-sidebar__item-content">
+            <el-icon class="qa-sidebar__item-icon"><ChatDotRound /></el-icon>
+            <span class="qa-sidebar__item-title">{{ conv.title }}</span>
           </div>
+          <el-button
+            type="danger"
+            link
+            size="small"
+            class="qa-sidebar__item-delete"
+            @click.stop="deleteConversation(conv.id)"
+          >
+            <el-icon><Delete /></el-icon>
+          </el-button>
         </div>
 
-        <div class="lc-qa-sidebar__section">
-          <label class="lc-label">选择知识库</label>
+        <div v-if="conversations.length === 0" class="qa-sidebar__empty">
+          <el-icon><ChatLineSquare /></el-icon>
+          <span>暂无对话记录</span>
+        </div>
+      </div>
+    </aside>
+
+    <!-- 右侧主区域 -->
+    <main class="qa-main">
+      <!-- 顶部：知识库选择和参数 -->
+      <header class="qa-header">
+        <div class="qa-header__left">
           <el-tree-select
             v-model="selectedCategoryIds"
             :data="categoryTree"
-            :props="{ label: 'name', value: 'id', children: 'children' }"
+            :props="treeProps"
+            node-key="id"
             placeholder="选择知识库（可多选）"
             check-strictly
             multiple
             filterable
             collapse-tags
             collapse-tags-tooltip
-            class="lc-tree-select"
+            class="kb-select"
           />
         </div>
-
-        <div class="lc-qa-sidebar__section">
-          <div class="lc-qa-section-header">
-            <label class="lc-label">检索参数</label>
-            <el-button type="primary" link size="small" @click="resetSearchParams">重置默认</el-button>
-          </div>
-          <div class="lc-params-group">
-            <div class="lc-param-item">
-              <div class="lc-param-row">
-                <span class="lc-param-label">返回结果数</span>
-                <el-input-number
-                  v-model="searchParams.topK"
-                  :min="1"
-                  :max="30"
-                  size="small"
-                  controls-position="right"
-                />
+        <div class="qa-header__right">
+          <el-popover placement="bottom-end" :width="320" trigger="click">
+            <template #reference>
+              <el-button link>
+                <el-icon><Setting /></el-icon>
+                检索参数
+              </el-button>
+            </template>
+            <div class="params-panel">
+              <div class="params-panel__item">
+                <span class="params-panel__label">返回结果数</span>
+                <el-input-number v-model="searchParams.topK" :min="1" :max="30" size="small" controls-position="right" />
               </div>
-              <div class="lc-param-hint">设置检索时返回的文档片段数</div>
-            </div>
-            <div class="lc-param-item">
-              <div class="lc-param-row">
-                <span class="lc-param-label">最小相似度</span>
-                <span class="lc-param-value">{{ (searchParams.minSimilarity * 100).toFixed(0) }}%</span>
+              <div class="params-panel__item">
+                <span class="params-panel__label">最小相似度</span>
+                <span class="params-panel__value">{{ (searchParams.minSimilarity * 100).toFixed(0) }}%</span>
               </div>
-              <el-slider
-                v-model="searchParams.minSimilarity"
-                :min="0.1"
-                :max="0.9"
-                :step="0.05"
-                size="small"
-                :format-tooltip="(v: number) => `${(v * 100).toFixed(0)}%`"
-              />
-              <div class="lc-param-hint">低于此相似度的结果将被过滤</div>
-            </div>
-            <div class="lc-param-item">
-              <div class="lc-param-row">
-                <span class="lc-param-label">搜索模式</span>
+              <el-slider v-model="searchParams.minSimilarity" :min="0.1" :max="0.9" :step="0.05" size="small" />
+              <div class="params-panel__item">
+                <span class="params-panel__label">搜索模式</span>
                 <el-radio-group v-model="searchParams.searchMode" size="small">
                   <el-radio-button value="hybrid">混合</el-radio-button>
                   <el-radio-button value="vector">向量</el-radio-button>
                   <el-radio-button value="keyword">关键词</el-radio-button>
                 </el-radio-group>
               </div>
-            </div>
-          </div>
-        </div>
-
-        <div class="lc-qa-sidebar__section">
-          <label class="lc-label">高级检索增强</label>
-          <div class="lc-toggle-group">
-            <div class="lc-toggle-item">
-              <el-switch v-model="searchParams.enableMultiQuery" size="small" />
-              <div class="lc-toggle-text">
+              <el-divider />
+              <div class="params-panel__toggle">
+                <el-switch v-model="searchParams.enableMultiQuery" size="small" />
                 <span>多查询扩展</span>
-                <span class="lc-toggle-hint">生成多个查询变体提高召回</span>
               </div>
-            </div>
-            <div class="lc-toggle-item">
-              <el-switch v-model="searchParams.enableHyDE" size="small" />
-              <div class="lc-toggle-text">
+              <div class="params-panel__toggle">
+                <el-switch v-model="searchParams.enableHyDE" size="small" />
                 <span>假设性文档</span>
-                <span class="lc-toggle-hint">先生成假设答案再检索</span>
               </div>
-            </div>
-            <div class="lc-toggle-item">
-              <el-switch v-model="searchParams.enableCompression" size="small" />
-              <div class="lc-toggle-text">
+              <div class="params-panel__toggle">
+                <el-switch v-model="searchParams.enableCompression" size="small" />
                 <span>上下文压缩</span>
-                <span class="lc-toggle-hint">压缩检索结果减少 token</span>
               </div>
+              <el-button type="primary" link size="small" class="params-panel__reset" @click="resetSearchParams">
+                重置默认
+              </el-button>
             </div>
-          </div>
+          </el-popover>
         </div>
+      </header>
 
-        <div class="lc-qa-sidebar__footer">
-          <div class="lc-engine-tag">
-            <span class="lc-engine-dot"></span>
-            LangChain.js RAG
+      <!-- 消息区域 -->
+      <div ref="chatContainer" class="qa-messages">
+        <div v-if="messages.length === 0" class="qa-empty">
+          <div class="qa-empty__icon">
+            <el-icon :size="48"><ChatDotRound /></el-icon>
           </div>
-        </div>
-      </aside>
-
-      <section class="lc-qa-chat">
-        <div class="lc-qa-chat__header">
-          <h2>知识库智能问答</h2>
-          <p class="lc-qa-chat__subtitle">{{ messages.length }} 条消息</p>
-        </div>
-
-        <div ref="chatContainer" class="lc-qa-messages">
-          <div v-if="messages.length === 0" class="lc-qa-empty">
-            <div class="lc-qa-empty__card">
-              <div class="lc-qa-empty__badge">LC</div>
-              <h3>基于 LangChain RAG 的智能问答</h3>
-              <p>选择知识库后，输入问题即可获得基于标准规范的精准回答</p>
-              <div class="lc-qa-empty__grid">
-                <button
-                  v-for="prompt in examplePrompts"
-                  :key="prompt"
-                  type="button"
-                  class="lc-qa-prompt-card"
-                  @click="selectPrompt(prompt)"
-                >
-                  {{ prompt }}
-                </button>
-              </div>
-            </div>
-          </div>
-
-          <div v-else class="lc-qa-message-list">
-            <div
-              v-for="(msg, idx) in messages"
-              :key="idx"
-              :class="['lc-qa-message', msg.role]"
+          <h3>知识库智能问答</h3>
+          <p>选择知识库后，输入问题即可获得基于标准规范的精准回答</p>
+          <div class="qa-empty__prompts">
+            <button
+              v-for="prompt in examplePrompts"
+              :key="prompt"
+              class="qa-prompt-btn"
+              @click="selectPrompt(prompt)"
             >
-              <div class="lc-qa-message__avatar">
-                {{ msg.role === 'user' ? '问' : 'LC' }}
-              </div>
-              <div class="lc-qa-message__card">
-                <div class="lc-qa-message__meta">
-                  <span>{{ msg.role === 'user' ? '您的提问' : 'LangChain AI' }}</span>
-                </div>
-                <div
-                  v-if="msg.role === 'assistant'"
-                  class="lc-qa-message__content"
-                  v-html="renderMarkdown(msg.content || '正在生成回答...')"
-                ></div>
-                <div v-else class="lc-qa-message__content lc-qa-message__content--user">
-                  {{ msg.content }}
-                </div>
-                <div v-if="msg.sources?.length" class="lc-qa-message__sources">
-                  <div class="lc-qa-sources__label">引用来源</div>
-                  <div class="lc-qa-sources__list">
-                    <el-tag
-                      v-for="(src, si) in msg.sources"
-                      :key="si"
-                      size="small"
-                      type="info"
-                      effect="plain"
-                    >
-                      {{ src.document_name }}
-                    </el-tag>
-                  </div>
-                </div>
-                <div v-if="msg.debug && Object.keys(msg.debug).length > 0" class="lc-qa-message__debug">
-                  <el-collapse class="lc-debug-collapse">
-                    <el-collapse-item title="检索诊断">
-                      <div class="lc-debug-info">
-                        <div v-if="msg.debug.retrievedCount" class="lc-debug-row">
-                          <span class="lc-debug-label">检索到片段</span>
-                          <span class="lc-debug-value">{{ msg.debug.retrievedCount }}</span>
-                        </div>
-                        <div v-if="msg.debug.afterCompressionCount" class="lc-debug-row">
-                          <span class="lc-debug-label">压缩后</span>
-                          <span class="lc-debug-value">{{ msg.debug.afterCompressionCount }}</span>
-                        </div>
-                        <div class="lc-debug-row">
-                          <span class="lc-debug-label">重排序</span>
-                          <span class="lc-debug-value">{{ msg.debug.rerankApplied ? '已启用' : '未启用' }}</span>
-                        </div>
-                        <div v-if="msg.debug.multiQueryVariants?.length" class="lc-debug-section">
-                          <span class="lc-debug-section-label">多查询变体</span>
-                          <div class="lc-debug-tags">
-                            <el-tag v-for="(v, vi) in msg.debug.multiQueryVariants" :key="vi" size="small" type="warning" effect="light">
-                              {{ v }}
-                            </el-tag>
-                          </div>
-                        </div>
-                        <div v-if="msg.debug.hydeAnswer" class="lc-debug-section">
-                          <span class="lc-debug-section-label">HyDE 假设答案</span>
-                          <div class="lc-debug-hyde">{{ msg.debug.hydeAnswer }}</div>
-                        </div>
-                      </div>
-                    </el-collapse-item>
-                  </el-collapse>
-                </div>
-              </div>
-            </div>
-
-            <div v-if="isLoading" class="lc-qa-streaming">
-              <div class="lc-qa-streaming__dots">
-                <span></span><span></span><span></span>
-              </div>
-              <p>正在检索知识库并生成回答</p>
-            </div>
+              {{ prompt }}
+            </button>
           </div>
         </div>
 
-        <footer class="lc-qa-composer">
-          <div class="lc-qa-composer__body">
-            <el-input
-              v-model="inputQuestion"
-              type="textarea"
-              :autosize="{ minRows: 2, maxRows: 5 }"
-              placeholder="输入问题，例如：GB/T 50265 中对泵站厂房的防火分区要求？"
-              resize="none"
-              :disabled="isLoading"
-              @keydown.enter="handleEnter"
-            />
-            <el-button
-              class="lc-qa-send-btn"
-              :disabled="!canSend"
-              :loading="isLoading"
-              @click="askQuestion"
-            >
-              <el-icon><Position /></el-icon>
-              发送
-            </el-button>
+        <div v-else class="qa-message-list">
+          <div
+            v-for="(msg, idx) in messages"
+            :key="msg.id || idx"
+            :class="['qa-message', msg.role]"
+          >
+            <div class="qa-message__avatar">
+              {{ msg.role === 'user' ? '我' : 'AI' }}
+            </div>
+            <div class="qa-message__content">
+              <!-- 处理中状态 -->
+              <div v-if="msg.status === 'processing'" class="qa-message__processing">
+                <div class="qa-loading__dots">
+                  <span></span><span></span><span></span>
+                </div>
+                <span>正在检索知识库并生成回答...</span>
+              </div>
+              <!-- 失败状态 -->
+              <div v-else-if="msg.status === 'failed'" class="qa-message__failed">
+                <el-icon><WarningFilled /></el-icon>
+                <span>{{ msg.content || '问答请求失败' }}</span>
+              </div>
+              <!-- 正常内容 -->
+              <template v-else>
+                <div v-if="msg.role === 'assistant'" v-html="renderMarkdown(msg.content || '')"></div>
+                <div v-else>{{ msg.content }}</div>
+              </template>
+
+              <!-- 引用来源 -->
+              <div v-if="msg.sources?.length" class="qa-message__sources">
+                <div class="qa-sources__header">
+                  <el-icon><Document /></el-icon>
+                  <span>引用来源</span>
+                </div>
+                <div class="qa-sources__list">
+                  <el-tag
+                    v-for="(src, si) in msg.sources"
+                    :key="si"
+                    size="small"
+                    type="info"
+                    effect="plain"
+                  >
+                    {{ src.document_name }}
+                  </el-tag>
+                </div>
+              </div>
+            </div>
           </div>
-        </footer>
-      </section>
-    </div>
+        </div>
+      </div>
+
+      <!-- 输入区域 -->
+      <footer class="qa-input">
+        <el-input
+          v-model="inputQuestion"
+          type="textarea"
+          :autosize="{ minRows: 1, maxRows: 4 }"
+          placeholder="输入问题，按 Enter 发送，Shift+Enter 换行"
+          resize="none"
+          :disabled="isProcessing"
+          @keydown.enter="handleEnter"
+        />
+        <el-button
+          type="primary"
+          :disabled="!canSend"
+          :loading="isProcessing"
+          @click="askQuestion"
+        >
+          <el-icon><Promotion /></el-icon>
+        </el-button>
+      </footer>
+    </main>
   </div>
 </template>
 
 <script setup lang="ts">
-import { computed, nextTick, onMounted, ref } from 'vue'
-import { Position } from '@element-plus/icons-vue'
-import { ElMessage } from 'element-plus'
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
+import { Plus, Delete, ChatDotRound, ChatLineSquare, Setting, Document, Promotion, WarningFilled } from '@element-plus/icons-vue'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import { useUserStore } from '@/stores/user'
 import { useMarkdown } from '@/composables/useMarkdown'
-import { getLangChainStreamUrl } from '@/api/langchain'
+import {
+  getConversationsApi,
+  getConversationApi,
+  createConversationApi,
+  deleteConversationApi,
+  langchainAskBackgroundApi,
+  getMessageStatusApi,
+  type Conversation,
+  type ConversationDetail,
+  type MessageStatus,
+} from '@/api/langchain'
 import { getKnowledgeTreeApi, type KnowledgeTreeNode } from '@/api/knowledge-category'
 
 interface ChatMessage {
+  id?: string
   role: 'user' | 'assistant'
   content: string
+  status?: 'processing' | 'completed' | 'failed'
   sources?: Array<{ content: string; document_name: string; similarity: number }>
-  debug?: {
-    multiQueryVariants?: string[]
-    hydeAnswer?: string
-    retrievedCount?: number
-    afterCompressionCount?: number
-    rerankApplied?: boolean
-  }
+  debug?: any
 }
 
 interface SearchParams {
@@ -285,11 +250,16 @@ const { renderMarkdown } = useMarkdown()
 
 const inputQuestion = ref('')
 const messages = ref<ChatMessage[]>([])
-const isLoading = ref(false)
+const isProcessing = ref(false)
 const selectedCategoryIds = ref<string[]>([])
 const searchParams = ref<SearchParams>({ ...DEFAULT_SEARCH_PARAMS })
 const chatContainer = ref<HTMLElement | null>(null)
 const categoryTree = ref<KnowledgeTreeNode[]>([])
+const conversations = ref<Conversation[]>([])
+const currentConversationId = ref<string | null>(null)
+const pollingTimers = ref<Map<string, ReturnType<typeof setInterval>>>(new Map())
+
+const treeProps = { label: 'name', value: 'id', children: 'children' } as any
 
 const examplePrompts = [
   'GB/T 50265 中对泵站厂房的防火分区和疏散要求有哪些？',
@@ -298,7 +268,7 @@ const examplePrompts = [
   '安全壳贯穿件的密封性试验有哪些标准要求？',
 ]
 
-const canSend = computed(() => inputQuestion.value.trim() && !isLoading.value && selectedCategoryIds.value.length > 0)
+const canSend = computed(() => inputQuestion.value.trim() && !isProcessing.value && selectedCategoryIds.value.length > 0)
 
 const resetSearchParams = () => {
   searchParams.value = { ...DEFAULT_SEARCH_PARAMS }
@@ -322,27 +292,141 @@ const handleEnter = (event: KeyboardEvent) => {
   askQuestion()
 }
 
-const parseSseEvent = (eventText: string) => {
-  const eventLine = eventText.split('\n').find(line => line.startsWith('event:'))
-  const dataLines = eventText
-    .split('\n')
-    .filter(line => line.startsWith('data:'))
-    .map(line => line.replace('data:', '').trim())
+// 开始轮询消息状态
+const startPolling = (messageId: string) => {
+  if (pollingTimers.value.has(messageId)) return
 
-  if (!dataLines.length) return null
+  const timer = setInterval(async () => {
+    try {
+      const { data } = await getMessageStatusApi(messageId)
+      if (!data) return
 
-  try {
-    return {
-      event: eventLine?.replace('event:', '').trim(),
-      data: JSON.parse(dataLines.join('\n')),
+      // 更新消息内容
+      const msgIndex = messages.value.findIndex(m => m.id === messageId)
+      if (msgIndex === -1) {
+        stopPolling(messageId)
+        return
+      }
+
+      const msg = messages.value[msgIndex]
+      msg.content = data.content
+      msg.status = data.status as any
+      msg.sources = data.sources
+      msg.debug = data.debug
+
+      // 如果完成或失败，停止轮询
+      if (data.status === 'completed' || data.status === 'failed') {
+        stopPolling(messageId)
+        isProcessing.value = false
+        // 更新对话列表
+        await loadConversations()
+      }
+    } catch (err) {
+      console.error('轮询消息状态失败:', err)
     }
+  }, 1000) // 每秒轮询一次
+
+  pollingTimers.value.set(messageId, timer)
+}
+
+// 停止轮询
+const stopPolling = (messageId: string) => {
+  const timer = pollingTimers.value.get(messageId)
+  if (timer) {
+    clearInterval(timer)
+    pollingTimers.value.delete(messageId)
+  }
+}
+
+// 停止所有轮询
+const stopAllPolling = () => {
+  pollingTimers.value.forEach((timer) => clearInterval(timer))
+  pollingTimers.value.clear()
+}
+
+// 恢复进行中的任务
+const resumeProcessingTasks = () => {
+  messages.value.forEach(msg => {
+    if (msg.id && msg.status === 'processing') {
+      startPolling(msg.id)
+      isProcessing.value = true
+    }
+  })
+}
+
+// 加载对话列表
+const loadConversations = async () => {
+  try {
+    const { data } = await getConversationsApi()
+    conversations.value = data || []
   } catch {
-    return null
+    conversations.value = []
+  }
+}
+
+// 创建新对话
+const createNewConversation = async () => {
+  try {
+    const { data } = await createConversationApi()
+    conversations.value.unshift(data)
+    currentConversationId.value = data.id
+    messages.value = []
+    stopAllPolling()
+    isProcessing.value = false
+  } catch {
+    ElMessage.error('创建对话失败')
+  }
+}
+
+// 切换对话
+const switchConversation = async (id: string) => {
+  if (isProcessing.value) {
+    ElMessage.warning('请等待当前问答完成')
+    return
+  }
+  try {
+    const { data } = await getConversationApi(id)
+    currentConversationId.value = id
+    messages.value = (data.messages || []).map(m => ({
+      id: m.id,
+      role: m.role as 'user' | 'assistant',
+      content: m.content,
+      status: (m.status as any) || 'completed',
+      sources: m.sources,
+      debug: m.debug,
+    }))
+    await scrollToBottom()
+    // 恢复进行中的任务
+    resumeProcessingTasks()
+  } catch {
+    ElMessage.error('加载对话失败')
+  }
+}
+
+// 删除对话
+const deleteConversation = async (id: string) => {
+  try {
+    await ElMessageBox.confirm('确定删除这个对话吗？', '提示', {
+      confirmButtonText: '删除',
+      cancelButtonText: '取消',
+      type: 'warning',
+    })
+    await deleteConversationApi(id)
+    conversations.value = conversations.value.filter(c => c.id !== id)
+    if (currentConversationId.value === id) {
+      currentConversationId.value = null
+      messages.value = []
+      stopAllPolling()
+      isProcessing.value = false
+    }
+    ElMessage.success('已删除')
+  } catch {
+    // 用户取消
   }
 }
 
 const askQuestion = async () => {
-  if (!inputQuestion.value.trim() || isLoading.value) return
+  if (!inputQuestion.value.trim() || isProcessing.value) return
   if (selectedCategoryIds.value.length === 0) {
     ElMessage.warning('请先选择知识库')
     return
@@ -351,76 +435,57 @@ const askQuestion = async () => {
   const question = inputQuestion.value.trim()
   inputQuestion.value = ''
 
-  messages.value.push({ role: 'user', content: question })
-  const assistantMsg: ChatMessage = { role: 'assistant', content: '' }
+  isProcessing.value = true
+
+  // 添加用户消息
+  const userMsg: ChatMessage = {
+    role: 'user',
+    content: question,
+    status: 'completed',
+  }
+  messages.value.push(userMsg)
+
+  // 添加助手消息（初始状态为 processing）
+  const assistantMsg: ChatMessage = {
+    role: 'assistant',
+    content: '',
+    status: 'processing',
+  }
   messages.value.push(assistantMsg)
   await scrollToBottom()
 
-  isLoading.value = true
   try {
-    const token = userStore.token
-    const response = await fetch(getLangChainStreamUrl(), {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${token}`,
-      },
-      body: JSON.stringify({
-        question,
-        categoryIds: selectedCategoryIds.value,
-        history: messages.value
-          .filter(m => ['user', 'assistant'].includes(m.role) && m.content.trim())
-          .slice(-12)
-          .map(m => ({ role: m.role, content: m.content.slice(0, 4000) })),
-        topK: searchParams.value.topK,
-        enableMultiQuery: searchParams.value.enableMultiQuery,
-        enableHyDE: searchParams.value.enableHyDE,
-        enableCompression: searchParams.value.enableCompression,
-      }),
+    // 调用后台问答 API
+    const { data } = await langchainAskBackgroundApi({
+      question,
+      categoryIds: selectedCategoryIds.value,
+      sessionId: currentConversationId.value || undefined,
+      history: messages.value
+        .filter(m => m.role === 'user' && m.status === 'completed')
+        .slice(-12)
+        .map(m => ({ role: m.role, content: m.content.slice(0, 4000) })),
+      topK: searchParams.value.topK,
+      enableMultiQuery: searchParams.value.enableMultiQuery,
+      enableHyDE: searchParams.value.enableHyDE,
+      enableCompression: searchParams.value.enableCompression,
     })
 
-    if (!response.ok || !response.body) throw new Error('STREAM_FAILED')
-
-    const reader = response.body.getReader()
-    const decoder = new TextDecoder('utf-8')
-    let buffer = ''
-
-    while (true) {
-      const { value, done } = await reader.read()
-      if (done) break
-
-      buffer += decoder.decode(value, { stream: true })
-      const events = buffer.split('\n\n')
-      buffer = events.pop() || ''
-
-      for (const eventText of events) {
-        const parsed = parseSseEvent(eventText)
-        if (!parsed) continue
-
-        if (parsed.event === 'sources') {
-          assistantMsg.sources = parsed.data?.sources
-          assistantMsg.debug = parsed.data?.debug
-        } else if (parsed.event === 'delta') {
-          assistantMsg.content += parsed.data?.content || ''
-        } else if (parsed.event === 'done') {
-          assistantMsg.content = parsed.data?.answer || assistantMsg.content || ''
-        } else if (parsed.event === 'error') {
-          throw new Error(parsed.data?.error || 'STREAM_ERROR')
-        }
-      }
-
-      await scrollToBottom()
+    // 更新当前会话 ID
+    if (!currentConversationId.value) {
+      currentConversationId.value = data.sessionId
     }
 
-    if (!assistantMsg.content) {
-      assistantMsg.content = '暂未返回有效回答，请稍后重试。'
-    }
-  } catch (e: any) {
+    // 更新消息 ID
+    userMsg.id = data.userMessageId
+    assistantMsg.id = data.assistantMessageId
+
+    // 开始轮询助手消息状态
+    startPolling(data.assistantMessageId)
+  } catch (err: any) {
     ElMessage.error('问答请求失败')
+    assistantMsg.status = 'failed'
     assistantMsg.content = '抱歉，问答请求失败。请检查知识库选择和网络连接后重试。'
-  } finally {
-    isLoading.value = false
-    await scrollToBottom()
+    isProcessing.value = false
   }
 }
 
@@ -431,576 +496,430 @@ onMounted(async () => {
   } catch {
     categoryTree.value = []
   }
+
+  await loadConversations()
+})
+
+onUnmounted(() => {
+  stopAllPolling()
 })
 </script>
 
 <style scoped>
-.lc-qa-page {
-  height: calc(100vh - 92px);
-  min-height: calc(100vh - 92px);
-  color: var(--corp-text-primary);
-  overflow: hidden;
-  background: #f6f8fc;
+.qa-page {
+  display: flex;
+  height: calc(100vh - 60px);
+  background: #f5f7fa;
 }
 
-.lc-qa-shell {
-  height: 100%;
-  min-height: 0;
-  display: grid;
-  grid-template-columns: 280px minmax(0, 1fr);
-  gap: 16px;
-  padding: 16px;
-}
-
-.lc-qa-sidebar {
+/* 左侧边栏 */
+.qa-sidebar {
+  width: 280px;
+  background: #fff;
+  border-right: 1px solid #e4e7ed;
   display: flex;
   flex-direction: column;
-  padding: 20px 16px;
-  border: 1px solid rgba(226, 232, 240, 0.9);
-  border-radius: 20px;
-  background: #fff;
-  overflow-y: auto;
 }
 
-.lc-qa-sidebar__header {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding-bottom: 16px;
-  margin-bottom: 16px;
-  border-bottom: 1px solid rgba(226, 232, 240, 0.8);
+.qa-sidebar__header {
+  padding: 16px;
+  border-bottom: 1px solid #e4e7ed;
 }
 
-.lc-badge {
-  width: 40px;
-  height: 40px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: 12px;
-  background: linear-gradient(135deg, #7c3aed 0%, #3b82f6 100%);
-  color: #fff;
-  font-size: 13px;
-  font-weight: 800;
-  letter-spacing: -0.5px;
-  flex-shrink: 0;
-}
-
-.lc-qa-sidebar__header h2 {
-  margin: 0;
-  font-size: 18px;
-  font-weight: 700;
-}
-
-.lc-qa-sidebar__subtitle {
-  margin: 4px 0 0;
-  font-size: 11px;
-  color: var(--corp-text-tertiary);
-  letter-spacing: 0.5px;
-}
-
-.lc-qa-sidebar__section {
-  margin-bottom: 20px;
-}
-
-.lc-label {
-  display: block;
-  margin-bottom: 8px;
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--corp-text-secondary);
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-}
-
-.lc-tree-select {
+.new-chat-btn {
   width: 100%;
 }
 
-.lc-qa-section-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 8px;
+.qa-sidebar__list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 8px;
 }
 
-.lc-params-group {
+.qa-sidebar__item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.2s;
+  margin-bottom: 4px;
+}
+
+.qa-sidebar__item:hover {
+  background: #f5f7fa;
+}
+
+.qa-sidebar__item.active {
+  background: #ecf5ff;
+  color: #409eff;
+}
+
+.qa-sidebar__item-content {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: 1;
+  min-width: 0;
+}
+
+.qa-sidebar__item-icon {
+  flex-shrink: 0;
+  font-size: 16px;
+}
+
+.qa-sidebar__item-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 14px;
+}
+
+.qa-sidebar__item-delete {
+  opacity: 0;
+  transition: opacity 0.2s;
+}
+
+.qa-sidebar__item:hover .qa-sidebar__item-delete {
+  opacity: 1;
+}
+
+.qa-sidebar__empty {
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  align-items: center;
+  justify-content: center;
+  padding: 40px 20px;
+  color: #909399;
+  font-size: 14px;
+  gap: 10px;
 }
 
-.lc-param-item {
+.qa-sidebar__empty .el-icon {
+  font-size: 32px;
+}
+
+/* 右侧主区域 */
+.qa-main {
+  flex: 1;
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  min-width: 0;
 }
 
-.lc-param-row {
+/* 顶部 header */
+.qa-header {
   display: flex;
-  justify-content: space-between;
   align-items: center;
+  justify-content: space-between;
+  padding: 12px 20px;
+  background: #fff;
+  border-bottom: 1px solid #e4e7ed;
 }
 
-.lc-param-label {
-  font-size: 13px;
-  font-weight: 500;
-  color: var(--corp-text-secondary);
+.qa-header__left {
+  flex: 1;
+  max-width: 400px;
 }
 
-.lc-param-value {
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--corp-text-primary);
+.kb-select {
+  width: 100%;
 }
 
-.lc-param-hint {
-  font-size: 11px;
-  color: var(--corp-text-tertiary);
-}
-
-.lc-toggle-group {
+/* 参数面板 */
+.params-panel {
   display: flex;
   flex-direction: column;
   gap: 12px;
 }
 
-.lc-toggle-item {
-  display: flex;
-  align-items: flex-start;
-  gap: 10px;
-}
-
-.lc-toggle-text {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-
-.lc-toggle-hint {
-  font-size: 11px;
-  color: var(--corp-text-tertiary);
-}
-
-.lc-qa-message__debug {
-  margin-top: 12px;
-  padding-top: 12px;
-  border-top: 1px solid rgba(226, 232, 240, 0.8);
-}
-
-.lc-debug-collapse :deep(.el-collapse-item__header) {
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--corp-text-tertiary);
-}
-
-.lc-debug-info {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-
-.lc-debug-row {
+.params-panel__item {
   display: flex;
   justify-content: space-between;
   align-items: center;
 }
 
-.lc-debug-label {
-  font-size: 12px;
-  color: var(--corp-text-tertiary);
-}
-
-.lc-debug-value {
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--corp-text-primary);
-}
-
-.lc-debug-section {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  padding-top: 8px;
-}
-
-.lc-debug-section-label {
-  font-size: 12px;
-  font-weight: 500;
-  color: var(--corp-text-secondary);
-}
-
-.lc-debug-tags {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-}
-
-.lc-debug-hyde {
-  font-size: 12px;
-  color: var(--corp-text-secondary);
-  padding: 10px;
-  background: rgba(226, 232, 240, 0.4);
-  border-radius: 8px;
-  line-height: 1.6;
-}
-
-.lc-qa-sidebar__footer {
-  margin-top: auto;
-  padding-top: 16px;
-  border-top: 1px solid rgba(226, 232, 240, 0.8);
-}
-
-.lc-engine-tag {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 11px;
-  color: var(--corp-text-tertiary);
-}
-
-.lc-engine-dot {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: #10b981;
-  animation: lc-pulse-dot 2s infinite;
-}
-
-@keyframes lc-pulse-dot {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.4; }
-}
-
-.lc-qa-chat {
-  display: flex;
-  flex-direction: column;
-  min-height: 0;
-  overflow: hidden;
-  border: 1px solid rgba(226, 232, 240, 0.9);
-  border-radius: 20px;
-  background: #fff;
-}
-
-.lc-qa-chat__header {
-  padding: 16px 20px;
-  border-bottom: 1px solid rgba(226, 232, 240, 0.8);
-}
-
-.lc-qa-chat__header h2 {
-  margin: 0;
-  font-size: 18px;
-  font-weight: 700;
-}
-
-.lc-qa-chat__subtitle {
-  margin: 4px 0 0;
-  font-size: 12px;
-  color: var(--corp-text-secondary);
-}
-
-.lc-qa-messages {
-  flex: 1;
-  min-height: 0;
-  overflow-y: auto;
-  overscroll-behavior: contain;
-  padding: 18px 20px;
-  background: #f8fafc;
-}
-
-.lc-qa-empty {
-  min-height: 100%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.lc-qa-empty__card {
-  width: min(680px, 100%);
-  padding: 32px;
-  border-radius: 18px;
-  border: 1px solid rgba(226, 232, 240, 0.96);
-  background: #fff;
-  text-align: center;
-}
-
-.lc-qa-empty__badge {
-  width: 48px;
-  height: 48px;
-  margin: 0 auto 16px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: 14px;
-  background: linear-gradient(135deg, #7c3aed 0%, #3b82f6 100%);
-  color: #fff;
-  font-size: 16px;
-  font-weight: 800;
-}
-
-.lc-qa-empty__card h3 {
-  margin: 0 0 8px;
-  font-size: 20px;
-  font-weight: 700;
-}
-
-.lc-qa-empty__card > p {
-  margin: 0;
+.params-panel__label {
   font-size: 13px;
-  color: var(--corp-text-secondary);
-  line-height: 1.7;
+  color: #606266;
 }
 
-.lc-qa-empty__grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+.params-panel__value {
+  font-size: 13px;
+  font-weight: 600;
+  color: #303133;
+}
+
+.params-panel__toggle {
+  display: flex;
+  align-items: center;
   gap: 10px;
-  margin-top: 20px;
+  font-size: 13px;
+  color: #606266;
+}
+
+.params-panel__reset {
+  align-self: flex-end;
+  margin-top: 8px;
+}
+
+/* 消息区域 */
+.qa-messages {
+  flex: 1;
+  overflow-y: auto;
+  padding: 20px;
+}
+
+.qa-empty {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  color: #909399;
+}
+
+.qa-empty__icon {
+  width: 80px;
+  height: 80px;
+  border-radius: 20px;
+  background: #ecf5ff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 20px;
+  color: #409eff;
+}
+
+.qa-empty h3 {
+  margin: 0 0 10px;
+  font-size: 20px;
+  font-weight: 600;
+  color: #303133;
+}
+
+.qa-empty p {
+  margin: 0 0 30px;
+  font-size: 14px;
+}
+
+.qa-empty__prompts {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 12px;
+  max-width: 600px;
+}
+
+.qa-prompt-btn {
+  padding: 14px;
+  border: 1px solid #e4e7ed;
+  border-radius: 10px;
+  background: #fff;
+  color: #606266;
+  font-size: 13px;
+  line-height: 1.5;
+  cursor: pointer;
+  transition: all 0.2s;
   text-align: left;
 }
 
-.lc-qa-prompt-card {
-  padding: 14px;
-  border: 1px solid rgba(226, 232, 240, 0.96);
-  border-radius: 14px;
-  background: #fff;
-  color: var(--corp-text-primary);
-  font-size: 13px;
-  line-height: 1.7;
-  cursor: pointer;
-  transition: border-color 0.2s;
+.qa-prompt-btn:hover {
+  border-color: #409eff;
+  color: #409eff;
 }
 
-.lc-qa-prompt-card:hover {
-  border-color: rgba(124, 58, 237, 0.4);
-}
-
-.lc-qa-message-list {
+/* 消息列表 */
+.qa-message-list {
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 20px;
 }
 
-.lc-qa-message {
+.qa-message {
   display: flex;
   gap: 12px;
+  max-width: 800px;
 }
 
-.lc-qa-message.user {
+.qa-message.user {
+  margin-left: auto;
   flex-direction: row-reverse;
 }
 
-.lc-qa-message__avatar {
+.qa-message__avatar {
   width: 36px;
   height: 36px;
+  border-radius: 10px;
   display: flex;
   align-items: center;
   justify-content: center;
+  font-size: 14px;
+  font-weight: 600;
   flex-shrink: 0;
-  border-radius: 12px;
-  font-size: 12px;
-  font-weight: 700;
 }
 
-.lc-qa-message.user .lc-qa-message__avatar {
-  background: #111827;
+.qa-message.user .qa-message__avatar {
+  background: #409eff;
   color: #fff;
 }
 
-.lc-qa-message.assistant .lc-qa-message__avatar {
-  background: #f5f3ff;
-  color: #7c3aed;
+.qa-message.assistant .qa-message__avatar {
+  background: #ecf5ff;
+  color: #409eff;
 }
 
-.lc-qa-message__card {
-  width: min(100%, 900px);
-  max-width: calc(100% - 48px);
+.qa-message__content {
   padding: 14px 16px;
-  border-radius: 16px;
-  border: 1px solid rgba(226, 232, 240, 0.94);
-  background: #fff;
-}
-
-.lc-qa-message.user .lc-qa-message__card {
-  background: #f5f3ff;
-  border-color: rgba(124, 58, 237, 0.15);
-}
-
-.lc-qa-message__meta {
-  margin-bottom: 8px;
-  font-size: 12px;
-  color: var(--corp-text-tertiary);
-  font-weight: 500;
-}
-
-.lc-qa-message__content {
+  border-radius: 12px;
   font-size: 14px;
-  line-height: 1.8;
-  word-break: break-word;
+  line-height: 1.7;
 }
 
-.lc-qa-message__content--user {
-  white-space: pre-wrap;
+.qa-message.user .qa-message__content {
+  background: #409eff;
+  color: #fff;
 }
 
-.lc-qa-message__content :deep(p) {
+.qa-message.assistant .qa-message__content {
+  background: #fff;
+  border: 1px solid #e4e7ed;
+}
+
+.qa-message__content :deep(p) {
   margin: 0 0 10px;
 }
 
-.lc-qa-message__content :deep(p:last-child) {
+.qa-message__content :deep(p:last-child) {
   margin-bottom: 0;
 }
 
-.lc-qa-message__content :deep(ul),
-.lc-qa-message__content :deep(ol) {
+.qa-message__content :deep(ul),
+.qa-message__content :deep(ol) {
   margin: 0 0 10px;
   padding-left: 20px;
 }
 
-.lc-qa-message__content :deep(blockquote) {
-  margin: 10px 0;
-  padding: 10px 14px;
-  border-left: 3px solid rgba(124, 58, 237, 0.36);
-  background: rgba(245, 243, 255, 0.7);
-  border-radius: 0 12px 12px 0;
-}
-
-.lc-qa-message__content :deep(code) {
+.qa-message__content :deep(code) {
   padding: 2px 6px;
-  border-radius: 6px;
-  background: rgba(15, 23, 42, 0.06);
+  border-radius: 4px;
+  background: #f5f7fa;
   font-size: 13px;
-  font-family: var(--font-mono);
 }
 
-.lc-qa-message__content :deep(pre) {
+.qa-message.user .qa-message__content :deep(code) {
+  background: rgba(255, 255, 255, 0.2);
+}
+
+.qa-message__content :deep(pre) {
   margin: 10px 0;
-  padding: 14px 16px;
+  padding: 12px;
+  border-radius: 8px;
+  background: #1e1e1e;
+  color: #d4d4d4;
   overflow-x: auto;
-  border-radius: 14px;
-  background: #0f172a;
-  color: #f8fafc;
 }
 
-.lc-qa-message__content :deep(pre code) {
+.qa-message__content :deep(pre code) {
   padding: 0;
   background: transparent;
   color: inherit;
 }
 
-.lc-qa-message__sources {
+/* 处理中状态 */
+.qa-message__processing {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: #909399;
+}
+
+.qa-loading__dots {
+  display: flex;
+  gap: 4px;
+}
+
+.qa-loading__dots span {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #409eff;
+  animation: loading-bounce 1s infinite ease-in-out;
+}
+
+.qa-loading__dots span:nth-child(2) { animation-delay: 0.15s; }
+.qa-loading__dots span:nth-child(3) { animation-delay: 0.3s; }
+
+@keyframes loading-bounce {
+  0%, 100% { transform: translateY(0); opacity: 0.35; }
+  50% { transform: translateY(-4px); opacity: 1; }
+}
+
+/* 失败状态 */
+.qa-message__failed {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #f56c6c;
+}
+
+/* 引用来源 */
+.qa-message__sources {
   margin-top: 12px;
-  padding-top: 10px;
-  border-top: 1px solid rgba(226, 232, 240, 0.8);
+  padding-top: 12px;
+  border-top: 1px solid #ebeef5;
 }
 
-.lc-qa-sources__label {
-  font-size: 11px;
-  font-weight: 600;
-  color: var(--corp-text-tertiary);
-  margin-bottom: 6px;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
+.qa-sources__header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: #909399;
+  margin-bottom: 8px;
 }
 
-.lc-qa-sources__list {
+.qa-sources__list {
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
 }
 
-.lc-qa-streaming {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  margin-left: 48px;
-  padding: 10px 14px;
-  border-radius: 999px;
-  background: #f5f3ff;
-  color: #7c3aed;
-  font-size: 12px;
-}
-
-.lc-qa-streaming__dots {
-  display: flex;
-  gap: 4px;
-}
-
-.lc-qa-streaming__dots span {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: currentColor;
-  animation: lc-qa-bounce 1s infinite ease-in-out;
-}
-
-.lc-qa-streaming__dots span:nth-child(2) { animation-delay: 0.15s; }
-.lc-qa-streaming__dots span:nth-child(3) { animation-delay: 0.3s; }
-
-@keyframes lc-qa-bounce {
-  0%, 100% { transform: translateY(0); opacity: 0.35; }
-  50% { transform: translateY(-3px); opacity: 1; }
-}
-
-.lc-qa-composer {
-  margin: 0 20px 20px;
-  padding: 14px 16px;
-  border-radius: 18px;
-  background: #fff;
-  box-shadow: inset 0 0 0 1px rgba(226, 232, 240, 0.9);
-}
-
-.lc-qa-composer__body {
+/* 输入区域 */
+.qa-input {
   display: flex;
   align-items: flex-end;
-  gap: 14px;
+  gap: 12px;
+  padding: 16px 20px;
+  background: #fff;
+  border-top: 1px solid #e4e7ed;
 }
 
-.lc-qa-composer__body :deep(.el-textarea) {
+.qa-input :deep(.el-textarea) {
   flex: 1;
 }
 
-.lc-qa-composer__body :deep(.el-textarea__inner) {
-  min-height: 80px !important;
-  padding: 14px 16px;
-  border: none;
-  border-radius: 14px;
-  background: #f8fafc;
-  box-shadow: inset 0 0 0 1px rgba(209, 213, 219, 0.8);
-  font-size: 14px;
-  line-height: 1.8;
+.qa-input :deep(.el-textarea__inner) {
+  min-height: 40px !important;
+  padding: 10px 14px;
+  border-radius: 10px;
+  resize: none;
 }
 
-.lc-qa-composer__body :deep(.el-textarea__inner:focus) {
-  box-shadow: inset 0 0 0 1px rgba(124, 58, 237, 0.6), 0 0 0 3px rgba(124, 58, 237, 0.08);
-}
-
-.lc-qa-send-btn {
-  flex-shrink: 0;
-  width: 120px;
-  height: 52px;
-  border: none;
-  border-radius: 14px;
-  background: linear-gradient(135deg, #7c3aed 0%, #3b82f6 100%);
-  font-weight: 600;
-}
-
-.lc-qa-send-btn:hover:not(.is-disabled) {
-  transform: translateY(-1px);
+.qa-input .el-button {
+  height: 40px;
+  width: 40px;
+  padding: 0;
+  border-radius: 10px;
 }
 
 @media (max-width: 768px) {
-  .lc-qa-shell {
+  .qa-sidebar {
+    display: none;
+  }
+
+  .qa-empty__prompts {
     grid-template-columns: 1fr;
-  }
-  .lc-qa-empty__grid {
-    grid-template-columns: 1fr;
-  }
-  .lc-qa-composer__body {
-    flex-direction: column;
-  }
-  .lc-qa-send-btn {
-    width: 100%;
   }
 }
 </style>

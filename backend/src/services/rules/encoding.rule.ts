@@ -15,10 +15,27 @@ export function checkEncodingConsistency(ctx: FileContext, config?: any): RuleIs
     : /^([A-Z]{2}\d{2}[A-Z]\d{2}[A-Z]{2}-[A-Z]{3}\d{2}(?:\([A-Z]\)|-\d{3}\([A-Z]\)|-(?:CM|TM|FM|SM)\([A-Z]\)))$/;
   const externalCodeMatch = nameWithoutExt.match(externalCodePattern);
   if (!externalCodeMatch) {
-    // 文件名本身不符合规范，无法进行编码对比
+    // CODE_004: 文件名中无法提取外部编码（仅当文件名看起来像编码但格式不完全匹配时报告）
+    if (/^[A-Z]{2}\d{2}[A-Z]/.test(nameWithoutExt)) {
+      issues.push({
+        issueType: 'ENCODING', ruleCode: 'CODE_004', severity: 'warning',
+        originalText: nameWithoutExt,
+        description: '无法从文件名中提取有效的外部编码，请检查文件名是否符合命名规范。',
+      });
+    }
     return issues;
   }
   const externalCode = externalCodeMatch[1];
+
+  // CODE_005: PDF无法读取页眉内容
+  if (!ctx.pdfPages || ctx.pdfPages.length === 0) {
+    issues.push({
+      issueType: 'ENCODING', ruleCode: 'CODE_005', severity: 'warning',
+      originalText: '(PDF页眉不可读)',
+      description: '无法读取PDF页眉内容，跳过编码一致性检查。',
+    });
+    return issues;
+  }
 
   // 2.2 获取页眉区域文本（通常在首页或第2页的顶部区域）
   const headerText = ctx.pdfPages!.length > 1 ? ctx.pdfPages![1] : ctx.pdfPages![0];
@@ -72,6 +89,45 @@ export function checkEncodingConsistency(ctx: FileContext, config?: any): RuleIs
   const docNoPattern = /DOC\.?\s*NO[.:：\s]*([A-Z]{2})([A-Z0-9])\d{6}/i;
   const docNoMatch = coverText.match(docNoPattern);
 
+  // UNIT_004: 封面缺少图册编号
+  const hasAlbumCode = /(?:图册|文件)\s*(?:编号|号)[：:\s]*[A-Z0-9\-]+/i.test(coverText);
+  if (!hasAlbumCode) {
+    issues.push({
+      issueType: 'ENCODING', ruleCode: 'UNIT_004', severity: 'warning',
+      originalText: '(未检测到)',
+      description: '封面未检测到图册(文件)编号，无法进行机组号一致性检查。',
+    });
+  }
+
+  // UNIT_005: 封面缺少DOC.NO
+  const hasDocNo = /DOC\.?\s*NO[.:：\s]*[A-Z0-9]+/i.test(coverText);
+  if (!hasDocNo) {
+    issues.push({
+      issueType: 'ENCODING', ruleCode: 'UNIT_005', severity: 'warning',
+      originalText: '(未检测到)',
+      description: '封面未检测到DOC.NO，无法进行机组号一致性检查。',
+    });
+  }
+
+  // UNIT_002: 无法从图册编号提取机组号
+  if (hasAlbumCode && !albumCodeMatch) {
+    issues.push({
+      issueType: 'ENCODING', ruleCode: 'UNIT_002', severity: 'warning',
+      originalText: '(格式不匹配)',
+      description: '无法从图册编号中提取机组号，请检查编号格式是否符合规范（如 QS25160ED-JPK01）。',
+    });
+  }
+
+  // UNIT_003: 无法从DOC.NO提取机组号
+  if (hasDocNo && !docNoMatch) {
+    issues.push({
+      issueType: 'ENCODING', ruleCode: 'UNIT_003', severity: 'warning',
+      originalText: '(格式不匹配)',
+      description: '无法从DOC.NO中提取机组号，请检查DOC.NO格式是否符合规范（如 QS251600001B25A44GN）。',
+    });
+  }
+
+  // UNIT_001: 机组号不一致
   if (albumCodeMatch && docNoMatch) {
     const albumUnitNo = albumCodeMatch[2];  // 图册编号第7字符（即机组号位置）
     const docNoUnitNo = docNoMatch[2];      // DOC.NO第3字符（即机组号位置）

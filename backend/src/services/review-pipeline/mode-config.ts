@@ -38,11 +38,11 @@ export interface ModeCapabilities {
  * - CONSISTENCY  （一致性）  = 仅 AI + 跨文件                        → 标准AI + 跨文件
  * - TYPO_GRAMMAR （错别字）  = 仅 AI(纯LLM)                        → 纯LLM模式
  * - MULTIMODAL   （多模态）  = 仅 AI(多模态)                        → 多模态LLM模式
- * - CUSTOM_RULE  （自定义）  = 规则引擎 + 标准引用检查               → 仅规则模式（保留原有逻辑）
+ * - CUSTOM_RULE  （自定义）  = 仅规则引擎                            → 纯规则模式（标准引用由 SELF_CHECK 专属处理）
  *
  * 配置说明：
  * - 除 CUSTOM_RULE 外，其他模式均关闭规则和标准引用检查，只保留 AI 审查
- * - CUSTOM_RULE 保持规则和标准引用检查开启，无 AI 审查
+ * - CUSTOM_RULE 仅开启规则引擎，无 AI 审查，无标准引用检查
  */
 export const MODE_CAPABILITIES: Record<ReviewModeType, ModeCapabilities> = {
   LIBRARY_REVIEW: {
@@ -87,7 +87,7 @@ export const MODE_CAPABILITIES: Record<ReviewModeType, ModeCapabilities> = {
   },
   CUSTOM_RULE: {
     rules: true,
-    standardRef: true,
+    standardRef: false,
     ai: false,
     aiStrategy: 'standard',
     crossFile: false,

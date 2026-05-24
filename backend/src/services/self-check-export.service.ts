@@ -12,6 +12,15 @@ import { CharDiffService } from './char-diff.service';
 
 export class SelfCheckExportService {
   /**
+   * 清理非法 Unicode 字符（孤立代理项等），防止 ExcelJS 写入报错
+   */
+  private static sanitize(text: string | null | undefined): string {
+    if (!text) return '-';
+    // 移除孤立代理项（U+D800-U+DFFF）和其他非法 Unicode 字符
+    return text.replace(/[\ud800-\udfff]/g, '').replace(/�/g, '') || '-';
+  }
+
+  /**
    * 生成自检报告 Excel Buffer
    */
   static async exportReport(report: SelfCheckReport): Promise<Buffer> {
@@ -48,12 +57,12 @@ export class SelfCheckExportService {
 
       ws.addRow({
         index: idx + 1,
-        standardName: item.docStandardName || '-',
-        standardNo: item.docStandardNo,
-        errorType: errorDesc,
-        correctName: item.matchResult.libraryStandardName || '-',
-        correctNo: item.matchResult.libraryStandardNo || '-',
-        sourceFile: item.sourceFile,
+        standardName: SelfCheckExportService.sanitize(item.docStandardName),
+        standardNo: SelfCheckExportService.sanitize(item.docStandardNo),
+        errorType: SelfCheckExportService.sanitize(errorDesc),
+        correctName: SelfCheckExportService.sanitize(item.matchResult.libraryStandardName),
+        correctNo: SelfCheckExportService.sanitize(item.matchResult.libraryStandardNo),
+        sourceFile: SelfCheckExportService.sanitize(item.sourceFile),
       });
     });
 
@@ -151,6 +160,7 @@ export class SelfCheckExportService {
     const ranges = isErrorSide ? diff.originalRanges : diff.correctRanges;
     if (!ranges || ranges.length === 0) return;
 
+    const cleanText = SelfCheckExportService.sanitize(text);
     const color = isErrorSide ? 'FFD32F2F' : 'FF388E3C'; // 红色 / 绿色
 
     // ExcelJS 富文本：将文本分段，差异段着色
@@ -159,18 +169,18 @@ export class SelfCheckExportService {
 
     for (const range of ranges.sort((a, b) => a.start - b.start)) {
       if (range.start > cursor) {
-        richText.push({ text: text.substring(cursor, range.start) });
+        richText.push({ text: cleanText.substring(cursor, range.start) });
       }
-      const endIdx = Math.min(range.start + range.length, text.length);
+      const endIdx = Math.min(range.start + range.length, cleanText.length);
       richText.push({
-        text: text.substring(range.start, endIdx),
+        text: cleanText.substring(range.start, endIdx),
         font: { color: { argb: color } },
       });
       cursor = endIdx;
     }
 
-    if (cursor < text.length) {
-      richText.push({ text: text.substring(cursor) });
+    if (cursor < cleanText.length) {
+      richText.push({ text: cleanText.substring(cursor) });
     }
 
     if (richText.length > 0) {

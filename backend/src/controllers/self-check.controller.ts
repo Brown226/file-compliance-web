@@ -26,10 +26,11 @@ function decodeFileName(raw: string): string {
 /**
  * POST /api/self-check/run
  * 执行标准引用自检
- * 
+ *
  * Body (multipart/form-data):
- *   - files: 待检文件（支持 .docx/.xlsx/.xls/.pdf）
+ *   - files: 待检文件（支持 .docx/.xlsx/.xls/.pdf/.ppt/.pptx/.dwg/.txt）
  *   - standardFolderId: 标准库文件夹ID（可选，不传则使用全部标准库）
+ *   - dwgParsedData: DWG前端解析数据JSON（可选，key为文件名，value为DwgParsedData）
  */
 export const runSelfCheck = async (req: Request, res: Response): Promise<void> => {
   try {
@@ -41,6 +42,16 @@ export const runSelfCheck = async (req: Request, res: Response): Promise<void> =
 
     const standardFolderId = (req.body.standardFolderId as string) || null;
 
+    // 解析前端传来的 DWG 解析数据
+    let dwgParsedData: Record<string, { text: string }> | null = null;
+    if (req.body.dwgParsedData) {
+      try {
+        dwgParsedData = JSON.parse(req.body.dwgParsedData);
+      } catch {
+        console.warn('[SelfCheck] dwgParsedData JSON 解析失败，忽略');
+      }
+    }
+
     // 标准化文件信息
     const filePaths = files.map(f => ({
       path: f.path,
@@ -48,8 +59,8 @@ export const runSelfCheck = async (req: Request, res: Response): Promise<void> =
       fileType: path.extname(f.originalname).slice(1).toLowerCase(),
     }));
 
-    // 执行自检
-    const report = await SelfCheckService.execute(filePaths, standardFolderId);
+    // 执行自检（传入 DWG 解析数据）
+    const report = await SelfCheckService.execute(filePaths, standardFolderId, undefined, dwgParsedData);
 
     // 持久化为任务记录（含 TaskFile，以便前端原文定位预览）
     const userId = (req as any).user?.id;
@@ -95,20 +106,32 @@ export const runSelfCheck = async (req: Request, res: Response): Promise<void> =
 export const exportSelfCheckReport = async (req: Request, res: Response): Promise<void> => {
   try {
     const reportId = req.params.id as string;
-    const report = reportCache.get(reportId);
+    let report = reportCache.get(reportId);
+
+    // 缓存未命中时，从数据库 Task.selfCheckReport 字段读取
+    if (!report) {
+      const task = await prisma.task.findUnique({
+        where: { id: reportId },
+        select: { selfCheckReport: true },
+      });
+      if (task?.selfCheckReport) {
+        report = task.selfCheckReport as unknown as SelfCheckReport;
+      }
+    }
 
     if (!report) {
-      error(res, '报告已过期或不存在，请重新执行自检', 404);
+      error(res, '报告不存在，请重新执行自检', 404);
       return;
     }
 
     const buffer = await SelfCheckExportService.exportReport(report);
+    const fileName = `标准引用自检报告_${new Date().toISOString().slice(0, 10)}.xlsx`;
     res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
-    res.setHeader('Content-Disposition', `attachment; filename=标准引用自检报告_${new Date().toISOString().slice(0, 10)}.xlsx`);
+    res.setHeader('Content-Disposition', `attachment; filename*=UTF-8''${encodeURIComponent(fileName)}`);
     res.send(buffer);
   } catch (err: any) {
     console.error('[SelfCheck] 导出失败:', err);
-    error(res, '导出报告失败', 500);
+    error(res, `导出报告失败: ${err.message || '未知错误'}`, 500);
   }
 };
 

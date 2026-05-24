@@ -133,7 +133,7 @@
               ref="uploadRef"
               v-model:file-list="fileList"
               :auto-upload="false"
-              :accept="'.docx,.xlsx,.xls,.pdf'"
+              :accept="'.doc,.docx,.xls,.xlsx,.pdf,.ppt,.pptx,.dwg,.txt'"
               :limit="20"
               multiple
               drag
@@ -260,9 +260,14 @@ const router = useRouter()
 
 const supportedFormats = [
   { ext: 'DOCX', color: '#2B579A' },
+  { ext: 'DOC', color: '#2B579A' },
   { ext: 'XLSX', color: '#217346' },
   { ext: 'XLS', color: '#207245' },
   { ext: 'PDF', color: '#F40F02' },
+  { ext: 'PPTX', color: '#D04423' },
+  { ext: 'PPT', color: '#D04423' },
+  { ext: 'DWG', color: '#E36C09' },
+  { ext: 'TXT', color: '#909399' },
 ]
 
 // ==================== 标准库信息（真实数据）====================
@@ -372,8 +377,10 @@ const formatFileSize = (bytes?: number): string => {
 const getFileIconColor = (file: UploadFile): string => {
   const name = (file.name || '').toLowerCase()
   if (name.endsWith('.pdf')) return '#F40F02'
-  if (name.endsWith('.docx')) return '#2B579A'
+  if (name.endsWith('.docx') || name.endsWith('.doc')) return '#2B579A'
   if (name.endsWith('.xlsx') || name.endsWith('.xls')) return '#217346'
+  if (name.endsWith('.pptx') || name.endsWith('.ppt')) return '#D04423'
+  if (name.endsWith('.dwg')) return '#E36C09'
   return '#909399'
 }
 
@@ -404,10 +411,36 @@ const handleRunCheck = async () => {
 
   try {
     const formData = new FormData()
+    const dwgParsedData: Record<string, any> = {}
+
     for (const f of fileList.value) {
       if (f.raw) {
         formData.append('files', f.raw, f.name)
+        // DWG 文件在前端 WASM 解析，提取文本后传给后端
+        if (f.name.toLowerCase().endsWith('.dwg')) {
+          try {
+            const { parseDwgFile } = await import('@/utils/dwg-parser')
+            const parsed = await parseDwgFile(f.raw)
+            dwgParsedData[f.name] = parsed
+          } catch (dwgErr: any) {
+            console.error(`[SelfCheck] DWG 解析失败: ${f.name}`, dwgErr)
+            const msg = dwgErr?.message || ''
+            if (msg.includes('R2004') || msg.includes('decompress') || msg.includes('Assertion')) {
+              ElMessage.warning({
+                message: `图纸 ${f.name} 解析失败：DWG 版本格式不兼容（R2004/R2007 压缩编码）。请用 AutoCAD 另存为 R18 (2010) 或 R21 (2013) 格式后重试。`,
+                duration: 8000,
+              })
+            } else {
+              ElMessage.warning(`图纸 ${f.name} 解析失败：${msg || '未知错误'}`)
+            }
+          }
+        }
       }
+    }
+
+    // 附带 DWG 解析数据
+    if (Object.keys(dwgParsedData).length > 0) {
+      formData.append('dwgParsedData', JSON.stringify(dwgParsedData))
     }
 
     const { data } = await runSelfCheckApi(formData)

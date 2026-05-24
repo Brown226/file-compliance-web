@@ -162,13 +162,8 @@ function mergeShortSegments(segments: ParagraphSegment[]): ParagraphSegment[] {
     const currentTooShort = current.content.length < MIN_CHUNK_LENGTH;
     const prevTooShort = prev.content.length < TARGET_CHUNK_LENGTH;
 
+    // 同标题下：当前段过短，或前段未达目标长度 → 合并
     if (sameTitle && (currentTooShort || prevTooShort)) {
-      const deduped = trimRepeatedPrefix(current.content, prev.content);
-      prev.content = [prev.content, deduped].filter(Boolean).join('\n\n').trim();
-      continue;
-    }
-
-    if (sameTitle && current.content.length < TARGET_CHUNK_LENGTH) {
       const deduped = trimRepeatedPrefix(current.content, prev.content);
       prev.content = [prev.content, deduped].filter(Boolean).join('\n\n').trim();
       continue;
@@ -379,6 +374,56 @@ function isSeparatorLine(line: string): boolean {
 
 export class VectorService {
 
+  // ============ 工具方法 ============
+
+  private static readonly MAX_EMBED_CHARS = 6000;
+
+  /**
+   * 构建 Embedding 输入文本：使用结构化分隔符区分文档名/标题/条文号/正文
+   * 超长时在自然断句处截断，避免硬截断破坏语义
+   */
+  private static buildEmbeddingText(opts: {
+    documentTitle?: string;
+    heading?: string;
+    clauseId?: string;
+    contextSummary?: string;
+    content: string;
+  }): string {
+    const parts: string[] = [];
+    if (opts.documentTitle) parts.push(`文档：${opts.documentTitle}`);
+    if (opts.heading) parts.push(`章节：${opts.heading}`);
+    if (opts.clauseId) parts.push(`条文号：${opts.clauseId}`);
+    if (opts.contextSummary) parts.push(`[上下文：${opts.contextSummary}]`);
+    parts.push(opts.content);
+
+    let text = parts.join('\n');
+    if (text.length <= this.MAX_EMBED_CHARS) return text;
+
+    // 智能截断：在自然断句处切断，而非硬截断
+    console.warn(`[VectorService] embedding 文本超长(${text.length}字符)，智能截断至 ${this.MAX_EMBED_CHARS}`);
+    const truncated = text.slice(0, this.MAX_EMBED_CHARS);
+    // 从末尾向前找句子级断句
+    for (const chars of ['。', '；', '！', '？', '；', '.', '!', '?', '\n']) {
+      const idx = truncated.lastIndexOf(chars);
+      if (idx > this.MAX_EMBED_CHARS * 0.7) {
+        return truncated.slice(0, idx + 1);
+      }
+    }
+    return truncated;
+  }
+
+  /**
+   * 批量查询 contentHash 是否已存在（替代逐条 findFirst）
+   */
+  private static async batchCheckExists(hashes: string[]): Promise<Set<string>> {
+    if (hashes.length === 0) return new Set();
+    const rows = await prisma.$queryRawUnsafe<{ content_hash: string }[]>(
+      `SELECT content_hash FROM vector_documents WHERE content_hash = ANY($1::text[])`,
+      hashes
+    );
+    return new Set(rows.map(r => r.content_hash));
+  }
+
   // ============ 分块（移植自 MaxKB SplitModel） ============
 
   /**
@@ -451,18 +496,11 @@ export class VectorService {
       return this.splitByParagraph(cleaned, maxChars, overlap).filter(c => c.length >= MIN_CHUNK_LENGTH);
     }
 
-    // auto 模式：先 SplitModel，再做段落窗口重叠
+    // auto 模式：SplitModel 已通过标题树分割 + mergeShortSegments 处理段落合并，
+    // 不再做字符级 overlap（会破坏标题边界语义）。overlap 仅对 fixed/paragraph 模式生效。
     const paragraphs = this.splitMarkdownIntoParagraphs(cleaned, maxChars);
-    const chunks = paragraphs.map((p, index) => {
-      const base = p.content;
-      if (index === 0 || overlap <= 0) return p.title ? `${p.title}\n${base}` : base;
-
-      const prev = paragraphs[index - 1];
-      const prevText = prev.content;
-      const tail = prevText.slice(Math.max(0, prevText.length - overlap));
-      const dedupedBase = trimRepeatedPrefix(base, prevText);
-      const body = [tail, dedupedBase].filter(Boolean).join('\n');
-      return p.title ? `${p.title}\n${body}`.trim() : body.trim();
+    const chunks = paragraphs.map((p) => {
+      return p.title ? `${p.title}\n${p.content}` : p.content;
     });
 
     return chunks.filter(c => c.length >= MIN_CHUNK_LENGTH);
@@ -519,14 +557,19 @@ export class VectorService {
    * 从内容头部提取条文号（章节号、表号、图号）
    */
   static extractClauseId(content: string): string | null {
-    // 取前200字符进行匹配（条文号通常在段落开头）
-    const head = content.substring(0, 200);
+    // 取前300字符进行匹配（条文号通常在段落开头）
+    const head = content.substring(0, 300);
     const patterns = [
-      /^(T-[\d.]+[-\d/（）()]*)/m,                    // 表号 T-2.3-1, T-2.3-36（1/5）
-      /^(F-[\d.]+[-\d/（）()]*)/m,                    // 图号 F-2.1-1
-      /^(\d+\.\d+(?:\.\d+)*(?:\.\d+)*)[\s,，、：:]/m, // 章节号 2.1.1 后跟空格/逗号/冒号
-      /^(第[一二三四五六七八九十百千\d]+[章节条款])/m,  // 第X章/节/条
-      /^(附录[A-Z\d])/m,                              // 附录A, 附录1
+      /^(T-[\d.]+[-\d/（）()]*)/m,                         // 表号 T-2.3-1, T-2.3-36（1/5）
+      /^(F-[\d.]+[-\d/（）()]*)/m,                         // 图号 F-2.1-1
+      /^(\d+\.\d+(?:\.\d+)*(?:[-.]\d+)*)[\s,，、：:]/m,   // 章节号 2.1.1, 3.2.1-1 后跟分隔符
+      /^(第[一二三四五六七八九十百千\d]+[章节条款](?:\s*[第\d一二三四五六七八九十]+[条款节]?)?)/m, // 第X章第Y条
+      /^(附录[A-Z\d](?:\.\d+)?)/m,                        // 附录A, 附录1, 附录A.1
+      /^([a-z])[）、]\s*/m,                                 // a)、b）、c]
+      /^(\d+)[）、]\s*/m,                                   // 1)、2）、3]
+      /^(表|图)\s*[\d.]+[-\d]*/m,                          // 表3.2-1、图2.1
+      /^(C\s*[\d.]+[-\d]*)/m,                              // C2.3-1 (条款号前缀)
+      /^(JGJ|GB|DL|NB|HJ)\s*[/\s]\s*\d+/mi,              // 标准编号 JGJ/T 233、GB 50001
     ];
 
     for (const pattern of patterns) {
@@ -603,79 +646,74 @@ export class VectorService {
       }
     }
 
-    const MAX_EMBED_CHARS = 6000;
-
-    const textsForEmbedding = paragraphs.map((p, idx) => {
-      const fields: string[] = [];
-      if (embeddingUseDocumentTitle && title) fields.push(title);
-      if (p.title) fields.push(p.title);
-      if (embeddingUseClauseId && clauseId) fields.push(clauseId);
-      const contextSummary = contextualMap.get(idx);
-      if (contextSummary) fields.push(`[${contextSummary}]`);
-      fields.push(p.content);
-      let text = fields.filter(Boolean).join('\n');
-      if (text.length > MAX_EMBED_CHARS) {
-        console.warn(`[VectorService] chunk ${idx} 超长(${text.length}字符)，截断至 ${MAX_EMBED_CHARS}`);
-        text = text.slice(0, MAX_EMBED_CHARS);
-      }
-      return text;
-    });
+    // 构建 Embedding 输入（结构化分隔 + 智能截断）
+    const textsForEmbedding = paragraphs.map((p, idx) =>
+      this.buildEmbeddingText({
+        documentTitle: embeddingUseDocumentTitle ? title : undefined,
+        heading: p.title || undefined,
+        clauseId: embeddingUseClauseId ? clauseId : undefined,
+        contextSummary: contextualMap.get(idx),
+        content: p.content,
+      })
+    );
 
     const embeddings = await EmbeddingService.embedTexts(textsForEmbedding);
-    let deduped = 0;
 
-    for (let i = 0; i < paragraphs.length; i++) {
-      const para = paragraphs[i];
-      const chunkContent = para.content;
-
-      const extractedClause = this.extractClauseId(chunkContent);
+    // 预计算所有 hash，批量查重（替代逐条 findFirst）
+    const hashData = paragraphs.map((para, i) => {
+      const extractedClause = this.extractClauseId(para.content);
       const chunkClauseId = extractedClause || clauseId || String(i + 1);
-      const contentHash = this.sourceHash([sourceType, title, category || '', chunkClauseId, chunkContent]);
+      const contentHash = this.sourceHash([sourceType, title, category || '', chunkClauseId, para.content]);
       const sourceId = entry.sourceId || `${sourceType}:${this.sourceHash([title, category || '', chunkClauseId, contentHash])}`;
+      return { para, chunkClauseId, contentHash, sourceId, index: i };
+    });
 
-      const existing = await prisma.vectorDocument.findFirst({
-        where: { contentHash },
-        select: { id: true },
+    const allHashes = hashData.map(h => h.contentHash);
+    const existingHashSet = await this.batchCheckExists(allHashes);
+
+    // 过滤出需要插入的项，事务批量入库
+    const toInsert = hashData.filter(h => !existingHashSet.has(h.contentHash));
+    const deduped = hashData.length - toInsert.length;
+
+    if (toInsert.length > 0) {
+      await prisma.$transaction(async (tx) => {
+        for (const item of toInsert) {
+          const { para, chunkClauseId, contentHash, sourceId, index: i } = item;
+          const embeddingStr = `[${embeddings[i].join(',')}]`;
+          const isTable = para.content.split('\n').some(l => isSeparatorLine(l));
+          const paragraphTitle = para.title || title;
+          const contextSummary = contextualMap.get(i);
+
+          await tx.$executeRawUnsafe(`
+            INSERT INTO vector_documents
+              (id, "categoryId", source_type, source_id, title, clause_id, content, content_hash, chunk_index, metadata, embedding, vector_status, search_vector, created_at, updated_at)
+            VALUES
+              (gen_random_uuid(), $1, $2, $3, $4, $5, $6, $7, $8, $9::jsonb, $10::vector, $11,
+               to_tsvector('simple', coalesce($4::text, '') || ' ' || coalesce($5::text, '') || ' ' || coalesce($6::text, '')),
+               NOW(), NOW())
+          `,
+            categoryId || null,
+            sourceType,
+            paragraphs.length > 1 ? `${sourceId}:chunk:${i}` : sourceId,
+            paragraphTitle,
+            chunkClauseId,
+            para.content,
+            contentHash,
+            i,
+            JSON.stringify({
+              ...metadata,
+              document_title: title,
+              original_source_id: sourceId,
+              is_table: isTable,
+              heading: para.title || '',
+              chunkConfigUsed: { mode, maxChars, overlap, contextualRetrieval },
+              ...(contextSummary ? { contextSummary } : {}),
+            }),
+            embeddingStr,
+            'SUCCESS'
+          );
+        }
       });
-
-      if (existing) { deduped++; continue; }
-
-      const embeddingStr = `[${embeddings[i].join(',')}]`;
-      const isTable = chunkContent.split('\n').some(l => isSeparatorLine(l));
-
-      // 段落标题优先，文档名兜底
-      const paragraphTitle = para.title || title;
-
-      const contextSummary = contextualMap.get(i);
-
-      await prisma.$executeRawUnsafe(`
-        INSERT INTO vector_documents
-          (id, "categoryId", source_type, source_id, title, clause_id, content, content_hash, chunk_index, metadata, embedding, vector_status, search_vector, created_at, updated_at)
-        VALUES
-          (gen_random_uuid(), $1, $2, $3, $4, $5, $6, $7, $8, $9::jsonb, $10::vector, $11,
-           to_tsvector('simple', coalesce($4::text, '') || ' ' || coalesce($5::text, '') || ' ' || coalesce($6::text, '')),
-           NOW(), NOW())
-      `,
-        categoryId || null,
-        sourceType,
-        paragraphs.length > 1 ? `${sourceId}:chunk:${i}` : sourceId,
-        paragraphTitle,
-        chunkClauseId,
-        chunkContent,
-        contentHash,
-        i,
-        JSON.stringify({
-          ...metadata,
-          document_title: title,
-          original_source_id: sourceId,
-          is_table: isTable,
-          heading: para.title || '',
-          chunkConfigUsed: { mode, maxChars, overlap, contextualRetrieval },
-          ...(contextSummary ? { contextSummary } : {}),
-        }),
-        embeddingStr,
-        'SUCCESS'
-      );
     }
 
     return { chunks: paragraphs.length, deduped };
@@ -734,81 +772,42 @@ export class VectorService {
       }
     }
 
-    const MAX_EMBED_CHARS = 6000;
-
-    const textsForEmbedding = segments.map((p, idx) => {
-      const fields: string[] = [];
-      if (embeddingUseDocumentTitle && title) fields.push(title);
-      if (p.title) fields.push(p.title);
-      if (embeddingUseClauseId && clauseId) fields.push(clauseId);
-      const contextSummary = contextualMap.get(idx);
-      if (contextSummary) fields.push(`[${contextSummary}]`);
-      fields.push(p.content);
-      let text = fields.filter(Boolean).join('\n');
-      if (text.length > MAX_EMBED_CHARS) {
-        console.warn(`[VectorService] importChunks chunk ${idx} 超长(${text.length}字符)，截断至 ${MAX_EMBED_CHARS}`);
-        text = text.slice(0, MAX_EMBED_CHARS);
-      }
-      return text;
-    });
+    // 构建 Embedding 输入（结构化分隔 + 智能截断）
+    const textsForEmbedding = segments.map((p, idx) =>
+      this.buildEmbeddingText({
+        documentTitle: embeddingUseDocumentTitle ? title : undefined,
+        heading: p.title || undefined,
+        clauseId: embeddingUseClauseId ? clauseId : undefined,
+        contextSummary: contextualMap.get(idx),
+        content: p.content,
+      })
+    );
 
     const embeddings = await EmbeddingService.embedTexts(textsForEmbedding);
 
-    let deduped = 0;
-    const toInsert: Array<{
-      para: ParagraphSegment;
-      chunkContent: string;
-      chunkClauseId: string;
-      contentHash: string;
-      sourceId: string;
-      embeddingStr: string;
-      isTable: boolean;
-      storedContent: string;
-      contextSummary?: string;
-    }> = [];
-
-    for (let i = 0; i < segments.length; i++) {
-      const para = segments[i];
-      const chunkContent = para.content;
-
-      const extractedClause = this.extractClauseId(chunkContent);
+    // 批量查重
+    const hashData = segments.map((para, i) => {
+      const extractedClause = this.extractClauseId(para.content);
       const chunkClauseId = extractedClause || clauseId || String(i + 1);
-      const contentHash = this.sourceHash([sourceType, title, category || '', chunkClauseId, chunkContent]);
+      const contentHash = this.sourceHash([sourceType, title, category || '', chunkClauseId, para.content]);
       const sourceId = entry.sourceId || `${sourceType}:${this.sourceHash([title, category || '', chunkClauseId, contentHash])}`;
+      return { para, chunkClauseId, contentHash, sourceId, index: i };
+    });
 
-      const existing = await prisma.vectorDocument.findFirst({
-        where: { contentHash },
-        select: { id: true },
-      });
+    const allHashes = hashData.map(h => h.contentHash);
+    const existingHashSet = await this.batchCheckExists(allHashes);
 
-      if (existing) { deduped++; continue; }
-
-      const embeddingStr = `[${embeddings[i].join(',')}]`;
-      const isTable = chunkContent.split('\n').some(l => isSeparatorLine(l));
-
-      // 段落标题优先，文档名兜底
-      const paragraphTitle = para.title || title;
-
-      const contextSummary = contextualMap.get(i);
-
-      toInsert.push({
-        para,
-        chunkContent,
-        chunkClauseId,
-        contentHash,
-        sourceId,
-        embeddingStr,
-        isTable,
-        paragraphTitle,
-        contextSummary,
-      });
-    }
+    const toInsert = hashData.filter(h => !existingHashSet.has(h.contentHash));
+    const deduped = hashData.length - toInsert.length;
 
     if (toInsert.length > 0) {
       await prisma.$transaction(async (tx) => {
-        for (let i = 0; i < toInsert.length; i++) {
-          const item = toInsert[i];
-          const paraIndex = segments.findIndex(p => p === item.para);
+        for (const item of toInsert) {
+          const { para, chunkClauseId, contentHash, sourceId, index: i } = item;
+          const embeddingStr = `[${embeddings[i].join(',')}]`;
+          const isTable = para.content.split('\n').some(l => isSeparatorLine(l));
+          const paragraphTitle = para.title || title;
+          const contextSummary = contextualMap.get(i);
 
           await tx.$executeRawUnsafe(`
             INSERT INTO vector_documents
@@ -820,21 +819,21 @@ export class VectorService {
           `,
             categoryId || null,
             sourceType,
-            toInsert.length > 1 ? `${item.sourceId}:chunk:${paraIndex}` : item.sourceId,
-            item.paragraphTitle,
-            item.chunkClauseId,
-            item.chunkContent,
-            item.contentHash,
-            paraIndex,
+            segments.length > 1 ? `${sourceId}:chunk:${i}` : sourceId,
+            paragraphTitle,
+            chunkClauseId,
+            para.content,
+            contentHash,
+            i,
             JSON.stringify({
               ...metadata,
               document_title: title,
-              original_source_id: item.sourceId,
-              is_table: item.isTable,
-              heading: item.para.title || '',
-              ...(item.contextSummary ? { contextSummary: item.contextSummary } : {}),
+              original_source_id: sourceId,
+              is_table: isTable,
+              heading: para.title || '',
+              ...(contextSummary ? { contextSummary } : {}),
             }),
-            item.embeddingStr,
+            embeddingStr,
             'SUCCESS'
           );
         }
@@ -894,23 +893,16 @@ export class VectorService {
       }
     }
 
-    const MAX_EMBED_CHARS = 6000;
-
-    const textsForEmbedding = paragraphs.map((p, idx) => {
-      const fields: string[] = [];
-      if (embeddingUseDocumentTitle && title) fields.push(title);
-      if (p.title) fields.push(p.title);
-      if (embeddingUseClauseId && clauseId) fields.push(clauseId);
-      const contextSummary = contextualMap.get(idx);
-      if (contextSummary) fields.push(`[${contextSummary}]`);
-      fields.push(p.content);
-      let text = fields.filter(Boolean).join('\n');
-      if (text.length > MAX_EMBED_CHARS) {
-        console.warn(`[VectorService] replaceDocument chunk ${idx} 超长(${text.length}字符)，截断至 ${MAX_EMBED_CHARS}`);
-        text = text.slice(0, MAX_EMBED_CHARS);
-      }
-      return text;
-    });
+    // 构建 Embedding 输入（结构化分隔 + 智能截断）
+    const textsForEmbedding = paragraphs.map((p, idx) =>
+      this.buildEmbeddingText({
+        documentTitle: embeddingUseDocumentTitle ? title : undefined,
+        heading: p.title || undefined,
+        clauseId: embeddingUseClauseId ? clauseId : undefined,
+        contextSummary: contextualMap.get(idx),
+        content: p.content,
+      })
+    );
     const embeddings = await EmbeddingService.embedTexts(textsForEmbedding);
 
     await prisma.$transaction(async (tx) => {
@@ -928,18 +920,16 @@ export class VectorService {
         const sourceId = entry.sourceId || `${sourceType}:${this.sourceHash([title, category || '', chunkClauseId, contentHash])}`;
         const embeddingStr = `[${embeddings[i].join(',')}]`;
         const isTable = chunkContent.split('\n').some(l => isSeparatorLine(l));
-
-        // 段落标题优先，文档名兜底
         const paragraphTitle = para.title || title;
-
         const contextSummary = contextualMap.get(i);
 
+        // search_vector 与 importDocument 保持一致：title + clauseId + content
         await tx.$executeRawUnsafe(
           `INSERT INTO vector_documents
             (id, "categoryId", source_type, source_id, title, clause_id, content, content_hash, chunk_index, metadata, embedding, vector_status, search_vector, created_at, updated_at)
           VALUES
             (gen_random_uuid(), $1, $2, $3, $4, $5, $6, $7, $8, $9::jsonb, $10::vector, $11,
-             to_tsvector('simple', coalesce($4::text, '') || ' ' || coalesce($6::text, '')),
+             to_tsvector('simple', coalesce($4::text, '') || ' ' || coalesce($5::text, '') || ' ' || coalesce($6::text, '')),
              NOW(), NOW())`,
           categoryId,
           sourceType,
@@ -1184,12 +1174,13 @@ export class VectorService {
     const cleanQuery = query.replace(/\s+/g, ' ').trim();
     if (!cleanQuery) return [];
 
-    // 用 jieba 分词后连接为 tsquery（& 连接 = 所有词都要匹配）
+    // 用 jieba 分词后连接为 tsquery
     const terms = await this.tokenizeQuery(cleanQuery);
     if (terms.length === 0) return [];
 
-    // 构建 tsquery：多个词用 & 连接
-    const tsqueryTerms = terms.map(t => `'${t.replace(/'/g, "''")}'`).join(' & ');
+    // 构建 tsquery：用 | 连接（OR），提升召回率，再通过 ts_rank 排序
+    // 原来用 & (AND) 要求全部命中，中文分词后词多导致召回率极低
+    const tsqueryTerms = terms.map(t => `'${t.replace(/'/g, "''")}'`).join(' | ');
 
     const params: any[] = [tsqueryTerms];
     let paramIndex = 2;

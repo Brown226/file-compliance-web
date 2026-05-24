@@ -99,53 +99,58 @@ export class StandardCheckService {
       }
     }
 
-    // Level 6: 包含匹配（编号）
+    // Level 6: 包含匹配（编号）— 要求被包含的字符串至少8个字符，避免短编号误匹配
+    const MIN_INCLUDE_LEN = 8;
     // 6a: 文档编号包含在库编号中（去空格）
     for (const lib of standardLibrary) {
-      if (lib.standardNo && docStandard.standardNo &&
-          this.removeSpaces(lib.standardNo).includes(this.removeSpaces(docStandard.standardNo))) {
+      const docNorm = this.removeSpaces(docStandard.standardNo || '');
+      if (lib.standardNo && docNorm.length >= MIN_INCLUDE_LEN &&
+          this.removeSpaces(lib.standardNo).includes(docNorm)) {
         return { matched: true, matchLevel: 6, matchedItem: lib, isExactMatch: false };
       }
     }
 
     // 6b: 库编号包含在文档编号中（去空格）
     for (const lib of standardLibrary) {
-      if (lib.standardNo && docStandard.standardNo &&
-          this.removeSpaces(docStandard.standardNo).includes(this.removeSpaces(lib.standardNo))) {
+      const libNorm = this.removeSpaces(lib.standardNo || '');
+      if (libNorm.length >= MIN_INCLUDE_LEN && docStandard.standardNo &&
+          this.removeSpaces(docStandard.standardNo).includes(libNorm)) {
         return { matched: true, matchLevel: 6, matchedItem: lib, isExactMatch: false };
       }
     }
 
     // 6c: 文档编号包含在库编号中（标点规范化）
     for (const lib of standardLibrary) {
-      if (lib.standardNo && docStandard.standardNo &&
-          this.normalizePunctuation(lib.standardNo).includes(this.normalizePunctuation(docStandard.standardNo))) {
+      const docNorm = this.normalizePunctuation(docStandard.standardNo || '');
+      if (lib.standardNo && docNorm.length >= MIN_INCLUDE_LEN &&
+          this.normalizePunctuation(lib.standardNo).includes(docNorm)) {
         return { matched: true, matchLevel: 6, matchedItem: lib, isExactMatch: false };
       }
     }
 
     // 6d: 库编号包含在文档编号中（标点规范化）
     for (const lib of standardLibrary) {
-      if (lib.standardNo && docStandard.standardNo &&
-          this.normalizePunctuation(docStandard.standardNo).includes(this.normalizePunctuation(lib.standardNo))) {
+      const libNorm = this.normalizePunctuation(lib.standardNo || '');
+      if (libNorm.length >= MIN_INCLUDE_LEN && docStandard.standardNo &&
+          this.normalizePunctuation(docStandard.standardNo).includes(libNorm)) {
         return { matched: true, matchLevel: 6, matchedItem: lib, isExactMatch: false };
       }
     }
 
     // 6e: 文档编号包含在库编号中（标点规范化+大写）
     for (const lib of standardLibrary) {
-      if (lib.standardNo && docStandard.standardNo &&
-          this.normalizePunctuation(lib.standardNo).toUpperCase().includes(
-          this.normalizePunctuation(docStandard.standardNo).toUpperCase())) {
+      const docNorm = this.normalizePunctuation(docStandard.standardNo || '').toUpperCase();
+      if (lib.standardNo && docNorm.length >= MIN_INCLUDE_LEN &&
+          this.normalizePunctuation(lib.standardNo).toUpperCase().includes(docNorm)) {
         return { matched: true, matchLevel: 6, matchedItem: lib, isExactMatch: false };
       }
     }
 
     // 6f: 库编号包含在文档编号中（标点规范化+大写）
     for (const lib of standardLibrary) {
-      if (lib.standardNo && docStandard.standardNo &&
-          this.normalizePunctuation(docStandard.standardNo).toUpperCase().includes(
-          this.normalizePunctuation(lib.standardNo).toUpperCase())) {
+      const libNorm = this.normalizePunctuation(lib.standardNo || '').toUpperCase();
+      if (libNorm.length >= MIN_INCLUDE_LEN && docStandard.standardNo &&
+          this.normalizePunctuation(docStandard.standardNo).toUpperCase().includes(libNorm)) {
         return { matched: true, matchLevel: 6, matchedItem: lib, isExactMatch: false };
       }
     }
@@ -193,10 +198,10 @@ export class StandardCheckService {
   }
 
   /**
-   * 去除所有空格
+   * 去除所有空白字符（包括全角空格、不间断空格、制表符等 Unicode 空白）
    */
   private static removeSpaces(s: string): string {
-    return s.replace(/ /g, '');
+    return s.replace(/[\s 　﻿]/g, '');
   }
 
   /**

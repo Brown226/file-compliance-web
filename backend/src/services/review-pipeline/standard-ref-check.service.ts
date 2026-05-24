@@ -78,6 +78,7 @@ export class StandardRefCheckService {
           description: `未找到该标准规范: ${ref.standardNo}${ref.standardName ? ` (${ref.standardName})` : ''}`,
         });
       } else if (matchResult.matchedItem) {
+        const matchLevel = matchResult.matchLevel;
         const libItem = matchResult.matchedItem;
 
         // 标准状态检查
@@ -98,6 +99,21 @@ export class StandardRefCheckService {
             description: `该标准尚未实施: ${libItem.standardNo}`,
           });
           continue;
+        }
+
+        // 版本号检查（年份不匹配）
+        if (ref.standardNo && libItem.standardNo && matchLevel >= 3) {
+          const docYear = this.extractYear(ref.standardNo);
+          const libYear = this.extractYear(libItem.standardNo);
+          if (docYear && libYear && docYear !== libYear) {
+            issues.push({
+              issueType: 'VIOLATION', ruleCode: 'STD_005',
+              originalText: ref.fullMatch,
+              suggestedText: libItem.standardNo,
+              description: `标准版本不一致: 文档引用版本 ${docYear}，标准库版本 ${libYear}`,
+            });
+            continue;
+          }
         }
 
         // 字符级差异定位
@@ -129,5 +145,16 @@ export class StandardRefCheckService {
     }
 
     return issues;
+  }
+
+  /**
+   * 从标准编号中提取年份（取最后一个4位数字）
+   */
+  private static extractYear(standardNo: string): string | null {
+    const matches = standardNo.match(/\d{4}/g);
+    if (!matches || matches.length === 0) return null;
+    const last = matches[matches.length - 1];
+    const year = parseInt(last, 10);
+    return (year >= 1900 && year <= 2099) ? last : null;
   }
 }

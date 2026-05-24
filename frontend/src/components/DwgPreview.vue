@@ -13,7 +13,7 @@
   <!-- 解析失败 -->
   <div class="dwg-error" v-else-if="error">
     <el-icon :size="14" color="var(--el-color-warning)"><WarningFilled /></el-icon>
-    <span>WASM 解析失败，将仅使用文本审查</span>
+    <span>{{ errorMsg || 'WASM 解析失败，将仅使用文本审查' }}</span>
   </div>
 
   <!-- 解析成功 -->
@@ -44,12 +44,14 @@ const emit = defineEmits<{
 const parsedData = ref<DwgParsedData | null>(null)
 const loading = ref(false)
 const error = ref(false)
+const errorMsg = ref('')
 
 /** 触发 WASM 解析 */
 async function doParse(file: File) {
   console.log('[DwgPreview] doParse 开始, file:', file?.name, 'size:', file?.size)
   loading.value = true
   error.value = false
+  errorMsg.value = ''
   parsedData.value = null
 
   try {
@@ -59,6 +61,14 @@ async function doParse(file: File) {
   } catch (e: any) {
     console.error('[DwgPreview] WASM 解析失败:', file.name, e?.message || e)
     error.value = true
+    const msg = e?.message || ''
+    if (msg.includes('R2004') || msg.includes('decompress') || msg.includes('Assertion')) {
+      errorMsg.value = 'DWG 版本不兼容（R2004/R2007），请另存为 R18 (2010) 或 R21 (2013) 格式后重试'
+    } else if (msg.includes('过大') || msg.includes('limit')) {
+      errorMsg.value = '文件过大，超出 WASM 解析限制'
+    } else {
+      errorMsg.value = 'WASM 解析失败，将仅使用文本审查'
+    }
     emit('error', e instanceof Error ? e : new Error(String(e)))
   } finally {
     loading.value = false

@@ -24,11 +24,11 @@ const upload = multer({
   limits: { fileSize: 50 * 1024 * 1024 }, // 50MB
   fileFilter: (_req, file, cb) => {
     const ext = path.extname(file.originalname).toLowerCase();
-    const allowed = ['.docx', '.xlsx', '.xls', '.pdf'];
+    const allowed = ['.doc', '.docx', '.xls', '.xlsx', '.pdf', '.ppt', '.pptx', '.dwg', '.txt'];
     if (allowed.includes(ext)) {
       cb(null, true);
     } else {
-      cb(new Error('仅支持 docx/xlsx/xls/pdf 文件'));
+      cb(new Error('仅支持 doc/docx/xls/xlsx/pdf/ppt/pptx/dwg/txt 文件'));
     }
   },
 });

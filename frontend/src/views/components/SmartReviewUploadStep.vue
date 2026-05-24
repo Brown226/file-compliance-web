@@ -343,6 +343,11 @@ const formatFileSize = (bytes: number) => {
   background: #EFF6FF;
 }
 
+/* 隐藏 el-upload 内部的文件列表（使用自定义列表） */
+.upload-dragger :deep(.el-upload-list) {
+  display: none !important;
+}
+
 .upload-content {
   display: flex;
   flex-direction: column;

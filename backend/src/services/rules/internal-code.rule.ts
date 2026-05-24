@@ -6,6 +6,9 @@
 
 import { RuleIssue, FileContext } from './types';
 
+// 排除标准编号、ISO标准等非工程编码
+const EXCLUDED_PREFIXES = /^(GB|ISO|IEC|NB|DL|HJ|EJ|JGJ|CJJ|HAF|CECS|TJ|DB|QX|GYJ|BJG|API|ASME|ASTM|ANSI|IEEE|NFPA|IBC|IRC)/i;
+
 export function checkInternalCodes(ctx: FileContext, config?: any): RuleIssue[] {
   const issues: RuleIssue[] = [];
   const text = ctx.extractedText || '';
@@ -16,8 +19,11 @@ export function checkInternalCodes(ctx: FileContext, config?: any): RuleIssue[] 
   const fileProjectCode = fileName.match(/^([A-Z]{2}\d{2}[A-Z]\d{2}[A-Z]{2})/)?.[1];
   const fileSystemCode = fileName.match(/-([A-Z]{3}\d{2})/)?.[1];
 
-  // 在正文中查找所有类似 ID-code 的编码
-  const allCodes = text.match(/[A-Z]{2,4}\d{2,}[A-Z]{0,2}\d{0,4}[A-Z]{0,3}/g);
+  // 如果文件名本身没有有效的项目编码，跳过检查（避免基于错误文件名产生连锁误报）
+  if (!fileProjectCode) return issues;
+
+  // 在正文中查找核电工程编码（更严格的模式：数字+字母+数字+字母组合）
+  const allCodes = text.match(/\d[A-Z]{2}\d{2,3}[A-Z]{2}\d{2}[A-Z]{2}/g);
   if (!allCodes) return issues;
 
   const seenCodes = new Set<string>();
@@ -25,17 +31,22 @@ export function checkInternalCodes(ctx: FileContext, config?: any): RuleIssue[] 
   for (const rawCode of allCodes) {
     const code = rawCode.toUpperCase();
     if (seenCodes.has(code)) continue;
-    if (code.length < 8 || code.length > 20) continue;
+    if (code.length < 8 || code.length > 15) continue;
+
+    // 排除标准编号等非工程编码
+    if (EXCLUDED_PREFIXES.test(code)) continue;
+
     seenCodes.add(code);
 
     // 如果有文件名的项目编码参考，检查正文编码前缀是否一致
-    if (fileProjectCode && code.startsWith(fileProjectCode.substring(0, 4))) {
-      // 前缀部分匹配，做进一步检查
+    // 提高匹配门槛：要求前6字符匹配（而非仅4字符）
+    if (code.startsWith(fileProjectCode.substring(0, 6))) {
+      // 前缀匹配，做进一步检查
       if (code.length >= fileProjectCode.length &&
           code !== fileProjectCode &&
-          !code.includes(fileProjectCode.substring(0, 6))) {
-        // 前4字符相同但后续不一致，可能是编码错误
-        if (issues.length < (config?.maxIssues ?? 2)) { // 最多报N个
+          !code.includes(fileProjectCode.substring(0, 8))) {
+        // 前6字符相同但后续不一致，可能是编码错误
+        if (issues.length < maxIssues) {
           issues.push({
             issueType: 'ENCODING', ruleCode: 'INTERNAL_CODE_001',
             severity: 'warning',

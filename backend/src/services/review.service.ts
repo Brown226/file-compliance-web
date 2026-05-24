@@ -1,15 +1,58 @@
 import prisma from '../config/db';
 import { ParserService } from './parser.service';
 import { LlmService, ReviewIssue } from './llm.service';
-import { createPipelineAsync, PipelineContext } from './review-pipeline';
+import { PipelineContext, ReviewModeType, createPipelineAsync } from './review-pipeline';
+import { TextExtractionService } from './review-pipeline/text-extraction.service';
+import { AiReviewService } from './review-pipeline/ai-review.service';
+import { RuleEngineService } from './rule-engine.service';
+import { StandardRefCheckService } from './review-pipeline/standard-ref-check.service';
+import { getEffectiveConfig } from './review-pipeline/pipeline-config';
 import { CrossFileConsistencyService } from './cross-file-consistency.service';
 import { IntraFileConsistencyService } from './intra-file-consistency.service';
 import { WebSocketService } from './websocket.service';
 import { ConcurrencyService } from './concurrency.service';
 import { ReviewSpecificationService } from './review-specification.service';
+import { TableExtractionService } from './table-extraction.service';
+import { FormulaOcrService } from './formula-ocr.service';
+import { TerminologyService } from './terminology.service';
 import path from 'path';
 import { ReviewPlan } from '../types/review-plan';
 import { TaskService } from './task.service';
+
+/**
+ * 固定模式行为配置 — 每种审查模式的硬编码行为声明
+ * 这些模式的行为已固化，不会发生变化，无需通过流水线工厂动态分派
+ *
+ * CUSTOM_RULE 模式仍走流水线（行为由用户配置的规则前缀动态决定）
+ */
+interface ModeBehavior {
+  rules: boolean;
+  standardRef: boolean;
+  ai: boolean;
+  scene: string;
+}
+
+const MODE_BEHAVIOR: Record<ReviewModeType, ModeBehavior> = {
+  LIBRARY_REVIEW: { rules: false, standardRef: false, ai: true, scene: 'library_review' },
+  CONSISTENCY:    { rules: false, standardRef: false, ai: true, scene: 'consistency' },
+  TYPO_GRAMMAR:   { rules: false, standardRef: false, ai: true, scene: 'typo_grammar' },
+  DOC_REVIEW:     { rules: false, standardRef: false, ai: true, scene: 'doc_review' },
+  MULTIMODAL:     { rules: false, standardRef: false, ai: true, scene: 'multimodal' },
+  CUSTOM_RULE:    { rules: true,  standardRef: false, ai: false, scene: 'library_review' },
+};
+
+const MODE_DISPLAY_NAMES: Record<ReviewModeType, string> = {
+  LIBRARY_REVIEW: '以库审文',
+  CONSISTENCY: '全文一致性',
+  TYPO_GRAMMAR: '错别字/语法',
+  DOC_REVIEW: '以文审文',
+  MULTIMODAL: '多模态识别',
+  CUSTOM_RULE: '自定义规则',
+};
+
+function getModeBehavior(mode: string): ModeBehavior {
+  return MODE_BEHAVIOR[mode as ReviewModeType] || MODE_BEHAVIOR.LIBRARY_REVIEW;
+}
 
 /**
  * 审查编排服务 - 两阶段分批并发编排
@@ -45,8 +88,12 @@ export class ReviewService {
     const plan = TaskService.normalizeReviewPlan(task?.reviewPlan);
     const reviewMode = TaskService.resolvePipelineSelector(plan);
     const ruleSource = plan.evidence.sources.includes('REVIEW_SPECIFICATION') || plan.evidence.sources.includes('RULE_LIBRARY') ? 'REVIEW_SPECIFICATION' : 'STANDARD';
+    // DOC_REVIEW 和 CONSISTENCY 模式强制启用 AI（即使前端误传 RULE_ONLY）
+    const effectiveProfile = (reviewMode === 'DOC_REVIEW' || reviewMode === 'CONSISTENCY')
+      ? 'HYBRID'
+      : plan.execution.profile;
     const stages =
-      plan.execution.profile === 'RULE_ONLY'
+      effectiveProfile === 'RULE_ONLY'
         ? { ai: false, rules: true, stdRef: false }
         : undefined;
     const crossFileConsistency = !!plan.enhancements.crossFileConsistency;
@@ -308,9 +355,10 @@ export class ReviewService {
       const reviewSpecificationId = executionPlan.reviewSpecificationId;
       const directPrefixes = executionPlan.enabledPrefixes;
 
-      // ===== 统一创建 Pipeline（一次创建，全流程复用） =====
-      const pipeline = await createPipelineAsync(reviewMode as any);
-      const needsAI = pipeline.capabilities.ai;
+      // ===== 模式行为配置（固定模式直接查表，无需创建 Pipeline） =====
+      const behavior = getModeBehavior(reviewMode);
+      const needsAI = behavior.ai;
+      const modeDisplayName = MODE_DISPLAY_NAMES[reviewMode as ReviewModeType] || reviewMode;
       // 优先使用前端传入的启用前缀，否则从审查规范集加载
       const ruleExecutionPlan = directPrefixes && directPrefixes.length > 0
         ? { enabledPrefixes: directPrefixes, executableItems: [] }
@@ -321,12 +369,24 @@ export class ReviewService {
             })
           : null;
 
-      // 从 preAnalysisData 读取文件内一致性开关
+      // 从 preAnalysisData 读取文件内一致性开关和审查点/核心目的
       const taskPreAnalysis = (task as any).preAnalysisData;
       const intraFileConsistency = !!(
         executionPlan.intraFileConsistency
         || (taskPreAnalysis && typeof taskPreAnalysis === 'object' && taskPreAnalysis.intraFileConsistency)
       );
+
+      // 提取用户选择的审查点和核心目的
+      const reviewPoints: string[] = (taskPreAnalysis && typeof taskPreAnalysis === 'object' && Array.isArray(taskPreAnalysis.reviewPoints))
+        ? taskPreAnalysis.reviewPoints
+        : [];
+      const corePurposes: string[] = (taskPreAnalysis && typeof taskPreAnalysis === 'object' && Array.isArray(taskPreAnalysis.corePurposes))
+        ? taskPreAnalysis.corePurposes
+        : [];
+
+      if (reviewPoints.length > 0 || corePurposes.length > 0) {
+        console.log(`[Review] 用户审查点: ${reviewPoints.length} 个, 核心目的: ${corePurposes.length} 个`);
+      }
 
       // 解析多知识子库 ID
       let knowledgeCategoryIds: string[] | undefined;
@@ -334,6 +394,24 @@ export class ReviewService {
         knowledgeCategoryIds = executionPlan.knowledgeCategoryIds;
       } else if (knowledgeCategoryId) {
         knowledgeCategoryIds = [knowledgeCategoryId];
+      }
+
+      // ===== 加载语义规范库条目（用于 AI 语义审查） =====
+      let semanticItems: PipelineContext['semanticItems'] = undefined;
+      const effectiveSpecId = executionPlan.reviewSpecificationId || (task as any).reviewSpecificationId;
+      if (effectiveSpecId) {
+        try {
+          const specItems = await prisma.reviewSpecificationItem.findMany({
+            where: { specificationId: effectiveSpecId, enabled: true },
+            select: { ruleCode: true, ruleName: true, category: true, description: true, severity: true },
+          });
+          if (specItems.length > 0) {
+            semanticItems = specItems;
+            console.log(`[Review] 加载语义规范库条目: ${specItems.length} 条`);
+          }
+        } catch (e) {
+          console.warn('[Review] 加载语义规范库条目失败:', e);
+        }
       }
 
       // 标记所有文件为 PENDING
@@ -399,7 +477,10 @@ export class ReviewService {
           pipelineConfig,
           executionOverrides: executionPlan.executionOverrides,
           refFileGroup: refFileGroupCtx,
+          semanticItems,
           intraFileConsistency,
+          reviewPoints,
+          corePurposes,
         };
 
         // ★ DWG 前端 WASM 数据：如果 taskFile 已有 dwg_wasm_parsed 标记，
@@ -511,7 +592,7 @@ export class ReviewService {
 
       // 阶段1：规则审查全部并行（资源消耗低，快速响应）
       const fastPhasePromises = fileContexts.map(({ file, ctx }, index) =>
-        this.runFileFastPhase(taskId, file, ctx, index, totalFiles, pipeline)
+        this.runFileFastPhase(taskId, file, ctx, index, totalFiles)
           .then(res => ({ ...res, fileId: file.id, fileName: file.fileName }))
           .catch(error => ({ error, fileId: file.id, fileName: file.fileName, ruleIssues: [] as any[], stdRefIssues: [] as any[] }))
       );
@@ -547,7 +628,8 @@ export class ReviewService {
 
       console.log(`[Review] 阶段1完成: 成功 ${fastSuccessCount}, 失败 ${fastFailedCount}`);
 
-      // ===== 文件内一致性检查（与阶段2并行） =====
+      // ===== 文件内一致性检查（启动后与阶段2并行，最后 await 汇总） =====
+      let intraConsistencyPromise: Promise<Array<{ fileId: string; issueCount: number }>> | null = null;
       if (intraFileConsistency) {
         WebSocketService.emitTaskProgress(taskId, {
           type: 'intra_consistency_check',
@@ -560,8 +642,8 @@ export class ReviewService {
         // 收集已成功提取文本的文件上下文
         const filesWithText = fileContexts.filter(({ ctx }) => ctx.extractedText && ctx.extractedText.trim().length > 0);
 
-        // 与阶段2并行执行，不阻塞主流程
-        const intraConsistencyPromise = Promise.all(
+        // 启动但不立即 await，与阶段2并行执行
+        intraConsistencyPromise = Promise.all(
           filesWithText.map(async ({ file, ctx }) => {
             try {
               const issueCount = await IntraFileConsistencyService.check(
@@ -577,58 +659,64 @@ export class ReviewService {
             }
           }),
         );
-
-        // 不 await，让它与阶段2并行，最后汇总
-        intraConsistencyPromise.then(results => {
-          const totalIssues = results.reduce((sum, r) => sum + r.issueCount, 0);
-          WebSocketService.emitTaskProgress(taskId, {
-            type: 'intra_consistency_done',
-            step: '文件内一致性检查完成',
-            progress: 92,
-            message: `文件内一致性检查完成: 发现 ${totalIssues} 个不一致问题`,
-            timestamp: Date.now(),
-          });
-        }).catch(() => { /* ignore */ });
       }
 
       // ===== 阶段2: 用户级别并发 AI 审查 =====
       // 使用统一创建的 pipeline 判断是否需要 AI 审查
       let slowPhaseResults: any[] = [];
       if (!needsAI) {
-        // 不需要 AI 审查的模式，直接标记文件完成
+        // 不需要 AI 审查的模式，根据阶段1结果标记文件状态
         console.log(`[Review] 阶段2跳过: ${reviewMode} 模式不需要 AI 审查`);
+        const failedFileIds = new Set(
+          fastPhaseResults.filter(r => 'error' in r).map(r => r.fileId)
+        );
         for (const { file } of fileContexts) {
+          const status = failedFileIds.has(file.id) ? 'FAILED' : 'COMPLETED';
           await prisma.taskFile.update({
             where: { id: file.id },
-            data: { status: 'COMPLETED' },
-          }).catch(() => { /* ignore */ });
+            data: { status },
+          }).catch((e) => { console.warn(`[Review] 更新文件状态失败 (${file.id}):`, e); });
         }
         WebSocketService.emitTaskProgress(taskId, {
           type: 'phase2_start',
           step: 'AI 深度审查',
           progress: 45,
-          message: `${pipeline.displayName}模式无需 AI 审查，直接完成`,
+          message: `${modeDisplayName}模式无需 AI 审查，直接完成`,
           timestamp: Date.now(),
         });
       } else {
-        // 注意：阶段2使用 ctx 中已填充的 extractedText 和 pdfPages
-        console.log(`[Review] 阶段2开始: ${totalFiles} 个文件 AI 审查 (用户 ${task.creatorId} 并发上限 ${maxConcurrent})`);
+        // 过滤掉阶段1失败的文件，避免对它们执行无意义的 AI 审查
+        const failedFileIds = new Set(
+          fastPhaseResults.filter(r => 'error' in r).map(r => r.fileId)
+        );
+        const eligibleForAI = fileContexts.filter(({ file }) => !failedFileIds.has(file.id));
+        const skippedCount = fileContexts.length - eligibleForAI.length;
+
+        // 标记阶段1失败的文件状态
+        for (const fileId of failedFileIds) {
+          await prisma.taskFile.update({
+            where: { id: fileId },
+            data: { status: 'FAILED' },
+          }).catch((e) => { console.warn(`[Review] 更新阶段1失败文件状态 (${fileId}):`, e); });
+        }
+
+        console.log(`[Review] 阶段2开始: ${eligibleForAI.length} 个文件 AI 审查 (跳过 ${skippedCount} 个阶段1失败文件, 用户 ${task.creatorId} 并发上限 ${maxConcurrent})`);
         console.log(`[Review] 用户 ${task.creatorId} 当前并发数: ${this.getUserProcessingCount(task.creatorId)}`);
         WebSocketService.emitTaskProgress(taskId, {
           type: 'phase2_start',
           step: 'AI 深度审查',
           progress: 45,
-          message: `开始 AI 审查（${totalFiles} 个文件，用户并发上限 ${maxConcurrent}）`,
+          message: `开始 AI 审查（${eligibleForAI.length} 个文件，用户并发上限 ${maxConcurrent}）`,
           timestamp: Date.now(),
         });
 
-        // 用户级别并发执行阶段2（每个用户独立限流）
+        // 用户级别并发执行阶段2（每个用户独立限流，跳过阶段1失败的文件）
         slowPhaseResults = await this.runUserLevelConcurrency(
           task.creatorId,
-          fileContexts,
+          eligibleForAI,
           maxConcurrent,
           ({ file, ctx }, index) =>
-            this.runFileSlowPhase(taskId, file, ctx, index, totalFiles, pipeline)
+            this.runFileSlowPhase(taskId, file, ctx, index, totalFiles)
               .then(res => ({ ...res, fileId: file.id, fileName: file.fileName }))
               .catch(error => ({ error, fileId: file.id, fileName: file.fileName, aiIssues: [] as any[] }))
         );
@@ -663,14 +751,33 @@ export class ReviewService {
         await prisma.taskFile.update({
           where: { id: result.fileId },
           data: { status: fileStatus },
-        }).catch(() => { /* ignore */ });
+        }).catch((e) => { console.warn(`[Review] 更新文件状态失败 (${result.fileId}):`, e); });
       }
 
       console.log(`[Review] 阶段2完成: 成功 ${slowSuccessCount}, 失败 ${slowFailedCount}`);
 
       // ===== 跨文件一致性检查 =====
       // 使用 capabilities.crossFile 判断（能力驱动，替代原先硬编码模式列表）
-      const crossFileNeeded = (executionPlan.crossFileConsistency || pipeline.capabilities.crossFile) && totalFiles >= 2;
+      // ===== 等待文件内一致性检查完成（与阶段2并行启动，此处汇总结果） =====
+      if (intraConsistencyPromise) {
+        try {
+          const intraResults = await intraConsistencyPromise;
+          const totalIntraIssues = intraResults.reduce((sum, r) => sum + r.issueCount, 0);
+          console.log(`[Review] 文件内一致性检查完成: 发现 ${totalIntraIssues} 个不一致`);
+          WebSocketService.emitTaskProgress(taskId, {
+            type: 'intra_consistency_done',
+            step: '文件内一致性检查完成',
+            progress: 92,
+            message: `文件内一致性检查完成: 发现 ${totalIntraIssues} 个不一致问题`,
+            timestamp: Date.now(),
+          });
+        } catch (e) {
+          console.warn(`[Review] 文件内一致性检查异常:`, e);
+        }
+      }
+
+      // ===== 跨文件一致性检查 =====
+      const crossFileNeeded = executionPlan.crossFileConsistency && totalFiles >= 2;
       if (crossFileNeeded) {
         WebSocketService.emitTaskProgress(taskId, {
           type: 'cross_file_check',
@@ -696,9 +803,12 @@ export class ReviewService {
       }
 
       // ===== 更新任务状态 =====
-      const successCount = slowSuccessCount;
-      const failedCount = slowFailedCount;
-      const newStatus = failedCount === totalFiles ? 'FAILED' : 'COMPLETED';
+      // AI 模式：阶段1失败 + 阶段2失败 = 总失败数
+      // 非 AI 模式：直接使用阶段1计数
+      const phase1FailedCount = fastFailedCount;
+      const successCount = needsAI ? slowSuccessCount : fastSuccessCount;
+      const failedCount = needsAI ? (phase1FailedCount + slowFailedCount) : fastFailedCount;
+      const newStatus = (failedCount >= totalFiles) ? 'FAILED' : 'COMPLETED';
 
       await prisma.task.update({
         where: { id: taskId },
@@ -769,7 +879,6 @@ export class ReviewService {
     ctx: PipelineContext,
     fileIndex: number,
     totalFiles: number,
-    pipeline?: any,  // 从 processTask 传入复用，避免重复创建
   ): Promise<{ ruleIssues: any[]; stdRefIssues: any[] }> {
     const uploadsDir = path.join(__dirname, '../../uploads');
     const absolutePath = path.join(uploadsDir, path.basename(file.filePath));
@@ -790,19 +899,20 @@ export class ReviewService {
     await prisma.taskFile.update({
       where: { id: file.id },
       data: { status: 'PROCESSING' },
-    }).catch(() => { /* ignore */ });
+    }).catch((e) => { console.warn(`[Review] 标记文件处理中失败 (${file.fileName}):`, e); });
 
-    // 复用 processTask 创建的 Pipeline（或按需创建）
-    const effectivePipeline = pipeline || await createPipelineAsync(ctx.reviewMode);
+    const behavior = getModeBehavior(ctx.reviewMode);
 
     // 预提取文本（用于进度分母计算）
     // ★ 如果 ctx.extractedText 已有前端 WASM 数据，跳过 Python 解析
+    let parseResultFromPreExtract: import('./python-parser.service').ParseResult | null = null;
     if (!ctx.extractedText || ctx.extractedText.trim().length === 0) {
       try {
-        const preText = await ParserService.parseFile(absolutePath, file.fileType);
-        if (preText && preText.trim().length > 0) {
-          ctx.extractedText = preText;
-          console.log(`[Review] 预提取成功: ${file.fileName}, ${preText.length} 字符`);
+        const parsed = await ParserService.parseFileWithResult(absolutePath, file.fileType);
+        if (parsed.text && parsed.text.trim().length > 0) {
+          ctx.extractedText = parsed.text;
+          parseResultFromPreExtract = parsed.result;
+          console.log(`[Review] 预提取成功: ${file.fileName}, ${parsed.text.length} 字符`);
         } else {
           console.warn(`[Review] 预提取返回空文本: ${file.fileName}, fileType=${file.fileType}`);
         }
@@ -812,10 +922,10 @@ export class ReviewService {
     }
 
     const textLength = ctx.extractedText?.length || 0;
-    // WASM 路径下 extractedMarkdown 使用 ctx.extractedText；其他路径使用 ParserService 的结果
+    // WASM 路径下 extractedMarkdown 使用 ctx.extractedText；其他路径使用预提取的 markdown
     const extractedMarkdown = (ctx.fileType.toLowerCase() === 'dwg' && ctx.extractedText)
       ? ctx.extractedText
-      : (ParserService.getLastMarkdown() || null);
+      : (parseResultFromPreExtract?.markdown || parseResultFromPreExtract?.text || null);
     // DWG 元数据：保存图层、图元统计等
     const dwgMetadata = (ctx.parseResult?.metadata && ctx.fileType.toLowerCase() === 'dwg')
       ? {
@@ -836,10 +946,76 @@ export class ReviewService {
         extractedMarkdown,
         ...(dwgMetadata ? { dwgMetadata } : {}),
       },
-    }).catch(() => { /* ignore */ });
+    }).catch((e) => { console.warn(`[Review] 保存提取文本失败 (${file.fileName}):`, e); });
 
-    // 执行阶段1
-    const fastResult = await effectivePipeline.runFastPhase(ctx);
+    // ===== 阶段1：文本提取 + 规则引擎 + 标准引用检查（直接调用子服务） =====
+
+    // 文本提取（DWG WASM 已预填充时跳过）
+    if (!ctx.extractedText || ctx.extractedText.trim().length === 0) {
+      ctx.extractedText = await TextExtractionService.ensureText(ctx);
+    }
+
+    // PDF 逐页解析 + Word/DWG 结构化
+    const pdfPages = await TextExtractionService.extractPdfPages(ctx);
+    ctx.pdfPages = pdfPages;
+    await TextExtractionService.ensureWordStructure(ctx);
+    TextExtractionService.ensureDwgStructure(ctx);
+
+    // 多模态模式：表格提取 + 公式检测
+    let extraRuleIssues: any[] = [];
+    if (ctx.reviewMode === 'MULTIMODAL') {
+      const tables = TableExtractionService.extractTablesFromText(ctx.extractedText);
+      for (const table of tables) {
+        extraRuleIssues.push(...TableExtractionService.validateTableData(table));
+      }
+      if (['xlsx', 'xls'].includes(ctx.fileType.toLowerCase())) {
+        const excelTables = await TableExtractionService.extractFromExcel(ctx.filePath);
+        for (const table of excelTables) {
+          extraRuleIssues.push(...TableExtractionService.validateTableData(table));
+        }
+      }
+      const formulaRegions = FormulaOcrService.detectFormulaRegions(ctx.extractedText);
+      for (const region of formulaRegions) {
+        extraRuleIssues.push({
+          issueType: 'FORMAT', ruleCode: 'FORMULA_001', severity: 'info',
+          originalText: region.text,
+          description: '检测到可能的公式内容，建议人工确认公式正确性。',
+        });
+      }
+    }
+
+    // 规则引擎
+    let ruleIssues: any[] = [];
+    if (behavior.rules) {
+      const stagesOverride = ctx.executionOverrides?.stages;
+      const rulesEnabled = stagesOverride?.rules !== false;
+      if (rulesEnabled) {
+        // 优先使用 rulePlan 中的前缀过滤（CUSTOM_RULE 模式用户选定的规则前缀）
+        const prefixes = ctx.rulePlan?.enabledPrefixes?.length
+          ? ctx.rulePlan.enabledPrefixes
+          : [];
+        const baseIssues = await RuleEngineService.runAllRules(
+          {
+            fileName: ctx.fileName, filePath: ctx.filePath, fileType: ctx.fileType,
+            extractedText: ctx.extractedText, pdfPages: ctx.pdfPages,
+            reviewMode: ctx.reviewMode, parseResult: ctx.parseResult,
+          },
+          prefixes.length > 0 ? { enabledRulePrefixes: new Set(prefixes) } : undefined,
+        );
+        ruleIssues = [...baseIssues, ...extraRuleIssues];
+      }
+    }
+
+    // 标准引用检查
+    let stdRefIssues: any[] = [];
+    if (behavior.standardRef && ctx.ruleSource !== 'REVIEW_SPECIFICATION' && ctx.extractedText?.trim()) {
+      const stagesOverride = ctx.executionOverrides?.stages;
+      if (stagesOverride?.stdRef !== false) {
+        stdRefIssues = await StandardRefCheckService.runStandardRefCheck(ctx, ctx.extractedText);
+      }
+    }
+
+    const fastResult = { ruleIssues, stdRefIssues, textLength: ctx.extractedText?.length || 0 };
 
     // 批量写入规则结果
     const allFastIssues: any[] = [];
@@ -851,7 +1027,6 @@ export class ReviewService {
         issueType: issue.issueType, ruleCode: issue.ruleCode,
         severity: issue.severity,
         reviewSource: ctx.ruleSource === 'REVIEW_SPECIFICATION' ? 'RULE_LIBRARY' : 'RULE_ENGINE',
-        ruleLibraryItemId: null,
         originalText: issue.originalText,
         suggestedText: issue.suggestedText || null,
         description: issue.description,
@@ -865,10 +1040,12 @@ export class ReviewService {
       }));
 
       // 增强版：事务保护 + 重试机制
+      const strippedRuleData = ruleData.map((item) => this.stripDbUnsupportedFields(item));
       try {
         await prisma.$transaction(async (tx) => {
           await tx.taskDetail.createMany({
-            data: ruleData.map((item) => this.stripDbUnsupportedFields(item)),
+            data: strippedRuleData,
+            skipDuplicates: true,
           });
           console.log(`[Review] ✅ 规则结果事务写入成功: ${ruleData.length}条 (${file.fileName})`);
         });
@@ -878,7 +1055,8 @@ export class ReviewService {
         // 重试一次（网络瞬时故障或锁冲突常见）
         try {
           await prisma.taskDetail.createMany({
-            data: ruleData.map((item) => this.stripDbUnsupportedFields(item)),
+            data: strippedRuleData,
+            skipDuplicates: true,
           });
           console.log(`[Review] ✅ 规则结果重试写入成功: ${ruleData.length}条 (${file.fileName})`);
         } catch (retryError) {
@@ -900,7 +1078,6 @@ export class ReviewService {
         ruleCode: issue.ruleCode || null,
         severity: issue.severity || 'warning',
         reviewSource: 'STANDARD_REF',
-        ruleLibraryItemId: null,
         originalText: issue.originalText,
         suggestedText: issue.suggestedText || null,
         description: issue.description || null,
@@ -916,10 +1093,12 @@ export class ReviewService {
       }));
 
       // 增强版：事务保护 + 重试机制
+      const strippedStdRefData = stdRefData.map((item) => this.stripDbUnsupportedFields(item));
       try {
         await prisma.$transaction(async (tx) => {
           await tx.taskDetail.createMany({
-            data: stdRefData.map((item) => this.stripDbUnsupportedFields(item)),
+            data: strippedStdRefData,
+            skipDuplicates: true,
           });
           console.log(`[Review] ✅ 标准引用结果事务写入成功: ${stdRefData.length}条 (${file.fileName})`);
         });
@@ -929,7 +1108,8 @@ export class ReviewService {
         // 重试一次
         try {
           await prisma.taskDetail.createMany({
-            data: stdRefData.map((item) => this.stripDbUnsupportedFields(item)),
+            data: strippedStdRefData,
+            skipDuplicates: true,
           });
           console.log(`[Review] ✅ 标准引用结果重试写入成功: ${stdRefData.length}条 (${file.fileName})`);
         } catch (retryError) {
@@ -953,7 +1133,7 @@ export class ReviewService {
             ? 'DWG 文件未能提取文本内容（前端 WASM 解析可能未成功）。图纸审查可能不完整，建议人工检查。'
             : '文件内容无法提取。可能是扫描件或图片型 PDF，且 OCR 识别未能成功获取文字。建议人工审查。',
         },
-      }).catch(() => { /* ignore */ });
+      }).catch((e) => { console.warn(`[Review] 无文本警告写入失败:`, e); });
     } else if (fastResult.textLength > 0 && allFastIssues.length === 0) {
       await this.createNoResultDetail(
         taskId,
@@ -965,8 +1145,8 @@ export class ReviewService {
 
     // DWG 文件特殊处理：保存尺寸标注和标准引用（含 cadHandleId）
     if (file.fileType.toLowerCase() === 'dwg') {
-      // 优先使用 ctx.parseResult（WASM 或 Python 解析的结果）
-      const parseResult = ctx.parseResult || ParserService.getLastParseResult();
+      // 优先使用 ctx.parseResult（WASM 或预提取的结果）
+      const parseResult = ctx.parseResult;
       if (parseResult && ctx.extractedText && ctx.extractedText.trim().length > 0) {
         const dwgDetails: any[] = [];
 
@@ -1002,13 +1182,13 @@ export class ReviewService {
         }
 
         if (dwgDetails.length > 0) {
-          await prisma.taskDetail.createMany({ data: dwgDetails }).catch(() => { /* ignore */ });
+          await prisma.taskDetail.createMany({ data: dwgDetails }).catch((e) => { console.warn(`[Review] DWG详情写入失败 (${file.fileName}):`, e); });
         }
       }
     }
 
     // 更新错误计数
-    await this.updateFileErrorCount(file.id).catch(() => { /* ignore */ });
+    await this.updateFileErrorCount(file.id).catch((e) => { console.warn(`[Review] 更新错误计数失败 (${file.id}):`, e); });
 
     console.log(`[Review] 文件 ${file.fileName} 阶段1完成: 规则=${fastResult.ruleIssues.length}, 标准引用=${fastResult.stdRefIssues.length}`);
 
@@ -1027,7 +1207,6 @@ export class ReviewService {
     ctx: PipelineContext,
     fileIndex: number,
     totalFiles: number,
-    pipeline?: any,  // 从 processTask 传入复用
   ): Promise<{ aiIssues: any[]; usedEngine?: string; skippedNoText?: boolean }> {
     const fileProgress = Math.round((fileIndex / totalFiles) * 100);
 
@@ -1041,6 +1220,9 @@ export class ReviewService {
       phase: 'phase2',
       timestamp: Date.now(),
     });
+
+    // 内存标记：追踪是否有分片成功写入 DB（避免兜底写入的竞态条件）
+    let anyChunkWritten = false;
 
     // 进度回调（每个 AI 分片审查完成后立即写入 DB 并推送 WebSocket）
     ctx.onChunkProgress = async (chunkLength: number, issues: any[], chunkIndex: number, totalChunks: number, engine: string) => {
@@ -1062,8 +1244,7 @@ export class ReviewService {
           ruleCode: issue.ruleCode || null,
           severity: issue.severity || (['TYPO', 'FORMAT', 'NAMING', 'ENCODING', 'HEADER', 'PAGE'].includes(issue.issueType) ? 'warning' : 'error'),
           reviewSource: 'AI',
-          ruleLibraryItemId: null,
-          originalText: issue.originalText,
+            originalText: issue.originalText,
           suggestedText: issue.suggestedText || null,
           description: issue.description || null,
           plainLanguage: issue.plainLanguage || null,
@@ -1084,13 +1265,16 @@ export class ReviewService {
 
         // 增强版：事务保护 + 重试机制 + 失败时延迟推送
         let dbWriteSuccess = false;
+        const strippedData = aiData.map((item) => this.stripDbUnsupportedFields(item));
         try {
           await prisma.$transaction(async (tx) => {
             await tx.taskDetail.createMany({
-              data: aiData.map((item) => this.stripDbUnsupportedFields(item)),
+              data: strippedData,
+              skipDuplicates: true,
             });
           });
           dbWriteSuccess = true;
+          anyChunkWritten = true;
           console.log(`[Review] ✅ 分片 ${chunkIndex}/${totalChunks} 事务写入成功: ${aiData.length}条 (${file.fileName})`);
         } catch (txError) {
           console.error(`[Review] ❌ 分片 ${chunkIndex}/${totalChunks} 事务写入失败: ${file.fileName}`, txError);
@@ -1098,9 +1282,11 @@ export class ReviewService {
           // 重试一次
           try {
             await prisma.taskDetail.createMany({
-              data: aiData.map((item) => this.stripDbUnsupportedFields(item)),
+              data: strippedData,
+              skipDuplicates: true,
             });
             dbWriteSuccess = true;
+            anyChunkWritten = true;
             console.log(`[Review] ✅ 分片 ${chunkIndex}/${totalChunks} 重试写入成功: ${aiData.length}条 (${file.fileName})`);
           } catch (retryError) {
             console.error(`[Review] ❌ 分片 ${chunkIndex}/${totalChunks} 重试也失败: ${file.fileName}`, retryError);
@@ -1124,61 +1310,83 @@ export class ReviewService {
         } // end if (dbWriteSuccess)
 
         // 4. 更新文件错误计数（仅在写入成功时）
-        this.updateFileErrorCount(file.id).catch(() => { /* ignore */ });
+        this.updateFileErrorCount(file.id).catch((e) => { console.warn(`[Review] 更新错误计数失败:`, e); });
       }
 
       // 5. 所有分片完成后更新错误计数（包含0问题的情况）
       if (chunkIndex === totalChunks - 1) {
-        this.updateFileErrorCount(file.id).catch(() => { /* ignore */ });
+        this.updateFileErrorCount(file.id).catch((e) => { console.warn(`[Review] 最终错误计数更新失败:`, e); });
       }
     };
 
-    // 执行阶段2（复用 processTask 创建的 Pipeline）
-    const effectivePipeline = pipeline || await createPipelineAsync(ctx.reviewMode);
-    const slowResult = await effectivePipeline.runSlowPhase(ctx);
+    // ===== 阶段2：AI 深度审查（按模式直接分派，不走流水线） =====
+    const behavior = getModeBehavior(ctx.reviewMode);
+    const scene = behavior.scene;
+    const config = getEffectiveConfig(ctx);
+    const text = ctx.extractedText || '';
+
+    // 预构建语义规范库提示词上下文（所有 AI 策略共用）
+    if (ctx.semanticItems && ctx.semanticItems.length > 0) {
+      ctx._semanticPromptContext = AiReviewService.formatSemanticItems(ctx.semanticItems);
+    }
+
+    let aiResult: { issues: ReviewIssue[]; engine: string };
+    switch (ctx.reviewMode) {
+      case 'TYPO_GRAMMAR':
+        aiResult = await AiReviewService.runLLMOnlyStrategy(text, ctx, scene, config);
+        // 术语白名单过滤：避免正确术语被误报为错别字
+        aiResult.issues = await TerminologyService.filterTerminologyIssues(text, aiResult.issues);
+        break;
+      case 'DOC_REVIEW':
+        aiResult = await AiReviewService.runRefCompareStrategy(text, ctx, scene, config);
+        break;
+      case 'MULTIMODAL':
+        aiResult = await AiReviewService.runLLMDirect(text, ctx, scene, config);
+        break;
+      case 'LIBRARY_REVIEW':
+      case 'CONSISTENCY':
+      default:
+        aiResult = await AiReviewService.runAIReview(text, ctx, scene, config);
+        break;
+    }
+    const slowResult = { aiIssues: aiResult.issues, usedEngine: aiResult.engine };
 
     // AI 结果已通过 ctx.onChunkProgress 增量写入（每个分片审查完成后立即入库 + 推送 WebSocket）
-    // 此处仅做兜底：检查是否有 AI 结果记录，若无则一次性写入（极端情况下 onChunkProgress 全部失败时的保底）
-    console.log(`[Review] AI 审查完成，slowResult.aiIssues.length=${slowResult.aiIssues.length}`);
-    if (slowResult.aiIssues.length > 0) {
+    // 此处仅做兜底：使用内存标记检查，若无分片成功写入则一次性写入（极端情况下 onChunkProgress 全部失败时的保底）
+    console.log(`[Review] AI 审查完成，slowResult.aiIssues.length=${slowResult.aiIssues.length}, anyChunkWritten=${anyChunkWritten}`);
+    if (slowResult.aiIssues.length > 0 && !anyChunkWritten) {
       try {
-        const existing = await prisma.taskDetail.count({
-          where: { taskId, fileId: file.id },
-        });
-        if (existing === 0) {
-          // 极端保底：从未写入过，一次性写入全部
-          const aiData = slowResult.aiIssues.map((issue) => ({
-            ...this.getConfidence(issue),
-            taskId,
-            fileId: file.id,
-            issueType: issue.issueType,
-            ruleCode: issue.ruleCode || null,
-            severity: issue.severity || (['TYPO', 'FORMAT', 'NAMING', 'ENCODING', 'HEADER', 'PAGE'].includes(issue.issueType) ? 'warning' : 'error'),
-            reviewSource: 'AI',
-            ruleLibraryItemId: null,
+        console.warn(`[Review] 兜底写入: ${slowResult.aiIssues.length} 条 (${file.fileName})`);
+        const aiData = slowResult.aiIssues.map((issue) => ({
+          ...this.getConfidence(issue),
+          taskId,
+          fileId: file.id,
+          issueType: issue.issueType,
+          ruleCode: issue.ruleCode || null,
+          severity: issue.severity || (['TYPO', 'FORMAT', 'NAMING', 'ENCODING', 'HEADER', 'PAGE'].includes(issue.issueType) ? 'warning' : 'error'),
+          reviewSource: 'AI',
             originalText: issue.originalText,
-            suggestedText: issue.suggestedText || null,
-            description: issue.description || null,
-            plainLanguage: issue.plainLanguage || null,
-            cadHandleId: issue.cadHandleId || null,
-            standardRef: issue.standardRef || null,
-            sourceReferences: issue.sourceReferences || null,
-            matchLevel: (issue as any).matchLevel || null,
-            similarity: (issue as any).similarity || null,
-            diffRanges: issue.diffRanges || null,
-            textPosition: this.buildLegacyTextPosition(
-              issue.locateMeta || this.buildLocateMeta(ctx.extractedText, issue, { fileId: file.id }),
-              ctx.extractedText,
-              issue.originalText,
-            ),
-            locateMeta: issue.locateMeta
-              || this.buildLocateMeta(ctx.extractedText, issue, { fileId: file.id }),
-          }));
-          await prisma.taskDetail.createMany({
-            data: aiData.map((item) => this.stripDbUnsupportedFields(item)) as any,
-          });
-          console.log(`[Review] 兜底写入 ${aiData.length} 条`);
-        }
+          suggestedText: issue.suggestedText || null,
+          description: issue.description || null,
+          plainLanguage: issue.plainLanguage || null,
+          cadHandleId: issue.cadHandleId || null,
+          standardRef: issue.standardRef || null,
+          sourceReferences: issue.sourceReferences || null,
+          matchLevel: (issue as any).matchLevel || null,
+          similarity: (issue as any).similarity || null,
+          diffRanges: issue.diffRanges || null,
+          textPosition: this.buildLegacyTextPosition(
+            issue.locateMeta || this.buildLocateMeta(ctx.extractedText, issue, { fileId: file.id }),
+            ctx.extractedText,
+            issue.originalText,
+          ),
+          locateMeta: issue.locateMeta
+            || this.buildLocateMeta(ctx.extractedText, issue, { fileId: file.id }),
+        }));
+        await prisma.taskDetail.createMany({
+          data: aiData.map((item) => this.stripDbUnsupportedFields(item)) as any,
+        });
+        console.log(`[Review] 兜底写入 ${aiData.length} 条`);
       } catch (e) {
         console.error(`[Review] 兜底写入失败:`, e);
       }
@@ -1304,8 +1512,9 @@ export class ReviewService {
     // 预提取文本（如果已有 WASM 数据则跳过）
     if (!ctx.extractedText || ctx.extractedText.trim().length === 0) {
       try {
-        const preText = await ParserService.parseFile(absolutePath, file.fileType);
-        if (preText?.trim()) ctx.extractedText = preText;
+        const parsed = await ParserService.parseFileWithResult(absolutePath, file.fileType);
+        if (parsed.text?.trim()) ctx.extractedText = parsed.text;
+        if (parsed.result) ctx.parseResult = parsed.result;
       } catch (e) { /* ignore */ }
     }
 
@@ -1380,7 +1589,7 @@ export class ReviewService {
 
       // DWG 处理：保存尺寸标注和标准引用（含 cadHandleId）
       if (file.fileType.toLowerCase() === 'dwg') {
-        const parseResult = ParserService.getLastParseResult();
+        const parseResult = ctx.parseResult;
         if (parseResult && ctx.extractedText?.trim()) {
           const dwgDetails: any[] = [];
 

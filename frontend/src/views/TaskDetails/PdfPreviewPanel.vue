@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, watch, onMounted, onUnmounted, nextTick } from 'vue'
+import { ref, computed, watch, onMounted, onUnmounted, nextTick } from 'vue'
 import { Loading, WarningFilled } from '@element-plus/icons-vue'
 import request from '@/utils/request'
 import VuePdfEmbed from 'vue-pdf-embed'
@@ -40,14 +40,29 @@ const goPage = (p: number) => {
   currentPage.value = p
 }
 
+const MIN_SCALE = 0.1
+const MAX_SCALE = 10
+
 const zoomIn = () => {
-  scale.value = Math.min(scale.value + 0.25, 3)
+  scale.value = Math.min(scale.value + 0.25, MAX_SCALE)
 }
 const zoomOut = () => {
-  scale.value = Math.max(scale.value - 0.25, 0.5)
+  scale.value = Math.max(scale.value - 0.25, MIN_SCALE)
+}
+const resetZoom = () => {
+  scale.value = 1
 }
 
-watch(scale, () => {})
+// 缩放后重新计算 PDF 渲染宽度
+const pdfRenderWidth = computed(() => Math.round(containerWidth.value * scale.value))
+
+// 鼠标滚轮缩放（Ctrl/Cmd + 滚轮）
+function onWheel(e: WheelEvent) {
+  if (!e.ctrlKey && !e.metaKey) return
+  e.preventDefault()
+  const factor = e.deltaY < 0 ? 1.15 : 1 / 1.15
+  scale.value = Math.min(MAX_SCALE, Math.max(MIN_SCALE, +(scale.value * factor).toFixed(2)))
+}
 
 const updateContainerWidth = () => {
   if (containerRef.value) {
@@ -350,12 +365,12 @@ defineExpose({ clearHighlights, loadPdf })
     </div>
 
     <template v-else-if="pdfSource">
-      <div ref="containerRef" class="pdf-container">
+      <div ref="containerRef" class="pdf-container" @wheel.prevent="onWheel">
         <VuePdfEmbed
           ref="pdfEmbedRef"
           :source="pdfSource"
           text-layer
-          :width="containerWidth"
+          :width="pdfRenderWidth"
           @rendered="onPdfRendered"
           @loading-failed="onLoadingFailed"
         />
@@ -363,14 +378,12 @@ defineExpose({ clearHighlights, loadPdf })
 
       <div class="pdf-toolbar" v-if="totalPages > 0">
         <span class="page-info">第 {{ currentPage }} / {{ totalPages }} 页</span>
-        <div class="page-nav">
-          <el-button size="small" :disabled="currentPage <= 1" @click="goPage(currentPage - 1)">上一页</el-button>
-          <el-button size="small" :disabled="currentPage >= totalPages" @click="goPage(currentPage + 1)">下一页</el-button>
-        </div>
+        <div class="zoom-hint">Ctrl + 滚轮缩放（10%~1000%）</div>
         <div class="zoom-controls">
           <el-button size="small" @click="zoomOut">-</el-button>
-          <span>{{ Math.round(scale * 100) }}%</span>
+          <el-button size="small" link @click="resetZoom" class="zoom-percent">{{ Math.round(scale * 100) }}%</el-button>
           <el-button size="small" @click="zoomIn">+</el-button>
+          <el-button size="small" @click="resetZoom" :disabled="scale === 1">重置</el-button>
         </div>
       </div>
     </template>
@@ -497,16 +510,24 @@ defineExpose({ clearHighlights, loadPdf })
   color: var(--corp-text-primary);
 }
 
-.page-nav {
-  display: flex;
-  gap: var(--space-2);
+.zoom-hint {
+  font-size: 11px;
+  color: var(--corp-text-secondary);
+  opacity: 0.7;
 }
 
 .zoom-controls {
   display: flex;
   align-items: center;
   gap: var(--space-2);
-  min-width: 120px;
+  min-width: 160px;
   justify-content: flex-end;
+}
+
+.zoom-percent {
+  font-weight: 600;
+  min-width: 42px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
 }
 </style>

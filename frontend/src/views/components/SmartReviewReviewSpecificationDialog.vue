@@ -2,7 +2,7 @@
   <el-dialog
     :model-value="visible"
     @update:model-value="$emit('update:visible', $event)"
-    title="选择审查规范集"
+    title="选择语义规范库"
     width="600px"
     :close-on-click-modal="false"
     class="selection-dialog"
@@ -10,7 +10,7 @@
     <div class="dialog-search">
       <el-input
         v-model="searchQuery"
-        placeholder="搜索规范集名称..."
+        placeholder="搜索规范库名称..."
         clearable
         prefix-icon="Search"
       />
@@ -37,6 +37,7 @@
               {{ getStatusLabel(spec.status) }}
             </el-tag>
           </div>
+          <div v-if="spec.description" class="list-item-desc">{{ spec.description }}</div>
           <div class="list-item-meta">
             <span class="meta-item" :class="{ 'meta-item--empty': spec.itemCount === 0 }">
               <el-icon><Document /></el-icon>
@@ -53,12 +54,12 @@
         </div>
       </div>
       <div v-if="filteredList.length === 0" class="empty-state">
-        <el-empty description="未找到匹配的审查规范集" :image-size="80" />
+        <el-empty description="未找到匹配的语义规范库" :image-size="80" />
       </div>
     </div>
     <template #footer>
       <div class="dialog-footer">
-        <span class="dialog-footer-info">{{ tempSelectedId ? '已选择 1 个审查规范集' : '未选择' }}</span>
+        <span class="dialog-footer-info">{{ tempSelectedId ? '已选择 1 个语义规范库' : '未选择' }}</span>
         <div class="dialog-footer-actions">
           <el-button @click="$emit('update:visible', false)">取消</el-button>
           <el-button type="primary" :disabled="!tempSelectedId" @click="handleConfirm">确认选择</el-button>
@@ -75,6 +76,7 @@ import { Search, Document, Check, Files } from '@element-plus/icons-vue'
 export interface ReviewSpecificationItem {
   id: string
   name: string
+  description?: string
   status: string
   itemCount: number
   executableCount: number
@@ -308,6 +310,16 @@ const handleConfirm = () => {
 
 .list-item-name-row .list-item-name {
   margin-bottom: 0;
+}
+
+.list-item-desc {
+  font-size: 12px;
+  color: #94A3B8;
+  line-height: 1.4;
+  margin-bottom: 4px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .status-tag {

@@ -468,7 +468,7 @@ const objectiveLabelMap: Record<string, string> = {
 
 const evidenceLabelMap: Record<string, string> = {
   STANDARD: '标准知识库',
-  REVIEW_SPECIFICATION: '审查规范集',
+  REVIEW_SPECIFICATION: '语义规范库',
   REFERENCE: '参考文件',
 }
 
@@ -506,9 +506,9 @@ const getReviewPlanSummary = (row: any): string => {
     if (plan.objective === 'COMPARE') return '一致性审查（对照）'
     if (plan.objective === 'PROOFREAD') return '基础校对审查'
     if (plan.objective === 'STRUCTURED') return '多模态审查'
-    if (plan.execution?.profile === 'RULE_ONLY' && sources.includes('REVIEW_SPECIFICATION')) return '审查规范集审查'
+    if (plan.execution?.profile === 'RULE_ONLY' && sources.includes('REVIEW_SPECIFICATION')) return '语义规范库审查'
     if (sources.includes('REVIEW_SPECIFICATION') && sources.includes('STANDARD')) return '以库审文'
-    if (sources.includes('REVIEW_SPECIFICATION')) return '审查规范集审查'
+    if (sources.includes('REVIEW_SPECIFICATION')) return '语义规范库审查'
     return '以库审文'
   })()
 

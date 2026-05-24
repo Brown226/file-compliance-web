@@ -749,6 +749,7 @@ const getIssueTypeLabel = (type: string): string => {
     PAGE: '页码检查', SCAN: '图纸扫描', TEMPLATE: '模板统一',
     FORMAT: '格式规范', COMPLETENESS: '数据完整性', CONSISTENCY: '一致性',
     LAYOUT: '排版布局', STD_REF: '标准引用', DWG: 'DWG图纸',
+    FLUENCY: '语句通顺性',
   }
   return m[type] || type
 }
@@ -760,6 +761,7 @@ const getCategoryTagType = (type: string): any => {
     PAGE: 'info', SCAN: 'info', TEMPLATE: 'warning',
     FORMAT: 'warning', COMPLETENESS: 'danger', CONSISTENCY: 'info',
     LAYOUT: 'info', STD_REF: 'warning', DWG: 'info',
+    FLUENCY: 'warning',
   }
   return m[type] || 'info'
 }

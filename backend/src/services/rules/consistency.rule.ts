@@ -70,41 +70,50 @@ function checkProjectNameConsistency(text: string, config?: any): RuleIssue | nu
  * CONSIST_002: 检查目录中的文件编码与实际出现的是否一致
  * 例如: 目录列出 1EAA001TB 但实际应该是 1EAE360CR
  */
+
+// 核电工程编码特征：必须包含字母和数字的特定组合，排除标准编号、日期等
+const NUCLEAR_CODE_PATTERN = /\d[A-Z]{2}\d{2,3}[A-Z]{2}\d{2}[A-Z]{2}/g; // 如 1EAA360CR, ZG25401EA
+const EXCLUDED_PREFIXES = /^(GB|ISO|IEC|NB|DL|HJ|EJ|JGJ|CJJ|HAF|CECS|TJ|DB|QX|GYJ|BJG)/i;
+
 function checkTocCodeConsistency(text: string): RuleIssue | null {
   // 提取目录区域的编码列表
-  const tocMatch = text.match(/(?:目\s*录|图纸\s*目\s*录)[\s\S]{0,2000}/);
+  const tocMatch = text.match(/(?:目\s*录|图纸\s*目\s*录|目\s*次)[\s\S]{0,3000}/);
   if (!tocMatch) return null;
 
   const tocText = tocMatch[0];
 
-  // 从目录中提取所有类似 ID-code 的编码 (如 1EAA360CR, ZG25401EA 等)
+  // 从目录中提取核电工程编码（更严格的模式）
   const tocCodes = new Set<string>();
-  const idCodeInToc = tocText.match(/[A-Z]{2,3}\d{2,}[A-Z]{0,2}\d*[A-Z]{0,3}/g);
+  const idCodeInToc = tocText.match(NUCLEAR_CODE_PATTERN);
   if (idCodeInToc) {
     for (const code of idCodeInToc) {
-      // 过滤掉太短或太长的（ID-code 通常 8-15 字符）
-      if (code.length >= 8 && code.length <= 18) {
-        tocCodes.add(code.toUpperCase());
+      const upper = code.toUpperCase();
+      // 排除标准编号等非工程编码
+      if (!EXCLUDED_PREFIXES.test(upper) && upper.length >= 8 && upper.length <= 15) {
+        tocCodes.add(upper);
       }
     }
   }
 
+  if (tocCodes.size === 0) return null;
+
   // 从正文中提取出现的编码
   const bodyText = text.replace(tocText, ''); // 排除目录区域本身
   const bodyCodes = new Set<string>();
-  const idCodeInBody = bodyText.match(/[A-Z]{2,3}\d{2,}[A-Z]{0,2}\d*[A-Z]{0,3}/g);
+  const idCodeInBody = bodyText.match(NUCLEAR_CODE_PATTERN);
   if (idCodeInBody) {
     for (const code of idCodeInBody) {
-      if (code.length >= 8 && code.length <= 18) {
-        bodyCodes.add(code.toUpperCase());
+      const upper = code.toUpperCase();
+      if (!EXCLUDED_PREFIXES.test(upper) && upper.length >= 8 && upper.length <= 15) {
+        bodyCodes.add(upper);
       }
     }
   }
 
   // 如果目录中有编码但正文中没有对应编码，可能不一致
-  if (tocCodes.size > 0 && bodyCodes.size > 0) {
+  if (bodyCodes.size > 0) {
     const codesOnlyInToc = [...tocCodes].filter(c => !bodyCodes.has(c) &&
-      !([...bodyCodes].some(bc => bc.startsWith(c.substring(0, 6)) || c.startsWith(bc.substring(0, 6))))
+      !([...bodyCodes].some(bc => bc.startsWith(c.substring(0, 7)) || c.startsWith(bc.substring(0, 7))))
     );
 
     if (codesOnlyInToc.length > 0) {

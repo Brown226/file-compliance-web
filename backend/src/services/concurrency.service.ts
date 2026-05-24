@@ -5,6 +5,7 @@ const GLOBAL_CONCURRENCY_KEY = 'review:global:concurrency';
 const GLOBAL_QUEUE_KEY = 'review:global:queue';
 const DEFAULT_GLOBAL_LIMIT = 5;
 const QUEUE_CHECK_INTERVAL_MS = 2000;
+const MAX_WAIT_TIMEOUT_MS = 30 * 60 * 1000; // 30 分钟最大等待时间
 
 /**
  * 全局并发控制服务
@@ -146,34 +147,45 @@ export class ConcurrencyService {
   }
 
   /**
-   * 等待获取全局槽位（带排队位置更新）
+   * 等待获取全局槽位（带排队位置更新和超时保护）
+   * @throws 超过最大等待时间时抛出错误
    */
   static async waitForSlot(taskId: string, userId: string): Promise<void> {
     // 先尝试直接获取
     if (await this.acquireSlot(taskId, userId)) return;
 
-    // 轮询等待
-    while (true) {
+    const deadline = Date.now() + MAX_WAIT_TIMEOUT_MS;
+
+    // 轮询等待（带超时保护）
+    while (Date.now() < deadline) {
       await new Promise(resolve => setTimeout(resolve, QUEUE_CHECK_INTERVAL_MS));
 
-      // 更新排队位置
-      const position = await this.getQueuePosition(taskId);
-      if (position > 0) {
-        WebSocketService.emitTaskProgress(taskId, {
-          type: 'queue_update',
-          step: '排队中',
-          progress: 0,
-          message: `排队位置: ${position}`,
-          timestamp: Date.now(),
-        } as any);
-      }
+      try {
+        // 更新排队位置
+        const position = await this.getQueuePosition(taskId);
+        if (position > 0) {
+          WebSocketService.emitTaskProgress(taskId, {
+            type: 'queue_update',
+            step: '排队中',
+            progress: 0,
+            message: `排队位置: ${position}`,
+            timestamp: Date.now(),
+          } as any);
+        }
 
-      // 再次尝试获取
-      if (await this.acquireSlot(taskId, userId)) {
-        // 从队列中移除
-        await this.dequeue(taskId);
-        return;
+        // 再次尝试获取
+        if (await this.acquireSlot(taskId, userId)) {
+          // 从队列中移除
+          await this.dequeue(taskId);
+          return;
+        }
+      } catch (e) {
+        console.warn(`[Concurrency] 轮询异常，继续等待: ${e}`);
       }
     }
+
+    // 超时：清理队列并抛出错误
+    await this.dequeue(taskId).catch(() => {});
+    throw new Error(`任务 ${taskId} 等待全局并发槽位超时（${MAX_WAIT_TIMEOUT_MS / 60000} 分钟）`);
   }
 }

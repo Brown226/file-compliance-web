@@ -60,7 +60,8 @@ export function checkFormatRules(ctx: FileContext, config?: any): RuleIssue[] {
 
 /**
  * FORMAT_001: 检测封面区域必填字段是否完整存在
- * 必填项: 专业、工种(区分)、版次、状态、设计阶段、图册名称、工程号
+ * 必填项: 专业、工种(区分)、版次、状态、设计阶段、工程号、子项号
+ * 注意: 图册名称由 ATTR_009 专门检查，避免重复告警
  */
 function checkFormatCoverFields(text: string, config?: any): RuleIssue[] {
   const issues: RuleIssue[] = [];
@@ -77,7 +78,7 @@ function checkFormatCoverFields(text: string, config?: any): RuleIssue[] {
     { label: '设计阶段', pattern: /设\s*计\s*阶\s*段[：:\s]/, code: 'FORMAT_001' },
     { label: '工程号', pattern: /工\s*程\s*号[：:\s]|工程编码/, code: 'FORMAT_001' },
     { label: '子项号', pattern: /子\s*项\s*号[：:\s]/, code: 'FORMAT_001' },
-    { label: '图册名称/文件名称', pattern: /(图册|文件)\s*(名\s*称)?[：:\s]/, code: 'FORMAT_001' },
+    // 图册名称由 ATTR_009 专门检查，此处不再重复
   ];
 
   const missingFields: string[] = [];

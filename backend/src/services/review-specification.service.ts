@@ -51,13 +51,14 @@ export interface SpecificationPreviewItem {
 
 const CATEGORY_PREFIX_MAP: Record<string, string[]> = {
   NAMING: ['NAME'],
-  ENCODING: ['CODE', 'UNIT', 'TYPO'],
+  ENCODING: ['CODE', 'UNIT'],
   ATTRIBUTE: ['ATTR'],
   HEADER: ['HEADER'],
   PAGE: ['PAGE'],
   FORMAT: ['FORMAT', 'LAYOUT'],
   CONSISTENCY: ['CONSIST'],
   COMPLETENESS: ['COMPL'],
+  TYPO: ['TYPO'],
   DRAWING: ['DWG'],
   DWG: ['DWG'],
 };

@@ -79,27 +79,27 @@ export class CrossFileConsistencyService {
 
     console.log(`[CrossConsist] 发现 ${inconsistencies.length} 个跨文件参数不一致`);
 
-    // 4. 写入 TaskDetail
-    const details = inconsistencies.map((inc) => {
+    // 4. 写入 TaskDetail（每个相关文件都写入一条记录，而非仅第一个文件）
+    const details = inconsistencies.flatMap((inc) => {
       const valuesDesc = inc.entries
         .map((e) => `${e.fileName}: "${e.value}"`)
         .join('; ');
-      // 取第一个文件作为 primary fileId
-      const primaryEntry = inc.entries[0];
 
-      return {
+      return inc.entries.map((entry) => ({
         taskId,
-        fileId: primaryEntry.fileId,
-        issueType: 'CONSISTENCY',
+        fileId: entry.fileId,
+        issueType: 'CONSISTENCY' as const,
         ruleCode: 'CROSS_CONSIST_001',
         severity: 'error' as const,
         originalText: inc.paramName,
         suggestedText: null,
         description: `参数 "${inc.paramName}" 在不同文件中取值不一致: ${valuesDesc}`,
-      };
+      }));
     });
 
-    await prisma.taskDetail.createMany({ data: details });
+    if (details.length > 0) {
+      await prisma.taskDetail.createMany({ data: details });
+    }
 
     // 更新相关文件的错误计数
     const affectedFileIds = new Set(inconsistencies.flatMap((inc) => inc.entries.map((e) => e.fileId)));

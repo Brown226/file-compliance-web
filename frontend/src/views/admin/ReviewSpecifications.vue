@@ -3,7 +3,7 @@
     <div class="rs-layout">
       <aside class="rs-sidebar">
         <div class="sidebar-header">
-          <h3 class="sidebar-title">规范集目录</h3>
+          <h3 class="sidebar-title">规范库目录</h3>
           <div class="sidebar-actions">
             <el-button size="small" icon="FolderPlus" @click="showCreateFolderDialog">新建目录</el-button>
           </div>
@@ -35,8 +35,8 @@
                     size="small" 
                     :icon="Plus" 
                     @click="showCreateSpecificationUnderFolder(data)" 
-                    title="在此目录下新建审查规范集"
-                    aria-label="在此目录下新建审查规范集"
+                    title="在此目录下新建语义规范库"
+                    aria-label="在此目录下新建语义规范库"
                     class="action-btn-create-spec"
                   />
                   <el-button 
@@ -65,7 +65,7 @@
         <section class="toolbar">
           <div class="toolbar-left">
             <div class="toolbar-stats">
-              <span class="stat-item"><strong>{{ specifications.length }}</strong> 个规范集</span>
+              <span class="stat-item"><strong>{{ specifications.length }}</strong> 个规范库</span>
               <span class="stat-sep">·</span>
               <span class="stat-item"><strong>{{ publishedCount }}</strong> 已发布</span>
               <span class="stat-sep">·</span>
@@ -80,7 +80,7 @@
           <div class="toolbar-right">
             <el-input
               v-model="searchKeyword"
-              placeholder="搜索规范集名称/描述..."
+              placeholder="搜索规范库名称/描述..."
               clearable
               prefix-icon="Search"
               class="search-input"
@@ -93,14 +93,14 @@
               <el-option label="归档" value="ARCHIVED" />
             </el-select>
             <el-button type="primary" @click="showCreateDialog">
-              <el-icon><Plus /></el-icon> 新建审查规范集
+              <el-icon><Plus /></el-icon> 新建语义规范库
             </el-button>
           </div>
         </section>
 
         <el-card shadow="never" class="rs-card rs-table-card">
-          <el-table :data="specifications" v-loading="loading" empty-text="暂无审查规范集">
-            <el-table-column prop="name" label="规范集名称" min-width="180">
+          <el-table :data="specifications" v-loading="loading" empty-text="暂无语义规范库">
+            <el-table-column prop="name" label="规范库名称" min-width="180">
               <template #default="{ row }">
                 <div class="spec-name-cell">
                   <div :class="['status-indicator', getStatusClass(row.status)]"></div>
@@ -149,13 +149,13 @@
       </main>
     </div>
 
-    <el-dialog title="新建审查规范集" :visible="createDialogVisible" width="500px" @close="resetSpecificationForm">
+    <el-dialog title="新建语义规范库" :visible="createDialogVisible" width="500px" @close="resetSpecificationForm">
       <el-form :model="formData" label-width="80px">
         <el-form-item label="名称" required>
           <el-input v-model="formData.name" placeholder="如：企业新闻稿书写规范" />
         </el-form-item>
         <el-form-item label="描述">
-          <el-input v-model="formData.description" type="textarea" :rows="3" placeholder="简要描述此规范集的用途" />
+          <el-input v-model="formData.description" type="textarea" :rows="3" placeholder="简要描述此规范库的用途" />
         </el-form-item>
         <el-form-item label="所属目录">
           <el-tree-select
@@ -255,7 +255,7 @@
       </template>
     </el-dialog>
 
-    <el-dialog title="审查规范集详情" :visible="detailDialogVisible" width="800px">
+    <el-dialog title="语义规范库详情" :visible="detailDialogVisible" width="800px">
       <div v-if="currentSpecification" class="detail-content">
         <div class="detail-header">
           <div class="detail-title">{{ currentSpecification.name }}</div>
@@ -279,16 +279,13 @@
           <el-button size="small" @click="showAddItemDialog">添加规则</el-button>
         </div>
         <el-table :data="currentSpecification.items || []" border>
-          <el-table-column prop="ruleCode" label="规则代码" width="120" />
-          <el-table-column prop="ruleName" label="规则名称" min-width="150" />
-          <el-table-column prop="category" label="分类" width="100" />
-          <el-table-column prop="severity" label="严重度" width="80">
+          <el-table-column prop="ruleName" label="规则名称" min-width="160" show-overflow-tooltip />
+          <el-table-column prop="description" label="规则描述" min-width="350" show-overflow-tooltip />
+          <el-table-column prop="severity" label="严重度" width="90" align="center">
             <template #default="{ row }">
-              <el-tag :type="getSeverityTagType(row.severity)" size="small">{{ row.severity }}</el-tag>
+              <el-tag :type="getSeverityTagType(row.severity)" size="small">{{ row.severity === 'error' ? '错误' : row.severity === 'warning' ? '警告' : '提示' }}</el-tag>
             </template>
           </el-table-column>
-          <el-table-column prop="executionType" label="执行类型" width="120" />
-          <el-table-column prop="builtinPrefix" label="内置前缀" width="100" />
           <el-table-column label="启用" width="80" align="center">
             <template #default="{ row }">
               <el-switch :model-value="row.enabled" @change="toggleItemEnabled(row)" />
@@ -307,35 +304,19 @@
       </template>
     </el-dialog>
 
-    <el-dialog title="添加规则" :visible="addItemDialogVisible" width="600px">
-      <el-form :model="itemForm" label-width="100px">
-        <el-form-item label="规则代码">
-          <el-input v-model="itemForm.ruleCode" placeholder="如：NAMING_001" />
-        </el-form-item>
+    <el-dialog title="添加规则" :visible="addItemDialogVisible" width="520px">
+      <el-form :model="itemForm" label-width="80px">
         <el-form-item label="规则名称" required>
-          <el-input v-model="itemForm.ruleName" placeholder="规则名称" />
+          <el-input v-model="itemForm.ruleName" placeholder="输入规则名称" />
         </el-form-item>
-        <el-form-item label="分类">
-          <el-select v-model="itemForm.category">
-            <el-option label="NAMING" value="NAMING" />
-            <el-option label="ENCODING" value="ENCODING" />
-            <el-option label="ATTRIBUTE" value="ATTRIBUTE" />
-            <el-option label="HEADER" value="HEADER" />
-            <el-option label="PAGE" value="PAGE" />
-            <el-option label="FORMAT" value="FORMAT" />
-            <el-option label="CONSISTENCY" value="CONSISTENCY" />
-            <el-option label="COMPLETENESS" value="COMPLETENESS" />
-            <el-option label="DWG" value="DWG" />
-          </el-select>
-        </el-form-item>
-        <el-form-item label="描述">
-          <el-input v-model="itemForm.description" type="textarea" :rows="3" />
+        <el-form-item label="规则描述">
+          <el-input v-model="itemForm.description" type="textarea" :rows="4" placeholder="详细描述此规则的检查内容" />
         </el-form-item>
         <el-form-item label="严重度">
           <el-select v-model="itemForm.severity">
-            <el-option label="error" value="error" />
-            <el-option label="warning" value="warning" />
-            <el-option label="info" value="info" />
+            <el-option label="错误" value="error" />
+            <el-option label="警告" value="warning" />
+            <el-option label="提示" value="info" />
           </el-select>
         </el-form-item>
       </el-form>
@@ -345,35 +326,19 @@
       </template>
     </el-dialog>
 
-    <el-dialog title="编辑规则" :visible="editItemDialogVisible" width="600px">
-      <el-form :model="itemForm" label-width="100px">
-        <el-form-item label="规则代码">
-          <el-input v-model="itemForm.ruleCode" />
-        </el-form-item>
+    <el-dialog title="编辑规则" :visible="editItemDialogVisible" width="520px">
+      <el-form :model="itemForm" label-width="80px">
         <el-form-item label="规则名称" required>
           <el-input v-model="itemForm.ruleName" />
         </el-form-item>
-        <el-form-item label="分类">
-          <el-select v-model="itemForm.category">
-            <el-option label="NAMING" value="NAMING" />
-            <el-option label="ENCODING" value="ENCODING" />
-            <el-option label="ATTRIBUTE" value="ATTRIBUTE" />
-            <el-option label="HEADER" value="HEADER" />
-            <el-option label="PAGE" value="PAGE" />
-            <el-option label="FORMAT" value="FORMAT" />
-            <el-option label="CONSISTENCY" value="CONSISTENCY" />
-            <el-option label="COMPLETENESS" value="COMPLETENESS" />
-            <el-option label="DWG" value="DWG" />
-          </el-select>
-        </el-form-item>
-        <el-form-item label="描述">
-          <el-input v-model="itemForm.description" type="textarea" :rows="3" />
+        <el-form-item label="规则描述">
+          <el-input v-model="itemForm.description" type="textarea" :rows="4" placeholder="详细描述此规则的检查内容" />
         </el-form-item>
         <el-form-item label="严重度">
           <el-select v-model="itemForm.severity">
-            <el-option label="error" value="error" />
-            <el-option label="warning" value="warning" />
-            <el-option label="info" value="info" />
+            <el-option label="错误" value="error" />
+            <el-option label="警告" value="warning" />
+            <el-option label="提示" value="info" />
           </el-select>
         </el-form-item>
         <el-form-item label="启用">
@@ -513,7 +478,7 @@ const showCreateSpecificationUnderFolder = (folderData: SpecificationFolderTreeN
   resetSpecificationForm()
   formData.value.folderId = folderData.id
   createDialogVisible.value = true
-  ElMessage.info(`将在目录 "${folderData.label}" 下创建审查规范集`)
+  ElMessage.info(`将在目录 "${folderData.label}" 下创建语义规范库`)
 }
 
 const resetSpecificationForm = () => {
@@ -582,7 +547,7 @@ const handleCreateFolder = async () => {
 }
 
 const handleDeleteFolder = async (id: string) => {
-  const confirm = await ElMessageBox.confirm('确定删除该目录？目录下的规范集将被移动到根目录。', '提示', { type: 'warning' })
+  const confirm = await ElMessageBox.confirm('确定删除该目录？目录下的规范库将被移动到根目录。', '提示', { type: 'warning' })
   if (confirm !== 'confirm') return
   try {
     await deleteSpecificationFolderApi(id)
@@ -784,7 +749,7 @@ const handleDeleteItem = async (item: ReviewSpecificationItem) => {
 }
 
 const handlePublish = async (row: ReviewSpecification) => {
-  const confirm = await ElMessageBox.confirm('确定发布此审查规范集？发布后将可用于审查任务。', '提示', { type: 'info' })
+  const confirm = await ElMessageBox.confirm('确定发布此语义规范库？发布后将可用于审查任务。', '提示', { type: 'info' })
   if (confirm !== 'confirm') return
   try {
     await updateReviewSpecificationApi(row.id, { status: 'PUBLISHED' })
@@ -796,7 +761,7 @@ const handlePublish = async (row: ReviewSpecification) => {
 }
 
 const handleUnpublish = async (row: ReviewSpecification) => {
-  const confirm = await ElMessageBox.confirm('确定撤回此审查规范集？撤回后将不可用于审查任务。', '提示', { type: 'warning' })
+  const confirm = await ElMessageBox.confirm('确定撤回此语义规范库？撤回后将不可用于审查任务。', '提示', { type: 'warning' })
   if (confirm !== 'confirm') return
   try {
     await updateReviewSpecificationApi(row.id, { status: 'DRAFT' })
@@ -808,7 +773,7 @@ const handleUnpublish = async (row: ReviewSpecification) => {
 }
 
 const handleDelete = async (row: ReviewSpecification) => {
-  const confirm = await ElMessageBox.confirm('确定删除此审查规范集？', '提示', { type: 'danger' })
+  const confirm = await ElMessageBox.confirm('确定删除此语义规范库？', '提示', { type: 'danger' })
   if (confirm !== 'confirm') return
   try {
     await deleteReviewSpecificationApi(row.id)

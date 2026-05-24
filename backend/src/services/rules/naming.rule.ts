@@ -67,9 +67,18 @@ export function checkNaming(ctx: FileContext, config?: any): RuleIssue[] {
       if (!matchesAny) {
         // 尝试细分错误类型
         const projectCodeMatch = nameWithoutExt.match(/^([A-Z]{2}\d{2}[A-Z]\d{2}[A-Z]{2})/);
-        const systemCodeMatch = nameWithoutExt.match(/^-([A-Z]{3}\d{2})/);
+        const systemCodeMatch = nameWithoutExt.match(/^[A-Z]{2}\d{2}[A-Z]\d{2}[A-Z]{2}-([A-Z]{3}\d{2})/);
 
-        if (!projectCodeMatch) {
+        // NAME_008: 序号格式检查（有连字符+数字但不是3位）
+        const seqMatch = nameWithoutExt.match(/^[A-Z]{2}\d{2}[A-Z]\d{2}[A-Z]{2}-[A-Z]{3}\d{2}-(\d+)\(/);
+        if (seqMatch && seqMatch[1] !== '001' || (seqMatch && !/^\d{3}$/.test(seqMatch[1]))) {
+          issues.push({
+            issueType: 'NAMING', ruleCode: 'NAME_008', severity: 'warning',
+            originalText: seqMatch[1],
+            suggestedText: seqMatch[1].padStart(3, '0'),
+            description: `序号"${seqMatch[1]}"格式错误，应为3位数字(001-999)。`,
+          });
+        } else if (!projectCodeMatch) {
           issues.push({
             issueType: 'NAMING', ruleCode: 'NAME_004', severity: 'warning',
             originalText: name,

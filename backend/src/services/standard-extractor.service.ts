@@ -8,7 +8,7 @@ const STANDARD_REF_PATTERN = /《.*?》\s*[\(（]?\s*([A-Za-z/]+)\s?(\d+[-/.]?\d
 
 // 仅编号正则：匹配不含书名号的标准编号（Excel类型专用）
 // 限定常见标准前缀，避免误匹配 DN/PN/Cr/Ni 等非标准编号
-const CODE_ONLY_PATTERN = /[\(（]?(GB|GB\/T|NB|NB\/T|HJ|DL|DL\/T|CECS|HAF|EJ|EJ\/T|JGJ|CJJ|JG|HG|SH|SY|YY|QB|SL|TB|JT|YB|DB|DBJ|QX|GBJ|TJ|BJG|GYJ)\s?(\d+[-/.]?\d*([-/.:]\d+)*)[\)）]?([\(（].*[\)）])?/gi;
+const CODE_ONLY_PATTERN = /[\(（]?(GB|GB\/T|NB|NB\/T|HJ|DL|DL\/T|CECS|HAF|EJ|EJ\/T|JGJ|CJJ|JG|HG|SH|SY|YY|QB|SL|TB|JT|YB|DB|DBJ|QX|GBJ|TJ|BJG|GYJ|GA|GA\/T|WS|WS\/T|LY|LY\/T|NY|NY\/T|MT|MT\/T|YD|YD\/T|JR|JR\/T|MH|MH\/T|BB|BB\/T|CB|CB\/T|TD|TD\/T|WH|WH\/T|JC|JC\/T|T\/CECS)\s?(\d+[-/.]?\d*([-/.:]\d+)*)[\)）]?([\(（].*[\)）])?/gi;
 
 export interface ExtractedStandard {
   standardNo: string;      // 标准编号，如 "GB/T 50001-2017"
@@ -85,9 +85,11 @@ export class StandardExtractorService {
       '九': '9', '玖': '9',
     };
     
-    // 匹配连续4个中文数字（年份格式）
-    r = r.replace(/([〇零一二三四五六七八九十壹贰叁肆伍陆柒捌玖OI]{4})/g, (match) => {
-      return match.split('').map(c => chineseNumMap[c] || c).join('');
+    // 匹配连续4个中文数字（仅在年份上下文中：前面是标点/空白/行首，后面是标点/空白/行尾）
+    // 避免误转换普通中文文本中的"一二三四"等
+    r = r.replace(/(?:^|[\s\t,，。.;；:：\-—（(《])(([〇零一二三四五六七八九十壹贰叁肆伍陆柒捌玖OI]{4}))(?=[\s\t,，。.;；:：\-—）)》\n]|$)/gm, (fullMatch, yearPart) => {
+      const converted = yearPart.split('').map((c: string) => chineseNumMap[c] || c).join('');
+      return fullMatch.replace(yearPart, converted);
     });
     
     return r;
