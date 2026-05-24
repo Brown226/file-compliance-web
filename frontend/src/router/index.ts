@@ -100,7 +100,7 @@ const routes: Array<RouteRecordRaw> = [
         path: 'admin/standards',
         name: 'AdminStandards',
         component: () => import('../views/StandardLibrary/index.vue'),
-        meta: { title: '标准库管理', requiresAdminOrManager: true }
+        meta: { title: '标准库清单管理', requiresAdminOrManager: true }
       },
       {
         path: 'admin/knowledge-categories',

@@ -79,6 +79,7 @@ model Standard {
   publishDate       DateTime?        // 发布日期
   implementDate     DateTime?        // 实施日期
   abolishDate       DateTime?        // 废止日期
+  content           String?          @db.Text  // 标准全文内容（从上传文件解析或手动输入），支持长文本
   folderId          String?          // 所属文件夹
   folder            StandardFolder?  @relation(fields: [folderId], references: [id])
   maxkbDocId        String?          // MaxKB 文档 ID
@@ -106,6 +107,7 @@ model Task {
   perspective        String?        // 审查立场
   preAnalysisData    Json?          @map("pre_analysis_data")   // 预分析结果
   reviewPlan         Json?          @map("review_plan")         // 审查方案
+  selfCheckReport    Json?          @map("self_check_report")   // 标准引用自检报告
   knowledgeCategoryId String?       // 关联的知识子库 ID
   reviewSpecificationId String?      // 关联的审查规范集 ID
   reviewSpecification   ReviewSpecification?   @relation(fields: [reviewSpecificationId], references: [id])
@@ -135,6 +137,7 @@ enum ReviewMode {
   MULTIMODAL        // 多模态识别 — 表格/公式/图纸
   CUSTOM_RULE       // 自定义规则审查 — 用户自定义规则
   FULL_REVIEW       // 全量审查 — 所有规则+AI（向后兼容默认模式）
+  SELF_CHECK        // 标准引用自检 — 机械匹配，独立于AI审查
 }
 
 model TaskFile {
@@ -648,15 +651,18 @@ model Tag {
 }
 
 model DocumentTag {
-  id          String      @id @default(uuid())
-  tagId       String      @map("tag_id")
-  tag         Tag         @relation(fields: [tagId], references: [id], onDelete: Cascade)
-  documentId  String      @map("document_id")  // 关联 Document
-  document    Document    @relation(fields: [documentId], references: [id], onDelete: Cascade)
-  createdAt   DateTime    @default(now()) @map("created_at")
+  id             String      @id @default(uuid())
+  tagId          String      @map("tag_id")
+  tag            Tag         @relation(fields: [tagId], references: [id], onDelete: Cascade)
+  documentId     String      @map("document_id")  // 关联 Document
+  document       Document    @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  categoryId     String?     @map("category_id")     // 从 Document 冗余，方便查询
+  documentTitle  String?     @map("document_title")  // 从 Document 冗余，方便查询
+  createdAt      DateTime    @default(now()) @map("created_at")
 
   @@unique([tagId, documentId])
   @@index([documentId])
+  @@index([categoryId])
   @@map("document_tags")
 }
 

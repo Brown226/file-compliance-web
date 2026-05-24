@@ -643,26 +643,30 @@ export class VectorService {
       const embeddingStr = `[${embeddings[i].join(',')}]`;
       const isTable = chunkContent.split('\n').some(l => isSeparatorLine(l));
 
-      const storedContent = para.title ? `${para.title}\n${chunkContent}` : chunkContent;
+      // 段落标题优先，文档名兜底
+      const paragraphTitle = para.title || title;
 
       const contextSummary = contextualMap.get(i);
 
       await prisma.$executeRawUnsafe(`
         INSERT INTO vector_documents
-          (id, "categoryId", source_type, source_id, title, clause_id, content, content_hash, chunk_index, metadata, embedding, vector_status, created_at, updated_at)
+          (id, "categoryId", source_type, source_id, title, clause_id, content, content_hash, chunk_index, metadata, embedding, vector_status, search_vector, created_at, updated_at)
         VALUES
-          (gen_random_uuid(), $1, $2, $3, $4, $5, $6, $7, $8, $9::jsonb, $10::vector, $11, NOW(), NOW())
+          (gen_random_uuid(), $1, $2, $3, $4, $5, $6, $7, $8, $9::jsonb, $10::vector, $11,
+           to_tsvector('simple', coalesce($4::text, '') || ' ' || coalesce($5::text, '') || ' ' || coalesce($6::text, '')),
+           NOW(), NOW())
       `,
         categoryId || null,
         sourceType,
         paragraphs.length > 1 ? `${sourceId}:chunk:${i}` : sourceId,
-        title,
+        paragraphTitle,
         chunkClauseId,
-        storedContent,
+        chunkContent,
         contentHash,
         i,
         JSON.stringify({
           ...metadata,
+          document_title: title,
           original_source_id: sourceId,
           is_table: isTable,
           heading: para.title || '',
@@ -781,7 +785,10 @@ export class VectorService {
 
       const embeddingStr = `[${embeddings[i].join(',')}]`;
       const isTable = chunkContent.split('\n').some(l => isSeparatorLine(l));
-      const storedContent = para.title ? `${para.title}\n${chunkContent}` : chunkContent;
+
+      // 段落标题优先，文档名兜底
+      const paragraphTitle = para.title || title;
+
       const contextSummary = contextualMap.get(i);
 
       toInsert.push({
@@ -792,7 +799,7 @@ export class VectorService {
         sourceId,
         embeddingStr,
         isTable,
-        storedContent,
+        paragraphTitle,
         contextSummary,
       });
     }
@@ -805,20 +812,23 @@ export class VectorService {
 
           await tx.$executeRawUnsafe(`
             INSERT INTO vector_documents
-              (id, "categoryId", source_type, source_id, title, clause_id, content, content_hash, chunk_index, metadata, embedding, vector_status, created_at, updated_at)
+              (id, "categoryId", source_type, source_id, title, clause_id, content, content_hash, chunk_index, metadata, embedding, vector_status, search_vector, created_at, updated_at)
             VALUES
-              (gen_random_uuid(), $1, $2, $3, $4, $5, $6, $7, $8, $9::jsonb, $10::vector, $11, NOW(), NOW())
+              (gen_random_uuid(), $1, $2, $3, $4, $5, $6, $7, $8, $9::jsonb, $10::vector, $11,
+               to_tsvector('simple', coalesce($4::text, '') || ' ' || coalesce($5::text, '') || ' ' || coalesce($6::text, '')),
+               NOW(), NOW())
           `,
             categoryId || null,
             sourceType,
             toInsert.length > 1 ? `${item.sourceId}:chunk:${paraIndex}` : item.sourceId,
-            title,
+            item.paragraphTitle,
             item.chunkClauseId,
-            item.storedContent,
+            item.chunkContent,
             item.contentHash,
             paraIndex,
             JSON.stringify({
               ...metadata,
+              document_title: title,
               original_source_id: item.sourceId,
               is_table: item.isTable,
               heading: item.para.title || '',
@@ -904,7 +914,10 @@ export class VectorService {
     const embeddings = await EmbeddingService.embedTexts(textsForEmbedding);
 
     await prisma.$transaction(async (tx) => {
-      await tx.vectorDocument.deleteMany({ where: { categoryId, title } });
+      await tx.$executeRawUnsafe(
+        `DELETE FROM vector_documents WHERE "categoryId" = $1 AND COALESCE(metadata->>'original_file', title) = $2`,
+        categoryId, title
+      );
 
       for (let i = 0; i < paragraphs.length; i++) {
         const para = paragraphs[i];
@@ -915,25 +928,30 @@ export class VectorService {
         const sourceId = entry.sourceId || `${sourceType}:${this.sourceHash([title, category || '', chunkClauseId, contentHash])}`;
         const embeddingStr = `[${embeddings[i].join(',')}]`;
         const isTable = chunkContent.split('\n').some(l => isSeparatorLine(l));
-        const storedContent = para.title ? `${para.title}\n${chunkContent}` : chunkContent;
+
+        // 段落标题优先，文档名兜底
+        const paragraphTitle = para.title || title;
 
         const contextSummary = contextualMap.get(i);
 
         await tx.$executeRawUnsafe(
           `INSERT INTO vector_documents
-            (id, "categoryId", source_type, source_id, title, clause_id, content, content_hash, chunk_index, metadata, embedding, vector_status, created_at, updated_at)
+            (id, "categoryId", source_type, source_id, title, clause_id, content, content_hash, chunk_index, metadata, embedding, vector_status, search_vector, created_at, updated_at)
           VALUES
-            (gen_random_uuid(), $1, $2, $3, $4, $5, $6, $7, $8, $9::jsonb, $10::vector, $11, NOW(), NOW())`,
+            (gen_random_uuid(), $1, $2, $3, $4, $5, $6, $7, $8, $9::jsonb, $10::vector, $11,
+             to_tsvector('simple', coalesce($4::text, '') || ' ' || coalesce($6::text, '')),
+             NOW(), NOW())`,
           categoryId,
           sourceType,
           paragraphs.length > 1 ? `${sourceId}:chunk:${i}` : sourceId,
-          title,
+          paragraphTitle,
           chunkClauseId,
-          storedContent,
+          chunkContent,
           contentHash,
           i,
           JSON.stringify({
             ...metadata,
+            document_title: title,
             original_source_id: sourceId,
             is_table: isTable,
             heading: para.title || '',
@@ -1002,7 +1020,7 @@ export class VectorService {
       paramIndex++;
     }
     if (filter.title) {
-      conditions.push(`title = $${paramIndex}`);
+      conditions.push(`COALESCE(metadata->>'original_file', title) = $${paramIndex}`);
       params.push(filter.title);
       paramIndex++;
     }
@@ -1090,7 +1108,8 @@ export class VectorService {
   }
 
   /**
-   * 关键词搜索（中文分词 + ILIKE）
+   * 关键词搜索（中文分词 + ILIKE）- 保留兼容
+   * 新代码应优先使用 ftsSearch（原生全文检索）
    */
   private static async keywordSearch(
     query: string,
@@ -1149,6 +1168,70 @@ export class VectorService {
         score,
       };
     }).filter(row => row.score > 0);
+  }
+
+  /**
+   * P0-1: PostgreSQL 原生全文检索
+   * 使用 tsvector + ts_rank 替代 ILIKE 全表扫描
+   * - 中文：使用 simple 配置（不剔除单字），结合 jieba 分词的查询词
+   * - 英语：simple 配置按空白分词，天然支持
+   */
+  private static async ftsSearch(
+    query: string,
+    options: { limit: number; sourceTypes?: string[]; categoryId?: string }
+  ): Promise<VectorSearchResult[]> {
+    const { limit, sourceTypes, categoryId } = options;
+    const cleanQuery = query.replace(/\s+/g, ' ').trim();
+    if (!cleanQuery) return [];
+
+    // 用 jieba 分词后连接为 tsquery（& 连接 = 所有词都要匹配）
+    const terms = await this.tokenizeQuery(cleanQuery);
+    if (terms.length === 0) return [];
+
+    // 构建 tsquery：多个词用 & 连接
+    const tsqueryTerms = terms.map(t => `'${t.replace(/'/g, "''")}'`).join(' & ');
+
+    const params: any[] = [tsqueryTerms];
+    let paramIndex = 2;
+
+    let sourceTypeFilter = '';
+    if (sourceTypes?.length) {
+      sourceTypeFilter = `AND source_type = ANY($${paramIndex}::text[])`;
+      params.push(sourceTypes);
+      paramIndex++;
+    }
+    let categoryFilter = '';
+    if (categoryId) {
+      categoryFilter = `AND "categoryId" = $${paramIndex}`;
+      params.push(categoryId);
+      paramIndex++;
+    }
+    params.push(limit * 3);
+
+    const rows = await prisma.$queryRawUnsafe<any[]>(`
+      SELECT
+        id, source_type, source_id, title, clause_id, content, content_hash, chunk_index, metadata,
+        ts_rank(search_vector, to_tsquery('simple', $1)) * 1.0 AS score
+      FROM vector_documents
+      WHERE search_vector @@ to_tsquery('simple', $1)
+        ${sourceTypeFilter} ${categoryFilter}
+        AND vector_status = 'SUCCESS'
+      ORDER BY score DESC
+      LIMIT $${paramIndex}
+    `, ...params);
+
+    return rows.map(row => ({
+      id: row.id,
+      source_type: row.source_type,
+      source_id: row.source_id,
+      title: row.title,
+      clause_id: row.clause_id,
+      content: row.content,
+      content_hash: row.content_hash,
+      chunk_index: Number(row.chunk_index),
+      metadata: this.parseMetadata(row.metadata),
+      score: Number(row.score),
+    }));
   }
 
   /**
@@ -1216,8 +1299,8 @@ export class VectorService {
     const queryVector = await EmbeddingService.embedText(cleanQuery);
     const vectorResults = await this.vectorSearch(queryVector, { limit: Math.round(candidateLimit * 0.8), sourceTypes, categoryId });
 
-    // Stage 2: 关键词搜索（jieba 分词）
-    const keywordResults = await this.keywordSearch(cleanQuery, { limit: Math.round(candidateLimit * 0.6), sourceTypes, categoryId });
+    // Stage 2: 全文检索（PostgreSQL tsvector + ts_rank，替代 ILIKE 全表扫描）
+    const keywordResults = await this.ftsSearch(cleanQuery, { limit: Math.round(candidateLimit * 0.6), sourceTypes, categoryId });
 
     // Stage 3: RRF 加权融合（向量 70%，关键词 30%）
     let merged = this.rrfConcat([

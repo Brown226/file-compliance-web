@@ -80,17 +80,8 @@ async function seed() {
     },
   });
 
-  // 4. 创建测试标准数据
-  const standards = [
-    { id: 'std-GB500162014', title: '建筑设计防火规范', standardNo: 'GB 50016-2014', standardName: '建筑设计防火规范', version: '2018年版', standardStatus: 'CURRENT' as const, isActive: true },
-    { id: 'std-GB500092012', title: '建筑结构荷载规范', standardNo: 'GB 50009-2012', standardName: '建筑结构荷载规范', version: '2012年版', standardStatus: 'CURRENT' as const, isActive: true },
-    { id: 'std-GB500112010', title: '建筑抗震设计规范', standardNo: 'GB 50011-2010', standardName: '建筑抗震设计规范', version: '2016年版', standardStatus: 'CURRENT' as const, isActive: true },
-    { id: 'std-GBT500012017', title: '房屋建筑制图统一标准', standardNo: 'GB/T 50001-2017', standardName: '房屋建筑制图统一标准', version: '2017年版', standardStatus: 'CURRENT' as const, isActive: true },
-    { id: 'std-GB503002013', title: '建筑工程施工质量验收统一标准', standardNo: 'GB 50300-2013', standardName: '建筑工程施工质量验收统一标准', version: '2013年版', standardStatus: 'CURRENT' as const, isActive: true },
-    { id: 'std-GB500152019', title: '建筑给水排水设计标准', standardNo: 'GB 50015-2019', standardName: '建筑给水排水设计标准', version: '2019年版', standardStatus: 'CURRENT' as const, isActive: true },
-    { id: 'std-JGJ162008', title: '民用建筑电气设计规范', standardNo: 'JGJ 16-2008', standardName: '民用建筑电气设计规范', version: '2008年版', standardStatus: 'CURRENT' as const, isActive: false },
-    { id: 'std-naming-001', title: '工程文件命名规范', standardNo: '内部规范', standardName: '工程文件命名规范', version: 'V1.0', standardStatus: 'CURRENT' as const, isActive: true },
-  ];
+  // 4. 创建测试标准数据（暂无，标准清单由用户导入）
+  const standards: Array<{ id: string; title: string; standardNo: string; standardName: string; version: string; standardStatus: 'CURRENT' | 'UPCOMING' | 'ABOLISHED'; isActive: boolean }> = [];
 
   for (const std of standards) {
     await prisma.standard.upsert({
@@ -100,141 +91,7 @@ async function seed() {
     });
   }
 
-  // 5. 创建测试任务（带 standardId 和 TaskFile）
-  const task1 = await prisma.task.upsert({
-    where: { id: 'task-demo-1' },
-    update: {},
-    create: {
-      id: 'task-demo-1',
-      title: 'A项目一期建筑图纸审查',
-      description: '对A项目一期全部建筑施工图进行合规性审查',
-      status: 'COMPLETED',
-      creatorId: admin.id,
-      standardId: 'std-GB500162014',
-    },
-  });
-
-  const task2 = await prisma.task.upsert({
-    where: { id: 'task-demo-2' },
-    update: {},
-    create: {
-      id: 'task-demo-2',
-      title: 'B项目结构图纸审查',
-      description: 'B项目结构专业施工图审查',
-      status: 'PROCESSING',
-      creatorId: admin.id,
-      standardId: 'std-GB500092012',
-    },
-  });
-
-  const task3 = await prisma.task.upsert({
-    where: { id: 'task-demo-3' },
-    update: {},
-    create: {
-      id: 'task-demo-3',
-      title: 'C小区给排水设计审查',
-      description: 'C小区给排水专业施工图审查',
-      status: 'PENDING',
-      creatorId: admin.id,
-      standardId: 'std-GB500152019',
-    },
-  });
-
-  const task4 = await prisma.task.upsert({
-    where: { id: 'task-demo-4' },
-    update: {},
-    create: {
-      id: 'task-demo-4',
-      title: 'D商场暖通图纸审查',
-      description: 'D商场暖通空调专业施工图审查',
-      status: 'FAILED',
-      creatorId: admin.id,
-    },
-  });
-
-  // 6. 为已完成任务创建 TaskFile 和 TaskDetail
-  // Task1 的文件
-  await prisma.taskFile.upsert({
-    where: { id: 'file-demo-1-1' },
-    update: {},
-    create: {
-      id: 'file-demo-1-1',
-      taskId: task1.id,
-      fileName: 'A项目-建筑平面图.dwg',
-      filePath: '/uploads/demo-arch-plan.dwg',
-      fileSize: 2457600,
-      fileType: 'dwg',
-      errorCount: 2,
-    },
-  });
-
-  await prisma.taskFile.upsert({
-    where: { id: 'file-demo-1-2' },
-    update: {},
-    create: {
-      id: 'file-demo-1-2',
-      taskId: task1.id,
-      fileName: 'A项目-防火设计说明.docx',
-      filePath: '/uploads/demo-fire-design.docx',
-      fileSize: 128000,
-      fileType: 'docx',
-      errorCount: 2,
-    },
-  });
-
-  // Task1 的审查结果
-  const existingDetails1 = await prisma.taskDetail.count({
-    where: { taskId: task1.id },
-  });
-
-  if (existingDetails1 === 0) {
-    await prisma.taskDetail.createMany({
-      data: [
-        {
-          taskId: task1.id,
-          fileId: 'file-demo-1-1',
-          issueType: 'TYPO',
-          ruleCode: null,
-          severity: 'warning',
-          originalText: '消仿通道',
-          suggestedText: '消防通道',
-          description: '存在错别字"消仿"，应改为"消防"。',
-        },
-        {
-          taskId: task1.id,
-          fileId: 'file-demo-1-1',
-          issueType: 'VIOLATION',
-          ruleCode: null,
-          severity: 'error',
-          originalText: 'M-1',
-          suggestedText: 'FM甲-1',
-          description: '防火门应标注耐火等级，违反 GB 50016-2014 第6.5.1条。',
-        },
-        {
-          taskId: task1.id,
-          fileId: 'file-demo-1-2',
-          issueType: 'NAMING',
-          ruleCode: 'NAME_001',
-          severity: 'error',
-          originalText: 'A项目-建筑平面图.dwg',
-          suggestedText: 'FJ24A00AC-JPS02-001(A).dwg',
-          description: '文件名包含中文字符"A项目-建筑平面图"，不符合命名规范。应使用项目编码-系统编码-序号(版本号)格式。',
-        },
-        {
-          taskId: task1.id,
-          fileId: 'file-demo-1-2',
-          issueType: 'TYPO',
-          ruleCode: null,
-          severity: 'warning',
-          originalText: '停泊车位',
-          suggestedText: '机动车停车位',
-          description: '用词不规范，建议修改为"机动车停车位"。',
-        },
-      ],
-    });
-  }
-
-  // 7. 初始化 LLM 默认配置（硅基流动免费模型）
+  // 5. 创建测试任务（无初始数据）
   await prisma.systemConfig.upsert({
     where: { key: 'llm_chat_model' },
     update: {},

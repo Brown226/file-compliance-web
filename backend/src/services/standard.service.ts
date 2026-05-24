@@ -20,6 +20,22 @@ export class StandardService {
     return str.replace(/\x00/g, '').replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g, '');
   }
 
+  /** 支持的排序字段白名单 */
+  private static readonly SORTABLE_FIELDS = ['standardNo', 'standardName', 'publishDate', 'implementDate', 'abolishDate', 'standardStatus', 'createdAt', 'updatedAt', 'isActive'];
+
+  /**
+   * 构建动态 orderBy，仅允许白名单字段，防注入
+   */
+  private static buildOrderBy(field?: string, order?: 'asc' | 'desc'): any {
+    const f = field && StandardService.SORTABLE_FIELDS.includes(field) ? field : 'createdAt';
+    const dir = order === 'asc' ? 'asc' : 'desc';
+    if (f === 'publishDate' || f === 'implementDate' || f === 'abolishDate') {
+      // 日期字段：NULL 值排最后（与前台默认排序视觉一致）
+      return [{ [f]: { sort: dir, nulls: 'last' } }];
+    }
+    return { [f]: dir };
+  }
+
   /**
    * 检测内容是否为乱码/二进制垃圾数据
    * 规则: 1) 替换字符(�)占比>5% → 编码错误; 2) 可读字符<30% → 二进制/扫描件; 3) 连续控制字符 → 二进制数据
@@ -44,6 +60,7 @@ export class StandardService {
   static async createStandard(data: { 
     title: string; version: string; isActive?: boolean; folderId?: string;
     standardNo?: string; standardName?: string;
+    content?: string;
     source?: string; importedBy?: string;
   }): Promise<Standard> {
     // 校验文件夹存在
@@ -65,6 +82,7 @@ export class StandardService {
         standardNo: data.standardNo ? StandardService.sanitizeUtf8(data.standardNo) : null,
         standardName: data.standardName ? StandardService.sanitizeUtf8(data.standardName) : null,
         standardIdent,
+        content: data.content ? StandardService.sanitizeUtf8(data.content) : null,
         source: data.source || null,
         importedBy: data.importedBy || null,
       },
@@ -73,8 +91,7 @@ export class StandardService {
   }
 
   /**
-   * 通过上传文件创建标准：解析文件内容验证质量后创建索引记录
-   * 注意：content 字段已移除，文件全文由 MaxKB 知识库管理，此方法仅验证文件可读性
+   * 通过上传文件创建标准：解析文件内容并保存到 content 字段
    */
   static async createFromFile(fileData: {
     filePath: string;
@@ -84,14 +101,14 @@ export class StandardService {
     isActive?: boolean;
     folderId?: string;
   }): Promise<Standard> {
-    const content = await ParserService.parseFile(fileData.filePath, fileData.fileType);
+    const parsedContent = await ParserService.parseFile(fileData.filePath, fileData.fileType);
     
-    if (!content || content.trim().length < 10) {
+    if (!parsedContent || parsedContent.trim().length < 10) {
       throw new Error('文件内容为空或过短，无法作为标准规范');
     }
 
     // 质量检测：拦截乱码/二进制垃圾内容
-    const garbageCheck = StandardService.detectGarbledText(content);
+    const garbageCheck = StandardService.detectGarbledText(parsedContent);
     if (garbageCheck.isGarbled) {
       throw new Error(`解析的文件内容质量不合格: ${garbageCheck.reason}。可能的原因：1) 文件是扫描版PDF(图片)需OCR处理；2) 文件加密/损坏；3) 文件格式不匹配`);
     }
@@ -108,6 +125,7 @@ export class StandardService {
         version: StandardService.sanitizeUtf8(fileData.version),
         isActive: fileData.isActive ?? true,
         folderId: fileData.folderId || null,
+        content: StandardService.sanitizeUtf8(parsedContent),
         source: 'import',
       },
     });
@@ -125,8 +143,10 @@ export class StandardService {
     standardStatus?: string;
     folderId?: string;
     includeSubFolders?: boolean;
+    sortField?: string;
+    sortOrder?: 'asc' | 'desc';
   }): Promise<{ total: number; standards: any[] }> {
-    const { skip = 0, take = 10, search, standardStatus, folderId, includeSubFolders } = params;
+    const { skip = 0, take = 10, search, standardStatus, folderId, includeSubFolders, sortField, sortOrder } = params;
 
     const conditions: any[] = [];
 
@@ -166,7 +186,7 @@ export class StandardService {
         where,
         skip,
         take,
-        orderBy: { createdAt: 'desc' },
+        orderBy: StandardService.buildOrderBy(sortField, sortOrder),
         select: {
           id: true, title: true, version: true, isActive: true,
           folderId: true,
@@ -214,6 +234,7 @@ export class StandardService {
       version: string
       isActive: boolean
       folderId: string | null
+      content: string | null  // 标准全文内容
       // Normative 特有字段
       standardNo?: string
       standardName?: string
@@ -233,6 +254,10 @@ export class StandardService {
     // folderId 显式设为 null 时清除文件夹关联
     if (data.folderId !== undefined) {
       updateData.folderId = data.folderId || null
+    }
+    // content 字段：支持设置和清空
+    if (data.content !== undefined) {
+      updateData.content = data.content ? StandardService.sanitizeUtf8(data.content) : null
     }
     // 日期字段转换
     if (data.publishDate !== undefined) {

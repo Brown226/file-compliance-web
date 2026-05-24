@@ -11,7 +11,7 @@
       <template #header>
         <div class="card-header">
           <span class="header-title">
-            <el-icon><Document /></el-icon> 标准库列表
+            <el-icon><Document /></el-icon> 标准库清单
             <span class="total-badge">共 {{ total }} 条</span>
           </span>
           <div class="header-actions">
@@ -52,21 +52,76 @@
 
       <!-- 数据表格 -->
       <el-table
+        ref="tableRef"
         v-loading="tableLoading"
         :data="tableData"
+        :default-sort="{ prop: 'createdAt', order: 'descending' }"
         border
         size="small"
         max-height="calc(100vh - 280px)"
         style="width: 100%; margin-top: 12px;"
+        row-key="id"
+        @sort-change="handleSortChange"
+        @expand-change="handleExpandChange"
         @selection-change="handleSelectionChange"
       >
+        <!-- 展开列：查看标准全文内容 -->
+        <el-table-column type="expand">
+          <template #default="{ row }">
+            <div v-loading="contentLoading[row.id]" class="expand-content-wrapper">
+              <div class="expand-content-header">
+                <span class="expand-content-title">
+                  <el-icon><Reading /></el-icon>
+                  《{{ row.standardName || row.title || '-' }}》全文内容
+                </span>
+                <span class="expand-content-meta">
+                  <el-tag v-if="hasContent(row.id)" size="small" type="success">
+                    {{ (getContent(row.id) || '').length }} 字
+                  </el-tag>
+                  <el-tag v-else size="small" type="warning">未填充</el-tag>
+                  <el-tag v-if="row.source" size="small" type="info" style="margin-left: 4px;">
+                    {{ sourceLabel(row.source) }}
+                  </el-tag>
+                </span>
+              </div>
+              <template v-if="contentLoading[row.id]">
+                <el-skeleton :rows="8" animated style="margin-top: 12px;" />
+              </template>
+              <template v-else>
+                <el-input
+                  :model-value="getContent(row.id)"
+                  type="textarea"
+                  :rows="10"
+                  :placeholder="canManage ? '点击此处编辑标准全文内容...' : '暂无内容'"
+                  :disabled="!canManage || contentSaving[row.id]"
+                  :maxlength="100000"
+                  show-word-limit
+                  @change="(val: string | number) => setContent(row.id, String(val))"
+                />
+                <div v-if="canManage && contentDirty[row.id]" class="expand-content-actions">
+                  <el-button
+                    type="primary"
+                    size="small"
+                    :loading="contentSaving[row.id]"
+                    @click.stop="handleSaveContent(row)"
+                  >
+                    <el-icon><Check /></el-icon> 保存内容
+                  </el-button>
+                  <el-button size="small" @click.stop="handleCancelEditContent(row.id)">
+                    取消
+                  </el-button>
+                </div>
+              </template>
+            </div>
+          </template>
+        </el-table-column>
         <el-table-column v-if="canManage" type="selection" width="45" />
-        <el-table-column prop="standardNo" label="标准编号" min-width="150" fixed>
+        <el-table-column prop="standardNo" label="标准编号" min-width="150" sortable="custom">
           <template #default="{ row }">
             <span class="standard-no">{{ row.standardNo || '-' }}</span>
           </template>
         </el-table-column>
-        <el-table-column prop="standardName" label="标准名称" min-width="200" show-overflow-tooltip>
+        <el-table-column prop="standardName" label="标准名称" min-width="200" show-overflow-tooltip sortable="custom">
           <template #default="{ row }">
             <span class="standard-name">{{ row.standardName || row.title || '-' }}</span>
           </template>
@@ -77,7 +132,7 @@
             <span v-else>-</span>
           </template>
         </el-table-column>
-        <el-table-column prop="standardStatus" label="状态" width="90">
+        <el-table-column prop="standardStatus" label="状态" width="90" sortable="custom">
           <template #default="{ row }">
             <el-tag
               size="small"
@@ -87,17 +142,17 @@
             </el-tag>
           </template>
         </el-table-column>
-        <el-table-column prop="publishDate" label="发布日期" width="110">
+        <el-table-column prop="publishDate" label="发布日期" width="115" sortable="custom">
           <template #default="{ row }">
             {{ formatDate(row.publishDate) }}
           </template>
         </el-table-column>
-        <el-table-column prop="implementDate" label="实施日期" width="110">
+        <el-table-column prop="implementDate" label="实施日期" width="115" sortable="custom">
           <template #default="{ row }">
             {{ formatDate(row.implementDate) }}
           </template>
         </el-table-column>
-        <el-table-column prop="isActive" label="启用状态" width="90">
+        <el-table-column prop="isActive" label="启用状态" width="90" sortable="custom">
           <template #default="{ row }">
             <el-tag :type="row.isActive ? 'success' : 'info'" size="small">
               {{ row.isActive ? '启用' : '禁用' }}
@@ -205,14 +260,16 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, computed, onMounted } from 'vue'
+import { ref, reactive, computed, onMounted, onUnmounted } from 'vue'
 import {
   Document, Download, Upload, Search,
   Edit, Delete, CircleCheck, CloseBold,
+  Reading, Check,
 } from '@element-plus/icons-vue'
-import { ElMessage, ElMessageBox, type FormInstance } from 'element-plus'
+import { ElMessage, ElMessageBox, type FormInstance, type TableInstance } from 'element-plus'
 import {
   getStandardsApi,
+  getStandardDetailApi,
   updateStandardApi,
   deleteStandardApi,
   downloadNormativeTemplateApi,
@@ -265,6 +322,22 @@ const pageSize = ref(20)
 const searchKeyword = ref('')
 const filterStatus = ref('')
 const selectedRows = ref<Standard[]>([])
+// 排序状态
+const sortField = ref<string>('createdAt')
+const sortOrder = ref<'asc' | 'desc'>('desc')
+
+/** 处理排序变化 */
+const handleSortChange = ({ prop, order }: { prop: string; order: string | null }) => {
+  if (order) {
+    sortField.value = prop
+    sortOrder.value = order === 'ascending' ? 'asc' : 'desc'
+  } else {
+    sortField.value = 'createdAt'
+    sortOrder.value = 'desc'
+  }
+  currentPage.value = 1
+  fetchTableData()
+}
 
 const fetchTableData = async () => {
   tableLoading.value = true
@@ -279,9 +352,16 @@ const fetchTableData = async () => {
     if (filterStatus.value) {
       params.standardStatus = filterStatus.value
     }
+    // 排序参数
+    if (sortField.value) {
+      params.sortField = sortField.value
+      params.sortOrder = sortOrder.value
+    }
     const { data } = await getStandardsApi(params)
     tableData.value = data?.items || []
     total.value = data?.total || 0
+    // 数据刷新后清除内容缓存（不同数据了）
+    clearContentCache()
   } catch (e) {
     console.error('获取数据失败:', e)
     ElMessage.error('获取数据失败')
@@ -315,6 +395,105 @@ const handleSizeChange = (size: number) => {
 
 const handleSelectionChange = (rows: Standard[]) => {
   selectedRows.value = rows
+}
+
+// ==================== 行展开 - 内容预览与编辑 ====================
+const tableRef = ref<TableInstance>()
+// 缓存已加载的标准内容 { [standardId]: contentString }
+const contentCache = reactive<Record<string, string>>({})
+// 跟踪哪些标准正在加载内容
+const contentLoading = reactive<Record<string, boolean>>({})
+// 跟踪哪些标准正在保存内容
+const contentSaving = reactive<Record<string, boolean>>({})
+// 跟踪内容是否被修改但未保存
+const contentDirty = reactive<Record<string, boolean>>({})
+// 记录原始内容（用于取消编辑时恢复）
+const originalContentCache = reactive<Record<string, string>>({})
+
+const hasContent = (id: string): boolean => {
+  const c = contentCache[id]
+  return c !== undefined && c !== null && c.length > 0
+}
+
+const getContent = (id: string): string => {
+  return contentCache[id] ?? ''
+}
+
+const setContent = (id: string, val: string) => {
+  contentCache[id] = val
+  contentDirty[id] = originalContentCache[id] !== val
+}
+
+/** 行展开/折叠处理：展开时懒加载内容 */
+const handleExpandChange = async (row: Standard, expandedRows: Standard[]) => {
+  const isExpanding = expandedRows.some((r) => r.id === row.id)
+  if (!isExpanding) return
+
+  // 如果已经加载过，不需要重新加载
+  if (contentCache[row.id] !== undefined) return
+
+  contentLoading[row.id] = true
+  try {
+    const { data } = await getStandardDetailApi(row.id)
+    const content = data?.content || ''
+    contentCache[row.id] = content
+    originalContentCache[row.id] = content
+    contentDirty[row.id] = false
+  } catch (e) {
+    console.error('加载标准内容失败:', e)
+    contentCache[row.id] = ''
+    originalContentCache[row.id] = ''
+    contentDirty[row.id] = false
+  } finally {
+    contentLoading[row.id] = false
+  }
+}
+
+/** 保存内容到后端 */
+const handleSaveContent = async (row: Standard) => {
+  if (!canManage.value) return
+  contentSaving[row.id] = true
+  try {
+    await updateStandardApi(row.id, {
+      title: row.standardName || row.title,
+      content: contentCache[row.id] || null,
+    })
+    ElMessage.success('标准内容已保存')
+    originalContentCache[row.id] = contentCache[row.id]
+    contentDirty[row.id] = false
+  } catch (e: any) {
+    console.error('保存内容失败:', e)
+    ElMessage.error(e?.response?.data?.error || '保存内容失败')
+  } finally {
+    contentSaving[row.id] = false
+  }
+}
+
+/** 取消编辑，恢复原始内容 */
+const handleCancelEditContent = (id: string) => {
+  contentCache[id] = originalContentCache[id]
+  contentDirty[id] = false
+}
+
+/** 来源标签 */
+const sourceLabel = (source?: string | null) => {
+  const map: Record<string, string> = {
+    manual: '手动',
+    import: '导入',
+    normative_import: '批量导入',
+    maxkb: 'MaxKB',
+    temp_archive: '归档',
+  }
+  return map[source || ''] || source || '手动'
+}
+
+// 翻页/搜索时清除内容缓存
+const clearContentCache = () => {
+  Object.keys(contentCache).forEach((k) => delete contentCache[k])
+  Object.keys(contentLoading).forEach((k) => delete contentLoading[k])
+  Object.keys(contentSaving).forEach((k) => delete contentSaving[k])
+  Object.keys(contentDirty).forEach((k) => delete contentDirty[k])
+  Object.keys(originalContentCache).forEach((k) => delete originalContentCache[k])
 }
 
 // ==================== 编辑对话框 ====================
@@ -635,5 +814,54 @@ onMounted(() => {
 
 .manage-card :deep(.el-pagination.is-background .el-pager li:not(.is-disabled).is-active) {
   background: var(--el-color-primary);
+}
+
+/* ======== 行展开 - 内容预览区域 ======== */
+.expand-content-wrapper {
+  padding: 12px 16px;
+  background: var(--el-fill-color-lighter);
+  border-radius: 6px;
+}
+
+.expand-content-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12px;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.expand-content-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--el-color-primary);
+}
+
+.expand-content-meta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.expand-content-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px dashed var(--el-border-color-lighter);
+}
+
+/* 展开列样式优化 */
+.manage-card :deep(.el-table__expanded-cell) {
+  padding: 8px 12px !important;
+}
+
+.manage-card :deep(.el-table__expand-column .cell) {
+  padding: 0 8px;
 }
 </style>

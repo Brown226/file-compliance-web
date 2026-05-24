@@ -632,7 +632,7 @@ onUnmounted(() => {
 
 .preview-content {
   flex: 1;
-  overflow-y: auto;
+  overflow: auto;
 }
 
 /* ===== Markdown 渲染样式 ===== */

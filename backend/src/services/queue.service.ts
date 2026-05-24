@@ -4,14 +4,24 @@
  */
 
 import Bull from 'bull';
+import path from 'path';
+import fs from 'fs';
 import { env } from '../config/env';
 import { ReviewService } from './review.service';
+import { KnowledgeCategoryService } from './knowledge-category.service';
+import { UploadTaskService } from './upload-task.service';
 import prisma from '../config/db';
 
 export interface ReviewJobData {
   taskId: string;
-  /** 重试次数，由 Bull 自动管理 */
   attempt?: number;
+}
+
+export interface KnowledgeUploadJobData {
+  taskId: string;        // UploadTaskService 追踪ID
+  categoryId: string;
+  savedPath: string;
+  originalName: string;
 }
 
 /** 审查任务队列 */
@@ -24,14 +34,24 @@ export const reviewQueue = new Bull<ReviewJobData>('review', env.redisUrl, {
   },
 });
 
+/** 知识库文档上传队列 — 持久化替代 setImmediate */
+export const knowledgeUploadQueue = new Bull<KnowledgeUploadJobData>('knowledge-upload', env.redisUrl, {
+  defaultJobOptions: {
+    attempts: 2,
+    backoff: { type: 'fixed', delay: 10000 },
+    removeOnComplete: { age: 3600, count: 200 },
+    removeOnFail: { age: 86400, count: 100 },
+  },
+});
+
 /** 初始化队列处理器（仅在主进程中调用一次） */
 export function initQueueProcessors(): void {
+  // ── 审查队列处理器 ──
   reviewQueue.process('review', 2, async (job) => {
     const { taskId } = job.data;
     console.log(`[Queue] 开始处理审查任务: ${taskId} (attempt ${job.attemptsMade + 1})`);
 
     try {
-      // 检查任务状态，避免重复处理
       const task = await prisma.task.findUnique({ where: { id: taskId } });
       if (!task) {
         console.warn(`[Queue] 任务不存在，跳过: ${taskId}`);
@@ -50,27 +70,68 @@ export function initQueueProcessors(): void {
       return result;
     } catch (err: any) {
       console.error(`[Queue] 审查任务失败: ${taskId}`, err.message);
-      throw err; // Bull 会自动重试
+      throw err;
     }
   });
 
-  reviewQueue.on('completed', (job, result) => {
-    if (result?.skipped) {
-      console.log(`[Queue] Job ${job.id} 跳过: ${result.reason}`);
-    } else {
-      console.log(`[Queue] Job ${job.id} 完成`);
+  // ── 知识库上传队列处理器 ──
+  knowledgeUploadQueue.process('upload', 3, async (job) => {
+    const { taskId, categoryId, savedPath, originalName } = job.data;
+    console.log(`[KB-Queue] 开始处理上传: ${originalName} (attempt ${job.attemptsMade + 1})`);
+
+    try {
+      // 幂等检查：任务已失败/完成则跳过
+      const existing = UploadTaskService.getTask(taskId);
+      if (existing && (existing.status === 'completed' || existing.status === 'failed' && job.attemptsMade > 0)) {
+        console.log(`[KB-Queue] 任务已终结，跳过: ${taskId}`);
+        return { skipped: true, reason: existing.status };
+      }
+
+      UploadTaskService.updateTask(taskId, { status: 'processing', progress: 20, message: '正在解析...' });
+      const result = await KnowledgeCategoryService.uploadDocument(categoryId, savedPath, originalName);
+      UploadTaskService.updateTask(taskId, {
+        status: 'completed',
+        progress: 100,
+        message: `完成，${result.chunks} 个分段`,
+        chunks: result.chunks,
+      });
+
+      console.log(`[KB-Queue] 上传完成: ${originalName}`);
+      return result;
+    } catch (err: any) {
+      console.error(`[KB-Queue] 上传失败: ${originalName}`, err.message);
+      UploadTaskService.updateTask(taskId, {
+        status: 'failed',
+        progress: 0,
+        message: '处理失败',
+        error: err.message,
+      });
+      // 清理失败文件
+      try { if (fs.existsSync(savedPath)) fs.unlinkSync(savedPath); } catch {}
+      throw err; // Bull 自动重试
     }
   });
 
-  reviewQueue.on('failed', (job, err) => {
-    console.error(`[Queue] Job ${job.id} 失败 (${job.attemptsMade}/${job.opts.attempts}):`, err.message);
-  });
+  // ── 全局事件 ──
+  for (const q of [reviewQueue, knowledgeUploadQueue]) {
+    q.on('completed', (job, result) => {
+      if (result?.skipped) {
+        console.log(`[Queue] Job ${job.id} 跳过: ${result.reason}`);
+      } else {
+        console.log(`[Queue] Job ${job.id} 完成`);
+      }
+    });
 
-  reviewQueue.on('stalled', (jobId) => {
-    console.warn(`[Queue] Job ${jobId} 停滞，将被重试`);
-  });
+    q.on('failed', (job, err) => {
+      console.error(`[Queue] Job ${job.id} 失败 (${job.attemptsMade}/${job.opts.attempts}):`, err.message);
+    });
 
-  console.log('[Queue] 审查队列处理器已启动 (concurrency=2)');
+    q.on('stalled', (jobId) => {
+      console.warn(`[Queue] Job ${jobId} 停滞，将被重试`);
+    });
+  }
+
+  console.log('[Queue] 队列处理器已启动 (review:2, knowledge-upload:3)');
 }
 
 /** 添加审查任务到队列 */

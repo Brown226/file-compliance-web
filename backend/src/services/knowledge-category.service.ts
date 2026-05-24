@@ -413,6 +413,28 @@ export class KnowledgeCategoryService {
 
     console.info('[KB][uploadDocument] imported', { categoryId, fileName, chunks: result.chunks });
 
+    // 同步创建 Document 记录（确保 Document ↔ VectorDocument 数据一致）
+    const docTitle = fileName.replace(/\.\w+$/, '');
+    await prisma.document.upsert({
+      where: { categoryId_title: { categoryId, title: docTitle } },
+      update: {
+        totalChunks: result.chunks,
+        totalChars: content.length,
+        isVectorized: true,
+        vectorStatus: 'SUCCESS',
+      },
+      create: {
+        categoryId,
+        title: docTitle,
+        sourceType: 'standard',
+        status: 'ACTIVE',
+        totalChunks: result.chunks,
+        totalChars: content.length,
+        isVectorized: true,
+        vectorStatus: 'SUCCESS',
+      },
+    });
+
     return { chunks: result.chunks };
   }
 
@@ -423,11 +445,13 @@ export class KnowledgeCategoryService {
     totalChunks: number;
     generatedCount: number;
   }> {
-    const paragraphs = await prisma.vectorDocument.findMany({
-      where: { categoryId, title },
-      select: { id: true, content: true, metadata: true },
-      orderBy: { chunkIndex: 'asc' },
-    });
+    const paragraphs = await prisma.$queryRawUnsafe<any[]>(
+      `SELECT id, content, metadata
+       FROM vector_documents
+       WHERE "categoryId" = $1 AND COALESCE(metadata->>'original_file', title) = $2
+       ORDER BY chunk_index ASC`,
+      categoryId, title
+    );
 
     if (paragraphs.length === 0) throw new Error('文档不存在或无段落数据');
 

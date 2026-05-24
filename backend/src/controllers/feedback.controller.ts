@@ -264,7 +264,9 @@ export const deleteFeedback = async (req: AuthRequest, res: Response): Promise<v
     const attachments = feedback.attachmentPaths as Array<{ filePath: string }> | null;
     if (attachments) {
       for (const attachment of attachments) {
-        const filePath = path.join(__dirname, '../..', attachment.filePath);
+        const filePath = path.isAbsolute(attachment.filePath)
+          ? attachment.filePath
+          : path.join(__dirname, '../..', attachment.filePath);
         if (fs.existsSync(filePath)) {
           fs.unlinkSync(filePath);
         }
@@ -334,7 +336,9 @@ export const batchDelete = async (req: AuthRequest, res: Response): Promise<void
         const attachments = feedback.attachmentPaths as Array<{ filePath: string }> | null;
         if (attachments) {
           for (const attachment of attachments) {
-            const filePath = path.join(__dirname, '../..', attachment.filePath);
+            const filePath = path.isAbsolute(attachment.filePath)
+              ? attachment.filePath
+              : path.join(__dirname, '../..', attachment.filePath);
             if (fs.existsSync(filePath)) {
               fs.unlinkSync(filePath);
             }
@@ -407,7 +411,9 @@ export const downloadAttachment = async (req: AuthRequest, res: Response): Promi
       return;
     }
 
-    const filePath = path.join(__dirname, '../..', foundAttachment.filePath);
+    const filePath = path.isAbsolute(foundAttachment.filePath)
+      ? foundAttachment.filePath
+      : path.join(__dirname, '../..', foundAttachment.filePath);
 
     if (!fs.existsSync(filePath)) {
       error(res, '文件不存在', 404);

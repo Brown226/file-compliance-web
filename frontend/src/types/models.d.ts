@@ -51,9 +51,40 @@ export interface Task {
   }
   files?: TaskFile[]
   taskFiles?: TaskFile[]
+  /** 标准引用自检报告（仅 SELF_CHECK 模式） */
+  selfCheckReport?: {
+    totalChecked: number
+    matchedCount: number
+    errorCount: number
+    items: SelfCheckReportItem[]
+    standardLibraryInfo: { name: string; total: number }
+  }
   _count?: {
     taskDetails: number
   }
+}
+
+/** 标准引用自检结果条目 */
+export interface SelfCheckReportItem {
+  docStandardNo: string
+  docStandardName: string
+  fullMatch: string
+  sourceFile: string
+  startChar: number
+  endChar: number
+  lineNumber: number
+  contextText: string
+  errorTypes: string[]
+  matchResult: {
+    matched: boolean
+    matchLevel: number
+    libraryStandardNo?: string
+    libraryStandardName?: string
+    libraryStandardStatus?: string
+    similarity?: number
+  }
+  noDiff?: { originalRanges: Array<{ start: number; length: number }>; correctRanges: Array<{ start: number; length: number }> } | null
+  nameDiff?: { originalRanges: Array<{ start: number; length: number }>; correctRanges: Array<{ start: number; length: number }> } | null
 }
 
 /** 任务文件 */
@@ -137,6 +168,7 @@ export interface ReviewPlan {
     knowledgeCategoryIds?: string[]
     reviewSpecificationId?: string | null
     refFileGroupId?: string | null
+    enabledPrefixes?: string[]
   }
   enhancements: {
     intraFileConsistency: boolean
@@ -167,27 +199,44 @@ export interface SourceReference {
 export interface Standard {
   id: string
   title: string
-  content: string
-  category: string
-  enabled: boolean
+  version: string
+  /** 标准全文内容（可以是长篇文本），列表接口不返回此字段 */
+  content?: string | null
+  category?: string
+  enabled?: boolean
   createdAt: string
   updatedAt: string
   /** Normative 标准编号 */
-  standardNo?: string
+  standardNo?: string | null
   /** Normative 标准名称 */
-  standardName?: string
+  standardName?: string | null
   /** Normative 标识符 (如 GB/T) */
-  standardIdent?: string
+  standardIdent?: string | null
   /** Normative 状态 */
   standardStatus?: 'CURRENT' | 'UPCOMING' | 'ABOLISHED'
   /** 发布日期 */
-  publishDate?: string
+  publishDate?: string | null
   /** 实施日期 */
-  implementDate?: string
+  implementDate?: string | null
   /** 废止日期 */
-  abolishDate?: string
+  abolishDate?: string | null
   /** 启用状态 */
   isActive?: boolean
+  /** 所属文件夹 */
+  folderId?: string | null
+  /** MaxKB 文档 ID */
+  maxkbDocId?: string | null
+  /** 来源 */
+  source?: string | null
+  /** 关联任务数 */
+  _count?: {
+    tasks: number
+  }
+  /** 文件夹 */
+  folder?: {
+    id: string
+    name: string
+  } | null
 }
 
 /** 知识库 */

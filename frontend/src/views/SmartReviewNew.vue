@@ -26,15 +26,17 @@
       <el-button text type="primary" @click="selectedModule = ''">重新选择</el-button>
     </div>
 
-    <SmartReviewLegacy v-if="selectedModule" />
+    <SmartReviewLegacy v-if="selectedModule && selectedModule !== 'SELF_CHECK'" />
+    <SelfCheck v-if="selectedModule === 'SELF_CHECK'" />
   </div>
 </template>
 
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import SmartReviewLegacy from './SmartReview.vue'
+import SelfCheck from './SelfCheck/index.vue'
 
-type ModuleId = 'LIBRARY' | 'CONSISTENCY' | 'PROOFREAD' | 'RULE_ONLY' | 'MULTIMODAL' | 'DOC_REVIEW'
+type ModuleId = 'LIBRARY' | 'CONSISTENCY' | 'PROOFREAD' | 'RULE_ONLY' | 'MULTIMODAL' | 'DOC_REVIEW' | 'SELF_CHECK'
 
 const selectedModule = ref<ModuleId | ''>('')
 
@@ -74,6 +76,12 @@ const modules: Array<{ id: ModuleId; title: string; desc: string; scenario: stri
     title: '📋 规则库审查',
     desc: '仅执行预定义规则检查（命名/编码/格式/页码等），不调用 AI，速度最快',
     scenario: '适用：批量格式检查、快速初筛、无需AI的纯规则场景'
+  },
+  {
+    id: 'SELF_CHECK',
+    title: '✅ 标准引用自检',
+    desc: '提取设计文件中引用的标准规范，与标准库逐条比对，检查编号/名称/版本/废止状态',
+    scenario: '适用：设计文件标准引用核查、规范清单校对、废止标准排查'
   },
 ]
 
@@ -282,6 +290,14 @@ const selectModule = (id: ModuleId) => {
   --module-color-ultra-light: #ecfeff;
   --module-color-dark: #0891b2;
   --module-color-alpha: rgba(6, 182, 212, 0.15);
+}
+
+.module-item[data-module="SELF_CHECK"] {
+  --module-color: #22c55e;
+  --module-color-light: #86efac;
+  --module-color-ultra-light: #f0fdf4;
+  --module-color-dark: #16a34a;
+  --module-color-alpha: rgba(34, 197, 94, 0.15);
 }
 
 /* ===== 已选择模块栏 ===== */

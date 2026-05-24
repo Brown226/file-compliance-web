@@ -79,7 +79,7 @@ export function getReviewModesApi() {
     needsRefFiles: boolean;
     capabilities: {
       rules: boolean;
-      standardRef: 'on' | 'off' | 'config';
+      standardRef: boolean;
       ai: boolean;
       aiStrategy: 'standard' | 'llmOnly' | 'refCompare' | 'multimodal';
       crossFile: boolean;
@@ -93,7 +93,7 @@ export function getModeCapabilitiesApi() {
   return request.get<Record<string, {
     enabled: boolean;
     rules: boolean;
-    standardRef: 'on' | 'off' | 'config';
+    standardRef: boolean;
     ai: boolean;
     aiStrategy: 'standard' | 'llmOnly' | 'refCompare' | 'multimodal';
     crossFile: boolean;

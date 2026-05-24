@@ -63,6 +63,20 @@ const loadDocx = async () => {
       arrayBuffer = resp.data
     }
 
+    if (arrayBuffer.byteLength < 512) {
+      try {
+        const text = new TextDecoder().decode(arrayBuffer)
+        const json = JSON.parse(text)
+        if (json && json.code && json.code !== 200) {
+          throw new Error(json.message || '文件加载失败')
+        }
+      } catch (e: any) {
+        if (e.message !== 'Unexpected token' && !e.message.includes('Unexpected')) {
+          throw e
+        }
+      }
+    }
+
     const result = await mammoth.convertToHtml({ arrayBuffer })
     renderedHtml.value = result.value
 
@@ -236,6 +250,7 @@ watch(() => props.locateTarget, () => {
   flex-direction: column;
   overflow: hidden;
   min-height: 0;
+  min-width: 0;
 }
 
 .preview-loading,
@@ -252,7 +267,7 @@ watch(() => props.locateTarget, () => {
 
 .docx-content {
   flex: 1;
-  overflow-y: auto;
+  overflow: auto;
   padding: 24px 32px;
   font-size: 14px;
   line-height: 1.8;

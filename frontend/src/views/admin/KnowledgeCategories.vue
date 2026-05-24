@@ -216,7 +216,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, computed, onMounted, watch } from 'vue'
+import { ref, reactive, computed, onMounted, watch, nextTick } from 'vue'
 import { useRouter } from 'vue-router'
 import {
   Plus, Upload, Edit, Delete, Search,
@@ -442,7 +442,18 @@ const showUploadDialog = (cat: KnowledgeCategory) => { uploadTarget.value = cat;
 const onUploadDone = async () => { await Promise.all([fetchTree(), fetchCategories()]) }
 
 // ===== 生命周期 =====
-onMounted(async () => { await Promise.all([fetchTree(), fetchCategories()]) })
+onMounted(async () => {
+  await Promise.all([fetchTree(), fetchCategories()])
+  // 页面首次加载：自动选中第一个树节点，确保右侧展示目录下已存在的知识库
+  await nextTick()
+  if (!currentNodeId.value && treeData.value.length > 0) {
+    const firstNode = treeData.value[0]
+    if (firstNode) {
+      treeRef.value?.setCurrentKey(firstNode.id)
+      currentNodeId.value = firstNode.id
+    }
+  }
+})
 </script>
 
 <style scoped>

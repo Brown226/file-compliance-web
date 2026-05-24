@@ -105,12 +105,12 @@
         </div>
       </div>
 
-      <!-- 右侧：AI审查报告面板 -->
+      <!-- 右侧：审查报告面板 -->
       <div class="right-panel" :style="rightPanelStyle">
         <!-- 面板头部 -->
         <div class="panel-header">
           <div class="header-left">
-            <h3 class="panel-title">AI 审查报告</h3>
+            <h3 class="panel-title">{{ isSelfCheck ? '标准引用自检报告' : 'AI 审查报告' }}</h3>
             <!-- 文件筛选下拉（多文件时显示） -->
             <el-select
               v-if="files.length > 1"
@@ -119,6 +119,7 @@
               style="width: 160px;"
               clearable
               placeholder="全部文件"
+              @change="(val: string) => { if (val) switchToFileContext(val); else { selectedFileId.value = files.value[0]?.id || null } }"
             >
               <el-option
                 v-for="f in files"
@@ -130,16 +131,16 @@
                 <span style="float: right; color: #9CA3AF; font-size: 11px;">{{ getFileIssueCount(f.id) }}</span>
               </el-option>
             </el-select>
-            <div class="plain-mode-switch">
+            <div v-if="!isSelfCheck" class="plain-mode-switch">
               <span class="switch-label">大白话模式</span>
               <el-switch v-model="showPlainLanguage" size="small" />
             </div>
           </div>
           <div class="header-right">
-            <el-button type="primary" link size="small" @click="handleExportWord">
+            <el-button v-if="!isSelfCheck" type="primary" link size="small" @click="handleExportWord">
               导出Word
             </el-button>
-            <el-button type="primary" link size="small" @click="handleExportExcel">
+            <el-button v-if="!isSelfCheck" type="primary" link size="small" @click="handleExportExcel">
               导出Excel
             </el-button>
             <el-button type="primary" link size="small" @click="goBack">
@@ -181,7 +182,7 @@
         </div>
 
         <!-- Tab导航 -->
-        <div class="tab-navigation">
+        <div v-if="!isSelfCheck" class="tab-navigation">
           <button
             v-for="tab in tabs"
             :key="tab.key"
@@ -192,8 +193,60 @@
           </button>
         </div>
 
+        <!-- ====== 标准引用自检报告（SELF_CHECK） ====== -->
+        <div v-if="isSelfCheck && scReport" class="self-check-report-panel">
+          <div class="sc-summary-bar">
+            <el-tag type="info" effect="plain">检查 {{ scReport.totalChecked }} 条引用</el-tag>
+            <el-tag type="success" effect="plain">完全匹配 {{ scFilteredItems.filter((it: any) => it.matchResult?.matched && it.errorTypes?.length === 0).length }} 条</el-tag>
+            <el-tag v-if="scFilteredItems.filter((it: any) => it.errorTypes?.length > 0).length > 0" type="danger" effect="plain">存在问题 {{ scFilteredItems.filter((it: any) => it.errorTypes?.length > 0).length }} 条</el-tag>
+            <el-tag v-else type="success" effect="plain">全部正确</el-tag>
+            <span class="sc-lib-info">{{ scReport.standardLibraryInfo?.name }}（{{ scReport.standardLibraryInfo?.total }} 条）</span>
+          </div>
+          <el-table
+            :data="scFilteredItems"
+            border stripe size="small"
+            highlight-current-row
+            @current-change="scSelectItem"
+          >
+            <el-table-column type="index" label="#" width="42" />
+            <el-table-column prop="sourceFile" label="来源文件" min-width="130" show-overflow-tooltip />
+            <el-table-column label="文档中的标准" min-width="150">
+              <template #default="{ row: it }">
+                <div>{{ it.docStandardNo || '-' }}</div>
+                <div class="sc-name-sub">{{ it.docStandardName || '' }}</div>
+              </template>
+            </el-table-column>
+            <el-table-column label="错误类型" min-width="170">
+              <template #default="{ row: it }">
+                <template v-if="it.errorTypes.length > 0">
+                  <el-tag v-for="et in it.errorTypes" :key="et" :type="scErrorTagType(et)" size="small" effect="dark" style="margin-right:3px;margin-bottom:2px;">
+                    {{ scErrorLabel(et) }}
+                  </el-tag>
+                </template>
+                <el-tag v-else-if="it.matchResult.matched" type="success" size="small" effect="plain">一致</el-tag>
+                <span v-else>-</span>
+              </template>
+            </el-table-column>
+            <el-table-column label="正确标准" min-width="180" show-overflow-tooltip>
+              <template #default="{ row: it }">
+                <div class="correct-text">{{ it.matchResult.libraryStandardNo || '-' }}</div>
+                <div class="sc-name-sub correct-text">{{ it.matchResult.libraryStandardName || '' }}</div>
+              </template>
+            </el-table-column>
+            <el-table-column label="级别" width="52">
+              <template #default="{ row: it }">
+                <span v-if="it.matchResult.matchLevel > 0">L{{ it.matchResult.matchLevel }}</span>
+                <span v-else class="no-match">∅</span>
+              </template>
+            </el-table-column>
+          </el-table>
+          <el-button type="primary" size="small" style="margin-top:10px;" @click="handleExportScReport">
+            <el-icon><Download /></el-icon> 导出 Excel 报告
+          </el-button>
+        </div>
+
         <!-- Tab内容区 -->
-        <div class="tab-content">
+        <div v-if="!isSelfCheck" class="tab-content">
           <!-- Tab 1: 审查概览 -->
           <div v-if="activeTab === 'overview'" class="tab-pane">
             <!-- 风险点/争议点 -->
@@ -241,7 +294,7 @@
                 </div>
                 <div class="summary-card sub">
                   <span class="summary-label">审查模式</span>
-                  <span class="summary-value">{{ reviewPlanSummary.legacyMode }}</span>
+                  <span class="summary-value">{{ reviewPlanSummary.taskMode }}</span>
                 </div>
                 <div class="summary-card">
                   <span class="summary-label">审查文件</span>
@@ -638,12 +691,13 @@ import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import {
   Loading,
-  ArrowRightBold,
+  ArrowRightBold, ArrowRight,
   WarningFilled,
   Check,
   Remove,
   CirclePlus,
   CircleCheckFilled,
+  Download,
 } from '@element-plus/icons-vue'
 import {
   getTaskByIdApi,
@@ -670,12 +724,89 @@ const files = ref<TaskFile[]>([])
 const loading = ref(false)
 const loadingMessage = ref('正在加载审查结果...')
 
+// ===== 标准引用自检（SELF_CHECK）=====
+const isSelfCheck = computed(() => (task.value as any)?.reviewMode === 'SELF_CHECK')
+
+// 默认左侧面板宽度：自检模式 40%（右侧表格需要更多空间），普通审查 55%
+const SELF_CHECK_LEFT_WIDTH = 40
+const NORMAL_LEFT_WIDTH = 55
+const leftPanelWidth = ref(localStorage.getItem('reviewLeftPanelWidth') ? Number(localStorage.getItem('reviewLeftPanelWidth')) : NORMAL_LEFT_WIDTH)
+
+// 任务加载后，自检模式统一用 40% 左面板（右侧表格需要更多空间）
+watch(isSelfCheck, (val) => {
+  if (val) {
+    leftPanelWidth.value = SELF_CHECK_LEFT_WIDTH
+  }
+}, { immediate: true })
+const scReport = computed(() => (task.value as any)?.selfCheckReport as import('@/types/models').SelfCheckReport | undefined)
+const scSelected = ref<import('@/types/models').SelfCheckReportItem | null>(null)
+
+// 自检报告：根据文件筛选过滤后的数据
+const scFilteredItems = computed(() => {
+  const items = scReport.value?.items || []
+  if (!filterFileId.value) return items
+  const targetFile = files.value.find((f: TaskFile) => f.id === filterFileId.value)
+  if (!targetFile) return items
+  return items.filter((it: any) => it.sourceFile === targetFile.fileName)
+})
+
+const scSelectItem = (row: any) => {
+  scSelected.value = row
+  // 联动左侧原文定位
+  if (row && row.startChar >= 0 && files.value.length > 0) {
+    const file = files.value.find((f: TaskFile) => f.fileName === row.sourceFile)
+    if (file) {
+      selectFile(file.id)
+      locateTarget.value = {
+        originalText: row.fullMatch,
+        textPosition: {
+          chunkIndex: Math.floor(row.startChar / 4000),
+          charOffset: row.startChar % 4000,
+        },
+      } as any
+    }
+  }
+}
+
+const scErrorTagType = (type: string) => {
+  if (type === 'NO_MATCH') return 'danger'
+  if (type === 'ABOLISHED') return 'warning'
+  if (type === 'VERSION_MISMATCH') return 'primary'
+  return ''
+}
+
+const scErrorLabel = (type: string) => {
+  const m: Record<string, string> = {
+    NO_MATCH: '不存在', NUMBER_MISMATCH: '编号错误', NAME_MISMATCH: '名称错误',
+    ABOLISHED: '已废止', UPCOMING: '尚未实施', VERSION_MISMATCH: '版本不匹配',
+  }
+  return m[type] || type
+}
+
+const handleExportScReport = async () => {
+  try {
+    const { exportSelfCheckReportApi } = await import('@/api/self-check')
+    const { data } = await exportSelfCheckReportApi(taskId.value)
+    const blob = data as unknown as Blob
+    const url = window.URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = `标准引用自检报告_${new Date().toISOString().slice(0, 10)}.xlsx`
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+    window.URL.revokeObjectURL(url)
+    ElMessage.success('报告导出成功')
+  } catch (e) { console.error('导出失败:', e); ElMessage.error('导出报告失败') }
+}
+
 // ===== 审查实时进度（WebSocket 推送） =====
-const { subscribeTask } = useWebSocket()
+const { subscribeTask, connected: wsConnected } = useWebSocket()
 const reviewing = ref(false)
 const reviewProgress = ref(0)
 const reviewStep = ref('')
 const reviewMessage = ref('')
+let pollTimer: ReturnType<typeof setInterval> | null = null
 const reviewFileProgress = reactive({
   fileName: '',
   chunkIndex: 0,
@@ -693,8 +824,6 @@ const leftPanel = ref<HTMLDivElement | null>(null)
 
 // ===== 可拖拽分割条相关 =====
 const isResizing = ref(false)
-const leftPanelWidth = ref(localStorage.getItem('reviewLeftPanelWidth') ? Number(localStorage.getItem('reviewLeftPanelWidth')) : 55) // 默认左侧占55%
-
 const startResize = (e: MouseEvent) => {
   e.preventDefault()
   isResizing.value = true
@@ -941,27 +1070,30 @@ const getModeLabel = (mode: string) => {
   const map: Record<string, string> = {
     LIBRARY_REVIEW: '以库审文',
     DOC_REVIEW: '以文审文',
-    CONSISTENCY: '一致性审查',
     TYPO_GRAMMAR: '错别字/语法',
     MULTIMODAL: '多模态识别',
+    SELF_CHECK: '标准引用自检',
+    // 旧模式兼容映射（历史数据）
+    CONSISTENCY: '一致性审查',
     CUSTOM_RULE: '自定义规则',
+    FULL_REVIEW: '全面审查',
   }
   return map[mode] || mode
 }
 
 const reviewPlanSummary = computed(() => {
   const plan = (task.value as any)?.reviewPlan
-  const legacyMode = reviewSummary.value?.reviewMode || (task.value as any)?.reviewMode || '-'
+  const taskMode = reviewSummary.value?.reviewMode || (task.value as any)?.reviewMode || '-'
 
   if (!plan || typeof plan !== 'object') {
     return {
-      module: getModeLabel(legacyMode),
+      module: getModeLabel(taskMode),
       objective: '—',
       evidence: '—',
       execution: '—',
       enhancements: '无',
       proofreadingEnhancement: '—',
-      legacyMode: getModeLabel(legacyMode),
+      taskMode: getModeLabel(taskMode),
     }
   }
 
@@ -995,7 +1127,7 @@ const reviewPlanSummary = computed(() => {
     execution: executionLabelMap[plan.execution?.profile] || plan.execution?.profile || '—',
     enhancements: enhancements.length > 0 ? enhancements.join(' + ') : '无',
     proofreadingEnhancement,
-    legacyMode: getModeLabel(legacyMode),
+    taskMode: getModeLabel(taskMode),
   }
 })
 
@@ -1186,12 +1318,41 @@ const handleWsMessage = (msg: WsMessage) => {
   }
 }
 
-/** 审查完成：清理 WS 订阅 + 最终加载 */
+/** WS 断连时使用轮询兜底检测任务完成状态 */
+const startPollFallback = () => {
+  if (!reviewing.value || wsConnected.value || pollTimer) return
+  pollTimer = setInterval(async () => {
+    try {
+      const res = await getTaskByIdApi(taskId.value)
+      const status = res.data?.status
+      if (status === 'COMPLETED' || status === 'FAILED') {
+        task.value = res.data
+        files.value = task.value?.files || []
+        if (files.value.length > 0 && !selectedFileId.value) {
+          switchToFileContext(files.value[0].id)
+        }
+        finishReview()
+      }
+    } catch (_) {
+      // polling error — swallow, retry next tick
+    }
+  }, 3000)
+}
+
+const stopPollFallback = () => {
+  if (pollTimer) {
+    clearInterval(pollTimer)
+    pollTimer = null
+  }
+}
+
+/** 审查完成：清理 WS 订阅 + 轮询 + 最终加载 */
 const finishReview = async () => {
   reviewing.value = false
   reviewProgress.value = 100
   reviewStep.value = '审查完成'
   reviewMessage.value = '正在加载最终结果...'
+  stopPollFallback()
   if (unsubscribeWs) {
     unsubscribeWs()
     unsubscribeWs = null
@@ -1656,10 +1817,14 @@ onMounted(async () => {
     reviewing.value = true
     reviewMessage.value = '正在初始化审查...'
     unsubscribeWs = subscribeTask(taskId.value, handleWsMessage)
+
+    // WS 断连时使用轮询兜底（10秒后检查 WS 是否连接成功）
+    setTimeout(() => startPollFallback(), 10000)
   }
 })
 
 onUnmounted(() => {
+  stopPollFallback()
   if (unsubscribeWs) {
     unsubscribeWs()
     unsubscribeWs = null
@@ -1982,7 +2147,8 @@ onUnmounted(() => {
   background: white;
   border-radius: 6px;
   border: 1px solid #E5E7EB;
-  overflow: hidden;
+  overflow-y: hidden;
+  overflow-x: auto;
   min-height: 0; /* 关键：允许在flex容器中正确收缩 */
 }
 
@@ -1998,6 +2164,15 @@ onUnmounted(() => {
   display: flex;
   align-items: center;
   gap: 16px;
+  flex-shrink: 0;
+}
+
+.header-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  flex-shrink: 0;
 }
 
 .panel-title {
@@ -2016,11 +2191,6 @@ onUnmounted(() => {
 .switch-label {
   font-size: 12px;
   color: #6B7280;
-}
-
-.header-right {
-  display: flex;
-  gap: 8px;
 }
 
 /* Tab导航 */
@@ -2916,5 +3086,79 @@ onUnmounted(() => {
     padding: 3px 6px;
     font-size: 11px;
   }
+}
+
+/* ====== 标准引用自检报告样式 ====== */
+.self-check-report-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 12px;
+  flex: 1;
+  overflow: auto;
+  min-width: 0;
+  min-height: 0;
+}
+
+.sc-summary-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding: 8px 12px;
+  background: var(--el-fill-color-lighter);
+  border-radius: 8px;
+}
+
+.sc-lib-info {
+  font-size: 12px;
+  color: var(--el-text-color-placeholder);
+  margin-left: auto;
+}
+
+.sc-name-sub {
+  font-size: 11px;
+  color: var(--el-text-color-secondary);
+  margin-top: 2px;
+}
+
+.sc-detail-card {
+  margin-top: 8px;
+}
+
+.sc-diff-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  line-height: 1.8;
+}
+
+.sc-wrong {
+  color: var(--el-color-danger);
+  font-family: monospace;
+  background: #fde8e8;
+  padding: 1px 6px;
+  border-radius: 3px;
+  border: 1px dashed var(--el-color-danger);
+}
+
+.sc-correct {
+  color: var(--el-color-success);
+  font-family: monospace;
+  background: #e8f5e9;
+  padding: 1px 6px;
+  border-radius: 3px;
+  font-weight: 600;
+}
+
+.correct-text {
+  color: var(--el-color-success);
+}
+
+.no-match {
+  color: var(--el-color-danger);
+  font-weight: 700;
+  font-size: 16px;
 }
 </style>

@@ -6,154 +6,35 @@ import { ReviewService } from './review.service';
 import { addReviewJob } from './queue.service';
 import FalsePositiveLibraryService from './falsePositiveLibrary.service';
 import { ParserService } from './parser.service';
-import { ReviewPlan, normalizeEvidenceSources, isReviewObjective } from '../types/review-plan';
+import { ReviewPlan, ReviewEvidenceSource, normalizeEvidenceSources, isReviewObjective } from '../types/review-plan';
+import { ReviewModeType } from './review-pipeline/types';
 
 export class TaskService {
-  static planToLegacyMode(plan: ReviewPlan): string {
+  /** 从 ReviewPlan 推导 Pipeline 需要的模式标识（内部分发用，不暴露给前端） */
+  static resolvePipelineSelector(plan: ReviewPlan): ReviewModeType {
     if (plan.objective === 'COMPARE') return 'DOC_REVIEW';
     if (plan.objective === 'PROOFREAD') return 'TYPO_GRAMMAR';
     if (plan.objective === 'STRUCTURED') return 'MULTIMODAL';
     if (plan.execution.profile === 'RULE_ONLY' && plan.evidence.sources.includes('REVIEW_SPECIFICATION')) {
       return 'CUSTOM_RULE';
     }
-    if (plan.enhancements.crossFileConsistency) {
-      return 'CONSISTENCY';
-    }
-    if (plan.enhancements.intraFileConsistency) {
-      return 'CONSISTENCY';
-    }
+    // crossFile 由 enhancements 动态控制，模式本身用 LIBRARY_REVIEW
     return 'LIBRARY_REVIEW';
   }
 
-  static legacyModeToPlan(reviewMode?: string, input?: any): ReviewPlan {
-    const normalizedSources = normalizeEvidenceSources(input?.evidence?.sources);
-    const baseSources = normalizedSources.length > 0 ? normalizedSources : ['STANDARD'];
-    switch (reviewMode) {
-      case 'DOC_REVIEW':
-        return {
-          objective: 'COMPARE',
-          evidence: {
-            sources: baseSources.includes('REFERENCE') ? baseSources : ['REFERENCE'],
-            knowledgeCategoryIds: Array.isArray(input?.evidence?.knowledgeCategoryIds) ? input.evidence.knowledgeCategoryIds : [],
-            reviewSpecificationId: input?.evidence?.reviewSpecificationId || input?.evidence?.ruleLibraryId || null,
-            refFileGroupId: input?.evidence?.refFileGroupId || null,
-          },
-          enhancements: {
-            intraFileConsistency: !!input?.enhancements?.intraFileConsistency,
-            crossFileConsistency: !!input?.enhancements?.crossFileConsistency,
-          },
-          execution: {
-            profile: input?.execution?.profile === 'RULE_ONLY' ? 'RULE_ONLY' : 'HYBRID',
-          },
-          templateId: input?.templateId,
-        };
-      case 'TYPO_GRAMMAR':
-        return {
-          objective: 'PROOFREAD',
-          evidence: {
-            sources: baseSources.filter((item) => item !== 'REFERENCE'),
-            knowledgeCategoryIds: Array.isArray(input?.evidence?.knowledgeCategoryIds) ? input.evidence.knowledgeCategoryIds : [],
-            reviewSpecificationId: input?.evidence?.reviewSpecificationId || input?.evidence?.ruleLibraryId || null,
-            refFileGroupId: null,
-          },
-          enhancements: {
-            intraFileConsistency: !!input?.enhancements?.intraFileConsistency,
-            crossFileConsistency: false,
-          },
-          execution: {
-            profile: input?.execution?.profile === 'RULE_ONLY' ? 'RULE_ONLY' : 'HYBRID',
-          },
-          templateId: input?.templateId,
-        };
-      case 'MULTIMODAL':
-        return {
-          objective: 'STRUCTURED',
-          evidence: {
-            sources: baseSources,
-            knowledgeCategoryIds: Array.isArray(input?.evidence?.knowledgeCategoryIds) ? input.evidence.knowledgeCategoryIds : [],
-            reviewSpecificationId: input?.evidence?.reviewSpecificationId || input?.evidence?.ruleLibraryId || null,
-            refFileGroupId: null,
-          },
-          enhancements: {
-            intraFileConsistency: !!input?.enhancements?.intraFileConsistency,
-            crossFileConsistency: !!input?.enhancements?.crossFileConsistency,
-          },
-          execution: {
-            profile: input?.execution?.profile === 'RULE_ONLY' ? 'RULE_ONLY' : 'HYBRID',
-          },
-          templateId: input?.templateId,
-        };
-      case 'CUSTOM_RULE':
-        return {
-          objective: 'COMPLIANCE',
-          evidence: {
-            sources: ['REVIEW_SPECIFICATION'],
-            knowledgeCategoryIds: [],
-            reviewSpecificationId: input?.evidence?.reviewSpecificationId || input?.evidence?.ruleLibraryId || null,
-            refFileGroupId: null,
-          },
-          enhancements: {
-            intraFileConsistency: !!input?.enhancements?.intraFileConsistency,
-            crossFileConsistency: !!input?.enhancements?.crossFileConsistency,
-          },
-          execution: {
-            profile: 'RULE_ONLY',
-          },
-          templateId: input?.templateId,
-        };
-      case 'CONSISTENCY':
-        return {
-          objective: 'COMPLIANCE',
-          evidence: {
-            sources: baseSources,
-            knowledgeCategoryIds: Array.isArray(input?.evidence?.knowledgeCategoryIds) ? input.evidence.knowledgeCategoryIds : [],
-            reviewSpecificationId: input?.evidence?.reviewSpecificationId || input?.evidence?.ruleLibraryId || null,
-            refFileGroupId: null,
-          },
-          enhancements: {
-            intraFileConsistency: !!input?.enhancements?.intraFileConsistency,
-            crossFileConsistency: true,
-          },
-          execution: {
-            profile: input?.execution?.profile === 'RULE_ONLY' ? 'RULE_ONLY' : 'HYBRID',
-          },
-          templateId: input?.templateId,
-        };
-      case 'LIBRARY_REVIEW':
-      default:
-        return {
-          objective: 'COMPLIANCE',
-          evidence: {
-            sources: baseSources,
-            knowledgeCategoryIds: Array.isArray(input?.evidence?.knowledgeCategoryIds) ? input.evidence.knowledgeCategoryIds : [],
-            reviewSpecificationId: input?.evidence?.reviewSpecificationId || input?.evidence?.ruleLibraryId || null,
-            refFileGroupId: null,
-          },
-          enhancements: {
-            intraFileConsistency: !!input?.enhancements?.intraFileConsistency,
-            crossFileConsistency: !!input?.enhancements?.crossFileConsistency,
-          },
-          execution: {
-            profile: input?.execution?.profile === 'RULE_ONLY' ? 'RULE_ONLY' : 'HYBRID',
-          },
-          templateId: input?.templateId,
-        };
-    }
-  }
-
-  static normalizeReviewPlan(input: any, legacyReviewMode?: string): ReviewPlan {
+  static normalizeReviewPlan(input: any): ReviewPlan {
     if (input && isReviewObjective(input.objective)) {
       const objective = input.objective;
       const sources = normalizeEvidenceSources(input?.evidence?.sources);
-      const normalizedSources = sources.length > 0
+      const normalizedSources: ReviewEvidenceSource[] = sources.length > 0
         ? sources
-        : (objective === 'COMPARE' ? ['REFERENCE'] : objective === 'PROOFREAD' ? [] : ['STANDARD']);
+        : (objective === 'COMPARE' ? ['REFERENCE'] as ReviewEvidenceSource[] : objective === 'PROOFREAD' ? [] : ['STANDARD'] as ReviewEvidenceSource[]);
 
       return {
         objective,
         evidence: {
           sources: objective === 'COMPARE'
-            ? (normalizedSources.includes('REFERENCE') ? normalizedSources : ['REFERENCE'])
+            ? (normalizedSources.includes('REFERENCE') ? normalizedSources : ['REFERENCE'] as ReviewEvidenceSource[])
             : normalizedSources,
           knowledgeCategoryIds: Array.isArray(input?.evidence?.knowledgeCategoryIds) ? input.evidence.knowledgeCategoryIds : [],
           reviewSpecificationId: typeof input?.evidence?.reviewSpecificationId === 'string' && input.evidence.reviewSpecificationId.trim()
@@ -164,6 +45,7 @@ export class TaskService {
           refFileGroupId: typeof input?.evidence?.refFileGroupId === 'string' && input.evidence.refFileGroupId.trim()
             ? input.evidence.refFileGroupId.trim()
             : null,
+          enabledPrefixes: Array.isArray(input?.evidence?.enabledPrefixes) ? input.evidence.enabledPrefixes.filter((p: any) => typeof p === 'string') : undefined,
         },
         enhancements: {
           intraFileConsistency: !!input?.enhancements?.intraFileConsistency,
@@ -175,8 +57,13 @@ export class TaskService {
         templateId: typeof input?.templateId === 'string' && input.templateId.trim() ? input.templateId.trim() : undefined,
       };
     }
-
-    return this.legacyModeToPlan(legacyReviewMode, input);
+    // 兜底：无有效 plan 时默认合规审查 + 标准依据
+    return {
+      objective: 'COMPLIANCE',
+      evidence: { sources: ['STANDARD'], knowledgeCategoryIds: [], reviewSpecificationId: null, refFileGroupId: null },
+      enhancements: { intraFileConsistency: false, crossFileConsistency: false },
+      execution: { profile: 'HYBRID' },
+    };
   }
 
   /**
@@ -203,7 +90,6 @@ export class TaskService {
     creatorId: string;
     standardId?: string;
     standardIds?: string[];  // 多标准关联
-    reviewMode?: string;
     knowledgeCategoryId?: string;  // 用户选择的知识库ID
     knowledgeCategoryIds?: string[];  // 用户选择的多个知识库ID
     reviewSpecificationId?: string;
@@ -217,13 +103,13 @@ export class TaskService {
     files?: Express.Multer.File[];
     dwgParsedData?: Record<string, any>;  // 前端 WASM 解析的 DWG 数据（按文件名映射）
   }): Promise<Task> {
-    const { title, description, creatorId, standardId, standardIds = [], reviewMode, knowledgeCategoryId, knowledgeCategoryIds,
+    const { title, description, creatorId, standardId, standardIds = [], knowledgeCategoryId, knowledgeCategoryIds,
       reviewSpecificationId, perspective, preAnalysisData, reviewPlan, reviewPoints, corePurposes, selectedTemplateId, intraFileConsistency,
       files = [], dwgParsedData } = data;
 
     // 合并标准 ID：保留单选兼容，同时写入多选
     const allStandardIds = [...new Set([standardId, ...standardIds].filter((id): id is string => Boolean(id)))];
-    const normalizedReviewPlan = this.normalizeReviewPlan(reviewPlan, reviewMode);
+    const normalizedReviewPlan = this.normalizeReviewPlan(reviewPlan);
 
     // 服务端兜底校验：防止前端绕过约束
     if (normalizedReviewPlan.objective === 'COMPARE' && files.length > 0 && !data.files?.length) {
@@ -233,15 +119,13 @@ export class TaskService {
       throw new Error('参照比对模式必须使用参考文件作为审查依据');
     }
     if (normalizedReviewPlan.execution.profile === 'RULE_ONLY') {
-      if (!normalizedReviewPlan.evidence.sources.includes('REVIEW_SPECIFICATION') && !normalizedReviewPlan.evidence.sources.includes('RULE_LIBRARY')) {
-        throw new Error('仅规则执行模式必须启用审查规范集依据');
-      }
-      if (!normalizedReviewPlan.evidence.reviewSpecificationId && !reviewSpecificationId) {
-        throw new Error('仅规则执行模式必须指定审查规范集');
+      const hasDirectPrefixes = Array.isArray(normalizedReviewPlan.evidence.enabledPrefixes) && normalizedReviewPlan.evidence.enabledPrefixes.length > 0;
+      if (!hasDirectPrefixes && !normalizedReviewPlan.evidence.reviewSpecificationId && !reviewSpecificationId) {
+        throw new Error('仅规则执行模式必须指定审查规范集或启用的规则前缀');
       }
     }
-    const resolvedReviewMode = reviewMode || this.planToLegacyMode(normalizedReviewPlan);
-    const shouldDelayReview = resolvedReviewMode === 'DOC_REVIEW';
+    const resolvedReviewMode = this.resolvePipelineSelector(normalizedReviewPlan);
+    const shouldDelayReview = normalizedReviewPlan.objective === 'COMPARE';
 
     // 知识库 ID：多选优先，回退到单选
     // 存储策略：将多个知识库 ID 存为 JSON 字符串到 knowledgeCategoryId 字段
@@ -287,7 +171,7 @@ export class TaskService {
         reviewSpecificationId: shouldBindRuleLibrary ? normalizedReviewPlan.evidence.reviewSpecificationId || null : null,
         perspective: perspective || null,
         preAnalysisData: preAnalysisJson || undefined,
-        reviewPlan: normalizedReviewPlan,
+        reviewPlan: normalizedReviewPlan as any,
         // DOC_REVIEW 需要先上传参照文件，创建时先保持 PENDING，待 ref-files 上传后再触发
         status: files.length > 0 && !shouldDelayReview ? 'PROCESSING' : 'PENDING',
       },

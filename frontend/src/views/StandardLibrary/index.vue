@@ -8,7 +8,7 @@
         @click="activeTab = 'local'"
       >
         <el-icon><Files /></el-icon>
-        标准库管理
+        标准库清单管理
       </div>
       <div
         class="tab-item"
@@ -30,7 +30,7 @@
       </div>
     </div>
 
-    <!-- 本地标准库管理 -->
+    <!-- 本地标准库清单管理 -->
     <LocalStandardTab v-show="activeTab === 'local'" />
 
     <!-- 白名单库 -->

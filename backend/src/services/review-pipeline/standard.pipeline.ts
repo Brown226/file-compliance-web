@@ -32,18 +32,13 @@ export class StandardPipeline extends BasePipeline {
     this.capabilities = runtimeCapabilities || getModeCapabilities(mode);
 
     // 根据模式设置显示信息
-    const modeInfo: Record<ReviewModeType, { name: string; desc: string }> = {
+    const modeInfo: Partial<Record<ReviewModeType, { name: string; desc: string }>> = {
       LIBRARY_REVIEW: { name: '以库审文', desc: '使用标准库+规则引擎+AI进行合规审查' },
       CONSISTENCY: { name: '全文一致性', desc: '单文件内一致性检查 + 跨文件参数一致性检查' },
       CUSTOM_RULE: { name: '自定义规则', desc: '用户自定义规则审查（仅执行启用的规则，无AI）' },
-      // 以下两个不会实际用到（DocReview/Multimodal/TypoGrammar 有各自 Pipeline），
-      // 保留声明以防 factory 误传
-      DOC_REVIEW: { name: '以文审文', desc: '使用参照文件比对审查' },
-      TYPO_GRAMMAR: { name: '错别字/语法', desc: '轻量级错别字和语法检查' },
-      MULTIMODAL: { name: '多模态识别', desc: '表格结构化、公式识别、图纸智能分析' },
     };
 
-    const info = modeInfo[mode];
+    const info = modeInfo[mode] || { name: mode, desc: '' };
     this.displayName = info.name;
     this.description = info.desc;
   }

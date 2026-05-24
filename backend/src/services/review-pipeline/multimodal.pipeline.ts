@@ -22,7 +22,7 @@ import { ModeCapabilities } from './mode-config';
 
 const DEFAULT_CAPABILITIES: ModeCapabilities = {
   rules: true,
-  standardRef: 'config',   // 默认关闭，需配置 stages.stdRef = true 才开启
+  standardRef: false,
   ai: true,
   aiStrategy: 'multimodal',
   crossFile: false,

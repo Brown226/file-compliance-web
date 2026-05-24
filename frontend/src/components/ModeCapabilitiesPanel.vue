@@ -68,17 +68,7 @@
 
         <el-table-column label="标准引用" width="110" align="center">
           <template #default="{ row, $index }">
-            <el-select
-              v-model="row.standardRef"
-              size="small"
-              style="width: 92px"
-              :disabled="!row.enabled"
-              @change="onChange($index)"
-            >
-              <el-option label="开启" value="on" />
-              <el-option label="关闭" value="off" />
-              <el-option label="配置" value="config" />
-            </el-select>
+            <el-switch v-model="row.standardRef" :disabled="!row.enabled" @change="onChange($index)" />
           </template>
         </el-table-column>
 
@@ -138,14 +128,14 @@ const modeMeta: Record<string, { displayName: string; description: string; icon:
   CUSTOM_RULE: { displayName: '自定义规则', description: '用户自定义规则审查（仅执行启用的规则）', icon: Setting, color: '#6B7280' },
 }
 
-// 默认配置（standardRef 为三态枚举）
+// 默认配置（standardRef 为 boolean）
 const defaultConfig: Record<string, any> = {
-  LIBRARY_REVIEW: { enabled: true, rules: true, standardRef: 'on', ai: true, aiStrategy: 'standard', crossFile: false },
-  DOC_REVIEW: { enabled: true, rules: true, standardRef: 'on', ai: true, aiStrategy: 'refCompare', crossFile: false },
-  CONSISTENCY: { enabled: true, rules: true, standardRef: 'on', ai: true, aiStrategy: 'standard', crossFile: true },
-  TYPO_GRAMMAR: { enabled: true, rules: true, standardRef: 'config', ai: true, aiStrategy: 'llmOnly', crossFile: false },
-  MULTIMODAL: { enabled: true, rules: true, standardRef: 'config', ai: true, aiStrategy: 'multimodal', crossFile: false },
-  CUSTOM_RULE: { enabled: true, rules: true, standardRef: 'off', ai: false, aiStrategy: 'standard', crossFile: false },
+  LIBRARY_REVIEW: { enabled: true, rules: true, standardRef: true, ai: true, aiStrategy: 'standard', crossFile: false },
+  DOC_REVIEW: { enabled: true, rules: true, standardRef: true, ai: true, aiStrategy: 'refCompare', crossFile: false },
+  CONSISTENCY: { enabled: true, rules: true, standardRef: true, ai: true, aiStrategy: 'standard', crossFile: true },
+  TYPO_GRAMMAR: { enabled: true, rules: true, standardRef: false, ai: true, aiStrategy: 'llmOnly', crossFile: false },
+  MULTIMODAL: { enabled: true, rules: true, standardRef: false, ai: true, aiStrategy: 'multimodal', crossFile: false },
+  CUSTOM_RULE: { enabled: true, rules: true, standardRef: false, ai: false, aiStrategy: 'standard', crossFile: false },
 }
 
 // 原始数据（用于比较是否有修改）
@@ -179,7 +169,7 @@ async function fetchData() {
         color: modeMeta[mode]?.color || '#6B7280',
         enabled: cfg.enabled !== false,
         rules: cfg.rules !== false,
-        standardRef: cfg.standardRef || 'off',
+        standardRef: !!cfg.standardRef,
         ai: cfg.ai !== false,
         aiStrategy: cfg.aiStrategy || 'standard',
         crossFile: cfg.crossFile === true,

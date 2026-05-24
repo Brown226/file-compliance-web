@@ -47,7 +47,10 @@ class WebSocketManager {
 
     const userStore = useUserStore()
     const token = userStore.token
-    if (!token) return
+    if (!token) {
+      setTimeout(() => this.connect(), 1000)
+      return
+    }
 
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
     const host = window.location.host
@@ -91,8 +94,8 @@ class WebSocketManager {
       this.reconnectTimer = window.setTimeout(() => this.connect(), 3000)
     }
 
-    this.ws.onerror = (err) => {
-      console.error('[WS] Error:', err)
+    this.ws.onerror = () => {
+      // onclose fires after onerror, so just let onclose handle reconnection
     }
   }
 

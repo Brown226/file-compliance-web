@@ -178,7 +178,7 @@ const navGroups = ref([
     name: '规范与知识',
     icon: 'Files',
     items: [
-      { id: 'standards', name: '标准库管理', icon: 'Reading', description: '管理各类标准文档、误报库和术语表' },
+      { id: 'standards', name: '标准库清单管理', icon: 'Reading', description: '管理标准清单、误报库和术语表' },
       { id: 'knowledge', name: '知识库管理', icon: 'FolderOpened', description: '管理知识库分类和文档' },
       { id: 'rules', name: '规则库管理', icon: 'Document', description: '管理审查规则和规则库' },
     ]

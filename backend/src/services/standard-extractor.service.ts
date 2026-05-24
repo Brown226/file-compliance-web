@@ -15,6 +15,10 @@ export interface ExtractedStandard {
   standardName: string;    // 标准名称（Excel类型为空字符串）
   standardIdent: string;   // 标识符，如 "GB"、"GB/T"、"NB/T"
   fullMatch: string;       // 原始匹配文本
+  /** 在原文中的起始字符位置（0-based） */
+  startChar: number;
+  /** 在原文中的结束字符位置（0-based, exclusive） */
+  endChar: number;
 }
 
 export class StandardExtractorService {
@@ -136,6 +140,8 @@ export class StandardExtractorService {
           standardName,
           standardIdent: StandardExtractorService.getIdent(cleanedNo),
           fullMatch,
+          startChar: match.index,
+          endChar: match.index + fullMatch.length,
         });
       }
     }
@@ -163,6 +169,8 @@ export class StandardExtractorService {
           standardName: '',
           standardIdent: StandardExtractorService.getIdent(standardNo),
           fullMatch,
+          startChar: match.index,
+          endChar: match.index + fullMatch.length,
         });
       }
     }
@@ -226,6 +234,8 @@ export class StandardExtractorService {
           standardName: '',
           standardIdent: StandardExtractorService.getIdent(fullMatch),
           fullMatch,
+          startChar: match.index,
+          endChar: match.index + fullMatch.length,
         });
       }
     }

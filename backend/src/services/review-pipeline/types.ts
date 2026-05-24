@@ -25,7 +25,6 @@ export interface PipelineStageConfig {
 export interface PipelineModeConfig {
   enabled: boolean;           // 该模式是否启用
   stages: PipelineStageConfig; // 阶段开关
-  rulePrefixes: string[];     // 启用的规则前缀
 }
 
 /** Pipeline 全局配置（存储在 SystemConfig 'pipeline_review_config' 中） */
@@ -152,13 +151,6 @@ export interface ReviewPipeline {
 
   /** 流水线描述 */
   readonly description: string;
-
-  /**
-   * 该模式需要使用的规则前缀（用于过滤规则引擎）
-   * @deprecated 空数组表示全量规则，实际过滤由数据库 review_rules.enabled 控制。
-   *   保留此字段仅为向后兼容。
-   */
-  readonly rulePrefixes: string[];
 
   /** 是否需要 AI 审查（MaxKB/LLM） */
   readonly needsAI: boolean;

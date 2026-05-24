@@ -36,45 +36,47 @@
 
     <!-- Step 1: 预审配置 - 参考项目左右分栏布局 -->
     <div v-if="currentStep === 1" class="confirm-step">
-      <!-- 后台预分析状态横幅 -->
-      <el-alert
-        v-if="backgroundStatus === 'pre-analyzing'"
-        title="正在AI预分析..."
-        type="warning"
-        :closable="false"
-        show-icon
-        class="background-status-alert"
-      >
-        <template #default>
-          <span>AI 正在分析您的文件内容并生成推荐配置，您可以先手动选择审查参数。</span>
-        </template>
-      </el-alert>
-      <el-alert
-        v-else-if="backgroundStatus === 'done'"
-        title="预分析完成"
-        type="success"
-        :closable="true"
-        show-icon
-        @close="backgroundStatus = 'idle'"
-        class="background-status-alert"
-      >
-        <template #default>
-          <span>AI 预分析已完成，推荐配置已自动填入下方表单。</span>
-        </template>
-      </el-alert>
-      <el-alert
-        v-else-if="backgroundStatus === 'failed'"
-        title="预分析失败"
-        type="error"
-        :closable="true"
-        show-icon
-        @close="backgroundStatus = 'idle'"
-        class="background-status-alert"
-      >
-        <template #default>
-          <span>AI 预分析失败，不影响正常使用。请手动配置后点击"开始分析"。</span>
-        </template>
-      </el-alert>
+      <!-- 后台预分析状态横幅（仅非 RULE_ONLY 模式显示） -->
+      <template v-if="entryModule !== 'RULE_ONLY'">
+        <el-alert
+          v-if="backgroundStatus === 'pre-analyzing'"
+          title="正在AI预分析..."
+          type="warning"
+          :closable="false"
+          show-icon
+          class="background-status-alert"
+        >
+          <template #default>
+            <span>AI 正在分析您的文件内容并生成推荐配置，您可以先手动选择审查参数。</span>
+          </template>
+        </el-alert>
+        <el-alert
+          v-else-if="backgroundStatus === 'done'"
+          title="预分析完成"
+          type="success"
+          :closable="true"
+          show-icon
+          @close="backgroundStatus = 'idle'"
+          class="background-status-alert"
+        >
+          <template #default>
+            <span>AI 预分析已完成，推荐配置已自动填入下方表单。</span>
+          </template>
+        </el-alert>
+        <el-alert
+          v-else-if="backgroundStatus === 'failed'"
+          title="预分析失败"
+          type="error"
+          :closable="true"
+          show-icon
+          @close="backgroundStatus = 'idle'"
+          class="background-status-alert"
+        >
+          <template #default>
+            <span>AI 预分析失败，不影响正常使用。请手动配置后点击"开始分析"。</span>
+          </template>
+        </el-alert>
+      </template>
 
       <div class="confirm-content">
         <!-- 任务标题 -->
@@ -92,21 +94,23 @@
         <!-- 文件上传成功提示 -->
         <div class="upload-success">
           <p class="success-text">文件 <span class="file-name">{{ fileList.length }} 个文件</span> 已上传成功。</p>
-          <p class="ai-hint" v-if="isUploadingForPreAnalysis">
-            <el-icon class="is-loading"><Loading /></el-icon>
-            正在上传文件用于AI分析...
-          </p>
-          <p class="ai-hint" v-else-if="preAnalyzing && !preAnalyzed">
-            <el-icon class="is-loading"><Loading /></el-icon>
-            AI 正在智能分析文件内容...
-          </p>
-          <p class="ai-hint" v-else-if="preAnalysisData.contractType">
-            AI初步识别文件类型为：<span class="type-text">{{ preAnalysisData.contractType }}</span>
-          </p>
+          <template v-if="entryModule !== 'RULE_ONLY'">
+            <p class="ai-hint" v-if="isUploadingForPreAnalysis">
+              <el-icon class="is-loading"><Loading /></el-icon>
+              正在上传文件用于AI分析...
+            </p>
+            <p class="ai-hint" v-else-if="preAnalyzing && !preAnalyzed">
+              <el-icon class="is-loading"><Loading /></el-icon>
+              AI 正在智能分析文件内容...
+            </p>
+            <p class="ai-hint" v-else-if="preAnalysisData.contractType">
+              AI初步识别文件类型为：<span class="type-text">{{ preAnalysisData.contractType }}</span>
+            </p>
+          </template>
         </div>
 
-        <!-- 审查点及核心目的 -->
-        <div class="review-options-panel">
+        <!-- 审查点及核心目的（仅非 RULE_ONLY 模式显示） -->
+        <div v-if="entryModule !== 'RULE_ONLY'" class="review-options-panel">
           <h3 class="panel-title">审查点及核心目的</h3>
           
           <!-- 审查点选择 -->
@@ -234,57 +238,106 @@
 
             <template v-if="showEvidenceSection">
               <div class="config-section">
-                <div class="evidence-cards">
-                  <div
-                    v-for="option in availableEvidenceSources"
-                    :key="option.value"
-                    class="evidence-card"
-                    :class="{
-                      'evidence-card--active': reviewPlanDraft.evidence.sources.includes(option.value),
-                      'evidence-card--disabled': isEvidenceLocked(option.value)
-                    }"
-                    @click="handleEvidenceCardClick(option.value)"
-                  >
-                    <div class="evidence-card__icon">
-                      <el-icon :size="16">
-                        <component :is="evidenceIconMap[option.value]" />
-                      </el-icon>
-                    </div>
-                    <span class="evidence-card__label">{{ option.label }}</span>
-                    <div class="evidence-card__check" v-if="reviewPlanDraft.evidence.sources.includes(option.value)">
-                      <el-icon><Check /></el-icon>
-                    </div>
+                <!-- RULE_ONLY 模式：规则前缀开关面板 -->
+                <template v-if="entryModule === 'RULE_ONLY'">
+                  <div class="config-section-label">
+                    <span class="section-label-num">2</span>
+                    检查项目
                   </div>
-                </div>
-                <div v-if="reviewPlanDraft.evidence.sources.includes('STANDARD')" class="selected-items-display">
-                  <div class="selected-items-header">
-                    <span class="selected-items-count">已选 {{ reviewPlanDraft.evidence.knowledgeCategoryIds.length }} 个知识库</span>
-                    <el-button type="primary" link size="small" @click="openKnowledgeDialog">管理知识库</el-button>
-                  </div>
-                  <div v-if="reviewPlanDraft.evidence.knowledgeCategoryIds.length > 0" class="selected-items-tags">
-                    <el-tag
-                      v-for="id in reviewPlanDraft.evidence.knowledgeCategoryIds"
-                      :key="id"
-                      closable
-                      type="info"
-                      size="small"
-                      @close="removeKnowledgeCategory(id)"
+                  <div class="rule-prefix-panel">
+                    <div
+                      v-for="group in RULE_PREFIX_GROUPS"
+                      :key="group.title"
+                      class="rule-prefix-group"
                     >
-                      {{ getKnowledgeCategoryName(id) }}
-                    </el-tag>
+                      <div class="rule-prefix-group__header" @click="toggleGroup(group.items.map((i: any) => i.prefix), !group.items.every((item: any) => enabledRulePrefixes.includes(item.prefix)))">
+                        <el-icon :size="16"><component :is="group.icon" /></el-icon>
+                        <span class="rule-prefix-group__title">{{ group.title }}</span>
+                        <span class="rule-prefix-group__count">{{ group.items.filter((i: any) => enabledRulePrefixes.includes(i.prefix)).length }}/{{ group.items.length }}</span>
+                        <el-checkbox
+                          :model-value="group.items.every((item: any) => enabledRulePrefixes.includes(item.prefix))"
+                          :indeterminate="group.items.some((item: any) => enabledRulePrefixes.includes(item.prefix)) && !group.items.every((item: any) => enabledRulePrefixes.includes(item.prefix))"
+                          size="small"
+                          @click.stop
+                          @change="(val: boolean | string | number) => toggleGroup(group.items.map((i: any) => i.prefix), !!val)"
+                        />
+                      </div>
+                      <div class="rule-prefix-group__items">
+                        <div
+                          v-for="item in group.items"
+                          :key="item.prefix"
+                          class="rule-prefix-item"
+                          :class="{ 'rule-prefix-item--active': enabledRulePrefixes.includes(item.prefix) }"
+                          @click="togglePrefix(item.prefix)"
+                        >
+                          <div class="rule-prefix-item__info">
+                            <span class="rule-prefix-item__label">{{ item.label }}</span>
+                            <span class="rule-prefix-item__desc">{{ item.desc }}</span>
+                          </div>
+                          <el-switch
+                            :model-value="enabledRulePrefixes.includes(item.prefix)"
+                            size="small"
+                            style="pointer-events: none;"
+                          />
+                        </div>
+                      </div>
+                    </div>
                   </div>
-                </div>
-                <div v-if="reviewPlanDraft.evidence.sources.includes('REVIEW_SPECIFICATION')" class="selected-items-display">
-                  <div class="selected-items-header">
-                    <span class="selected-items-count">{{ reviewPlanDraft.evidence.reviewSpecificationId ? '已选择' : '未选择' }}审查规范集</span>
-                    <el-button type="primary" link size="small" @click="openReviewSpecificationDialog">选择审查规范集</el-button>
+                </template>
+                <!-- 其他模式：标准展示证据源卡片 -->
+                <template v-else>
+                  <div class="evidence-cards">
+                    <div
+                      v-for="option in availableEvidenceSources"
+                      :key="option.value"
+                      class="evidence-card"
+                      :class="{
+                        'evidence-card--active': reviewPlanDraft.evidence.sources.includes(option.value),
+                        'evidence-card--disabled': isEvidenceLocked(option.value)
+                      }"
+                      @click="handleEvidenceCardClick(option.value)"
+                    >
+                      <div class="evidence-card__icon">
+                        <el-icon :size="16">
+                          <component :is="evidenceIconMap[option.value]" />
+                        </el-icon>
+                      </div>
+                      <span class="evidence-card__label">{{ option.label }}</span>
+                      <div class="evidence-card__check" v-if="reviewPlanDraft.evidence.sources.includes(option.value)">
+                        <el-icon><Check /></el-icon>
+                      </div>
+                    </div>
                   </div>
-                  <div v-if="reviewPlanDraft.evidence.reviewSpecificationId" class="selected-item-single">
-                    <el-tag closable type="info" size="small" @close="reviewPlanDraft.evidence.reviewSpecificationId = null">
-                      {{ getReviewSpecificationName(reviewPlanDraft.evidence.reviewSpecificationId) }}
-                    </el-tag>
+                  <div v-if="reviewPlanDraft.evidence.sources.includes('STANDARD')" class="selected-items-display">
+                    <div class="selected-items-header">
+                      <span class="selected-items-count">已选 {{ reviewPlanDraft.evidence.knowledgeCategoryIds.length }} 个知识库</span>
+                      <el-button type="primary" link size="small" @click="openKnowledgeDialog">管理知识库</el-button>
+                    </div>
+                    <div v-if="reviewPlanDraft.evidence.knowledgeCategoryIds.length > 0" class="selected-items-tags">
+                      <el-tag
+                        v-for="id in reviewPlanDraft.evidence.knowledgeCategoryIds"
+                        :key="id"
+                        closable
+                        type="info"
+                        size="small"
+                        @close="removeKnowledgeCategory(id)"
+                      >
+                        {{ getKnowledgeCategoryName(id) }}
+                      </el-tag>
+                    </div>
                   </div>
-                </div>
+                  <div v-if="reviewPlanDraft.evidence.sources.includes('REVIEW_SPECIFICATION')" class="selected-items-display">
+                    <div class="selected-items-header">
+                      <span class="selected-items-count">{{ reviewPlanDraft.evidence.reviewSpecificationId ? '已选择' : '未选择' }}审查规范集</span>
+                      <el-button type="primary" link size="small" @click="openReviewSpecificationDialog">选择审查规范集</el-button>
+                    </div>
+                    <div v-if="reviewPlanDraft.evidence.reviewSpecificationId" class="selected-item-single">
+                      <el-tag closable type="info" size="small" @close="reviewPlanDraft.evidence.reviewSpecificationId = null">
+                        {{ getReviewSpecificationName(reviewPlanDraft.evidence.reviewSpecificationId) }}
+                      </el-tag>
+                    </div>
+                  </div>
+                </template>
                 <div v-if="entryModule === 'DOC_REVIEW' && reviewPlanDraft.objective === 'COMPARE'" class="config-reason config-reason--warning">
                   <el-icon><WarningFilled /></el-icon>
                   参照比对目标强制使用参考文件，未上传参考文件将无法提交。
@@ -511,36 +564,7 @@ const applyPreAnalysisData = (data: any) => {
     return
   }
 
-  // 规范性审查
-  reviewItems.standardReview.recommended = !!rec.libraryReview?.enabled
-  reviewItems.standardReview.reason = rec.libraryReview?.reason || ''
-  if (rec.libraryReview?.categoryId) {
-    reviewItems.standardReview.knowledgeCategoryIds = [rec.libraryReview.categoryId]
-  }
-
-  // 参照比对（由 refFileList 驱动，无需预分析推荐）
-  reviewItems.docCompare.enabled = refFileList.value.length > 0
-
-  // 文件内一致性
-  reviewItems.intraFileConsistency.recommended = !!rec.generalChecks?.crossFileCheck?.enabled
-  if (rec.generalChecks?.crossFileCheck?.enabled) {
-    reviewItems.intraFileConsistency.enabled = true
-  }
-
-  // 文字校对
-  reviewItems.typoCheck.recommended = !!rec.generalChecks?.typoCheck?.enabled
-  if (rec.generalChecks?.typoCheck?.enabled) {
-    reviewItems.typoCheck.enabled = true
-  }
-
-  // 审查规范集检查
-  reviewItems.reviewSpecification.recommended = !!rec.reviewSpecification?.enabled
-  reviewItems.reviewSpecification.reason = rec.reviewSpecification?.reason || ''
-  if (rec.reviewSpecification?.specificationId) {
-    reviewItems.reviewSpecification.reviewSpecificationId = rec.reviewSpecification.specificationId
-  }
-
-  // 新流程(ReviewPlanDraft)同步填充：确保预分析推荐同时作用于新版配置面板
+  // 新流程(ReviewPlanDraft)直接填充：预分析推荐作用于新版配置面板
   if (rec.libraryReview?.categoryId) {
     const ids = reviewPlanDraft.evidence.knowledgeCategoryIds
     if (!ids.includes(rec.libraryReview.categoryId)) {
@@ -598,6 +622,11 @@ const goToStep1 = async () => {
   currentStep.value = 1
   if (!config.perspective) {
     config.perspective = 'general'
+  }
+
+  // RULE_ONLY 模式无需 AI 预分析，直接跳过
+  if (entryModule.value === 'RULE_ONLY') {
+    return
   }
 
   if (preAnalyzed.value) {
@@ -763,8 +792,7 @@ const config = reactive({
   perspective: '',
 })
 
-const useNewFlow = ref(true)
-const showLegacyFlow = ref(false)
+
 
 type EntryModule = 'LIBRARY' | 'CONSISTENCY' | 'PROOFREAD' | 'RULE_ONLY' | 'MULTIMODAL' | 'DOC_REVIEW'
 
@@ -853,8 +881,6 @@ const isEvidenceLocked = (source: ReviewEvidenceSource) => {
 }
 
 const applyEntryModulePreset = (module: EntryModule) => {
-  useNewFlow.value = true
-
   if (module === 'LIBRARY') {
     reviewPlanDraft.objective = 'COMPLIANCE'
     reviewPlanDraft.evidence.sources = ['STANDARD']
@@ -897,18 +923,26 @@ const applyEntryModulePreset = (module: EntryModule) => {
   if (module === 'DOC_REVIEW') {
     reviewPlanDraft.objective = 'COMPARE'
     reviewPlanDraft.evidence.sources = ['REFERENCE']
+    reviewPlanDraft.evidence.reviewSpecificationId = null
+    reviewPlanDraft.evidence.knowledgeCategoryIds = []
+    reviewPlanDraft.evidence.refFileGroupId = null
     reviewPlanDraft.enhancements.intraFileConsistency = true
     reviewPlanDraft.enhancements.crossFileConsistency = true
     reviewPlanDraft.execution.profile = 'RULE_ONLY'
     return
   }
 
-  reviewPlanDraft.objective = 'COMPLIANCE'
-  reviewPlanDraft.evidence.sources = ['REVIEW_SPECIFICATION']
-  reviewPlanDraft.evidence.knowledgeCategoryIds = []
-  reviewPlanDraft.enhancements.intraFileConsistency = false
-  reviewPlanDraft.enhancements.crossFileConsistency = false
-  reviewPlanDraft.execution.profile = 'RULE_ONLY'
+  if (module === 'RULE_ONLY') {
+    reviewPlanDraft.objective = 'COMPLIANCE'
+    reviewPlanDraft.evidence.sources = []
+    reviewPlanDraft.evidence.reviewSpecificationId = null
+    reviewPlanDraft.evidence.knowledgeCategoryIds = []
+    reviewPlanDraft.evidence.refFileGroupId = null
+    reviewPlanDraft.enhancements.intraFileConsistency = false
+    reviewPlanDraft.enhancements.crossFileConsistency = false
+    reviewPlanDraft.execution.profile = 'RULE_ONLY'
+    return
+  }
 }
 
 const reviewPlanDraft = reactive<ReviewPlan>({
@@ -918,6 +952,7 @@ const reviewPlanDraft = reactive<ReviewPlan>({
     knowledgeCategoryIds: [],
     reviewSpecificationId: null,
     refFileGroupId: null,
+    enabledPrefixes: [],
   },
   enhancements: {
     intraFileConsistency: false,
@@ -929,67 +964,68 @@ const reviewPlanDraft = reactive<ReviewPlan>({
   templateId: 'general',
 })
 
-// 审查项状态
-const reviewItems = reactive({
-  standardReview: { enabled: true, knowledgeCategoryIds: [] as string[], recommended: false, reason: '' },
-  docCompare: { enabled: false, recommended: false },
-  intraFileConsistency: { enabled: false, recommended: false },
-  typoCheck: { enabled: false, recommended: false },
-  drawingRecognition: { enabled: false },
-  reviewSpecification: { enabled: false, reviewSpecificationId: '', recommended: false, reason: '' },
-})
+const defaultEnabledPrefixes = [
+  'NAME', 'FORMAT', 'LAYOUT', 'HEADER', 'PAGE', 'CODE', 'UNIT', 'ATTR', 'TYPO',
+  'CONSIST', 'COMPL',
+  'DWG_TITLE', 'DWG_LAYER', 'DWG_DIM', 'DWG_STDREF', 'DWG_SCALE', 'DWG_OVERLAP',
+]
 
-// 高级选项
-const advancedOpen = ref(false)
-const manualMode = ref('')
+const enabledRulePrefixes = ref<string[]>([...defaultEnabledPrefixes])
 
-// 模式显示名称
-const MODE_DISPLAY_NAMES: Record<string, string> = {
-  LIBRARY_REVIEW: '以库审文',
-  DOC_REVIEW: '以文审文',
-  CONSISTENCY: '全文一致性',
-  TYPO_GRAMMAR: '错别字/语法',
-  MULTIMODAL: '多模态识别',
-  CUSTOM_RULE: '自定义规则',
-}
-
-// 根据审查项推导审查模式
-const derivedMode = computed(() => {
-  if (manualMode.value) return manualMode.value
-
-  const active = Object.entries(reviewItems)
-    .filter(([_, v]) => v.enabled)
-    .map(([k]) => k)
-
-  if (active.length === 0) return 'CONSISTENCY'
-
-  // 单项 → 专用模式
-  if (active.length === 1) {
-    if (active[0] === 'standardReview') return 'LIBRARY_REVIEW'
-    if (active[0] === 'docCompare') return 'DOC_REVIEW'
-    if (active[0] === 'typoCheck') return 'TYPO_GRAMMAR'
-    if (active[0] === 'drawingRecognition') return 'MULTIMODAL'
-    if (active[0] === 'ruleLibrary') return 'CUSTOM_RULE'
-  }
-
-  // 多项 → CONSISTENCY（启用跨文件）
-  return 'CONSISTENCY'
-})
-
-const ruleSource = computed<'STANDARD' | 'REVIEW_SPECIFICATION'>(() =>
-  reviewItems.reviewSpecification.enabled ? 'REVIEW_SPECIFICATION' : 'STANDARD',
-)
+const RULE_PREFIX_GROUPS = [
+  {
+    title: '文件规范',
+    icon: 'FolderOpened',
+    items: [
+      { prefix: 'NAME', label: '命名规范', desc: '文件名格式、版本号、特殊字符检查' },
+      { prefix: 'FORMAT', label: '格式规范', desc: '文档排版、字体、段落格式检查' },
+      { prefix: 'LAYOUT', label: '排版布局', desc: '布局结构、缩进、对齐方式检查' },
+    ],
+  },
+  {
+    title: '内容规范',
+    icon: 'EditPen',
+    items: [
+      { prefix: 'HEADER', label: '页眉规范', desc: '页眉内容、格式一致性检查' },
+      { prefix: 'PAGE', label: '页码规范', desc: '页码连续性、格式正确性检查' },
+      { prefix: 'CODE', label: '编码规范', desc: '编码规则、编号一致性检查' },
+      { prefix: 'UNIT', label: '单位规范', desc: '计量单位使用规范性检查' },
+      { prefix: 'ATTR', label: '属性规范', desc: '文档属性、元数据完整性检查' },
+      { prefix: 'TYPO', label: '术语一致性', desc: '专业术语使用是否统一检查' },
+    ],
+  },
+  {
+    title: '逻辑验证',
+    icon: 'List',
+    items: [
+      { prefix: 'CONSIST', label: '一致性检查', desc: '前后参数、数据逻辑一致性检查' },
+      { prefix: 'COMPL', label: '完整性检查', desc: '必填项、关键内容是否缺失检查' },
+    ],
+  },
+  {
+    title: '图纸审查 (DWG)',
+    icon: 'DataAnalysis',
+    items: [
+      { prefix: 'DWG_TITLE', label: '标题规范', desc: '图签、标题栏格式内容检查' },
+      { prefix: 'DWG_LAYER', label: '图层规范', desc: '图层命名、颜色、线型规范性检查' },
+      { prefix: 'DWG_DIM', label: '标注规范', desc: '尺寸标注样式和规范性检查' },
+      { prefix: 'DWG_STDREF', label: '标准引用', desc: '图纸引用的标准有效性检查' },
+      { prefix: 'DWG_SCALE', label: '比例规范', desc: '图幅比例设置正确性检查' },
+      { prefix: 'DWG_OVERLAP', label: '重叠检查', desc: '图元重叠、干涉问题检查' },
+    ],
+  },
+]
 
 const reviewPlanPayload = computed<ReviewPlan>(() => {
-  if (useNewFlow.value) {
-    return {
-      ...reviewPlanDraft,
+  return {
+    ...reviewPlanDraft,
       evidence: {
         ...reviewPlanDraft.evidence,
         knowledgeCategoryIds: [...(reviewPlanDraft.evidence.knowledgeCategoryIds || [])],
         sources: [...(reviewPlanDraft.evidence.sources || [])],
         reviewSpecificationId: reviewPlanDraft.evidence.reviewSpecificationId || null,
         refFileGroupId: reviewPlanDraft.evidence.refFileGroupId || null,
+        enabledPrefixes: [...enabledRulePrefixes.value],
       },
       enhancements: {
         ...reviewPlanDraft.enhancements,
@@ -999,42 +1035,7 @@ const reviewPlanPayload = computed<ReviewPlan>(() => {
       },
       templateId: reviewPlanDraft.templateId,
     }
-  }
-
-  const objective: ReviewObjective =
-    derivedMode.value === 'DOC_REVIEW'
-      ? 'COMPARE'
-      : derivedMode.value === 'TYPO_GRAMMAR'
-      ? 'PROOFREAD'
-      : derivedMode.value === 'MULTIMODAL'
-      ? 'STRUCTURED'
-      : 'COMPLIANCE'
-
-  const sources: ReviewEvidenceSource[] = []
-  if (reviewItems.standardReview.enabled) sources.push('STANDARD')
-  if (reviewItems.reviewSpecification.enabled) sources.push('REVIEW_SPECIFICATION')
-  if (reviewItems.docCompare.enabled) sources.push('REFERENCE')
-
-  return {
-    objective,
-    evidence: {
-      sources: objective === 'COMPARE' ? ['REFERENCE'] : sources,
-      knowledgeCategoryIds: reviewItems.standardReview.enabled ? [...reviewItems.standardReview.knowledgeCategoryIds] : [],
-      reviewSpecificationId: reviewItems.reviewSpecification.enabled ? (reviewItems.reviewSpecification.reviewSpecificationId || null) : null,
-      refFileGroupId: null,
-    },
-    enhancements: {
-      intraFileConsistency: !!reviewItems.intraFileConsistency.enabled,
-      crossFileConsistency: derivedMode.value === 'CONSISTENCY',
-    },
-    execution: {
-      profile: reviewItems.reviewSpecification.enabled && !reviewItems.standardReview.enabled ? 'RULE_ONLY' : 'HYBRID',
-    },
-    templateId: 'general',
-  }
-})
-
-const derivedModeDisplay = computed(() => MODE_DISPLAY_NAMES[derivedMode.value] || derivedMode.value)
+  })
 
 const objectiveOptions: Array<{ value: ReviewObjective; label: string; desc: string }> = [
   { value: 'COMPLIANCE', label: '合规审查', desc: '对照标准知识库或规则库检查文件是否合规。' },
@@ -1167,6 +1168,27 @@ watch(() => reviewPlanDraft.objective, (objective) => {
 const knowledgeCategories = ref<Array<{ id: string; name: string }>>([])
 const knowledgeTreeData = ref<any[]>([])
 
+const togglePrefix = (prefix: string) => {
+  const idx = enabledRulePrefixes.value.indexOf(prefix)
+  if (idx >= 0) {
+    enabledRulePrefixes.value.splice(idx, 1)
+  } else {
+    enabledRulePrefixes.value.push(prefix)
+  }
+}
+
+const toggleGroup = (prefixes: string[], enabled: boolean) => {
+  if (enabled) {
+    prefixes.forEach(p => {
+      if (!enabledRulePrefixes.value.includes(p)) {
+        enabledRulePrefixes.value.push(p)
+      }
+    })
+  } else {
+    enabledRulePrefixes.value = enabledRulePrefixes.value.filter(p => !prefixes.includes(p))
+  }
+}
+
 // 审查规范集列表
 const reviewSpecifications = ref<Array<{
   id: string
@@ -1182,29 +1204,9 @@ const allSuggestedCorePurposes = ref<string[]>([])
 const selectedReviewPoints = ref<string[]>([])
 const customPurposes = ref<Array<{ value: string }>>([{ value: '' }])
 
-// 监听参照文件上传，自动启用参照比对
-watch(refFileList, (newList) => {
-  reviewItems.docCompare.enabled = newList.length > 0
-})
-
-watch(() => reviewItems.reviewSpecification.enabled, (enabled) => {
-  if (enabled) {
-    reviewItems.standardReview.enabled = false
-    reviewItems.standardReview.knowledgeCategoryIds = []
-  }
-})
-
-watch(() => reviewItems.standardReview.enabled, (enabled) => {
-  if (enabled) {
-    reviewItems.reviewSpecification.enabled = false
-    reviewItems.reviewSpecification.reviewSpecificationId = ''
-  }
-})
-
 // 监听关键状态变化，自动保存到 localStorage
 watch([currentStep, () => form.title, preAnalyzed], () => saveState(), { deep: true })
 watch(preAnalysisData, () => saveState(), { deep: true })
-watch(reviewItems, () => saveState(), { deep: true })
 watch([selectedReviewPoints, customPurposes], () => saveState(), { deep: true })
 
 // ===== 结果展示 =====
@@ -1255,22 +1257,13 @@ const startAnalysis = async () => {
   if (!canSubmit.value) {
     const reasons: string[] = []
     if (!form.title.trim()) reasons.push('请输入任务标题')
-    if (useNewFlow.value) {
-      if (reviewPlanDraft.objective === 'COMPARE' && refFileList.value.length === 0)
-        reasons.push('以文审文/参照比对模式需要上传参照文件（在参考文件区上传）')
-      if (reviewPlanDraft.evidence.sources.includes('REVIEW_SPECIFICATION') && !reviewPlanDraft.evidence.reviewSpecificationId)
-        reasons.push('审查规范集模式需要选择具体的审查规范集')
-      const allowEmptySources = ['PROOFREAD'].includes(reviewPlanDraft.objective) || entryModule.value === 'CONSISTENCY'
-      if (!allowEmptySources && reviewPlanDraft.evidence.sources.length === 0)
-        reasons.push('请至少选择一项审查依据（标准库/知识库/审查规范集/参照文件）')
-    } else {
-      const hasActiveItem = Object.values(reviewItems).some((v: any) => v.enabled)
-      if (!hasActiveItem) reasons.push('请至少启用一项审查项')
-      if ((reviewItems as any).docCompare?.enabled && refFileList.value.length === 0)
-        reasons.push('参照比对需要上传参考文件')
-      if ((reviewItems as any).reviewSpecification?.enabled && !(reviewItems as any).reviewSpecification?.reviewSpecificationId)
-        reasons.push('审查规范集检查需要选择具体审查规范集')
-    }
+    if (reviewPlanDraft.objective === 'COMPARE' && refFileList.value.length === 0)
+      reasons.push('以文审文/参照比对模式需要上传参照文件（在参考文件区上传）')
+    if (reviewPlanDraft.evidence.sources.includes('REVIEW_SPECIFICATION') && !reviewPlanDraft.evidence.reviewSpecificationId)
+      reasons.push('审查规范集模式需要选择具体的审查规范集')
+    const allowEmptySources = ['PROOFREAD'].includes(reviewPlanDraft.objective) || entryModule.value === 'CONSISTENCY' || entryModule.value === 'RULE_ONLY'
+    if (!allowEmptySources && reviewPlanDraft.evidence.sources.length === 0)
+      reasons.push('请至少选择一项审查依据（标准库/知识库/审查规范集/参照文件）')
     ElMessage.warning(reasons.length > 0 ? reasons[0] : '请完善审查配置后再开始分析')
     return
   }
@@ -1294,21 +1287,10 @@ const querySearchCorePurposes = (queryString: string, cb: any) => {
 
 const canSubmit = computed(() => {
   if (!form.title.trim()) return false
-  if (useNewFlow.value) {
-    if (reviewPlanDraft.objective === 'COMPARE' && refFileList.value.length === 0) return false
-    if (reviewPlanDraft.evidence.sources.includes('REVIEW_SPECIFICATION') && !reviewPlanDraft.evidence.reviewSpecificationId) return false
-    // PROOFREAD、CONSISTENCY 等模式允许无审查依据; 其他模式至少需要选一项
-    const allowEmptySources = ['PROOFREAD'].includes(reviewPlanDraft.objective) || entryModule.value === 'CONSISTENCY'
-    if (!allowEmptySources && reviewPlanDraft.evidence.sources.length === 0) return false
-    return true
-  }
-  // 至少启用一项审查
-  const hasActiveItem = Object.values(reviewItems).some(v => v.enabled)
-  if (!hasActiveItem) return false
-  // 参照比对需要参照文件
-  if (reviewItems.docCompare.enabled && refFileList.value.length === 0) return false
-  // 审查规范集检查需要选择审查规范集
-  if (reviewItems.reviewSpecification.enabled && !reviewItems.reviewSpecification.reviewSpecificationId) return false
+  if (reviewPlanDraft.objective === 'COMPARE' && refFileList.value.length === 0) return false
+  if (reviewPlanDraft.evidence.sources.includes('REVIEW_SPECIFICATION') && !reviewPlanDraft.evidence.reviewSpecificationId) return false
+  const allowEmptySources = ['PROOFREAD'].includes(reviewPlanDraft.objective) || entryModule.value === 'CONSISTENCY' || entryModule.value === 'RULE_ONLY'
+  if (!allowEmptySources && reviewPlanDraft.evidence.sources.length === 0) return false
   return true
 })
 
@@ -1331,33 +1313,25 @@ const submitTask = async () => {
 
   const submitPlan = reviewPlanPayload.value
 
-  if (useNewFlow.value) {
-    if (submitPlan.objective === 'COMPARE') {
-      if (!submitPlan.evidence.sources.includes('REFERENCE')) {
-        ElMessage.warning('参照比对模式必须使用参考文件作为审查依据')
-        return
-      }
-      if (refFileList.value.length === 0) {
-        ElMessage.warning('参照比对模式必须上传至少一个参考文件')
-        return
-      }
-    }
-
-    if (submitPlan.evidence.sources.includes('REVIEW_SPECIFICATION') && !submitPlan.evidence.reviewSpecificationId) {
-      ElMessage.warning('已选择审查规范集依据，请先选择具体规范集')
+  if (submitPlan.objective === 'COMPARE') {
+    if (!submitPlan.evidence.sources.includes('REFERENCE')) {
+      ElMessage.warning('参照比对模式必须使用参考文件作为审查依据')
       return
     }
-
-    if (submitPlan.execution.profile === 'RULE_ONLY') {
-      if (!submitPlan.evidence.sources.includes('REVIEW_SPECIFICATION')) {
-        ElMessage.warning('仅规则执行必须选择审查规范集作为审查依据')
-        return
-      }
-      if (!submitPlan.evidence.reviewSpecificationId) {
-        ElMessage.warning('仅规则执行必须选择具体审查规范集')
-        return
-      }
+    if (refFileList.value.length === 0) {
+      ElMessage.warning('参照比对模式必须上传至少一个参考文件')
+      return
     }
+  }
+
+  if (submitPlan.execution.profile !== 'RULE_ONLY' && submitPlan.evidence.sources.includes('REVIEW_SPECIFICATION') && !submitPlan.evidence.reviewSpecificationId) {
+    ElMessage.warning('已选择审查规范集依据，请先选择具体规范集')
+    return
+  }
+
+  if (submitPlan.execution.profile === 'RULE_ONLY' && enabledRulePrefixes.value.length === 0) {
+    ElMessage.warning('请至少启用一个检查项目')
+    return
   }
 
   submitting.value = true
@@ -1365,30 +1339,13 @@ const submitTask = async () => {
     const fd = new FormData()
     fd.append('title', form.title)
 
-    // 审查模式兼容字段（后端以 reviewPlan 为真源）
-    const legacyMode = useNewFlow.value
-      ? (() => {
-          if (submitPlan.objective === 'COMPARE') return 'DOC_REVIEW'
-          if (submitPlan.objective === 'PROOFREAD') return 'TYPO_GRAMMAR'
-          if (submitPlan.objective === 'STRUCTURED') return 'MULTIMODAL'
-          if (submitPlan.execution.profile === 'RULE_ONLY' && submitPlan.evidence.sources.includes('REVIEW_SPECIFICATION')) return 'CUSTOM_RULE'
-          if (submitPlan.enhancements.crossFileConsistency) return 'CONSISTENCY'
-          return 'LIBRARY_REVIEW'
-        })()
-      : derivedMode.value
-    fd.append('reviewMode', legacyMode)
-
     // 知识库（规范性审查启用时）
-    if (useNewFlow.value && submitPlan.evidence.sources.includes('STANDARD') && submitPlan.evidence.knowledgeCategoryIds?.length) {
+    if (submitPlan.evidence.sources.includes('STANDARD') && submitPlan.evidence.knowledgeCategoryIds?.length) {
       fd.append('knowledgeCategoryIds', JSON.stringify(submitPlan.evidence.knowledgeCategoryIds))
-    } else if (reviewItems.standardReview.enabled && reviewItems.standardReview.knowledgeCategoryIds.length > 0) {
-      fd.append('knowledgeCategoryIds', JSON.stringify(reviewItems.standardReview.knowledgeCategoryIds))
     }
 
-    if (useNewFlow.value && submitPlan.evidence.sources.includes('REVIEW_SPECIFICATION') && submitPlan.evidence.reviewSpecificationId) {
+    if (submitPlan.evidence.sources.includes('REVIEW_SPECIFICATION') && submitPlan.evidence.reviewSpecificationId) {
       fd.append('reviewSpecificationId', submitPlan.evidence.reviewSpecificationId)
-    } else if (reviewItems.reviewSpecification.enabled && reviewItems.reviewSpecification.reviewSpecificationId) {
-      fd.append('reviewSpecificationId', reviewItems.reviewSpecification.reviewSpecificationId)
     }
 
     // 预分析数据（完整对象，包含文件类型、签约方等）
@@ -3144,6 +3101,125 @@ onMounted(async () => {
     padding: 8px 14px;
     font-size: 12px;
     flex: 1;
+  }
+}
+
+/* 规则前缀开关面板 - RULE_ONLY 模式 */
+.rule-prefix-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.rule-prefix-group {
+  background: #F8FAFC;
+  border: 1px solid #E2E8F0;
+  border-radius: 10px;
+  overflow: hidden;
+  transition: border-color 0.2s;
+}
+
+.rule-prefix-group:hover {
+  border-color: #CBD5E1;
+}
+
+.rule-prefix-group__header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  background: #F1F5F9;
+  border-bottom: 1px solid #E2E8F0;
+  color: #475569;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  user-select: none;
+  transition: background 0.15s;
+}
+
+.rule-prefix-group__header:hover {
+  background: #E8EDF5;
+}
+
+.rule-prefix-group__header .el-icon {
+  color: #64748B;
+}
+
+.rule-prefix-group__title {
+  flex: 1;
+}
+
+.rule-prefix-group__count {
+  font-size: 11px;
+  font-weight: 500;
+  color: #94A3B8;
+  min-width: 28px;
+  text-align: center;
+}
+
+.rule-prefix-group__items {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 1px;
+  background: #E2E8F0;
+}
+
+.rule-prefix-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 14px;
+  background: white;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  user-select: none;
+}
+
+.rule-prefix-item:hover {
+  background: #FAFBFC;
+}
+
+.rule-prefix-item--active {
+  background: #F0F9FF;
+}
+
+.rule-prefix-item--active:hover {
+  background: #E0F2FE;
+}
+
+.rule-prefix-item__info {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.rule-prefix-item__label {
+  font-size: 13px;
+  font-weight: 500;
+  color: #1E293B;
+  line-height: 1.4;
+}
+
+.rule-prefix-item--active .rule-prefix-item__label {
+  color: #0369A1;
+  font-weight: 600;
+}
+
+.rule-prefix-item__desc {
+  font-size: 11px;
+  color: #94A3B8;
+  line-height: 1.3;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+@media (max-width: 640px) {
+  .rule-prefix-group__items {
+    grid-template-columns: 1fr;
   }
 }
 </style>

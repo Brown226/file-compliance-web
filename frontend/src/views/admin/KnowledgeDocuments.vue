@@ -774,6 +774,14 @@ const statusTagText = (row: any) => {
 }
 
 // ===== 数据加载 =====
+const fetchCategories = async () => {
+  try {
+    const { data } = await getAllKnowledgeCategoriesApi()
+    const found = (data || []).find((c: any) => c.id === categoryId)
+    if (found) categoryInfo.value = found
+  } catch (_) {}
+}
+
 const fetchCategoryInfo = async () => {
   try {
     const { data } = await getKnowledgeCategoriesApi()
@@ -833,13 +841,25 @@ const handleSearch = () => {
 }
 
 // ===== 轮询 =====
+const MAX_POLLING_CYCLES = 50 // 最多轮询50次 (5分钟)
+let pollCycleCount = 0
+
 const startPolling = () => {
   if (pollTimer) return
-  pollTimer = setInterval(() => { fetchDocuments() }, 6000)
+  pollCycleCount = 0
+  pollTimer = setInterval(() => {
+    pollCycleCount++
+    if (pollCycleCount > MAX_POLLING_CYCLES) {
+      stopPolling()
+      return
+    }
+    fetchDocuments()
+  }, 6000)
 }
 
 const stopPolling = () => {
   if (pollTimer) { clearInterval(pollTimer); pollTimer = null }
+  pollCycleCount = 0
 }
 
 // ===== 选择 =====

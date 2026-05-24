@@ -6,13 +6,13 @@ import { success, error, paginated } from '../utils/response';
 
 export const createStandard = async (req: Request, res: Response): Promise<void> => {
   try {
-    const { title, version, isActive, folderId, standardNo, standardName, source, importedBy } = req.body;
+    const { title, version, isActive, folderId, standardNo, standardName, content, source, importedBy } = req.body;
     if (!title || !version) {
       error(res, '标题和版本号为必填项', 400);
       return;
     }
     const standard = await StandardService.createStandard({ 
-      title, version, isActive, folderId, standardNo, standardName, source, importedBy
+      title, version, isActive, folderId, standardNo, standardName, content, source, importedBy
     });
     success(res, standard, '标准创建成功');
   } catch (err: any) {
@@ -59,9 +59,11 @@ export const getStandards = async (req: Request, res: Response): Promise<void> =
     const standardStatus = req.query.standardStatus as string | undefined;
     const folderId = req.query.folderId as string | undefined;
     const includeSubFolders = req.query.includeSubFolders === 'true';
+    const sortField = req.query.sortField as string | undefined;
+    const sortOrder = (req.query.sortOrder as string) === 'asc' ? 'asc' as const : 'desc' as const;
 
     const skip = (page - 1) * limit;
-    const result = await StandardService.getStandards({ skip, take: limit, search, standardStatus, folderId, includeSubFolders });
+    const result = await StandardService.getStandards({ skip, take: limit, search, standardStatus, folderId, includeSubFolders, sortField, sortOrder });
     paginated(res, result.standards, result.total);
   } catch (err) {
     console.error('Get Standards Error:', err);
@@ -102,6 +104,7 @@ export const updateStandard = async (req: Request, res: Response): Promise<void>
       version,
       isActive,
       folderId,
+      content,
       standardNo,
       standardName,
       standardIdent,
@@ -118,6 +121,7 @@ export const updateStandard = async (req: Request, res: Response): Promise<void>
       version,
       isActive,
       folderId,
+      content,
       standardNo,
       standardName,
       standardIdent,

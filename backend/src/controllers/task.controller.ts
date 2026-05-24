@@ -10,7 +10,7 @@ import { success, error, paginated } from '../utils/response';
 
 export const createTask = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
-    const { title, description, standardId, standardIds, reviewMode, knowledgeCategoryId, knowledgeCategoryIds,
+    const { title, description, standardId, standardIds, knowledgeCategoryId, knowledgeCategoryIds,
       perspective, preAnalysisData, reviewPoints, corePurposes, selectedTemplateId, intraFileConsistency,
       reviewPlan, reviewSpecificationId } = req.body;
     const creatorId = req.user?.id;
@@ -99,7 +99,6 @@ export const createTask = async (req: AuthRequest, res: Response): Promise<void>
       creatorId,
       standardId,
       standardIds: parsedStandardIds || (standardId ? [standardId] : []),
-      reviewMode,
       knowledgeCategoryId: knowledgeCategoryId || parsedKnowledgeIds?.[0],
       knowledgeCategoryIds: parsedKnowledgeIds,
       files: files || [],
@@ -341,7 +340,11 @@ export const getTaskFileRaw = async (req: Request, res: Response): Promise<void>
       return;
     }
 
-    const absPath = path.join(__dirname, '..', '..', file.filePath);
+    // file.filePath 可能是 multer 写入的绝对路径（如 E:\...\uploads\file.docx），
+    // 也可能是旧数据的相对路径。path.isAbsolute 确保两种都能正确解析。
+    const absPath = path.isAbsolute(file.filePath)
+      ? file.filePath
+      : path.join(__dirname, '..', '..', file.filePath);
     if (!fs.existsSync(absPath)) {
       error(res, '文件不存在', 404);
       return;
@@ -517,8 +520,8 @@ export const uploadRefFiles = async (req: AuthRequest, res: Response): Promise<v
 
     const group = await TaskService.createRefFileGroup({ taskId, groupName, description, files });
 
-    // DOC_REVIEW 在创建任务时会延迟触发审查，待参照文件上传后再启动
-    if ((task as any).reviewMode === 'DOC_REVIEW' && task.status === 'PENDING') {
+    // 参照比对模式在创建任务时会延迟触发审查，待参照文件上传后再启动
+    if ((task as any).reviewPlan?.objective === 'COMPARE' && task.status === 'PENDING') {
       await TaskService.startTaskReview(taskId);
     }
 

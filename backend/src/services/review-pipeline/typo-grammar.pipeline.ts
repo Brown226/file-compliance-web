@@ -17,9 +17,9 @@ import { ModeCapabilities } from './mode-config';
 
 const DEFAULT_CAPABILITIES: ModeCapabilities = {
   rules: true,
-  standardRef: 'config',   // 默认关闭，需配置 stages.stdRef = true 才开启
+  standardRef: false,
   ai: true,
-  aiStrategy: 'llmOnly',   // 跳过 MaxKB/RAG，直接 LLM
+  aiStrategy: 'llmOnly',
   crossFile: false,
   needsRefFiles: false,
 };
@@ -51,6 +51,6 @@ export class TypoGrammarPipeline extends BasePipeline {
    * BasePipeline 的能力驱动编排已正确处理：
    * - runAIStrategy → 根据 capabilities.aiStrategy='llmOnly' → runLLMOnlyStrategy
    * - postProcessAIResult → 术语白名单过滤
-   * - 额外标准引用检查 → capabilities.standardRef='config' 由 runSlowPhase 自动处理
+   * - 额外标准引用检查 → capabilities.standardRef=false 由 runSlowPhase 跳过
    */
 }

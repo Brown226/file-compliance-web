@@ -2,7 +2,7 @@ import request from '@/utils/request'
 import type { Standard, StandardCheckResult, StandardRefExtractResult, TempLibraryEntry } from '@/types/models'
 import type { PaginatedResponse } from '@/types/api'
 
-// ==================== 标准库管理 ====================
+// ==================== 标准库清单管理 ====================
 
 // 获取标准列表
 export function getStandardsApi(params?: {
@@ -14,6 +14,8 @@ export function getStandardsApi(params?: {
   standardStatus?: 'CURRENT' | 'UPCOMING' | 'ABOLISHED'
   folderId?: string
   includeSubFolders?: boolean
+  sortField?: string
+  sortOrder?: 'asc' | 'desc'
 }) {
   return request.get<PaginatedResponse<Standard>>('/standards', { params })
 }
@@ -49,7 +51,7 @@ export function createStandardFromFileApi(formData: FormData) {
 // 更新标准
 export function updateStandardApi(id: string, data: {
   title?: string
-  content?: string
+  content?: string | null
   version?: string
   isActive?: boolean
   folderId?: string | null
@@ -197,6 +199,7 @@ export function importNormativeExcelApi(
   
   return request.post<NormativeImportResult>('/standards/import/normative', formData, {
     headers: { 'Content-Type': 'multipart/form-data' },
+    timeout: 600000, // 10分钟超时（大规模标准库导入需要较长时间）
   })
 }
 

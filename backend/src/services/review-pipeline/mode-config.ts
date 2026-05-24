@@ -18,7 +18,7 @@ export interface ModeCapabilities {
   /** 是否执行规则引擎（阶段1） */
   rules: boolean;
   /** 是否执行标准引用规范性检查（阶段1） */
-  standardRef: 'on' | 'off' | 'config';  // on=默认开, off=默认关, config=由 pipelineConfig 控制
+  standardRef: boolean;
   /** 是否执行 AI 深度审查（阶段2） */
   ai: boolean;
   /** AI 引擎策略：standard=走 runAIReview, llmOnly=走 runLLMOnly, refCompare=参照文件比对, multimodal=多模态LLM */
@@ -47,7 +47,7 @@ export interface ModeCapabilities {
 export const MODE_CAPABILITIES: Record<ReviewModeType, ModeCapabilities> = {
   LIBRARY_REVIEW: {
     rules: false,
-    standardRef: 'off',
+    standardRef: false,
     ai: true,
     aiStrategy: 'standard',
     crossFile: false,
@@ -55,7 +55,7 @@ export const MODE_CAPABILITIES: Record<ReviewModeType, ModeCapabilities> = {
   },
   DOC_REVIEW: {
     rules: false,
-    standardRef: 'off',
+    standardRef: false,
     ai: true,
     aiStrategy: 'refCompare',
     crossFile: false,
@@ -63,7 +63,7 @@ export const MODE_CAPABILITIES: Record<ReviewModeType, ModeCapabilities> = {
   },
   CONSISTENCY: {
     rules: false,
-    standardRef: 'off',
+    standardRef: false,
     ai: true,
     aiStrategy: 'standard',
     crossFile: true,
@@ -71,7 +71,7 @@ export const MODE_CAPABILITIES: Record<ReviewModeType, ModeCapabilities> = {
   },
   TYPO_GRAMMAR: {
     rules: false,
-    standardRef: 'off',
+    standardRef: false,
     ai: true,
     aiStrategy: 'llmOnly',
     crossFile: false,
@@ -79,7 +79,7 @@ export const MODE_CAPABILITIES: Record<ReviewModeType, ModeCapabilities> = {
   },
   MULTIMODAL: {
     rules: false,
-    standardRef: 'off',
+    standardRef: false,
     ai: true,
     aiStrategy: 'multimodal',
     crossFile: false,
@@ -87,7 +87,7 @@ export const MODE_CAPABILITIES: Record<ReviewModeType, ModeCapabilities> = {
   },
   CUSTOM_RULE: {
     rules: true,
-    standardRef: 'on',
+    standardRef: true,
     ai: false,
     aiStrategy: 'standard',
     crossFile: false,

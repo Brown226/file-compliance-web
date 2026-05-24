@@ -107,7 +107,7 @@ export const uploadDocument = async (req: AuthRequest, res: Response): Promise<v
 
 // ==================== 异步上传 ====================
 
-/** 异步上传文档 — 立即返回任务ID，后台处理 */
+/** 异步上传文档 — 立即返回任务ID，通过 Bull 队列后台处理 */
 export const uploadDocumentAsync = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const id = req.params.id as string;
@@ -115,6 +115,9 @@ export const uploadDocumentAsync = async (req: AuthRequest, res: Response): Prom
     if (!files?.length) { error(res, '请选择文件', 400); return; }
 
     await KnowledgeCategoryService.ensureLeafCategory(id);
+
+    // 动态导入避免循环依赖
+    const { knowledgeUploadQueue } = await import('../services/queue.service');
 
     const taskIds: string[] = [];
 
@@ -128,26 +131,17 @@ export const uploadDocumentAsync = async (req: AuthRequest, res: Response): Prom
       const taskId = UploadTaskService.createTask(originalName);
       taskIds.push(taskId);
 
-      // 后台处理，不阻塞响应
-      setImmediate(async () => {
-        try {
-          UploadTaskService.updateTask(taskId, { status: 'processing', progress: 30, message: '正在解析...' });
-          const result = await KnowledgeCategoryService.uploadDocument(id, savedPath, originalName);
-          UploadTaskService.updateTask(taskId, {
-            status: 'completed',
-            progress: 100,
-            message: `完成，${result.chunks} 个分段`,
-            chunks: result.chunks,
-          });
-        } catch (err: any) {
-          UploadTaskService.updateTask(taskId, {
-            status: 'failed',
-            progress: 0,
-            message: '处理失败',
-            error: err.message,
-          });
-        }
+      // 通过 Bull 队列持久化处理（重启不丢任务，自动重试）
+      await knowledgeUploadQueue.add('upload', {
+        taskId,
+        categoryId: id,
+        savedPath,
+        originalName,
+      }, {
+        jobId: `kb-upload:${taskId}`,
       });
+
+      console.log(`[KB-Upload] 任务已入队: ${originalName} (taskId=${taskId})`);
     }
 
     success(res, { taskIds }, '文件已接收，正在后台处理');
@@ -268,6 +262,28 @@ export const confirmImport = async (req: AuthRequest, res: Response): Promise<vo
     if (result.errors?.length) {
       console.warn(`[ConfirmImport] ${result.errors.length} 个文档导入失败:`, result.errors);
     }
+
+    // 同步创建 Document 记录，确保 Document ↔ VectorDocument 数据一致
+    for (const entry of entries) {
+      if (!entry.title) continue;
+      const totalChars = entry.content?.length || 0;
+      const totalChunks = entry.preChunkedParagraphs?.length || 0;
+      await prisma.document.upsert({
+        where: { categoryId_title: { categoryId: id, title: entry.title } },
+        update: { totalChunks, totalChars, isVectorized: true, vectorStatus: 'SUCCESS' },
+        create: {
+          categoryId: id,
+          title: entry.title,
+          sourceType: 'standard',
+          status: 'ACTIVE',
+          totalChunks,
+          totalChars,
+          isVectorized: true,
+          vectorStatus: 'SUCCESS',
+        },
+      });
+    }
+
     success(res, { imported: result.imported, deduped: result.deduped, errors: result.errors }, `导入完成：${result.imported} 成功，${result.errors.length} 失败`);
   } catch (err: any) {
     console.error('Confirm Import Error:', err);
@@ -368,7 +384,7 @@ export const listGroupedDocuments = async (req: AuthRequest, res: Response): Pro
 
     const rows = await prisma.$queryRawUnsafe<any[]>(
       `SELECT
-        title,
+        COALESCE(metadata->>'original_file', title) as title,
         "categoryId",
         COUNT(*) as paragraph_count,
         SUM(LENGTH(content)) as char_length,
@@ -379,7 +395,7 @@ export const listGroupedDocuments = async (req: AuthRequest, res: Response): Pro
         COUNT(*) FILTER (WHERE embedding IS NOT NULL) as embedded_count
       FROM vector_documents
       WHERE ${whereSQL}
-      GROUP BY title, "categoryId"
+      GROUP BY COALESCE(metadata->>'original_file', title), "categoryId"
       ORDER BY MAX(updated_at) DESC
       LIMIT $${paramIdx} OFFSET $${paramIdx + 1}`,
       ...params,
@@ -388,27 +404,44 @@ export const listGroupedDocuments = async (req: AuthRequest, res: Response): Pro
     );
 
     const titles = rows.map(row => row.title).filter(Boolean);
-    const tagRows = titles.length > 0
+
+    // 通过 Document 表将 title 映射到 documentId，再查 DocumentTag
+    const titleToDocId = new Map<string, string>();
+    if (titles.length > 0) {
+      const docs = await prisma.document.findMany({
+        where: { categoryId, title: { in: titles } },
+        select: { id: true, title: true },
+      });
+      docs.forEach(d => titleToDocId.set(d.title, d.id));
+    }
+
+    const docIdToTitle = new Map<string, string>();
+    for (const [title, docId] of titleToDocId) {
+      docIdToTitle.set(docId, title);
+    }
+
+    const documentIds = [...titleToDocId.values()];
+    const tagRows = documentIds.length > 0
       ? await prisma.documentTag.findMany({
-          where: {
-            categoryId,
-            documentTitle: { in: titles },
-          },
+          where: { documentId: { in: documentIds } },
           include: { tag: true },
         })
       : [];
 
-    const tagMap = tagRows.reduce<Record<string, Array<{ id: string; key: string; value: string; categoryId?: string; createdAt: Date }>>>((acc, row) => {
-      if (!acc[row.documentTitle]) acc[row.documentTitle] = [];
-      acc[row.documentTitle].push({
-        id: row.tag.id,
-        key: row.tag.key,
-        value: row.tag.value,
-        categoryId: row.tag.categoryId || undefined,
-        createdAt: row.tag.createdAt,
-      });
-      return acc;
-    }, {});
+    const tagMap: Record<string, Array<{ id: string; key: string; value: string; categoryId?: string; createdAt: Date }>> = {};
+    tagRows.forEach(row => {
+      const title = docIdToTitle.get(row.documentId);
+      if (title) {
+        if (!tagMap[title]) tagMap[title] = [];
+        tagMap[title].push({
+          id: row.tag.id,
+          key: row.tag.key,
+          value: row.tag.value,
+          categoryId: row.tag.categoryId || undefined,
+          createdAt: row.tag.createdAt,
+        });
+      }
+    });
 
     const items = rows.map(row => ({
       title: row.title,
@@ -442,19 +475,29 @@ export const updateDocument = async (req: AuthRequest, res: Response): Promise<v
     if (!oldTitle) { error(res, '原文档名称不能为空', 400); return; }
     if (!normalizedTitle) { error(res, '新文档名称不能为空', 400); return; }
 
-    // 更新该分类下所有同标题的向量文档
+    // 更新该分类下所有同标题的向量文档和关联记录
     const result = await prisma.$transaction(async (tx) => {
-      const updated = await tx.vectorDocument.updateMany({
+      // 向量文档：更新 metadata->>'document_title'（兼容新旧数据）
+      const updated = await tx.$executeRawUnsafe(
+        `UPDATE vector_documents
+         SET metadata = jsonb_set(metadata, '{document_title}', $1::jsonb)
+         WHERE "categoryId" = $2 AND COALESCE(metadata->>'original_file', title) = $3`,
+        JSON.stringify(normalizedTitle), categoryId, oldTitle
+      );
+
+      // 同步更新 Document 表标题
+      await tx.document.updateMany({
         where: { categoryId, title: oldTitle },
         data: { title: normalizedTitle },
       });
 
+      // 同步更新 DocumentTag 冗余字段
       await tx.documentTag.updateMany({
         where: { categoryId, documentTitle: oldTitle },
         data: { documentTitle: normalizedTitle },
       });
 
-      return updated;
+      return { count: updated };
     });
 
     success(res, { updatedCount: result.count }, '更新成功');
@@ -488,20 +531,16 @@ export const getDocumentParagraphs = async (req: AuthRequest, res: Response): Pr
 
     if (!title) { error(res, '文档名称不能为空', 400); return; }
 
-    const paragraphs = await prisma.vectorDocument.findMany({
-      where: { categoryId, title: title as string },
-      select: {
-        id: true,
-        clauseId: true,
-        content: true,
-        chunkIndex: true,
-        sourceType: true,
-        metadata: true,
-        createdAt: true,
-        updatedAt: true,
-      },
-      orderBy: { chunkIndex: 'asc' },
-    });
+    const paragraphs = await prisma.$queryRawUnsafe<any[]>(
+      `SELECT id, title, clause_id as "clauseId", content, chunk_index as "chunkIndex",
+              source_type as "sourceType", metadata, created_at as "createdAt", updated_at as "updatedAt"
+       FROM vector_documents
+       WHERE "categoryId" = $1
+         AND COALESCE(metadata->>'original_file', title) = $2
+         AND vector_status = 'SUCCESS'
+       ORDER BY chunk_index ASC`,
+      categoryId, title
+    );
 
     const totalChars = paragraphs.reduce((sum, p) => sum + p.content.length, 0);
 
@@ -568,12 +607,14 @@ export const batchVectorize = async (req: AuthRequest, res: Response): Promise<v
     let totalUpdated = 0;
 
     for (const title of titles) {
-      // 1. 获取该文档所有段落的原始内容（从第一个段落的 metadata 中获取原始文件信息）
-      const paragraphs = await prisma.vectorDocument.findMany({
-        where: { categoryId, title },
-        select: { content: true, metadata: true },
-        orderBy: { chunkIndex: 'asc' },
-      });
+      // 1. 获取该文档所有段落的原始内容（兼容新旧数据）
+      const paragraphs = await prisma.$queryRawUnsafe<any[]>(
+        `SELECT content, metadata
+         FROM vector_documents
+         WHERE "categoryId" = $1 AND COALESCE(metadata->>'original_file', title) = $2
+         ORDER BY chunk_index ASC`,
+        categoryId, title
+      );
 
       if (paragraphs.length === 0) continue;
 
@@ -586,12 +627,14 @@ export const batchVectorize = async (req: AuthRequest, res: Response): Promise<v
         contextualRetrieval: category?.contextualRetrieval ?? false,
       };
 
-      // 重建内容：将所有段落的 storedContent 拼接（去掉 heading 前缀如果有的话）
+      // 重建内容：将所有段落的 content 拼接（保留 heading 结构）
       const fullContent = paragraphs.map(p => {
         const content = p.content as string;
         const meta = (p.metadata as Record<string, any>) || {};
+        // 若有 heading 元数据且内容以 heading 开头，在前面补回 Markdown 标记
+        // 确保 splitMarkdownIntoParagraphs 能正确识别标题层级
         if (meta.heading && content.startsWith(meta.heading)) {
-          return content.slice(meta.heading.length).trim();
+          return `## ${content.trim()}`;
         }
         return content;
       }).join('\n\n');
@@ -677,8 +720,20 @@ export const addDocumentTag = async (req: AuthRequest, res: Response): Promise<v
     const { tagId, documentTitle, categoryId } = req.body;
     if (!tagId || !documentTitle || !categoryId) { error(res, '缺少必要参数', 400); return; }
 
+    // 确保 Document 记录存在（若无则自动创建）
+    await prisma.document.upsert({
+      where: { categoryId_title: { categoryId, title: documentTitle } },
+      update: {},
+      create: { categoryId, title: documentTitle, sourceType: 'standard', status: 'ACTIVE' },
+    });
+
+    // 获取 documentId 以建立正确关联
+    const doc = await prisma.document.findUniqueOrThrow({
+      where: { categoryId_title: { categoryId, title: documentTitle } },
+    });
+
     const docTag = await prisma.documentTag.create({
-      data: { tagId, documentTitle, categoryId },
+      data: { tagId, documentId: doc.id, documentTitle, categoryId },
     });
     success(res, docTag, '添加成功');
   } catch (err: any) {
@@ -694,8 +749,13 @@ export const removeDocumentTag = async (req: AuthRequest, res: Response): Promis
     const { tagId, documentTitle, categoryId } = req.body;
     if (!tagId || !documentTitle || !categoryId) { error(res, '缺少必要参数', 400); return; }
 
+    const doc = await prisma.document.findUnique({
+      where: { categoryId_title: { categoryId, title: documentTitle } },
+    });
+    if (!doc) { error(res, '文档不存在', 404); return; }
+
     await prisma.documentTag.deleteMany({
-      where: { tagId, documentTitle, categoryId },
+      where: { tagId, documentId: doc.id },
     });
     success(res, null, '移除成功');
   } catch (err) {
@@ -712,8 +772,22 @@ export const getDocumentTags = async (req: AuthRequest, res: Response): Promise<
 
     if (!title) { error(res, '文档名称不能为空', 400); return; }
 
+    // 通过 Document 表获取 documentId，再查标签关联
+    const doc = await prisma.document.findUnique({
+      where: { categoryId_title: { categoryId, title: title as string } },
+    });
+
+    if (!doc) {
+      // 无 Document 记录时，尝试通过冗余字段查询（兼容历史数据）
+      const legacyTags = await prisma.documentTag.findMany({
+        where: { categoryId, documentTitle: title as string },
+        include: { tag: true },
+      });
+      return success(res, legacyTags.map(dt => dt.tag));
+    }
+
     const docTags = await prisma.documentTag.findMany({
-      where: { categoryId, documentTitle: title as string },
+      where: { documentId: doc.id },
       include: { tag: true },
     });
 

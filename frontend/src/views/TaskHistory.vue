@@ -47,11 +47,9 @@
           >
             <el-option label="以库审文" value="LIBRARY_REVIEW" />
             <el-option label="以文审文" value="DOC_REVIEW" />
-            <el-option label="全文一致性" value="CONSISTENCY" />
             <el-option label="错别字/语法" value="TYPO_GRAMMAR" />
             <el-option label="多模态识别" value="MULTIMODAL" />
-            <el-option label="自定义规则" value="CUSTOM_RULE" />
-            <el-option label="全面审查" value="FULL_REVIEW" />
+            <el-option label="标准引用自检" value="SELF_CHECK" />
           </el-select>
         </el-form-item>
         <el-form-item>
@@ -312,14 +310,21 @@ const evidenceLabelMap: Record<string, string> = {
 const reviewModeLabelMap: Record<string, string> = {
   LIBRARY_REVIEW: '以库审文',
   DOC_REVIEW: '以文审文',
-  CONSISTENCY: '全文一致性',
   TYPO_GRAMMAR: '错别字/语法',
   MULTIMODAL: '多模态识别',
+  SELF_CHECK: '标准引用自检',
+  // 旧模式兼容映射（历史数据）
+  CONSISTENCY: '一致性审查',
   CUSTOM_RULE: '自定义规则',
   FULL_REVIEW: '全面审查',
 }
 
 const getReviewPlanSummary = (row: any): string => {
+  // 自检任务特殊处理：显示检查统计
+  if (row?.reviewMode === 'SELF_CHECK' && row?.selfCheckReport) {
+    const sc = row.selfCheckReport as any
+    return `标准引用自检 — ${sc.totalChecked ?? '?'} 条引用，${sc.errorCount ?? '?'} 条错误`
+  }
   const plan = row?.reviewPlan
   if (!plan || typeof plan !== 'object') {
     return row?.reviewMode ? (reviewModeLabelMap[row.reviewMode] || row.reviewMode) : '—'

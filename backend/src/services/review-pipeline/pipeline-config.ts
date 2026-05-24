@@ -56,7 +56,7 @@ export function shouldRunStage(
     // 无运行时配置时，回退到 capabilities 的静态声明
     if (stageName === 'rules') return capabilities.rules;
     if (stageName === 'ai') return capabilities.ai;
-    if (stageName === 'stdRef') return capabilities.standardRef !== 'off';
+    if (stageName === 'stdRef') return capabilities.standardRef;
     return true;
   }
   const stages = modeConfig.stages as any;
@@ -66,18 +66,4 @@ export function shouldRunStage(
   return true; // 未配置的阶段默认执行
 }
 
-/**
- * 获取当前模式的自定义规则前缀（如果配置了），否则返回默认前缀
- */
-export function getEffectiveRulePrefixes(
-  ctx: PipelineContext,
-  capabilities: ModeCapabilities,
-  defaultPrefixes: string[],
-): string[] {
-  const config = getEffectiveConfig(ctx);
-  const modeConfig = config.modes?.[ctx.reviewMode as ReviewModeType];
-  if (modeConfig?.rulePrefixes && modeConfig.rulePrefixes.length > 0) {
-    return modeConfig.rulePrefixes;
-  }
-  return defaultPrefixes;
-}
+

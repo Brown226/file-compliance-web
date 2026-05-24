@@ -78,7 +78,7 @@
             <el-menu-item-group title="规范与知识">
               <el-menu-item index="/admin/standards">
                 <el-icon><Reading /></el-icon>
-                <template #title><span>标准库管理</span></template>
+                <template #title><span>标准库清单管理</span></template>
               </el-menu-item>
               <el-menu-item index="/admin/knowledge-categories">
                 <el-icon><FolderOpened /></el-icon>

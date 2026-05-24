@@ -28,6 +28,7 @@ export class ReviewService {
     reviewMode: string;
     ruleSource: 'STANDARD' | 'REVIEW_SPECIFICATION';
     reviewSpecificationId?: string;
+    enabledPrefixes?: string[];
     knowledgeCategoryIds: string[];
     refFileGroupRequired: boolean;
     intraFileConsistency: boolean;
@@ -41,8 +42,8 @@ export class ReviewService {
       };
     };
   } {
-    const plan = TaskService.normalizeReviewPlan(task?.reviewPlan, task?.reviewMode);
-    const reviewMode = TaskService.planToLegacyMode(plan);
+    const plan = TaskService.normalizeReviewPlan(task?.reviewPlan);
+    const reviewMode = TaskService.resolvePipelineSelector(plan);
     const ruleSource = plan.evidence.sources.includes('REVIEW_SPECIFICATION') || plan.evidence.sources.includes('RULE_LIBRARY') ? 'REVIEW_SPECIFICATION' : 'STANDARD';
     const stages =
       plan.execution.profile === 'RULE_ONLY'
@@ -50,11 +51,14 @@ export class ReviewService {
         : undefined;
     const crossFileConsistency = !!plan.enhancements.crossFileConsistency;
 
+    const hasDirectPrefixes = Array.isArray(plan.evidence.enabledPrefixes) && plan.evidence.enabledPrefixes.length > 0;
+
     return {
       plan,
       reviewMode,
       ruleSource,
-      reviewSpecificationId: ruleSource === 'REVIEW_SPECIFICATION' ? plan.evidence.reviewSpecificationId || undefined : undefined,
+      reviewSpecificationId: ruleSource === 'REVIEW_SPECIFICATION' && !hasDirectPrefixes ? plan.evidence.reviewSpecificationId || undefined : undefined,
+      enabledPrefixes: hasDirectPrefixes ? plan.evidence.enabledPrefixes : undefined,
       knowledgeCategoryIds: Array.isArray(plan.evidence.knowledgeCategoryIds) ? plan.evidence.knowledgeCategoryIds : [],
       refFileGroupRequired: plan.objective === 'COMPARE' || plan.evidence.sources.includes('REFERENCE'),
       intraFileConsistency: !!plan.enhancements.intraFileConsistency,
@@ -299,15 +303,23 @@ export class ReviewService {
       });
 
       const executionPlan = this.adaptReviewPlanForExecution(task);
-      const reviewMode = executionPlan.reviewMode || (task as any).reviewMode || 'CONSISTENCY';
+      const reviewMode = executionPlan.reviewMode;
       const knowledgeCategoryId = (task as any).knowledgeCategoryId || undefined;
       const reviewSpecificationId = executionPlan.reviewSpecificationId;
-      const ruleExecutionPlan = reviewSpecificationId
-        ? await ReviewSpecificationService.getExecutionPlan(reviewSpecificationId).catch((error) => {
-            console.warn('[Review] 审查规范集执行计划加载失败:', error);
-            return null;
-          })
-        : null;
+      const directPrefixes = executionPlan.enabledPrefixes;
+
+      // ===== 统一创建 Pipeline（一次创建，全流程复用） =====
+      const pipeline = await createPipelineAsync(reviewMode as any);
+      const needsAI = pipeline.capabilities.ai;
+      // 优先使用前端传入的启用前缀，否则从审查规范集加载
+      const ruleExecutionPlan = directPrefixes && directPrefixes.length > 0
+        ? { enabledPrefixes: directPrefixes, executableItems: [] }
+        : reviewSpecificationId
+          ? await ReviewSpecificationService.getExecutionPlan(reviewSpecificationId).catch((error) => {
+              console.warn('[Review] 审查规范集执行计划加载失败:', error);
+              return null;
+            })
+          : null;
 
       // 从 preAnalysisData 读取文件内一致性开关
       const taskPreAnalysis = (task as any).preAnalysisData;
@@ -339,7 +351,7 @@ export class ReviewService {
 
       // ===== 一次性加载参照文件（以文审文模式） =====
       let refFileGroupCtx: PipelineContext['refFileGroup'] | undefined;
-      if (executionPlan.refFileGroupRequired || reviewMode === 'DOC_REVIEW') {
+      if (executionPlan.refFileGroupRequired) {
         const groups = await prisma.refFileGroup.findMany({
           where: { taskId },
           include: { refFiles: true },
@@ -499,7 +511,7 @@ export class ReviewService {
 
       // 阶段1：规则审查全部并行（资源消耗低，快速响应）
       const fastPhasePromises = fileContexts.map(({ file, ctx }, index) =>
-        this.runFileFastPhase(taskId, file, ctx, index, totalFiles)
+        this.runFileFastPhase(taskId, file, ctx, index, totalFiles, pipeline)
           .then(res => ({ ...res, fileId: file.id, fileName: file.fileName }))
           .catch(error => ({ error, fileId: file.id, fileName: file.fileName, ruleIssues: [] as any[], stdRefIssues: [] as any[] }))
       );
@@ -580,10 +592,7 @@ export class ReviewService {
       }
 
       // ===== 阶段2: 用户级别并发 AI 审查 =====
-      // 使用 capabilities.ai 判断是否需要 AI 审查（能力驱动，替代原先硬编码 needsAI）
-      const pipeline = await createPipelineAsync(reviewMode as any);
-      const needsAI = pipeline.capabilities.ai;
-
+      // 使用统一创建的 pipeline 判断是否需要 AI 审查
       let slowPhaseResults: any[] = [];
       if (!needsAI) {
         // 不需要 AI 审查的模式，直接标记文件完成
@@ -619,7 +628,7 @@ export class ReviewService {
           fileContexts,
           maxConcurrent,
           ({ file, ctx }, index) =>
-            this.runFileSlowPhase(taskId, file, ctx, index, totalFiles)
+            this.runFileSlowPhase(taskId, file, ctx, index, totalFiles, pipeline)
               .then(res => ({ ...res, fileId: file.id, fileName: file.fileName }))
               .catch(error => ({ error, fileId: file.id, fileName: file.fileName, aiIssues: [] as any[] }))
         );
@@ -760,6 +769,7 @@ export class ReviewService {
     ctx: PipelineContext,
     fileIndex: number,
     totalFiles: number,
+    pipeline?: any,  // 从 processTask 传入复用，避免重复创建
   ): Promise<{ ruleIssues: any[]; stdRefIssues: any[] }> {
     const uploadsDir = path.join(__dirname, '../../uploads');
     const absolutePath = path.join(uploadsDir, path.basename(file.filePath));
@@ -782,8 +792,8 @@ export class ReviewService {
       data: { status: 'PROCESSING' },
     }).catch(() => { /* ignore */ });
 
-    // 选择 Pipeline 并执行阶段1
-    const pipeline = await createPipelineAsync(ctx.reviewMode);
+    // 复用 processTask 创建的 Pipeline（或按需创建）
+    const effectivePipeline = pipeline || await createPipelineAsync(ctx.reviewMode);
 
     // 预提取文本（用于进度分母计算）
     // ★ 如果 ctx.extractedText 已有前端 WASM 数据，跳过 Python 解析
@@ -829,7 +839,7 @@ export class ReviewService {
     }).catch(() => { /* ignore */ });
 
     // 执行阶段1
-    const fastResult = await pipeline.runFastPhase(ctx);
+    const fastResult = await effectivePipeline.runFastPhase(ctx);
 
     // 批量写入规则结果
     const allFastIssues: any[] = [];
@@ -977,6 +987,7 @@ export class ReviewService {
     ctx: PipelineContext,
     fileIndex: number,
     totalFiles: number,
+    pipeline?: any,  // 从 processTask 传入复用
   ): Promise<{ aiIssues: any[]; usedEngine?: string; skippedNoText?: boolean }> {
     const fileProgress = Math.round((fileIndex / totalFiles) * 100);
 
@@ -1061,9 +1072,9 @@ export class ReviewService {
       }
     };
 
-    // 执行阶段2
-    const pipeline = await createPipelineAsync(ctx.reviewMode);
-    const slowResult = await pipeline.runSlowPhase(ctx);
+    // 执行阶段2（复用 processTask 创建的 Pipeline）
+    const effectivePipeline = pipeline || await createPipelineAsync(ctx.reviewMode);
+    const slowResult = await effectivePipeline.runSlowPhase(ctx);
 
     // AI 结果已通过 ctx.onChunkProgress 增量写入（每个分片审查完成后立即入库 + 推送 WebSocket）
     // 此处仅做兜底：检查是否有 AI 结果记录，若无则一次性写入（极端情况下 onChunkProgress 全部失败时的保底）
@@ -1208,7 +1219,7 @@ export class ReviewService {
   static async processFile(
     taskId: string,
     file: { id: string; fileName: string; filePath: string; fileType: string },
-    reviewMode: string = 'CONSISTENCY',
+    reviewMode: string = 'LIBRARY_REVIEW',
     knowledgeCategoryId?: string,
     knowledgeCategoryIds?: string[],
     onProgress?: (chunkProgress: number) => void,

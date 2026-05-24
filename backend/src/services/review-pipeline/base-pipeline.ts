@@ -22,7 +22,7 @@
  * - text-extraction.service.ts — 文本提取（ensureText / extractPdfPages / ensureWordStructure / ensureDwgStructure）
  * - ai-review.service.ts — AI 审查（runRAGReview / runAIReview / runLLMOnlyStrategy / runLLMOnly）
  * - standard-ref-check.service.ts — 标准引用检查（runStandardRefCheck）
- * - pipeline-config.ts — 配置工具函数（getEffectiveConfig / shouldRunStage / getEffectiveRulePrefixes）
+ * - pipeline-config.ts — 配置工具函数（getEffectiveConfig / shouldRunStage）
  */
 
 import { PipelineContext, PipelineResult, PipelineReviewConfig, ReviewModeType } from './types';
@@ -33,7 +33,7 @@ import { RuleIssue } from '../rules/types';
 import { TextExtractionService } from './text-extraction.service';
 import { AiReviewService } from './ai-review.service';
 import { StandardRefCheckService } from './standard-ref-check.service';
-import { getEffectiveConfig, shouldRunStage, getEffectiveRulePrefixes } from './pipeline-config';
+import { getEffectiveConfig, shouldRunStage } from './pipeline-config';
 
 export abstract class BasePipeline {
   // ==================== 子类必须实现的抽象属性 ====================
@@ -44,12 +44,6 @@ export abstract class BasePipeline {
 
   /** 模式能力组合 — 子类通过此配置声明启用的能力 */
   abstract readonly capabilities: ModeCapabilities;
-
-  /**
-   * @deprecated 空数组表示全量规则，实际过滤由数据库 review_rules.enabled 控制。
-   * 保留此字段仅为向后兼容 ReviewPipeline 接口。
-   */
-  readonly rulePrefixes: string[] = [];
 
   /** 是否需要 AI 审查 — 从 capabilities.ai 派生 */
   get needsAI(): boolean { return this.capabilities.ai; }
@@ -110,11 +104,9 @@ export abstract class BasePipeline {
       case 'llmOnly':
         return this.runLLMOnlyStrategy(text, ctx);
       case 'refCompare':
-        // 默认降级到 standard AI；DocReviewPipeline 会覆盖此分支
-        return this.runAIReview(text, ctx);
       case 'multimodal':
-        // 默认降级到 standard AI；MultimodalPipeline 会覆盖此分支
-        return this.runAIReview(text, ctx);
+        // 子类必须覆盖 runAIStrategy() 实现对应策略
+        throw new Error(`Pipeline ${this.constructor.name} 不支持 aiStrategy=${strategy}，需子类覆盖 runAIStrategy()`);
       case 'standard':
       default:
         return this.runAIReview(text, ctx);
@@ -261,13 +253,6 @@ export abstract class BasePipeline {
   }
 
   /**
-   * 获取当前模式的自定义规则前缀（如果配置了），否则返回默认前缀
-   */
-  protected getEffectiveRulePrefixes(ctx: PipelineContext, defaultPrefixes: string[]): string[] {
-    return getEffectiveRulePrefixes(ctx, this.capabilities, defaultPrefixes);
-  }
-
-  /**
    * 公共步骤: 标准引用规范性检查
    * 提取文档中的标准引用 → 8级比对 → 字符级差异定位
    */
@@ -289,9 +274,8 @@ export abstract class BasePipeline {
    *
    * 编排逻辑统一由 capabilities 控制：
    * - capabilities.rules === false → 跳过规则引擎
-   * - capabilities.standardRef === 'off' → 跳过标准引用
-   * - capabilities.standardRef === 'config' → 由 pipelineConfig 控制
-   * - capabilities.standardRef === 'on' → 默认执行
+   * - capabilities.standardRef === false → 跳过标准引用
+   * - capabilities.standardRef === true → 默认执行
    */
   async runFastPhase(ctx: PipelineContext): Promise<{ ruleIssues: RuleIssue[]; stdRefIssues: ReviewIssue[]; textLength: number }> {
     const startTime = Date.now();
@@ -319,14 +303,14 @@ export abstract class BasePipeline {
         if (!this.shouldRunStage(ctx, 'rules')) return [];
         const prefixes = ctx.ruleSource === 'REVIEW_SPECIFICATION' && ctx.rulePlan?.enabledPrefixes?.length
           ? ctx.rulePlan.enabledPrefixes
-          : this.getEffectiveRulePrefixes(ctx, this.rulePrefixes);
+          : [];
         const baseIssues = await this.runRules(ctx, prefixes);
         return this.decorateRuleIssues(ctx, [...baseIssues, ...extraRuleIssues]);
       })(),
       // 标准引用检查（受 capabilities.standardRef + stages.stdRef 控制）
       (async () => {
         if (ctx.ruleSource === 'REVIEW_SPECIFICATION') return [];
-        if (this.capabilities.standardRef === 'off') return [];
+        if (!this.capabilities.standardRef) return [];
         if (!this.shouldRunStage(ctx, 'stdRef') || !text.trim()) return [];
         return this.runStandardRefCheck(ctx, text);
       })(),
@@ -348,7 +332,7 @@ export abstract class BasePipeline {
    * 阶段2: AI 深度审查（耗时）
    * - runAIStrategy 钩子：根据 capabilities.aiStrategy 分发到不同 AI 路径
    * - postProcessAIResult 钩子：子类对 AI 结果做后处理（如术语过滤）
-   * - 额外标准引用检查（capabilities.standardRef === 'config' 且配置启用时）
+   * - 额外标准引用检查（capabilities.standardRef 且配置启用时）
    *
    * 编排逻辑统一由 capabilities 控制：
    * - capabilities.ai === false → 直接跳过阶段2
@@ -380,18 +364,10 @@ export abstract class BasePipeline {
       // 2. AI 结果后处理（如术语白名单过滤）
       const processedIssues = await this.postProcessAIResult(text, aiResult.issues);
 
-      // 3. 额外标准引用检查（config 模式下，runFastPhase 可能跳过了，这里补上）
-      let stdRefIssues: ReviewIssue[] = [];
-      if (this.capabilities.standardRef === 'config' && this.shouldRunStage(ctx, 'stdRef') && text.trim()) {
-        stdRefIssues = await this.runStandardRefCheck(ctx, text);
-      }
+      const allAiIssues = [...processedIssues];
+      const usedEngine = aiResult.engine;
 
-      const allAiIssues = [...processedIssues, ...stdRefIssues];
-      const usedEngine = stdRefIssues.length > 0
-        ? `${aiResult.engine}+stdRef`
-        : aiResult.engine;
-
-      console.log(`[${this.constructor.name}] 阶段2完成: AI=${processedIssues.length}, 标准引用=${stdRefIssues.length}, engine=${usedEngine}`);
+      console.log(`[${this.constructor.name}] 阶段2完成: AI=${processedIssues.length}, engine=${usedEngine}`);
       return {
         aiIssues: allAiIssues,
         sources: aiResult.sources,

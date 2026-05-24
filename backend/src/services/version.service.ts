@@ -35,11 +35,10 @@ export class VersionService {
 
     const newVersionNo = (maxVersion?.versionNo || 0) + 1;
 
-    // 复制当前文件为快照
-    const absolutePath = path.resolve(file.filePath.startsWith('/')
-      ? path.join(__dirname, '../..', file.filePath)
-      : file.filePath
-    );
+    // 复制当前文件为快照（兼容绝对路径和相对路径）
+    const absolutePath = path.isAbsolute(file.filePath)
+      ? file.filePath
+      : path.join(__dirname, '../..', file.filePath);
 
     const snapshotName = `${fileId}-v${newVersionNo}-${uuidv4()}.docx`;
     const snapshotPath = path.join(VERSIONS_DIR, snapshotName);

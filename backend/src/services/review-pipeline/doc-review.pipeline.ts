@@ -18,7 +18,7 @@ import { ModeCapabilities } from './mode-config';
 
 const DEFAULT_CAPABILITIES: ModeCapabilities = {
   rules: true,
-  standardRef: 'on',
+  standardRef: true,
   ai: true,
   aiStrategy: 'refCompare',
   crossFile: false,
