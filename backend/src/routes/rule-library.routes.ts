@@ -18,7 +18,12 @@ import {
 } from '../controllers/rule-library.controller';
 
 const router = Router();
-const upload = multer({ dest: path.join(__dirname, '../../uploads/tmp/') });
+const upload = multer({
+  dest: path.join(__dirname, '../../uploads/tmp/'),
+  limits: {
+    fileSize: 50 * 1024 * 1024, // 50MB：支持大型文档文件
+  },
+});
 
 router.use(authenticate);
 

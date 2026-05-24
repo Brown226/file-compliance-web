@@ -1,7 +1,7 @@
 import request from '@/utils/request'
 import type { ReviewRule } from '@/types/models'
 
-// ==================== 审查规则管理 ====================
+// ==================== 合规规则库 ====================
 
 // 获取规则列表（后端返回数组，非分页）
 export function getRulesApi(params?: {

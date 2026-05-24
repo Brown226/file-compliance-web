@@ -49,9 +49,29 @@
               <span class="file-tab-count" v-if="getFileIssueCount(f.id) > 0">{{ getFileIssueCount(f.id) }}</span>
             </button>
           </div>
-          <span v-else class="hint-text">左侧为文件实时预览与编辑区。可选中文本后进行专项审查。</span>
+          <div v-else-if="files.length === 0" class="empty-file-hint">
+            <el-icon :size="24" color="#C0C4CC"><FolderOpened /></el-icon>
+            <span>暂无文件，请先上传文档</span>
+          </div>
+          <span v-else class="hint-text">📄 文件预览区 · 选中文本可进行专项审查</span>
         </div>
-        <div class="editor-container">
+
+        <!-- 空状态提示（无文件时） -->
+        <div v-if="files.length === 0" class="file-preview-empty-state">
+          <el-empty description=" " :image-size="120">
+            <template #image>
+              <div class="custom-empty-image">
+                <el-icon :size="64" color="#DCDFE6"><Document /></el-icon>
+              </div>
+            </template>
+            <template #description>
+              <p class="empty-title">等待文件加载</p>
+              <p class="empty-desc">上传文件后将在此处显示预览内容</p>
+            </template>
+          </el-empty>
+        </div>
+
+        <div v-else class="editor-container">
           <!-- DWG图纸预览（保留专用组件，支持图纸交互） -->
           <DwgPreviewPanel
             v-if="isDwgFileSelected && !dwgParseFailed"
@@ -137,22 +157,54 @@
             </div>
           </div>
           <div class="header-right">
-            <el-button v-if="!isSelfCheck" type="primary" link size="small" @click="handleExportWord">
-              导出Word
-            </el-button>
-            <el-button v-if="!isSelfCheck" type="primary" link size="small" @click="handleExportExcel">
-              导出Excel
-            </el-button>
-            <el-button type="primary" link size="small" @click="goBack">
-              返回历史
-            </el-button>
+            <!-- 主要操作按钮 -->
+            <el-button-group v-if="!isSelfCheck" class="primary-actions">
+              <el-tooltip content="导出 Word 报告" placement="bottom">
+                <el-button type="primary" size="small" @click="handleExportWord">
+                  <el-icon><Document /></el-icon>
+                  导出Word
+                </el-button>
+              </el-tooltip>
+              <el-dropdown @command="handleExportCommand" trigger="click">
+                <el-button type="primary" size="small">
+                  更多导出
+                  <el-icon class="el-icon--right"><ArrowDown /></el-icon>
+                </el-button>
+                <template #dropdown>
+                  <el-dropdown-menu>
+                    <el-dropdown-item command="excel">
+                      <el-icon><Tickets /></el-icon>导出 Excel
+                    </el-dropdown-item>
+                    <el-dropdown-item command="pdf">
+                      <el-icon><Notebook /></el-icon>导出 PDF（开发中）
+                    </el-dropdown-item>
+                    <el-dropdown-item divided command="print">
+                      <el-icon><Printer /></el-icon>打印报告
+                    </el-dropdown-item>
+                  </el-dropdown-menu>
+                </template>
+              </el-dropdown>
+            </el-button-group>
+
+            <!-- 次要操作按钮 -->
+            <el-button-group class="secondary-actions">
+              <el-tooltip content="返回任务列表" placement="bottom">
+                <el-button size="small" @click="goBack">
+                  <el-icon><Back /></el-icon>
+                  返回历史
+                </el-button>
+              </el-tooltip>
+            </el-button-group>
           </div>
         </div>
 
         <!-- 审查中进度（非阻塞，嵌入结果面板） -->
         <div v-if="reviewing" class="inline-review-progress">
           <div class="progress-top">
-            <span class="progress-title">AI 审查进行中</span>
+            <div class="progress-status">
+              <el-icon class="is-loading" :size="16"><Loading /></el-icon>
+              <span class="progress-title">正在智能审查文档</span>
+            </div>
             <span class="progress-percent">{{ reviewProgress }}%</span>
           </div>
           <el-progress
@@ -160,16 +212,23 @@
             :stroke-width="6"
             :show-text="false"
             :status="reviewProgress >= 100 ? 'success' : ''"
+            color="#409EFF"
           />
-          <p class="progress-step">{{ reviewStep || '准备中...' }}</p>
-          <p class="progress-message">{{ reviewMessage }}</p>
-          <div v-if="reviewFileProgress.fileName" class="chunk-progress">
-            <span>{{ reviewFileProgress.fileName }}</span>
-            <span>分片 {{ reviewFileProgress.chunkIndex }}/{{ reviewFileProgress.totalChunks }}</span>
+          <div class="progress-details">
+            <p class="progress-step">{{ reviewStep || '准备中...' }}</p>
+            <p class="progress-message">{{ reviewMessage }}</p>
+            <div v-if="reviewFileProgress.fileName" class="chunk-progress">
+              <el-icon><Document /></el-icon>
+              <span class="chunk-filename">{{ reviewFileProgress.fileName }}</span>
+              <el-tag size="small" type="info" round>
+                分片 {{ reviewFileProgress.chunkIndex }}/{{ reviewFileProgress.totalChunks }}
+              </el-tag>
+            </div>
+            <div v-if="totalLiveIssueCount > 0" class="live-issue-count">
+              <el-icon color="#E6A23C"><Warning /></el-icon>
+              已发现 <strong>{{ totalLiveIssueCount }}</strong> 个问题
+            </div>
           </div>
-          <p v-if="totalLiveIssueCount > 0" class="live-issue-count">
-            已实时发现 {{ totalLiveIssueCount }} 个问题
-          </p>
         </div>
 
         <div v-if="locateFeedback" class="locate-feedback">
@@ -488,7 +547,47 @@
 
           <!-- Tab 4: 工作台 -->
           <div v-if="activeTab === 'workspace'" class="tab-pane">
-            <div class="workspace-content">
+            <!-- 工作台引导（无操作时显示） -->
+            <div v-if="!diffItems.length && !focusedReviewResult" class="workspace-guide">
+              <div class="guide-icon">
+                <el-icon :size="48" color="#409EFF"><Tools /></el-icon>
+              </div>
+              <h3 class="guide-title">审查工作台</h3>
+              <p class="guide-subtitle">在这里处理审查发现的问题，提升文档合规性</p>
+
+              <div class="guide-cards">
+                <div class="guide-card">
+                  <div class="card-icon">📝</div>
+                  <h4>选中文本专项审查</h4>
+                  <p>从左侧预览区选中文本，进行针对性深度审查</p>
+                </div>
+
+                <div class="guide-card">
+                  <div class="card-icon">🔄</div>
+                  <h4>版本对比</h4>
+                  <p>查看采纳修改前后的差异，追踪变更历史</p>
+                </div>
+
+                <div class="guide-card">
+                  <div class="card-icon">⚙️</div>
+                  <h4>规则库审查</h4>
+                  <p>使用自定义规则库进行结构化标准化检查</p>
+                </div>
+              </div>
+
+              <div class="guide-actions">
+                <el-button type="primary" size="large" @click="scrollToFocusedReview">
+                  <el-icon><EditPen /></el-icon>
+                  开始专项审查
+                </el-button>
+                <el-button size="large" @click="loadLatestDiff">
+                  <el-icon><Refresh /></el-icon>
+                  查看版本对比
+                </el-button>
+              </div>
+            </div>
+
+            <div v-else class="workspace-content">
               <!-- 合同版本对比 -->
               <div class="workspace-section">
                 <div class="section-header">
@@ -586,88 +685,82 @@
                 </div>
               </div>
 
-              <!-- 重审表单 -->
-              <div class="workspace-section re-review-form">
-                <div class="form-group">
-                  <label class="form-label">合同类型</label>
-                  <el-input v-model="preAnalysisData.contract_type" />
-                </div>
-                <div class="form-group">
-                  <label class="form-label">审查立场</label>
-                  <el-select
-                    v-model="perspective"
-                    placeholder="请选择或输入您的立场"
-                    class="w-full"
-                    filterable
-                    allow-create
-                  >
-                    <el-option
-                      v-for="party in allPotentialParties"
-                      :key="party"
-                      :label="party"
-                      :value="party"
-                    />
-                  </el-select>
-                </div>
-                <div class="form-group">
-                  <label class="form-label">审查点选择</label>
-                  <div class="review-points-wrapper">
-                    <el-checkbox-group v-model="selectedReviewPoints" class="review-points-group">
-                      <el-checkbox
-                        v-for="point in allSuggestedReviewPoints"
-                        :key="point"
-                        :label="point"
-                        :value="point"
-                        border
-                      >
-                        {{ point }}
-                      </el-checkbox>
-                    </el-checkbox-group>
+              <!-- 重审表单 - 规则库审查模式设置面板（仅在规则库审查模式下显示） -->
+              <div v-if="isRuleOnlyMode" class="workspace-section re-review-form">
+                <div class="review-item-config">
+                  <!-- 模式说明横幅 -->
+                  <div class="mode-banner">
+                    <div class="mode-banner__icon">
+                      <el-icon :size="22"><Files /></el-icon>
+                    </div>
+                    <div class="mode-banner__content">
+                      <div class="mode-banner__title">规则库审查模式</div>
+                      <div class="mode-banner__desc">仅使用自定义规则库进行结构化审查，适合有明确规则的标准化检查场景。</div>
+                    </div>
+                    <div class="mode-banner__badge">
+                      <el-tag type="warning" effect="dark" round>专业</el-tag>
+                    </div>
                   </div>
-                </div>
-                <div class="form-group">
-                  <label class="form-label">审查核心目的</label>
-                  <div
-                    v-for="(purpose, index) in customPurposes"
-                    :key="index"
-                    class="purpose-row"
-                  >
-                    <el-autocomplete
-                      v-model="purpose.value"
-                      :fetch-suggestions="querySearchCorePurposes"
-                      placeholder="搜索或输入新目的"
-                      class="w-full"
-                      trigger-on-focus
-                    />
+
+                  <div class="config-section">
+                    <div class="config-section-label">
+                      <span class="section-label-num">2</span>
+                      检查项目
+                    </div>
+                    <!-- 规则前缀开关面板 -->
+                    <div class="rule-prefix-panel">
+                      <div
+                        v-for="group in RULE_PREFIX_GROUPS"
+                        :key="group.title"
+                        class="rule-prefix-group"
+                      >
+                        <div class="rule-prefix-group__header" @click="toggleGroup(group.items.map((i: any) => i.prefix), !group.items.every((item: any) => enabledRulePrefixes.includes(item.prefix)))">
+                          <el-icon :size="16"><component :is="group.icon" /></el-icon>
+                          <span class="rule-prefix-group__title">{{ group.title }}</span>
+                          <span class="rule-prefix-group__count">{{ group.items.filter((i: any) => enabledRulePrefixes.includes(i.prefix)).length }}/{{ group.items.length }}</span>
+                          <el-checkbox
+                            :model-value="group.items.every((item: any) => enabledRulePrefixes.includes(item.prefix))"
+                            :indeterminate="group.items.some((item: any) => enabledRulePrefixes.includes(item.prefix)) && !group.items.every((item: any) => enabledRulePrefixes.includes(item.prefix))"
+                            size="small"
+                            @click.stop
+                            @change="(val: boolean | string | number) => toggleGroup(group.items.map((i: any) => i.prefix), !!val)"
+                          />
+                        </div>
+                        <div class="rule-prefix-group__items">
+                          <div
+                            v-for="item in group.items"
+                            :key="item.prefix"
+                            class="rule-prefix-item"
+                            :class="{ 'rule-prefix-item--active': enabledRulePrefixes.includes(item.prefix) }"
+                            @click="togglePrefix(item.prefix)"
+                          >
+                            <div class="rule-prefix-item__info">
+                              <span class="rule-prefix-item__label">{{ item.label }}</span>
+                              <span class="rule-prefix-item__desc">{{ item.desc }}</span>
+                            </div>
+                            <el-switch
+                              :model-value="enabledRulePrefixes.includes(item.prefix)"
+                              size="small"
+                              style="pointer-events: none;"
+                            />
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <!-- 确认重审按钮 -->
+                  <div class="form-actions">
                     <el-button
-                      type="danger"
-                      link
-                      class="purpose-remove-btn"
-                      @click="removePurpose(index)"
+                      type="primary"
+                      :loading="reAnalyzing"
+                      :disabled="enabledRulePrefixes.length === 0 || reAnalyzing"
+                      class="w-full"
+                      @click="startReAnalysis"
                     >
-                      <el-icon><Remove /></el-icon>
+                      {{ reAnalyzing ? '正在重审...' : '确认重审' }}
                     </el-button>
                   </div>
-                  <el-button
-                    type="primary"
-                    link
-                    class="add-purpose-btn"
-                    @click="addPurpose"
-                  >
-                    <el-icon class="mr-1"><CirclePlus /></el-icon>
-                    添加目的
-                  </el-button>
-                </div>
-                <div class="form-actions">
-                  <el-button
-                    type="primary"
-                    :loading="reAnalyzing"
-                    :disabled="!perspective || selectedReviewPoints.length === 0 || reAnalyzing"
-                    class="w-full"
-                    @click="startReAnalysis"
-                  >
-                    {{ reAnalyzing ? '正在重审...' : '确认重审' }}
-                  </el-button>
                 </div>
               </div>
             </div>
@@ -698,6 +791,12 @@ import {
   CirclePlus,
   CircleCheckFilled,
   Download,
+  MagicStick,
+  EditPen,
+  DataAnalysis,
+  FolderOpened,
+  Files,
+  Link,
 } from '@element-plus/icons-vue'
 import {
   getTaskByIdApi,
@@ -726,6 +825,12 @@ const loadingMessage = ref('正在加载审查结果...')
 
 // ===== 标准引用自检（SELF_CHECK）=====
 const isSelfCheck = computed(() => (task.value as any)?.reviewMode === 'SELF_CHECK')
+
+// ===== 规则库审查模式判断 =====
+const isRuleOnlyMode = computed(() => {
+  const plan = (task.value as any)?.reviewPlan
+  return plan?.execution?.profile === 'RULE_ONLY'
+})
 
 // 默认左侧面板宽度：自检模式 40%（右侧表格需要更多空间），普通审查 55%
 const SELF_CHECK_LEFT_WIDTH = 40
@@ -830,7 +935,10 @@ const startResize = (e: MouseEvent) => {
 
   const startX = e.clientX
   const startWidth = leftPanel.value?.offsetWidth || 0
-  const containerWidth = (e.currentTarget as HTMLElement).parentElement?.offsetWidth || window.innerWidth
+  const mainContent = (e.currentTarget as HTMLElement).parentElement
+  if (!mainContent) return
+  const containerRect = mainContent.getBoundingClientRect()
+  const containerWidth = containerRect.width
 
   const onMouseMove = (moveEvent: MouseEvent) => {
     if (!isResizing.value) return
@@ -838,7 +946,6 @@ const startResize = (e: MouseEvent) => {
     const deltaX = moveEvent.clientX - startX
     const newWidthPercent = ((startWidth + deltaX) / containerWidth) * 100
 
-    // 限制范围：20% - 80%
     leftPanelWidth.value = Math.max(20, Math.min(80, newWidthPercent))
   }
 
@@ -846,11 +953,14 @@ const startResize = (e: MouseEvent) => {
     isResizing.value = false
     document.removeEventListener('mousemove', onMouseMove)
     document.removeEventListener('mouseup', onMouseUp)
+    document.body.style.cursor = ''
+    document.body.style.userSelect = ''
 
-    // 保存用户偏好
     localStorage.setItem('reviewLeftPanelWidth', String(leftPanelWidth.value))
   }
 
+  document.body.style.cursor = 'col-resize'
+  document.body.style.userSelect = 'none'
   document.addEventListener('mousemove', onMouseMove)
   document.addEventListener('mouseup', onMouseUp)
 }
@@ -861,10 +971,11 @@ const leftPanelStyle = computed(() => ({
   width: `${leftPanelWidth.value}%`,
 }))
 
-// 右侧面板的动态样式
+// 右侧面板：自动填充剩余空间
 const rightPanelStyle = computed(() => ({
-  flex: 'none',
-  width: `${100 - leftPanelWidth.value}%`,
+  flex: '1',
+  minWidth: '0',
+  overflow: 'hidden',
 }))
 
 // ===== 文件预览相关 =====
@@ -1178,6 +1289,58 @@ const preAnalysisData = reactive({
   template_name: '',
 })
 
+// 规则前缀配置
+const defaultEnabledPrefixes = [
+  'NAME', 'FORMAT', 'LAYOUT', 'HEADER', 'PAGE', 'CODE', 'UNIT', 'ATTR', 'TYPO',
+  'CONSIST', 'COMPL',
+  'DWG_TITLE', 'DWG_LAYER', 'DWG_DIM', 'DWG_STDREF', 'DWG_SCALE', 'DWG_OVERLAP',
+]
+const enabledRulePrefixes = ref<string[]>([...defaultEnabledPrefixes])
+
+const RULE_PREFIX_GROUPS = [
+  {
+    title: '文件规范',
+    icon: 'FolderOpened',
+    items: [
+      { prefix: 'NAME', label: '命名规范', desc: '文件名格式、版本号、特殊字符检查' },
+      { prefix: 'FORMAT', label: '格式规范', desc: '文档排版、字体、段落格式检查' },
+      { prefix: 'LAYOUT', label: '排版布局', desc: '布局结构、缩进、对齐方式检查' },
+    ],
+  },
+  {
+    title: '内容规范',
+    icon: 'EditPen',
+    items: [
+      { prefix: 'HEADER', label: '页眉规范', desc: '页眉内容、格式一致性检查' },
+      { prefix: 'PAGE', label: '页码规范', desc: '页码连续性、格式正确性检查' },
+      { prefix: 'CODE', label: '编码规范', desc: '编码规则、编号一致性检查' },
+      { prefix: 'UNIT', label: '单位规范', desc: '计量单位使用规范性检查' },
+      { prefix: 'ATTR', label: '属性规范', desc: '文档属性、元数据完整性检查' },
+      { prefix: 'TYPO', label: '术语一致性', desc: '专业术语使用是否统一检查' },
+    ],
+  },
+  {
+    title: '逻辑验证',
+    icon: 'List',
+    items: [
+      { prefix: 'CONSIST', label: '一致性检查', desc: '前后参数、数据逻辑一致性检查' },
+      { prefix: 'COMPL', label: '完整性检查', desc: '必填项、关键内容是否缺失检查' },
+    ],
+  },
+  {
+    title: '图纸审查 (DWG)',
+    icon: 'DataAnalysis',
+    items: [
+      { prefix: 'DWG_TITLE', label: '标题规范', desc: '图签、标题栏格式内容检查' },
+      { prefix: 'DWG_LAYER', label: '图层规范', desc: '图层命名、颜色、线型规范性检查' },
+      { prefix: 'DWG_DIM', label: '标注规范', desc: '尺寸标注样式和规范性检查' },
+      { prefix: 'DWG_STDREF', label: '标准引用', desc: '图纸引用的标准有效性检查' },
+      { prefix: 'DWG_SCALE', label: '比例规范', desc: '图幅比例设置正确性检查' },
+      { prefix: 'DWG_OVERLAP', label: '重叠检查', desc: '图元重叠、干涉问题检查' },
+    ],
+  },
+]
+
 // ===== 工具函数 =====
 const getIssueTitle = (item: any, index: number): string => {
   if (item.originalText && item.originalText.trim()) {
@@ -1404,6 +1567,58 @@ const fetchData = async (silent = false) => {
       taskFileId: d.taskFileId || '',
     }))
     files.value = task.value?.files || []
+
+    // ===== 结果完整性校验（增强版） =====
+    if (task.value?.status === 'COMPLETED' && files.value.length > 0) {
+      const totalDetails = allDetails.value.length
+      const noResultCount = allDetails.value.filter(d => d.ruleCode === 'NO_RESULT').length
+      const errorDetails = allDetails.value.filter(d => d.description?.includes('审查过程中发生错误') || d.description?.includes('保存失败'))
+      const validResults = totalDetails - noResultCount - errorDetails.length
+
+      console.log(`[TaskResultsView] 📊 结果校验: 总计=${totalDetails}, 有效=${validResults}, 无结果标记=${noResultCount}, 错误记录=${errorDetails.length}`)
+
+      // 场景1：任务完成但完全没有有效结果
+      if (totalDetails === 0 || (totalDetails === noResultCount && noResultCount === files.value.length)) {
+        console.warn('[TaskResultsView] ⚠️ 任务标记为完成但无任何有效结果')
+
+        ElMessage({
+          type: 'warning',
+          message: '任务已完成但未发现有效审查结果，可能存在数据保存问题。建议刷新页面或联系管理员。',
+          duration: 8000,
+          showClose: true,
+        })
+      }
+      // 场景2：有错误记录（保存失败）
+      else if (errorDetails.length > 0) {
+        console.warn(`[TaskResultsView] ⚠️ 发现${errorDetails.length}条错误记录`)
+
+        ElMessage({
+          type: 'warning',
+          message: `部分审查结果可能未成功保存（${errorDetails.length}条异常）。当前显示${validResults}条有效结果。`,
+          duration: 6000,
+          showClose: true,
+        })
+      }
+      // 场景3：任务卡在PROCESSING状态超过5分钟（可能入队失败）
+    } else if (task.value?.status === 'PROCESSING') {
+      const taskCreatedAt = new Date(task.value.createdAt).getTime()
+      const now = Date.now()
+      const elapsedMinutes = (now - taskCreatedAt) / 60000
+
+      if (elapsedMinutes > 5) {
+        console.warn(`[TaskResultsView] ⚠️ 任务已处理${elapsedMinutes.toFixed(1)}分钟仍为PROCESSING状态`)
+
+        // 仅在非静默加载时提示
+        if (!silent) {
+          ElMessage({
+            type: 'info',
+            message: '任务处理时间较长，可能遇到队列阻塞。系统将自动轮询检测完成状态...',
+            duration: 5000,
+            showClose: true,
+          })
+        }
+      }
+    }
 
     // 默认选中第一个文件
     if (files.value.length > 0 && !selectedFileId.value) {
@@ -1656,7 +1871,36 @@ const handleExportExcel = async () => {
   }
 }
 
+const handleExportCommand = (command: string) => {
+  switch (command) {
+    case 'excel':
+      handleExportExcel()
+      break
+    case 'pdf':
+      ElMessage.info('PDF导出功能开发中，敬请期待')
+      break
+    case 'print':
+      window.print()
+      break
+    default:
+      console.warn('未知导出命令:', command)
+  }
+}
+
 // ===== 工作台功能 =====
+
+const scrollToFocusedReview = () => {
+  activeTab.value = 'workspace'
+  setTimeout(() => {
+    const el = document.querySelector('.workspace-section:nth-child(2)')
+    if (el) {
+      el.scrollIntoView({ behavior: 'smooth', block: 'start' })
+      const textarea = el.querySelector('textarea')
+      if (textarea) textarea.focus()
+    }
+  }, 100)
+}
+
 const loadLatestDiff = async () => {
   activeTab.value = 'workspace'
   diffLoading.value = true
@@ -1765,9 +2009,32 @@ const querySearchCorePurposes = (queryString: string, cb: (results: Array<{ valu
   cb(results.map((p: string) => ({ value: p })))
 }
 
+// 切换规则前缀
+const togglePrefix = (prefix: string) => {
+  const idx = enabledRulePrefixes.value.indexOf(prefix)
+  if (idx >= 0) {
+    enabledRulePrefixes.value.splice(idx, 1)
+  } else {
+    enabledRulePrefixes.value.push(prefix)
+  }
+}
+
+// 切换规则前缀分组
+const toggleGroup = (prefixes: string[], enabled: boolean) => {
+  if (enabled) {
+    prefixes.forEach(p => {
+      if (!enabledRulePrefixes.value.includes(p)) {
+        enabledRulePrefixes.value.push(p)
+      }
+    })
+  } else {
+    enabledRulePrefixes.value = enabledRulePrefixes.value.filter(p => !prefixes.includes(p))
+  }
+}
+
 const startReAnalysis = async () => {
-  if (!perspective.value) {
-    ElMessage.warning('请选择您的审查立场')
+  if (enabledRulePrefixes.value.length === 0) {
+    ElMessage.warning('请至少选择一个检查项目')
     return
   }
 
@@ -1776,15 +2043,7 @@ const startReAnalysis = async () => {
     // TODO: 调用后端重审API
     // const analysisPayload = {
     //   taskId: taskId.value,
-    //   perspective: perspective.value,
-    //   preAnalysisData: {
-    //     contract_type: preAnalysisData.contract_type,
-    //     potential_parties: allPotentialParties.value,
-    //     suggested_review_points: allSuggestedReviewPoints.value,
-    //     suggested_core_purposes: allSuggestedCorePurposes.value,
-    //     reviewPoints: selectedReviewPoints.value,
-    //     core_purposes: customPurposes.value.map(p => p.value).filter(p => p.trim() !== ''),
-    //   },
+    //   enabledPrefixes: enabledRulePrefixes.value,
     // }
     // const res = await reAnalyzeTaskApi(analysisPayload)
 
@@ -1923,13 +2182,14 @@ onUnmounted(() => {
   font-size: 14px;
 }
 
-/* 审查进度（嵌入右侧面板，非阻塞） */
+/* 审查进度（嵌入右侧面板，非阻塞）—— 紧凑模式 */
 .inline-review-progress {
-  margin: 12px 16px 0;
-  padding: 12px;
-  border: 1px solid #E5E7EB;
+  margin: 8px 12px 0;
+  padding: 10px 12px;
+  border: 1px solid #E4E7ED;
   border-radius: 8px;
-  background: #F9FAFB;
+  background: linear-gradient(135deg, #F5F7FA 0%, #FFFFFF 100%);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.03);
 }
 
 .progress-top {
@@ -1939,66 +2199,105 @@ onUnmounted(() => {
   margin-bottom: 8px;
 }
 
+.progress-status {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
 .progress-title {
   font-size: 13px;
   font-weight: 600;
-  color: #1F2937;
+  color: #303133;
 }
 
 .progress-percent {
-  font-size: 12px;
-  font-weight: 600;
-  color: #3B82F6;
+  font-size: 13px;
+  font-weight: 700;
+  color: #409EFF;
+  background: #ECF5FF;
+  padding: 1px 8px;
+  border-radius: 10px;
+}
+
+.progress-details {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px dashed #EBEEF5;
 }
 
 .progress-step {
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 600;
-  color: #1F2937;
-  margin: 8px 0 4px;
+  color: #606266;
+  margin: 4px 0 1px;
 }
 
 .progress-message {
-  font-size: 12px;
-  color: #6B7280;
-  margin: 0 0 8px;
+  font-size: 11px;
+  color: #909399;
+  margin: 0 0 6px;
+  line-height: 1.4;
 }
 
 .chunk-progress {
   display: flex;
-  justify-content: space-between;
-  font-size: 12px;
-  color: #9CA3AF;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: #909399;
   margin-bottom: 6px;
+  padding: 4px 8px;
+  background: #F5F7FA;
+  border-radius: 4px;
+}
+
+.chunk-filename {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 220px;
 }
 
 .live-issue-count {
+  display: flex;
+  align-items: center;
+  gap: 4px;
   font-size: 12px;
-  color: #3B82F6;
+  color: #E6A23C;
   font-weight: 600;
   margin: 0;
+  padding: 4px 8px;
+  background: #FDF6EC;
+  border-radius: 4px;
 }
 
 /* 主内容区（紧凑模式：最大化核心内容展示） */
 .main-content {
   flex: 1;
   display: flex;
-  gap: 12px;
-  padding: 8px;
+  gap: 16px;
+  padding: 12px;
   overflow: hidden;
   min-height: 0; /* 关键：允许flex子项收缩到小于内容高度 */
 }
 
-/* 左侧面板 */
+/* 左侧面板 - 尺寸由 JS leftPanelStyle 动态控制 */
 .left-panel {
-  flex: 2;
   display: flex;
   flex-direction: column;
   background: white;
-  border-radius: 6px;
-  border: 1px solid #E5E7EB;
+  border-radius: 8px;
+  border: 1px solid #E4E7ED;
   overflow: hidden;
-  min-height: 0; /* 关键：允许在flex容器中正确收缩 */
+  min-height: 0;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.02);
+}
+
+.left-panel :deep(.file-preview-panel) {
+  overflow-x: auto;
+  overflow-y: auto;
 }
 
 .panel-header {
@@ -2009,7 +2308,54 @@ onUnmounted(() => {
 
 .hint-text {
   font-size: 12px;
-  color: #6B7280;
+  color: #909399;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.empty-file-hint {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: #C0C4CC;
+}
+
+.file-preview-empty-state {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 40px 20px;
+  background: #FAFCFF;
+  border-radius: 8px;
+  margin: 12px;
+  min-height: 400px;
+}
+
+.custom-empty-image {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 120px;
+  height: 120px;
+  background: linear-gradient(135deg, #F5F7FA 0%, #FFFFFF 100%);
+  border-radius: 50%;
+  margin-bottom: 16px;
+}
+
+.empty-title {
+  font-size: 16px;
+  font-weight: 600;
+  color: #606266;
+  margin: 0 0 8px;
+}
+
+.empty-desc {
+  font-size: 13px;
+  color: #C0C4CC;
+  margin: 0;
 }
 
 /* 文件切换 Tab */
@@ -2071,8 +2417,9 @@ onUnmounted(() => {
 
 .editor-container {
   flex: 1;
-  overflow: hidden;
+  overflow: auto;
   min-height: 0;
+  min-width: 0;
 }
 
 .dwg-loading {
@@ -2142,14 +2489,16 @@ onUnmounted(() => {
 /* 右侧面板 */
 .right-panel {
   flex: 1;
+  min-width: 0; /* 关键：允许flex子项收缩 */
   display: flex;
   flex-direction: column;
   background: white;
-  border-radius: 6px;
-  border: 1px solid #E5E7EB;
+  border-radius: 8px;
+  border: 1px solid #E4E7ED;
   overflow-y: hidden;
   overflow-x: auto;
   min-height: 0; /* 关键：允许在flex容器中正确收缩 */
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
 }
 
 .panel-header {
@@ -2163,34 +2512,60 @@ onUnmounted(() => {
 .header-left {
   display: flex;
   align-items: center;
-  gap: 16px;
+  gap: 10px;
   flex-shrink: 0;
+  min-width: 0;
 }
 
 .header-right {
   display: flex;
   align-items: center;
   gap: 8px;
-  flex-wrap: wrap;
   flex-shrink: 0;
+  min-width: 0;
+}
+
+.primary-actions {
+  box-shadow: 0 2px 6px rgba(64, 158, 255, 0.15);
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.primary-actions .el-button {
+  font-weight: 500;
+  letter-spacing: 0.3px;
+}
+
+.secondary-actions .el-button {
+  color: #606266;
+  border-color: #DCDFE6;
+}
+
+.secondary-actions .el-button:hover {
+  color: #409EFF;
+  border-color: #C6E2FF;
+  background-color: #ECF5FF;
 }
 
 .panel-title {
-  font-size: 16px;
+  font-size: 15px;
   font-weight: 600;
   color: #111827;
   margin: 0;
+  white-space: nowrap;
 }
 
 .plain-mode-switch {
   display: flex;
   align-items: center;
   gap: 6px;
+  flex-shrink: 0;
 }
 
 .switch-label {
   font-size: 12px;
   color: #6B7280;
+  white-space: nowrap;
 }
 
 /* Tab导航 */
@@ -2622,6 +2997,87 @@ onUnmounted(() => {
   transform: scale(1.06);
 }
 
+/* 工作台引导样式 */
+.workspace-guide {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 60px 40px;
+  text-align: center;
+  min-height: 500px;
+}
+
+.guide-icon {
+  margin-bottom: 20px;
+  animation: float 3s ease-in-out infinite;
+}
+
+@keyframes float {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-10px); }
+}
+
+.guide-title {
+  font-size: 24px;
+  font-weight: 700;
+  color: #303133;
+  margin: 0 0 8px;
+}
+
+.guide-subtitle {
+  font-size: 14px;
+  color: #909399;
+  margin: 0 0 40px;
+}
+
+.guide-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 20px;
+  width: 100%;
+  max-width: 800px;
+  margin-bottom: 40px;
+}
+
+.guide-card {
+  padding: 24px 20px;
+  background: linear-gradient(135deg, #FAFCFF 0%, #F5F7FA 100%);
+  border: 1px solid #E4E7ED;
+  border-radius: 12px;
+  transition: all 0.3s ease;
+}
+
+.guide-card:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 8px 20px rgba(64, 158, 255, 0.12);
+  border-color: #409EFF;
+}
+
+.card-icon {
+  font-size: 32px;
+  margin-bottom: 12px;
+}
+
+.guide-card h4 {
+  font-size: 16px;
+  font-weight: 600;
+  color: #303133;
+  margin: 0 0 8px;
+}
+
+.guide-card p {
+  font-size: 13px;
+  color: #909399;
+  line-height: 1.6;
+  margin: 0;
+}
+
+.guide-actions {
+  display: flex;
+  gap: 16px;
+}
+
 /* 工作台样式 */
 .workspace-content {
   display: flex;
@@ -2807,6 +3263,173 @@ onUnmounted(() => {
   padding-top: 16px;
 }
 
+/* 审查目标卡片 - 已移除（仅保留规则库审查模式） */
+
+/* 证据源卡片 - 已移除（仅保留规则库审查模式） */
+
+/* 模式横幅 */
+.mode-banner {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 18px 22px;
+  background: linear-gradient(135deg, #F0F5FF 0%, #EFF6FF 50%, #F0FDF4 100%);
+  border-radius: 12px;
+  margin-bottom: 20px;
+}
+
+.mode-banner__icon {
+  width: 44px;
+  height: 44px;
+  border-radius: 12px;
+  background: linear-gradient(135deg, #3B82F6 0%, #6366F1 100%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: white;
+  flex-shrink: 0;
+  box-shadow: 0 4px 12px rgba(59, 130, 246, 0.3);
+}
+
+.mode-banner__content {
+  flex: 1;
+  min-width: 0;
+}
+
+.mode-banner__title {
+  font-size: 17px;
+  font-weight: 700;
+  color: #1E293B;
+  margin-bottom: 2px;
+}
+
+.mode-banner__desc {
+  font-size: 13px;
+  color: #64748B;
+}
+
+.mode-banner__badge {
+  flex-shrink: 0;
+}
+
+/* 配置区域 */
+.review-item-config {
+  padding: 0;
+}
+
+.config-section {
+  padding: 20px 24px 24px;
+}
+
+.config-section-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 15px;
+  font-weight: 600;
+  color: #374151;
+  margin-bottom: 16px;
+}
+
+.section-label-num {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: #3B82F6;
+  color: white;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+/* 规则前缀面板 */
+.rule-prefix-panel {
+  background: white;
+  border-radius: 8px;
+  border: 1px solid #E5E7EB;
+  overflow: hidden;
+}
+
+.rule-prefix-group {
+  border-bottom: 1px solid #F3F4F6;
+}
+
+.rule-prefix-group:last-child {
+  border-bottom: none;
+}
+
+.rule-prefix-group__header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 14px;
+  cursor: pointer;
+  background: #F9FAFB;
+  transition: background 0.2s;
+}
+
+.rule-prefix-group__header:hover {
+  background: #F3F4F6;
+}
+
+.rule-prefix-group__title {
+  flex: 1;
+  font-size: 14px;
+  font-weight: 600;
+  color: #1F2937;
+}
+
+.rule-prefix-group__count {
+  font-size: 12px;
+  color: #6B7280;
+  font-variant-numeric: tabular-nums;
+}
+
+.rule-prefix-group__items {
+  padding: 8px 14px;
+  background: white;
+}
+
+.rule-prefix-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 12px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.rule-prefix-item:hover {
+  background: #F9FAFB;
+}
+
+.rule-prefix-item--active {
+  background: #EFF6FF;
+}
+
+.rule-prefix-item__info {
+  flex: 1;
+}
+
+.rule-prefix-item__label {
+  display: block;
+  font-size: 13px;
+  font-weight: 500;
+  color: #1F2937;
+}
+
+.rule-prefix-item__desc {
+  display: block;
+  font-size: 11px;
+  color: #9CA3AF;
+  margin-top: 2px;
+}
+
+/* 执行方式选项 - 已移除（仅保留规则库审查模式） */
+
 /* 工具类 */
 .w-full {
   width: 100%;
@@ -2972,10 +3595,73 @@ onUnmounted(() => {
 
 /*
  * 断点设计：
- * - ≥ 1200px：大屏桌面，左右分栏（文件预览 55% : AI审查 45%）
- * - 768px - 1199px：中屏/平板/小窗口，左右分栏但比例调整（40% : 60%）
- * - < 768px：小屏/手机，上下堆叠（AI审查优先显示在上）
+ * - ≥ 1400px：大屏桌面，左右分栏（文件预览 55% : AI审查 45%）
+ * - 1200px - 1399px：中屏/笔记本（如1268x800），调整比例（45% : 55%）
+ * - 768px - 1199px：小窗口，左右分栏但更紧凑
+ * - < 768px：小屏/手机，上下堆叠
  */
+
+/* 笔记本/中等屏幕（1200px - 1399px）：优化1268x800等常见分辨率 */
+@media (max-width: 1399px) and (min-width: 1200px) {
+  .main-content {
+    gap: 10px;
+    padding: 10px;
+  }
+
+  .left-panel {
+    flex: none;
+    width: 45%;
+    min-width: 320px;
+  }
+
+  .right-panel {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .panel-header {
+    padding: 6px 10px;
+  }
+
+  .header-left {
+    gap: 8px;
+  }
+
+  .header-right {
+    gap: 6px;
+  }
+
+  .resize-divider {
+    width: 6px;
+  }
+
+  .tab-navigation {
+    padding: 0 12px;
+  }
+
+  .tab-item {
+    padding: 8px 12px;
+    font-size: 12px;
+  }
+
+  .tab-content {
+    padding: 12px;
+  }
+
+  .inline-review-progress {
+    margin: 10px 12px 0;
+    padding: 12px;
+  }
+
+  .file-tab-name {
+    max-width: 90px;
+  }
+
+  .file-tab {
+    padding: 3px 8px;
+    font-size: 11px;
+  }
+}
 
 /* 中等屏幕（768px - 1199px）：优化窗口缩小时的体验 */
 @media (max-width: 1199px) and (min-width: 769px) {
@@ -2983,28 +3669,22 @@ onUnmounted(() => {
     flex-direction: row;
     gap: 8px;
     padding: 6px;
-    /* 继承父元素高度，不使用height:auto */
   }
 
-  /* 左侧面板缩小，给右侧AI报告更多空间 */
   .left-panel {
-    flex: none; /* 不覆盖动态样式的width设置 */
-    min-width: 280px;
-    max-width: 45%;
+    flex: none;
+    min-width: 20%;
   }
 
-  /* 右侧AI审查报告优先扩展 */
   .right-panel {
-    flex: none; /* 不覆盖动态样式的width设置 */
-    min-width: 320px;
+    flex: 1;
+    min-width: 0;
   }
 
-  /* 面板头部更紧凑 */
   .panel-header {
     padding: 6px 10px;
   }
 
-  /* 分割条保持可见但更窄 */
   .resize-divider {
     width: 6px;
   }
@@ -3160,5 +3840,150 @@ onUnmounted(() => {
   color: var(--el-color-danger);
   font-weight: 700;
   font-size: 16px;
+}
+
+/* 响应式布局优化 */
+@media (max-width: 1200px) {
+  .main-content {
+    gap: 12px;
+    padding: 8px;
+  }
+
+  .left-panel {
+    flex: 0 0 32%;
+    max-width: 360px;
+  }
+}
+
+@media (max-width: 1024px) {
+  .main-content {
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  .left-panel {
+    flex: 0 0 auto;
+    max-width: none;
+    max-height: 45vh;
+    min-height: 300px;
+  }
+
+  .right-panel {
+    flex: 1;
+    min-height: 50vh;
+  }
+
+  .resize-divider {
+    display: none;
+  }
+
+  .workspace-guide {
+    padding: 40px 24px;
+    min-height: auto;
+  }
+
+  .guide-cards {
+    grid-template-columns: 1fr;
+    gap: 16px;
+  }
+}
+
+@media (max-width: 1024px) {
+  .inline-review-progress {
+    margin: 6px 10px 0;
+    padding: 8px 10px;
+  }
+
+  .progress-title {
+    font-size: 12px;
+  }
+
+  .progress-percent {
+    font-size: 12px;
+    padding: 1px 6px;
+  }
+
+  .chunk-filename {
+    max-width: 160px;
+  }
+}
+
+@media (max-width: 768px) {
+  .main-content {
+    padding: 6px;
+    gap: 8px;
+  }
+
+  .left-panel {
+    max-height: 35vh;
+    min-height: 250px;
+  }
+
+  .inline-review-progress {
+    margin: 6px 8px 0;
+    padding: 8px;
+    border-radius: 6px;
+  }
+
+  .progress-top {
+    margin-bottom: 6px;
+  }
+
+  .progress-status {
+    gap: 4px;
+  }
+
+  .progress-title {
+    font-size: 11px;
+  }
+
+  .progress-percent {
+    font-size: 11px;
+    padding: 0 6px;
+  }
+
+  .progress-details {
+    margin-top: 6px;
+    padding-top: 6px;
+  }
+
+  .progress-step {
+    font-size: 11px;
+    margin: 2px 0 0;
+  }
+
+  .progress-message {
+    font-size: 10px;
+    margin-bottom: 4px;
+  }
+
+  .chunk-progress {
+    font-size: 10px;
+    padding: 3px 6px;
+    margin-bottom: 4px;
+    gap: 4px;
+  }
+
+  .chunk-filename {
+    max-width: 120px;
+  }
+
+  .live-issue-count {
+    font-size: 11px;
+    padding: 3px 6px;
+  }
+
+  .guide-title {
+    font-size: 20px;
+  }
+
+  .guide-actions {
+    flex-direction: column;
+    width: 100%;
+  }
+
+  .guide-actions .el-button {
+    width: 100%;
+  }
 }
 </style>

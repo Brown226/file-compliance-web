@@ -18,12 +18,8 @@ import { Loading, WarningFilled } from '@element-plus/icons-vue'
 import request from '@/utils/request'
 import mammoth from 'mammoth'
 
-const reportDebug = (event: string, data: Record<string, any>) => {
-  void fetch('/api/debug/log', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ scope: 'docx-locate', event, data, ts: Date.now() }),
-  }).catch(() => {})
+const reportDebug = (_event: string, _data: Record<string, any>) => {
+  // debug log disabled — backend /api/debug/log not implemented
 }
 
 const props = defineProps<{

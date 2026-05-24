@@ -256,11 +256,46 @@ export class TaskService {
       },
     }) as Task;
 
-    // 异步触发审查流程（不阻塞响应）
+    // 异步触发审查流程（增强版：带错误处理和状态保护）
     if (files.length > 0 && !shouldDelayReview) {
-      addReviewJob(task.id).catch((err) => {
-        console.error(`[TaskService] 任务入队失败: ${task.id}`, err);
-      });
+      try {
+        const job = await addReviewJob(task.id);
+        console.log(`[TaskService] ✅ 任务入队成功: ${task.id}, jobId=${job.id}, state=waiting`);
+
+        // 8秒后检查job是否开始执行（防止队列处理器未启动）
+        setTimeout(async () => {
+          try {
+            const jobState = await job.getState();
+            if (jobState === 'waiting' || jobState === 'delayed') {
+              console.warn(`[TaskService] ⚠️ 任务仍在等待执行: ${task.id}, state=${jobState}, 可能队列处理器未启动或Redis连接异常`);
+
+              // 可选：更新任务状态提示用户（不强制改为PENDING，避免影响正在排队的任务）
+              // await prisma.task.update({ where: { id: task.id }, data: { status: 'PENDING' } });
+            }
+          } catch (checkErr) {
+            console.warn(`[TaskService] 任务状态检查失败: ${task.id}`, checkErr);
+          }
+        }, 8000);
+      } catch (queueError) {
+        console.error(`[TaskService] ❌ 任务入队失败: ${task.id}`, queueError);
+
+        // 回滚任务状态为PENDING，让用户知道需要手动重试或联系管理员
+        try {
+          await prisma.task.update({
+            where: { id: task.id },
+            data: { 
+              status: 'PENDING',
+              // 在description中记录失败原因，方便用户查看
+              description: `${result.description || ''}\n\n⚠️ 入队失败: ${queueError instanceof Error ? queueError.message : String(queueError)}`.trim(),
+            },
+          });
+          console.log(`[TaskService] 🔄 已回滚任务状态为PENDING: ${task.id}`);
+        } catch (rollbackErr) {
+          console.error(`[TaskService] ❌ 状态回滚也失败: ${task.id}`, rollbackErr);
+        }
+
+        // 注意：不抛出错误，仍返回任务对象给前端（前端可根据status=PENDING判断异常）
+      }
     }
 
     return result;

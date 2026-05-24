@@ -118,7 +118,7 @@ const routes: Array<RouteRecordRaw> = [
         path: 'admin/rule-libraries',
         name: 'RuleLibraries',
         component: () => import('../views/admin/RuleLibraries.vue'),
-        meta: { title: '规则库管理', requiresAdminOrManager: true }
+        meta: { title: '语义知识库', requiresAdminOrManager: true }
       },
       {
         path: 'admin/rules',

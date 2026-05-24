@@ -340,12 +340,16 @@ export const getTaskFileRaw = async (req: Request, res: Response): Promise<void>
       return;
     }
 
-    // file.filePath 可能是 multer 写入的绝对路径（如 E:\...\uploads\file.docx），
-    // 也可能是旧数据的相对路径。path.isAbsolute 确保两种都能正确解析。
-    const absPath = path.isAbsolute(file.filePath)
-      ? file.filePath
-      : path.join(__dirname, '..', '..', file.filePath);
+    let absPath: string
+    const rawPath = file.filePath
+    if (path.isAbsolute(rawPath) && !rawPath.startsWith('/') && !rawPath.startsWith('\\')) {
+      absPath = rawPath
+    } else {
+      const relativePath = rawPath.replace(/^[/\\]+/, '')
+      absPath = path.join(__dirname, '..', '..', relativePath)
+    }
     if (!fs.existsSync(absPath)) {
+      console.error('[getTaskFileRaw] 文件不存在:', { taskId, fileId, absPath, rawPath })
       error(res, '文件不存在', 404);
       return;
     }

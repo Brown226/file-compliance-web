@@ -86,7 +86,7 @@
               </el-menu-item>
               <el-menu-item index="/admin/rule-libraries">
                 <el-icon><Notebook /></el-icon>
-                <template #title><span>规则库管理</span></template>
+                <template #title><span>语义知识库</span></template>
               </el-menu-item>
             </el-menu-item-group>
             <el-menu-item-group title="审查配置">
@@ -149,9 +149,21 @@
             <span class="breadcrumb-item">{{ route.meta.title || '绯荤粺' }}</span>
           </div>
         </div>
-        <div class="security-warning">
-          <el-icon :size="14"><WarningFilled /></el-icon>
-          <span>审查内容由 AI 生成，仅供参考。平台严禁处理、存储和传输涉密敏感信息。</span>
+        <div class="security-warning" v-if="!warningDismissed">
+          <el-icon :size="14" color="#E6A23C"><WarningFilled /></el-icon>
+          <span class="warning-text">
+            <strong>AI 辅助审查</strong> · 生成内容仅供参考
+            <el-tooltip content="平台严禁处理、存储和传输涉密敏感信息。请确保上传的文档符合安全规定。" placement="bottom">
+              <el-button link type="primary" size="small" class="security-link">安全须知</el-button>
+            </el-tooltip>
+          </span>
+          <el-icon 
+            class="warning-close" 
+            :size="14" 
+            @click="warningDismissed = true"
+          >
+            <Close />
+          </el-icon>
         </div>
         <div class="header-right">
           <div class="header-tools">
@@ -328,6 +340,7 @@ const roleDisplayText = computed(() => {
 })
 const sidebarCollapsed = ref(localStorage.getItem('sidebar_collapsed') === 'true')
 const sidebarOpen = ref(false)
+const warningDismissed = ref(false)
 
 watch(sidebarCollapsed, (val) => {
   localStorage.setItem('sidebar_collapsed', String(val))
@@ -861,19 +874,56 @@ const submitUsernameChange = async () => {
 .security-warning {
   display: flex;
   align-items: center;
-  gap: 5px;
-  padding: 4px 12px;
-  background: #FEF3C7;
-  border-radius: var(--radius-full);
+  gap: 8px;
+  padding: 6px 14px;
+  background: linear-gradient(135deg, #FFF9E6 0%, #FFFBEB 100%);
+  border: 1px solid #FEF3C7;
+  border-radius: 20px;
   color: #92400E;
-  font-size: 11px;
-  font-weight: 600;
+  font-size: 12px;
   white-space: nowrap;
   flex-shrink: 0;
+  transition: all 0.3s ease;
+  max-width: 400px;
 }
 
-.security-warning .el-icon {
-  color: #F59E0B;
+.security-warning:hover {
+  box-shadow: 0 2px 8px rgba(245, 158, 11, 0.15);
+  border-color: #FCD34D;
+}
+
+.warning-text {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 1;
+  overflow: hidden;
+}
+
+.warning-text strong {
+  color: #B45309;
+  font-weight: 600;
+}
+
+.security-link {
+  padding: 0 4px;
+  font-size: 11px;
+  margin-left: 4px;
+}
+
+.warning-close {
+  cursor: pointer;
+  color: #D1D5DB;
+  transition: color 0.2s;
+  flex-shrink: 0;
+  margin-left: 4px;
+}
+
+.warning-close:hover {
+  color: #92400E;
+}
+
+.security-warning .el-icon:first-child {
   flex-shrink: 0;
 }
 

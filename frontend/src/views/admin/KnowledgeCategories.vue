@@ -1,7 +1,7 @@
 <template>
   <div class="kb-page">
     <div class="kb-layout">
-      <!-- 左侧：目录树（完全照搬 MaxKB folder-tree） -->
+      <!-- 左侧：扁平化目录列表（最多2层） -->
       <aside class="kb-sidebar">
         <div class="kb-sidebar__head">
           <span class="kb-sidebar__title">知识库</span>
@@ -20,28 +20,58 @@
           />
         </div>
 
-        <el-scrollbar class="kb-sidebar__tree-wrap">
-          <el-tree
-            ref="treeRef"
-            :data="treeData"
-            :props="{ children: 'children', label: 'name', isLeaf: (data: any) => Boolean(data.isLeaf) }"
-            node-key="id"
-            :filter-node-method="filterNode"
-            :default-expanded-keys="expandedKeys"
-            :current-node-key="currentNodeId"
-            highlight-current
-            @node-click="handleNodeClick"
-            v-loading="treeLoading"
-          >
-            <template #default="{ node, data }">
-              <div class="kb-tree-node">
-                <el-icon class="kb-tree-node__icon" :size="18">
-                  <FolderOpened v-if="!data.isLeaf" /><Collection v-else />
+        <el-scrollbar class="kb-sidebar__list-wrap">
+          <!-- 根级目录（可展开/折叠） -->
+          <div v-for="root in filteredSidebarItems" :key="root.id" class="kb-sidebar__group">
+            <div
+              class="kb-sidebar__group-header"
+              :class="{ 'is-active': expandedGroups.has(root.id) }"
+            >
+              <div class="kb-sidebar__group-left" @click="toggleGroup(root)">
+                <el-icon class="kb-sidebar__arrow" :size="12">
+                  <ArrowRight v-if="!expandedGroups.has(root.id)" />
+                  <ArrowDown v-else />
                 </el-icon>
-                <span class="kb-tree-node__label" :title="node.label">{{ node.label }}</span>
-                <div class="kb-tree-node__actions" @click.stop>
-                  <el-dropdown trigger="click" @command="(cmd: string) => handleTreeCommand(cmd, data)">
-                    <el-icon class="kb-tree-node__more"><MoreFilled /></el-icon>
+                <el-icon class="kb-sidebar__group-icon" :size="16"><FolderOpened /></el-icon>
+                <span class="kb-sidebar__group-name">{{ root.name }}</span>
+                <span class="kb-sidebar__group-count">{{ root.childCount }}</span>
+              </div>
+              <div class="kb-sidebar__group-actions" @click.stop>
+                <el-dropdown trigger="click" @command="(cmd: string) => handleRootGroupCommand(cmd, root)">
+                  <el-icon class="kb-sidebar__group-more"><MoreFilled /></el-icon>
+                  <template #dropdown>
+                    <el-dropdown-menu>
+                      <el-dropdown-item command="createFolder">
+                        <el-icon><Plus /></el-icon> 新建子文件夹
+                      </el-dropdown-item>
+                      <el-dropdown-item command="edit">
+                        <el-icon><Edit /></el-icon> 编辑
+                      </el-dropdown-item>
+                      <el-dropdown-item command="delete" divided>
+                        <el-icon><Delete /></el-icon> 删除
+                      </el-dropdown-item>
+                    </el-dropdown-menu>
+                  </template>
+                </el-dropdown>
+              </div>
+            </div>
+
+            <!-- 子项（平铺展示，不再递归嵌套） -->
+            <div v-show="expandedGroups.has(root.id)" class="kb-sidebar__children">
+              <div
+                v-for="child in root.children"
+                :key="child.id"
+                class="kb-sidebar__child-item"
+                :class="{ 'is-current': currentNodeId === child.id, 'is-folder': !child.isLeaf, 'is-leaf': child.isLeaf }"
+                @click="handleNodeClick(child)"
+              >
+                <el-icon class="kb-sidebar__child-icon" :size="15">
+                  <FolderOpened v-if="!child.isLeaf" /><Collection v-else />
+                </el-icon>
+                <span class="kb-sidebar__child-label" :title="child.name">{{ child.name }}</span>
+                <div class="kb-sidebar__child-actions" @click.stop>
+                  <el-dropdown trigger="click" @command="(cmd: string) => handleTreeCommand(cmd, child)">
+                    <el-icon class="kb-sidebar__child-more"><MoreFilled /></el-icon>
                     <template #dropdown>
                       <el-dropdown-menu>
                         <el-dropdown-item command="createFolder">
@@ -58,15 +88,40 @@
                   </el-dropdown>
                 </div>
               </div>
-            </template>
-          </el-tree>
+
+              <!-- 子项为空时提示 -->
+              <div v-if="!root.children?.length" class="kb-sidebar__empty-hint">暂无子项</div>
+            </div>
+          </div>
+
+          <!-- 无数据 -->
+          <div v-if="filteredSidebarItems.length === 0 && !filterText" class="kb-sidebar__empty">
+            暂无知识库分类
+          </div>
         </el-scrollbar>
       </aside>
 
       <!-- 右侧：内容区 -->
       <main class="kb-main">
         <div class="kb-main__header">
-          <h2 class="kb-main__title">我的知识库</h2>
+          <div class="kb-main__header-left">
+            <!-- 面包屑导航 -->
+            <div v-if="breadcrumbPath.length > 0" class="kb-breadcrumb">
+              <span
+                class="kb-breadcrumb__item kb-breadcrumb__root"
+                @click="handleBreadcrumbClick(null)"
+              >知识库</span>
+              <template v-for="(crumb, idx) in breadcrumbPath" :key="crumb.id">
+                <el-icon class="kb-breadcrumb__sep" :size="12"><ArrowRight /></el-icon>
+                <span
+                  class="kb-breadcrumb__item"
+                  :class="{ 'is-current': idx === breadcrumbPath.length - 1 }"
+                  @click="handleBreadcrumbClick(crumb)"
+                >{{ crumb.name }}</span>
+              </template>
+            </div>
+            <h2 v-else class="kb-main__title">我的知识库</h2>
+          </div>
           <div class="kb-main__header-actions">
             <el-input
               v-model="filterText"
@@ -221,10 +276,10 @@ import { useRouter } from 'vue-router'
 import {
   Plus, Upload, Edit, Delete, Search,
   FolderOpened, Collection, Document, MoreFilled,
-  User, Lock,
+  User, Lock, ArrowRight, ArrowDown,
 } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import type { FormInstance, FormRules, TreeInstance } from 'element-plus'
+import type { FormInstance, FormRules } from 'element-plus'
 import UploadDialog from './components/UploadDialog.vue'
 import {
   getKnowledgeCategoriesApi,
@@ -239,22 +294,82 @@ import {
 
 const router = useRouter()
 
-// ===== 树 =====
-const treeRef = ref<TreeInstance>()
+// ===== 扁平化目录列表 =====
 const treeData = ref<KnowledgeTreeNode[]>([])
 const allCategories = ref<KnowledgeCategory[]>([])
 const filterText = ref('')
 const currentNodeId = ref<string>('')
 const treeLoading = ref(false)
 
-const expandedKeys = computed(() => {
-  const keys: string[] = []
-  const collect = (nodes: KnowledgeTreeNode[]) => {
-    for (const n of nodes) { keys.push(n.id); if (n.children?.length) collect(n.children) }
-  }
-  collect(treeData.value)
-  return keys
+const expandedGroups = ref<Set<string>>(new Set())
+
+interface SidebarGroup {
+  id: string
+  name: string
+  isLeaf: boolean
+  childCount: number
+  children: KnowledgeTreeNode[]
+}
+
+const sidebarGroups = computed<SidebarGroup[]>(() => {
+  return (treeData.value || []).map(root => ({
+    id: root.id,
+    name: root.name,
+    isLeaf: root.isLeaf,
+    childCount: (root.children || []).length,
+    children: (root.children || []).sort((a, b) => a.name.localeCompare(b.name, 'zh-CN')),
+  }))
 })
+
+const filteredSidebarItems = computed<SidebarGroup[]>(() => {
+  if (!filterText.value.trim()) return sidebarGroups.value
+  const q = filterText.value.trim().toLowerCase()
+  return sidebarGroups.value.filter(group => {
+    if (group.name.toLowerCase().includes(q)) return true
+    return group.children.some(c => c.name.toLowerCase().includes(q))
+  }).map(group => ({
+    ...group,
+    children: group.children.filter(c => c.name.toLowerCase().includes(q) || group.name.toLowerCase().includes(q)),
+  }))
+})
+
+// ===== 面包屑导航 =====
+interface BreadcrumbNode { id: string; name: string }
+
+const breadcrumbPath = computed<BreadcrumbNode[]>(() => {
+  if (!currentNodeId.value) return []
+  const path: BreadcrumbNode[] = []
+  const findPath = (nodes: KnowledgeTreeNode[], targetId: string, currentPath: BreadcrumbNode[]): boolean => {
+    for (const node of nodes) {
+      const newPath = [...currentPath, { id: node.id, name: node.name }]
+      if (node.id === targetId) {
+        path.push(...newPath)
+        return true
+      }
+      if (node.children?.length && findPath(node.children, targetId, newPath)) return true
+    }
+    return false
+  }
+  findPath(treeData.value, currentNodeId.value, [])
+  return path
+})
+
+const toggleGroup = (group: SidebarGroup) => {
+  if (expandedGroups.value.has(group.id)) {
+    expandedGroups.value.delete(group.id)
+  } else {
+    expandedGroups.value.add(group.id)
+  }
+  expandedGroups.value = new Set(expandedGroups.value)
+}
+
+const handleBreadcrumbClick = (crumb: BreadcrumbNode | null) => {
+  if (!crumb) {
+    currentNodeId.value = ''
+    return
+  }
+  currentNodeId.value = crumb.id
+}
 
 const currentNodeName = computed(() => {
   if (!currentNodeId.value) return ''
@@ -296,7 +411,7 @@ const filterNode = (value: string, data: any) => {
   return (data.name || '').toLowerCase().includes(value.toLowerCase())
 }
 
-watch(filterText, (val) => { treeRef.value?.filter(val.trim()) })
+watch(filterText, () => {})
 
 // ===== 加载数据 =====
 const fetchTree = async () => {
@@ -326,6 +441,27 @@ const handleTreeCommand = (cmd: string, data: KnowledgeTreeNode) => {
     case 'delete':
       ElMessageBox.confirm(`确认删除「${data.name}」？`, '删除确认', { type: 'warning' })
         .then(() => handleDelete(data.id)).catch(() => {})
+      break
+  }
+}
+
+const handleRootGroupCommand = (cmd: string, group: SidebarGroup) => {
+  const findNodeById = (nodes: KnowledgeTreeNode[], id: string): KnowledgeTreeNode | undefined => {
+    for (const n of nodes) { if (n.id === id) return n; if (n.children?.length) { const f = findNodeById(n.children, id); if (f) return f } }
+    return undefined
+  }
+  const node = findNodeById(treeData.value, group.id)
+  const target = node || { id: group.id, name: group.name }
+  switch (cmd) {
+    case 'createFolder':
+      showCreateFolderDialog(target as any)
+      break
+    case 'edit':
+      showEditDialog(target as any)
+      break
+    case 'delete':
+      ElMessageBox.confirm(`确认删除「${group.name}」及其所有子项？`, '删除确认', { type: 'warning' })
+        .then(() => handleDelete(group.id)).catch(() => {})
       break
   }
 }
@@ -372,7 +508,43 @@ const dialogTitle = computed(() => {
 const formData = reactive({ name: '', description: '', parentId: '' as string | undefined })
 
 const formRules: FormRules = {
-  name: [{ required: true, message: '请输入名称', trigger: 'blur' }],
+  name: [
+    { required: true, message: '请输入名称', trigger: 'blur' },
+    { min: 1, max: 64, message: '名称长度为 1-64 个字符', trigger: 'blur' },
+    {
+      validator: (_rule: any, value: string, callback: any) => {
+        if (!value) { callback(); return }
+        const v = value.trim()
+        if (!/[\u4e00-\u9fa5A-Za-z0-9]/.test(v)) {
+          callback(new Error('名称需包含至少1个汉字、字母或数字'))
+          return
+        }
+        if (/^[\;\.\,\s]+$/.test(v)) {
+          callback(new Error('名称不能仅为标点符号'))
+          return
+        }
+        if (/^[a-zA-Z]v[a-zA-Z]*$/i.test(v) || /^v+$/i.test(v)) {
+          callback(new Error('名称格式不合法'))
+          return
+        }
+        callback()
+      },
+      trigger: 'blur',
+    },
+  ],
+  description: [
+    {
+      validator: (_rule: any, value: string, callback: any) => {
+        if (!value || !value.trim()) { callback(); return }
+        if (!/[\u4e00-\u9fa5A-Za-z0-9]{2,}/.test(value.trim())) {
+          callback(new Error('描述需包含至少2个连续的有效字符'))
+          return
+        }
+        callback()
+      },
+      trigger: 'blur',
+    },
+  ],
 }
 
 const showCreateKbDialog = () => {
@@ -405,16 +577,20 @@ const handleSubmit = async () => {
     if (!valid) return
     submitting.value = true
     try {
+      const cleanName = (raw: string) => raw.trim().replace(/\s{2,}/g, ' ')
+      const payload: any = {
+        name: cleanName(formData.name),
+        parentId: formData.parentId,
+        isLeaf: dialogMode.value === 'kb',
+      }
+      if (formData.description?.trim()) {
+        payload.description = formData.description.trim()
+      }
       if (isEdit.value) {
-        await updateKnowledgeCategoryApi(editId.value, formData)
+        await updateKnowledgeCategoryApi(editId.value, payload)
         ElMessage.success('编辑成功')
       } else {
-        await createKnowledgeCategoryApi({
-          name: formData.name.trim(),
-          description: formData.description,
-          parentId: formData.parentId,
-          isLeaf: dialogMode.value === 'kb',
-        })
+        await createKnowledgeCategoryApi(payload)
         ElMessage.success('创建成功')
       }
       dialogVisible.value = false
@@ -444,13 +620,12 @@ const onUploadDone = async () => { await Promise.all([fetchTree(), fetchCategori
 // ===== 生命周期 =====
 onMounted(async () => {
   await Promise.all([fetchTree(), fetchCategories()])
-  // 页面首次加载：自动选中第一个树节点，确保右侧展示目录下已存在的知识库
   await nextTick()
-  if (!currentNodeId.value && treeData.value.length > 0) {
+  if (treeData.value.length > 0) {
     const firstNode = treeData.value[0]
     if (firstNode) {
-      treeRef.value?.setCurrentKey(firstNode.id)
       currentNodeId.value = firstNode.id
+      expandedGroups.value.add(firstNode.id)
     }
   }
 })
@@ -468,7 +643,7 @@ onMounted(async () => {
   overflow: hidden;
 }
 
-/* 左侧树栏（MaxKB 风格） */
+/* 左侧扁平化列表栏 */
 .kb-sidebar {
   width: 248px; min-width: 248px;
   display: flex; flex-direction: column;
@@ -482,36 +657,83 @@ onMounted(async () => {
 .kb-sidebar__title { font-size: 15px; font-weight: 700; color: #1f2937; }
 .kb-sidebar__search { padding: 0 16px 10px; }
 .kb-sidebar__search :deep(.el-input__wrapper) { border-radius: 6px; box-shadow: 0 0 0 1px #e5e7eb inset; }
-.kb-sidebar__tree-wrap { flex: 1; overflow: hidden; }
-.kb-sidebar__tree-wrap :deep(.el-scrollbar) { height: 100%; }
+.kb-sidebar__list-wrap { flex: 1; overflow: hidden; }
+.kb-sidebar__list-wrap :deep(.el-scrollbar) { height: 100%; }
 
-/* 树节点 */
-.kb-tree-node {
-  display: flex; align-items: center; gap: 8px;
-  width: 100%; padding: 3px 4px 3px 0; box-sizing: content-box;
+/* 分组 */
+.kb-sidebar__group { margin-bottom: 2px; }
+.kb-sidebar__group-header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 8px 10px 8px 12px;
+  cursor: pointer;
+  border-radius: 6px;
+  margin: 2px 8px;
+  transition: background 0.15s, color 0.15s;
 }
-.kb-tree-node__icon { color: #9ca3af; flex-shrink: 0; transition: color 0.15s; }
-.kb-tree-node:hover .kb-tree-node__icon { color: #3b82f6; }
-.kb-tree-node__label {
+.kb-sidebar__group-left {
+  display: flex; align-items: center; gap: 6px;
+  flex: 1; min-width: 0;
+  user-select: none;
+}
+.kb-sidebar__group-header:hover { background: rgba(59, 130, 246, 0.06); }
+.kb-sidebar__group-header.is-active { background: rgba(59, 130, 246, 0.08); }
+.kb-sidebar__arrow {
+  color: #9ca3af; transition: transform 0.2s;
+  flex-shrink: 0;
+}
+.kb-sidebar__group-icon { color: #f59e0b; flex-shrink: 0; }
+.kb-sidebar__group-name {
+  flex: 1; font-size: 13px; font-weight: 600; color: #374151;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.kb-sidebar__group-count {
+  font-size: 11px; color: #9ca3af; background: #f3f4f6;
+  padding: 0 6px; border-radius: 10px; line-height: 18px;
+}
+.kb-sidebar__group-actions {
+  flex-shrink: 0;
+}
+.kb-sidebar__group-more {
+  cursor: pointer; padding: 4px; border-radius: 4px;
+  color: #9ca3af; font-size: 13px; transition: background 0.15s, color 0.15s;
+}
+.kb-sidebar__group-more:hover { background: #e5e7eb; color: #374151; }
+
+/* 子项（平铺） */
+.kb-sidebar__children {
+  padding-left: 20px;
+}
+.kb-sidebar__child-item {
+  display: flex; align-items: center; gap: 6px;
+  padding: 6px 12px 6px 10px;
+  cursor: pointer;
+  border-radius: 6px;
+  margin: 1px 8px;
+  transition: all 0.15s;
+}
+.kb-sidebar__child-item:hover { background: rgba(59, 130, 246, 0.06); }
+.kb-sidebar__child-item.is-current { background: rgba(59, 130, 246, 0.1); font-weight: 600; }
+.kb-sidebar__child-item.is-current .kb-sidebar__child-icon { color: #3b82f6; }
+.kb-sidebar__child-item.is-current .kb-sidebar__child-label { color: #1d4ed8; }
+.kb-sidebar__child-icon { color: #9ca3af; flex-shrink: 0; transition: color 0.15s; }
+.kb-sidebar__child-label {
   flex: 1; font-size: 13px; font-weight: 500; color: #374151;
-  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; line-height: 1.5;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; line-height: 1.4;
 }
-.kb-tree-node__actions { flex-shrink: 0; opacity: 0; transition: opacity 0.15s; }
-.kb-tree-node:hover .kb-tree-node__actions { opacity: 1; }
-.kb-tree-node__more {
+.kb-sidebar__child-actions { flex-shrink: 0; opacity: 0; transition: opacity 0.15s; }
+.kb-sidebar__child-item:hover .kb-sidebar__child-actions { opacity: 1; }
+.kb-sidebar__child-more {
   cursor: pointer; padding: 3px; border-radius: 4px;
   color: #9ca3af; font-size: 13px; transition: background 0.15s, color 0.15s;
 }
-.kb-tree-node__more:hover { background: #e5e7eb; color: #374151; }
+.kb-sidebar__child-more:hover { background: #e5e7eb; color: #374151; }
 
-/* 树覆盖 */
-:deep(.el-tree) { background: transparent; padding: 4px 12px; }
-:deep(.el-tree-node__content) { height: 36px; border-radius: 6px; transition: background 0.15s; }
-:deep(.el-tree-node__content:hover) { background: rgba(59, 130, 246, 0.06); }
-:deep(.el-tree-node.is-current > .el-tree-node__content) { background: rgba(59, 130, 246, 0.08); font-weight: 600; }
-:deep(.el-tree-node.is-current > .el-tree-node__content .kb-tree-node__icon) { color: #3b82f6; }
-:deep(.el-tree-node.is-current > .el-tree-node__content .kb-tree-node__label) { color: #1d4ed8; }
-:deep(.el-tree-node__expand-icon) { color: #9ca3af; }
+.kb-sidebar__empty-hint {
+  padding: 12px 14px; font-size: 12px; color: #9ca3af; text-align: center;
+}
+.kb-sidebar__empty {
+  padding: 32px 16px; text-align: center; font-size: 13px; color: #9ca3af;
+}
 
 /* 右侧主区域 */
 .kb-main {
@@ -524,11 +746,45 @@ onMounted(async () => {
   justify-content: space-between;
   margin-bottom: 20px;
 }
+.kb-main__header-left {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+}
 .kb-main__header-actions {
   display: flex;
   align-items: center;
   gap: 12px;
+  flex-shrink: 0;
 }
+
+/* 面包屑导航 */
+.kb-breadcrumb {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+.kb-breadcrumb__item {
+  font-size: 15px;
+  font-weight: 700;
+  color: #6b7280;
+  cursor: pointer;
+  transition: color 0.15s;
+  white-space: nowrap;
+  max-width: 160px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.kb-breadcrumb__item:hover { color: #3b82f6; }
+.kb-breadcrumb__item.is-current { color: #1a1a2e; cursor: default; }
+.kb-breadcrumb__root {
+  color: #9ca3af;
+  font-size: 14px;
+  font-weight: 600;
+}
+.kb-breadcrumb__root:hover { color: #3b82f6; }
+.kb-breadcrumb__sep { color: #d1d5db; margin: 0 4px; flex-shrink: 0; }
+
 .kb-main__title { font-size: 18px; font-weight: 700; margin: 0; color: #1a1a2e; letter-spacing: -0.3px; }
 
 /* 卡片网格 */

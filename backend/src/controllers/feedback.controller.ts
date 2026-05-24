@@ -264,9 +264,10 @@ export const deleteFeedback = async (req: AuthRequest, res: Response): Promise<v
     const attachments = feedback.attachmentPaths as Array<{ filePath: string }> | null;
     if (attachments) {
       for (const attachment of attachments) {
-        const filePath = path.isAbsolute(attachment.filePath)
-          ? attachment.filePath
-          : path.join(__dirname, '../..', attachment.filePath);
+        const rawPath = attachment.filePath
+        const filePath = (path.isAbsolute(rawPath) && !rawPath.startsWith('/') && !rawPath.startsWith('\\'))
+          ? rawPath
+          : path.join(__dirname, '../..', rawPath.replace(/^[/\\]+/, ''));
         if (fs.existsSync(filePath)) {
           fs.unlinkSync(filePath);
         }
@@ -336,9 +337,10 @@ export const batchDelete = async (req: AuthRequest, res: Response): Promise<void
         const attachments = feedback.attachmentPaths as Array<{ filePath: string }> | null;
         if (attachments) {
           for (const attachment of attachments) {
-            const filePath = path.isAbsolute(attachment.filePath)
-              ? attachment.filePath
-              : path.join(__dirname, '../..', attachment.filePath);
+            const rawPath = attachment.filePath
+            const filePath = (path.isAbsolute(rawPath) && !rawPath.startsWith('/') && !rawPath.startsWith('\\'))
+              ? rawPath
+              : path.join(__dirname, '../..', rawPath.replace(/^[/\\]+/, ''));
             if (fs.existsSync(filePath)) {
               fs.unlinkSync(filePath);
             }
@@ -411,9 +413,14 @@ export const downloadAttachment = async (req: AuthRequest, res: Response): Promi
       return;
     }
 
-    const filePath = path.isAbsolute(foundAttachment.filePath)
-      ? foundAttachment.filePath
-      : path.join(__dirname, '../..', foundAttachment.filePath);
+    let filePath: string
+    const rawPath = foundAttachment.filePath
+    if (path.isAbsolute(rawPath) && !rawPath.startsWith('/') && !rawPath.startsWith('\\')) {
+      filePath = rawPath
+    } else {
+      const relativePath = rawPath.replace(/^[/\\]+/, '')
+      filePath = path.join(__dirname, '../..', relativePath)
+    }
 
     if (!fs.existsSync(filePath)) {
       error(res, '文件不存在', 404);

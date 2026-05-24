@@ -3,27 +3,27 @@
     <!-- 主布局：左侧目录树 + 右侧内容区 -->
     <div class="rl-layout">
       <!-- 左侧分类/目录面板 -->
-      <aside class="rl-sidebar">
+      <aside class="rl-sidebar" :class="{ 'rl-sidebar--collapsed': sidebarCollapsed }">
         <div class="sidebar-header">
-          <h3 class="sidebar-title">规则目录</h3>
+          <h3 v-if="!sidebarCollapsed" class="sidebar-title">规则目录</h3>
           <div class="sidebar-actions">
-            <el-button size="small" icon="FolderPlus" @click="showCreateFolderDialog">新建目录</el-button>
+            <el-button v-if="!sidebarCollapsed" size="small" icon="FolderPlus" @click="showCreateFolderDialog">新建目录</el-button>
+            <button class="sidebar-collapse-btn" :title="sidebarCollapsed ? '展开目录' : '收起目录'" @click="sidebarCollapsed = !sidebarCollapsed">
+              <el-icon :size="14"><ArrowRight /></el-icon>
+            </button>
           </div>
         </div>
-        
+
         <!-- 目录树 -->
-        <div class="folder-section">
+        <div v-if="!sidebarCollapsed" class="folder-section">
           <el-tree
             :data="folderTree"
             :props="treeProps"
             :default-expanded-keys="expandedFolderKeys"
-            :default-checked-keys="checkedFolderKeys"
-            show-checkbox
             node-key="id"
             class="folder-tree"
             ref="folderTreeRef"
             @node-click="handleFolderClick"
-            @check-change="handleFolderCheck"
           >
             <template #default="{ node, data }">
               <span class="tree-node">
@@ -34,44 +34,28 @@
                 <span class="node-label">{{ data.label }}</span>
                 <span v-if="data.count !== undefined" class="tree-count">{{ data.count }}</span>
                 <span class="tree-node-actions" @click.stop>
-                  <el-button 
-                    size="small" 
-                    :icon="Plus" 
-                    @click="showCreateLibraryUnderFolder(data)" 
+                  <el-button
+                    size="small"
+                    :icon="Plus"
+                    @click="showCreateLibraryUnderFolder(data)"
                     title="在此目录下新建规则库"
                     aria-label="在此目录下新建规则库"
                     class="action-btn-create-lib"
                   />
-                  <el-button 
-                    size="small" 
-                    :icon="Edit" 
-                    @click="showEditFolderDialog(data)" 
+                  <el-button
+                    size="small"
+                    :icon="Edit"
+                    @click="showEditFolderDialog(data)"
                     title="编辑"
                     aria-label="编辑目录"
                   />
-                  <el-button 
-                    size="small" 
-                    :icon="Delete" 
-                    type="danger" 
-                    @click="handleDeleteFolder(data.id)" 
+                  <el-button
+                    size="small"
+                    :icon="Delete"
+                    type="danger"
+                    @click="handleDeleteFolder(data.id)"
                     title="删除"
                     aria-label="删除目录"
-                  />
-                  <el-button 
-                    v-if="node.parent" 
-                    size="small" 
-                    :icon="ArrowUp" 
-                    @click="moveFolderUp(data, node)" 
-                    title="上移"
-                    aria-label="目录上移"
-                  />
-                  <el-button 
-                    v-if="node.parent && node.parent.children?.length > 1" 
-                    size="small" 
-                    :icon="ArrowDown" 
-                    @click="moveFolderDown(data, node)" 
-                    title="下移"
-                    aria-label="目录下移"
                   />
                 </span>
               </span>
@@ -121,7 +105,13 @@
 
         <!-- 规则库表格 -->
         <el-card shadow="never" class="rl-card rl-table-card">
-          <el-table :data="libraries" v-loading="loading" empty-text="暂无规则库">
+          <el-table
+            :data="libraries"
+            v-loading="loading"
+            empty-text="暂无规则库"
+            stripe
+            row-class-name="rl-table-row"
+          >
             <el-table-column prop="name" label="规则库名称" min-width="180">
               <template #default="{ row }">
                 <div class="lib-name-cell">
@@ -130,31 +120,39 @@
                 </div>
               </template>
             </el-table-column>
-            <el-table-column prop="description" label="描述" min-width="220" show-overflow-tooltip />
-            <el-table-column prop="sourceFileName" label="源文件" width="160" show-overflow-tooltip />
-            <el-table-column label="规则数" width="100" align="center">
+            <el-table-column prop="description" label="描述" min-width="200" show-overflow-tooltip>
               <template #default="{ row }">
-                <el-tag type="info" size="small">{{ row._count?.items || 0 }}</el-tag>
+                <span class="cell-muted">{{ row.description || '—' }}</span>
               </template>
             </el-table-column>
-            <el-table-column label="可执行" width="100" align="center">
+            <el-table-column prop="sourceFileName" label="源文件" width="150" show-overflow-tooltip>
               <template #default="{ row }">
-                <el-tag type="success" size="small">{{ row.enabledExecutableItemCount || 0 }}</el-tag>
+                <span class="cell-muted">{{ row.sourceFileName || '—' }}</span>
               </template>
             </el-table-column>
-            <el-table-column label="待结构化" width="100" align="center">
+            <el-table-column label="规则数" width="90" align="center">
               <template #default="{ row }">
-                <el-tag type="warning" size="small">{{ row.pendingStructuredItemCount || 0 }}</el-tag>
+                <span class="cell-num">{{ row._count?.items || 0 }}</span>
+              </template>
+            </el-table-column>
+            <el-table-column label="可执行" width="90" align="center">
+              <template #default="{ row }">
+                <span class="cell-num cell-num--success">{{ row.enabledExecutableItemCount || 0 }}</span>
+              </template>
+            </el-table-column>
+            <el-table-column label="待结构化" width="90" align="center">
+              <template #default="{ row }">
+                <span class="cell-num cell-num--warning">{{ row.pendingStructuredItemCount || 0 }}</span>
               </template>
             </el-table-column>
             <el-table-column prop="status" label="状态" width="90">
               <template #default="{ row }">
-                <el-tag :type="getStatusTagType(row.status)" size="small">
+                <el-tag :type="getStatusTagType(row.status)" size="small" effect="light">
                   {{ getStatusLabel(row.status) }}
                 </el-tag>
               </template>
             </el-table-column>
-            <el-table-column label="操作" width="200" fixed="right">
+            <el-table-column label="操作" width="180" fixed="right">
               <template #default="{ row }">
                 <el-button type="primary" link size="small" @click="showDetail(row)">查看规则</el-button>
                 <el-button type="primary" link size="small" @click="showEditDialog(row)">编辑</el-button>
@@ -372,13 +370,41 @@
     <!-- AI解析对话框 -->
     <el-dialog v-model="parseDialogVisible" :title="`AI 解析规则 — ${parseTarget?.name || ''}`" width="560px">
       <p class="helper-text">上传规范文档后先生成候选规则，确认后再导入当前规则库。</p>
-      <el-upload drag :auto-upload="false" :limit="1" accept=".docx,.doc,.pdf,.xlsx,.xls,.txt,.md" :on-change="handleParseFileChange">
-        <el-icon class="el-icon--upload"><UploadFilled /></el-icon>
-        <div class="el-upload__text">拖拽文件到此处，或 <em>点击选择</em></div>
-      </el-upload>
+
+      <!-- 解析中的局部加载状态 -->
+      <div v-if="isParsing" class="parse-loading-state">
+        <el-icon class="is-loading" :size="32"><Loading /></el-icon>
+        <div class="parse-loading-text">
+          <strong>正在解析文件...</strong>
+          <span v-if="parseFile">{{ parseFile.name }} ({{ (parseFile.size / (1024 * 1024)).toFixed(1) }}MB)</span>
+        </div>
+        <div class="parse-loading-hint">请耐心等待，大文件可能需要较长时间</div>
+      </div>
+
+      <!-- 文件上传区域（非解析状态时显示） -->
+      <template v-else>
+        <el-upload
+          drag
+          :auto-upload="false"
+          :limit="1"
+          accept=".docx,.doc,.pdf,.xlsx,.xls,.txt,.md"
+          :on-change="handleParseFileChange"
+        >
+          <el-icon class="el-icon--upload"><UploadFilled /></el-icon>
+          <div class="el-upload__text">拖拽文件到此处，或 <em>点击选择</em></div>
+        </el-upload>
+      </template>
+
       <template #footer>
         <el-button @click="parseDialogVisible = false">取消</el-button>
-        <el-button type="primary" @click="handleParsePreview" :loading="parsing">生成候选规则</el-button>
+        <el-button
+          type="primary"
+          @click="handleParsePreview"
+          :loading="parsing"
+          :disabled="isParsing"
+        >
+          {{ isParsing ? '解析中...' : '生成候选规则' }}
+        </el-button>
       </template>
     </el-dialog>
 
@@ -473,9 +499,9 @@
 
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from 'vue'
-import { 
-  Plus, UploadFilled, Folder, FolderOpened, ArrowRight, 
-  CircleCheck, Edit, Delete, ArrowDown, ArrowUp, Files
+import {
+  Plus, UploadFilled, Folder, FolderOpened, ArrowRight,
+  CircleCheck, Edit, Delete, ArrowDown, ArrowUp, Files, Loading
 } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox, ElTree } from 'element-plus'
 import {
@@ -508,6 +534,7 @@ const loading = ref(false)
 const submitting = ref(false)
 const parsing = ref(false)
 const importing = ref(false)
+const sidebarCollapsed = ref(false)
 
 // 数据
 const libraries = ref<RuleLibrary[]>([])
@@ -564,6 +591,7 @@ const parseFile = ref<File | null>(null)
 const previewItems = ref<RuleLibraryPreviewItem[]>([])
 const previewSourceFileName = ref('')
 const importMode = ref<'merge' | 'replace'>('merge')
+const isParsing = ref(false) // 新增：解析中的状态标记
 
 const itemDialogVisible = ref(false)
 const itemDialogMode = ref<'create' | 'edit'>('create')
@@ -955,19 +983,54 @@ const handleParsePreview = async () => {
     ElMessage.warning('请选择文件')
     return
   }
+
+  // 文件大小检查（前端预检）
+  const fileSizeMB = parseFile.value.size / (1024 * 1024)
+  if (fileSizeMB > 50) {
+    ElMessage.error('文件大小超过50MB限制，请选择更小的文件')
+    return
+  }
+
   parsing.value = true
+  isParsing.value = true // 标记解析中状态
+
   try {
     const fd = new FormData()
     fd.append('file', parseFile.value)
     const { data } = await parseRulesPreviewApi(parseTarget.value.id, fd)
+
     previewItems.value = data?.items || []
     previewSourceFileName.value = data?.sourceFileName || parseFile.value.name
+
+    if (previewItems.value.length === 0) {
+      ElMessage.warning('未解析出任何规则，请检查文件内容是否完整')
+    } else {
+      ElMessage.success(`成功解析 ${previewItems.value.length} 条候选规则`)
+    }
+
     parseDialogVisible.value = false
     previewDialogVisible.value = true
   } catch (e: any) {
-    ElMessage.error(e?.response?.data?.message || '解析预览失败')
+    // 区分不同类型的错误
+    if (e?.code === 'ECONNABORTED' || e?.message?.includes('timeout')) {
+      ElMessage.error('文件解析超时，可能是文件过大或服务器繁忙，请稍后重试')
+    } else if (e?.message === 'canceled') {
+      ElMessage.info('请求已取消')
+    } else {
+      const errorMsg = e?.response?.data?.message || e?.message || '解析预览失败'
+
+      // 针对常见错误提供更友好的提示
+      if (errorMsg.includes('文件大小') || errorMsg.includes('file size')) {
+        ElMessage.error('文件过大，请压缩后重试（最大支持50MB）')
+      } else if (errorMsg.includes('解析失败') || errorMsg.includes('parse')) {
+        ElMessage.error('文件解析失败，请检查文件格式是否支持（支持PDF/DOCX/TXT/MD等）')
+      } else {
+        ElMessage.error(errorMsg)
+      }
+    }
   } finally {
     parsing.value = false
+    isParsing.value = false // 解析完成
   }
 }
 
@@ -1106,40 +1169,70 @@ onMounted(() => {
 .rl-page {
   padding: 0;
   min-height: 100vh;
-  background: linear-gradient(180deg, #f8fafc 0%, #f1f5f9 100%);
+  background: var(--bg-body);
 }
 
 .rl-layout {
   display: flex;
-  gap: 24px;
-  padding: 24px;
+  gap: var(--space-8);
+  padding: var(--space-8);
   width: 100%;
 }
 
 /* 左侧边栏 */
 .rl-sidebar {
-  width: 360px;
+  width: 260px;
   flex-shrink: 0;
-  background: linear-gradient(180deg, #f8fafc 0%, #eef2f7 100%);
-  border-radius: 16px;
-  padding: 20px;
-  border: 1px solid #d8e0ea;
-  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.08);
+  background: var(--bg-surface);
+  border-radius: var(--radius-xl);
+  padding: var(--space-6);
+  border: 1px solid var(--corp-border-light);
+  box-shadow: var(--shadow-card);
+  transition: width 0.25s ease, padding 0.25s ease, opacity 0.2s ease;
+  overflow: hidden;
+}
+
+.rl-sidebar--collapsed {
+  width: 48px;
+  padding: var(--space-4) var(--space-3);
+}
+
+.sidebar-collapse-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border: 1px solid var(--corp-border-light);
+  border-radius: var(--radius-md);
+  background: var(--bg-surface);
+  cursor: pointer;
+  color: var(--corp-text-secondary);
+  transition: all 0.15s;
+  flex-shrink: 0;
+}
+.sidebar-collapse-btn:hover {
+  border-color: var(--corp-primary);
+  color: var(--corp-primary);
+  background: var(--color-primary-50);
+}
+.rl-sidebar--collapsed .sidebar-collapse-btn .el-icon {
+  transform: rotate(180deg);
 }
 
 .sidebar-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 20px;
-  padding-bottom: 16px;
-  border-bottom: 1px solid #e2e8f0;
+  margin-bottom: var(--space-6);
+  padding-bottom: var(--space-5);
+  border-bottom: 1px solid var(--corp-border-light);
 }
 
 .sidebar-title {
-  font-size: 16px;
+  font-size: var(--text-lg);
   font-weight: 600;
-  color: #0f172a;
+  color: var(--corp-text-primary);
   margin: 0;
 }
 
@@ -1149,35 +1242,35 @@ onMounted(() => {
 }
 
 .folder-section {
-  margin-bottom: 24px;
+  margin-bottom: var(--space-6);
 }
 
 .category-list {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: var(--space-1);
 }
 
 .folder-tree {
-  font-size: 14px;
-  max-height: calc(100vh - 320px);
-  min-height: 400px;
+  font-size: var(--text-base);
+  max-height: calc(100vh - 300px);
+  min-height: 380px;
   overflow-y: auto;
-  color: #0f172a;
+  color: var(--corp-text-primary);
 }
 
 .folder-tree :deep(.el-tree-node__content) {
   height: auto;
-  padding: 6px 8px;
-  border-radius: 8px;
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-md);
 }
 
 .folder-tree :deep(.el-tree-node:hover > .el-tree-node__content) {
-  background: rgba(255, 255, 255, 0.9);
+  background: var(--bg-surface-hover);
 }
 
 .folder-tree :deep(.el-tree-node.is-selected > .el-tree-node__content) {
-  background: linear-gradient(90deg, #dbeafe 0%, #eff6ff 100%);
+  background: var(--corp-primary-lighter);
 }
 
 .folder-tree :deep(.el-checkbox__inner) {
@@ -1187,36 +1280,36 @@ onMounted(() => {
 .tree-node {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 4px 0;
+  gap: var(--space-2);
+  padding: var(--space-1) 0;
   width: 100%;
 }
 
 .expand-icon {
-  font-size: 12px;
-  color: #64748b;
+  font-size: var(--text-xs);
+  color: var(--corp-text-secondary);
 }
 
 .node-label {
   flex: 1;
-  color: #0f172a;
-  font-size: 13px;
+  color: var(--corp-text-primary);
+  font-size: var(--text-sm);
   font-weight: 500;
 }
 
 .tree-count {
-  font-size: 12px;
-  color: #334155;
-  background: rgba(255, 255, 255, 0.82);
-  padding: 2px 6px;
-  border-radius: 999px;
+  font-size: var(--text-xs);
+  color: var(--corp-text-secondary);
+  background: var(--bg-surface-hover);
+  padding: 2px var(--space-2);
+  border-radius: var(--radius-full);
 }
 
 .tree-node-actions {
   display: flex;
-  gap: 2px;
+  gap: var(--space-1);
   opacity: 0;
-  transition: opacity 0.2s ease;
+  transition: opacity var(--corp-transition-base);
 }
 
 .tree-node:hover .tree-node-actions {
@@ -1224,30 +1317,30 @@ onMounted(() => {
 }
 
 .action-btn-create-lib {
-  color: #10b981 !important;
-  background: rgba(16, 185, 129, 0.1) !important;
+  color: var(--corp-success) !important;
+  background: var(--corp-success-light) !important;
 }
 
 .action-btn-create-lib:hover {
-  color: #059669 !important;
+  color: var(--corp-success) !important;
   background: rgba(16, 185, 129, 0.2) !important;
 }
 
 .tree-node-actions :deep(.el-button) {
-  padding: 4px;
+  padding: var(--space-1);
   min-width: auto;
 }
 
 .dialog-tip {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 12px 16px;
-  margin-bottom: 16px;
-  background: #f0f9ff;
-  border-radius: 8px;
-  font-size: 13px;
-  color: #0369a1;
+  gap: var(--space-2);
+  padding: var(--space-4) var(--space-5);
+  margin-bottom: var(--space-5);
+  background: var(--corp-info-light);
+  border-radius: var(--radius-lg);
+  font-size: var(--text-base);
+  color: var(--corp-info-text);
 }
 
 .dialog-tip :deep(.el-icon) {
@@ -1265,35 +1358,35 @@ onMounted(() => {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 16px 20px;
-  margin-bottom: 16px;
-  background: #ffffff;
-  border-radius: 12px;
-  border: 1px solid #e2e8f0;
-  gap: 16px;
+  padding: var(--space-4) var(--space-6);
+  margin-bottom: var(--space-5);
+  background: var(--bg-surface);
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--corp-border-light);
+  gap: var(--space-5);
   flex-wrap: wrap;
 }
 
 .toolbar-left {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: var(--space-4);
   flex-wrap: wrap;
 }
 
 .toolbar-right {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: var(--space-3);
   flex-wrap: wrap;
 }
 
 .search-input {
-  width: 280px;
+  width: 240px;
 }
 
 .status-filter {
-  width: 140px;
+  width: 120px;
 }
 
 .active-filter-tag {
@@ -1302,180 +1395,248 @@ onMounted(() => {
 }
 
 .publish-hint {
-  font-size: 11px;
-  color: #909399;
-  margin-left: 4px;
+  font-size: var(--text-xs);
+  color: var(--corp-text-tertiary);
+  margin-left: var(--space-1);
 }
 
 .toolbar-stats {
-  display: flex;
+  display: inline-flex;
   align-items: center;
-  gap: 8px;
-  font-size: 13px;
-  color: #64748b;
+  gap: var(--space-3);
+  font-size: var(--text-sm);
+  color: var(--corp-text-secondary);
+  background: #f5f7fa;
+  padding: 5px 14px;
+  border-radius: 20px;
+  border: 1px solid #ebeef5;
 }
 
 .toolbar-stats .stat-item strong {
-  color: #1e293b;
+  color: var(--corp-text-primary);
   font-weight: 700;
 }
 
 .stat-sep {
-  color: #cbd5e1;
+  color: #dcdfe6;
 }
 
 /* 卡片样式 */
 .rl-card {
-  border-radius: 16px;
-  border: 1px solid #e2e8f0;
+  border-radius: var(--radius-xl);
+  border: 1px solid var(--corp-border-light);
   overflow: hidden;
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.04);
-  transition: all 0.3s ease;
+  box-shadow: var(--shadow-surface);
+  transition: all var(--corp-transition-base);
 }
 
 .rl-card:hover {
-  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.08);
+  box-shadow: var(--shadow-card);
 }
 
 .rl-table-card :deep(.el-card__body),
 .detail-card :deep(.el-card__body) {
-  padding: 20px;
+  padding: var(--space-6);
 }
 
 .rl-table-card :deep(.el-table th.el-table__cell) {
-  background: linear-gradient(180deg, #f8fafc 0%, #f1f5f9 100%);
-  color: #334155;
+  background: var(--bg-elevated);
+  color: var(--corp-text-secondary);
   font-weight: 600;
-  font-size: 14px;
-  border-bottom: 2px solid #e2e8f0;
+  font-size: var(--text-sm);
+  border-bottom: 2px solid var(--corp-border-light);
 }
 
 .rl-table-card :deep(.el-table th.el-table__cell):first-child {
-  border-radius: 12px 0 0 0;
+  border-radius: var(--radius-lg) 0 0 0;
 }
 
 .rl-table-card :deep(.el-table th.el-table__cell):last-child {
-  border-radius: 0 12px 0 0;
+  border-radius: 0 var(--radius-lg) 0 0;
+}
+
+.rl-table-card :deep(.el-table--striped .el-table__body tr.el-table__row--striped td.el-table__cell) {
+  background: #fafbfc;
 }
 
 .rl-table-card :deep(.el-table tr:hover > td.el-table__cell),
 .detail-card :deep(.el-table tr:hover > td.el-table__cell) {
-  background: #f8fafc;
+  background: #f0f5ff !important;
 }
 
 .rl-table-card :deep(.el-table__row) {
-  transition: all 0.2s ease;
-}
-
-.rl-table-card :deep(.el-table__row):hover {
-  transform: scale(1.002);
+  transition: all var(--corp-transition-fast);
 }
 
 .rl-table-card :deep(.el-table__body tr:last-child td.el-table__cell):first-child {
-  border-radius: 0 0 0 12px;
+  border-radius: 0 0 0 var(--radius-lg);
 }
 
 .rl-table-card :deep(.el-table__body tr:last-child td.el-table__cell):last-child {
-  border-radius: 0 0 12px 0;
+  border-radius: 0 0 var(--radius-lg) 0;
 }
 
 .detail-card {
-  margin-top: 20px;
+  margin-top: var(--space-6);
 }
 
 .lib-name-cell {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: var(--space-3);
 }
+
+.cell-muted {
+  color: var(--corp-text-tertiary);
+  font-size: var(--text-sm);
+}
+
+.cell-num {
+  font-weight: 700;
+  font-size: var(--text-sm);
+  color: var(--corp-text-primary);
+}
+.cell-num--success { color: #10b981; }
+.cell-num--warning { color: #f59e0b; }
 
 .status-indicator {
   width: 8px;
   height: 8px;
-  border-radius: 50%;
+  border-radius: var(--radius-full);
+  flex-shrink: 0;
 }
 
 .status-indicator.status-draft {
-  background: #f59e0b;
+  background: var(--corp-warning);
 }
 
 .status-indicator.status-published {
-  background: #10b981;
+  background: var(--corp-success);
 }
 
 .status-indicator.status-archived {
-  background: #6366f1;
+  background: var(--color-primary-500);
 }
 
 .lib-name {
   font-weight: 600;
-  color: #1e293b;
+  color: var(--corp-text-primary);
 }
 
 .detail-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  gap: 12px;
+  gap: var(--space-4);
 }
 
 .detail-stats {
   display: flex;
-  gap: 8px;
-  margin-top: 6px;
+  gap: var(--space-2);
+  margin-top: var(--space-2);
 }
 
 .filters {
   display: flex;
-  gap: 14px;
-  margin-bottom: 18px;
-  padding: 16px;
-  border-radius: 14px;
-  background: #f8fafc;
-  border: 1px solid #e2e8f0;
+  gap: var(--space-4);
+  margin-bottom: var(--space-5);
+  padding: var(--space-5);
+  border-radius: var(--radius-lg);
+  background: var(--bg-elevated);
+  border: 1px solid var(--corp-border-light);
   flex-wrap: wrap;
 }
 
 .filter-input {
-  width: 280px;
+  width: 260px;
 }
 
 .filter-select {
-  width: 150px;
+  width: 140px;
 }
 
 .helper-text {
-  font-size: 13px;
-  color: #64748b;
-  margin-bottom: 16px;
+  font-size: var(--text-base);
+  color: var(--corp-text-secondary);
+  margin-bottom: var(--space-5);
 }
 
 .preview-toolbar {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 16px;
+  margin-bottom: var(--space-5);
 }
 
 .preview-meta {
-  font-size: 13px;
-  color: #64748b;
+  font-size: var(--text-base);
+  color: var(--corp-text-secondary);
+}
+
+/* 解析中的局部加载状态 */
+.parse-loading-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-10) var(--space-6);
+  gap: var(--space-4);
+  background: var(--bg-elevated);
+  border-radius: var(--radius-lg);
+  border: 1px dashed var(--corp-border-light);
+}
+
+.parse-loading-state .el-icon {
+  color: var(--corp-primary);
+}
+
+.parse-loading-text {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-1);
+  font-size: var(--text-base);
+  color: var(--corp-text-primary);
+}
+
+.parse-loading-text strong {
+  font-size: var(--text-lg);
+  font-weight: 600;
+}
+
+.parse-loading-text span {
+  color: var(--corp-text-secondary);
+  font-size: var(--text-sm);
+}
+
+.parse-loading-hint {
+  font-size: var(--text-xs);
+  color: var(--corp-text-tertiary);
 }
 
 @media (max-width: 1200px) {
   .rl-layout {
     flex-direction: column;
-    gap: 16px;
+    gap: var(--space-6);
   }
-  
+
   .rl-sidebar {
     width: 100%;
     max-width: 100%;
   }
+
+  .rl-sidebar--collapsed {
+    width: 100%;
+    padding: var(--space-5);
+  }
+
+  .sidebar-collapse-btn {
+    display: none;
+  }
   
   .filters {
     flex-wrap: wrap;
-    gap: 12px;
+    gap: var(--space-4);
   }
   
   .filter-input {
@@ -1490,17 +1651,17 @@ onMounted(() => {
 
 @media (max-width: 768px) {
   .rl-layout {
-    padding: 12px;
-    gap: 12px;
+    padding: var(--space-5);
+    gap: var(--space-4);
   }
   
   .rl-sidebar {
-    padding: 16px;
+    padding: var(--space-5);
   }
   
   .filters {
-    padding: 12px;
-    gap: 10px;
+    padding: var(--space-4);
+    gap: var(--space-3);
   }
   
   .filter-input {
@@ -1509,13 +1670,13 @@ onMounted(() => {
   }
   
   .filter-select {
-    width: calc(50% - 5px);
+    width: calc(50% - var(--space-2));
   }
   
   .detail-header {
     flex-direction: column;
     align-items: flex-start;
-    gap: 12px;
+    gap: var(--space-4);
   }
   
   .tree-node-actions {
@@ -1525,13 +1686,13 @@ onMounted(() => {
 
 @media (max-width: 480px) {
   .rl-layout {
-    padding: 8px;
+    padding: var(--space-3);
   }
   
   .lib-name-cell {
     flex-direction: column;
     align-items: flex-start;
-    gap: 4px;
+    gap: var(--space-1);
   }
 }
 </style>

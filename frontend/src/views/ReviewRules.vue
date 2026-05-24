@@ -4,7 +4,7 @@
       <!-- 紧凑的顶栏：标题 + 操作按钮 -->
       <div class="panel-header">
         <div class="header-left">
-          <span class="panel-title">审查规则管理</span>
+          <span class="panel-title">合规规则库</span>
           <el-tag size="small" type="info">共 {{ totalRules }} 条</el-tag>
         </div>
         <div class="header-actions">

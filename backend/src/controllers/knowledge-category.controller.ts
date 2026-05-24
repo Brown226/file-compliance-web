@@ -14,6 +14,46 @@ import { AppError } from '../middlewares/error.middleware';
 const UPLOAD_DIR = path.join(__dirname, '../../uploads/knowledge');
 if (!fs.existsSync(UPLOAD_DIR)) fs.mkdirSync(UPLOAD_DIR, { recursive: true });
 
+// ==================== 名称/描述校验工具 ====================
+
+const NAME_MIN_LEN = 1;
+const NAME_MAX_LEN = 64;
+const DESC_MAX_LEN = 128;
+
+function validateAndCleanName(raw: string | undefined | null): string | null {
+  if (raw == null) return null;
+  const trimmed = raw.trim();
+  if (trimmed.length < NAME_MIN_LEN || trimmed.length > NAME_MAX_LEN) return null;
+
+  const hasValidChar = /[\u4e00-\u9fa5A-Za-z0-9]/.test(trimmed);
+  if (!hasValidChar) return null;
+
+  const onlyPunctuation = /^[^\u4e00-\u9fa5A-Za-z0-9]*$/.test(trimmed);
+  if (onlyPunctuation) return null;
+
+  const suspiciousPatterns = [
+    /^[\;\.\,\s]+$/,
+    /^\.+$/,
+    /^\;+$/,
+    /^[\;\.\,]+$/,
+    /^v+$/i,
+    /^[a-zA-Z]v[a-zA-Z]*$/i,
+  ];
+  for (const pattern of suspiciousPatterns) {
+    if (pattern.test(trimmed)) return null;
+  }
+
+  return trimmed.replace(/\s{2,}/g, ' ');
+}
+
+function isValidDescription(text: string): boolean {
+  if (!text || text.length > DESC_MAX_LEN) return false;
+  const trimmed = text.trim();
+  if (trimmed.length === 0) return false;
+  const hasValidContent = /[\u4e00-\u9fa5A-Za-z0-9]{2,}/.test(trimmed);
+  return hasValidContent;
+}
+
 /** 获取知识子库列表 */
 export const listCategories = async (_req: AuthRequest, res: Response): Promise<void> => {
   try {
@@ -41,10 +81,19 @@ export const createCategory = async (req: AuthRequest, res: Response): Promise<v
   try {
     const { name, description, parentId, isLeaf } = req.body;
     console.log('[DEBUG] createCategory isLeaf =', isLeaf, 'parentId =', parentId);
-    if (!name?.trim()) { error(res, '名称不能为空', 400); return; }
+
+    const cleanedName = validateAndCleanName(name);
+    if (!cleanedName) { error(res, '名称不能为空，且需包含至少1个汉字、字母或数字', 400); return; }
+
+    const cleanedDescription = description?.trim() || null;
+    if (cleanedDescription && !isValidDescription(cleanedDescription)) {
+      error(res, '描述内容不合法，请输入有意义的文字描述', 400);
+      return;
+    }
+
     const category = await KnowledgeCategoryService.create({
-      name: name.trim(),
-      description,
+      name: cleanedName,
+      description: cleanedDescription,
       parentId,
       isLeaf,
     });
@@ -59,6 +108,23 @@ export const createCategory = async (req: AuthRequest, res: Response): Promise<v
 export const updateCategory = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const id = req.params.id as string;
+    const { name, description } = req.body;
+
+    if (name !== undefined) {
+      const cleanedName = validateAndCleanName(name);
+      if (!cleanedName) { error(res, '名称不合法，需包含至少1个汉字、字母或数字', 400); return; }
+      req.body.name = cleanedName;
+    }
+
+    if (description !== undefined && description !== null) {
+      const cleanedDesc = description.trim() || null;
+      if (cleanedDesc && !isValidDescription(cleanedDesc)) {
+        error(res, '描述内容不合法', 400);
+        return;
+      }
+      req.body.description = cleanedDesc;
+    }
+
     const category = await KnowledgeCategoryService.update(id, req.body);
     success(res, category, '更新成功');
   } catch (err: any) {

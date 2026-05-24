@@ -170,19 +170,26 @@ export class LangChainSearchService {
     const seenIds = new Set<string>();
 
     for (const q of queries) {
-      const retriever = new PgVectorRetriever({
-        limit: topNumber * 2,
-        categoryId,
-        sourceTypes,
-        minSimilarity: 0.3,
-        enableRerank: true,
-        searchMode,
-      });
-      const docs = await retriever.invoke(q);
-      for (const doc of docs) {
-        if (!seenIds.has(doc.metadata.id)) {
-          seenIds.add(doc.metadata.id);
-          allDocs.push(doc);
+      try {
+        const retriever = new PgVectorRetriever({
+          limit: topNumber * 2,
+          categoryId,
+          sourceTypes,
+          minSimilarity: 0.3,
+          enableRerank: true,
+          searchMode,
+        });
+        const docs = await retriever.invoke(q);
+        for (const doc of docs) {
+          if (!seenIds.has(doc.metadata.id)) {
+            seenIds.add(doc.metadata.id);
+            allDocs.push(doc);
+          }
+        }
+      } catch (e: any) {
+        console.warn(`[LangChain-HitTest] 检索失败 (query="${q.substring(0, 50)}"): ${e.message}`);
+        if (allDocs.length === 0 && queries.indexOf(q) === 0) {
+          throw new Error(`向量检索服务异常: ${e.message || '未知错误'}`);
         }
       }
     }

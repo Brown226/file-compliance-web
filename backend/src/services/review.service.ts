@@ -863,11 +863,32 @@ export class ReviewService {
         ),
         locateMeta: this.buildLocateMeta(ctx.extractedText, issue, { fileId: file.id }),
       }));
-      await prisma.taskDetail.createMany({
-        data: ruleData.map((item) => this.stripDbUnsupportedFields(item)),
-      }).catch((error) => {
-        console.error('[Review] 规则结果写入失败:', error);
-      });
+
+      // 增强版：事务保护 + 重试机制
+      try {
+        await prisma.$transaction(async (tx) => {
+          await tx.taskDetail.createMany({
+            data: ruleData.map((item) => this.stripDbUnsupportedFields(item)),
+          });
+          console.log(`[Review] ✅ 规则结果事务写入成功: ${ruleData.length}条 (${file.fileName})`);
+        });
+      } catch (txError) {
+        console.error(`[Review] ❌ 规则结果事务写入失败: ${file.fileName}`, txError);
+
+        // 重试一次（网络瞬时故障或锁冲突常见）
+        try {
+          await prisma.taskDetail.createMany({
+            data: ruleData.map((item) => this.stripDbUnsupportedFields(item)),
+          });
+          console.log(`[Review] ✅ 规则结果重试写入成功: ${ruleData.length}条 (${file.fileName})`);
+        } catch (retryError) {
+          console.error(`[Review] ❌ 规则结果重试也失败，数据将丢失: ${file.fileName}`, retryError);
+
+          // 创建错误记录以便追踪
+          await this.createErrorDetail(taskId, file.id, file.fileName, `规则结果保存失败(重试后): ${retryError instanceof Error ? retryError.message : String(retryError)}`);
+        }
+      }
+
       allFastIssues.push(...ruleData);
     }
 
@@ -893,11 +914,30 @@ export class ReviewService {
         ),
         locateMeta: this.buildLocateMeta(ctx.extractedText, issue, { fileId: file.id }),
       }));
-      await prisma.taskDetail.createMany({
-        data: stdRefData.map((item) => this.stripDbUnsupportedFields(item)),
-      }).catch((error) => {
-        console.error('[Review] 标准引用结果写入失败:', error);
-      });
+
+      // 增强版：事务保护 + 重试机制
+      try {
+        await prisma.$transaction(async (tx) => {
+          await tx.taskDetail.createMany({
+            data: stdRefData.map((item) => this.stripDbUnsupportedFields(item)),
+          });
+          console.log(`[Review] ✅ 标准引用结果事务写入成功: ${stdRefData.length}条 (${file.fileName})`);
+        });
+      } catch (txError) {
+        console.error(`[Review] ❌ 标准引用结果事务写入失败: ${file.fileName}`, txError);
+
+        // 重试一次
+        try {
+          await prisma.taskDetail.createMany({
+            data: stdRefData.map((item) => this.stripDbUnsupportedFields(item)),
+          });
+          console.log(`[Review] ✅ 标准引用结果重试写入成功: ${stdRefData.length}条 (${file.fileName})`);
+        } catch (retryError) {
+          console.error(`[Review] ❌ 标准引用结果重试也失败，数据将丢失: ${file.fileName}`, retryError);
+          await this.createErrorDetail(taskId, file.id, file.fileName, `标准引用保存失败(重试后): ${retryError instanceof Error ? retryError.message : String(retryError)}`);
+        }
+      }
+
       allFastIssues.push(...stdRefData);
     }
 
@@ -1042,17 +1082,37 @@ export class ReviewService {
             || this.buildLocateMeta(ctx.extractedText, issue, { fileId: file.id }),
         }));
 
+        // 增强版：事务保护 + 重试机制 + 失败时延迟推送
+        let dbWriteSuccess = false;
         try {
-          await prisma.taskDetail.createMany({
-            data: aiData.map((item) => this.stripDbUnsupportedFields(item)),
+          await prisma.$transaction(async (tx) => {
+            await tx.taskDetail.createMany({
+              data: aiData.map((item) => this.stripDbUnsupportedFields(item)),
+            });
           });
-          console.log(`[Review] 分片 ${chunkIndex}/${totalChunks} 写入 ${aiData.length} 条`);
-        } catch (e) {
-          console.error(`[Review] 分片写入失败:`, e);
+          dbWriteSuccess = true;
+          console.log(`[Review] ✅ 分片 ${chunkIndex}/${totalChunks} 事务写入成功: ${aiData.length}条 (${file.fileName})`);
+        } catch (txError) {
+          console.error(`[Review] ❌ 分片 ${chunkIndex}/${totalChunks} 事务写入失败: ${file.fileName}`, txError);
+
+          // 重试一次
+          try {
+            await prisma.taskDetail.createMany({
+              data: aiData.map((item) => this.stripDbUnsupportedFields(item)),
+            });
+            dbWriteSuccess = true;
+            console.log(`[Review] ✅ 分片 ${chunkIndex}/${totalChunks} 重试写入成功: ${aiData.length}条 (${file.fileName})`);
+          } catch (retryError) {
+            console.error(`[Review] ❌ 分片 ${chunkIndex}/${totalChunks} 重试也失败: ${file.fileName}`, retryError);
+
+            // 创建错误记录（不阻塞主流程）
+            this.createErrorDetail(taskId, file.id, file.fileName, `AI分片${chunkIndex}保存失败(重试后): ${retryError instanceof Error ? retryError.message : String(retryError)}`).catch(() => {});
+          }
         }
 
-        // 3. 立即推送该分片结果到前端（用于实时追加展示）
-        WebSocketService.emitChunkResult(taskId, {
+        // 3. 仅在数据库写入成功后才推送WebSocket（避免前端显示但DB没有）
+        if (dbWriteSuccess) {
+          WebSocketService.emitChunkResult(taskId, {
           fileId: file.id,
           fileName: file.fileName,
           chunkIndex,
@@ -1061,8 +1121,9 @@ export class ReviewService {
           issues: aiData,
           engine,
         });
+        } // end if (dbWriteSuccess)
 
-        // 4. 更新文件错误计数
+        // 4. 更新文件错误计数（仅在写入成功时）
         this.updateFileErrorCount(file.id).catch(() => { /* ignore */ });
       }
 

@@ -5,7 +5,7 @@ import router from '../router'
 
 const request = axios.create({
   baseURL: '/api',
-  timeout: 30000,
+  timeout: 120000, // 120秒：文件上传/解析等耗时操作需要更长超时
 })
 
 // ===== 全局请求取消机制 =====

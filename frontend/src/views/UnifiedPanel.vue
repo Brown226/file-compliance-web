@@ -180,7 +180,7 @@ const navGroups = ref([
     items: [
       { id: 'standards', name: '标准库清单管理', icon: 'Reading', description: '管理标准清单、误报库和术语表' },
       { id: 'knowledge', name: '知识库管理', icon: 'FolderOpened', description: '管理知识库分类和文档' },
-      { id: 'rules', name: '规则库管理', icon: 'Document', description: '管理审查规则和规则库' },
+      { id: 'rules', name: '语义知识库', icon: 'Document', description: '管理审查规则和规则库' },
     ]
   },
   {

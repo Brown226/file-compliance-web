@@ -90,14 +90,103 @@
       </el-button>
     </div>
 
-    <div class="error-content" ref="errorContentRef" v-loading="loading">
+    <!-- 批量操作工具栏 -->
+    <div class="batch-toolbar" v-if="filteredAndSearched.length > 0 && batchMode">
+      <div class="batch-info">
+        <el-checkbox
+          :model-value="isAllSelected"
+          :indeterminate="isIndeterminate"
+          @change="toggleSelectAll"
+          class="select-all-checkbox"
+        >
+          全选
+        </el-checkbox>
+        <span class="selected-count">
+          已选 <strong>{{ selectedIssueIds.length }}</strong> / {{ filteredAndSearched.length }} 项
+        </span>
+      </div>
+
+      <div class="batch-actions">
+        <!-- 批量确认建议 -->
+        <el-button-group v-if="selectedIssueIds.length > 0 && isDocxSelected">
+          <el-button
+            type="success"
+            size="small"
+            @click="handleBatchAdopt"
+            :disabled="!hasAdoptableItems"
+            :loading="batchLoading"
+          >
+            <el-icon><Check /></el-icon>
+            批量采纳 ({{ adoptableCount }})
+          </el-button>
+        </el-button-group>
+
+        <!-- 批量标记误报 -->
+        <el-button-group v-if="selectedIssueIds.length > 0">
+          <el-button
+            type="warning"
+            size="small"
+            @click="handleBatchFalsePositive"
+            :disabled="!hasFpMarkableItems"
+            :loading="batchLoading"
+          >
+            <el-icon><WarningFilled /></el-icon>
+            标记误报 ({{ fpMarkableCount }})
+          </el-button>
+        </el-button-group>
+
+        <!-- 取消选择 -->
+        <el-button
+          size="small"
+          @click="clearSelection"
+          :disabled="selectedIssueIds.length === 0"
+        >
+          取消选择
+        </el-button>
+
+        <!-- 退出批量模式 -->
+        <el-button
+          link
+          type="info"
+          size="small"
+          @click="exitBatchMode"
+        >
+          退出批量操作
+        </el-button>
+      </div>
+    </div>
+
+    <!-- 进入批量模式按钮（非批量模式下显示） -->
+    <div class="enter-batch-bar" v-else-if="filteredAndSearched.length > 0 && !batchMode">
+      <el-button
+        type="primary"
+        plain
+        size="small"
+        @click="enterBatchMode"
+      >
+        <el-icon><Operation /></el-icon>
+        批量操作
+      </el-button>
+      <span class="batch-hint">可批量采纳建议或标记误报</span>
+    </div>
+
+    <div class="error-content" :class="{ 'batch-mode-active': batchMode }" ref="errorContentRef" v-loading="loading">
       <template v-if="filteredAndSearched.length > 0">
         <div
           v-for="detail in filteredAndSearched"
           :key="detail.id"
           :id="`issue-${detail.id}`"
-          :class="['issue-card', { 'false-positive-card': detail.isFalsePositive, 'issue-highlighted': highlightedId === detail.id }]"
+          :class="['issue-card', { 'false-positive-card': detail.isFalsePositive, 'issue-highlighted': highlightedId === detail.id, 'batch-selected': selectedIssueIds.includes(detail.id) }]"
         >
+          <!-- 批量选择 Checkbox -->
+          <div class="batch-checkbox-wrapper" v-if="batchMode">
+            <el-checkbox
+              :model-value="selectedIssueIds.includes(detail.id)"
+              @change="(val: boolean) => toggleIssueSelection(detail.id, val)"
+              class="batch-checkbox"
+            />
+          </div>
+
           <!-- 卡片头部 -->
           <div class="issue-header">
             <div class="issue-tags">
@@ -322,7 +411,17 @@
 
 <script setup lang="ts">
 import { ref, computed, nextTick } from 'vue'
-import { CopyDocument, Search, RefreshRight, Location, ChatLineRound, Check } from '@element-plus/icons-vue'
+import { ElMessage, ElMessageBox } from 'element-plus'
+import {
+  CopyDocument,
+  Search,
+  RefreshRight,
+  Location,
+  ChatLineRound,
+  Check,
+  Operation,
+  WarningFilled
+} from '@element-plus/icons-vue'
 import DiffText from './DiffText.vue'
 
 const props = defineProps<{
@@ -332,7 +431,7 @@ const props = defineProps<{
   isDocxSelected?: boolean
 }>()
 
-defineEmits<{
+const emit = defineEmits<{
   'update:selectedFileId': [value: string | null]
   selectFileById: [fileId: string]
   copyHandleId: [handleId: string]
@@ -340,9 +439,183 @@ defineEmits<{
   cancelFp: [detail: any]
   locateText: [payload: { detail: any; elementId: string }]
   adoptSuggestion: [detail: any]
+  batchAdopt: [issueIds: string[]]
+  batchFalsePositive: [issueIds: string[], reason?: string]
 }>()
 
 const errorContentRef = ref<HTMLElement | null>(null)
+
+// ===== 批量操作状态 =====
+const batchMode = ref(false)
+const selectedIssueIds = ref<string[]>([])
+const batchLoading = ref(false)
+
+// 进入批量模式
+const enterBatchMode = () => {
+  batchMode.value = true
+  selectedIssueIds.value = []
+}
+
+// 退出批量模式
+const exitBatchMode = () => {
+  batchMode.value = false
+  selectedIssueIds.value = []
+}
+
+// 切换单个问题的选择状态
+const toggleIssueSelection = (issueId: string, isSelected: boolean) => {
+  if (isSelected) {
+    if (!selectedIssueIds.value.includes(issueId)) {
+      selectedIssueIds.value.push(issueId)
+    }
+  } else {
+    selectedIssueIds.value = selectedIssueIds.value.filter(id => id !== issueId)
+  }
+}
+
+// 全选/取消全选
+const toggleSelectAll = (isSelected: boolean) => {
+  if (isSelected) {
+    selectedIssueIds.value = filteredAndSearched.value.map((d: any) => d.id)
+  } else {
+    selectedIssueIds.value = []
+  }
+}
+
+// 清空选择
+const clearSelection = () => {
+  selectedIssueIds.value = []
+}
+
+// 是否全选
+const isAllSelected = computed(() => {
+  return filteredAndSearched.value.length > 0 &&
+         selectedIssueIds.value.length === filteredAndSearched.value.length
+})
+
+// 是否半选（部分选中）
+const isIndeterminate = computed(() => {
+  return selectedIssueIds.value.length > 0 &&
+         selectedIssueIds.value.length < filteredAndSearched.value.length
+})
+
+// 可采纳的问题数量
+const adoptableCount = computed(() => {
+  return selectedIssueIds.value.filter(id => {
+    const issue = filteredAndSearched.value.find((d: any) => d.id === id)
+    return issue?.suggestedText && !issue?.isFalsePositive
+  }).length
+})
+
+// 可标记误报的问题数量
+const fpMarkableCount = computed(() => {
+  return selectedIssueIds.value.filter(id => {
+    const issue = filteredAndSearched.value.find((d: any) => d.id === id)
+    return issue && !issue.isFalsePositive
+  }).length
+})
+
+// 是否有可采纳项
+const hasAdoptableItems = computed(() => adoptableCount.value > 0)
+
+// 是否有可标记误报项
+const hasFpMarkableItems = computed(() => fpMarkableCount.value > 0)
+
+// 获取选中项的详细信息
+const getSelectedIssues = () => {
+  return filteredAndSearched.value.filter((d: any) =>
+    selectedIssueIds.value.includes(d.id)
+  )
+}
+
+// 批量采纳建议
+const handleBatchAdopt = async () => {
+  if (!hasAdoptableItems.value) return
+
+  try {
+    await ElMessageBox.confirm(
+      `确定要批量采纳 ${adoptableCount.value} 条建议吗？此操作将自动修改文档内容。`,
+      '批量确认',
+      {
+        confirmButtonText: '确认采纳',
+        cancelButtonText: '取消',
+        type: 'success',
+        distinguishCancelAndClose: true,
+      }
+    )
+
+    batchLoading.value = true
+
+    // 筛选出可采纳的问题ID
+    const adoptableIds = getSelectedIssues()
+      .filter((issue: any) => issue.suggestedText && !issue.isFalsePositive)
+      .map((issue: any) => issue.id)
+
+    // 触发父组件事件
+    emit('batchAdopt', adoptableIds)
+
+    ElMessage.success(`已提交 ${adoptableIds.length} 条采纳请求`)
+
+    // 延迟清空选择，让用户看到反馈
+    setTimeout(() => {
+      clearSelection()
+    }, 1000)
+  } catch (error: any) {
+    if (error !== 'cancel' && error !== 'close') {
+      ElMessage.error('批量操作失败')
+      console.error('批量采纳失败:', error)
+    }
+  } finally {
+    batchLoading.value = false
+  }
+}
+
+// 批量标记误报
+const handleBatchFalsePositive = async () => {
+  if (!hasFpMarkableItems.value) return
+
+  try {
+    const { value: reason } = await ElMessageBox.prompt(
+      `请输入将 ${fpMarkableCount.value} 条问题标记为误报的原因：`,
+      '批量标记误报',
+      {
+        confirmButtonText: '确认标记',
+        cancelButtonText: '取消',
+        inputPlaceholder: '例如：该条款符合公司内部规定...',
+        inputType: 'textarea',
+        inputValidator: (val: string) => {
+          if (!val || val.trim().length < 5) {
+            return '请至少输入5个字符的原因说明'
+          }
+          return true
+        },
+      }
+    )
+
+    batchLoading.value = true
+
+    // 筛选出可标记的问题ID
+    const fpMarkableIds = getSelectedIssues()
+      .filter((issue: any) => !issue.isFalsePositive)
+      .map((issue: any) => issue.id)
+
+    // 触发父组件事件
+    emit('batchFalsePositive', fpMarkableIds, reason)
+
+    ElMessage.success(`已提交 ${fpMarkableIds.length} 条误报标记`)
+
+    setTimeout(() => {
+      clearSelection()
+    }, 1000)
+  } catch (error: any) {
+    if (error !== 'cancel' && error !== 'close') {
+      ElMessage.error('批量操作失败')
+      console.error('批量标记误报失败:', error)
+    }
+  } finally {
+    batchLoading.value = false
+  }
+}
 
 // 筛选状态
 const filterSeverity = ref('')
@@ -605,6 +878,137 @@ defineExpose({
   z-index: 10;
 }
 .filter-group { display: flex; align-items: center; gap: 8px; }
+
+/* ===== 批量操作工具栏 ===== */
+.batch-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 14px;
+  background: linear-gradient(135deg, #ECF5FF 0%, #F0F9FF 100%);
+  border-bottom: 2px solid #409EFF;
+  flex-shrink: 0;
+  position: sticky;
+  top: 48px; /* 筛选工具栏高度 */
+  z-index: 9;
+  animation: slideDown 0.3s ease;
+}
+
+@keyframes slideDown {
+  from {
+    opacity: 0;
+    transform: translateY(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.batch-info {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.select-all-checkbox {
+  font-weight: 600;
+  color: #303133;
+}
+
+.selected-count {
+  font-size: 13px;
+  color: #606266;
+}
+
+.selected-count strong {
+  color: #409EFF;
+  font-weight: 700;
+  font-size: 15px;
+  margin: 0 2px;
+}
+
+.batch-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.batch-actions .el-button-group {
+  box-shadow: 0 2px 6px rgba(64, 158, 255, 0.12);
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+/* 进入批量模式按钮栏 */
+.enter-batch-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 14px;
+  background: #FAFAFA;
+  border-bottom: 1px solid #EBEEF5;
+  flex-shrink: 0;
+}
+
+.batch-hint {
+  font-size: 12px;
+  color: #909399;
+}
+
+/* 批量选择 Checkbox 样式 */
+.batch-checkbox-wrapper {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  z-index: 5;
+  background: white;
+  border-radius: 50%;
+  padding: 4px;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.08);
+  transition: all 0.2s ease;
+}
+
+.batch-checkbox-wrapper:hover {
+  box-shadow: 0 3px 10px rgba(64, 158, 255, 0.2);
+  transform: scale(1.05);
+}
+
+.batch-checkbox :deep(.el-checkbox__inner) {
+  width: 18px;
+  height: 18px;
+  border-radius: 4px;
+}
+
+.batch-checkbox :deep(.el-checkbox__inner::after) {
+  width: 5px;
+  height: 9px;
+  left: 6px;
+  top: 2px;
+}
+
+/* 批量选中状态的卡片样式 */
+.issue-card.batch-selected {
+  border-left-color: #409EFF !important;
+  box-shadow:
+    var(--border-inset),
+    0 0 0 2px rgba(64, 158, 255, 0.15),
+    0 4px 12px rgba(64, 158, 255, 0.1) !important;
+  transition: all 0.25s ease;
+}
+
+.issue-card.batch-selected:hover {
+  box-shadow:
+    var(--border-inset),
+    0 0 0 2px rgba(64, 158, 255, 0.25),
+    0 6px 20px rgba(64, 158, 255, 0.15) !important;
+}
+
+/* 批量模式下卡片增加左边距（为checkbox留空间） */
+.batch-mode-active .issue-card {
+  position: relative;
+  padding-left: 36px;
+}
 
 .error-content { flex: 1; padding: 12px 14px; overflow-y: auto; }
 

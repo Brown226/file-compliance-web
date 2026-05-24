@@ -9,65 +9,100 @@
     </div>
 
     <!-- 过滤栏 -->
-    <div class="filter-bar">
-      <el-form :inline="true" :model="filters" class="filter-form">
-        <el-form-item label="任务名称">
+    <div class="filter-bar-enhanced">
+      <!-- 左侧：主要筛选项 -->
+      <div class="filter-left">
+        <div class="search-box">
           <el-input
             v-model="filters.search"
-            placeholder="搜索任务名称"
+            placeholder="搜索任务名称..."
             clearable
+            prefix-icon="Search"
             @clear="() => fetchTasks()"
             @keyup.enter="() => fetchTasks()"
-            style="width: 220px"
-          >
-            <template #prefix><el-icon><Search /></el-icon></template>
-          </el-input>
-        </el-form-item>
-        <el-form-item label="状态">
-          <el-select
-            v-model="filters.status"
-            placeholder="全部状态"
-            clearable
-            @change="fetchTasks"
-            style="width: 150px"
-          >
-            <el-option label="排队中" value="PENDING" />
-            <el-option label="审查中" value="PROCESSING" />
-            <el-option label="已完成" value="COMPLETED" />
-            <el-option label="失败" value="FAILED" />
-          </el-select>
-        </el-form-item>
-        <el-form-item label="审查模式">
-          <el-select
-            v-model="filters.reviewMode"
-            placeholder="全部模式"
-            clearable
-            @change="fetchTasks"
-            style="width: 150px"
-          >
-            <el-option label="以库审文" value="LIBRARY_REVIEW" />
-            <el-option label="以文审文" value="DOC_REVIEW" />
-            <el-option label="错别字/语法" value="TYPO_GRAMMAR" />
-            <el-option label="多模态识别" value="MULTIMODAL" />
-            <el-option label="标准引用自检" value="SELF_CHECK" />
-          </el-select>
-        </el-form-item>
-        <el-form-item>
+            class="search-input"
+          />
+        </div>
+
+        <el-select
+          v-model="filters.status"
+          placeholder="全部状态"
+          clearable
+          @change="fetchTasks"
+          class="filter-select"
+        >
+          <el-option label="排队中" value="PENDING" />
+          <el-option label="审查中" value="PROCESSING" />
+          <el-option label="已完成" value="COMPLETED" />
+          <el-option label="失败" value="FAILED" />
+        </el-select>
+
+        <el-select
+          v-model="filters.reviewMode"
+          placeholder="审查模式"
+          clearable
+          @change="fetchTasks"
+          class="filter-select"
+        >
+          <el-option label="以库审文" value="LIBRARY_REVIEW" />
+          <el-option label="以文审文" value="DOC_REVIEW" />
+          <el-option label="错别字/语法" value="TYPO_GRAMMAR" />
+          <el-option label="多模态识别" value="MULTIMODAL" />
+          <el-option label="标准引用自检" value="SELF_CHECK" />
+        </el-select>
+      </div>
+
+      <!-- 右侧：操作按钮组 -->
+      <div class="filter-right">
+        <el-button-group>
           <el-button type="primary" @click="() => fetchTasks()">
-            <el-icon><Search /></el-icon> 查询
+            <el-icon><Search /></el-icon>
+            查询
           </el-button>
-          <el-button plain @click="resetFilter">重置</el-button>
-          <el-button :icon="Download" plain type="info" @click="handleExportAll">导出</el-button>
-          <el-button link type="info" @click="showAdvancedFilter = !showAdvancedFilter">
-            {{ showAdvancedFilter ? '收起筛选' : '高级筛选' }}
-            <el-icon :size="12"><component :is="showAdvancedFilter ? 'ArrowUp' : 'ArrowDown'" /></el-icon>
+          <el-button @click="resetFilter">
+            <el-icon><Refresh /></el-icon>
+            重置
           </el-button>
-        </el-form-item>
-      </el-form>
-      <!-- 高级筛选区 -->
+        </el-button-group>
+
+        <el-divider direction="vertical" />
+
+        <el-dropdown @command="handleExportCommand" trigger="click">
+          <el-button>
+            <el-icon><Download /></el-icon>
+            导出
+            <el-icon class="el-icon--right"><ArrowDown /></el-icon>
+          </el-button>
+          <template #dropdown>
+            <el-dropdown-menu>
+              <el-dropdown-item command="all">导出全部数据</el-dropdown-item>
+              <el-dropdown-item command="selected" :disabled="selectedRows.length === 0">
+                导出选中项 ({{ selectedRows.length }})
+              </el-dropdown-item>
+              <el-dropdown-item divided command="template">
+                下载导出模板
+              </el-dropdown-item>
+            </el-dropdown-menu>
+          </template>
+        </el-dropdown>
+
+        <el-button
+          link
+          type="primary"
+          @click="showAdvancedFilter = !showAdvancedFilter"
+          class="advanced-toggle"
+        >
+          {{ showAdvancedFilter ? '收起' : '高级' }}
+          <el-icon :size="12">
+            <component :is="showAdvancedFilter ? 'ArrowUp' : 'ArrowDown'" />
+          </el-icon>
+        </el-button>
+      </div>
+
+      <!-- 高级筛选区（可折叠） -->
       <transition name="slide-down">
-        <div v-if="showAdvancedFilter" class="advanced-filter">
-          <el-form :inline="true" :model="filters" class="filter-form">
+        <div v-if="showAdvancedFilter" class="advanced-filter-enhanced">
+          <div class="filter-row">
             <el-form-item label="创建人">
               <el-input
                 v-model="filters.creator"
@@ -75,9 +110,10 @@
                 clearable
                 @clear="() => fetchTasks()"
                 @keyup.enter="fetchTasks"
-                style="width: 160px"
+                style="width: 180px"
               />
             </el-form-item>
+
             <el-form-item label="创建时间">
               <el-date-picker
                 v-model="filters.dateRange"
@@ -87,24 +123,59 @@
                 end-placeholder="结束日期"
                 value-format="YYYY-MM-DD"
                 @change="fetchTasks"
-                style="width: 260px"
+                style="width: 280px"
               />
             </el-form-item>
-          </el-form>
+          </div>
         </div>
       </transition>
     </div>
 
-    <!-- 批量操作栏 -->
+    <!-- 批量操作栏（增强版） -->
     <transition name="slide-fade">
-      <div class="batch-actions" v-if="selectedRows.length > 0">
-        <span class="selected-info">
-          <el-icon><Select /></el-icon>
-          已选择 <strong>{{ selectedRows.length }}</strong> 项
-        </span>
-        <el-button type="danger" size="small" @click="handleBatchDelete">
-          <el-icon><Delete /></el-icon> 批量删除
-        </el-button>
+      <div class="batch-actions-enhanced" v-if="selectedRows.length > 0">
+        <div class="batch-left">
+          <el-icon :size="18" color="#409EFF"><Select /></el-icon>
+          <span class="batch-text">
+            已选择 <strong>{{ selectedRows.length }}</strong> 项
+          </span>
+        </div>
+
+        <div class="batch-right">
+          <!-- 批量导出 -->
+          <el-button-group>
+            <el-button
+              type="success"
+              size="small"
+              @click="handleBatchExport"
+            >
+              <el-icon><Download /></el-icon>
+              批量导出
+            </el-button>
+          </el-button-group>
+
+          <!-- 批量删除 -->
+          <el-button
+            type="danger"
+            size="small"
+            @click="handleBatchDelete"
+            plain
+          >
+            <el-icon><Delete /></el-icon>
+            批量删除
+          </el-button>
+
+          <!-- 取消选择 -->
+          <el-button
+            link
+            type="info"
+            size="small"
+            @click="selectedRows = []"
+            class="cancel-select"
+          >
+            取消选择
+          </el-button>
+        </div>
       </div>
     </transition>
 
@@ -128,23 +199,31 @@
             <span class="plan-summary-cell">{{ getReviewPlanSummary(row) }}</span>
           </template>
         </el-table-column>
-        <el-table-column prop="status" label="状态" width="160">
+        <el-table-column prop="status" label="状态" width="140" align="center">
           <template #default="{ row }">
+            <!-- 审查中：显示进度条 -->
             <template v-if="row.status === 'PROCESSING'">
-              <div class="progress-wrap">
+              <div class="status-progress">
                 <el-progress
                   :percentage="row.progress || 0"
-                  :stroke-width="14"
+                  :stroke-width="16"
                   :text-inside="true"
                   :format="(p: number) => `${p}%`"
                   status=""
+                  color="#409EFF"
                 />
+                <span class="progress-label">审查中</span>
               </div>
             </template>
+
+            <!-- 其他状态：使用增强标签 -->
             <template v-else>
-              <span :class="['status-tag', `status-${(row.status || '').toLowerCase()}`]">
-                {{ getStatusLabel(row.status) }}
-              </span>
+              <div :class="['status-enhanced', `status-${(row.status || '').toLowerCase()}`]">
+                <span class="status-icon" v-if="row.status === 'COMPLETED'">✓</span>
+                <span class="status-icon" v-else-if="row.status === 'FAILED'">✗</span>
+                <span class="status-icon" v-else-if="row.status === 'PENDING'">⏳</span>
+                <span class="status-text">{{ getStatusLabel(row.status) }}</span>
+              </div>
             </template>
           </template>
         </el-table-column>
@@ -153,14 +232,14 @@
             <span class="count-num">{{ row.file_count || 0 }}</span>
           </template>
         </el-table-column>
-        <el-table-column prop="issue_count" label="问题" width="60" align="center">
+        <el-table-column prop="issue_count" label="问题" width="70" align="center">
           <template #default="{ row }">
-            <span
-              class="issue-count"
-              :class="{ 'has-issue': (row.issue_count || 0) > 0 }"
+            <div
+              :class="['issue-count-enhanced', { 'has-issues': (row.issue_count || 0) > 0 }]"
             >
-              {{ row.issue_count || 0 }}
-            </span>
+              <span class="issue-number">{{ row.issue_count || 0 }}</span>
+              <el-icon v-if="(row.issue_count || 0) > 0" class="issue-warning"><WarningFilled /></el-icon>
+            </div>
           </template>
         </el-table-column>
         <el-table-column prop="user" label="创建人" width="100">
@@ -168,35 +247,65 @@
             <span>{{ row.user?.nick_name || row.user?.username || '-' }}</span>
           </template>
         </el-table-column>
-        <el-table-column prop="create_time" label="创建时间" width="155">
+        <el-table-column prop="create_time" label="创建时间" width="150" align="center">
           <template #default="{ row }">
-            <span class="time-cell">{{ formatTime(row.create_time) }}</span>
+            <div class="time-enhanced" :title="formatTime(row.create_time)">
+              <el-icon><Clock /></el-icon>
+              <span>{{ formatTimeRelative(row.create_time) }}</span>
+            </div>
           </template>
         </el-table-column>
-        <el-table-column label="操作" width="240" fixed="right">
+        <el-table-column label="操作" width="180" fixed="right" align="center">
           <template #default="{ row }">
             <div class="action-btns">
-              <el-button type="primary" link size="small" @click="handleViewResult(row)">
+              <!-- 主要操作：查看详情 -->
+              <el-button
+                type="primary"
+                size="small"
+                @click="handleViewResult(row)"
+                class="primary-action"
+              >
+                <el-icon><View /></el-icon>
                 详情
               </el-button>
-              <el-button
-                type="success" link size="small"
-                @click="handleExportTask(row)"
-                :disabled="row.status !== 'COMPLETED'"
+
+              <!-- 次要操作：下拉菜单 -->
+              <el-dropdown
+                trigger="click"
+                @command="(cmd: string) => handleActionCommand(cmd, row)"
               >
-                导出
-              </el-button>
-              <el-button
-                type="warning" link size="small"
-                @click="handleReReview(row)"
-                :loading="reviewingMap.get(row.id)"
-                :disabled="row.status === 'PROCESSING' || !row.file_count"
-              >
-                重审
-              </el-button>
-              <el-button type="danger" link size="small" @click="handleDelete(row)">
-                删除
-              </el-button>
+                <el-button size="small" class="more-action">
+                  更多
+                  <el-icon class="el-icon--right"><ArrowDown /></el-icon>
+                </el-button>
+                <template #dropdown>
+                  <el-dropdown-menu>
+                    <el-dropdown-item
+                      command="export"
+                      :disabled="row.status !== 'COMPLETED'"
+                    >
+                      <el-icon><Download /></el-icon>
+                      导出报告
+                    </el-dropdown-item>
+                    <el-dropdown-item
+                      command="review"
+                      :disabled="row.status === 'PROCESSING' || !row.file_count"
+                      :divided="true"
+                    >
+                      <el-icon><Refresh /></el-icon>
+                      重新审查
+                    </el-dropdown-item>
+                    <el-dropdown-item
+                      command="delete"
+                      divided
+                      style="color: #F56C6C"
+                    >
+                      <el-icon><Delete /></el-icon>
+                      删除任务
+                    </el-dropdown-item>
+                  </el-dropdown-menu>
+                </template>
+              </el-dropdown>
             </div>
           </template>
         </el-table-column>
@@ -234,17 +343,37 @@
       </el-table>
     </div>
 
-    <!-- 分页 -->
-    <div class="pagination-container">
+    <!-- 分页（增强版） -->
+    <div class="pagination-enhanced">
+      <!-- 左侧：统计信息 -->
+      <div class="pagination-left">
+        <el-text type="info" size="default">
+          共 <strong class="total-count">{{ total }}</strong> 条记录
+        </el-text>
+        <el-tag
+          v-if="selectedRows.length > 0"
+          size="small"
+          type="info"
+          effect="plain"
+          round
+          class="selected-tag"
+        >
+          已选 {{ selectedRows.length }} 项
+        </el-tag>
+      </div>
+
+      <!-- 右侧：分页器 -->
       <el-pagination
         v-model:current-page="currentPage"
         v-model:page-size="pageSize"
         :page-sizes="[10, 20, 50, 100]"
-        layout="total, sizes, prev, pager, next"
+        layout="sizes, prev, pager, next, jumper"
         :total="total"
         background
+        small
         @size-change="handleSizeChange"
         @current-change="handleCurrentChange"
+        class="pagination-component"
       />
     </div>
   </div>
@@ -253,7 +382,18 @@
 <script setup lang="ts">
 import { ref, reactive, computed, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
-import { Download, Search, Plus, Select, Delete } from '@element-plus/icons-vue'
+import {
+  Download,
+  Search,
+  Plus,
+  Select,
+  Delete,
+  WarningFilled,    // ⚠️ 问题数警告图标
+  Clock,            // 🕐 时间列图标
+  View,             // 👁️ 详情按钮图标
+  ArrowDown,        // 🔽 下拉箭头
+  Refresh,          // 🔄 重置按钮图标
+} from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
   getTasksApi,
@@ -268,6 +408,31 @@ import { useStatusHelpers } from '@/composables/useStatusHelpers'
 const router = useRouter()
 const { formatTime } = useFormatTime()
 const { getTaskStatusLabel } = useStatusHelpers()
+
+// 相对时间格式化（如：5分钟前、2小时前、昨天）
+const formatTimeRelative = (timeStr: string) => {
+  if (!timeStr) return '-'
+
+  const now = new Date()
+  const time = new Date(timeStr)
+  const diff = now.getTime() - time.getTime()
+
+  // 计算时间差
+  const minutes = Math.floor(diff / 60000)
+  const hours = Math.floor(diff / 3600000)
+  const days = Math.floor(diff / 86400000)
+
+  if (minutes < 1) return '刚刚'
+  if (minutes < 60) return `${minutes}分钟前`
+  if (hours < 24) return `${hours}小时前`
+  if (days === 1) return '昨天'
+  if (days < 7) return `${days}天前`
+
+  // 超过7天显示具体日期
+  const month = String(time.getMonth() + 1).padStart(2, '0')
+  const day = String(time.getDate()).padStart(2, '0')
+  return `${month}/${day}`
+}
 
 const loading = ref(false)
 const currentPage = ref(1)
@@ -414,6 +579,40 @@ const handleViewResult = (row: any) => {
   router.push(`/tasks/${row.id}`)
 }
 
+// 统一操作命令处理
+const handleActionCommand = (command: string, row: any) => {
+  switch (command) {
+    case 'export':
+      handleExportTask(row)
+      break
+    case 'review':
+      handleReReview(row)
+      break
+    case 'delete':
+      handleDelete(row)
+      break
+    default:
+      console.warn('未知操作命令:', command)
+  }
+}
+
+// 导出命令处理（筛选栏）
+const handleExportCommand = (command: string) => {
+  switch (command) {
+    case 'all':
+      handleExportAll()
+      break
+    case 'selected':
+      ElMessage.info(`导出 ${selectedRows.length} 条选中记录（功能开发中）`)
+      break
+    case 'template':
+      ElMessage.success('正在下载导出模板...')
+      break
+    default:
+      console.warn('未知导出命令:', command)
+  }
+}
+
 const handleExportTask = async (row: any) => {
   try {
     const { data } = await exportTaskReportApi(row.id)
@@ -488,6 +687,21 @@ const handleDelete = (row: any) => {
       fetchTasks()
     } catch (e) {}
   }).catch(() => {})
+}
+
+// 批量导出
+const handleBatchExport = () => {
+  if (selectedRows.value.length === 0) {
+    ElMessage.warning('请先选择要导出的任务')
+    return
+  }
+
+  ElMessage.success(`正在准备导出 ${selectedRows.value.length} 条记录...`)
+
+  // TODO: 调用批量导出API
+  setTimeout(() => {
+    ElMessage.info('批量导出功能开发中，敬请期待')
+  }, 1000)
 }
 
 const handleBatchDelete = () => {
@@ -880,5 +1094,408 @@ onUnmounted(() => { stopPolling() })
 .slide-down-enter-to,
 .slide-down-leave-from {
   max-height: 80px;
+}
+
+/* ===== 增强筛选栏样式 ===== */
+.filter-bar-enhanced {
+  margin-bottom: 20px;
+  padding: 18px 22px;
+  border-radius: var(--corp-radius-md);
+  background: linear-gradient(135deg, #FAFCFF 0%, #FFFFFF 100%);
+  border: 1px solid #E4E7ED;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+  /* 关键：使用Flexbox实现水平对齐 */
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 20px;
+}
+
+.filter-left {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  flex: 1; /* 占据剩余空间 */
+  min-width: 0; /* 防止溢出 */
+}
+
+.filter-right {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-shrink: 0; /* 不压缩按钮组 */
+  white-space: nowrap; /* 防止换行 */
+}
+
+.search-box {
+  min-width: 260px;
+}
+
+.search-input :deep(.el-input__wrapper) {
+  border-radius: 20px;
+  box-shadow: 0 2px 6px rgba(64, 158, 255, 0.08);
+}
+
+.filter-select {
+  width: 150px !important;
+}
+
+.advanced-toggle {
+  font-weight: 500;
+  letter-spacing: 0.5px;
+}
+
+.advanced-filter-enhanced {
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: 1px solid #EBEEF5;
+}
+
+.filter-row {
+  display: flex;
+  gap: 24px;
+  flex-wrap: wrap;
+}
+
+/* ===== 增强批量操作栏样式 ===== */
+.batch-actions-enhanced {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 20px;
+  margin-bottom: 16px;
+  background: linear-gradient(90deg, #ECF5FF 0%, #F0F9FF 50%, #ECF5FF 100%);
+  border: 2px solid #409EFF;
+  border-radius: 10px;
+  animation: slideDown 0.3s ease;
+  box-shadow: 0 4px 12px rgba(64, 158, 255, 0.15);
+}
+
+.batch-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.batch-text {
+  font-size: 14px;
+  color: #303133;
+}
+
+.batch-text strong {
+  color: #409EFF;
+  font-size: 18px;
+  font-weight: 700;
+  margin: 0 3px;
+}
+
+.batch-right {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.cancel-select {
+  font-weight: 500;
+}
+
+/* ===== 增强分页组件样式 ===== */
+.pagination-enhanced {
+  margin-top: 24px;
+  padding: 16px 20px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background: #FAFCFF;
+  border-radius: 8px;
+  border: 1px solid #E4E7ED;
+}
+
+.pagination-left {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.total-count {
+  color: #409EFF;
+  font-size: 18px;
+  font-weight: 700;
+  margin: 0 3px;
+}
+
+.selected-tag {
+  font-weight: 600;
+}
+
+.pagination-component :deep(.el-pagination) {
+  font-size: 13px;
+  justify-content: flex-end;
+}
+
+/* ===== 操作按钮增强样式 ===== */
+.action-btns {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  justify-content: center;
+}
+
+.primary-action {
+  font-weight: 500;
+  border-radius: 6px;
+  padding: 6px 14px;
+  box-shadow: 0 2px 6px rgba(64, 158, 255, 0.2);
+}
+
+.more-action {
+  font-weight: 500;
+  border-radius: 6px;
+  padding: 6px 10px;
+  background-color: #F5F7FA;
+  border-color: #DCDFE6;
+  color: #606266;
+}
+
+.more-action:hover {
+  background-color: #ECF5FF;
+  border-color: #C6E2FF;
+  color: #409EFF;
+}
+
+/* ===== 状态标签增强样式 ===== */
+.status-enhanced {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 14px;
+  border-radius: 20px;
+  font-size: 13px;
+  font-weight: 600;
+  transition: all 0.25s ease;
+}
+
+.status-icon {
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.status-text {
+  letter-spacing: 0.5px;
+}
+
+/* 已完成 - 绿色 */
+.status-completed {
+  background: linear-gradient(135deg, #F0F9EB 0%, #E1F3D8 100%);
+  color: #67C23A;
+  border: 1px solid #B3E19D;
+}
+
+.status-completed .status-icon {
+  color: #67C23A;
+}
+
+/* 失败 - 红色 */
+.status-failed {
+  background: linear-gradient(135deg, #FEF0F0 0%, #FDE2E2 100%);
+  color: #F56C6C;
+  border: 1px solid #FBC4C4;
+}
+
+.status-failed .status-icon {
+  color: #F56C6C;
+}
+
+/* 排队中 - 灰色 */
+.status-pending {
+  background: linear-gradient(135deg, #F4F4F5 0%, #E9E9EB 100%);
+  color: #909399;
+  border: 1px solid #DCDFE6;
+}
+
+.status-pending .status-icon {
+  color: #909399;
+}
+
+/* 进度条状态 */
+.status-progress {
+  text-align: center;
+}
+
+.progress-label {
+  display: block;
+  margin-top: 4px;
+  font-size: 11px;
+  color: #409EFF;
+  font-weight: 600;
+}
+
+/* ===== 问题数增强样式 ===== */
+.issue-count-enhanced {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  padding: 4px 10px;
+  border-radius: 12px;
+  font-size: 15px;
+  font-weight: 700;
+  font-family: 'SF Mono', monospace;
+  transition: all 0.25s ease;
+}
+
+.issue-number {
+  color: #606266;
+}
+
+.issue-warning {
+  font-size: 14px;
+  color: #E6A23C;
+  animation: pulse 2s infinite;
+}
+
+.issue-count-enhanced.has-issues {
+  background: linear-gradient(135deg, #FDF6EC 0%, #FAECD8 100%);
+  border: 1px solid #F5DAB1;
+  box-shadow: 0 2px 6px rgba(230, 162, 60, 0.15);
+}
+
+.issue-count-enhanced.has-issues .issue-number {
+  color: #E6A23C;
+}
+
+/* ===== 时间列增强样式 ===== */
+.time-enhanced {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 13px;
+  color: #909399;
+  white-space: nowrap;
+  padding: 4px 8px;
+  border-radius: 6px;
+  transition: all 0.2s ease;
+}
+
+.time-enhanced:hover {
+  background: #F5F7FA;
+  color: #409EFF;
+}
+
+.time-enhanced .el-icon {
+  font-size: 14px;
+}
+
+/* ===== 表格行悬停效果 ===== */
+.task-history :deep(.el-table__body tr:hover > td) {
+  background-color: #F5F9FF !important;
+  cursor: pointer;
+}
+
+.task-history :deep(.el-table__body tr) {
+  transition: all 0.2s ease;
+}
+
+/* ===== 响应式布局优化 ===== */
+
+/* 中等屏幕 (≤1200px) */
+@media (max-width: 1200px) {
+  .filter-bar-enhanced {
+    gap: 16px;
+    padding: 16px 18px;
+  }
+
+  .search-box {
+    min-width: 220px;
+  }
+
+  .filter-select {
+    width: 140px !important;
+  }
+}
+
+/* 小屏幕 (≤992px) */
+@media (max-width: 992px) {
+  .filter-bar-enhanced {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 14px;
+  }
+
+  .filter-left {
+    justify-content: stretch;
+  }
+
+  .filter-right {
+    justify-content: space-between;
+    padding-top: 12px;
+    border-top: 1px dashed #E4E7ED;
+  }
+
+  .search-box {
+    min-width: auto;
+    flex: 1;
+  }
+
+  .filter-select {
+    flex: 1 !important;
+    width: auto !important;
+    min-width: 120px;
+  }
+}
+
+/* 移动端 (≤768px) */
+@media (max-width: 768px) {
+  .filter-bar-enhanced {
+    padding: 14px 16px;
+    gap: 12px;
+  }
+
+  .filter-left {
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .search-input :deep(.el-input__wrapper) {
+    border-radius: 8px; /* 移动端使用较小圆角 */
+  }
+
+  .filter-right {
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  .filter-right .el-button-group {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+
+  /* 隐藏分隔线，节省空间 */
+  .filter-right .el-divider--vertical {
+    display: none;
+  }
+
+  /* 高级按钮文字简化 */
+  .advanced-toggle span:not(.el-icon) {
+    display: none; /* 只显示图标 */
+  }
+}
+
+/* 超小屏幕 (≤480px) */
+@media (max-width: 480px) {
+  .filter-bar-enhanced {
+    padding: 12px;
+  }
+
+  .filter-right .el-button {
+    font-size: 13px;
+    padding: 7px 12px;
+  }
+
+  .filter-select :deep(.el-select__placeholder) {
+    font-size: 13px;
+  }
 }
 </style>

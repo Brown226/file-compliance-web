@@ -134,23 +134,49 @@ export function initQueueProcessors(): void {
   console.log('[Queue] 队列处理器已启动 (review:2, knowledge-upload:3)');
 }
 
-/** 添加审查任务到队列 */
+/** 添加审查任务到队列（增强版：细粒度状态检测 + 智能重入队） */
 export async function addReviewJob(taskId: string): Promise<Bull.Job<ReviewJobData>> {
   const jobId = `review:${taskId}`;
   const existingJob = await reviewQueue.getJob(jobId);
+
   if (existingJob) {
     const state = await existingJob.getState().catch(() => 'unknown');
-    const replaceableStates = new Set(['completed', 'failed', 'delayed', 'waiting', 'paused']);
-    if (replaceableStates.has(state)) {
+    console.log(`[Queue] 📋 发现已存在的job: ${taskId}, 当前状态=${state}`);
+
+    // 可直接替换的终态：已完成/失败的任务
+    const terminalStates = new Set(['completed', 'failed']);
+    // 可强制替换的异常态：停滞/延迟/等待/暂停（可能卡住）
+    const stuckStates = new Set(['stalled', 'delayed', 'waiting', 'paused']);
+    // 需要警告但允许继续的状态：正在执行
+    const activeState = 'active';
+
+    if (terminalStates.has(state)) {
       await existingJob.remove().catch(() => { /* ignore */ });
+      console.log(`[Queue] 🗑️ 已移除${state}状态的旧job: ${taskId}`);
+    } else if (stuckStates.has(state)) {
+      // 停滞/等待状态可能意味着队列处理器未正常工作
+      console.warn(`[Queue] ⚠️ 强制移除停滞job: ${taskId} (原状态=${state})`);
+      await existingJob.remove().catch((err) => {
+        console.error(`[Queue] ❌ 移除停滞job失败: ${taskId}`, err);
+        throw new Error(`无法移除停滞的任务(jobId=${existingJob.id}, state=${state}): ${err instanceof Error ? err.message : String(err)}`);
+      });
+    } else if (state === activeState) {
+      // 任务正在执行中，拒绝重复入队并返回明确的警告信息
+      console.warn(`[Queue] ⛔ 任务正在执行中，拒绝重复入队: ${taskId}`);
+      const enhancedJob = existingJob as Bull.Job<ReviewJobData> & { warning?: string };
+      enhancedJob.warning = '任务正在执行中，请勿重复提交。如需重新审查，请先取消当前任务。';
+      return enhancedJob;
     } else {
+      // unknown或其他未预料的状态，保守处理：返回现有job
+      console.warn(`[Queue] ❓ 未知状态(${state})，保守返回旧job: ${taskId}`);
       return existingJob;
     }
   }
+
   const job = await reviewQueue.add('review', { taskId }, {
     jobId,
   });
-  console.log(`[Queue] 审查任务已入队: ${taskId} (jobId=${job.id})`);
+  console.log(`[Queue] ✅ 审查任务已入队: ${taskId} (jobId=${job.id}, state=waiting)`);
   return job;
 }
 
