@@ -9,20 +9,15 @@
           <p class="stat-value">{{ stat.value }}</p>
           <p class="stat-label">{{ stat.label }}</p>
         </div>
-        <div class="stat-trend" v-if="stat.trend !== null">
-          <span :class="stat.trend >= 0 ? 'trend-up' : 'trend-down'">
-            {{ stat.trend >= 0 ? '↑' : '↓' }}
-          </span>
-          <span>{{ Math.abs(stat.trend) }}%</span>
-        </div>
       </div>
     </section>
 
     <section class="main-layout">
       <aside class="nav-sidebar">
-        <div class="sidebar-header">
+        <div class="sidebar-header" @click="activeNav = 'overview'" :class="{ clickable: activeNav !== 'overview' }">
           <el-icon><Menu /></el-icon>
           <span>管理导航</span>
+          <span v-if="activeNav !== 'overview'" class="back-hint">← 概览</span>
         </div>
         <nav class="nav-tree">
           <div
@@ -58,12 +53,12 @@
       <main class="content-area">
         <div class="content-header">
           <div class="header-info">
-            <h3>{{ currentNav?.name || '选择管理项' }}</h3>
-            <p>{{ currentNav?.description || '请从左侧选择要管理的项目' }}</p>
+            <h3>{{ currentNav?.name || '管理后台' }}</h3>
+            <p>{{ currentNav?.description || '系统运行状态总览，点击左侧导航进入具体管理功能' }}</p>
           </div>
           <div class="header-breadcrumb">
             <el-breadcrumb separator="/">
-              <el-breadcrumb-item>统一管理</el-breadcrumb-item>
+              <el-breadcrumb-item>管理后台</el-breadcrumb-item>
               <el-breadcrumb-item v-if="currentGroup">{{ currentGroup.name }}</el-breadcrumb-item>
               <el-breadcrumb-item v-if="currentNav">{{ currentNav.name }}</el-breadcrumb-item>
             </el-breadcrumb>
@@ -72,15 +67,15 @@
 
         <div class="content-body">
           <!-- 动态加载现有组件 -->
-          <component 
-            v-if="activeComponent" 
-            :is="activeComponent" 
+          <component
+            v-if="activeComponent"
+            :is="activeComponent"
             :key="activeNav"
             class="embedded-component"
           />
-          
-          <!-- 系统概览（保留自定义） -->
-          <div v-else-if="activeNav === 'overview'" class="overview-content">
+
+          <!-- 默认概览页（未选择管理项时显示） -->
+          <div v-else class="overview-content">
             <div class="overview-grid">
               <div class="overview-card" v-for="card in overviewCards" :key="card.title" @click="navigateTo(card.route)">
                 <div class="card-header">
@@ -97,11 +92,6 @@
               </div>
             </div>
           </div>
-
-          <!-- 空状态 -->
-          <div v-else class="empty-content">
-            <el-empty description="请从左侧导航选择要管理的项目" />
-          </div>
         </div>
       </main>
     </section>
@@ -109,45 +99,49 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, defineAsyncComponent, markRaw } from 'vue'
+import { ref, computed, defineAsyncComponent, markRaw, onMounted } from 'vue'
 import {
   DataBoard, Refresh, Menu, ArrowDown, ArrowRight,
   OfficeBuilding, User, FolderOpened, Document, ChatDotRound, Clock,
   WarningFilled, CircleCheck, Setting, Files, Bell, Grid, MagicStick,
-  Reading, Connection
+  Reading, Connection, ChatLineSquare
 } from '@element-plus/icons-vue'
+import { getDashboardStatsApi } from '@/api/dashboard'
 
 const iconMap: Record<string, any> = {
   DataBoard, Refresh, Menu, ArrowDown, ArrowRight,
   OfficeBuilding, User, FolderOpened, Document, ChatDotRound, Clock,
   WarningFilled, CircleCheck, Setting, Files, Bell, Grid, MagicStick,
-  Reading, Connection,
+  Reading, Connection, ChatLineSquare,
 }
 
-const expandedGroups = ref(['overview', 'organization', 'knowledge', 'ai', 'system', 'audit'])
+const expandedGroups = ref(['organization', 'knowledge', 'review', 'operations', 'system', 'audit'])
 const activeNav = ref('overview')
+const loading = ref(false)
 
 // 动态导入现有组件（懒加载）
 const componentsMap: Record<string, any> = {
   // 组织与权限
   departments: markRaw(defineAsyncComponent(() => import('./admin/DepartmentManagement.vue'))),
-  employees: markRaw(defineAsyncComponent(() => import('./admin/DepartmentManagement.vue'))),
-  
+
   // 规范与知识
-  standards: markRaw(defineAsyncComponent(() => import('./StandardLibrary/LocalStandardTab.vue'))),
+  standards: markRaw(defineAsyncComponent(() => import('./StandardLibrary/index.vue'))),
   knowledge: markRaw(defineAsyncComponent(() => import('./admin/KnowledgeCategories.vue'))),
   rules: markRaw(defineAsyncComponent(() => import('./admin/RuleLibraries.vue'))),
-  
+
   // 审查配置
   reviewRules: markRaw(defineAsyncComponent(() => import('./ReviewRules.vue'))),
   prompts: markRaw(defineAsyncComponent(() => import('./PromptConfig.vue'))),
-  
+
   // 系统设置
   systemOverview: markRaw(defineAsyncComponent(() => import('./Dashboard.vue'))),
   aiEngine: markRaw(defineAsyncComponent(() => import('./admin/AiEngineConfig.vue'))),
   storage: markRaw(defineAsyncComponent(() => import('./admin/StorageManagement.vue'))),
   basicSettings: markRaw(defineAsyncComponent(() => import('./admin/BasicSettings.vue'))),
-  
+
+  // 运营与监控
+  feedback: markRaw(defineAsyncComponent(() => import('./FeedbackManagement.vue'))),
+
   // 治理与审计
   audit: markRaw(defineAsyncComponent(() => import('./AuditLogs.vue'))),
 }
@@ -158,19 +152,11 @@ const activeComponent = computed(() => {
 
 const navGroups = ref([
   {
-    id: 'overview',
-    name: '总览中心',
-    icon: 'MagicStick',
-    items: [
-      { id: 'overview', name: '系统概览', icon: 'DataBoard', description: '查看系统整体运行状态和关键指标', route: '' },
-    ]
-  },
-  {
     id: 'organization',
     name: '组织与权限',
     icon: 'OfficeBuilding',
     items: [
-      { id: 'departments', name: '部门与员工', icon: 'User', description: '管理企业部门架构和员工账号', badge: '3' },
+      { id: 'departments', name: '部门与员工', icon: 'User', description: '管理企业部门架构和员工账号' },
     ]
   },
   {
@@ -178,9 +164,9 @@ const navGroups = ref([
     name: '规范与知识',
     icon: 'Files',
     items: [
-      { id: 'standards', name: '标准库清单管理', icon: 'Reading', description: '管理标准清单、误报库和术语表' },
+      { id: 'standards', name: '标准库清单管理', icon: 'Reading', description: '管理标准清单、白名单库和误报标记库' },
       { id: 'knowledge', name: '知识库管理', icon: 'FolderOpened', description: '管理知识库分类和文档' },
-      { id: 'rules', name: '语义知识库', icon: 'Document', description: '管理审查规则和规则库' },
+      { id: 'rules', name: '语义知识库', icon: 'Document', description: '管理语义知识库和规则库' },
     ]
   },
   {
@@ -190,6 +176,14 @@ const navGroups = ref([
     items: [
       { id: 'reviewRules', name: '审查规则', icon: 'MagicStick', description: '管理和配置审查规则' },
       { id: 'prompts', name: '提示词模板', icon: 'ChatDotRound', description: '管理AI提示词模板和版本' },
+    ]
+  },
+  {
+    id: 'operations',
+    name: '运营与监控',
+    icon: 'Bell',
+    items: [
+      { id: 'feedback', name: '反馈管理', icon: 'ChatLineSquare', description: '查看和处理用户反馈' },
     ]
   },
   {
@@ -230,46 +224,86 @@ const currentGroup = computed(() => {
   return null
 })
 
-// 统计数据（后续可接入API）
+// 统计数据 - 从 API 获取真实数据
 const stats = ref([
-  { label: '部门数量', value: '12', icon: 'OfficeBuilding', color: 'blue', trend: 15, route: 'departments' },
-  { label: '员工总数', value: '256', icon: 'User', color: 'green', trend: 8, route: 'departments' },
-  { label: '标准文档', value: '158', icon: 'Reading', color: 'purple', trend: 23, route: 'standards' },
-  { label: '审查规则', value: '89', icon: 'Document', color: 'orange', trend: -2, route: 'rules' },
-  { label: '待处理反馈', value: '12', icon: 'ChatDotRound', color: 'red', trend: 5, route: '' },
-  { label: '系统公告', value: '3', icon: 'Bell', color: 'blue', trend: 0, route: '' },
+  { label: '员工总数', value: '-', icon: 'User', color: 'green', route: 'departments' },
+  { label: '知识库文档', value: '-', icon: 'FolderOpened', color: 'purple', route: 'knowledge' },
+  { label: '标准清单', value: '-', icon: 'Reading', color: 'blue', route: 'standards' },
+  { label: '语义知识库', value: '-', icon: 'Files', color: 'purple', route: 'rules' },
+  { label: '审查规则', value: '-', icon: 'Document', color: 'orange', route: 'reviewRules' },
+  { label: '待处理反馈', value: '-', icon: 'ChatDotRound', color: 'red', route: 'feedback' },
 ])
 
 const overviewCards = ref([
   {
-    title: '组织架构',
-    value: '12 部门',
-    description: '管理部门结构和员工信息',
+    title: '部门与员工',
+    value: '',
+    description: '管理部门结构和员工账号',
     icon: 'OfficeBuilding',
     route: 'departments'
   },
   {
-    title: '知识资源',
-    value: '247 文档',
-    description: '标准库、知识库、规则库',
-    icon: 'Files',
+    title: '标准清单',
+    value: '',
+    description: '管理审查标准清单、白名单库和误报标记库',
+    icon: 'Reading',
     route: 'standards'
   },
   {
-    title: 'AI 配置',
-    value: '已启用',
-    description: '模型、提示词、向量检索',
-    icon: 'WarningFilled',
-    route: 'aiEngine'
+    title: '知识库管理',
+    value: '',
+    description: '管理知识库分类和文档，支撑 RAG 智能审查',
+    icon: 'FolderOpened',
+    route: 'knowledge'
   },
   {
-    title: '审计日志',
-    value: '1,234 条',
-    description: '近期操作记录和变更追踪',
-    icon: 'Clock',
-    route: 'audit'
+    title: '语义知识库',
+    value: '',
+    description: '管理语义知识库和规则库，提升审查准确率',
+    icon: 'Files',
+    route: 'rules'
+  },
+  {
+    title: '审查规则',
+    value: '',
+    description: '配置审查规则的启停、严重级别和检查参数',
+    icon: 'MagicStick',
+    route: 'reviewRules'
+  },
+  {
+    title: '反馈管理',
+    value: '',
+    description: '查看和处理用户反馈，持续优化系统',
+    icon: 'ChatLineSquare',
+    route: 'feedback'
   },
 ])
+
+const fetchStats = async () => {
+  loading.value = true
+  try {
+    const { data } = await getDashboardStatsApi()
+    if (data) {
+      const ov = data.overview
+      if (ov) {
+        stats.value[0].value = String(ov.userCount)
+        stats.value[1].value = String(ov.knowledgeDocCount)
+        stats.value[2].value = String(ov.standardCount)
+        stats.value[3].value = String(ov.ruleLibraryCount)
+        stats.value[4].value = String(ov.ruleCount)
+        stats.value[5].value = String(ov.feedbackCount)
+      }
+    }
+  } catch (e) {
+    console.error('Failed to fetch dashboard stats', e)
+  } finally {
+    loading.value = false
+  }
+}
+
+onMounted(() => {
+  fetchStats()
+})
 
 const toggleGroup = (groupId: string) => {
   const index = expandedGroups.value.indexOf(groupId)
@@ -291,7 +325,6 @@ const navigateTo = (route: string) => {
 }
 
 const refreshCurrent = () => {
-  // 触发当前组件刷新（通过 key 变化）
   activeNav.value = ''
   setTimeout(() => {
     activeNav.value = currentNav.value?.id || 'overview'
@@ -404,7 +437,24 @@ const refreshCurrent = () => {
   color: #1f2937;
   border-bottom: 1px solid #f3f4f6;
   margin-bottom: 6px;
-  font-size: 13px;
+  border-radius: 6px;
+  transition: background 0.2s;
+  user-select: none;
+}
+
+.sidebar-header.clickable {
+  cursor: pointer;
+}
+
+.sidebar-header.clickable:hover {
+  background: #f3f4f6;
+}
+
+.sidebar-header .back-hint {
+  margin-left: auto;
+  font-size: 11px;
+  font-weight: 400;
+  color: #3b82f6;
 }
 
 .nav-group {

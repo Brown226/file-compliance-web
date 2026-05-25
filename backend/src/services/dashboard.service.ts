@@ -303,6 +303,19 @@ export class DashboardService {
       console.error('Error calculating compared to last period', e);
     }
 
+    // System overview counts
+    const [departmentCount, userCount, standardCount, ruleCount, feedbackCount, announcementCount, knowledgeDocCount, auditLogCount, ruleLibraryCount] = await Promise.all([
+      prisma.department.count(),
+      prisma.user.count(),
+      prisma.standard.count(),
+      prisma.reviewRule.count(),
+      prisma.feedback.count(),
+      prisma.systemAnnouncement.count(),
+      prisma.document.count(),
+      prisma.auditLog.count(),
+      prisma.ruleLibrary.count(),
+    ]);
+
     return {
       taskStats,
       issueStats,
@@ -316,6 +329,17 @@ export class DashboardService {
       },
       unhandledHigh,
       comparedToLastPeriod,
+      overview: {
+        departmentCount,
+        userCount,
+        standardCount,
+        ruleCount,
+        feedbackCount,
+        announcementCount,
+        knowledgeDocCount,
+        auditLogCount,
+        ruleLibraryCount,
+      },
     };
   }
 

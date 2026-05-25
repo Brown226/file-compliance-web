@@ -70,13 +70,14 @@
             </div>
             <div class="kd-toolbar__right">
               <el-button
+                v-if="canManage"
                 size="small"
                 @click="batchVectorize"
                 :disabled="selectedDocs.length === 0"
               >
                 <el-icon><RefreshRight /></el-icon> 批量向量化
               </el-button>
-              <el-dropdown v-if="selectedDocs.length > 0">
+              <el-dropdown v-if="canManage && selectedDocs.length > 0">
                 <el-button size="small" :disabled="selectedDocs.length === 0">
                   更多 <el-icon><ArrowDown /></el-icon>
                 </el-button>
@@ -114,7 +115,7 @@
                   <el-icon><Refresh /></el-icon>
                 </el-button>
               </el-tooltip>
-              <el-button type="primary" size="small" @click="importWizardVisible = true">
+              <el-button v-if="canManage" type="primary" size="small" @click="importWizardVisible = true">
                 <el-icon><Upload /></el-icon> 上传文档
               </el-button>
             </div>
@@ -130,7 +131,7 @@
             @row-click="handleRowClick"
             style="width: 100%"
           >
-            <el-table-column type="selection" width="48" />
+            <el-table-column v-if="canManage" type="selection" width="48" />
             <el-table-column prop="title" label="文档名称" min-width="240">
               <template #default="{ row }">
                 <div class="doc-name-cell">
@@ -145,7 +146,7 @@
                     @keydown.escape.prevent="cancelEdit"
                   >{{ row.title }}</span>
                   <el-icon
-                    v-if="editingDoc !== row.title"
+                    v-if="canManage && editingDoc !== row.title"
                     class="doc-name-cell__edit-icon"
                     :size="12"
                     @click.stop="startEditDoc(row)"
@@ -177,6 +178,7 @@
                   >
                     <template #reference>
                       <el-button
+                        v-if="canManage"
                         size="small"
                         text
                         type="primary"
@@ -198,7 +200,7 @@
                           <span class="tag-popover__item-label">{{ tag.key }}:{{ tag.value }}</span>
                           <el-icon v-if="isTagApplied(row.title, tag.id)" :size="12"><CircleCheck /></el-icon>
                           <el-button
-                            v-else
+                            v-else-if="canManage"
                             type="danger"
                             link
                             size="small"
@@ -208,8 +210,8 @@
                           </el-button>
                         </div>
                       </div>
-                      <el-divider v-if="allTags.length > 0" style="margin: 8px 0;" />
-                      <div class="tag-popover__create">
+                      <el-divider v-if="allTags.length > 0 && canManage" style="margin: 8px 0;" />
+                      <div v-if="canManage" class="tag-popover__create">
                         <el-input v-model="newTagKey" placeholder="标签名" size="small" style="width: 90px;" />
                         <el-input v-model="newTagValue" placeholder="标签值" size="small" style="width: 90px;" />
                         <el-button size="small" type="primary" @click="handleCreateTag(row.title)">
@@ -243,7 +245,7 @@
                 {{ formatTime(row.create_time) }}
               </template>
             </el-table-column>
-            <el-table-column label="操作" width="80" fixed="right" align="center">
+            <el-table-column v-if="canManage" label="操作" width="80" fixed="right" align="center">
               <template #default="{ row }">
                 <el-dropdown trigger="click" @command="(cmd: string) => handleRowCommand(cmd, row)">
                   <el-button type="primary" link size="small" @click.stop>
@@ -769,6 +771,7 @@
 <script setup lang="ts">
 import { ref, reactive, onMounted, onBeforeUnmount, computed, nextTick } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
+import { useUserStore } from '@/stores/user'
 import {
   Upload, RefreshRight, Refresh, Search, ArrowLeft,
   Document, View, Edit, Delete, ArrowDown, MoreFilled,
@@ -804,6 +807,8 @@ import {
 
 const router = useRouter()
 const route = useRoute()
+const userStore = useUserStore()
+const canManage = computed(() => userStore.isAdminOrManager())
 const categoryId = route.params.id as string
 
 const activeTab = ref((route.query.tab as string) || 'documents')

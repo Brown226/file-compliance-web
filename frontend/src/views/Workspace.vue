@@ -12,16 +12,13 @@
           <el-icon><Plus /></el-icon> 新建审查
         </el-button>
         <el-button size="large" @click="$router.push('/tasks')">
-          <el-icon><Document /></el-icon> 查看报告
-        </el-button>
-        <el-button size="large" @click="$router.push('/admin/standards')">
-          <el-icon><Collection /></el-icon> 标准库
+          <el-icon><Document /></el-icon> 查看任务记录
         </el-button>
       </div>
     </div>
 
-    <!-- 统计卡片 -->
-    <div class="stats-grid">
+    <!-- 统计卡片（全部为0时隐藏） -->
+    <div v-if="hasStats" class="stats-grid">
       <div
         v-for="(stat, index) in statList"
         :key="index"
@@ -80,10 +77,6 @@
 
             <template #empty>
               <div class="table-empty">
-                <svg viewBox="0 0 100 80" fill="none" class="empty-svg-sm">
-                  <rect x="10" y="8" width="80" height="58" rx="6" stroke="var(--color-gray-200)" stroke-width="2" fill="var(--color-gray-50)"/>
-                  <path d="M24 28H76M24 38H66M24 48H50" stroke="var(--color-gray-300)" stroke-width="1.5" stroke-linecap="round"/>
-                </svg>
                 <p>暂无任务记录</p>
                 <el-button type="primary" link @click="$router.push('/review')">创建第一个审查</el-button>
               </div>
@@ -102,8 +95,26 @@
                 <el-icon :size="18"><Collection /></el-icon>
               </div>
               <div class="link-info">
-                <span class="link-label">常用标准</span>
-                <span class="link-desc">查看和管理审查标准库</span>
+                <span class="link-label">标准清单</span>
+                <span class="link-desc">查看标准清单、白名单库和误报标记库</span>
+              </div>
+            </div>
+            <div class="sidebar-link-item" @click="$router.push('/admin/knowledge-categories')">
+              <div class="link-icon knowledge-icon">
+                <el-icon :size="18"><FolderOpened /></el-icon>
+              </div>
+              <div class="link-info">
+                <span class="link-label">知识库</span>
+                <span class="link-desc">查看知识库分类和文档</span>
+              </div>
+            </div>
+            <div class="sidebar-link-item" @click="$router.push('/admin/rule-libraries')">
+              <div class="link-icon rulelib-icon">
+                <el-icon :size="18"><Files /></el-icon>
+              </div>
+              <div class="link-info">
+                <span class="link-label">语义知识库</span>
+                <span class="link-desc">查看语义知识库和规则库</span>
               </div>
             </div>
             <div class="sidebar-link-item" @click="$router.push('/admin/rules')">
@@ -112,34 +123,10 @@
               </div>
               <div class="link-info">
                 <span class="link-label">审查规则</span>
-                <span class="link-desc">配置和管理审查规则</span>
+                <span class="link-desc">查看审查规则配置</span>
               </div>
             </div>
-            <div class="sidebar-link-item" @click="$router.push('/admin/system')">
-              <div class="link-icon system-icon">
-                <el-icon :size="18"><Setting /></el-icon>
-              </div>
-              <div class="link-info">
-                <span class="link-label">系统配置</span>
-                <span class="link-desc">LLM模型与系统参数</span>
-              </div>
-            </div>
-            <div class="sidebar-link-item" @click="$router.push('/admin/dashboard')">
-              <div class="link-icon dashboard-icon">
-                <el-icon :size="18"><DataAnalysis /></el-icon>
-              </div>
-              <div class="link-info">
-                <span class="link-label">数据看板</span>
-                <span class="link-desc">审查统计与趋势分析</span>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <div class="sidebar-card">
-          <h3 class="sidebar-title">帮助支持</h3>
-          <div class="sidebar-links">
-            <div class="sidebar-link-item" @click="$router.push('/qna')">
+            <div class="sidebar-link-item" @click="$router.push('/langchain/qa')">
               <div class="link-icon qna-icon">
                 <el-icon :size="18"><ChatLineSquare /></el-icon>
               </div>
@@ -160,7 +147,7 @@ import { ref, reactive, computed, onMounted } from 'vue'
 import { useUserStore } from '@/stores/user'
 import { getTasksApi } from '@/api/task'
 import { getDashboardStatsApi } from '@/api/dashboard'
-import { Clock, Loading, CircleCheck, CircleClose, Plus, Document, Collection, List, Setting, DataAnalysis, ChatLineSquare } from '@element-plus/icons-vue'
+import { Clock, Loading, CircleCheck, CircleClose, Plus, Document, Collection, List, ChatLineSquare, FolderOpened, Files } from '@element-plus/icons-vue'
 import { useFormatTime } from '@/composables/useFormatTime'
 import { useStatusHelpers } from '@/composables/useStatusHelpers'
 
@@ -203,6 +190,9 @@ const currentDate = computed(() => {
   const w = weekDays[now.getDay()]
   return `${y}年${m}月${d}日 ${w}`
 })
+
+// 是否有任何统计数据
+const hasStats = computed(() => stats.pending > 0 || stats.processing > 0 || stats.completed > 0 || stats.failed > 0)
 
 // 统计列表（驱动模板）
 const statList = computed(() => [
@@ -424,14 +414,7 @@ onMounted(() => { fetchMyTasks() })
 
 .table-empty {
   text-align: center;
-  padding: 32px 0 24px;
-}
-
-.empty-svg-sm {
-  width: 80px;
-  height: 64px;
-  margin-bottom: 8px;
-  opacity: 0.5;
+  padding: 24px 0 16px;
 }
 
 .table-empty p {
@@ -495,8 +478,8 @@ onMounted(() => { fetchMyTasks() })
 
 .standards-icon { background: #EFF6FF; color: #3B82F6; }
 .rules-icon    { background: #FEF3C7; color: #F59E0B; }
-.system-icon   { background: #F3E8FF; color: #8B5CF6; }
-.dashboard-icon{ background: #DCFCE7; color: #10B981; }
+.knowledge-icon { background: #F0F9FF; color: #0EA5E9; }
+.rulelib-icon   { background: #FDF4FF; color: #A855F7; }
 .qna-icon      { background: #FEE2E2; color: #EF4444; }
 
 .link-info {

@@ -20,6 +20,7 @@
         <el-tag v-if="terminologyTotal > 0" size="small" type="info" style="margin-left:6px;">{{ terminologyTotal }}词</el-tag>
       </div>
       <div
+        v-if="isAdmin"
         class="tab-item"
         :class="{ active: activeTab === 'falsePositive' }"
         @click="switchToFalsePositive"
@@ -41,6 +42,7 @@
 
     <!-- 误报标记库 -->
     <FalsePositiveLibraryTab
+      v-if="isAdmin"
       v-show="activeTab === 'falsePositive'"
       @update:total="fpLibraryTotal = $event"
     />
@@ -48,11 +50,15 @@
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue'
+import { ref, computed } from 'vue'
+import { useUserStore } from '@/stores/user'
 import { Files, Key, Warning } from '@element-plus/icons-vue'
 import LocalStandardTab from './LocalStandardTab.vue'
 import TerminologyTab from './TerminologyTab.vue'
 import FalsePositiveLibraryTab from './FalsePositiveLibraryTab.vue'
+
+const userStore = useUserStore()
+const isAdmin = computed(() => userStore.isAdmin())
 
 // ===== Tab 切换 =====
 const activeTab = ref<'local' | 'terminology' | 'falsePositive'>('local')

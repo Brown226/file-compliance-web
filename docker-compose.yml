@@ -37,7 +37,7 @@ services:
 
   doc-parser:
     build:
-      context: ./backend/markitdown-service
+      context: ./backend/doc-parser
       dockerfile: Dockerfile
     container_name: file_review_doc_parser
     ports:

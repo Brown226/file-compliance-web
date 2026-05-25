@@ -9,7 +9,7 @@ offline-packages/compose-files
 *.tar.gz
 docs
 maxkb-runtime
-backend/markitdown-service
+backend/doc-parser
 backend/uploads
 SmartDuctV3
 SmartDuct

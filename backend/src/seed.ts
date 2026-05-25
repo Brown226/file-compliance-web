@@ -54,18 +54,26 @@ async function seed() {
     });
   }
 
-  // 5. 创建测试任务（无初始数据）
+  // 5. 初始化 LLM 模型配置（从环境变量读取，未配置则使用占位符）
+  const chatApiKey = process.env.LLM_CHAT_API_KEY || 'sk-placeholder-replace-in-management-ui';
+  const chatApiBase = process.env.LLM_CHAT_API_BASE || 'https://sub2api.toioto.org/v1';
+  const chatModel = process.env.LLM_CHAT_MODEL || 'gpt-5.4-mini';
+
+  const embedApiKey = process.env.LLM_EMBED_API_KEY || 'ms-placeholder-replace-in-management-ui';
+  const embedApiBase = process.env.LLM_EMBED_API_BASE || 'https://api-inference.modelscope.cn/v1';
+  const embedModel = process.env.LLM_EMBED_MODEL || 'Qwen/Qwen3-Embedding-8B';
+
+  // 5.1 对话模型
   await prisma.systemConfig.upsert({
     where: { key: 'llm_chat_model' },
     update: {},
     create: {
       key: 'llm_chat_model',
       value: {
-        serviceType: 'siliconflow',
-        // TODO: 在系统管理页面配置真实 API Key
-        apiKey: 'sk-placeholder-replace-in-production',
-        apiBaseUrl: 'https://api.siliconflow.cn/v1',
-        modelName: 'Qwen/Qwen2.5-72B-Instruct',
+        serviceType: 'openai',
+        apiKey: chatApiKey,
+        apiBaseUrl: chatApiBase,
+        modelName: chatModel,
         maxTokens: 4096,
         temperature: 0.3,
         timeout: 120,
@@ -76,17 +84,17 @@ async function seed() {
     },
   });
 
+  // 5.2 OCR/多模态模型（复用对话模型）
   await prisma.systemConfig.upsert({
     where: { key: 'llm_ocr_model' },
     update: {},
     create: {
       key: 'llm_ocr_model',
       value: {
-        serviceType: 'siliconflow',
-        // TODO: 在系统管理页面配置真实 API Key
-        apiKey: 'sk-placeholder-replace-in-production',
-        apiBaseUrl: 'https://api.siliconflow.cn/v1',
-        modelName: 'deepseek-ai/DeepSeek-OCR',
+        serviceType: 'openai',
+        apiKey: chatApiKey,
+        apiBaseUrl: chatApiBase,
+        modelName: chatModel,
         timeout: 180,
         enabled: true,
         rateLimit: 30,
@@ -96,19 +104,18 @@ async function seed() {
     },
   });
 
-  // 7.1 初始化 Embedding 向量化模型配置（RAG 知识库核心）- 硅基流动 BAAI/bge-m3
+  // 5.3 Embedding 向量化模型
   await prisma.systemConfig.upsert({
     where: { key: 'llm_embedding_model' },
     update: {},
     create: {
       key: 'llm_embedding_model',
       value: {
-        serviceType: 'siliconflow',
-        // TODO: 在系统管理页面配置真实 API Key
-        apiKey: 'sk-placeholder-replace-in-production',
-        apiBaseUrl: 'https://api.siliconflow.cn/v1',
-        modelName: 'BAAI/bge-m3',
-        dimensions: 1024,
+        serviceType: 'openai',
+        apiKey: embedApiKey,
+        apiBaseUrl: embedApiBase,
+        modelName: embedModel,
+        dimensions: 4096,
         batchSize: 20,
         timeout: 60,
         enabled: true,
@@ -116,18 +123,17 @@ async function seed() {
     },
   });
 
-  // 7.2 初始化 Rerank 重排序模型配置（RAG 检索增强，已启用）- 硅基流动 BAAI/bge-reranker-v2-m3
+  // 5.4 Rerank 重排序模型（复用对话模型）
   await prisma.systemConfig.upsert({
     where: { key: 'llm_rerank_model' },
     update: {},
     create: {
       key: 'llm_rerank_model',
       value: {
-        serviceType: 'siliconflow',
-        // TODO: 在系统管理页面配置真实 API Key
-        apiKey: 'sk-placeholder-replace-in-production',
-        apiBaseUrl: 'https://api.siliconflow.cn/v1',
-        modelName: 'BAAI/bge-reranker-v2-m3',
+        serviceType: 'openai',
+        apiKey: chatApiKey,
+        apiBaseUrl: chatApiBase,
+        modelName: chatModel,
         topK: 8,
         timeout: 30,
         enabled: true,
@@ -334,11 +340,11 @@ async function seed() {
   console.log('📋 默认账号信息:');
   console.log('  管理员: admin / admin123');
   console.log('');
-  console.log('🤖 LLM 默认配置（硅基流动免费模型）:');
-  console.log('  对话模型: Qwen/Qwen2.5-72B-Instruct');
-  console.log('  OCR模型:  deepseek-ai/DeepSeek-OCR');
-  console.log('  Embedding: BAAI/bge-m3 (1024维)');
-  console.log('  Rerank:   BAAI/bge-reranker-v2-m3');
+  console.log('🤖 LLM 默认配置:');
+  console.log('  对话模型: gpt-5.4-mini');
+  console.log('  OCR/多模态: gpt-5.4-mini');
+  console.log('  Embedding: Qwen/Qwen3-Embedding-8B (4096维)');
+  console.log('  Rerank:   gpt-5.4-mini');
 }
 
 seed()

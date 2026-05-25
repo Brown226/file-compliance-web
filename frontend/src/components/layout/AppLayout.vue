@@ -28,106 +28,34 @@
           <el-icon><DocumentAdd /></el-icon>
           <template #title><span>智能审查</span></template>
         </el-menu-item>
-        <el-menu-item index="/langchain/search">
-          <el-icon><Search /></el-icon>
-          <template #title><span>LC 知识检索</span></template>
-        </el-menu-item>
         <el-menu-item index="/langchain/qa">
           <el-icon><ChatDotRound /></el-icon>
-          <template #title><span>LC 智能问答</span></template>
+          <template #title><span>智能问答</span></template>
         </el-menu-item>
         <el-menu-item index="/tasks">
           <el-icon><List /></el-icon>
           <template #title><span>我的任务</span></template>
         </el-menu-item>
 
-        <div class="menu-divider" v-show="!sidebarCollapsed"></div>
-        <el-menu-item index="/feedback">
-          <el-icon><ChatLineRound /></el-icon>
-          <template #title><span>反馈意见</span></template>
-        </el-menu-item>
-        <el-menu-item index="/announcements">
-          <el-icon><Bell /></el-icon>
-          <template #title><span>系统公告</span></template>
-        </el-menu-item>
+        <template v-if="userStore.isAdmin()">
+          <div class="menu-divider" v-show="!sidebarCollapsed"></div>
+          <el-menu-item index="/feedback">
+            <el-icon><ChatLineRound /></el-icon>
+            <template #title><span>反馈意见</span></template>
+          </el-menu-item>
+          <el-menu-item index="/announcements">
+            <el-icon><Bell /></el-icon>
+            <template #title><span>系统公告</span></template>
+          </el-menu-item>
+        </template>
 
-        <!-- ===== 管理后台锛圓DMIN/MANAGER 鍙锛屾姌鍙犲瓙鑿滃崟锛?==== -->
+        <!-- ===== admin panel (ADMIN/MANAGER only) ===== -->
         <template v-if="userStore.isAdminOrManager()">
           <div class="menu-divider" v-show="!sidebarCollapsed"></div>
-          <el-sub-menu index="/admin" popper-class="admin-submenu-popper">
-            <template #title>
-              <el-icon><Setting /></el-icon>
-              <span>管理后台</span>
-            </template>
-            <el-menu-item-group title="统一管理">
-              <el-menu-item index="/admin">
-                <el-icon><Grid /></el-icon>
-                <template #title><span>管理面板</span></template>
-              </el-menu-item>
-            </el-menu-item-group>
-            <el-menu-item-group title="运营与监控">
-              <el-menu-item index="/admin/dashboard">
-                <el-icon><DataBoard /></el-icon>
-                <template #title><span>数据看板</span></template>
-              </el-menu-item>
-              <el-menu-item index="/admin/feedback">
-                <el-icon><ChatLineSquare /></el-icon>
-                <template #title><span>反馈管理</span></template>
-              </el-menu-item>
-            </el-menu-item-group>
-            <el-menu-item-group title="规范与知识">
-              <el-menu-item index="/admin/standards">
-                <el-icon><Reading /></el-icon>
-                <template #title><span>标准库清单管理</span></template>
-              </el-menu-item>
-              <el-menu-item index="/admin/knowledge-categories">
-                <el-icon><FolderOpened /></el-icon>
-                <template #title><span>知识库管理</span></template>
-              </el-menu-item>
-              <el-menu-item index="/admin/rule-libraries">
-                <el-icon><Notebook /></el-icon>
-                <template #title><span>语义知识库</span></template>
-              </el-menu-item>
-            </el-menu-item-group>
-            <el-menu-item-group title="审查配置">
-              <el-menu-item index="/admin/rules">
-                <el-icon><Operation /></el-icon>
-                <template #title><span>审查规则</span></template>
-              </el-menu-item>
-              <el-menu-item index="/admin/prompts">
-                <el-icon><Edit /></el-icon>
-                <template #title><span>提示词模板</span></template>
-              </el-menu-item>
-            </el-menu-item-group>
-            <el-menu-item-group title="系统设置">
-              <el-menu-item index="/admin/system">
-                <el-icon><Tools /></el-icon>
-                <template #title><span>系统总览</span></template>
-              </el-menu-item>
-              <el-menu-item index="/admin/users">
-                <el-icon><User /></el-icon>
-                <template #title><span>部门与员工</span></template>
-              </el-menu-item>
-              <el-menu-item index="/admin/storage">
-                <el-icon><FolderOpened /></el-icon>
-                <template #title><span>存储管理</span></template>
-              </el-menu-item>
-              <el-menu-item index="/admin/ai-engine">
-                <el-icon><Tools /></el-icon>
-                <template #title><span>AI 引擎</span></template>
-              </el-menu-item>
-              <el-menu-item index="/admin/basic">
-                <el-icon><Setting /></el-icon>
-                <template #title><span>基础设置</span></template>
-              </el-menu-item>
-            </el-menu-item-group>
-            <el-menu-item-group title="治理与审计">
-              <el-menu-item index="/admin/audit">
-                <el-icon><Document /></el-icon>
-                <template #title><span>审计日志</span></template>
-              </el-menu-item>
-            </el-menu-item-group>
-          </el-sub-menu>
+          <el-menu-item index="/admin">
+            <el-icon><Setting /></el-icon>
+            <template #title><span>管理后台</span></template>
+          </el-menu-item>
         </template>
       </el-menu>
 
@@ -144,6 +72,10 @@
         <div class="header-left">
           <div class="header-toggle" @click="sidebarOpen = !sidebarOpen" v-show="isMobile">
             <el-icon :size="20"><Fold /></el-icon>
+          </div>
+          <div v-if="isAdminSubRoute" class="admin-back-btn" @click="router.push('/admin')">
+            <el-icon :size="14"><ArrowLeft /></el-icon>
+            <span>管理后台</span>
           </div>
           <div class="breadcrumb">
             <span class="breadcrumb-item">{{ route.meta.title || '绯荤粺' }}</span>
@@ -315,12 +247,11 @@ import { useUserStore } from '@/stores/user'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import type { FormInstance, FormRules } from 'element-plus'
 import {
-  DataBoard, DocumentAdd, List, Reading,
-  Setting, Grid,
-  Document, FullScreen, ArrowDown, Lock, SwitchButton,
+  DataBoard, DocumentAdd, List,
+  Setting, FullScreen, ArrowDown, Lock, SwitchButton,
   Fold, Expand, Search, QuestionFilled, Edit,
-  Tools, Operation, WarningFilled, ChatDotRound, ChatLineRound, ChatLineSquare,
-  Bell, FolderOpened, Notebook, User,
+  WarningFilled, ChatDotRound, ChatLineRound,
+  Bell, User, ArrowLeft,
 } from '@element-plus/icons-vue'
 import { logoutApi, changePasswordApi, changeUsernameApi, loginApi } from '@/api/auth'
 import GlobalSearch from '@/components/GlobalSearch.vue'
@@ -333,6 +264,7 @@ const route = useRoute()
 const router = useRouter()
 const userStore = useUserStore()
 const activeMenu = computed(() => route.path)
+const isAdminSubRoute = computed(() => route.path.startsWith('/admin/') && route.path !== '/admin')
 const roleDisplayText = computed(() => {
   const role = userStore.userInfo?.role
   const map: Record<string, string> = { ADMIN: '系统管理员', MANAGER: '部门管理员', USER: '普通用户' }
@@ -754,89 +686,6 @@ const submitUsernameChange = async () => {
   display: none;
 }
 
-/* 管理后台鎶樺彔瀛愯彍鍗?*/
-.clean-menu :deep(.el-sub-menu .el-sub-menu__title) {
-  height: 40px;
-  line-height: 40px;
-  margin: 2px 8px;
-  border-radius: 6px;
-  font-weight: 500;
-  font-size: 13px;
-  padding-left: 16px;
-  color: #9CA3AF;
-  border-left: none;
-  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
-}
-
-.clean-menu :deep(.el-sub-menu .el-sub-menu__title:hover) {
-  background-color: rgba(255, 255, 255, 0.06);
-  color: #E5E7EB;
-}
-
-.clean-menu :deep(.el-sub-menu .el-sub-menu__title .el-icon) {
-  font-size: 17px;
-  margin-right: 10px;
-  color: #8B93A0;
-  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
-}
-
-.clean-menu :deep(.el-sub-menu.is-opened .el-sub-menu__title) {
-  color: #FFFFFF;
-}
-
-.clean-menu :deep(.el-sub-menu.is-opened .el-sub-menu__title .el-icon) {
-  color: var(--color-primary-300);
-}
-
-.clean-menu :deep(.el-sub-menu .el-menu) {
-  background-color: rgba(0, 0, 0, 0.25);
-  border-radius: 0 0 6px 6px;
-  margin: 0 8px 4px;
-  padding: 4px 0;
-}
-
-.clean-menu :deep(.el-sub-menu .el-menu .el-menu-item) {
-  height: 34px;
-  line-height: 34px;
-  padding-left: 44px;
-  font-size: 12px;
-  margin: 1px 4px;
-  border-left: none;
-  border-radius: 4px;
-  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
-}
-
-.clean-menu :deep(.el-sub-menu .el-menu .el-menu-item:hover) {
-  background-color: rgba(255, 255, 255, 0.04);
-  color: #E5E7EB;
-}
-
-.clean-menu :deep(.el-sub-menu .el-menu .el-menu-item .el-icon) {
-  font-size: 14px;
-  margin-right: 8px;
-  color: #8B93A0;
-}
-
-.clean-menu :deep(.el-sub-menu .el-menu .el-menu-item.is-active) {
-  background-color: rgba(59, 130, 246, 0.12);
-  color: #FFFFFF;
-}
-
-.clean-menu.el-menu--collapse :deep(.el-sub-menu .el-sub-menu__title) {
-  padding: 0;
-  justify-content: center;
-  margin: 2px 6px;
-  padding-left: 0;
-}
-
-.clean-menu.el-menu--collapse :deep(.el-sub-menu .el-sub-menu__title .el-icon) {
-  margin-right: 0;
-  font-size: 18px;
-}
-
-.clean-menu.el-menu--collapse :deep(.el-sub-menu.is-opened .el-sub-menu__title .el-icon) {
-  color: var(--color-primary-300);
-}
 
 .collapse-btn {
   height: 44px;
@@ -972,6 +821,25 @@ const submitUsernameChange = async () => {
   font-size: 14px;
   color: #111827;
   font-weight: 700;
+}
+
+.admin-back-btn {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 500;
+  color: #3B82F6;
+  transition: all 0.15s;
+  white-space: nowrap;
+}
+
+.admin-back-btn:hover {
+  background: #EFF6FF;
+  color: #2563EB;
 }
 
 .header-right {
@@ -1147,56 +1015,4 @@ const submitUsernameChange = async () => {
   font-family: inherit;
 }
 </style>
-
-<!-- 管理后台鎶樺彔寮瑰嚭鑿滃崟 鈥?闈?scoped锛坱eleported 鍒?body锛?-->
-<style>
-.admin-submenu-popper {
-  background: #1A1A1A !important;
-  border: 1px solid rgba(255, 255, 255, 0.08) !important;
-  border-radius: 8px !important;
-  padding: 4px 0 !important;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4) !important;
-  min-width: 180px !important;
-}
-
-.admin-submenu-popper .el-menu--popup .el-menu-item {
-  height: 36px !important;
-  line-height: 36px !important;
-  padding: 0 16px !important;
-  font-size: 13px !important;
-  color: #9CA3AF !important;
-  background-color: transparent !important;
-  border-radius: 4px !important;
-  margin: 2px 6px !important;
-  transition: all 0.15s ease !important;
-}
-
-.admin-submenu-popper .el-menu--popup .el-menu-item:hover {
-  background-color: rgba(255, 255, 255, 0.06) !important;
-  color: #E5E7EB !important;
-}
-
-.admin-submenu-popper .el-menu--popup .el-menu-item.is-active {
-  background-color: rgba(59, 130, 246, 0.15) !important;
-  color: #FFFFFF !important;
-  font-weight: 600 !important;
-}
-
-.admin-submenu-popper .el-menu--popup .el-menu-item .el-icon {
-  color: #8B93A0 !important;
-  font-size: 16px !important;
-  margin-right: 8px !important;
-}
-
-.admin-submenu-popper .el-menu--popup .el-menu-item.is-active .el-icon {
-  color: var(--color-primary-300, #93C5FD) !important;
-}
-
-.admin-submenu-popper .el-menu--popup .el-menu-item:hover .el-icon {
-  color: #D1D5DB !important;
-}
-</style>
-
-
-
 

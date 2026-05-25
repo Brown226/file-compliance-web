@@ -5,7 +5,7 @@
       <aside class="kb-sidebar">
         <div class="kb-sidebar__head">
           <span class="kb-sidebar__title">知识库</span>
-          <el-button type="primary" link size="small" @click="showCreateFolderDialog">
+          <el-button v-if="canManage" type="primary" link size="small" @click="showCreateFolderDialog">
             <el-icon><Plus /></el-icon>
           </el-button>
         </div>
@@ -36,7 +36,7 @@
                 <span class="kb-sidebar__group-name">{{ root.name }}</span>
                 <span class="kb-sidebar__group-count">{{ root.childCount }}</span>
               </div>
-              <div class="kb-sidebar__group-actions" @click.stop>
+              <div v-if="canManage" class="kb-sidebar__group-actions" @click.stop>
                 <el-dropdown trigger="click" @command="(cmd: string) => handleRootGroupCommand(cmd, root)">
                   <el-icon class="kb-sidebar__group-more"><MoreFilled /></el-icon>
                   <template #dropdown>
@@ -69,7 +69,7 @@
                   <FolderOpened v-if="!child.isLeaf" /><Collection v-else />
                 </el-icon>
                 <span class="kb-sidebar__child-label" :title="child.name">{{ child.name }}</span>
-                <div class="kb-sidebar__child-actions" @click.stop>
+                <div v-if="canManage" class="kb-sidebar__child-actions" @click.stop>
                   <el-dropdown trigger="click" @command="(cmd: string) => handleTreeCommand(cmd, child)">
                     <el-icon class="kb-sidebar__child-more"><MoreFilled /></el-icon>
                     <template #dropdown>
@@ -131,7 +131,7 @@
               :prefix-icon="Search"
               style="width: 240px"
             />
-            <el-button type="primary" @click="showCreateKbDialog">
+            <el-button v-if="canManage" type="primary" @click="showCreateKbDialog">
               <el-icon><Plus /></el-icon> 新建
             </el-button>
           </div>
@@ -160,25 +160,25 @@
                   </div>
                   <template #dropdown>
                       <el-dropdown-menu>
-                        <el-dropdown-item command="upload">
+                        <el-dropdown-item v-if="canManage" command="upload">
                           <el-icon><Upload /></el-icon> 上传文档
                         </el-dropdown-item>
                         <el-dropdown-item command="documents">
                           <el-icon><Document /></el-icon> 查看文档
                         </el-dropdown-item>
-                        <el-dropdown-item command="edit">
+                        <el-dropdown-item v-if="canManage" command="edit">
                           <el-icon><Edit /></el-icon> 编辑信息
                         </el-dropdown-item>
-                        <el-dropdown-item command="move" divided>
+                        <el-dropdown-item v-if="canManage" command="move" divided>
                           <el-icon><FolderOpened /></el-icon> 移动
                         </el-dropdown-item>
-                        <el-dropdown-item command="permission">
+                        <el-dropdown-item v-if="canManage" command="permission">
                           <el-icon><Lock /></el-icon> 权限
                         </el-dropdown-item>
                         <el-dropdown-item command="export">
                           <el-icon><Document /></el-icon> 导出
                         </el-dropdown-item>
-                        <el-dropdown-item command="delete" divided>
+                        <el-dropdown-item v-if="canManage" command="delete" divided>
                           <el-icon><Delete /></el-icon> 删除
                         </el-dropdown-item>
                       </el-dropdown-menu>
@@ -215,7 +215,7 @@
             <el-icon :size="48" color="#c0c4cc"><FolderOpened /></el-icon>
           </div>
           <p class="kb-empty__text">{{ currentNodeId ? '此目录下暂无知识库' : '暂无知识库' }}</p>
-          <el-button type="primary" @click="showCreateKbDialog">
+          <el-button v-if="canManage" type="primary" @click="showCreateKbDialog">
             <el-icon><Plus /></el-icon> 新建知识库
           </el-button>
         </div>
@@ -273,6 +273,7 @@
 <script setup lang="ts">
 import { ref, reactive, computed, onMounted, watch, nextTick } from 'vue'
 import { useRouter } from 'vue-router'
+import { useUserStore } from '@/stores/user'
 import {
   Plus, Upload, Edit, Delete, Search,
   FolderOpened, Collection, Document, MoreFilled,
@@ -293,6 +294,8 @@ import {
 } from '@/api/knowledge-category'
 
 const router = useRouter()
+const userStore = useUserStore()
+const canManage = computed(() => userStore.isAdminOrManager())
 
 // ===== 扁平化目录列表 =====
 const treeData = ref<KnowledgeTreeNode[]>([])

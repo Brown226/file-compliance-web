@@ -347,6 +347,17 @@ export interface DashboardStats {
   bySeverity?: Record<string, number>
   unhandledHigh?: any[]
   comparedToLastPeriod?: { tasksDelta?: number; complianceDelta?: number; avgTimeDelta?: number }
+  overview?: {
+    departmentCount: number
+    userCount: number
+    standardCount: number
+    ruleCount: number
+    feedbackCount: number
+    announcementCount: number
+    knowledgeDocCount: number
+    auditLogCount: number
+    ruleLibraryCount: number
+  }
 }
 
 /** 仪表盘趋势数据 */

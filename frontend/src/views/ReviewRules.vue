@@ -7,7 +7,7 @@
           <span class="panel-title">合规规则库</span>
           <el-tag size="small" type="info">共 {{ totalRules }} 条</el-tag>
         </div>
-        <div class="header-actions">
+        <div v-if="canManage" class="header-actions">
           <el-button size="small" @click="openCreateDialog">
             <el-icon><Plus /></el-icon> 创建规则
           </el-button>
@@ -139,13 +139,17 @@
           <el-table-column prop="enabled" label="状态" width="70">
             <template #default="{ row }">
               <el-switch
+                v-if="canManage"
                 :model-value="row.enabled"
                 size="small"
                 @change="(val: boolean) => handleToggleRule(row, val)"
               />
+              <el-tag v-else :type="row.enabled ? 'success' : 'info'" size="small">
+                {{ row.enabled ? '启用' : '禁用' }}
+              </el-tag>
             </template>
           </el-table-column>
-          <el-table-column label="操作" width="120" fixed="right">
+          <el-table-column v-if="canManage" label="操作" width="120" fixed="right">
             <template #default="{ row }">
               <el-button size="small" link type="primary" @click="openEditDialog(row)">编辑</el-button>
               <el-button size="small" link type="danger" @click="handleDeleteRule(row)">删除</el-button>
@@ -288,6 +292,7 @@
 
 <script setup lang="ts">
 import { ref, reactive, computed, onMounted } from 'vue'
+import { useUserStore } from '@/stores/user'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Search, Plus, Upload, Delete, MagicStick } from '@element-plus/icons-vue'
 import type { FormInstance, FormRules } from 'element-plus'
@@ -304,6 +309,9 @@ import {
   importRulesApi,
 } from '@/api/rule'
 import type { ReviewRule } from '@/types/models'
+
+const userStore = useUserStore()
+const canManage = computed(() => userStore.isAdminOrManager())
 
 const loading = ref(false)
 const rules = ref<ReviewRule[]>([])

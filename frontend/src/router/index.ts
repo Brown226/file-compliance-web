@@ -94,31 +94,31 @@ const routes: Array<RouteRecordRaw> = [
         path: 'admin/standards',
         name: 'AdminStandards',
         component: () => import('../views/StandardLibrary/index.vue'),
-        meta: { title: '标准库清单管理', requiresAdminOrManager: true }
+        meta: { title: '标准库清单管理', allowViewer: true }
       },
       {
         path: 'admin/knowledge-categories',
         name: 'KnowledgeCategories',
         component: () => import('../views/admin/KnowledgeCategories.vue'),
-        meta: { title: '知识库管理', requiresAdminOrManager: true }
+        meta: { title: '知识库管理', allowViewer: true }
       },
       {
         path: 'admin/knowledge-categories/:id/documents',
         name: 'KnowledgeDocuments',
         component: () => import('../views/admin/KnowledgeDocuments.vue'),
-        meta: { title: '知识库文档管理', requiresAdminOrManager: true, hidden: true }
+        meta: { title: '知识库文档管理', allowViewer: true, hidden: true }
       },
       {
         path: 'admin/rule-libraries',
         name: 'RuleLibraries',
         component: () => import('../views/admin/RuleLibraries.vue'),
-        meta: { title: '语义知识库', requiresAdminOrManager: true }
+        meta: { title: '语义知识库', allowViewer: true }
       },
       {
         path: 'admin/rules',
         name: 'AdminReviewRules',
         component: () => import('../views/ReviewRules.vue'),
-        meta: { title: '审查规则配置', requiresAdminOrManager: true }
+        meta: { title: '审查规则配置', allowViewer: true }
       },
       {
         path: 'admin/prompts',
@@ -197,6 +197,8 @@ router.beforeEach((to, _from, next) => {
   const isAuthenticated = !!userStore.token
 
   if (to.meta.requiresAuth && !isAuthenticated) {
+    next({ name: 'Login' })
+  } else if (to.meta.allowViewer && !isAuthenticated) {
     next({ name: 'Login' })
   } else if (to.meta.requiresAdminOrManager && !userStore.isAdminOrManager()) {
     next({ path: '/workspace' })

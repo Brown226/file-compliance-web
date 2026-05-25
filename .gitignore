@@ -1,6 +1,6 @@
 # Dependencies
 node_modules/
-backend/markitdown-service/.venv/
+backend/doc-parser/.venv/
 
 # WASM files (large binary assets, should be downloaded separately)
 *.wasm
@@ -123,7 +123,7 @@ nul
 docs/
 
 # Python markitdown microservice (separate from Node.js backend)
-backend/markitdown-service/
+backend/doc-parser/
 
 # Temp doc files (not source code)
 Tab导航调整与工作台功能说明.md
@@ -150,7 +150,7 @@ backend/check-db.js
 backend/db-push.txt
 backend/dev-start.txt
 backend/prisma-gen*.txt
-backend/markitdown-service/test_*
+backend/doc-parser/test_*
 
 # Redundant SQL init files (docker-compose handles pgvector init)
 backend/prisma/enable-vector.sql

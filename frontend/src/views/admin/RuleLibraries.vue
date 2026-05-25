@@ -26,7 +26,7 @@
               <el-option label="已发布" value="PUBLISHED" />
               <el-option label="归档" value="ARCHIVED" />
             </el-select>
-            <el-button type="primary" @click="showCreateDialog">
+            <el-button v-if="canManage" type="primary" @click="showCreateDialog">
               <el-icon><Plus /></el-icon> 新建规则库
             </el-button>
           </div>
@@ -81,11 +81,11 @@
                 </el-tag>
               </template>
             </el-table-column>
-            <el-table-column label="操作" width="180" fixed="right">
+            <el-table-column label="操作" :width="canManage ? 180 : 100" fixed="right">
               <template #default="{ row }">
                 <el-button type="primary" link size="small" @click="showDetail(row)">查看规则</el-button>
-                <el-button type="primary" link size="small" @click="showEditDialog(row)">编辑</el-button>
-                <el-dropdown trigger="click" @command="(cmd: string) => handleRowCommand(cmd, row)">
+                <el-button v-if="canManage" type="primary" link size="small" @click="showEditDialog(row)">编辑</el-button>
+                <el-dropdown v-if="canManage" trigger="click" @command="(cmd: string) => handleRowCommand(cmd, row)">
                   <el-button type="primary" link size="small">
                     更多<el-icon class="el-icon--right"><ArrowDown /></el-icon>
                   </el-button>
@@ -127,7 +127,7 @@
                 </div>
               </div>
               <div>
-                <el-button type="primary" size="small" @click="showAddItemDialog">手动添加</el-button>
+                <el-button v-if="canManage" type="primary" size="small" @click="showAddItemDialog">手动添加</el-button>
                 <el-button type="primary" link @click="selectedLibrary = null">关闭</el-button>
               </div>
             </div>
@@ -179,10 +179,11 @@
             <el-table-column prop="description" label="描述" min-width="250" show-overflow-tooltip />
             <el-table-column prop="enabled" label="启用" width="70" align="center">
               <template #default="{ row }">
-                <el-switch v-model="row.enabled" size="small" @change="toggleItem(row)" />
+                <el-switch v-if="canManage" v-model="row.enabled" size="small" @change="toggleItem(row)" />
+                <span v-else>{{ row.enabled ? '是' : '否' }}</span>
               </template>
             </el-table-column>
-            <el-table-column label="操作" width="120" fixed="right">
+            <el-table-column v-if="canManage" label="操作" width="120" fixed="right">
               <template #default="{ row }">
                 <el-button type="primary" link size="small" @click="showEditItemDialog(row)">编辑</el-button>
                 <el-popconfirm title="确认删除？" @confirm="handleDeleteItem(row.id)">
@@ -343,6 +344,7 @@
 
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from 'vue'
+import { useUserStore } from '@/stores/user'
 import {
   Plus, UploadFilled, CircleCheck, Edit, Delete, ArrowDown, Loading
 } from '@element-plus/icons-vue'
@@ -364,6 +366,9 @@ import {
 } from '@/api/rule-library'
 
 // 加载状态
+const userStore = useUserStore()
+const canManage = computed(() => userStore.isAdminOrManager())
+
 const loading = ref(false)
 const submitting = ref(false)
 const parsing = ref(false)
