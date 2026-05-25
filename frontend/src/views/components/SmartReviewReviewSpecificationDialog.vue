@@ -103,12 +103,7 @@ watch(() => props.visible, (val) => {
   }
 })
 
-watch(() => props.specifications, (val) => {
-  console.log('[Dialog] specifications prop updated:', val)
-}, { immediate: true, deep: true })
-
 const filteredList = computed(() => {
-  console.log('[Dialog] filteredList computed, specifications:', props.specifications)
   if (!searchQuery.value.trim()) return props.specifications
   const query = searchQuery.value.toLowerCase()
   return props.specifications.filter(spec =>

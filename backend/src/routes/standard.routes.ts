@@ -12,6 +12,7 @@ import {
   getStandardDetail,
   updateStandard,
   deleteStandard,
+  clearAllStandards,
   exportStandardsExcel,
   importStandardsExcel,
   downloadTemplate,
@@ -99,6 +100,7 @@ router.post('/extract/excel-column', excelUpload.single('file'), extractFromExce
 router.post('/temp-library', excelUpload.single('file'), importTempLibrary);
 router.post('/check-temp', checkStandardWithTempLibrary);
 router.delete('/temp-library', clearTempLibrary);
+router.delete('/', requireRole('ADMIN'), clearAllStandards);
 router.post('/temp-library/archive', archiveTempToStandard);
 router.post('/temp-library/archive-all', archiveAllTempToStandard);
 router.post('/import/normative', requireRole('ADMIN'), excelUpload.single('file'), importNormativeExcel);

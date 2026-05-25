@@ -45,6 +45,10 @@
               <el-button plain size="small" @click="handleDownloadTemplate">
                 <el-icon><Download /></el-icon> 下载模板
               </el-button>
+              <el-divider direction="vertical" />
+              <el-button plain size="small" @click="handleClearAll">
+                <el-icon><Delete /></el-icon> 清空数据
+              </el-button>
             </template>
           </div>
         </div>
@@ -274,6 +278,7 @@ import {
   updateStandardApi,
   deleteStandardApi,
   downloadNormativeTemplateApi,
+  clearAllStandardsApi,
 } from '@/api/standard'
 import { useUserStore } from '@/stores/user'
 import type { Standard } from '@/types/models'
@@ -311,6 +316,25 @@ const handleDownloadTemplate = async () => {
   } catch (e) {
     console.error('下载模板失败:', e)
     ElMessage.error('下载模板失败')
+  }
+}
+
+// ==================== 清空数据 ====================
+const handleClearAll = async () => {
+  try {
+    await ElMessageBox.confirm(
+      '确定要清空所有标准数据（共 ' + total.value + ' 条）吗？此操作不可恢复！建议先导出备份。',
+      '清空确认',
+      { type: 'warning', confirmButtonText: '确认清空', cancelButtonText: '取消' }
+    )
+    const { data } = await clearAllStandardsApi()
+    ElMessage.success(`已清空 ${data.count} 条标准数据`)
+    fetchTableData()
+  } catch (e: any) {
+    if (e !== 'cancel') {
+      console.error('清空失败:', e)
+      ElMessage.error(e?.response?.data?.error || '清空失败')
+    }
   }
 }
 
@@ -393,8 +417,6 @@ const handleSizeChange = (size: number) => {
   currentPage.value = 1
   fetchTableData()
 }
-
-useEnterToConfirm(editDialogVisible, handleSubmitEdit, { disabled: editLoading })
 
 const handleSelectionChange = (rows: Standard[]) => {
   selectedRows.value = rows
@@ -559,6 +581,8 @@ const handleSubmitEdit = async () => {
     editLoading.value = false
   }
 }
+
+useEnterToConfirm(editDialogVisible, handleSubmitEdit, { disabled: editLoading })
 
 // ==================== 删除 ====================
 const handleDelete = async (row: Standard) => {

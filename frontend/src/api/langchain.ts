@@ -1,4 +1,5 @@
 import request from '@/utils/request'
+import { fetchSSE, type SSEOptions } from '@/utils/sse'
 
 export interface LangChainAskResult {
   answer: string
@@ -70,6 +71,37 @@ export const langchainReviewApi = (data: {
 export const getLangChainStreamUrl = () => {
   const base = request.defaults?.baseURL || '/api'
   return `${base}/langchain/ask-stream`
+}
+
+export const langchainAskStreamApi = (
+  data: {
+    question: string
+    categoryIds: string[]
+    history?: Array<{ role: string; content: string }>
+    topK?: number
+    enableMultiQuery?: boolean
+    enableHyDE?: boolean
+    enableCompression?: boolean
+  },
+  options: {
+    token: string
+    onMessage: SSEOptions['onMessage']
+    onError?: SSEOptions['onError']
+    onComplete?: SSEOptions['onComplete']
+    signal?: AbortSignal
+  }
+) => {
+  const base = request.defaults?.baseURL || '/api'
+  return fetchSSE({
+    url: `${base}/langchain/ask-stream`,
+    method: 'POST',
+    token: options.token,
+    body: data,
+    onMessage: options.onMessage,
+    onError: options.onError,
+    onComplete: options.onComplete,
+    signal: options.signal,
+  })
 }
 
 // 后台问答 API

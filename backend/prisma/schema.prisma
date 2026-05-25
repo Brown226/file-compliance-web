@@ -798,11 +798,15 @@ model QASession {
 
 model QAMessage {
   id              String        @id @default(uuid())
-  sessionId       String
+  sessionId       String        @map("sessionId")
   session         QASession     @relation(fields: [sessionId], references: [id], onDelete: Cascade)
   role            String        // user, assistant, system
   content         String        @db.Text
-  createdAt       DateTime      @default(now())
+  status          String        @default("processing") // processing, completed, failed
+  sources         Json?         // 引用来源
+  debug           Json?         // 调试信息
+  createdAt       DateTime      @default(now()) @map("createdAt")
+  updatedAt       DateTime      @updatedAt @map("updated_at")
 
   @@index([sessionId])
   @@map("qa_messages")

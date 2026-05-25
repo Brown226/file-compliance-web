@@ -280,6 +280,12 @@ export class StandardService {
     return prisma.standard.delete({ where: { id } });
   }
 
+  /** 清空所有标准库数据（物理删除） */
+  static async clearAllStandards(): Promise<number> {
+    const result = await prisma.standard.deleteMany();
+    return result.count;
+  }
+
   /**
    * 导出标准库为 Excel
    */
@@ -801,6 +807,18 @@ export class StandardService {
       columnMap.repealDate = 7;
     }
 
+    // ===== 预加载已存在的标准编号（避免逐行 findFirst）=====
+    const existingStandardMap = new Map<string, { id: string; title: string; standardName: string | null; standardIdent: string | null }>();
+    if (!dryRun) {
+      const existingStandards = await prisma.standard.findMany({
+        where: { standardNo: { not: null } },
+        select: { id: true, standardNo: true, title: true, standardName: true, standardIdent: true },
+      });
+      for (const s of existingStandards) {
+        if (s.standardNo) existingStandardMap.set(s.standardNo, s);
+      }
+    }
+
     // ===== 解析数据行 =====
     const preview: Array<{
       row: number;
@@ -819,6 +837,34 @@ export class StandardService {
     let validCount = 0;
     let importedCount = 0;
     let skippedCount = 0;
+
+    // 批量收集待创建/更新的记录
+    const newRecords: Array<{
+      title: string;
+      version: string;
+      isActive: boolean;
+      standardNo: string;
+      standardName: string;
+      standardIdent: string | null;
+      standardStatus: 'CURRENT' | 'UPCOMING' | 'ABOLISHED';
+      publishDate: Date | null;
+      implementDate: Date | null;
+      abolishDate: Date | null;
+      folderId: string | null;
+      source: string;
+    }> = [];
+    const updateRecords: Array<{
+      id: string;
+      data: {
+        title: string;
+        standardName: string;
+        standardIdent: string | null;
+        standardStatus: 'CURRENT' | 'UPCOMING' | 'ABOLISHED';
+        publishDate: Date | null;
+        implementDate: Date | null;
+        abolishDate: Date | null;
+      };
+    }> = [];
 
     for (let i = 2; i <= worksheet.rowCount; i++) {
       const rowNum = i;
@@ -913,18 +959,14 @@ export class StandardService {
           isValid: true,
         });
 
-        // 如果不是试运行，则写入数据库
+        // 如果不是试运行，则收集数据供批量写入
         if (!dryRun) {
-          // 检查是否已存在
-          const existing = await prisma.standard.findFirst({
-            where: { standardNo },
-          });
+          const existing = existingStandardMap.get(standardNo);
 
           if (existing) {
             if (overwriteExisting) {
-              // 更新已存在的标准
-              await prisma.standard.update({
-                where: { id: existing.id },
+              updateRecords.push({
+                id: existing.id,
                 data: {
                   title: standardName || existing.title,
                   standardName: standardName || existing.standardName,
@@ -940,22 +982,19 @@ export class StandardService {
               skippedCount++;
             }
           } else {
-            // 创建新标准
-            await prisma.standard.create({
-                data: {
-                  title: standardName || standardNo,
-                  version: 'v1.0',
-                  isActive: mappedStatus !== 'ABOLISHED',
-                  standardNo,
-                  standardName: standardName || standardNo,
-                  standardIdent: standardIdent || null,
-                standardStatus: mappedStatus,
-                publishDate,
-                implementDate,
-                abolishDate: repealDate,
-                folderId: defaultFolderId || null,
-                source: 'normative_import',
-              },
+            newRecords.push({
+              title: standardName || standardNo,
+              version: 'v1.0',
+              isActive: mappedStatus !== 'ABOLISHED',
+              standardNo,
+              standardName: standardName || standardNo,
+              standardIdent: standardIdent || null,
+              standardStatus: mappedStatus,
+              publishDate,
+              implementDate,
+              abolishDate: repealDate,
+              folderId: defaultFolderId || null,
+              source: 'normative_import',
             });
             importedCount++;
           }
@@ -973,6 +1012,34 @@ export class StandardService {
         });
         errors.push({ row: rowNum, message: errorMsg });
         skippedCount++;
+      }
+    }
+
+    // 批量写入数据库
+    if (!dryRun) {
+      // 批量创建新记录（使用 createMany，一次查询）
+      if (newRecords.length > 0) {
+        const BATCH_SIZE = 5000;
+        for (let j = 0; j < newRecords.length; j += BATCH_SIZE) {
+          const batch = newRecords.slice(j, j + BATCH_SIZE);
+          await prisma.standard.createMany({ data: batch });
+        }
+      }
+
+      // 批量更新已有记录（使用 $transaction 合并为一次事务）
+      if (updateRecords.length > 0) {
+        const BATCH_SIZE = 2000;
+        for (let j = 0; j < updateRecords.length; j += BATCH_SIZE) {
+          const batch = updateRecords.slice(j, j + BATCH_SIZE);
+          await prisma.$transaction(
+            batch.map(record =>
+              prisma.standard.update({
+                where: { id: record.id },
+                data: record.data,
+              })
+            )
+          );
+        }
       }
     }
 

@@ -72,6 +72,11 @@ export function deleteStandardApi(id: string) {
   return request.delete<{ message: string }>(`/standards/${id}`)
 }
 
+// 清空所有标准库数据（仅 ADMIN）
+export function clearAllStandardsApi() {
+  return request.delete<{ count: number }>('/standards')
+}
+
 // 导出标准 Excel
 export function exportStandardsExcelApi() {
   return request.get<Blob>('/standards/export/excel', { responseType: 'blob' })

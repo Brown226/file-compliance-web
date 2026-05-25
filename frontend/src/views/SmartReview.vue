@@ -1104,19 +1104,15 @@ const openKnowledgeDialog = () => {
 const openReviewSpecificationDialog = async () => {
   reviewSpecificationDialogVisible.value = true
   try {
-    const specRes = await getRuleLibrariesApi()
-    console.log('[SmartReview] API response:', specRes)
-    console.log('[SmartReview] specRes.data type:', typeof specRes.data, Array.isArray(specRes.data))
-    console.log('[SmartReview] specRes.data content:', JSON.stringify(specRes.data))
+    const specRes = await getReviewSpecificationsApi()
     reviewSpecifications.value = (specRes.data || []).map((l: any) => ({
       id: l.id,
       name: l.name,
       status: l.status || 'DRAFT',
       description: l.description || '',
       itemCount: l._count?.items || l.items?.length || 0,
-      executableCount: l.enabledExecutableItemCount || l.executableItemCount || 0,
+      executableCount: l.executableItemCount || 0,
     }))
-    console.log('[SmartReview] reviewSpecifications.value:', reviewSpecifications.value)
   } catch (e) {
     console.warn('[SmartReview] 刷新语义规范库列表失败:', e)
   }

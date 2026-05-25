@@ -44,64 +44,18 @@
             <el-tag type="success" effect="plain" size="small" round>{{ libraryTotal.toLocaleString() }} 条</el-tag>
           </div>
 
-          <!-- 搜索框 -->
-          <el-input
-            v-model="librarySearch"
-            placeholder="搜索标准编号或名称..."
-            :prefix-icon="Search"
-            clearable
-            size="default"
-            class="library-search"
-          />
-
-          <!-- 标准分类列表 -->
-          <div class="standard-categories">
-            <div
-              v-for="cat in filteredCategories"
-              :key="cat.key"
-              class="category-item"
-              :class="{ 'category-item--expanded': expandedCategories.includes(cat.key) }"
-            >
-              <div class="category-item__header" @click="toggleCategory(cat.key)">
-                <el-icon class="category-arrow"><ArrowRight /></el-icon>
-                <el-checkbox
-                  :model-value="isCategoryAllSelected(cat)"
-                  :indeterminate="isCategoryPartialSelected(cat)"
-                  @change="(val: any) => toggleCategorySelection(cat, val)"
-                  @click.stop
-                />
-                <span class="category-name">{{ cat.label }}</span>
-                <span class="category-count">{{ cat.count }}</span>
-              </div>
-              <transition name="expand">
-                <div v-show="expandedCategories.includes(cat.key)" class="category-item__children">
-                  <template v-if="loadingCategories.has(cat.key)">
-                    <div class="standard-loading">
-                      <el-icon class="is-loading" :size="16"><Loading /></el-icon>
-                      <span>加载中...</span>
-                    </div>
-                  </template>
-                  <template v-else-if="cat.standards.length">
-                    <div
-                      v-for="std in cat.standards"
-                      :key="std"
-                      class="standard-child"
-                    >
-                      <el-checkbox :model-value="true" disabled />
-                      <span class="standard-name">{{ std }}</span>
-                    </div>
-                  </template>
-                  <template v-else>
-                    <div class="standard-empty">暂无标准数据</div>
-                  </template>
-                </div>
-              </transition>
+          <!-- 简洁信息展示 -->
+          <div class="library-info">
+            <div class="library-info__icon">
+              <el-icon :size="32"><FolderOpened /></el-icon>
             </div>
-          </div>
-
-          <div class="library-footer">
-            <el-button link type="primary" size="small">展开全部</el-button>
-            <span class="library-hint">使用全部标准清单进行比对</span>
+            <div class="library-info__content">
+              <p class="library-info__text">标准库中共有 <strong>{{ libraryTotal.toLocaleString() }}</strong> 条标准引用数据</p>
+              <p class="library-info__hint">系统将自动与全部标准清单进行比对分析</p>
+            </div>
+            <el-button type="primary" plain size="small" @click="$router.push('/standards')">
+              <el-icon><View /></el-icon> 查看标准库
+            </el-button>
           </div>
         </div>
       </div>
@@ -235,7 +189,7 @@ import { useRouter } from 'vue-router'
 import {
   FolderOpened, UploadFilled, Search, Download,
   RefreshRight, Check, Checked,
-  Document, Close, ArrowRight, Loading,
+  Document, Close, Loading,
   CircleCheckFilled, WarningFilled, View,
 } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
@@ -247,7 +201,6 @@ import {
   type LibraryInfoAPI,
   type SelfCheckReportAPI,
 } from '@/api/self-check'
-import { getStandardsApi } from '@/api/standard'
 
 const router = useRouter()
 
@@ -265,89 +218,15 @@ const supportedFormats = [
 
 // ==================== 标准库信息（真实数据）====================
 const libraryTotal = ref(0)
-const librarySearch = ref('')
-const expandedCategories = ref<string[]>([])
-const loadingCategories = ref<Set<string>>(new Set())
-
-interface StandardCategory {
-  key: string
-  folderId: string
-  label: string
-  count: number
-  standards: string[]
-}
-
-const standardCategories = ref<StandardCategory[]>([])
-
-const filteredCategories = computed(() => {
-  if (!librarySearch.value.trim()) return standardCategories.value
-  const kw = librarySearch.value.toLowerCase()
-  return standardCategories.value.filter(cat =>
-    cat.label.toLowerCase().includes(kw) ||
-    cat.standards.some(s => s.toLowerCase().includes(kw))
-  )
-})
 
 const fetchLibraryInfo = async () => {
   try {
     const { data } = await getSelfCheckLibraryInfoApi()
     libraryTotal.value = data?.total || 0
-
-    if (data?.folders?.length) {
-      standardCategories.value = data.folders.map((f: any) => ({
-        key: f.id,
-        folderId: f.id,
-        label: f.name,
-        count: f.count || 0,
-        standards: [],
-      }))
-    }
   } catch (e) {
     console.error('获取标准库信息失败:', e)
   }
 }
-
-const toggleCategory = async (key: string) => {
-  const idx = expandedCategories.value.indexOf(key)
-
-  if (idx >= 0) {
-    expandedCategories.value.splice(idx, 1)
-    return
-  }
-
-  expandedCategories.value.push(key)
-
-  const cat = standardCategories.value.find(c => c.key === key)
-  if (cat && cat.standards.length === 0 && !loadingCategories.value.has(key)) {
-    loadingCategories.value.add(key)
-    try {
-      const { data } = await getStandardsApi({
-        folderId: cat.folderId,
-        limit: 10,
-        sortField: 'standardNo',
-        sortOrder: 'asc',
-      })
-
-      cat.standards = (data?.items || []).map(
-        (s: any) => s.standardNo || s.title || s.id
-      )
-
-      if ((data?.total || 0) > (cat.count || 0)) {
-        cat.count = data.total
-      }
-    } catch (e) {
-      console.error(`获取分类 ${cat.label} 标准列表失败:`, e)
-    } finally {
-      loadingCategories.value.delete(key)
-    }
-  }
-}
-
-const isCategoryAllSelected = (cat: StandardCategory) => true
-
-const isCategoryPartialSelected = (_cat: StandardCategory) => false
-
-const toggleCategorySelection = (_cat: StandardCategory, _val: any) => {}
 
 // ==================== 文件上传 ====================
 const uploadRef = ref<UploadInstance>()
@@ -665,123 +544,42 @@ onMounted(() => {
   top: 24px;
 }
 
-.library-search {
-  padding: 0 16px 12px;
-}
-
-.standard-categories {
-  padding: 0 12px 12px;
-  max-height: 420px;
-  overflow-y: auto;
-}
-
-.category-item {
-  border-radius: 8px;
-  margin-bottom: 4px;
-  transition: background 0.15s;
-}
-
-.category-item:hover {
-  background: var(--el-fill-color-lighter);
-}
-
-.category-item__header {
+.library-info {
   display: flex;
+  flex-direction: column;
   align-items: center;
-  gap: 6px;
-  padding: 9px 10px;
-  cursor: pointer;
-  user-select: none;
-}
-
-.category-arrow {
-  font-size: 12px;
-  color: var(--el-text-color-placeholder);
-  transition: transform 0.2s;
-  flex-shrink: 0;
-}
-
-.category-item--expanded .category-arrow {
-  transform: rotate(90deg);
-}
-
-.category-name {
-  font-size: 13px;
-  font-weight: 500;
-  color: var(--el-text-color-primary);
-  flex: 1;
-}
-
-.category-count {
-  font-size: 11px;
-  color: var(--el-text-color-placeholder);
-  background: var(--el-fill-color-light);
-  padding: 1px 7px;
-  border-radius: 10px;
-}
-
-.category-item__children {
-  padding-left: 30px;
-  overflow: hidden;
-}
-
-.standard-child {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 5px 10px;
-  font-size: 12px;
-  color: var(--el-text-color-regular);
-}
-
-.standard-name {
-  font-family: 'Consolas', 'Courier New', monospace;
-}
-
-.standard-loading {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 12px 10px;
-  font-size: 12px;
-  color: var(--el-text-color-placeholder);
-}
-
-.standard-empty {
-  padding: 10px;
-  font-size: 12px;
-  color: var(--el-text-color-placeholder);
+  gap: 16px;
+  padding: 32px 20px 24px;
   text-align: center;
 }
 
-.library-footer {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 10px 16px;
-  border-top: 1px solid var(--el-fill-color-lighter);
+.library-info__icon {
+  color: var(--el-color-primary);
+  opacity: 0.45;
 }
 
-.library-hint {
-  font-size: 11px;
+.library-info__content {
+  width: 100%;
+}
+
+.library-info__text {
+  margin: 0 0 6px;
+  font-size: 14px;
+  color: var(--el-text-color-regular);
+  line-height: 1.6;
+}
+
+.library-info__text strong {
+  color: var(--el-color-primary);
+  font-size: 18px;
+  font-weight: 700;
+}
+
+.library-info__hint {
+  margin: 0;
+  font-size: 12px;
   color: var(--el-text-color-placeholder);
-}
-
-/* 展开动画 */
-.expand-enter-active,
-.expand-leave-active {
-  transition: all 0.2s ease;
-  overflow: hidden;
-}
-.expand-enter-from,
-.expand-leave-to {
-  opacity: 0;
-  max-height: 0;
-}
-.expand-enter-to,
-.expand-leave-from {
-  opacity: 1;
-  max-height: 300px;
+  line-height: 1.5;
 }
 
 /* ====== 右栏 ====== */
@@ -1087,10 +885,6 @@ onMounted(() => {
 
   .panel-left {
     position: static;
-  }
-
-  .standard-categories {
-    max-height: 240px;
   }
 
   .action-bar {

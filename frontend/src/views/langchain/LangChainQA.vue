@@ -232,6 +232,7 @@ import {
   getConversationApi,
   createConversationApi,
   deleteConversationApi,
+  langchainAskStreamApi,
   langchainAskBackgroundApi,
   getMessageStatusApi,
   type Conversation,
@@ -270,6 +271,11 @@ const DEFAULT_SEARCH_PARAMS: SearchParams = {
 const userStore = useUserStore()
 const { renderMarkdown } = useMarkdown()
 
+const STORAGE_KEYS = {
+  SELECTED_KB_IDS: 'langchain-qa-selected-kb-ids',
+  SEARCH_PARAMS: 'langchain-qa-search-params',
+}
+
 const inputQuestion = ref('')
 const messages = ref<ChatMessage[]>([])
 const isProcessing = ref(false)
@@ -280,7 +286,49 @@ const chatContainer = ref<HTMLElement | null>(null)
 const categoryTree = ref<KnowledgeTreeNode[]>([])
 const conversations = ref<Conversation[]>([])
 const currentConversationId = ref<string | null>(null)
-const pollingTimers = ref<Map<string, ReturnType<typeof setInterval>>>(new Map())
+const abortController = ref<AbortController | null>(null)
+
+// ========== 持久化存储 ==========
+const saveSelectedKbIds = (ids: string[]) => {
+  try {
+    localStorage.setItem(STORAGE_KEYS.SELECTED_KB_IDS, JSON.stringify(ids))
+  } catch { /* ignore */ }
+}
+
+const loadSelectedKbIds = (): string[] => {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEYS.SELECTED_KB_IDS)
+    if (raw) {
+      const parsed = JSON.parse(raw)
+      if (Array.isArray(parsed)) return parsed
+    }
+  } catch { /* ignore */ }
+  return []
+}
+
+const saveSearchParams = (params: SearchParams) => {
+  try {
+    localStorage.setItem(STORAGE_KEYS.SEARCH_PARAMS, JSON.stringify(params))
+  } catch { /* ignore */ }
+}
+
+const loadSearchParams = (): SearchParams | null => {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEYS.SEARCH_PARAMS)
+    if (raw) return JSON.parse(raw)
+  } catch { /* ignore */ }
+  return null
+}
+
+// 监听知识库选择变化，自动保存
+watch(selectedCategoryIds, (ids) => {
+  saveSelectedKbIds(ids)
+}, { deep: true })
+
+// 监听搜索参数变化，自动保存
+watch(searchParams, (params) => {
+  saveSearchParams(params)
+}, { deep: true })
 
 const findKbNode = (id: string, nodes: any[]): any => {
   for (const node of nodes) {
@@ -337,66 +385,132 @@ const handleEnter = (event: KeyboardEvent) => {
   askQuestion()
 }
 
-// 开始轮询消息状态
-const startPolling = (messageId: string) => {
-  if (pollingTimers.value.has(messageId)) return
-
-  const timer = setInterval(async () => {
-    try {
-      const { data } = await getMessageStatusApi(messageId)
-      if (!data) return
-
-      // 更新消息内容
-      const msgIndex = messages.value.findIndex(m => m.id === messageId)
-      if (msgIndex === -1) {
-        stopPolling(messageId)
-        return
-      }
-
-      const msg = messages.value[msgIndex]
-      msg.content = data.content
-      msg.status = data.status as any
-      msg.sources = data.sources
-      msg.debug = data.debug
-
-      // 如果完成或失败，停止轮询
-      if (data.status === 'completed' || data.status === 'failed') {
-        stopPolling(messageId)
-        isProcessing.value = false
-        // 更新对话列表
-        await loadConversations()
-      }
-    } catch (err) {
-      console.error('轮询消息状态失败:', err)
-    }
-  }, 1000) // 每秒轮询一次
-
-  pollingTimers.value.set(messageId, timer)
-}
-
-// 停止轮询
-const stopPolling = (messageId: string) => {
-  const timer = pollingTimers.value.get(messageId)
-  if (timer) {
-    clearInterval(timer)
-    pollingTimers.value.delete(messageId)
+// 开始流式问答（SSE）
+const startStreamAsk = async (question: string) => {
+  const token = userStore.token
+  console.log('[SSE] 开始流式问答, token:', token ? '✅ 有' : '❌ 无')
+  if (!token) {
+    ElMessage.error('未登录，请重新登录')
+    isProcessing.value = false
+    return
   }
-}
 
-// 停止所有轮询
-const stopAllPolling = () => {
-  pollingTimers.value.forEach((timer) => clearInterval(timer))
-  pollingTimers.value.clear()
-}
+  const controller = new AbortController()
+  abortController.value = controller
 
-// 恢复进行中的任务
-const resumeProcessingTasks = () => {
-  messages.value.forEach(msg => {
-    if (msg.id && msg.status === 'processing') {
-      startPolling(msg.id)
-      isProcessing.value = true
+  console.log('[SSE] 发送请求, 问题:', question.slice(0, 50))
+  console.log('[SSE] 知识库:', selectedCategoryIds.value)
+
+  try {
+    await langchainAskStreamApi(
+      {
+        question,
+        categoryIds: selectedCategoryIds.value,
+        sessionId: currentConversationId.value || undefined,
+        history: messages.value
+          .filter(m => m.role === 'user' && m.status === 'completed')
+          .slice(-12)
+          .map(m => ({ role: m.role, content: m.content.slice(0, 4000) })),
+        topK: searchParams.value.topK,
+        enableMultiQuery: searchParams.value.enableMultiQuery,
+        enableHyDE: searchParams.value.enableHyDE,
+        enableCompression: searchParams.value.enableCompression,
+      },
+      {
+        token,
+        signal: controller.signal,
+        onMessage: (data: any, eventType?: string) => {
+          console.log(`[SSE] 收到事件: ${eventType || 'message'}`, data)
+
+          const msgIndex = messages.value.findIndex(m => m.role === 'assistant' && m.status === 'processing')
+          if (msgIndex === -1) {
+            console.warn('[SSE] 找不到 processing 状态的 assistant 消息')
+            return
+          }
+
+          const msg = messages.value[msgIndex]
+
+          switch (eventType) {
+            case 'status':
+              msg.content = data.message || '正在处理...'
+              break
+
+            case 'sources':
+              msg.sources = data.sources || []
+              msg.debug = data.debug || {}
+              break
+
+            case 'delta':
+              if (data.content) {
+                msg.content += data.content
+              }
+              break
+
+            case 'done':
+              msg.content = data.answer || msg.content
+              msg.status = 'completed'
+              isProcessing.value = false
+              abortController.value = null
+              loadConversations()
+              console.log('[SSE] ✅ 流式完成')
+              break
+
+            case 'error':
+              msg.status = 'failed'
+              msg.content = data.error || '问答请求失败'
+              isProcessing.value = false
+              abortController.value = null
+              console.error('[SSE] ❌ 服务端错误:', data.error)
+              break
+
+            default:
+              if (data.content) {
+                msg.content += data.content
+              }
+          }
+
+          scrollToBottom()
+        },
+        onError: (error: string) => {
+          console.error('[SSE] 🔥 流式错误:', error)
+          ElMessage.error('连接失败: ' + error)
+          const msgIndex = messages.value.findIndex(m => m.role === 'assistant' && m.status === 'processing')
+          if (msgIndex !== -1) {
+            messages.value[msgIndex].status = 'failed'
+            messages.value[msgIndex].content = `❌ 连接失败: ${error}`
+          }
+          isProcessing.value = false
+          abortController.value = null
+        },
+        onComplete: () => {
+          console.log('[SSE] 流结束 (onComplete)')
+          const msgIndex = messages.value.findIndex(m => m.role === 'assistant' && m.status === 'processing')
+          if (msgIndex !== -1 && messages.value[msgIndex].status === 'processing') {
+            messages.value[msgIndex].status = 'completed'
+            if (!messages.value[msgIndex].content) {
+              messages.value[msgIndex].content = '(空回复)'
+            }
+          }
+          isProcessing.value = false
+          abortController.value = null
+        },
+      }
+    )
+  } catch (err: any) {
+    if (err.name === 'AbortError') {
+      console.log('[SSE] 用户取消请求')
+    } else {
+      console.error('[SSE] 💥 请求异常:', err)
+      ElMessage.error('请求异常: ' + err.message)
+      const msgIndex = messages.value.findIndex(m => m.role === 'assistant' && m.status === 'processing')
+      if (msgIndex !== -1) {
+        messages.value[msgIndex].status = 'failed'
+        messages.value[msgIndex].content = `❌ 请求失败: ${err.message}`
+      }
+      isProcessing.value = false
+      abortController.value = null
     }
-  })
+  }
 }
 
 // 加载对话列表
@@ -416,7 +530,10 @@ const createNewConversation = async () => {
     conversations.value.unshift(data)
     currentConversationId.value = data.id
     messages.value = []
-    stopAllPolling()
+    if (abortController.value) {
+      abortController.value.abort()
+      abortController.value = null
+    }
     isProcessing.value = false
   } catch {
     ElMessage.error('创建对话失败')
@@ -441,8 +558,6 @@ const switchConversation = async (id: string) => {
       debug: m.debug,
     }))
     await scrollToBottom()
-    // 恢复进行中的任务
-    resumeProcessingTasks()
   } catch {
     ElMessage.error('加载对话失败')
   }
@@ -461,7 +576,10 @@ const deleteConversation = async (id: string) => {
     if (currentConversationId.value === id) {
       currentConversationId.value = null
       messages.value = []
-      stopAllPolling()
+      if (abortController.value) {
+        abortController.value.abort()
+        abortController.value = null
+      }
       isProcessing.value = false
     }
     ElMessage.success('已删除')
@@ -499,39 +617,8 @@ const askQuestion = async () => {
   messages.value.push(assistantMsg)
   await scrollToBottom()
 
-  try {
-    // 调用后台问答 API
-    const { data } = await langchainAskBackgroundApi({
-      question,
-      categoryIds: selectedCategoryIds.value,
-      sessionId: currentConversationId.value || undefined,
-      history: messages.value
-        .filter(m => m.role === 'user' && m.status === 'completed')
-        .slice(-12)
-        .map(m => ({ role: m.role, content: m.content.slice(0, 4000) })),
-      topK: searchParams.value.topK,
-      enableMultiQuery: searchParams.value.enableMultiQuery,
-      enableHyDE: searchParams.value.enableHyDE,
-      enableCompression: searchParams.value.enableCompression,
-    })
-
-    // 更新当前会话 ID
-    if (!currentConversationId.value) {
-      currentConversationId.value = data.sessionId
-    }
-
-    // 更新消息 ID
-    userMsg.id = data.userMessageId
-    assistantMsg.id = data.assistantMessageId
-
-    // 开始轮询助手消息状态
-    startPolling(data.assistantMessageId)
-  } catch (err: any) {
-    ElMessage.error('问答请求失败')
-    assistantMsg.status = 'failed'
-    assistantMsg.content = '抱歉，问答请求失败。请检查知识库选择和网络连接后重试。'
-    isProcessing.value = false
-  }
+  // 使用 SSE 流式输出
+  await startStreamAsk(question)
 }
 
 onMounted(async () => {
@@ -542,11 +629,41 @@ onMounted(async () => {
     categoryTree.value = []
   }
 
+  // 恢复持久化的知识库选择
+  const savedIds = loadSelectedKbIds()
+  if (savedIds.length > 0 && categoryTree.value.length > 0) {
+    const allLeafIds: string[] = []
+    function collectLeaves(nodes: any[]) {
+      for (const node of nodes) {
+        if (!node.children || node.children.length === 0) {
+          allLeafIds.push(node.id)
+        } else {
+          collectLeaves(node.children)
+        }
+      }
+    }
+    collectLeaves(categoryTree.value)
+    // 只保留仍然存在于当前树中的 ID
+    selectedCategoryIds.value = savedIds.filter(id => allLeafIds.includes(id))
+    if (selectedCategoryIds.value.length > 0) {
+      console.log(`[QA] 恢复知识库选择: ${selectedCategoryIds.value.length} 个`)
+    }
+  }
+
+  // 恢复持久化的搜索参数
+  const savedParams = loadSearchParams()
+  if (savedParams) {
+    searchParams.value = { ...DEFAULT_SEARCH_PARAMS, ...savedParams }
+  }
+
   await loadConversations()
 })
 
 onUnmounted(() => {
-  stopAllPolling()
+  if (abortController.value) {
+    abortController.value.abort()
+    abortController.value = null
+  }
 })
 </script>
 
@@ -554,7 +671,7 @@ onUnmounted(() => {
 .qa-page {
   display: flex;
   height: calc(100vh - 60px);
-  background: #f5f7fa;
+  background: linear-gradient(135deg, #f0f4f8 0%, #e8ecf1 100%);
 }
 
 /* 左侧边栏 */
@@ -659,8 +776,10 @@ onUnmounted(() => {
   align-items: center;
   justify-content: space-between;
   padding: 12px 20px;
-  background: #fff;
-  border-bottom: 1px solid #e4e7ed;
+  background: rgba(255, 255, 255, 0.9);
+  backdrop-filter: blur(10px);
+  border-bottom: 1px solid rgba(228, 231, 237, 0.6);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
 }
 
 .qa-header__left {
@@ -835,30 +954,35 @@ onUnmounted(() => {
 }
 
 .qa-message.user .qa-message__avatar {
-  background: #409eff;
+  background: linear-gradient(135deg, #409eff 0%, #337ecc 100%);
   color: #fff;
+  box-shadow: 0 2px 8px rgba(64, 158, 255, 0.3);
 }
 
 .qa-message.assistant .qa-message__avatar {
-  background: #ecf5ff;
+  background: linear-gradient(135deg, #f0f7ff 0%, #e6f1fc 100%);
   color: #409eff;
+  box-shadow: 0 2px 6px rgba(64, 158, 255, 0.15);
 }
 
 .qa-message__content {
-  padding: 14px 16px;
-  border-radius: 12px;
+  padding: 16px 20px;
+  border-radius: 16px;
   font-size: 14px;
   line-height: 1.7;
+  transition: all 0.3s ease;
 }
 
 .qa-message.user .qa-message__content {
-  background: #409eff;
+  background: linear-gradient(135deg, #409eff 0%, #337ecc 100%);
   color: #fff;
+  box-shadow: 0 4px 12px rgba(64, 158, 255, 0.25);
 }
 
 .qa-message.assistant .qa-message__content {
-  background: #fff;
-  border: 1px solid #e4e7ed;
+  background: linear-gradient(135deg, #ffffff 0%, #fafbfc 100%);
+  border: 1px solid rgba(228, 231, 237, 0.8);
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.06), 0 0 0 1px rgba(255, 255, 255, 0.8) inset;
 }
 
 .qa-message__content :deep(p) {
@@ -905,29 +1029,32 @@ onUnmounted(() => {
 .qa-message__processing {
   display: flex;
   align-items: center;
-  gap: 10px;
-  color: #909399;
+  gap: 12px;
+  color: #606266;
+  padding: 4px 0;
 }
 
 .qa-loading__dots {
   display: flex;
-  gap: 4px;
+  gap: 5px;
+  align-items: center;
 }
 
 .qa-loading__dots span {
-  width: 6px;
-  height: 6px;
+  width: 7px;
+  height: 7px;
   border-radius: 50%;
-  background: #409eff;
-  animation: loading-bounce 1s infinite ease-in-out;
+  background: linear-gradient(135deg, #409eff 0%, #66b1ff 100%);
+  animation: loading-bounce 1.2s infinite ease-in-out;
+  box-shadow: 0 1px 3px rgba(64, 158, 255, 0.3);
 }
 
-.qa-loading__dots span:nth-child(2) { animation-delay: 0.15s; }
-.qa-loading__dots span:nth-child(3) { animation-delay: 0.3s; }
+.qa-loading__dots span:nth-child(2) { animation-delay: 0.16s; }
+.qa-loading__dots span:nth-child(3) { animation-delay: 0.32s; }
 
 @keyframes loading-bounce {
-  0%, 100% { transform: translateY(0); opacity: 0.35; }
-  50% { transform: translateY(-4px); opacity: 1; }
+  0%, 100% { transform: translateY(0) scale(1); opacity: 0.4; }
+  50% { transform: translateY(-6px) scale(1.1); opacity: 1; }
 }
 
 /* 失败状态 */
@@ -940,9 +1067,9 @@ onUnmounted(() => {
 
 /* 引用来源 */
 .qa-message__sources {
-  margin-top: 12px;
-  padding-top: 12px;
-  border-top: 1px solid #ebeef5;
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px solid rgba(235, 238, 245, 0.8);
 }
 
 .qa-sources__header {
@@ -951,7 +1078,8 @@ onUnmounted(() => {
   gap: 6px;
   font-size: 12px;
   color: #909399;
-  margin-bottom: 8px;
+  margin-bottom: 10px;
+  font-weight: 500;
 }
 
 .qa-sources__list {
@@ -960,14 +1088,23 @@ onUnmounted(() => {
   gap: 6px;
 }
 
+.qa-sources__list .el-tag {
+  background: linear-gradient(135deg, #f0f7ff 0%, #e8f2fe 100%);
+  border-color: rgba(64, 158, 255, 0.2);
+  color: #409eff;
+  font-size: 12px;
+}
+
 /* 输入区域 */
 .qa-input {
   display: flex;
   align-items: flex-end;
   gap: 12px;
   padding: 16px 20px;
-  background: #fff;
-  border-top: 1px solid #e4e7ed;
+  background: rgba(255, 255, 255, 0.9);
+  backdrop-filter: blur(10px);
+  border-top: 1px solid rgba(228, 231, 237, 0.6);
+  box-shadow: 0 -2px 12px rgba(0, 0, 0, 0.04);
 }
 
 .qa-input :deep(.el-textarea) {
@@ -985,7 +1122,20 @@ onUnmounted(() => {
   height: 40px;
   width: 40px;
   padding: 0;
-  border-radius: 10px;
+  border-radius: 12px;
+  background: linear-gradient(135deg, #409eff 0%, #337ecc 100%);
+  border: none;
+  box-shadow: 0 2px 8px rgba(64, 158, 255, 0.3);
+  transition: all 0.3s ease;
+}
+
+.qa-input .el-button:hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(64, 158, 255, 0.4);
+}
+
+.qa-input .el-button:active:not(:disabled) {
+  transform: translateY(0);
 }
 
 @media (max-width: 768px) {

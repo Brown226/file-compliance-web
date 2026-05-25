@@ -294,6 +294,12 @@
   border-color: var(--corp-primary);
   background: var(--color-primary-50);
 }
+/* 隐藏 el-upload 默认文件列表（使用自定义列表时） */
+.upload-dragger .el-upload-list,
+.reference-upload .el-upload-list,
+.upload-area--compact .el-upload-list {
+  display: none !important;
+}
 
 /* Switch 开关 */
 .el-switch.is-checked .el-switch__core {

@@ -61,6 +61,16 @@ export default defineConfig({
       '/api': {
         target: 'http://localhost:3000',
         changeOrigin: true,
+        configure: (proxy, options) => {
+          proxy.on('proxyRes', (proxyRes, req, res) => {
+            // SSE 流式响应：禁用缓冲，保持长连接
+            if (proxyRes.headers['content-type']?.includes('text/event-stream')) {
+              proxyRes.headers['cache-control'] = 'no-cache'
+              proxyRes.headers['connection'] = 'keep-alive'
+              proxyRes.headers['x-accel-buffering'] = 'no'
+            }
+          })
+        },
       },
       // WebSocket 代理
       '/ws': {

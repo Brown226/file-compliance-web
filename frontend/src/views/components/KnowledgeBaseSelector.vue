@@ -28,7 +28,19 @@
             check-strictly
             :default-expand-all="true"
             :expand-on-click-node="false"
-          />
+            :check="handleCheckChange"
+            :class="{ 'kb-tree--filtering': !!searchQuery.trim() }"
+          >
+            <template #default="{ node, data }">
+              <div class="kb-tree-node" :class="{ 'is-folder': !isLeafNode(data), 'is-kb': isLeafNode(data) }">
+                <el-icon v-if="!isLeafNode(data)" class="kb-tree-node__icon kb-tree-node__icon--folder"><FolderOpened /></el-icon>
+                <el-icon v-else class="kb-tree-node__icon kb-tree-node__icon--kb"><Collection /></el-icon>
+                <span class="kb-tree-node__label">{{ node.label }}</span>
+                <el-tag v-if="!isLeafNode(data)" size="small" type="info" effect="plain" class="kb-tree-node__tag">文件夹</el-tag>
+                <el-tag v-else size="small" type="primary" effect="plain" class="kb-tree-node__tag">知识库</el-tag>
+              </div>
+            </template>
+          </el-tree>
           <el-empty v-if="filteredTree.length === 0" description="未找到匹配的知识库" :image-size="60" />
         </div>
       </div>
@@ -36,13 +48,13 @@
       <div class="kb-selector-right">
         <div class="kb-selected-header">
           <span class="kb-selected-title">已选知识库</span>
-          <el-tag v-if="checkedIds.length > 0" size="small" type="primary" effect="plain">
-            {{ checkedIds.length }} 个
+          <el-tag v-if="leafCheckedIds.length > 0" size="small" type="primary" effect="plain">
+            {{ leafCheckedIds.length }} 个
           </el-tag>
         </div>
         <div class="kb-selected-list">
           <div v-if="checkedItems.length > 0" class="kb-selected-items">
-            <div v-for="item in checkedItems" :key="item.id" class="kb-selected-item">
+            <div v-for="item in checkedItems" :key="item.id" class="kb-selected-item kb-selected-item--kb">
               <el-icon class="kb-selected-item-icon"><Collection /></el-icon>
               <span class="kb-selected-item-name">{{ item.name }}</span>
               <el-button
@@ -60,7 +72,7 @@
             <span>请从左侧勾选知识库</span>
           </div>
         </div>
-        <div v-if="checkedIds.length > 0" class="kb-selected-actions">
+        <div v-if="leafCheckedIds.length > 0" class="kb-selected-actions">
           <el-button size="small" @click="clearAll">清空全部</el-button>
         </div>
       </div>
@@ -68,7 +80,7 @@
 
     <template #footer>
       <div class="kb-selector-footer">
-        <span class="kb-selector-footer-info">已选 {{ checkedIds.length }} 个知识库</span>
+        <span class="kb-selector-footer-info">已选 {{ leafCheckedIds.length }} 个知识库</span>
         <div class="kb-selector-footer-actions">
           <el-button @click="$emit('update:visible', false)">取消</el-button>
           <el-button type="primary" @click="handleConfirm">确认选择</el-button>
@@ -98,15 +110,23 @@ const emit = defineEmits<{
 const searchQuery = ref('')
 const treeRef = ref()
 
+const isLeafNode = (data: any): boolean => {
+  return data.isLeaf || !data.children?.length
+}
+
+const handleCheckChange = (data: any, info: { checkedKeys: string[]; checked: boolean; halfCheckedKeys: string[] }) => {
+  if (info.checked && !isLeafNode(data)) {
+    ElMessage.warning('只能选择知识库（叶子节点），不能选择文件夹')
+    nextTick(() => {
+      const keys = treeRef.value?.getCheckedKeys() || []
+      treeRef.value?.setCheckedKeys(keys.filter((k: string) => k !== data.id))
+    })
+  }
+}
+
 const treeProps = {
   label: 'name',
   children: 'children',
-  icon: (node: any) => {
-    if (node.isLeaf || !node.children?.length) {
-      return { component: 'Collection', props: { size: 16, color: '#3B82F6' } }
-    }
-    return { component: 'FolderOpened', props: { size: 16, color: '#F59E0B' } }
-  }
 }
 
 const filteredTree = computed(() => {
@@ -138,8 +158,15 @@ const findNode = (id: string, nodes: KnowledgeTreeNode[]): KnowledgeTreeNode | n
 
 const checkedIds = computed(() => treeRef.value?.getCheckedKeys() || [])
 
+const leafCheckedIds = computed(() =>
+  checkedIds.value.filter((id: string) => {
+    const node = findNode(id, props.treeData)
+    return node && isLeafNode(node)
+  })
+)
+
 const checkedItems = computed(() => {
-  return checkedIds.value
+  return leafCheckedIds.value
     .map((id: string) => findNode(id, props.treeData))
     .filter((n): n is KnowledgeTreeNode => !!n)
 })
@@ -154,13 +181,14 @@ const clearAll = () => {
 }
 
 const handleConfirm = () => {
-  const leafIds = checkedIds.value.filter((id: string) => {
-    const node = findNode(id, props.treeData)
-    return node && (node.isLeaf || !node.children?.length)
-  })
-  emit('confirm', [...leafIds])
+  const ids = [...leafCheckedIds.value]
+  if (ids.length === 0) {
+    ElMessage.warning('请至少选择一个知识库')
+    return
+  }
+  emit('confirm', ids)
   emit('update:visible', false)
-  ElMessage.success(`已选择 ${leafIds.length} 个知识库`)
+  ElMessage.success(`已选择 ${ids.length} 个知识库`)
 }
 
 watch(() => props.visible, async (val) => {
@@ -236,6 +264,63 @@ watch(() => props.visible, async (val) => {
   padding: 10px;
 }
 
+/* 树节点样式 - 区分文件夹和知识库 */
+.kb-tree-node {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex: 1;
+  min-width: 0;
+}
+
+.kb-tree-node__icon {
+  flex-shrink: 0;
+  font-size: 15px;
+}
+
+.kb-tree-node__icon--folder {
+  color: #F59E0B;
+}
+
+.kb-tree-node__icon--kb {
+  color: #3B82F6;
+}
+
+.kb-tree-node__label {
+  font-size: 13px;
+  color: #1E293B;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.kb-tree-node.is-folder .kb-tree-node__label {
+  color: #64748B;
+  font-weight: 500;
+}
+
+.kb-tree-node.is-kb .kb-tree-node__label {
+  color: #1E293B;
+  font-weight: 600;
+}
+
+.kb-tree-node__tag {
+  flex-shrink: 0;
+  font-size: 11px;
+  padding: 0 5px;
+  height: 18px;
+  line-height: 17px;
+}
+
+/* 文件夹节点：禁用 checkbox 视觉 */
+.kb-selector-tree :deep(.el-tree-node.is-folder) {
+  --el-checkbox-disabled-input-border-color: #DCDFE6;
+}
+
+.kb-selector-tree :deep(.el-tree-node__content:hover) {
+  background-color: #F0F5FF;
+}
+
 .kb-selector-tree::-webkit-scrollbar {
   width: 5px;
 }
@@ -295,6 +380,15 @@ watch(() => props.visible, async (val) => {
 .kb-selected-item:hover {
   border-color: #3B82F6;
   box-shadow: 0 2px 8px rgba(59, 130, 246, 0.08);
+}
+
+.kb-selected-item--kb {
+  background: linear-gradient(135deg, #F0F7FF 0%, #EFF6FF 100%);
+  border-color: rgba(59, 130, 246, 0.25);
+}
+
+.kb-selected-item--kb .kb-selected-item-icon {
+  color: #3B82F6;
 }
 
 .kb-selected-item-icon {

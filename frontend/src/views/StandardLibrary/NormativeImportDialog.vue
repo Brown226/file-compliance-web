@@ -1,22 +1,12 @@
 <template>
   <el-dialog
     v-model="visible"
-    title="Normative 标准库导入"
+    title="批量导入标准库"
     width="500px"
     :close-on-click-modal="false"
     @close="handleClose"
   >
     <div class="import-dialog-content">
-      <!-- 功能说明 -->
-      <el-alert type="info" :closable="false" show-icon style="margin-bottom: 16px;">
-        <template #title>
-          导入说明
-        </template>
-        <template #default>
-          支持从 Normative 工具导出的 Excel 文件批量导入标准库数据。
-        </template>
-      </el-alert>
-
       <!-- 文件上传 -->
       <el-upload
         :auto-upload="false"
@@ -31,7 +21,7 @@
         <div class="upload-content">
           <el-icon class="upload-icon"><UploadFilled /></el-icon>
           <div class="upload-text">
-            <span class="upload-title">将 Normative Excel 文件拖到此处</span>
+            <span class="upload-title">拖拽或点击上传标准库 Excel 文件</span>
             <span class="upload-subtitle">或点击选择文件</span>
           </div>
         </div>
