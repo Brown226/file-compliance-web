@@ -35,11 +35,11 @@ services:
       timeout: 5s
       retries: 5
 
-  markitdown:
+  doc-parser:
     build:
       context: ./backend/markitdown-service
       dockerfile: Dockerfile
-    container_name: file_review_markitdown
+    container_name: file_review_doc_parser
     ports:
       - "${PARSER_PORT:-8000}:${PARSER_PORT:-8000}"
     environment:

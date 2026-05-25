@@ -6,7 +6,7 @@ ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
 ENV TZ=Asia/Shanghai
 
-RUN sed -i 's/deb.debian.org/mirrors.tuna.tsinghua.edu.cn/g' /etc/apt/sources.list.d/debian.sources 2>/dev/null || sed -i 's/deb.debian.org/mirrors.tuna.tsinghua.edu.cn/g' /etc/apt/sources.list; apt-get update && apt-get install -y \
+RUN apt-get update && apt-get install -y --no-install-recommends \
     gcc \
     g++ \
     libgl1 \
@@ -22,8 +22,7 @@ RUN pip install --no-cache-dir \
     uvicorn==0.24.0.post1 \
     python-multipart==0.0.6 \
     python-dotenv==1.0.0 \
-    pdf2image==1.17.0 \
-    --index-url https://pypi.tuna.tsinghua.edu.cn/simple
+    pdf2image==1.17.0
 
 RUN python -c "from paddleocr import PaddleOCR; ocr = PaddleOCR(use_angle_cls=True, lang='ch')"
 

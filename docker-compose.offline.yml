@@ -1,6 +1,6 @@
 # ============================================
 # 文件智能审查系统 - 完整离线部署配置
-# 包含: PostgreSQL + Redis + MarkItDown + OCR + 后端 + 前端
+# 包含: PostgreSQL + Redis + 文档解析 + OCR + 后端 + 前端
 # 支持内网无公网环境运行
 #
 # ⚠️ 部署前请检查 .env 配置
@@ -64,12 +64,13 @@ services:
           memory: 128M
 
   # ==========================================
-  # MarkItDown 文档解析服务（Python FastAPI）
+  # 文档解析服务（Python FastAPI）
+  # 各格式使用独立增强解析器（原生 Python 库）
   # 支持: DOCX / XLSX / PDF / PPTX
   # ==========================================
-  markitdown:
-    image: file-review-markitdown:v1.0
-    container_name: markitdown_service
+  doc-parser:
+    image: file-review-doc-parser:v1.0
+    container_name: doc_parser_service
     ports:
       - "${PARSER_PORT:-8000}:8000"
     environment:
@@ -138,7 +139,7 @@ services:
       - REDIS_URL=redis://redis:6379
       - JWT_SECRET=${JWT_SECRET:-enterprise-review-system-jwt-secret-2026}
       - JWT_EXPIRES_IN=${JWT_EXPIRES_IN:-1d}
-      - PARSER_SERVICE_URL=http://markitdown:8000
+      - PARSER_SERVICE_URL=http://doc-parser:8000
       - OCR_SERVICE_URL=http://ocr-service:8000
       - TZ=Asia/Shanghai
     volumes:
@@ -149,7 +150,7 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
-      markitdown:
+      doc-parser:
         condition: service_healthy
     healthcheck:
       test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3000/health"]

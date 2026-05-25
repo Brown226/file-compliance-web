@@ -42,17 +42,24 @@ echo ""
 
 # ==========================================
 # 执行数据库迁移
-# 策略: 先尝试 migrate deploy，如果失败则建基线重试
+# 策略: 先尝试 migrate deploy，如果存在失败迁移则标记回滚后重试
 # ==========================================
 echo "[entrypoint] 执行数据库迁移..."
 if $PRISMA migrate deploy 2>&1; then
   echo "[entrypoint] ✅ 数据库迁移完成"
 else
-  echo "[entrypoint] migrate deploy 失败，可能存在旧表，尝试建立迁移基线..."
-  $PRISMA migrate resolve --applied "20250422000000_init" 2>/dev/null || true
-  echo "[entrypoint] 迁移基线已建立，重新执行 migrate deploy..."
-  $PRISMA migrate deploy
-  echo "[entrypoint] ✅ 数据库迁移完成"
+  echo "[entrypoint] migrate deploy 失败，检查是否有失败的迁移记录..."
+  # 查找所有未完成的迁移并标记为已回滚
+  FAILED_MIGRATIONS=$(docker exec -i file_review_postgres psql -U file_review_user -d file_review_db -t -A -c \
+    "SELECT migration_name FROM _prisma_migrations WHERE finished_at IS NULL AND rolled_back_at IS NULL;" 2>/dev/null || true)
+  if [ -n "$FAILED_MIGRATIONS" ]; then
+    for migration in $FAILED_MIGRATIONS; do
+      echo "[entrypoint] 标记失败迁移为已回滚: $migration"
+      $PRISMA migrate resolve --rolled-back "$migration" 2>/dev/null || true
+    done
+  fi
+  echo "[entrypoint] 重新执行 migrate deploy..."
+  $PRISMA migrate deploy 2>&1 || echo "[entrypoint] ⚠️ migrate deploy 仍有问题，后续 db push 将兜底同步"
 fi
 
 echo ""
