@@ -5,36 +5,28 @@ import { randomUUID } from 'crypto';
 async function seed() {
   console.log('🌱 开始数据库初始化...');
 
-  // 1. 创建默认部门
-  const rootDept = await prisma.department.upsert({
-    where: { id: 'dept-root' },
+  // 1. 创建部门结构（河北分公司）
+  const deptRoot = await prisma.department.upsert({
+    where: { id: 'dept-hebei' },
     update: {},
-    create: { id: 'dept-root', name: '总公司' },
+    create: { id: 'dept-hebei', name: '河北分公司' },
   });
 
-  const rdDept = await prisma.department.upsert({
-    where: { id: 'dept-rd' },
-    update: {},
-    create: { id: 'dept-rd', name: '研发部', parentId: rootDept.id },
-  });
+  const deptList = [
+    '分公司领导', '分公司副总工程师', '专家委员会', '综合办公室',
+    '设计管理部', '人力资源部', '财务部', '党群工作部',
+    '纪检监督部', '技术质量部', '档案信息中心', '工程部',
+    '核工程所', '核电工艺所', '电力工程研究设计所', '电力所',
+    '电气自动化所', '建筑结构所', '工程经济所',
+  ];
 
-  const archDept = await prisma.department.upsert({
-    where: { id: 'dept-arch' },
-    update: {},
-    create: { id: 'dept-arch', name: '建筑设计部', parentId: rootDept.id },
-  });
-
-  const structDept = await prisma.department.upsert({
-    where: { id: 'dept-struct' },
-    update: {},
-    create: { id: 'dept-struct', name: '结构设计部', parentId: rootDept.id },
-  });
-
-  const mechDept = await prisma.department.upsert({
-    where: { id: 'dept-mech' },
-    update: {},
-    create: { id: 'dept-mech', name: '机电设计部', parentId: rootDept.id },
-  });
+  for (const name of deptList) {
+    await prisma.department.upsert({
+      where: { id: `dept-hebei-${name}` },
+      update: {},
+      create: { id: `dept-hebei-${name}`, name, parentId: deptRoot.id },
+    });
+  }
 
   // 2. 创建默认管理员用户
   const adminSalt = await bcrypt.genSalt(10);
@@ -51,36 +43,7 @@ async function seed() {
     },
   });
 
-  // 3. 创建测试用户
-  const managerSalt = await bcrypt.genSalt(10);
-  const managerHash = await bcrypt.hash('123456', managerSalt);
-  await prisma.user.upsert({
-    where: { username: 'zhangsan' },
-    update: {},
-    create: {
-      username: 'zhangsan',
-      passwordHash: managerHash,
-      name: '张三',
-      role: 'MANAGER',
-      departmentId: archDept.id,
-    },
-  });
-
-  const userSalt = await bcrypt.genSalt(10);
-  const userHash = await bcrypt.hash('123456', userSalt);
-  await prisma.user.upsert({
-    where: { username: 'lisi' },
-    update: {},
-    create: {
-      username: 'lisi',
-      passwordHash: userHash,
-      name: '李四',
-      role: 'USER',
-      departmentId: archDept.id,
-    },
-  });
-
-  // 4. 创建测试标准数据（暂无，标准清单由用户导入）
+  // 3. 创建测试标准数据（暂无，标准清单由用户导入）
   const standards: Array<{ id: string; title: string; standardNo: string; standardName: string; version: string; standardStatus: 'CURRENT' | 'UPCOMING' | 'ABOLISHED'; isActive: boolean }> = [];
 
   for (const std of standards) {
@@ -314,118 +277,62 @@ async function seed() {
     });
   }
 
-  // 9. 创建测试公告数据
+  // 9. 创建 V2.0 版本更新公告
   const adminUser = await prisma.user.findUnique({ where: { username: 'admin' } });
   if (adminUser) {
-    // 已发布的普通公告
     await prisma.systemAnnouncement.upsert({
-      where: { id: 'ann-001' },
+      where: { id: 'ann-v2.0' },
       update: {},
       create: {
-        id: 'ann-001',
-        title: '系统功能更新通知',
-        content: `## 系统功能更新
+        id: 'ann-v2.0',
+        title: '文件智能审查系统 V2.0 正式发布',
+        content: `## 核审通 V2.0 版本更新
 
-亲爱的用户，
+各位用户好！
 
-系统已完成以下功能更新：
+文件智能审查系统 V2.0 已正式发布，本次更新包含多项重大功能升级。
+
+### 架构升级
+- **移除 MaxKB 依赖**：知识库 RAG 改用本地 pgvector 向量数据库，部署更轻量、运行更稳定
+- **文档解析引擎重构**：移除 markitdown 引擎，PDF/DOCX/XLSX/PPTX 四种格式全部使用原生 Python 库直接解析，解析速度提升 30%
+- **新增 PPTX 解析**：支持 PowerPoint 幻灯片文件的完整解析（文本、表格、图表、备注）
 
 ### 新增功能
-- **全局通知系统**：管理员可以发布系统公告，用户登录时自动弹窗展示
-- **公告历史记录**：在通知中心可以查看所有历史公告
-- **多级紧急度**：支持普通、重要、紧急三种紧急程度
+- **OCR 识别服务**：新增 PaddleOCR 服务，支持扫描件 PDF 和图片的文字识别，视觉模型作为兜底方案
+- **智能审查推荐**：上传文件后 AI 自动分析文档类型，智能推荐审查模式、审查点和核心目的
+- **审查点按模式定制**：不同审查模式（一致性检查、错别字检查、以文审文等）使用专属的审查点和核心目的模板
+- **知识库问答**：支持与指定知识库进行对话式问答，对话记录持久化保存
+- **误报标记库**：支持标记审查问题为误报，系统自动学习避免重复误报
 
-### 优化内容
-- 提升了文件解析速度
-- 优化了用户界面体验
+### 体验优化
+- **任务进度实时推送**：WebSocket 实时推送审查进度，支持分片级别的进度展示
+- **审查报告增强**：支持导出 Excel 和 Word 格式的审查报告
+- **部门结构优化**：适配河北分公司组织架构，支持两级部门管理
+- **界面全面升级**：Element Plus 2.9 + ECharts 5.6，数据可视化更丰富
 
-如有疑问，请联系系统管理员。
+### 部署说明
+- 离线部署包体积优化至 4.6GB（含 OCR 服务）
+- 支持 Docker Compose 一键部署
+- Linux/Windows 双平台部署脚本
+
+如有问题或建议，请联系系统管理员。
 
 > 系统管理员团队
 `,
-        urgency: 'NORMAL',
-        status: 'PUBLISHED',
-        publishAt: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000), // 7天前发布
-        createdBy: adminUser.id,
-      },
-    });
-
-    // 已发布的重要公告
-    await prisma.systemAnnouncement.upsert({
-      where: { id: 'ann-002' },
-      update: {},
-      create: {
-        id: 'ann-002',
-        title: '系统维护计划通知',
-        content: `## 系统维护计划
-
-各位用户：
-
-为了提供更好的服务体验，系统将于以下时间进行维护升级：
-
-### 维护时间
-- **开始时间**：2024年6月15日 22:00
-- **结束时间**：2024年6月16日 06:00
-
-### 影响范围
-维护期间系统将**暂时无法访问**，请提前安排好工作。
-
-### 维护内容
-1. 数据库性能优化
-2. 服务器硬件升级
-3. 安全补丁更新
-
-感谢您的理解与支持！
-
-> 系统运维团队
-`,
         urgency: 'IMPORTANT',
         status: 'PUBLISHED',
-        publishAt: new Date(Date.now() - 3 * 24 * 60 * 60 * 1000), // 3天前发布
+        publishAt: new Date(),
         createdBy: adminUser.id,
       },
     });
 
-    // 草稿状态的紧急公告（用于测试管理界面）
-    await prisma.systemAnnouncement.upsert({
-      where: { id: 'ann-003' },
-      update: {},
-      create: {
-        id: 'ann-003',
-        title: '紧急安全更新通知（草稿）',
-        content: `## 紧急安全更新
-
-⚠️ **重要安全提示**
-
-系统检测到潜在的安全风险，即将进行紧急更新。
-
-### 更新内容
-- 修复已知安全漏洞
-- 升级加密算法
-- 增强访问控制
-
-### 注意事项
-1. 更新期间系统可能短暂不可用
-2. 请保存好正在进行的工作
-3. 更新完成后请重新登录
-
-此公告为测试数据，尚未发布。
-`,
-        urgency: 'URGENT',
-        status: 'DRAFT',
-        createdBy: adminUser.id,
-      },
-    });
-
-    console.log('✅ 测试公告数据创建完成');
+    console.log('✅ V2.0 版本公告创建完成');
   }
 
   console.log('✅ 数据库初始化完成！');
   console.log('');
   console.log('📋 默认账号信息:');
   console.log('  管理员: admin / admin123');
-  console.log('  主管:   zhangsan / 123456');
-  console.log('  员工:   lisi / 123456');
   console.log('');
   console.log('🤖 LLM 默认配置（硅基流动免费模型）:');
   console.log('  对话模型: Qwen/Qwen2.5-72B-Instruct');
