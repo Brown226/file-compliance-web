@@ -1,4 +1,4 @@
-<template>
+﻿<template>
   <div class="task-results-view">
     <!-- 步骤条头部（仅在新任务流程中显示；本组件专用于 /review/:id 历史记录入口，故默认隐藏） -->
     <!-- <div class="step-header">
@@ -467,6 +467,8 @@ import {
 import {
   getTaskByIdApi,
   getTaskDetailsApi,
+  exportTaskReportApi,
+  exportTaskReportWordApi,
   toggleFalsePositiveApi,
 } from '@/api/task'
 import { useWebSocket, type WsMessage } from '@/composables/useWebSocket'
@@ -476,7 +478,6 @@ import FilePreviewPanel from '@/views/TaskDetails/FilePreviewPanel.vue'
 import DwgPreviewPanel from '@/views/TaskDetails/DwgPreviewPanel.vue'
 import FalsePositiveDialog from '@/views/TaskDetails/FalsePositiveDialog.vue'
 import IssueCardList from './TaskDetails/IssueCardList.vue'
-import { useTaskExport, useTextLocator } from './TaskDetails/composables'
 
 const route = useRoute()
 const router = useRouter()
@@ -488,12 +489,6 @@ const allDetails = ref<TaskDetail[]>([])
 const files = ref<TaskFile[]>([])
 const loading = ref(false)
 const loadingMessage = ref('正在加载审查结果...')
-
-// ===== 导出功能（使用 Composable）=====
-const { exportToWord: handleExportWord, exportToExcel: handleExportExcel, handleExportCommand } = useTaskExport(
-  () => taskId.value,
-  () => task.value?.title || '审查报告'
-)
 
 // ===== 标准引用自检（SELF_CHECK）=====
 const isSelfCheck = computed(() => (task.value as any)?.reviewMode === 'SELF_CHECK')
@@ -647,45 +642,59 @@ const rightPanelStyle = computed(() => ({
 // ===== 文件预览相关 =====
 const selectedFileId = ref<string | null>(null)
 const filterFileId = ref<string>('')
+const locateTarget = ref<{ originalText: string; locateCandidates?: string[]; textPosition: any; locateMeta?: any; cadHandleId?: string; locateHint?: string; triggerId?: string } | null>(null)
+const locateFeedback = ref<{ type: 'success' | 'warning'; message: string } | null>(null)
+const locateStatusMap = ref<Record<string, 'direct' | 'fallback'>>({})
+const locatingIssueId = ref<string | null>(null)
 
 const selectedFile = computed(() => files.value.find((f: any) => f.id === selectedFileId.value) as any)
 const selectedFileType = computed(() => selectedFile.value?.fileType || selectedFile.value?.file_type || '')
 const selectedFileName = computed(() => selectedFile.value?.fileName || '')
 
-// ===== 定位系统（使用 Composable）=====
-const {
-  locateTarget,
-  locateFeedback,
-  dwgLocateTarget,
-  getLocateStatus,
-  handleLocateResult,
-  handleLocateText,
-} = useTextLocator(files, selectedFileId, (fileId, options) => {
-  // 基础文件上下文切换
+const switchToFileContext = (
+  fileId: string,
+  options?: { locate?: { originalText: string; locateCandidates?: string[]; textPosition: any; locateMeta?: any; cadHandleId?: string; locateHint?: string } }
+) => {
   selectedFileId.value = fileId
   filterFileId.value = fileId
 
-  // 如果有定位选项，触发定位
   if (options?.locate) {
-    locateTarget.value = {
-      originalText: options.locate.originalText || '',
-      locateCandidates: options.locate.locateCandidates || [],
-      textPosition: options.locate.textPosition || null,
-      locateMeta: options.locate.locateMeta || null,
-      cadHandleId: options.locate.cadHandleId,
-      locateHint: options.locate.locateHint,
-    }
+    // 先清空再设置，确保重复点击同一问题也会触发子预览组件定位
+    locateTarget.value = null
+    setTimeout(() => {
+      locateTarget.value = {
+        originalText: options.locate!.originalText || '',
+        locateCandidates: options.locate!.locateCandidates || [],
+        textPosition: options.locate!.textPosition || null,
+        locateMeta: options.locate!.locateMeta || null,
+        cadHandleId: options.locate!.cadHandleId,
+        locateHint: options.locate!.locateHint,
+        triggerId: `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+      }
+    }, 0)
   }
-})
-
-// 兼容性包装：供模板使用（内部调用 selectFile）
-const switchToFileContext = (fileId: string, options?: any) => {
-  selectFile(fileId)
 }
 
-const selectFile = (fileId: string) => {
-  selectedFileId.value = fileId
-  filterFileId.value = fileId
+  switchToFileContext(fileId)
+}
+
+  const key = item.id || ''
+  return locateStatusMap.value[key] || 'fallback'
+}
+
+  if (locatingIssueId.value) {
+    locateStatusMap.value[locatingIssueId.value] = payload.success && payload.mode === 'direct' ? 'direct' : 'fallback'
+  }
+
+  if (payload.success && payload.mode === 'direct') {
+    locateFeedback.value = { type: 'success', message: '已定位到原文位置并高亮显示' }
+    locatingIssueId.value = null
+    return
+  }
+
+  const fallbackHint = payload.hint || '未能直接定位，请按“页/段/句”提示快速查找。'
+  locateFeedback.value = { type: 'warning', message: `未能直接定位：${fallbackHint}` }
+  locatingIssueId.value = null
 }
 
 const getFileNameById = (fileId: string): string => {
@@ -737,6 +746,14 @@ const isDocxFileSelected = computed(() => {
 
 const dwgFileForPreview = ref<File | null>(null)
 const dwgParseFailed = ref(false)
+const dwgLocateTarget = computed(() => {
+  if (!locateTarget.value) return null
+  return {
+    cadHandleId: locateTarget.value.cadHandleId,
+    originalText: locateTarget.value.originalText,
+    description: locateTarget.value.locateHint || '',
+  }
+})
 
 /** 下载 DWG 原始文件并在前端创建 File 对象供 WASM 解析 */
 async function loadDwgFile(fileId: string) {
@@ -1243,6 +1260,54 @@ const collectLocateAnchors = (item: TaskDetail): string[] => {
     })
 }
 
+const buildLocatePayload = (item: TaskDetail): { originalText: string; locateCandidates: string[]; textPosition: any; locateMeta?: any; cadHandleId?: string; locateHint?: string } => {
+  const anchors = collectLocateAnchors(item)
+  const locateCandidates = anchors
+    .map(pickLocateKeyword)
+    .map(s => s.trim())
+    .filter(Boolean)
+  const uniqueCandidates = [...new Set(locateCandidates)]
+
+  const bestAnchor = uniqueCandidates[0] || ''
+
+  const textPos = item.textPosition as any
+  const chunkNo = typeof textPos?.chunkIndex === 'number' ? textPos.chunkIndex + 1 : null
+  const charNo = typeof textPos?.charOffset === 'number' ? textPos.charOffset + 1 : null
+  const keyword = bestAnchor || item.originalText || item.description || ''
+
+  const fallbackHint = chunkNo
+    ? `建议先看第 ${chunkNo} 段${charNo ? `（约第 ${charNo} 字）` : ''}，再搜索“${keyword}”`
+    : `建议搜索“${keyword}”并结合问题描述定位`
+
+  return {
+    originalText: keyword,
+    locateCandidates: uniqueCandidates,
+    textPosition: item.textPosition || null,
+    locateMeta: item.locateMeta || null,
+    cadHandleId: item.cadHandleId,
+    locateHint: fallbackHint,
+  }
+}
+
+const handleLocateText = (item: TaskDetail) => {
+  locateFeedback.value = null
+
+  if (!item.fileId) {
+    locateFeedback.value = { type: 'warning', message: '该问题缺少文件归属，无法自动定位，请先切换到对应文件后手动检索。' }
+    return
+  }
+
+  const locate = buildLocatePayload(item)
+  if (!locate.originalText.trim()) {
+    locateFeedback.value = { type: 'warning', message: '该问题缺少可检索原文，建议结合问题描述手动定位。' }
+    return
+  }
+
+  locatingIssueId.value = item.id
+
+  // 统一文件上下文切换，保持预览与列表一致
+  switchToFileContext(item.fileId, { locate })
+}
 
 const handleAdoptSuggestion = async (item: TaskDetail) => {
   if (!item.fileId || !item.originalText || !item.suggestedText) {
@@ -1338,6 +1403,63 @@ const handleBatchFalsePositiveFromIssueList = async (issueIds: string[], reason?
   console.log('批量标记误报:', issueIds.length, '条, 原因:', reason)
   // 可以复用 FalsePositiveDialog 或直接调用 API
   // TODO: 根据实际需求实现批量误报标记逻辑
+}
+
+// ===== 导出功能 =====
+const handleExportWord = async () => {
+  try {
+    const res = await exportTaskReportWordApi(taskId.value)
+    const blob = res.data
+    if (!blob || blob.size === 0) {
+      ElMessage.warning('暂无可导出的内容')
+      return
+    }
+    const url = window.URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = `${task.value?.title || '审查报告'}_Word版.docx`
+    link.click()
+    window.URL.revokeObjectURL(url)
+    ElMessage.success('Word导出成功')
+  } catch (e) {
+    ElMessage.error('导出Word失败')
+  }
+}
+
+const handleExportExcel = async () => {
+  try {
+    const res = await exportTaskReportApi(taskId.value)
+    const blob = res.data
+    if (!blob || blob.size === 0) {
+      ElMessage.warning('暂无可导出的内容')
+      return
+    }
+    const url = window.URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = `${task.value?.title || '审查报告'}_Excel版.xlsx`
+    link.click()
+    window.URL.revokeObjectURL(url)
+    ElMessage.success('Excel导出成功')
+  } catch (e) {
+    ElMessage.error('导出Excel失败')
+  }
+}
+
+const handleExportCommand = (command: string) => {
+  switch (command) {
+    case 'excel':
+      handleExportExcel()
+      break
+    case 'pdf':
+      ElMessage.info('PDF导出功能开发中，敬请期待')
+      break
+    case 'print':
+      window.print()
+      break
+    default:
+      console.warn('未知导出命令:', command)
+  }
 }
 
 const goBack = () => {
@@ -1995,6 +2117,13 @@ onUnmounted(() => {
 .plain-language-box p {
   font-size: 12px;
   color: #1E3A5F;
+  margin: 0;
+  line-height: 1.6;
+}
+
+/* ===== 卡片操作按钮（通用）===== */
+  font-size: 12px;
+  color: #6B7280;
   margin: 0;
   line-height: 1.6;
 }
