@@ -87,10 +87,15 @@ export const langchainAskQuestion = async (req: AuthRequest, res: Response): Pro
 };
 
 export const langchainAskStream = async (req: AuthRequest, res: Response): Promise<void> => {
-  const { question, categoryIds, history = [], topK, enableMultiQuery, enableHyDE, enableCompression } = req.body
+  const { question, categoryIds, sessionId: providedSessionId, history = [], topK, enableMultiQuery, enableHyDE, enableCompression } = req.body
+  const userId = req.user!.id
 
   if (!question) { error(res, '请输入问题', 400); return }
   if (!categoryIds || categoryIds.length === 0) { error(res, '请选择知识库', 400); return }
+
+  // 验证用户存在
+  const userExists = await prisma.user.findUnique({ where: { id: userId }, select: { id: true } })
+  if (!userExists) { error(res, '用户不存在，请重新登录', 401); return }
 
   const response = res as any
   response.setHeader('Content-Type', 'text/event-stream; charset=utf-8')
@@ -104,6 +109,42 @@ export const langchainAskStream = async (req: AuthRequest, res: Response): Promi
   }
 
   try {
+    // 确定或创建会话
+    let actualSessionId = providedSessionId
+    if (actualSessionId) {
+      const session = await prisma.qASession.findFirst({ where: { id: actualSessionId, userId } })
+      if (!session) {
+        send('error', { error: '会话不存在或无权访问' })
+        response.end()
+        return
+      }
+    } else {
+      const newSession = await prisma.qASession.create({
+        data: { userId, title: question.slice(0, 50) },
+      })
+      actualSessionId = newSession.id
+    }
+
+    // 保存用户消息
+    const userMessage = await prisma.qAMessage.create({
+      data: { sessionId: actualSessionId, role: 'user', content: question, status: 'completed' },
+    })
+
+    // 创建助手消息占位
+    const assistantMessage = await prisma.qAMessage.create({
+      data: { sessionId: actualSessionId, role: 'assistant', content: '', status: 'processing' },
+    })
+
+    // 更新会话时间
+    await prisma.qASession.update({ where: { id: actualSessionId }, data: { updatedAt: new Date() } })
+
+    // 发送元数据事件，让前端获取 ID
+    send('meta', {
+      sessionId: actualSessionId,
+      userMessageId: userMessage.id,
+      assistantMessageId: assistantMessage.id,
+    })
+
     send('status', { message: '正在检索知识库...' })
 
     const searchResult = await LangChainRAGService.askQuestion(question, categoryIds, history, {
@@ -204,7 +245,21 @@ export const langchainAskStream = async (req: AuthRequest, res: Response): Promi
     }
 
     answer = answer.replace(/<think[\s\S]*?<\/think>/g, '').trim();
-    send('done', { answer });
+
+    // 持久化完成结果到数据库
+    await prisma.qAMessage.update({
+      where: { id: assistantMessage.id },
+      data: {
+        content: answer || '暂未返回有效回答，请稍后重试。',
+        status: 'completed',
+        sources: (searchResult.sources || []) as any,
+        debug: (searchResult.debug || {}) as any,
+      },
+    });
+
+    console.log(`[LangChain] 流式问答完成并持久化: session=${actualSessionId}, msg=${assistantMessage.id}`);
+
+    send('done', { answer, sessionId: actualSessionId });
     response.end();
   } catch (err: any) {
     console.error('[LangChain] 流式问答失败:', err);

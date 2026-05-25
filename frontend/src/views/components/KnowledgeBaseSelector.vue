@@ -36,8 +36,35 @@
                 <el-icon v-if="!isLeafNode(data)" class="kb-tree-node__icon kb-tree-node__icon--folder"><FolderOpened /></el-icon>
                 <el-icon v-else class="kb-tree-node__icon kb-tree-node__icon--kb"><Collection /></el-icon>
                 <span class="kb-tree-node__label">{{ node.label }}</span>
-                <el-tag v-if="!isLeafNode(data)" size="small" type="info" effect="plain" class="kb-tree-node__tag">文件夹</el-tag>
+                <el-tag v-if="!isLeafNode(data)" size="small" type="info" effect="plain" class="kb-tree-node__tag">
+                  文件夹 ({{ countLeafChildren(data) }}个知识库)
+                </el-tag>
                 <el-tag v-else size="small" type="primary" effect="plain" class="kb-tree-node__tag">知识库</el-tag>
+                <!-- 文件夹：批量选择按钮 -->
+                <template v-if="!isLeafNode(data)">
+                  <el-button
+                    v-if="!isFolderFullySelected(data)"
+                    type="primary"
+                    link
+                    size="small"
+                    class="kb-tree-node__action"
+                    @click.stop="selectFolderChildren(data)"
+                  >
+                    <el-icon><Select /></el-icon>
+                    全选
+                  </el-button>
+                  <el-button
+                    v-else
+                    type="danger"
+                    link
+                    size="small"
+                    class="kb-tree-node__action"
+                    @click.stop="deselectFolderChildren(data)"
+                  >
+                    <el-icon><CloseBold /></el-icon>
+                    取消
+                  </el-button>
+                </template>
               </div>
             </template>
           </el-tree>
@@ -93,7 +120,7 @@
 <script setup lang="ts">
 import { ref, computed, watch, nextTick } from 'vue'
 import { ElMessage } from 'element-plus'
-import { Close, Collection, FolderOpened, Search } from '@element-plus/icons-vue'
+import { Close, Collection, FolderOpened, Search, Select, CloseBold } from '@element-plus/icons-vue'
 import type { KnowledgeTreeNode } from '@/api/knowledge-category'
 
 const props = defineProps<{
@@ -112,6 +139,44 @@ const treeRef = ref()
 
 const isLeafNode = (data: any): boolean => {
   return data.isLeaf || !data.children?.length
+}
+
+const collectLeafIds = (data: any): string[] => {
+  const ids: string[] = []
+  const walk = (node: any) => {
+    if (isLeafNode(node)) {
+      ids.push(node.id)
+    } else if (node.children) {
+      node.children.forEach(walk)
+    }
+  }
+  walk(data)
+  return ids
+}
+
+const countLeafChildren = (data: any): number => {
+  return collectLeafIds(data).length
+}
+
+const isFolderFullySelected = (folderData: any): boolean => {
+  const leafIds = collectLeafIds(folderData)
+  const currentChecked = treeRef.value?.getCheckedKeys() || []
+  return leafIds.length > 0 && leafIds.every(id => currentChecked.includes(id))
+}
+
+const selectFolderChildren = (folderData: any) => {
+  const leafIds = collectLeafIds(folderData)
+  const currentChecked = new Set(treeRef.value?.getCheckedKeys() || [])
+  leafIds.forEach(id => currentChecked.add(id))
+  treeRef.value?.setCheckedKeys([...currentChecked])
+  ElMessage.success(`已全选「${folderData.name}」下的 ${leafIds.length} 个知识库`)
+}
+
+const deselectFolderChildren = (folderData: any) => {
+  const leafIds = collectLeafIds(folderData)
+  const currentChecked = (treeRef.value?.getCheckedKeys() || []).filter((id: string) => !leafIds.includes(id))
+  treeRef.value?.setCheckedKeys(currentChecked)
+  ElMessage.info(`已取消「${folderData.name}」下的 ${leafIds.length} 个知识库`)
 }
 
 const handleCheckChange = (data: any, info: { checkedKeys: string[]; checked: boolean; halfCheckedKeys: string[] }) => {
@@ -310,6 +375,19 @@ watch(() => props.visible, async (val) => {
   padding: 0 5px;
   height: 18px;
   line-height: 17px;
+}
+
+.kb-tree-node__action {
+  flex-shrink: 0;
+  margin-left: auto;
+  padding: 2px 6px !important;
+  font-size: 12px !important;
+  border-radius: 6px !important;
+  transition: all 0.2s;
+}
+
+.kb-tree-node__action:hover {
+  transform: scale(1.05);
 }
 
 /* 文件夹节点：禁用 checkbox 视觉 */

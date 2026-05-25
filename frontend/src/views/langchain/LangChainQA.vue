@@ -388,7 +388,6 @@ const handleEnter = (event: KeyboardEvent) => {
 // 开始流式问答（SSE）
 const startStreamAsk = async (question: string) => {
   const token = userStore.token
-  console.log('[SSE] 开始流式问答, token:', token ? '✅ 有' : '❌ 无')
   if (!token) {
     ElMessage.error('未登录，请重新登录')
     isProcessing.value = false
@@ -397,9 +396,6 @@ const startStreamAsk = async (question: string) => {
 
   const controller = new AbortController()
   abortController.value = controller
-
-  console.log('[SSE] 发送请求, 问题:', question.slice(0, 50))
-  console.log('[SSE] 知识库:', selectedCategoryIds.value)
 
   try {
     await langchainAskStreamApi(
@@ -420,59 +416,72 @@ const startStreamAsk = async (question: string) => {
         token,
         signal: controller.signal,
         onMessage: (data: any, eventType?: string) => {
-          console.log(`[SSE] 收到事件: ${eventType || 'message'}`, data)
-
           const msgIndex = messages.value.findIndex(m => m.role === 'assistant' && m.status === 'processing')
-          if (msgIndex === -1) {
-            console.warn('[SSE] 找不到 processing 状态的 assistant 消息')
-            return
-          }
-
-          const msg = messages.value[msgIndex]
+          if (msgIndex === -1 && eventType !== 'meta') return
 
           switch (eventType) {
+            case 'meta':
+              // 接收后端创建的会话和消息 ID
+              if (!currentConversationId.value && data.sessionId) {
+                currentConversationId.value = data.sessionId
+              }
+              // 更新消息 ID
+              const userMsgIdx = messages.value.findIndex(m => m.role === 'user' && !m.id)
+              if (userMsgIdx !== -1 && data.userMessageId) {
+                messages.value[userMsgIdx].id = data.userMessageId
+              }
+              if (msgIndex !== -1 && data.assistantMessageId) {
+                messages.value[msgIndex].id = data.assistantMessageId
+              }
+              break
+
             case 'status':
-              msg.content = data.message || '正在处理...'
+              if (msgIndex !== -1) {
+                messages.value[msgIndex].content = data.message || '正在处理...'
+              }
               break
 
             case 'sources':
-              msg.sources = data.sources || []
-              msg.debug = data.debug || {}
+              if (msgIndex !== -1) {
+                messages.value[msgIndex].sources = data.sources || []
+                messages.value[msgIndex].debug = data.debug || {}
+              }
               break
 
             case 'delta':
-              if (data.content) {
-                msg.content += data.content
+              if (msgIndex !== -1 && data.content) {
+                messages.value[msgIndex].content += data.content
               }
               break
 
             case 'done':
-              msg.content = data.answer || msg.content
-              msg.status = 'completed'
+              if (msgIndex !== -1) {
+                messages.value[msgIndex].content = data.answer || messages.value[msgIndex].content
+                messages.value[msgIndex].status = 'completed'
+              }
               isProcessing.value = false
               abortController.value = null
               loadConversations()
-              console.log('[SSE] ✅ 流式完成')
               break
 
             case 'error':
-              msg.status = 'failed'
-              msg.content = data.error || '问答请求失败'
+              if (msgIndex !== -1) {
+                messages.value[msgIndex].status = 'failed'
+                messages.value[msgIndex].content = data.error || '问答请求失败'
+              }
               isProcessing.value = false
               abortController.value = null
-              console.error('[SSE] ❌ 服务端错误:', data.error)
               break
 
             default:
-              if (data.content) {
-                msg.content += data.content
+              if (msgIndex !== -1 && data.content) {
+                messages.value[msgIndex].content += data.content
               }
           }
 
           scrollToBottom()
         },
         onError: (error: string) => {
-          console.error('[SSE] 🔥 流式错误:', error)
           ElMessage.error('连接失败: ' + error)
           const msgIndex = messages.value.findIndex(m => m.role === 'assistant' && m.status === 'processing')
           if (msgIndex !== -1) {
@@ -483,7 +492,6 @@ const startStreamAsk = async (question: string) => {
           abortController.value = null
         },
         onComplete: () => {
-          console.log('[SSE] 流结束 (onComplete)')
           const msgIndex = messages.value.findIndex(m => m.role === 'assistant' && m.status === 'processing')
           if (msgIndex !== -1 && messages.value[msgIndex].status === 'processing') {
             messages.value[msgIndex].status = 'completed'
@@ -497,10 +505,7 @@ const startStreamAsk = async (question: string) => {
       }
     )
   } catch (err: any) {
-    if (err.name === 'AbortError') {
-      console.log('[SSE] 用户取消请求')
-    } else {
-      console.error('[SSE] 💥 请求异常:', err)
+    if (err.name !== 'AbortError') {
       ElMessage.error('请求异常: ' + err.message)
       const msgIndex = messages.value.findIndex(m => m.role === 'assistant' && m.status === 'processing')
       if (msgIndex !== -1) {
@@ -645,9 +650,6 @@ onMounted(async () => {
     collectLeaves(categoryTree.value)
     // 只保留仍然存在于当前树中的 ID
     selectedCategoryIds.value = savedIds.filter(id => allLeafIds.includes(id))
-    if (selectedCategoryIds.value.length > 0) {
-      console.log(`[QA] 恢复知识库选择: ${selectedCategoryIds.value.length} 个`)
-    }
   }
 
   // 恢复持久化的搜索参数

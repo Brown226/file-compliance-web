@@ -104,7 +104,7 @@ import {
   DataBoard, Refresh, Menu, ArrowDown, ArrowRight,
   OfficeBuilding, User, FolderOpened, Document, ChatDotRound, Clock,
   WarningFilled, CircleCheck, Setting, Files, Bell, Grid, MagicStick,
-  Reading, Connection, ChatLineSquare
+  Reading, Connection, ChatLineSquare, Key, Warning
 } from '@element-plus/icons-vue'
 import { getDashboardStatsApi } from '@/api/dashboard'
 
@@ -112,7 +112,7 @@ const iconMap: Record<string, any> = {
   DataBoard, Refresh, Menu, ArrowDown, ArrowRight,
   OfficeBuilding, User, FolderOpened, Document, ChatDotRound, Clock,
   WarningFilled, CircleCheck, Setting, Files, Bell, Grid, MagicStick,
-  Reading, Connection, ChatLineSquare,
+  Reading, Connection, ChatLineSquare, Key, Warning,
 }
 
 const expandedGroups = ref(['organization', 'knowledge', 'review', 'operations', 'system', 'audit'])
@@ -126,6 +126,8 @@ const componentsMap: Record<string, any> = {
 
   // 规范与知识
   standards: markRaw(defineAsyncComponent(() => import('./StandardLibrary/index.vue'))),
+  terminology: markRaw(defineAsyncComponent(() => import('./StandardLibrary/TerminologyTab.vue'))),
+  falsePositive: markRaw(defineAsyncComponent(() => import('./StandardLibrary/FalsePositiveLibraryTab.vue'))),
   knowledge: markRaw(defineAsyncComponent(() => import('./admin/KnowledgeCategories.vue'))),
   rules: markRaw(defineAsyncComponent(() => import('./admin/RuleLibraries.vue'))),
 
@@ -164,7 +166,9 @@ const navGroups = ref([
     name: '规范与知识',
     icon: 'Files',
     items: [
-      { id: 'standards', name: '标准库清单管理', icon: 'Reading', description: '管理标准清单、白名单库和误报标记库' },
+      { id: 'standards', name: '标准库清单管理', icon: 'Reading', description: '管理标准清单' },
+      { id: 'terminology', name: '白名单库', icon: 'Key', description: '管理白名单术语库' },
+      { id: 'falsePositive', name: '误报标记库', icon: 'Warning', description: '管理误报标记记录' },
       { id: 'knowledge', name: '知识库管理', icon: 'FolderOpened', description: '管理知识库分类和文档' },
       { id: 'rules', name: '语义知识库', icon: 'Document', description: '管理语义知识库和规则库' },
     ]
