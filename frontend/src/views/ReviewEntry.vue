@@ -1,5 +1,5 @@
 <template>
-  <div class="smart-review-new-page">
+  <div class="review-entry-page">
     <div v-if="!selectedModule" class="module-step-card">
       <h3 class="module-title">选择审查模块</h3>
       <p class="module-desc">不同模块对应不同的审查策略和配置,选择后将自动加载对应的审查项。</p>
@@ -104,7 +104,7 @@ const selectModule = (id: ModuleId) => {
 </script>
 
 <style scoped>
-.smart-review-new-page {
+.review-entry-page {
   display: flex;
   flex-direction: column;
   gap: 20px;

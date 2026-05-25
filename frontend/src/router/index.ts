@@ -27,7 +27,7 @@ const routes: Array<RouteRecordRaw> = [
       {
         path: 'review',
         name: 'SmartReview',
-        component: () => import('../views/SmartReviewNew.vue'),
+        component: () => import('../views/ReviewEntry.vue'),
         meta: { title: '智能审查' }
       },
       {
