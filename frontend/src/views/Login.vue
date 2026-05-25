@@ -11,7 +11,7 @@
 
         <!-- 中间：系统名称 + 副标题 -->
         <div class="brand-center">
-          <h1 class="brand-title">核审通</h1>
+          <h1 class="brand-title">{{ systemConfigStore.systemName }}</h1>
           <p class="brand-subtitle">智能识别 · 精准审查 · 高效管理</p>
         </div>
       </div>
@@ -25,7 +25,7 @@
           <div class="logo-icon-wrap">
             <img src="/logo.jpg" alt="Logo" class="logo-img" />
           </div>
-          <h2 class="brand-name">核审通</h2>
+          <h2 class="brand-name">{{ systemConfigStore.systemName }}</h2>
           <h2>欢迎登录</h2>
           <p class="login-subtitle">请输入您的账号信息</p>
         </div>
@@ -105,15 +105,17 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive } from 'vue'
+import { ref, reactive, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import type { FormInstance, FormRules } from 'element-plus'
 import { useUserStore } from '@/stores/user'
+import { useSystemConfigStore } from '@/stores/system-config'
 import { loginApi } from '@/api/auth'
 
 const router = useRouter()
 const userStore = useUserStore()
+const systemConfigStore = useSystemConfigStore()
 
 const loginFormRef = ref<FormInstance>()
 const loading = ref(false)
@@ -168,6 +170,10 @@ const handleLogin = async () => {
 const handleForgotPassword = () => {
   ElMessage.info('请联系系统管理员重置密码')
 }
+
+onMounted(() => {
+  systemConfigStore.loadSystemName()
+})
 </script>
 
 <style scoped>

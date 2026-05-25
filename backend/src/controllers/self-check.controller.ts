@@ -81,7 +81,7 @@ export const runSelfCheck = async (req: Request, res: Response): Promise<void> =
             status: 'COMPLETED',
             textLength: 0,
             processedLength: 0,
-            errorCount: report.items.filter((item: any) => item.sourceFile === f.originalName).length,
+            errorCount: report.items.filter((item: any) => item.sourceFile === f.originalName && item.errorTypes.length > 0).length,
           })),
         },
       },

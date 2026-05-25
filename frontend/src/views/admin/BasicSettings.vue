@@ -69,6 +69,9 @@ import { ref, reactive, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import { RefreshRight } from '@element-plus/icons-vue'
 import { getSystemConfigApi, saveSystemConfigApi } from '@/api/system'
+import { useSystemConfigStore } from '@/stores/system-config'
+
+const systemConfigStore = useSystemConfigStore()
 
 const basicSettingsSaving = ref(false)
 const basicSettings = reactive({
@@ -86,6 +89,7 @@ const handleSaveBasicSettings = async () => {
   basicSettingsSaving.value = true
   try {
     await saveSystemConfigApi('basic_settings', basicSettings)
+    systemConfigStore.loadSystemName()
     ElMessage.success('基础设置已保存')
   } catch (e: any) {
     ElMessage.error(`保存失败: ${e.message || '未知错误'}`)

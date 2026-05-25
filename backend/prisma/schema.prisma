@@ -98,7 +98,7 @@ model Task {
   title              String
   description        String?
   status             TaskStatus     @default(PENDING)
-  reviewMode         ReviewMode     @default(FULL_REVIEW)  // 审查模式
+  reviewMode         ReviewMode     @default(LIBRARY_REVIEW)  // 审查模式
   creatorId          String
   creator            User           @relation(fields: [creatorId], references: [id])
   standardId         String?
@@ -138,7 +138,6 @@ enum ReviewMode {
   TYPO_GRAMMAR      // 错别字/语法 — 轻量LLM直接调用
   MULTIMODAL        // 多模态识别 — 表格/公式/图纸
   CUSTOM_RULE       // 自定义规则审查 — 用户自定义规则
-  FULL_REVIEW       // 全量审查 — 所有规则+AI（向后兼容默认模式）
   SELF_CHECK        // 标准引用自检 — 机械匹配，独立于AI审查
 }
 

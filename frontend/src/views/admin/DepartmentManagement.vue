@@ -428,7 +428,7 @@ const batchLoading = ref(false)
 
 const roleOptions = [
   { value: 'ADMIN', label: '管理员', cls: 'admin' },
-  { value: 'MANAGER', label: '部门主管', cls: 'manager' },
+  { value: 'MANAGER', label: '二级管理员', cls: 'manager' },
   { value: 'USER', label: '普通员工', cls: 'user' },
 ]
 
@@ -437,7 +437,7 @@ const roleTabs = computed(() => {
   return [
     { label: '全部', value: 'ALL', count: all.length },
     { label: '管理员', value: 'ADMIN', count: all.filter((e: any) => e.role === 'ADMIN').length },
-    { label: '部门主管', value: 'MANAGER', count: all.filter((e: any) => e.role === 'MANAGER').length },
+    { label: '二级管理员', value: 'MANAGER', count: all.filter((e: any) => e.role === 'MANAGER').length },
     { label: '普通员工', value: 'USER', count: all.filter((e: any) => e.role === 'USER').length },
   ]
 })
@@ -462,7 +462,7 @@ const toggleSelectAll = (val: boolean) => {
 
 const getAvatarClass = (role: string) => { const map: Record<string, string> = { ADMIN: 'admin', MANAGER: 'manager', USER: 'user' }; return map[role] || 'user' }
 const getAvatarLetter = (emp: any) => (emp.name || emp.username || '?').charAt(0).toUpperCase()
-const getRoleLabel = (role: string) => { const map: Record<string, string> = { ADMIN: '管理员', MANAGER: '部门主管', USER: '普通员工' }; return map[role] || role }
+const getRoleLabel = (role: string) => { const map: Record<string, string> = { ADMIN: '管理员', MANAGER: '二级管理员', USER: '普通员工' }; return map[role] || role }
 
 const deptMemberCounts = ref<Record<string, number>>({})
 

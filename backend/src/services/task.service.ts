@@ -383,10 +383,15 @@ export class TaskService {
       if (task.status === 'COMPLETED') progress = 100;
       if (task.status === 'PENDING') progress = 0;
 
+      const isSelfCheck = task.reviewMode === 'SELF_CHECK';
+      const errorCount = isSelfCheck
+        ? (task.selfCheckReport as any)?.errorCount ?? 0
+        : _count.details;
+
       return {
         ...task,
         fileCount: _count.files,
-        errorCount: _count.details,
+        errorCount,
         progress,
       };
     });

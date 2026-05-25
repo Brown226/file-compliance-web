@@ -54,6 +54,12 @@ interface RuleEntry {
   category: string;     // issueType 分类
   fn: (ctx: FileContext, config?: any) => RuleIssue[];
   condition: (ctx: FileContext) => boolean;  // 执行条件
+  meta: {               // 前端展示元数据
+    label: string;
+    description: string;
+    group: string;      // 分组名：文件规范 / 内容规范 / 逻辑验证 / 图纸审查(DWG)
+    icon: string;       // Element Plus icon name
+  };
 }
 
 const RULE_REGISTRY: RuleEntry[] = [
@@ -61,109 +67,127 @@ const RULE_REGISTRY: RuleEntry[] = [
     prefix: 'NAME',
     category: 'NAMING',
     fn: checkNaming,
-    condition: () => true, // 所有文件都检查
+    condition: () => true,
+    meta: { label: '命名规范', description: '文件名格式、版本号、特殊字符检查', group: '文件规范', icon: 'FolderOpened' },
   },
   {
     prefix: 'CODE',
     category: 'ENCODING',
     fn: checkEncodingConsistency,
     condition: (ctx) => !!ctx.pdfPages && ctx.pdfPages.length > 0,
+    meta: { label: '编码规范', description: '编码规则、编号一致性检查', group: '内容规范', icon: 'EditPen' },
   },
   {
     prefix: 'UNIT',
     category: 'ENCODING',
     fn: checkEncodingConsistency,
     condition: (ctx) => !!ctx.pdfPages && ctx.pdfPages.length > 0,
+    meta: { label: '单位规范', description: '计量单位使用规范性检查', group: '内容规范', icon: 'EditPen' },
   },
   {
     prefix: 'ATTR',
     category: 'ATTRIBUTE',
     fn: checkCoverAttributes,
     condition: (ctx) => ctx.fileType === 'pdf' && !!ctx.extractedText,
+    meta: { label: '属性规范', description: '文档属性、元数据完整性检查', group: '内容规范', icon: 'EditPen' },
   },
   {
     prefix: 'HEADER',
     category: 'HEADER',
     fn: checkHeader,
     condition: (ctx) => !!ctx.pdfPages && ctx.pdfPages.length > 1,
+    meta: { label: '页眉规范', description: '页眉内容、格式一致性检查', group: '内容规范', icon: 'EditPen' },
   },
   {
     prefix: 'PAGE',
     category: 'PAGE',
     fn: checkPageNumbers,
     condition: (ctx) => !!ctx.pdfPages && ctx.pdfPages.length > 1,
+    meta: { label: '页码规范', description: '页码连续性、格式正确性检查', group: '内容规范', icon: 'EditPen' },
   },
   {
     prefix: 'FORMAT',
     category: 'FORMAT',
     fn: checkFormatRules,
     condition: (ctx) => !!ctx.extractedText,
+    meta: { label: '格式规范', description: '文档排版、字体、段落格式检查', group: '文件规范', icon: 'FolderOpened' },
   },
   {
     prefix: 'COMPL',
     category: 'COMPLETENESS',
     fn: checkCompleteness,
     condition: (ctx) => !!ctx.extractedText,
+    meta: { label: '完整性检查', description: '必填项、关键内容是否缺失检查', group: '逻辑验证', icon: 'List' },
   },
   {
     prefix: 'CONSIST',
     category: 'CONSISTENCY',
     fn: checkConsistency,
     condition: (ctx) => !!ctx.extractedText,
+    meta: { label: '一致性检查', description: '前后参数、数据逻辑一致性检查', group: '逻辑验证', icon: 'List' },
   },
   {
     prefix: 'LAYOUT',
     category: 'LAYOUT',
     fn: checkLayout,
     condition: (ctx) => !!ctx.pdfPages && ctx.pdfPages.length > 0,
+    meta: { label: '排版布局', description: '布局结构、缩进、对齐方式检查', group: '文件规范', icon: 'FolderOpened' },
   },
   {
     prefix: 'TYPO',
     category: 'TYPO',
     fn: checkTypo,
     condition: (ctx) => !!ctx.extractedText,
+    meta: { label: '术语一致性', description: '专业术语使用是否统一检查', group: '内容规范', icon: 'EditPen' },
   },
   {
     prefix: 'INTERNAL_CODE',
     category: 'ENCODING',
     fn: checkInternalCodes,
     condition: (ctx) => !!ctx.extractedText,
+    meta: { label: '内部编码校验', description: '正文内工程编码与文件名项目编码一致性检查', group: '内容规范', icon: 'EditPen' },
   },
   {
     prefix: 'DWG_TITLE',
     category: 'DWG',
     fn: checkDwgRules('DWG_TITLE'),
     condition: (ctx) => ctx.fileType.toLowerCase() === 'dwg',
+    meta: { label: '标题规范', description: '图签、标题栏格式内容检查', group: '图纸审查 (DWG)', icon: 'DataAnalysis' },
   },
   {
     prefix: 'DWG_LAYER',
     category: 'DWG',
     fn: checkDwgRules('DWG_LAYER'),
     condition: (ctx) => ctx.fileType.toLowerCase() === 'dwg' && !!ctx.parseResult?.metadata?.dwg_layers?.length,
+    meta: { label: '图层规范', description: '图层命名、颜色、线型规范性检查', group: '图纸审查 (DWG)', icon: 'DataAnalysis' },
   },
   {
     prefix: 'DWG_DIM',
     category: 'DWG',
     fn: checkDwgRules('DWG_DIM'),
     condition: (ctx) => ctx.fileType.toLowerCase() === 'dwg' && !!(ctx.parseResult?.metadata as any)?.layer_stats,
+    meta: { label: '标注规范', description: '尺寸标注样式和规范性检查', group: '图纸审查 (DWG)', icon: 'DataAnalysis' },
   },
   {
     prefix: 'DWG_STDREF',
     category: 'DWG',
     fn: checkDwgRules('DWG_STDREF'),
     condition: (ctx) => ctx.fileType.toLowerCase() === 'dwg' && !!ctx.parseResult,
+    meta: { label: '标准引用', description: '图纸引用的标准有效性检查', group: '图纸审查 (DWG)', icon: 'DataAnalysis' },
   },
   {
     prefix: 'DWG_SCALE',
     category: 'DWG',
     fn: checkDwgRules('DWG_SCALE'),
     condition: (ctx) => ctx.fileType.toLowerCase() === 'dwg',
+    meta: { label: '比例规范', description: '图幅比例设置正确性检查', group: '图纸审查 (DWG)', icon: 'DataAnalysis' },
   },
   {
     prefix: 'DWG_OVERLAP',
     category: 'DWG',
     fn: checkDwgRules('DWG_OVERLAP'),
     condition: (ctx) => ctx.fileType.toLowerCase() === 'dwg' && !!(ctx.parseResult?.metadata as any)?.layer_stats,
+    meta: { label: '重叠检查', description: '图元重叠、干涉问题检查', group: '图纸审查 (DWG)', icon: 'DataAnalysis' },
   },
 ];
 
@@ -282,6 +306,47 @@ export async function runAllRules(ctx: FileContext, options?: RunRulesOptions): 
   }
 
   return issues;
+}
+
+export interface RuleMetaItem {
+  prefix: string;
+  label: string;
+  description: string;
+  group: string;
+  icon: string;
+}
+
+export interface RuleGroupMeta {
+  title: string;
+  icon: string;
+  items: RuleMetaItem[];
+}
+
+export function getRuleRegistryMetadata(): { groups: RuleGroupMeta[]; total: number; allPrefixes: string[] } {
+  const groupMap = new Map<string, { icon: string; items: RuleMetaItem[] }>();
+  for (const rule of RULE_REGISTRY) {
+    const g = rule.meta.group;
+    if (!groupMap.has(g)) {
+      groupMap.set(g, { icon: rule.meta.icon, items: [] });
+    }
+    groupMap.get(g)!.items.push({
+      prefix: rule.prefix,
+      label: rule.meta.label,
+      description: rule.meta.description,
+      group: g,
+      icon: rule.meta.icon,
+    });
+  }
+  const groups: RuleGroupMeta[] = Array.from(groupMap.entries()).map(([title, val]) => ({
+    title,
+    icon: val.icon,
+    items: val.items,
+  }));
+  return {
+    groups,
+    total: RULE_REGISTRY.length,
+    allPrefixes: RULE_REGISTRY.map(r => r.prefix),
+  };
 }
 
 /**

@@ -6,7 +6,7 @@
           <img src="/logo.jpg" alt="Logo" class="logo-img" />
         </div>
         <div class="logo-text" v-show="!sidebarCollapsed">
-          <h2>核审通</h2>
+          <h2>{{ systemConfigStore.systemName }}</h2>
         </div>
       </div>
 
@@ -244,6 +244,7 @@
 import { computed, ref, reactive, onMounted, onUnmounted, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useUserStore } from '@/stores/user'
+import { useSystemConfigStore } from '@/stores/system-config'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import type { FormInstance, FormRules } from 'element-plus'
 import {
@@ -263,6 +264,7 @@ import { useAnnouncements } from '@/composables/useAnnouncements'
 const route = useRoute()
 const router = useRouter()
 const userStore = useUserStore()
+const systemConfigStore = useSystemConfigStore()
 const activeMenu = computed(() => route.path)
 const isAdminSubRoute = computed(() => route.path.startsWith('/admin/') && route.path !== '/admin')
 const roleDisplayText = computed(() => {
@@ -324,7 +326,8 @@ onMounted(() => {
     if (!isMobile.value) sidebarOpen.value = false
   })
 
-  // 检查未读公告
+  systemConfigStore.loadSystemName()
+
   checkAnnouncements()
 })
 

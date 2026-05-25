@@ -1,9 +1,23 @@
 /**
  * 定时任务服务
- * 功能：每天凌晨2点自动清理孤立文件
+ * 功能：每天凌晨2点自动清理孤立文件（天数从基础设置读取）
  */
 import * as path from 'path';
+import prisma from '../config/db';
 import FileCleanupService from './file-cleanup.service';
+
+const DEFAULT_CLEANUP_DAYS = 7;
+
+async function getCleanupDays(): Promise<number> {
+  try {
+    const cfg = await prisma.systemConfig.findUnique({ where: { key: 'basic_settings' } });
+    if (cfg?.value && typeof cfg.value === 'object') {
+      const days = (cfg.value as any).autoCleanupDays;
+      if (typeof days === 'number' && days >= 0) return days;
+    }
+  } catch {}
+  return DEFAULT_CLEANUP_DAYS;
+}
 
 // 定时清理孤立文件（每天凌晨2点执行）
 function scheduleCleanup() {
@@ -30,8 +44,13 @@ async function runCleanup() {
   console.log('[Scheduler] 开始执行孤立文件清理...');
   try {
     const uploadsDir = path.join(__dirname, '../../uploads');
-    const result = await FileCleanupService.cleanupOrphanedFiles(uploadsDir, 7);
-    console.log(`[Scheduler] 清理完成：删除了 ${result.deleted} 个文件，释放了 ${(result.freedSpace / 1024 / 1024).toFixed(2)} MB 空间`);
+    const days = await getCleanupDays();
+    if (days === 0) {
+      console.log('[Scheduler] 自动清理已禁用（配置为 0 天），跳过清理');
+      return;
+    }
+    const result = await FileCleanupService.cleanupOrphanedFiles(uploadsDir, days);
+    console.log(`[Scheduler] 清理完成（${days}天前）：删除了 ${result.deleted} 个文件，释放了 ${(result.freedSpace / 1024 / 1024).toFixed(2)} MB 空间`);
   } catch (error: any) {
     console.error('[Scheduler] 清理失败:', error.message);
   }

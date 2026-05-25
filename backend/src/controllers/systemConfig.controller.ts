@@ -2,6 +2,7 @@ import { Request, Response } from 'express';
 import { AuthRequest } from '../middlewares/auth.middleware';
 import prisma from '../config/db';
 import { success, error } from '../utils/response';
+import { invalidateConfigCache } from '../utils/system-config';
 
 /**
  * 获取系统配置
@@ -72,6 +73,10 @@ export const saveSystemConfig = async (req: AuthRequest, res: Response): Promise
       update: { value: normalizedValue },
       create: { key, value: normalizedValue },
     });
+
+    if (key === 'basic_settings') {
+      invalidateConfigCache();
+    }
 
     success(res, config, '配置保存成功');
   } catch (err: any) {

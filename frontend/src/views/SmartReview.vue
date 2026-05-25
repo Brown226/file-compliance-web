@@ -81,301 +81,224 @@
       <div class="confirm-content">
         <!-- 任务标题 -->
         <div class="title-input-section">
+          <label class="title-label">
+            任务标题
+            <span class="required-mark">*</span>
+          </label>
           <el-input
             v-model="form.title"
-            placeholder="请输入任务标题，例如：XX项目施工图审查"
+            :placeholder="aiSuggestedTitle ? '点击右侧按钮使用AI建议，或手动输入' : '请输入任务标题，例如：XX项目施工图审查'"
             size="large"
             clearable
             maxlength="100"
             show-word-limit
-          />
+          >
+            <template #suffix v-if="aiSuggestedTitle && !form.title">
+              <button class="ai-fill-btn" @click="form.title = aiSuggestedTitle" type="button">
+                <el-icon><MagicStick /></el-icon>
+                使用AI建议
+              </button>
+            </template>
+          </el-input>
+          <div v-if="aiSuggestedTitle && !form.title" class="ai-suggestion-preview" @click="form.title = aiSuggestedTitle">
+            <el-icon><MagicStick /></el-icon>
+            <span>建议：<span class="suggestion-text">{{ aiSuggestedTitle }}</span></span>
+            <span class="suggestion-action">点击采用</span>
+          </div>
         </div>
 
-        <!-- 文件上传成功提示 -->
-        <div class="upload-success">
-          <p class="success-text">文件 <span class="file-name">{{ fileList.length }} 个文件</span> 已上传成功。</p>
+        <!-- 文件上传状态（精简单行） -->
+        <div class="upload-status-bar">
+          <span class="status-file-count">
+            <el-icon><Document /></el-icon>
+            {{ fileList.length }} 个文件已就绪
+          </span>
           <template v-if="entryModule !== 'RULE_ONLY'">
-            <p class="ai-hint" v-if="isUploadingForPreAnalysis">
+            <span v-if="isUploadingForPreAnalysis || preAnalyzing" class="status-loading">
               <el-icon class="is-loading"><Loading /></el-icon>
-              正在上传文件用于AI分析...
-            </p>
-            <p class="ai-hint" v-else-if="preAnalyzing && !preAnalyzed">
-              <el-icon class="is-loading"><Loading /></el-icon>
-              AI 正在智能分析文件内容...
-            </p>
-            <p class="ai-hint" v-else-if="preAnalysisData.contractType">
-              AI初步识别文件类型为：<span class="type-text">{{ preAnalysisData.contractType }}</span>
-            </p>
+              AI分析中...
+            </span>
+            <span v-else-if="preAnalyzed && preAnalysisData.contractType" class="status-done">
+              <el-icon><CircleCheck /></el-icon>
+              {{ preAnalysisData.contractType }}
+            </span>
           </template>
         </div>
 
-        <!-- 审查点及核心目的（仅非 RULE_ONLY 模式显示） -->
-        <div v-if="entryModule !== 'RULE_ONLY'" class="review-options-panel">
-          <h3 class="panel-title">审查点及核心目的</h3>
-          
-          <!-- 审查点选择 -->
-          <div class="review-points-section">
-            <h4 class="section-label">
-              审查点选择 (可多选)
-              <el-tag 
-                v-if="preAnalysisData.llmAnalyzed" 
-                type="success" 
-                size="small"
-                class="analysis-badge"
-              >
-                AI分析
-              </el-tag>
-              <el-tag 
-                v-else 
-                type="info" 
-                size="small"
-                class="analysis-badge"
-              >
-                默认模板
-              </el-tag>
-            </h4>
-            <el-checkbox-group v-model="selectedReviewPoints" class="review-points-group">
-              <el-checkbox
-                v-for="point in allSuggestedReviewPoints"
-                :key="point"
-                :label="point"
-                :value="point"
-                border
-              ></el-checkbox>
-            </el-checkbox-group>
-          </div>
-
-          <!-- 审查核心目的 -->
-          <div class="review-purposes-section">
-            <h4 class="section-label">
-              审查核心目的 (可自定义)
-              <el-tag 
-                v-if="preAnalysisData.llmAnalyzed" 
-                type="success" 
-                size="small"
-                class="analysis-badge"
-              >
-                AI分析
-              </el-tag>
-              <el-tag 
-                v-else 
-                type="info" 
-                size="small"
-                class="analysis-badge"
-              >
-                默认模板
-              </el-tag>
-            </h4>
-            <div v-for="(purpose, index) in customPurposes" :key="index" class="purpose-row">
-              <el-autocomplete
-                v-model="purpose.value"
-                :fetch-suggestions="querySearchCorePurposes"
-                placeholder="搜索或输入新目的"
-                class="w-full"
-                trigger-on-focus
-              ></el-autocomplete>
-              <el-button 
-                type="primary" link
-                @click="removePurpose(index)"
-                class="remove-btn"
-              >
-                <el-icon><RemoveFilled /></el-icon>
-              </el-button>
-            </div>
-            <el-button 
-              type="primary" link
-              @click="addPurpose" 
-              class="add-purpose-btn"
-            >
-              <el-icon><CirclePlusFilled /></el-icon>
-              添加目的
-            </el-button>
-          </div>
-        </div>
-
-                <div v-if="entryModule !== 'PROOFREAD'" class="review-items-section">
+        <!-- 核心配置区：始终展开 -->
+        <div class="review-items-section">
           <div class="review-item-config">
-            <!-- 模式说明横幅 -->
-            <div v-if="entryModule && modeDescriptionMap[entryModule as EntryModule]" class="mode-banner">
-              <div class="mode-banner__icon">
-                <el-icon :size="22"><component :is="modeDescriptionMap[entryModule as EntryModule].icon" /></el-icon>
+            <!-- 目标选择（核心决策，始终可见） -->
+            <div v-if="showObjectiveSelector" class="config-section">
+              <div class="config-section-label">
+                <span class="section-label-num">1</span>
+                审查目标
               </div>
-              <div class="mode-banner__content">
-                <div class="mode-banner__title">{{ modeDescriptionMap[entryModule as EntryModule].title }}</div>
-                <div class="mode-banner__desc">{{ modeDescriptionMap[entryModule as EntryModule].desc }}</div>
-              </div>
-              <div class="mode-banner__badge">
-                <el-tag :type="getModeBadgeType(entryModule as EntryModule)" effect="dark" round>
-                  {{ getModeBadgeLabel(entryModule as EntryModule) }}
-                </el-tag>
-              </div>
-            </div>
-
-            <div class="config-section">
-              <div v-if="showObjectiveSelector" class="objective-cards">
+              <div class="objective-cards">
                 <div
                   v-for="option in objectiveOptions"
                   :key="option.value"
-                  class="objective-card"
-                  :class="{ 'objective-card--active': reviewPlanDraft.objective === option.value }"
+                  class="selectable-card"
+                  :class="{ 'selectable-card--active': reviewPlanDraft.objective === option.value }"
                   @click="reviewPlanDraft.objective = option.value as any"
+                  tabindex="0"
+                  role="button"
+                  @keydown.enter="reviewPlanDraft.objective = option.value as any"
                 >
-                  <div class="objective-card__icon">
-                    <el-icon :size="18">
-                      <component :is="objectiveIconMap[option.value]" />
-                    </el-icon>
+                  <div class="selectable-card__icon">
+                    <el-icon :size="16"><component :is="objectiveIconMap[option.value]" /></el-icon>
                   </div>
-                  <div class="objective-card__content">
-                    <div class="objective-card__label">{{ option.label }}</div>
-                    <div class="objective-card__desc">{{ option.desc }}</div>
+                  <div class="selectable-card__content">
+                    <div class="selectable-card__label">{{ option.label }}</div>
+                    <div class="selectable-card__desc">{{ option.desc }}</div>
                   </div>
-                  <div class="objective-card__check" v-if="reviewPlanDraft.objective === option.value">
+                  <div class="selectable-card__check" v-if="reviewPlanDraft.objective === option.value">
                     <el-icon><Check /></el-icon>
                   </div>
                 </div>
               </div>
             </div>
 
-            <template v-if="showEvidenceSection">
-              <div class="config-section">
-                <!-- RULE_ONLY 模式：规则前缀开关面板 -->
-                <template v-if="entryModule === 'RULE_ONLY'">
-                  <div class="config-section-label">
-                    <span class="section-label-num">2</span>
-                    检查项目
-                  </div>
-                  <div class="rule-prefix-panel">
-                    <div
-                      v-for="group in RULE_PREFIX_GROUPS"
-                      :key="group.title"
-                      class="rule-prefix-group"
-                    >
-                      <div class="rule-prefix-group__header" @click="toggleGroup(group.items.map((i: any) => i.prefix), !group.items.every((item: any) => enabledRulePrefixes.includes(item.prefix)))">
-                        <el-icon :size="16"><component :is="group.icon" /></el-icon>
-                        <span class="rule-prefix-group__title">{{ group.title }}</span>
-                        <span class="rule-prefix-group__count">{{ group.items.filter((i: any) => enabledRulePrefixes.includes(i.prefix)).length }}/{{ group.items.length }}</span>
-                        <el-checkbox
-                          :model-value="group.items.every((item: any) => enabledRulePrefixes.includes(item.prefix))"
-                          :indeterminate="group.items.some((item: any) => enabledRulePrefixes.includes(item.prefix)) && !group.items.every((item: any) => enabledRulePrefixes.includes(item.prefix))"
-                          size="small"
-                          @click.stop
-                          @change="(val: boolean | string | number) => toggleGroup(group.items.map((i: any) => i.prefix), !!val)"
-                        />
-                      </div>
-                      <div class="rule-prefix-group__items">
-                        <div
-                          v-for="item in group.items"
-                          :key="item.prefix"
-                          class="rule-prefix-item"
-                          :class="{ 'rule-prefix-item--active': enabledRulePrefixes.includes(item.prefix) }"
-                          @click="togglePrefix(item.prefix)"
-                        >
-                          <div class="rule-prefix-item__info">
-                            <span class="rule-prefix-item__label">{{ item.label }}</span>
-                            <span class="rule-prefix-item__desc">{{ item.desc }}</span>
-                          </div>
-                          <el-switch
-                            :model-value="enabledRulePrefixes.includes(item.prefix)"
-                            size="small"
-                            style="pointer-events: none;"
-                          />
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                </template>
-                <!-- 其他模式（非 RULE_ONLY 且非 DOC_REVIEW）：标准展示证据源卡片 -->
-                <template v-else-if="entryModule !== 'DOC_REVIEW'">
-                  <div class="evidence-cards">
-                    <div
-                      v-for="option in availableEvidenceSources"
-                      :key="option.value"
-                      class="evidence-card"
-                      :class="{
-                        'evidence-card--active': reviewPlanDraft.evidence.sources.includes(option.value),
-                        'evidence-card--disabled': isEvidenceLocked(option.value)
-                      }"
-                      @click="handleEvidenceCardClick(option.value)"
-                    >
-                      <div class="evidence-card__icon">
-                        <el-icon :size="16">
-                          <component :is="evidenceIconMap[option.value]" />
-                        </el-icon>
-                      </div>
-                      <span class="evidence-card__label">{{ option.label }}</span>
-                      <div class="evidence-card__check" v-if="reviewPlanDraft.evidence.sources.includes(option.value)">
-                        <el-icon><Check /></el-icon>
-                      </div>
-                    </div>
-                  </div>
-                  <div v-if="reviewPlanDraft.evidence.sources.includes('STANDARD')" class="selected-items-display">
-                    <div class="selected-items-header">
-                      <span class="selected-items-count">已选 {{ reviewPlanDraft.evidence.knowledgeCategoryIds.length }} 个知识库</span>
-                      <el-button type="primary" link size="small" @click="openKnowledgeDialog">管理知识库</el-button>
-                    </div>
-                    <div v-if="reviewPlanDraft.evidence.knowledgeCategoryIds.length > 0" class="selected-items-tags">
-                      <el-tag
-                        v-for="id in reviewPlanDraft.evidence.knowledgeCategoryIds"
-                        :key="id"
-                        closable
-                        type="info"
-                        size="small"
-                        @close="removeKnowledgeCategory(id)"
-                      >
-                        {{ getKnowledgeCategoryName(id) }}
-                      </el-tag>
-                    </div>
-                  </div>
-                  <div v-if="reviewPlanDraft.evidence.sources.includes('REVIEW_SPECIFICATION')" class="selected-items-display">
-                    <div class="selected-items-header">
-                      <span class="selected-items-count">{{ reviewPlanDraft.evidence.reviewSpecificationId ? '已选择' : '未选择' }}语义规范库</span>
-                      <el-button type="primary" link size="small" @click="openReviewSpecificationDialog">选择语义规范库</el-button>
-                    </div>
-                    <div v-if="reviewPlanDraft.evidence.reviewSpecificationId" class="selected-item-single">
-                      <el-tag closable type="info" size="small" @close="reviewPlanDraft.evidence.reviewSpecificationId = null">
-                        {{ getReviewSpecificationName(reviewPlanDraft.evidence.reviewSpecificationId) }}
-                      </el-tag>
-                    </div>
-                  </div>
-                </template>
-                <div v-if="entryModule === 'DOC_REVIEW' && reviewPlanDraft.objective === 'COMPARE'" class="config-reason config-reason--warning">
-                  <el-icon><WarningFilled /></el-icon>
-                  参照比对目标强制使用参考文件，未上传参考文件将无法提交。
-                </div>
+            <!-- 审查点及核心目的（非 RULE_ONLY） -->
+            <div v-if="entryModule !== 'RULE_ONLY'" class="config-section">
+              <div class="config-section-label">
+                <span class="section-label-num">2</span>
+                审查点与核心目的
+                <el-tag v-if="selectedReviewPoints.length > 0" size="small" type="info" style="margin-left: auto">{{ selectedReviewPoints.length }}项</el-tag>
               </div>
-            </template>
+              <div class="sub-area">
+                <div class="review-points-section">
+                <h4 class="section-label">
+                  审查点选择 (可多选)
+                  <el-tag v-if="preAnalysisData.llmAnalyzed" type="success" size="small">AI推荐</el-tag>
+                </h4>
+                <el-checkbox-group v-model="selectedReviewPoints" class="review-points-group">
+                  <el-tooltip
+                    v-for="point in allSuggestedReviewPoints"
+                    :key="point"
+                    :content="point"
+                    placement="top"
+                    :show-after="300"
+                  >
+                    <el-checkbox :label="point" :value="point" border class="review-point-checkbox"></el-checkbox>
+                  </el-tooltip>
+                </el-checkbox-group>
+              </div>
+              </div>
+              <div class="sub-area sub-area--alt">
+              <div class="review-purposes-section">
+                <h4 class="section-label">
+                  审查核心目的 (可自定义)
+                  <el-tag v-if="preAnalysisData.llmAnalyzed" type="success" size="small">AI推荐</el-tag>
+                </h4>
+                <div v-for="(purpose, index) in customPurposes" :key="index" class="purpose-row">
+                  <el-autocomplete v-model="purpose.value" :fetch-suggestions="querySearchCorePurposes" placeholder="搜索或输入新目的" class="w-full" trigger-on-focus></el-autocomplete>
+                  <el-button type="primary" link @click="removePurpose(index)" class="remove-btn">
+                    <el-icon><RemoveFilled /></el-icon>
+                  </el-button>
+                </div>
+                <el-button type="primary" link @click="addPurpose" class="add-purpose-btn">
+                  <el-icon><CirclePlusFilled /></el-icon>
+                  添加目的
+                </el-button>
+              </div>
+              </div>
+            </div>
 
-            <template v-if="showExecutionProfileSection && entryModule !== 'RULE_ONLY'">
-              <div class="config-section">
-                <div class="config-section-label">
-                  <span class="section-label-num">4</span>
-                  执行方式
+            <!-- 证据源 / 检查项目 -->
+            <div v-if="showEvidenceSection" class="config-section">
+              <div class="config-section-label">
+                <span class="section-label-num">3</span>
+                {{ entryModule === 'RULE_ONLY' ? '检查项目' : '审查依据' }}
+                <el-tag v-if="reviewPlanDraft.evidence.sources.length > 0 || enabledRulePrefixes.length > 0" size="small" type="info" style="margin-left: auto">
+                  {{ entryModule === 'RULE_ONLY' ? enabledRulePrefixes.length + '项' : reviewPlanDraft.evidence.sources.length + '个来源' }}
+                </el-tag>
+              </div>
+              <!-- RULE_ONLY: 规则前缀开关面板 -->
+              <template v-if="entryModule === 'RULE_ONLY'">
+                <div v-if="!ruleRegistryLoaded" class="rule-prefix-panel" style="padding: 20px; text-align: center; color: #94a3b8;">
+                  <el-icon class="is-loading" :size="24"><Loading /></el-icon>
+                  <span style="margin-left: 8px;">加载检查项目...</span>
                 </div>
-                <div class="execution-options">
-                  <div
-                    class="execution-option"
-                    :class="{ 'execution-option--active': reviewPlanDraft.execution.profile === 'HYBRID' }"
-                    @click="reviewPlanDraft.execution.profile = 'HYBRID'"
-                  >
-                    <el-icon :size="16"><MagicStick /></el-icon>
-                    <span>标准执行</span>
-                    <span class="execution-option__badge">AI + 规则</span>
+                <div v-else class="rule-prefix-panel">
+                  <div v-for="group in rulePrefixGroups" :key="group.title" class="rule-prefix-group">
+                    <div class="rule-prefix-group__header" @click="toggleGroup(group.items.map((i: any) => i.prefix), !group.items.every((item: any) => enabledRulePrefixes.includes(item.prefix)))">
+                      <el-icon :size="14"><component :is="group.icon" /></el-icon>
+                      <span class="rule-prefix-group__title">{{ group.title }}</span>
+                      <span class="rule-prefix-group__count">{{ group.items.filter((i: any) => enabledRulePrefixes.includes(i.prefix)).length }}/{{ group.items.length }}</span>
+                      <el-checkbox :model-value="group.items.every((item: any) => enabledRulePrefixes.includes(item.prefix))" :indeterminate="group.items.some((item: any) => enabledRulePrefixes.includes(item.prefix)) && !group.items.every((item: any) => enabledRulePrefixes.includes(item.prefix))" size="small" @click.stop @change="(val: boolean | string | number) => toggleGroup(group.items.map((i: any) => i.prefix), !!val)" />
+                    </div>
+                    <div class="rule-prefix-group__items">
+                      <div v-for="item in group.items" :key="item.prefix" class="rule-prefix-item" :class="{ 'rule-prefix-item--active': enabledRulePrefixes.includes(item.prefix) }" @click="togglePrefix(item.prefix)">
+                        <div class="rule-prefix-item__info">
+                          <span class="rule-prefix-item__label">{{ item.label }}</span>
+                          <span class="rule-prefix-item__desc">{{ item.description }}</span>
+                        </div>
+                        <el-checkbox :model-value="enabledRulePrefixes.includes(item.prefix)" size="small" />
+                      </div>
+                    </div>
                   </div>
-                  <div
-                    class="execution-option"
-                    :class="{ 'execution-option--active': reviewPlanDraft.execution.profile === 'RULE_ONLY' }"
-                    @click="reviewPlanDraft.execution.profile = 'RULE_ONLY'"
-                  >
-                    <el-icon :size="16"><Check /></el-icon>
-                    <span>仅规则执行</span>
-                    <span class="execution-option__badge">快速</span>
+                </div>
+              </template>
+              <!-- 其他模式：证据源卡片 -->
+              <template v-else-if="entryModule !== 'DOC_REVIEW'">
+                <div class="evidence-cards">
+                  <div v-for="option in availableEvidenceSources" :key="option.value" class="selectable-card selectable-card--compact" :class="{ 'selectable-card--active': reviewPlanDraft.evidence.sources.includes(option.value), 'selectable-card--disabled': isEvidenceLocked(option.value) }" @click="handleEvidenceCardClick(option.value)" tabindex="0" role="button" @keydown.enter="handleEvidenceCardClick(option.value)">
+                    <div class="selectable-card__icon">
+                      <el-icon :size="14"><component :is="evidenceIconMap[option.value]" /></el-icon>
+                    </div>
+                    <span class="selectable-card__label">{{ option.label }}</span>
+                    <div class="selectable-card__check" v-if="reviewPlanDraft.evidence.sources.includes(option.value)">
+                      <el-icon><Check /></el-icon>
+                    </div>
                   </div>
+                </div>
+                <div v-if="reviewPlanDraft.evidence.sources.includes('STANDARD')" class="selected-items-display">
+                  <div class="selected-items-header">
+                    <span class="selected-items-count">已选 {{ reviewPlanDraft.evidence.knowledgeCategoryIds.length }} 个知识库</span>
+                    <el-button type="primary" link size="small" @click="openKnowledgeDialog">管理</el-button>
+                  </div>
+                  <div v-if="reviewPlanDraft.evidence.knowledgeCategoryIds.length > 0" class="selected-items-tags">
+                    <el-tag v-for="id in reviewPlanDraft.evidence.knowledgeCategoryIds" :key="id" closable type="info" size="small" @close="removeKnowledgeCategory(id)">{{ getKnowledgeCategoryName(id) }}</el-tag>
+                  </div>
+                </div>
+                <div v-if="reviewPlanDraft.evidence.sources.includes('REVIEW_SPECIFICATION')" class="selected-items-display">
+                  <div class="selected-items-header">
+                    <span class="selected-items-count">{{ reviewPlanDraft.evidence.reviewSpecificationId ? '已选择' : '未选择' }}语义规范库</span>
+                    <el-button type="primary" link size="small" @click="openReviewSpecificationDialog">选择</el-button>
+                  </div>
+                  <div v-if="reviewPlanDraft.evidence.reviewSpecificationId" class="selected-item-single">
+                    <el-tag closable type="info" size="small" @close="reviewPlanDraft.evidence.reviewSpecificationId = null">{{ getReviewSpecificationName(reviewPlanDraft.evidence.reviewSpecificationId) }}</el-tag>
+                  </div>
+                </div>
+              </template>
+              <div v-if="entryModule === 'DOC_REVIEW' && reviewPlanDraft.objective === 'COMPARE'" class="config-reason config-reason--warning">
+                <el-icon><WarningFilled /></el-icon>
+                参照比对目标强制使用参考文件，未上传参考文件将无法提交。
+              </div>
+            </div>
+
+            <!-- 执行方式 -->
+            <div v-if="showExecutionProfileSection && entryModule !== 'RULE_ONLY'" class="config-section">
+              <div class="config-section-label">
+                <span class="section-label-num">4</span>
+                执行方式
+              </div>
+              <div class="execution-options">
+                <div class="selectable-card selectable-card--inline" :class="{ 'selectable-card--active': reviewPlanDraft.execution.profile === 'HYBRID' }" @click="reviewPlanDraft.execution.profile = 'HYBRID'" tabindex="0" role="button" @keydown.enter="reviewPlanDraft.execution.profile = 'HYBRID'">
+                  <el-icon :size="14"><MagicStick /></el-icon>
+                  <span>标准执行</span>
+                  <span class="execution-option__badge">AI + 规则</span>
+                </div>
+                <div class="selectable-card selectable-card--inline" :class="{ 'selectable-card--active': reviewPlanDraft.execution.profile === 'RULE_ONLY' }" @click="reviewPlanDraft.execution.profile = 'RULE_ONLY'" tabindex="0" role="button" @keydown.enter="reviewPlanDraft.execution.profile = 'RULE_ONLY'">
+                  <el-icon :size="14"><Check /></el-icon>
+                  <span>仅规则执行</span>
+                  <span class="execution-option__badge">快速</span>
                 </div>
               </div>
-            </template>
+            </div>
           </div>
         </div>
-
       </div>
     </div>
 
@@ -430,11 +353,13 @@
     </el-button>
     <el-button
       type="primary"
+      :disabled="!canSubmit"
       @click="startAnalysis"
       class="action-btn action-btn--primary"
+      :class="{ 'action-btn--disabled': !canSubmit }"
     >
       <el-icon><MagicStick /></el-icon>
-      开始分析
+      {{ canSubmit ? '开始分析' : '请完善配置' }}
     </el-button>
   </div>
 </template>
@@ -442,18 +367,19 @@
 <script setup lang="ts">
 import { ref, reactive, computed, watch, onMounted, nextTick } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import type { UploadFile, FormInstance, FormRules } from 'element-plus'
 import {
   Check, MagicStick, WarningFilled,
   RemoveFilled, CirclePlusFilled, Document, Link,
-  Loading, ArrowUp, EditPen, DataAnalysis, FolderOpened, Files,
-  Connection, Monitor,
+  Loading, ArrowUp, EditPen, DataAnalysis, Files,
+  Connection, Monitor, CircleCheck,
 } from '@element-plus/icons-vue'
 import { createTaskApi, preAnalyzeApi, uploadOnlyApi, exportTaskReportApi, exportTaskReportWordApi } from '@/api/task'
 import type { ReviewPlan, ReviewObjective, ReviewEvidenceSource } from '@/types/models'
 import { getAllKnowledgeCategoriesApi, getKnowledgeTreeApi } from '@/api/knowledge-category'
 import { getRuleLibrariesApi } from '@/api/rule-library'
+import { getRuleRegistryApi, type RuleGroupMeta, type RuleMetaItem } from '@/api/system'
 import { useUserStore } from '@/stores/user'
 import SmartReviewUploadStep from './components/SmartReviewUploadStep.vue'
 import SmartReviewKnowledgeDialog from './components/SmartReviewKnowledgeDialog.vue'
@@ -501,7 +427,18 @@ const preAnalysisData = reactive({
   potentialParties: [] as string[],
   suggestedReviewPoints: [] as string[],
   suggestedCorePurposes: [] as string[],
-  llmAnalyzed: false,  // 新增：标记是否经过真实AI分析
+  llmAnalyzed: false,
+})
+
+const aiSuggestedTitle = computed(() => {
+  if (!preAnalyzed.value || form.title) return ''
+  if (preAnalysisData.noResultReason) return ''
+  const type = preAnalysisData.contractType
+  const firstFile = fileList.value[0]?.name?.replace(/\.[^.]+$/, '') || ''
+  if (type && firstFile) return `${firstFile}-${type}审查`
+  if (type) return `${type}智能审查`
+  if (firstFile) return `${firstFile}-文件合规审查`
+  return ''
 })
 
 let preAnalyzeTimer: ReturnType<typeof setTimeout> | null = null
@@ -972,51 +909,25 @@ const defaultEnabledPrefixes = [
   'DWG_TITLE', 'DWG_LAYER', 'DWG_DIM', 'DWG_STDREF', 'DWG_SCALE', 'DWG_OVERLAP',
 ]
 
-const enabledRulePrefixes = ref<string[]>([...defaultEnabledPrefixes])
+const enabledRulePrefixes = ref<string[]>([])
 
-const RULE_PREFIX_GROUPS = [
-  {
-    title: '文件规范',
-    icon: 'FolderOpened',
-    items: [
-      { prefix: 'NAME', label: '命名规范', desc: '文件名格式、版本号、特殊字符检查' },
-      { prefix: 'FORMAT', label: '格式规范', desc: '文档排版、字体、段落格式检查' },
-      { prefix: 'LAYOUT', label: '排版布局', desc: '布局结构、缩进、对齐方式检查' },
-    ],
-  },
-  {
-    title: '内容规范',
-    icon: 'EditPen',
-    items: [
-      { prefix: 'HEADER', label: '页眉规范', desc: '页眉内容、格式一致性检查' },
-      { prefix: 'PAGE', label: '页码规范', desc: '页码连续性、格式正确性检查' },
-      { prefix: 'CODE', label: '编码规范', desc: '编码规则、编号一致性检查' },
-      { prefix: 'UNIT', label: '单位规范', desc: '计量单位使用规范性检查' },
-      { prefix: 'ATTR', label: '属性规范', desc: '文档属性、元数据完整性检查' },
-      { prefix: 'TYPO', label: '术语一致性', desc: '专业术语使用是否统一检查' },
-    ],
-  },
-  {
-    title: '逻辑验证',
-    icon: 'List',
-    items: [
-      { prefix: 'CONSIST', label: '一致性检查', desc: '前后参数、数据逻辑一致性检查' },
-      { prefix: 'COMPL', label: '完整性检查', desc: '必填项、关键内容是否缺失检查' },
-    ],
-  },
-  {
-    title: '图纸审查 (DWG)',
-    icon: 'DataAnalysis',
-    items: [
-      { prefix: 'DWG_TITLE', label: '标题规范', desc: '图签、标题栏格式内容检查' },
-      { prefix: 'DWG_LAYER', label: '图层规范', desc: '图层命名、颜色、线型规范性检查' },
-      { prefix: 'DWG_DIM', label: '标注规范', desc: '尺寸标注样式和规范性检查' },
-      { prefix: 'DWG_STDREF', label: '标准引用', desc: '图纸引用的标准有效性检查' },
-      { prefix: 'DWG_SCALE', label: '比例规范', desc: '图幅比例设置正确性检查' },
-      { prefix: 'DWG_OVERLAP', label: '重叠检查', desc: '图元重叠、干涉问题检查' },
-    ],
-  },
-]
+const rulePrefixGroups = ref<RuleGroupMeta[]>([])
+const ruleRegistryLoaded = ref(false)
+
+async function loadRuleRegistry() {
+  try {
+    const { data } = await getRuleRegistryApi()
+    rulePrefixGroups.value = data.groups || []
+    if (!enabledRulePrefixes.value.length && data.allPrefixes?.length) {
+      enabledRulePrefixes.value = [...data.allPrefixes]
+    }
+    ruleRegistryLoaded.value = true
+    console.log(`[SmartReview] 规则注册表加载成功: ${data.total} 项, ${data.groups?.length || 0} 组`)
+  } catch (e) {
+    console.warn('[SmartReview] 规则注册表加载失败，使用空列表:', e)
+    ruleRegistryLoaded.value = true
+  }
+}
 
 const reviewPlanPayload = computed<ReviewPlan>(() => {
   return {
@@ -1104,15 +1015,19 @@ const openKnowledgeDialog = () => {
 const openReviewSpecificationDialog = async () => {
   reviewSpecificationDialogVisible.value = true
   try {
-    const specRes = await getReviewSpecificationsApi()
+    const specRes = await getRuleLibrariesApi()
+    console.log('[SmartReview] API response:', specRes)
+    console.log('[SmartReview] specRes.data type:', typeof specRes.data, Array.isArray(specRes.data))
+    console.log('[SmartReview] specRes.data content:', JSON.stringify(specRes.data))
     reviewSpecifications.value = (specRes.data || []).map((l: any) => ({
       id: l.id,
       name: l.name,
       status: l.status || 'DRAFT',
       description: l.description || '',
       itemCount: l._count?.items || l.items?.length || 0,
-      executableCount: l.executableItemCount || 0,
+      executableCount: l.enabledExecutableItemCount || l.executableItemCount || 0,
     }))
+    console.log('[SmartReview] reviewSpecifications.value:', reviewSpecifications.value)
   } catch (e) {
     console.warn('[SmartReview] 刷新语义规范库列表失败:', e)
   }
@@ -1290,8 +1205,16 @@ const addPurpose = () => {
 }
 
 const removePurpose = (index: number) => {
-  customPurposes.value.splice(index, 1)
+  if (customPurposes.value.length <= 1) {
+    ElMessage.warning('至少保留一个目的输入框')
+    return
+  }
+  ElMessageBox.confirm('确认删除该审查目的？', '提示', { confirmButtonText: '确定', cancelButtonText: '取消', type: 'warning' })
+    .then(() => { customPurposes.value.splice(index, 1) })
+    .catch(() => {})
 }
+
+
 
 const querySearchCorePurposes = (queryString: string, cb: any) => {
   const results = queryString
@@ -1446,10 +1369,11 @@ onMounted(async () => {
   }
   
   try {
-    const [catRes, treeRes, specRes] = await Promise.all([
+    const [catRes, treeRes, specRes, ruleRegRes] = await Promise.all([
       getAllKnowledgeCategoriesApi(),
       getKnowledgeTreeApi(),
       getRuleLibrariesApi(),
+      getRuleRegistryApi(),
     ])
     knowledgeCategories.value = (catRes.data || []).map((c: any) => ({ id: c.id, name: c.name }))
     knowledgeTreeData.value = treeRes.data || []
@@ -1466,6 +1390,15 @@ onMounted(async () => {
     console.log('[SmartReview] 知识库树形结构加载成功:', knowledgeTreeData.value.length, '个根节点')
     console.log('[SmartReview] 语义规范库列表加载成功:', reviewSpecifications.value.length, '个')
     console.log('[SmartReview] 语义规范库详情:', JSON.stringify(reviewSpecifications.value, null, 2))
+    
+    if (ruleRegRes.data) {
+      rulePrefixGroups.value = ruleRegRes.data.groups || []
+      if (!enabledRulePrefixes.value.length && ruleRegRes.data.allPrefixes?.length) {
+        enabledRulePrefixes.value = [...ruleRegRes.data.allPrefixes]
+      }
+      ruleRegistryLoaded.value = true
+      console.log(`[SmartReview] 规则注册表加载成功: ${ruleRegRes.data.total} 项, ${ruleRegRes.data.groups?.length || 0} 组`)
+    }
     
   } catch (e) {
     console.warn('[SmartReview] 加载知识库/语义规范库列表失败:', e)
@@ -1547,19 +1480,19 @@ onMounted(async () => {
 
 /* 主容器 */
 .smart-review {
-  max-width: 1200px;
+  width: 600px;
+  height: 1000px;
   margin: 0 auto;
-  padding: 16px 20px;
+  padding: 16px 32px;
   position: relative;
-  min-height: calc(100vh - 140px);
 }
 
 
 
 /* 确认步骤 */
 .confirm-step {
-  max-width: 1000px;
   margin: 0 auto;
+  padding-bottom: 80px;
 }
 
 /* 后台上传/预分析状态横幅 */
@@ -1578,203 +1511,259 @@ onMounted(async () => {
 }
 
 .title-input-section {
-  margin-bottom: 20px;
+  margin-bottom: 16px;
 }
 
-.upload-success {
-  text-align: center;
-  margin-bottom: 32px;
-}
-
-.success-text {
-  font-size: 16px;
-  color: #111827;
-  margin: 0 0 8px;
-}
-
-.file-name {
-  font-weight: 700;
-  color: #3B82F6;
-}
-
-.ai-hint {
+.title-label {
+  display: block;
   font-size: 14px;
-  color: #6B7280;
-  margin: 0;
-}
-
-.type-text {
-  font-weight: 700;
-  color: #111827;
-}
-
-/* 配置网格 */
-.config-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
-  gap: 24px;
-  margin-bottom: 24px;
-}
-
-.config-panel {
-  background: white;
-  border-radius: 12px;
-  padding: 24px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
-  border: 1px solid #E5E7EB;
-}
-
-.config-panel .panel-title {
-  font-size: 18px;
-  font-weight: 700;
-  color: #111827;
-  margin: 0 0 8px;
-}
-
-.config-panel .panel-desc {
-  font-size: 14px;
-  color: #6B7280;
-  margin: 0 0 16px;
-}
-
-/* 审查选项面板 */
-.review-options-panel {
-  background: white;
-  border-radius: 12px;
-  padding: 24px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
-  border: 1px solid #E5E7EB;
-  margin-bottom: 24px;
-}
-
-.review-options-panel .panel-title {
-  font-size: 18px;
-  font-weight: 700;
-  color: #111827;
-  margin: 0 0 20px;
-}
-
-.review-points-section {
-  margin-bottom: 24px;
-}
-
-.section-label {
-  font-size: 15px;
   font-weight: 600;
-  color: #111827;
-  margin: 0 0 12px;
-}
-
-.review-points-group {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 12px;
-}
-
-.review-points-group :deep(.el-checkbox) {
-  margin-right: 0;
-}
-
-.review-purposes-section .purpose-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
+  color: #374151;
   margin-bottom: 8px;
 }
 
-.remove-btn {
+.required-mark {
   color: #EF4444;
-  padding: 4px;
+  margin-left: 2px;
+  font-weight: 700;
 }
 
-.add-purpose-btn {
+.ai-fill-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 3px 10px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #2563EB;
+  background: #EFF6FF;
+  border: 1px solid #BFDBFE;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.ai-fill-btn:hover {
+  background: #DBEAFE;
+  border-color: #93C5FD;
+  color: #1D4ED8;
+}
+
+.ai-suggestion-preview {
+  display: flex;
+  align-items: center;
+  gap: 6px;
   margin-top: 8px;
+  padding: 8px 12px;
+  background: linear-gradient(135deg, #F0FDF4, #ECFDF5);
+  border: 1px solid #BBF7D0;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.18s ease;
+  font-size: 13px;
+  color: #374151;
+}
+
+.ai-suggestion-preview:hover {
+  background: linear-gradient(135deg, #DCFCE7, #D1FAE5);
+  border-color: #86EFAC;
+}
+
+.ai-suggestion-preview .el-icon {
+  color: #10B981;
+  font-size: 14px;
+}
+
+.suggestion-text {
+  font-weight: 600;
+  color: #059669;
+}
+
+.suggestion-action {
+  margin-left: auto;
+  font-size: 11px;
   color: #3B82F6;
+  font-weight: 600;
+  white-space: nowrap;
 }
 
-/* ========== 新流程配置面板（美化版）========== */
-.review-items-section {
-  background: white;
-  border-radius: 16px;
-  padding: 0;
-  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.06);
-  border: 1px solid #E5E7EB;
-  overflow: hidden;
-}
-
-.review-flow-header {
+.upload-status-bar {
   display: flex;
   align-items: center;
   gap: 16px;
-  padding: 20px 24px;
-  background: linear-gradient(135deg, #F0F5FF 0%, #EFF6FF 50%, #F0FDF4 100%);
-  border-bottom: 1px solid #E0E7FF;
+  padding: 8px 14px;
+  margin-bottom: 18px;
+  background: #F8FAFC;
+  border-radius: 8px;
+  border: 1px solid #E2E8F0;
+  font-size: 13px;
 }
 
-.review-flow-header-icon {
-  width: 44px;
-  height: 44px;
-  border-radius: 12px;
-  background: linear-gradient(135deg, #3B82F6 0%, #6366F1 100%);
+.status-file-count {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  color: #374151;
+  font-weight: 600;
+}
+
+.status-loading {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  color: #D97706;
+  font-size: 12px;
+}
+
+.status-done {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  color: #059669;
+  font-weight: 600;
+  font-size: 12px;
+  padding: 1px 8px;
+  background: #ECFDF5;
+  border-radius: 4px;
+}
+
+/* ========== 统一可选中卡片组件（替代 objective-card / evidence-card / execution-option）========== */
+.selectable-card {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 14px 16px;
+  border: 2px solid #E2E8F0;
+  border-radius: 10px;
+  background: #FAFBFC;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  user-select: none;
+}
+
+.selectable-card:hover:not(.selectable-card--disabled) {
+  border-color: #93C5FD;
+  background: white;
+  box-shadow: 0 2px 8px rgba(59, 130, 246, 0.08);
+}
+
+.selectable-card--active {
+  border-color: #3B82F6;
+  background: linear-gradient(135deg, #EFF6FF 0%, #F0F4FF 100%);
+  box-shadow: 0 2px 12px rgba(59, 130, 246, 0.12);
+}
+
+.selectable-card--disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.selectable-card:focus-visible {
+  outline: 2px solid #3B82F6;
+  outline-offset: 2px;
+}
+
+/* 紧凑变体：用于证据源等小卡片 */
+.selectable-card--compact {
+  padding: 10px 14px;
+  flex: 1;
+  min-width: 120px;
+}
+
+/* 内联变体：用于执行方式 */
+.selectable-card--inline {
+  flex: 1;
+  justify-content: center;
+}
+
+.selectable-card__icon {
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  background: #E0E7FF;
+  color: #4F46E5;
   display: flex;
   align-items: center;
   justify-content: center;
-  color: white;
   flex-shrink: 0;
-  box-shadow: 0 4px 12px rgba(59, 130, 246, 0.3);
+  transition: all 0.2s ease;
 }
 
-.review-flow-header-content {
+.selectable-card--active .selectable-card__icon {
+  background: linear-gradient(135deg, #3B82F6, #2563EB);
+  color: white;
+  box-shadow: 0 2px 6px rgba(59, 130, 246, 0.25);
+}
+
+.selectable-card__content {
   flex: 1;
   min-width: 0;
 }
 
-.review-flow-header-content .review-item-title {
-  font-size: 17px;
-  font-weight: 700;
+.selectable-card__label {
+  font-size: 14px;
+  font-weight: 600;
   color: #1E293B;
-  margin-bottom: 2px;
 }
 
-.review-flow-header-content .review-item-desc {
-  font-size: 13px;
-  color: #64748B;
-  margin: 0;
+.selectable-card__desc {
+  font-size: 12px;
+  color: #94A3B8;
+  line-height: 1.4;
+  margin-top: 1px;
 }
 
-.review-flow-switch {
+.selectable-card__check {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: #3B82F6;
+  color: white;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
   flex-shrink: 0;
+  animation: checkPop 0.25s ease;
 }
-
-.review-item-config {
-  padding: 20px 24px 24px;
+/* ========== 折叠面板配置区 ========== */
+.review-items-section {
+  background: white;
+  border-radius: 12px;
+  padding: 4px;
+  box-shadow: 0 1px 6px rgba(0, 0, 0, 0.06);
+  border: 1px solid #E5E7EB;
+  width: 550px;
 }
 
 .config-section {
-  margin-bottom: 24px;
+  padding: 18px 0;
+  border-bottom: 1px solid #F1F5F9;
 }
 
 .config-section:last-child {
-  margin-bottom: 0;
+  border-bottom: none;
+  padding-bottom: 4px;
 }
 
 .config-section-label {
   display: flex;
   align-items: center;
   gap: 10px;
-  font-size: 15px;
+  font-size: 14px;
   font-weight: 700;
   color: #1E293B;
-  margin-bottom: 14px;
+  margin-bottom: 12px;
 }
 
 .section-label-num {
-  width: 24px;
-  height: 24px;
+  width: 22px;
+  height: 22px;
   border-radius: 6px;
-  background: linear-gradient(135deg, #3B82F6, #6366F1);
+  background: linear-gradient(135deg, #3B82F6, #2563EB);
   color: white;
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 700;
   display: flex;
   align-items: center;
@@ -1782,86 +1771,82 @@ onMounted(async () => {
   line-height: 1;
 }
 
-.objective-cards {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-  gap: 12px;
-}
-
-.objective-card {
-  position: relative;
-  display: flex;
-  align-items: flex-start;
-  gap: 12px;
-  padding: 16px;
-  border: 2px solid #E2E8F0;
-  border-radius: 12px;
+/* 子区域背景区分 */
+.sub-area {
+  padding: 12px 14px;
+  border-radius: 8px;
   background: #FAFBFC;
-  cursor: pointer;
-  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+  margin-bottom: 10px;
 }
 
-.objective-card:hover {
-  border-color: #93C5FD;
-  background: white;
-  box-shadow: 0 4px 12px rgba(59, 130, 246, 0.08);
-  transform: translateY(-1px);
+.sub-area--alt {
+  background: #F8FAFC;
+  margin-bottom: 0;
 }
 
-.objective-card--active {
-  border-color: #3B82F6;
-  background: linear-gradient(135deg, #EFF6FF 0%, #F0F4FF 100%);
-  box-shadow: 0 4px 16px rgba(59, 130, 246, 0.15);
+.review-points-section {
+  margin-bottom: 0;
 }
 
-.objective-card__icon {
-  width: 36px;
-  height: 36px;
-  border-radius: 10px;
-  background: #E0E7FF;
-  color: #4F46E5;
+.section-label {
   display: flex;
   align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-  transition: all 0.25s ease;
-}
-
-.objective-card--active .objective-card__icon {
-  background: linear-gradient(135deg, #3B82F6, #6366F1);
-  color: white;
-  box-shadow: 0 2px 8px rgba(59, 130, 246, 0.3);
-}
-
-.objective-card__content {
-  flex: 1;
-  min-width: 0;
-}
-
-.objective-card__label {
-  font-size: 14px;
+  gap: 6px;
+  font-size: 13px;
   font-weight: 600;
-  color: #1E293B;
-  margin-bottom: 2px;
+  color: #374151;
+  margin: 0 0 10px;
 }
 
-.objective-card__desc {
-  font-size: 12px;
-  color: #94A3B8;
+.review-points-group {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.review-points-group :deep(.el-checkbox) {
+  margin-right: 0;
+  max-width: 100%;
+}
+
+.review-point-checkbox :deep(.el-checkbox__label) {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   line-height: 1.4;
 }
 
-.objective-card__check {
-  width: 22px;
-  height: 22px;
-  border-radius: 50%;
-  background: linear-gradient(135deg, #3B82F6, #6366F1);
-  color: white;
+.review-purposes-section .purpose-row {
   display: flex;
   align-items: center;
-  justify-content: center;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.remove-btn {
+  color: #94A3B8;
+  padding: 2px;
   flex-shrink: 0;
-  animation: checkPop 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  opacity: 0;
+  transition: opacity 0.15s ease, color 0.15s ease;
+}
+
+.purpose-row:hover .remove-btn {
+  opacity: 1;
+  color: #EF4444;
+}
+
+.add-purpose-btn {
+  margin-top: 6px;
+  color: #3B82F6;
+  font-size: 13px;
+}
+
+/* 目标选择网格 */
+.objective-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 10px;
 }
 
 @keyframes checkPop {
@@ -1870,168 +1855,36 @@ onMounted(async () => {
   100% { transform: scale(1); }
 }
 
-.rule-review-toggle {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 14px 16px;
-  background: #FAFBFC;
-  border: 1px solid #E2E8F0;
-  border-radius: 10px;
-  margin-bottom: 14px;
-  transition: all 0.2s ease;
-}
-
-.rule-review-toggle:hover {
-  background: #F5F7FA;
-  border-color: #D1D5DB;
-}
-
-.rule-review-toggle__info {
-  flex: 1;
-}
-
-.rule-review-toggle__info .review-item-title {
-  font-size: 14px;
-  margin-bottom: 2px;
-}
-
-.rule-review-toggle__info .review-item-desc {
-  font-size: 12px;
-}
-
+/* 证据源卡片容器 */
 .evidence-cards {
   display: flex;
-  gap: 10px;
+  gap: 8px;
   flex-wrap: wrap;
 }
 
-.evidence-card {
-  position: relative;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 12px 16px;
-  border: 2px solid #E2E8F0;
-  border-radius: 10px;
-  background: #FAFBFC;
-  cursor: pointer;
-  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
-  user-select: none;
-  flex: 1;
-  min-width: 140px;
-}
-
-.evidence-card:hover:not(.evidence-card--disabled) {
-  border-color: #93C5FD;
-  background: white;
-  box-shadow: 0 2px 8px rgba(59, 130, 246, 0.08);
-}
-
-.evidence-card--active {
-  border-color: #3B82F6;
-  background: linear-gradient(135deg, #EFF6FF 0%, #F0F4FF 100%);
-  box-shadow: 0 2px 12px rgba(59, 130, 246, 0.12);
-}
-
-.evidence-card--disabled {
-  opacity: 0.45;
-  cursor: not-allowed;
-}
-
-.evidence-card__icon {
-  color: #94A3B8;
-  transition: color 0.2s ease;
-}
-
-.evidence-card--active .evidence-card__icon {
-  color: #3B82F6;
-}
-
-.evidence-card__label {
-  font-size: 14px;
-  font-weight: 600;
-  color: #475569;
-  flex: 1;
-}
-
-.evidence-card--active .evidence-card__label {
-  color: #1D4ED8;
-}
-
-.evidence-card__check {
-  width: 18px;
-  height: 18px;
-  border-radius: 50%;
-  background: linear-gradient(135deg, #3B82F6, #6366F1);
-  color: white;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 11px;
-  animation: checkPop 0.25s cubic-bezier(0.4, 0, 0.2, 1);
-}
-
 .rule-library-select {
-  margin-top: 12px;
-  padding: 12px;
+  margin-top: 10px;
+  padding: 10px;
   background: #F8FAFC;
-  border-radius: 10px;
+  border-radius: 8px;
   border: 1px dashed #CBD5E1;
 }
 
 .execution-options {
   display: flex;
-  gap: 10px;
-}
-
-.execution-option {
-  flex: 1;
-  display: flex;
-  align-items: center;
-  justify-content: center;
   gap: 8px;
-  padding: 14px 16px;
-  border: 2px solid #E2E8F0;
-  border-radius: 10px;
-  background: #FAFBFC;
-  cursor: pointer;
-  font-size: 14px;
-  font-weight: 600;
-  color: #64748B;
-  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
-  user-select: none;
-}
-
-.execution-option:hover:not(.execution-option--disabled) {
-  border-color: #93C5FD;
-  color: #3B82F6;
-  background: white;
-}
-
-.execution-option--active {
-  border-color: #3B82F6;
-  background: linear-gradient(135deg, #EFF6FF 0%, #DBEAFE 100%);
-  color: #1D4ED8;
-  box-shadow: 0 2px 10px rgba(59, 130, 246, 0.12);
-}
-
-.execution-option--disabled {
-  opacity: 0.45;
-  cursor: not-allowed;
 }
 
 .execution-option__badge {
   font-size: 10px;
-  font-weight: 700;
+  font-weight: 600;
   padding: 2px 6px;
   border-radius: 4px;
   background: #E0E7FF;
   color: #4338CA;
-  letter-spacing: 0.02em;
 }
 
-.execution-option--active .execution-option__badge {
+.selectable-card--active .execution-option__badge {
   background: #3B82F6;
   color: white;
 }
@@ -2245,473 +2098,6 @@ onMounted(async () => {
 .upload-ref-btn:hover {
   border-color: #3B82F6;
   background: #EFF6FF;
-}
-
-.compare-config-grid {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-}
-
-.config-row {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
-.config-row label {
-  font-size: 13px;
-  font-weight: 600;
-  color: #475569;
-}
-
-/* ========== CONSISTENCY：一致性配置 ========== */
-.consistency-config {
-  display: flex;
-  flex-direction: column;
-  gap: 20px;
-}
-
-.tolerance-setting {
-  padding: 16px;
-  background: #FAFBFC;
-  border-radius: 10px;
-  border: 1px solid #E2E8F0;
-}
-
-.setting-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 12px;
-}
-
-.setting-label {
-  font-size: 14px;
-  font-weight: 600;
-  color: #334155;
-}
-
-.setting-value {
-  font-size: 18px;
-  font-weight: 700;
-  color: #3B82F6;
-}
-
-.setting-hint {
-  margin-top: 10px;
-  font-size: 12px;
-  color: #94A3B8;
-  line-height: 1.5;
-}
-
-.dimension-setting .dimension-grid {
-  display: grid;
-  grid-template-columns: repeat(2, 1fr);
-  gap: 10px;
-}
-
-.dimension-item {
-  margin-right: 0 !important;
-}
-
-/* ========== MULTIMODAL：模态卡片 ========== */
-.modal-grid {
-  display: grid;
-  grid-template-columns: repeat(2, 1fr);
-  gap: 12px;
-}
-
-@media (max-width: 640px) {
-  .modal-grid {
-    grid-template-columns: 1fr;
-  }
-}
-
-.modal-card {
-  position: relative;
-  display: flex;
-  align-items: flex-start;
-  gap: 12px;
-  padding: 14px 16px;
-  border: 2px solid #E2E8F0;
-  border-radius: 12px;
-  background: #FAFBFC;
-  cursor: pointer;
-  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
-}
-
-.modal-card:hover {
-  border-color: #A5B4FC;
-  background: white;
-  transform: translateY(-2px);
-  box-shadow: 0 4px 12px rgba(99, 102, 241, 0.1);
-}
-
-.modal-card--active {
-  border-color: #6366F1;
-  background: linear-gradient(135deg, #EEF2FF 0%, #F0F4FF 100%);
-  box-shadow: 0 4px 16px rgba(99, 102, 241, 0.15);
-}
-
-.modal-card__icon {
-  width: 42px;
-  height: 42px;
-  border-radius: 10px;
-  background: #E0E7FF;
-  color: #6366F1;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-  transition: all 0.25s ease;
-}
-
-.modal-card--active .modal-card__icon {
-  background: linear-gradient(135deg, #6366F1, #8B5CF6);
-  color: white;
-  box-shadow: 0 2px 8px rgba(99, 102, 241, 0.3);
-}
-
-.modal-card__content {
-  flex: 1;
-  min-width: 0;
-}
-
-.modal-card__label {
-  font-size: 14px;
-  font-weight: 600;
-  color: #1E293B;
-  margin-bottom: 2px;
-}
-
-.modal-card__desc {
-  font-size: 11px;
-  color: #94A3B8;
-  line-height: 1.4;
-}
-
-.modal-card__check {
-  position: absolute;
-  top: 10px;
-  right: 10px;
-  width: 22px;
-  height: 22px;
-  border-radius: 50%;
-  background: linear-gradient(135deg, #6366F1, #8B5CF6);
-  color: white;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 12px;
-}
-
-.modal-hint {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  margin-top: 12px;
-  padding: 10px 14px;
-  background: #FEF3C7;
-  border-radius: 8px;
-  font-size: 12px;
-  color: #92400E;
-}
-
-/* ========== LIBRARY：合规等级 ========== */
-.compliance-level-cards {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 10px;
-}
-
-@media (max-width: 640px) {
-  .compliance-level-cards {
-    grid-template-columns: 1fr;
-  }
-}
-
-.compliance-card {
-  position: relative;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 10px;
-  padding: 16px 12px;
-  border: 2px solid #E2E8F0;
-  border-radius: 12px;
-  background: #FAFBFC;
-  cursor: pointer;
-  transition: all 0.25s ease;
-  text-align: center;
-}
-
-.compliance-card:hover {
-  border-color: #93C5FD;
-  background: white;
-}
-
-.compliance-card--active {
-  border-color: #3B82F6;
-  background: linear-gradient(135deg, #EFF6FF 0%, #DBEAFE 100%);
-  box-shadow: 0 4px 14px rgba(59, 130, 246, 0.15);
-}
-
-.compliance-card__icon {
-  width: 40px;
-  height: 40px;
-  border-radius: 50%;
-  background: #E0E7FF;
-  color: #6366F1;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  transition: all 0.25s ease;
-}
-
-.compliance-card--active .compliance-card__icon {
-  background: linear-gradient(135deg, #3B82F6, #2563EB);
-  color: white;
-  box-shadow: 0 3px 10px rgba(59, 130, 246, 0.3);
-}
-
-.compliance-card__content {
-  text-align: center;
-}
-
-.compliance-card__label {
-  font-size: 14px;
-  font-weight: 600;
-  color: #1E293B;
-}
-
-.compliance-card__desc {
-  font-size: 11px;
-  color: #94A3B8;
-  line-height: 1.4;
-}
-
-.compliance-card__check {
-  position: absolute;
-  top: 8px;
-  right: 8px;
-  width: 20px;
-  height: 20px;
-  border-radius: 50%;
-  background: #3B82F6;
-  color: white;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 11px;
-}
-
-/* ========== PROOFREAD：校对类型 ========== */
-.proofread-type-grid {
-  display: grid;
-  grid-template-columns: repeat(2, 1fr);
-  gap: 12px;
-}
-
-@media (max-width: 640px) {
-  .proofread-type-grid {
-    grid-template-columns: 1fr;
-  }
-}
-
-.proofread-type-card {
-  position: relative;
-  display: flex;
-  align-items: flex-start;
-  gap: 12px;
-  padding: 14px 16px;
-  border: 2px solid #E2E8F0;
-  border-radius: 12px;
-  background: #FAFBFC;
-  cursor: pointer;
-  transition: all 0.25s ease;
-}
-
-.proofread-type-card:hover {
-  border-color: #6EE7B7;
-  background: white;
-}
-
-.proofread-type-card--active {
-  border-color: #10B981;
-  background: linear-gradient(135deg, #ECFDF5 0%, #D1FAE5 100%);
-  box-shadow: 0 4px 14px rgba(16, 185, 129, 0.15);
-}
-
-.proofread-type-card__icon {
-  width: 36px;
-  height: 36px;
-  border-radius: 10px;
-  background: #D1FAE5;
-  color: #10B981;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-  transition: all 0.25s ease;
-}
-
-.proofread-type-card--active .proofread-type-card__icon {
-  background: linear-gradient(135deg, #10B981, #059669);
-  color: white;
-  box-shadow: 0 2px 8px rgba(16, 185, 129, 0.3);
-}
-
-.proofread-type-card__content {
-  flex: 1;
-  min-width: 0;
-}
-
-.proofread-type-card__label {
-  font-size: 14px;
-  font-weight: 600;
-  color: #1E293B;
-  margin-bottom: 2px;
-}
-
-.proofread-type-card__desc {
-  font-size: 11px;
-  color: #94A3B8;
-  line-height: 1.4;
-}
-
-.proofread-type-card__check {
-  position: absolute;
-  top: 10px;
-  right: 10px;
-  width: 20px;
-  height: 20px;
-  border-radius: 50%;
-  background: #10B981;
-  color: white;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 11px;
-}
-
-/* ========== RULE_ONLY：执行策略 ========== */
-.strategy-options {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-
-.strategy-card {
-  position: relative;
-  padding: 16px 18px;
-  border: 2px solid #E2E8F0;
-  border-radius: 12px;
-  background: #FAFBFC;
-  cursor: pointer;
-  transition: all 0.25s ease;
-}
-
-.strategy-card:hover {
-  border-color: #FBBF24;
-  background: white;
-}
-
-.strategy-card--active {
-  border-color: #F59E0B;
-  background: linear-gradient(135deg, #FFFBEB 0%, #FEF3C7 100%);
-  box-shadow: 0 4px 14px rgba(245, 158, 11, 0.15);
-}
-
-.strategy-card__header {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  margin-bottom: 6px;
-}
-
-.strategy-card__header .el-icon {
-  color: #F59E0B;
-  font-size: 20px;
-}
-
-.strategy-card--active .strategy-card__header .el-icon {
-  color: #D97706;
-}
-
-.strategy-card__title {
-  font-size: 15px;
-  font-weight: 700;
-  color: #1E293B;
-}
-
-.strategy-card__desc {
-  font-size: 13px;
-  color: #64748B;
-  line-height: 1.5;
-  margin-bottom: 6px;
-}
-
-.strategy-card__meta {
-  font-size: 11px;
-  color: #D97706;
-  font-weight: 600;
-  background: #FEF3C7;
-  display: inline-block;
-  padding: 3px 10px;
-  border-radius: 20px;
-}
-
-/* 高级选项 */
-.advanced-section {
-  margin-top: 16px;
-  border-top: 1px solid #E5E7EB;
-  padding-top: 12px;
-}
-
-.advanced-toggle {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  cursor: pointer;
-  font-size: 14px;
-  color: #6B7280;
-  user-select: none;
-}
-
-.advanced-toggle:hover {
-  color: #374151;
-}
-
-.manual-mode-hint {
-  margin-left: 8px;
-  font-size: 12px;
-  color: #F59E0B;
-  font-weight: 600;
-}
-
-.advanced-content {
-  margin-top: 12px;
-  padding: 16px;
-  background: #F9FAFB;
-  border-radius: 8px;
-  border: 1px solid #E5E7EB;
-}
-
-.advanced-hint {
-  font-size: 13px;
-  color: #6B7280;
-  margin: 0 0 12px;
-}
-
-.mode-radio-group {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.pre-analyzing {
-  padding: 24px;
 }
 
 /* 审查步骤 */
@@ -3033,14 +2419,13 @@ onMounted(async () => {
 
 /* 浮动操作按钮 - 固定右下角 */
 .floating-actions {
-  position: absolute;
-  bottom: 0;
-  right: 0;
+  position: fixed;
+  bottom: 24px;
+  right: 24px;
   display: flex;
-  gap: 12px;
+  gap: 10px;
   z-index: 100;
-  padding: 16px 24px;
-  background: transparent;
+  padding: 0;
 }
 
 .action-btn {
@@ -3051,13 +2436,13 @@ onMounted(async () => {
   font-weight: 600;
   padding: 10px 20px;
   border-radius: 10px;
-  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+  transition: all 0.2s ease;
   white-space: nowrap;
 }
 
-.action-btn:hover {
+.action-btn:hover:not(:disabled) {
   transform: translateY(-2px);
-  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.15);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12);
 }
 
 .action-btn:active {
@@ -3065,36 +2450,44 @@ onMounted(async () => {
 }
 
 .action-btn--secondary {
-  background: #F8FAFC;
+  background: white;
   border-color: #E2E8F0;
   color: #475569;
 }
 
 .action-btn--secondary:hover {
-  background: white;
+  background: #F8FAFC;
   border-color: #CBD5E1;
   color: #1E293B;
 }
 
 .action-btn--primary {
-  background: linear-gradient(135deg, #3B82F6 0%, #2563EB 100%);
-  border-color: transparent;
+  background: #3B82F6;
+  border-color: #3B82F6;
   color: white;
-  box-shadow: 0 4px 14px rgba(59, 130, 246, 0.35);
+  box-shadow: 0 2px 8px rgba(59, 130, 246, 0.3);
 }
 
-.action-btn--primary:hover {
-  background: linear-gradient(135deg, #2563EB 0%, #1D4ED8 100%);
-  box-shadow: 0 6px 20px rgba(59, 130, 246, 0.45);
+.action-btn--primary:hover:not(:disabled) {
+  background: #2563EB;
+  border-color: #2563EB;
+  box-shadow: 0 4px 14px rgba(59, 130, 246, 0.4);
+}
+
+.action-btn--disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+  background: #9CA3AF;
+  border-color: #9CA3AF;
+  box-shadow: none;
 }
 
 /* 响应式适配 */
 @media (max-width: 768px) {
   .floating-actions {
-    left: 0;
+    left: 12px;
+    right: 12px;
     justify-content: center;
-    padding: 12px 16px;
-    gap: 10px;
   }
 
   .action-btn {
@@ -3105,12 +2498,17 @@ onMounted(async () => {
   .action-btn .el-icon {
     display: none;
   }
+
+  .objective-cards {
+    grid-template-columns: 1fr;
+  }
 }
 
 @media (max-width: 480px) {
   .floating-actions {
-    padding: 10px 12px;
-    gap: 8px;
+    left: 8px;
+    right: 8px;
+    bottom: 16px;
   }
 
   .action-btn {

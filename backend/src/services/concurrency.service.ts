@@ -18,9 +18,10 @@ export class ConcurrencyService {
   static async getGlobalLimit(): Promise<number> {
     try {
       const prisma = (await import('../config/db')).default;
-      const cfg = await prisma.systemConfig.findUnique({ where: { key: 'global_concurrency_limit' } });
+      const cfg = await prisma.systemConfig.findUnique({ where: { key: 'basic_settings' } });
       if (cfg?.value && typeof cfg.value === 'object') {
-        return (cfg.value as any).limit || DEFAULT_GLOBAL_LIMIT;
+        const limit = (cfg.value as any).globalConcurrencyLimit;
+        if (typeof limit === 'number' && limit > 0) return limit;
       }
     } catch {}
     return DEFAULT_GLOBAL_LIMIT;

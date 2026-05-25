@@ -159,3 +159,29 @@ export function getStorageStatsApi() {
 export function cleanupFilesApi(days: number = 7) {
   return request.post<CleanupResult>(`/system/cleanup-files?days=${days}`)
 }
+
+// ==================== 规则注册表 ====================
+
+export interface RuleMetaItem {
+  prefix: string
+  label: string
+  description: string
+  group: string
+  icon: string
+}
+
+export interface RuleGroupMeta {
+  title: string
+  icon: string
+  items: RuleMetaItem[]
+}
+
+export interface RuleRegistryData {
+  groups: RuleGroupMeta[]
+  total: number
+  allPrefixes: string[]
+}
+
+export function getRuleRegistryApi() {
+  return request.get<RuleRegistryData>('/system/rule-registry')
+}

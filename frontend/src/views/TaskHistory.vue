@@ -46,8 +46,10 @@
         >
           <el-option label="以库审文" value="LIBRARY_REVIEW" />
           <el-option label="以文审文" value="DOC_REVIEW" />
+          <el-option label="全文一致性" value="CONSISTENCY" />
           <el-option label="错别字/语法" value="TYPO_GRAMMAR" />
           <el-option label="多模态识别" value="MULTIMODAL" />
+          <el-option label="自定义规则" value="CUSTOM_RULE" />
           <el-option label="标准引用自检" value="SELF_CHECK" />
         </el-select>
       </div>
@@ -194,7 +196,7 @@
             <span class="task-name-cell">{{ row.title }}</span>
           </template>
         </el-table-column>
-        <el-table-column label="审查摘要" min-width="220" show-overflow-tooltip>
+        <el-table-column label="审查模式" min-width="140" show-overflow-tooltip>
           <template #default="{ row }">
             <span class="plan-summary-cell">{{ getReviewPlanSummary(row) }}</span>
           </template>
@@ -238,7 +240,6 @@
               :class="['issue-count-enhanced', { 'has-issues': (row.issue_count || 0) > 0 }]"
             >
               <span class="issue-number">{{ row.issue_count || 0 }}</span>
-              <el-icon v-if="(row.issue_count || 0) > 0" class="issue-warning"><WarningFilled /></el-icon>
             </div>
           </template>
         </el-table-column>
@@ -388,7 +389,6 @@ import {
   Plus,
   Select,
   Delete,
-  WarningFilled,    // ⚠️ 问题数警告图标
   Clock,            // 🕐 时间列图标
   View,             // 👁️ 详情按钮图标
   ArrowDown,        // 🔽 下拉箭头
@@ -481,7 +481,6 @@ const reviewModeLabelMap: Record<string, string> = {
   // 旧模式兼容映射（历史数据）
   CONSISTENCY: '一致性审查',
   CUSTOM_RULE: '自定义规则',
-  FULL_REVIEW: '全面审查',
 }
 
 const getReviewPlanSummary = (row: any): string => {
@@ -1337,32 +1336,19 @@ onUnmounted(() => { stopPolling() })
   align-items: center;
   justify-content: center;
   gap: 4px;
-  padding: 4px 10px;
-  border-radius: 12px;
-  font-size: 15px;
-  font-weight: 700;
-  font-family: 'SF Mono', monospace;
-  transition: all 0.25s ease;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-size: 14px;
+  font-weight: 600;
+  transition: all 0.2s ease;
 }
 
 .issue-number {
   color: #606266;
 }
 
-.issue-warning {
-  font-size: 14px;
-  color: #E6A23C;
-  animation: pulse 2s infinite;
-}
-
-.issue-count-enhanced.has-issues {
-  background: linear-gradient(135deg, #FDF6EC 0%, #FAECD8 100%);
-  border: 1px solid #F5DAB1;
-  box-shadow: 0 2px 6px rgba(230, 162, 60, 0.15);
-}
-
 .issue-count-enhanced.has-issues .issue-number {
-  color: #E6A23C;
+  color: #F56C6C;
 }
 
 /* ===== 时间列增强样式 ===== */

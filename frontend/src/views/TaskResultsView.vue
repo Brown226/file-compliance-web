@@ -157,44 +157,42 @@
             </div>
           </div>
           <div class="header-right">
-            <!-- 主要操作按钮 -->
-            <el-button-group v-if="!isSelfCheck" class="primary-actions">
-              <el-tooltip content="导出 Word 报告" placement="bottom">
-                <el-button type="primary" size="small" @click="handleExportWord">
-                  <el-icon><Document /></el-icon>
-                  导出Word
-                </el-button>
-              </el-tooltip>
-              <el-dropdown @command="handleExportCommand" trigger="click">
-                <el-button type="primary" size="small">
-                  更多导出
-                  <el-icon class="el-icon--right"><ArrowDown /></el-icon>
-                </el-button>
-                <template #dropdown>
-                  <el-dropdown-menu>
-                    <el-dropdown-item command="excel">
-                      <el-icon><Tickets /></el-icon>导出 Excel
-                    </el-dropdown-item>
-                    <el-dropdown-item command="pdf">
-                      <el-icon><Notebook /></el-icon>导出 PDF（开发中）
-                    </el-dropdown-item>
-                    <el-dropdown-item divided command="print">
-                      <el-icon><Printer /></el-icon>打印报告
-                    </el-dropdown-item>
-                  </el-dropdown-menu>
-                </template>
-              </el-dropdown>
-            </el-button-group>
+            <!-- 主操作：导出Word（最突出） -->
+            <el-tooltip content="导出 Word 报告" placement="bottom">
+              <el-button type="primary" @click="handleExportWord" class="export-word-btn">
+                <el-icon><Document /></el-icon>
+                导出Word
+              </el-button>
+            </el-tooltip>
 
-            <!-- 次要操作按钮 -->
-            <el-button-group class="secondary-actions">
-              <el-tooltip content="返回任务列表" placement="bottom">
-                <el-button size="small" @click="goBack">
-                  <el-icon><Back /></el-icon>
-                  返回历史
-                </el-button>
-              </el-tooltip>
-            </el-button-group>
+            <!-- 次操作：更多导出（次级） -->
+            <el-dropdown @command="handleExportCommand" trigger="click">
+              <el-button class="more-export-btn">
+                更多导出
+                <el-icon class="el-icon--right"><ArrowDown /></el-icon>
+              </el-button>
+              <template #dropdown>
+                <el-dropdown-menu>
+                  <el-dropdown-item command="excel">
+                    <el-icon><Tickets /></el-icon>导出 Excel
+                  </el-dropdown-item>
+                  <el-dropdown-item command="pdf">
+                    <el-icon><Notebook /></el-icon>导出 PDF（开发中）
+                  </el-dropdown-item>
+                  <el-dropdown-item divided command="print">
+                    <el-icon><Printer /></el-icon>打印报告
+                  </el-dropdown-item>
+                </el-dropdown-menu>
+              </template>
+            </el-dropdown>
+
+            <!-- 分隔 + 导航：返回历史（最轻） -->
+            <div class="header-divider"></div>
+            <el-tooltip content="返回任务列表" placement="bottom">
+              <button class="back-btn" @click="goBack">
+                返回历史
+              </button>
+            </el-tooltip>
           </div>
         </div>
 
@@ -255,7 +253,7 @@
         <!-- ====== 标准引用自检报告（SELF_CHECK） ====== -->
         <div v-if="isSelfCheck && scReport" class="self-check-report-panel">
           <div class="sc-summary-bar">
-            <el-tag type="info" effect="plain">检查 {{ scReport.totalChecked }} 条引用</el-tag>
+            <el-tag type="info" effect="plain">检查 {{ scFilteredItems.length }} 条引用</el-tag>
             <el-tag type="success" effect="plain">完全匹配 {{ scFilteredItems.filter((it: any) => it.matchResult?.matched && it.errorTypes?.length === 0).length }} 条</el-tag>
             <el-tag v-if="scFilteredItems.filter((it: any) => it.errorTypes?.length > 0).length > 0" type="danger" effect="plain">存在问题 {{ scFilteredItems.filter((it: any) => it.errorTypes?.length > 0).length }} 条</el-tag>
             <el-tag v-else type="success" effect="plain">全部正确</el-tag>
@@ -413,17 +411,6 @@
             </div>
 
             <!-- 问题卡片列表 -->
-            <div v-if="noResultReasons.length > 0" class="explanation-panel">
-              <div class="explanation-title">审查说明</div>
-              <p
-                v-for="(reason, idx) in noResultReasons"
-                :key="`reason-${idx}`"
-                class="explanation-text"
-              >
-                {{ reason }}
-              </p>
-            </div>
-
             <div v-if="issueDetails.length > 0" class="suggestions-list">
               <div
                 v-for="(item, index) in issueDetails"
@@ -545,226 +532,6 @@
             <el-empty v-else description="未命中相关标准引用" />
           </div>
 
-          <!-- Tab 4: 工作台 -->
-          <div v-if="activeTab === 'workspace'" class="tab-pane">
-            <!-- 工作台引导（无操作时显示） -->
-            <div v-if="!diffItems.length && !focusedReviewResult" class="workspace-guide">
-              <div class="guide-icon">
-                <el-icon :size="48" color="#409EFF"><Tools /></el-icon>
-              </div>
-              <h3 class="guide-title">审查工作台</h3>
-              <p class="guide-subtitle">在这里处理审查发现的问题，提升文档合规性</p>
-
-              <div class="guide-cards">
-                <div class="guide-card">
-                  <div class="card-icon">📝</div>
-                  <h4>选中文本专项审查</h4>
-                  <p>从左侧预览区选中文本，进行针对性深度审查</p>
-                </div>
-
-                <div class="guide-card">
-                  <div class="card-icon">🔄</div>
-                  <h4>版本对比</h4>
-                  <p>查看采纳修改前后的差异，追踪变更历史</p>
-                </div>
-
-                <div class="guide-card">
-                  <div class="card-icon">⚙️</div>
-                  <h4>规则库审查</h4>
-                  <p>使用自定义规则库进行结构化标准化检查</p>
-                </div>
-              </div>
-
-              <div class="guide-actions">
-                <el-button type="primary" size="large" @click="scrollToFocusedReview">
-                  <el-icon><EditPen /></el-icon>
-                  开始专项审查
-                </el-button>
-                <el-button size="large" @click="loadLatestDiff">
-                  <el-icon><Refresh /></el-icon>
-                  查看版本对比
-                </el-button>
-              </div>
-            </div>
-
-            <div v-else class="workspace-content">
-              <!-- 合同版本对比 -->
-              <div class="workspace-section">
-                <div class="section-header">
-                  <h4 class="section-title">合同版本对比</h4>
-                  <el-button
-                    type="primary"
-                    plain
-                    size="small"
-                    :loading="diffLoading"
-                    @click="loadLatestDiff"
-                  >
-                    {{ diffLoading ? '加载中...' : '查看最近变更' }}
-                  </el-button>
-                </div>
-                <div v-if="diffItems.length" class="diff-content">
-                  <template v-for="(part, index) in diffItems" :key="index">
-                    <span v-if="part.type === 'insert'" class="diff-insert">{{ part.text }}</span>
-                    <span v-else-if="part.type === 'delete'" class="diff-delete">{{ part.text }}</span>
-                    <span v-else>{{ part.text }}</span>
-                  </template>
-                </div>
-                <p v-else class="diff-placeholder">
-                  采纳修改后会自动保存原始快照，可在这里查看新增和删除文本。
-                </p>
-              </div>
-
-              <!-- 选中文本专项审查 -->
-              <div class="workspace-section">
-                <div class="section-header">
-                  <h4 class="section-title">选中文本专项审查</h4>
-                  <el-button
-                    type="primary"
-                    size="small"
-                    @click="prepareFocusedReviewFromSelection"
-                  >
-                    从左侧读取选中文本
-                  </el-button>
-                </div>
-                <el-input
-                  v-model="focusedReviewText"
-                  type="textarea"
-                  :rows="6"
-                  placeholder="可从左侧预览区选中文本后读取，也可手动粘贴某一条款或段落"
-                  class="mt-3"
-                />
-                <el-input
-                  v-model="focusedReviewQuestion"
-                  placeholder="专项问题，例如：审查这段试用期条款是否合法，并给出可替换文本"
-                  class="mt-3"
-                />
-                <div class="section-footer">
-                  <el-button
-                    type="primary"
-                    :loading="focusedReviewLoading"
-                    :disabled="!focusedReviewText.trim()"
-                    @click="submitFocusedReview"
-                  >
-                    {{ focusedReviewLoading ? '审查中...' : '开始专项审查' }}
-                  </el-button>
-                </div>
-              </div>
-
-              <!-- 专项审查结果 -->
-              <div v-if="focusedReviewResult" class="workspace-section result-section">
-                <h4 class="section-title">专项审查结论</h4>
-                <p class="result-text">{{ focusedReviewResult.risk_summary }}</p>
-                
-                <div v-if="focusedReviewResult.plain_language" class="plain-language-result">
-                  <p class="plain-label">大白话说明</p>
-                  <p>{{ focusedReviewResult.plain_language }}</p>
-                </div>
-
-                <div v-if="focusedReviewResult.suggested_text" class="suggestion-result">
-                  <p class="suggestion-label">建议替换文本</p>
-                  <div class="suggestion-text">{{ focusedReviewResult.suggested_text }}</div>
-                  <el-button
-                    type="primary"
-                    size="small"
-                    class="mt-3"
-                    @click="applyFocusedSuggestion"
-                  >
-                    替换左侧选中文本
-                  </el-button>
-                </div>
-
-                <div v-if="focusedReviewResult.relevant_laws?.length" class="laws-result">
-                  <p class="laws-label">检索依据</p>
-                  <div
-                    v-for="(item, index) in focusedReviewResult.relevant_laws"
-                    :key="index"
-                    class="law-item"
-                  >
-                    <p><strong>【{{ item.law }}】</strong>{{ item.clause }}：{{ item.content }}</p>
-                  </div>
-                </div>
-              </div>
-
-              <!-- 重审表单 - 规则库审查模式设置面板（仅在规则库审查模式下显示） -->
-              <div v-if="isRuleOnlyMode" class="workspace-section re-review-form">
-                <div class="review-item-config">
-                  <!-- 模式说明横幅 -->
-                  <div class="mode-banner">
-                    <div class="mode-banner__icon">
-                      <el-icon :size="22"><Files /></el-icon>
-                    </div>
-                    <div class="mode-banner__content">
-                      <div class="mode-banner__title">规则库审查模式</div>
-                      <div class="mode-banner__desc">仅使用自定义规则库进行结构化审查，适合有明确规则的标准化检查场景。</div>
-                    </div>
-                    <div class="mode-banner__badge">
-                      <el-tag type="warning" effect="dark" round>专业</el-tag>
-                    </div>
-                  </div>
-
-                  <div class="config-section">
-                    <div class="config-section-label">
-                      <span class="section-label-num">2</span>
-                      检查项目
-                    </div>
-                    <!-- 规则前缀开关面板 -->
-                    <div class="rule-prefix-panel">
-                      <div
-                        v-for="group in RULE_PREFIX_GROUPS"
-                        :key="group.title"
-                        class="rule-prefix-group"
-                      >
-                        <div class="rule-prefix-group__header" @click="toggleGroup(group.items.map((i: any) => i.prefix), !group.items.every((item: any) => enabledRulePrefixes.includes(item.prefix)))">
-                          <el-icon :size="16"><component :is="group.icon" /></el-icon>
-                          <span class="rule-prefix-group__title">{{ group.title }}</span>
-                          <span class="rule-prefix-group__count">{{ group.items.filter((i: any) => enabledRulePrefixes.includes(i.prefix)).length }}/{{ group.items.length }}</span>
-                          <el-checkbox
-                            :model-value="group.items.every((item: any) => enabledRulePrefixes.includes(item.prefix))"
-                            :indeterminate="group.items.some((item: any) => enabledRulePrefixes.includes(item.prefix)) && !group.items.every((item: any) => enabledRulePrefixes.includes(item.prefix))"
-                            size="small"
-                            @click.stop
-                            @change="(val: boolean | string | number) => toggleGroup(group.items.map((i: any) => i.prefix), !!val)"
-                          />
-                        </div>
-                        <div class="rule-prefix-group__items">
-                          <div
-                            v-for="item in group.items"
-                            :key="item.prefix"
-                            class="rule-prefix-item"
-                            :class="{ 'rule-prefix-item--active': enabledRulePrefixes.includes(item.prefix) }"
-                            @click="togglePrefix(item.prefix)"
-                          >
-                            <div class="rule-prefix-item__info">
-                              <span class="rule-prefix-item__label">{{ item.label }}</span>
-                              <span class="rule-prefix-item__desc">{{ item.desc }}</span>
-                            </div>
-                            <el-switch
-                              :model-value="enabledRulePrefixes.includes(item.prefix)"
-                              size="small"
-                              style="pointer-events: none;"
-                            />
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-
-                  <!-- 确认重审按钮 -->
-                  <div class="form-actions">
-                    <el-button
-                      type="primary"
-                      :loading="reAnalyzing"
-                      :disabled="enabledRulePrefixes.length === 0 || reAnalyzing"
-                      class="w-full"
-                      @click="startReAnalysis"
-                    >
-                      {{ reAnalyzing ? '正在重审...' : '确认重审' }}
-                    </el-button>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
         </div>
       </div>
     </div>
@@ -825,12 +592,6 @@ const loadingMessage = ref('正在加载审查结果...')
 
 // ===== 标准引用自检（SELF_CHECK）=====
 const isSelfCheck = computed(() => (task.value as any)?.reviewMode === 'SELF_CHECK')
-
-// ===== 规则库审查模式判断 =====
-const isRuleOnlyMode = computed(() => {
-  const plan = (task.value as any)?.reviewPlan
-  return plan?.execution?.profile === 'RULE_ONLY'
-})
 
 // 默认左侧面板宽度：自检模式 40%（右侧表格需要更多空间），普通审查 55%
 const SELF_CHECK_LEFT_WIDTH = 40
@@ -1132,7 +893,6 @@ const tabs = [
   { key: 'overview', label: '审查概览' },
   { key: 'suggestions', label: '问题明细' },
   { key: 'knowledge', label: '依据' },
-  { key: 'workspace', label: '工作台' },
 ]
 
 // ===== 采纳预览 =====
@@ -1187,7 +947,6 @@ const getModeLabel = (mode: string) => {
     // 旧模式兼容映射（历史数据）
     CONSISTENCY: '一致性审查',
     CUSTOM_RULE: '自定义规则',
-    FULL_REVIEW: '全面审查',
   }
   return map[mode] || mode
 }
@@ -1263,83 +1022,6 @@ const errorIssues = computed(() => issueDetails.value.filter((d: any) => d.sever
 const warningIssues = computed(() => issueDetails.value.filter((d: any) => d.severity === 'warning'))
 const infoIssues = computed(() => issueDetails.value.filter((d: any) => d.severity === 'info'))
 const standardRefIssues = computed(() => issueDetails.value.filter((d: any) => d.standardRef || d.standardRefId))
-
-// ===== 工作台功能 =====
-const focusedReviewText = ref('')
-const focusedReviewQuestion = ref('')
-const focusedReviewResult = ref<any>(null)
-const focusedReviewLoading = ref(false)
-const diffItems = ref<any[]>([])
-const diffLoading = ref(false)
-const reAnalyzing = ref(false)
-
-// ===== 重审表单 =====
-const perspective = ref('')
-const allPotentialParties = ref<string[]>([])
-const allSuggestedReviewPoints = ref<string[]>([])
-const allSuggestedCorePurposes = ref<string[]>([])
-const selectedReviewPoints = ref<string[]>([])
-const customPurposes = ref<Array<{ value: string }>>([{ value: '' }])
-const preAnalysisData = reactive({
-  contract_type: '',
-  potential_parties: [] as string[],
-  suggested_review_points: [] as string[],
-  suggested_core_purposes: [] as string[],
-  template_id: '',
-  template_name: '',
-})
-
-// 规则前缀配置
-const defaultEnabledPrefixes = [
-  'NAME', 'FORMAT', 'LAYOUT', 'HEADER', 'PAGE', 'CODE', 'UNIT', 'ATTR', 'TYPO',
-  'CONSIST', 'COMPL',
-  'DWG_TITLE', 'DWG_LAYER', 'DWG_DIM', 'DWG_STDREF', 'DWG_SCALE', 'DWG_OVERLAP',
-]
-const enabledRulePrefixes = ref<string[]>([...defaultEnabledPrefixes])
-
-const RULE_PREFIX_GROUPS = [
-  {
-    title: '文件规范',
-    icon: 'FolderOpened',
-    items: [
-      { prefix: 'NAME', label: '命名规范', desc: '文件名格式、版本号、特殊字符检查' },
-      { prefix: 'FORMAT', label: '格式规范', desc: '文档排版、字体、段落格式检查' },
-      { prefix: 'LAYOUT', label: '排版布局', desc: '布局结构、缩进、对齐方式检查' },
-    ],
-  },
-  {
-    title: '内容规范',
-    icon: 'EditPen',
-    items: [
-      { prefix: 'HEADER', label: '页眉规范', desc: '页眉内容、格式一致性检查' },
-      { prefix: 'PAGE', label: '页码规范', desc: '页码连续性、格式正确性检查' },
-      { prefix: 'CODE', label: '编码规范', desc: '编码规则、编号一致性检查' },
-      { prefix: 'UNIT', label: '单位规范', desc: '计量单位使用规范性检查' },
-      { prefix: 'ATTR', label: '属性规范', desc: '文档属性、元数据完整性检查' },
-      { prefix: 'TYPO', label: '术语一致性', desc: '专业术语使用是否统一检查' },
-    ],
-  },
-  {
-    title: '逻辑验证',
-    icon: 'List',
-    items: [
-      { prefix: 'CONSIST', label: '一致性检查', desc: '前后参数、数据逻辑一致性检查' },
-      { prefix: 'COMPL', label: '完整性检查', desc: '必填项、关键内容是否缺失检查' },
-    ],
-  },
-  {
-    title: '图纸审查 (DWG)',
-    icon: 'DataAnalysis',
-    items: [
-      { prefix: 'DWG_TITLE', label: '标题规范', desc: '图签、标题栏格式内容检查' },
-      { prefix: 'DWG_LAYER', label: '图层规范', desc: '图层命名、颜色、线型规范性检查' },
-      { prefix: 'DWG_DIM', label: '标注规范', desc: '尺寸标注样式和规范性检查' },
-      { prefix: 'DWG_STDREF', label: '标准引用', desc: '图纸引用的标准有效性检查' },
-      { prefix: 'DWG_SCALE', label: '比例规范', desc: '图幅比例设置正确性检查' },
-      { prefix: 'DWG_OVERLAP', label: '重叠检查', desc: '图元重叠、干涉问题检查' },
-    ],
-  },
-]
 
 // ===== 工具函数 =====
 const getIssueTitle = (item: any, index: number): string => {
@@ -1577,19 +1259,8 @@ const fetchData = async (silent = false) => {
 
       console.log(`[TaskResultsView] 📊 结果校验: 总计=${totalDetails}, 有效=${validResults}, 无结果标记=${noResultCount}, 错误记录=${errorDetails.length}`)
 
-      // 场景1：任务完成但完全没有有效结果
-      if (totalDetails === 0 || (totalDetails === noResultCount && noResultCount === files.value.length)) {
-        console.warn('[TaskResultsView] ⚠️ 任务标记为完成但无任何有效结果')
-
-        ElMessage({
-          type: 'warning',
-          message: '任务已完成但未发现有效审查结果，可能存在数据保存问题。建议刷新页面或联系管理员。',
-          duration: 8000,
-          showClose: true,
-        })
-      }
-      // 场景2：有错误记录（保存失败）
-      else if (errorDetails.length > 0) {
+      // 场景1：有错误记录（保存失败）
+      if (errorDetails.length > 0) {
         console.warn(`[TaskResultsView] ⚠️ 发现${errorDetails.length}条错误记录`)
 
         ElMessage({
@@ -1884,177 +1555,6 @@ const handleExportCommand = (command: string) => {
       break
     default:
       console.warn('未知导出命令:', command)
-  }
-}
-
-// ===== 工作台功能 =====
-
-const scrollToFocusedReview = () => {
-  activeTab.value = 'workspace'
-  setTimeout(() => {
-    const el = document.querySelector('.workspace-section:nth-child(2)')
-    if (el) {
-      el.scrollIntoView({ behavior: 'smooth', block: 'start' })
-      const textarea = el.querySelector('textarea')
-      if (textarea) textarea.focus()
-    }
-  }, 100)
-}
-
-const loadLatestDiff = async () => {
-  activeTab.value = 'workspace'
-  diffLoading.value = true
-  try {
-    // TODO: 调用后端API获取最新的diff
-    // const res = await getTaskDiffApi(taskId.value)
-    // diffItems.value = res.data.diffItems || []
-    
-    // 临时模拟数据
-    diffItems.value = [
-      { type: 'delete', text: '原文被删除的部分' },
-      { type: 'insert', text: '新文本插入的部分' },
-    ]
-    
-    ElMessage.success('已加载最近变更')
-  } catch (e: any) {
-    ElMessage.info(e?.response?.data?.message || '暂无可对比的合同版本')
-  } finally {
-    diffLoading.value = false
-  }
-}
-
-const prepareFocusedReviewFromSelection = async () => {
-  activeTab.value = 'workspace'
-  // 尝试从浏览器选区获取文本
-  const selection = window.getSelection()
-  const selectedText = selection?.toString()?.trim()
-  if (selectedText) {
-    focusedReviewText.value = selectedText
-    ElMessage.success('已读取左侧选中文本')
-  } else {
-    ElMessage.info('请先在左侧预览区选中文本，再点击此按钮读取')
-  }
-}
-
-const submitFocusedReview = async () => {
-  if (!focusedReviewText.value.trim()) {
-    ElMessage.warning('请输入需要审查的文本')
-    return
-  }
-
-  focusedReviewLoading.value = true
-  try {
-    // TODO: 调用专项审查API
-    // const response = await reviewSelectedTextApi({
-    //   text: focusedReviewText.value,
-    //   question: focusedReviewQuestion.value,
-    //   perspective: perspective.value,
-    //   contractType: preAnalysisData.contract_type,
-    // })
-    // focusedReviewResult.value = res.data
-    
-    // 临时模拟数据
-    focusedReviewResult.value = {
-      risk_summary: '该条款存在以下风险：1. 违约责任约定不明确；2. 缺少争议解决条款；3. 赔偿上限设置过低。',
-      plain_language: '大白话：这条款对您不太有利，建议增加明确的违约责任和争议解决方式。',
-      suggested_text: '建议修改为：如一方违约，应承担违约责任，并向守约方赔偿因此造成的全部损失。争议应提交甲方所在地人民法院管辖。',
-      relevant_laws: [
-        {
-          law: '《民法典》',
-          clause: '第五百七十七条',
-          content: '当事人一方不履行合同义务或者履行合同义务不符合约定的，应当承担继续履行、采取补救措施或者赔偿损失等违约责任。',
-        },
-      ],
-    }
-    
-    ElMessage.success('专项审查完成')
-  } catch (e: any) {
-    ElMessage.error(e?.response?.data?.message || '专项审查失败，请稍后重试')
-  } finally {
-    focusedReviewLoading.value = false
-  }
-}
-
-const applyFocusedSuggestion = async () => {
-  if (!focusedReviewResult.value?.suggested_text) {
-    ElMessage.warning('没有可应用的建议')
-    return
-  }
-
-  const originalText = focusedReviewText.value
-  const suggestedText = focusedReviewResult.value.suggested_text
-
-  // 已移除 OnlyOffice 文本替换功能，仅展示预览
-  selectedSuggestionPreview.value = {
-    before: originalText,
-    after: suggestedText,
-    status: '建议已展示在预览区',
-  }
-  ElMessage.success('建议已展示在预览区')
-}
-
-// ===== 重审表单功能 =====
-const addPurpose = () => {
-  customPurposes.value.push({ value: '' })
-}
-
-const removePurpose = (index: number) => {
-  customPurposes.value.splice(index, 1)
-}
-
-const querySearchCorePurposes = (queryString: string, cb: (results: Array<{ value: string }>) => void) => {
-  const results = queryString
-    ? allSuggestedCorePurposes.value.filter((p: string) => p.toLowerCase().includes(queryString.toLowerCase()))
-    : allSuggestedCorePurposes.value
-  cb(results.map((p: string) => ({ value: p })))
-}
-
-// 切换规则前缀
-const togglePrefix = (prefix: string) => {
-  const idx = enabledRulePrefixes.value.indexOf(prefix)
-  if (idx >= 0) {
-    enabledRulePrefixes.value.splice(idx, 1)
-  } else {
-    enabledRulePrefixes.value.push(prefix)
-  }
-}
-
-// 切换规则前缀分组
-const toggleGroup = (prefixes: string[], enabled: boolean) => {
-  if (enabled) {
-    prefixes.forEach(p => {
-      if (!enabledRulePrefixes.value.includes(p)) {
-        enabledRulePrefixes.value.push(p)
-      }
-    })
-  } else {
-    enabledRulePrefixes.value = enabledRulePrefixes.value.filter(p => !prefixes.includes(p))
-  }
-}
-
-const startReAnalysis = async () => {
-  if (enabledRulePrefixes.value.length === 0) {
-    ElMessage.warning('请至少选择一个检查项目')
-    return
-  }
-
-  reAnalyzing.value = true
-  try {
-    // TODO: 调用后端重审API
-    // const analysisPayload = {
-    //   taskId: taskId.value,
-    //   enabledPrefixes: enabledRulePrefixes.value,
-    // }
-    // const res = await reAnalyzeTaskApi(analysisPayload)
-
-    // 临时模拟
-    await new Promise(resolve => setTimeout(resolve, 2000))
-    ElMessage.success('重审完成！')
-    activeTab.value = 'suggestions' // 切换到问题明细查看结果
-  } catch (err: any) {
-    ElMessage.error(err?.response?.data?.message || '重审失败，请稍后重试')
-  } finally {
-    reAnalyzing.value = false
   }
 }
 
@@ -2520,31 +2020,79 @@ onUnmounted(() => {
 .header-right {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 10px;
   flex-shrink: 0;
   min-width: 0;
 }
 
-.primary-actions {
-  box-shadow: 0 2px 6px rgba(64, 158, 255, 0.15);
-  border-radius: 6px;
-  overflow: hidden;
-}
-
-.primary-actions .el-button {
-  font-weight: 500;
+/* ===== 导出Word：主操作，最突出 ===== */
+.export-word-btn {
+  font-weight: 600;
+  font-size: 14px;
+  padding: 8px 18px;
+  border-radius: 8px;
+  background: linear-gradient(135deg, #3B82F6, #2563EB) !important;
+  border: none !important;
+  box-shadow: 0 2px 8px rgba(37, 99, 235, 0.35);
   letter-spacing: 0.3px;
 }
 
-.secondary-actions .el-button {
-  color: #606266;
-  border-color: #DCDFE6;
+.export-word-btn:hover,
+.export-word-btn:focus {
+  background: linear-gradient(135deg, #2563EB, #1D4ED8) !important;
+  box-shadow: 0 4px 14px rgba(37, 99, 235, 0.45);
+  transform: translateY(-1px);
 }
 
-.secondary-actions .el-button:hover {
-  color: #409EFF;
-  border-color: #C6E2FF;
-  background-color: #ECF5FF;
+/* ===== 更多导出：次操作，明显弱于主按钮 ===== */
+.more-export-btn {
+  font-weight: 500;
+  font-size: 13px;
+  padding: 7px 12px;
+  border-radius: 8px;
+  color: #2563EB !important;
+  background: #EFF6FF !important;
+  border: 1px solid #BFDBFE !important;
+  letter-spacing: 0.2px;
+  transition: all 0.2s ease;
+}
+
+.more-export-btn:hover,
+.more-export-btn:focus {
+  color: #1D4ED8 !important;
+  background: #DBEAFE !important;
+  border-color: #93C5FD !important;
+  box-shadow: 0 2px 8px rgba(37, 99, 235, 0.15);
+}
+
+/* ===== 分隔线：区分导出组和导航 ===== */
+.header-divider {
+  width: 1px;
+  height: 22px;
+  background: #E2E8F0;
+  margin: 0 4px;
+}
+
+/* ===== 返回历史：导航类，最轻（纯文字按钮） ===== */
+.back-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 13px;
+  font-weight: 500;
+  color: #64748B;
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 5px 10px;
+  border-radius: 6px;
+  transition: all 0.2s ease;
+  white-space: nowrap;
+}
+
+.back-btn:hover {
+  color: #334155;
+  background: #F1F5F9;
 }
 
 .panel-title {
@@ -2997,439 +2545,6 @@ onUnmounted(() => {
   transform: scale(1.06);
 }
 
-/* 工作台引导样式 */
-.workspace-guide {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  padding: 60px 40px;
-  text-align: center;
-  min-height: 500px;
-}
-
-.guide-icon {
-  margin-bottom: 20px;
-  animation: float 3s ease-in-out infinite;
-}
-
-@keyframes float {
-  0%, 100% { transform: translateY(0); }
-  50% { transform: translateY(-10px); }
-}
-
-.guide-title {
-  font-size: 24px;
-  font-weight: 700;
-  color: #303133;
-  margin: 0 0 8px;
-}
-
-.guide-subtitle {
-  font-size: 14px;
-  color: #909399;
-  margin: 0 0 40px;
-}
-
-.guide-cards {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-  gap: 20px;
-  width: 100%;
-  max-width: 800px;
-  margin-bottom: 40px;
-}
-
-.guide-card {
-  padding: 24px 20px;
-  background: linear-gradient(135deg, #FAFCFF 0%, #F5F7FA 100%);
-  border: 1px solid #E4E7ED;
-  border-radius: 12px;
-  transition: all 0.3s ease;
-}
-
-.guide-card:hover {
-  transform: translateY(-4px);
-  box-shadow: 0 8px 20px rgba(64, 158, 255, 0.12);
-  border-color: #409EFF;
-}
-
-.card-icon {
-  font-size: 32px;
-  margin-bottom: 12px;
-}
-
-.guide-card h4 {
-  font-size: 16px;
-  font-weight: 600;
-  color: #303133;
-  margin: 0 0 8px;
-}
-
-.guide-card p {
-  font-size: 13px;
-  color: #909399;
-  line-height: 1.6;
-  margin: 0;
-}
-
-.guide-actions {
-  display: flex;
-  gap: 16px;
-}
-
-/* 工作台样式 */
-.workspace-content {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-}
-
-.workspace-section {
-  padding: 16px;
-  background: white;
-  border-radius: 8px;
-  border: 1px solid #E5E7EB;
-}
-
-.section-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 12px;
-}
-
-.section-footer {
-  display: flex;
-  justify-content: flex-end;
-  margin-top: 12px;
-}
-
-.diff-content {
-  padding: 12px;
-  background: #F9FAFB;
-  border-radius: 6px;
-  font-size: 12px;
-  line-height: 1.8;
-  max-height: 224px;
-  overflow-y: auto;
-  white-space: pre-wrap;
-}
-
-.diff-insert {
-  background: #DCFCE7;
-  color: #166534;
-  padding: 2px 4px;
-  border-radius: 3px;
-}
-
-.diff-delete {
-  background: #FEE2E2;
-  color: #991B1B;
-  padding: 2px 4px;
-  border-radius: 3px;
-  text-decoration: line-through;
-}
-
-.diff-placeholder {
-  font-size: 12px;
-  color: #9CA3AF;
-  text-align: center;
-  padding: 16px;
-}
-
-.result-section {
-  background: #EFF6FF;
-  border-color: #BFDBFE;
-}
-
-.result-text {
-  font-size: 13px;
-  color: #374151;
-  line-height: 1.8;
-  margin: 0;
-}
-
-.plain-language-result {
-  margin-top: 12px;
-  padding: 12px;
-  background: #EFF6FF;
-  border-radius: 6px;
-  border-left: 3px solid #3B82F6;
-}
-
-.suggestion-result {
-  margin-top: 12px;
-}
-
-.suggestion-label {
-  font-size: 11px;
-  font-weight: 600;
-  color: #6B7280;
-  margin: 0 0 8px;
-}
-
-.suggestion-text {
-  padding: 12px;
-  background: #F0FDF4;
-  border: 1px solid #BBF7D0;
-  border-radius: 6px;
-  color: #166534;
-  font-size: 12px;
-  line-height: 1.8;
-  white-space: pre-wrap;
-}
-
-.laws-result {
-  margin-top: 12px;
-}
-
-.laws-label {
-  font-size: 11px;
-  font-weight: 600;
-  color: #6B7280;
-  margin: 0 0 8px;
-}
-
-.law-item {
-  padding: 8px 12px;
-  background: #F9FAFB;
-  border-radius: 6px;
-  border: 1px solid #E5E7EB;
-  margin-bottom: 8px;
-  font-size: 12px;
-  color: #374151;
-  line-height: 1.6;
-}
-
-.law-item p {
-  margin: 0;
-}
-
-/* 重审表单样式 */
-.re-review-form {
-  background: #F9FAFB;
-  border-color: #D1D5DB;
-}
-
-.form-group {
-  margin-bottom: 20px;
-}
-
-.form-label {
-  display: block;
-  font-size: 13px;
-  font-weight: 500;
-  color: #374151;
-  margin-bottom: 6px;
-}
-
-.review-points-wrapper {
-  padding: 12px;
-  background: #F9FAFB;
-  border-radius: 6px;
-}
-
-.review-points-group {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-}
-
-.purpose-row {
-  display: flex;
-  align-items: center;
-  margin-top: 8px;
-  gap: 8px;
-}
-
-.purpose-remove-btn {
-  color: #9CA3AF;
-}
-
-.purpose-remove-btn:hover {
-  color: #EF4444;
-}
-
-.add-purpose-btn {
-  margin-top: 8px;
-  font-size: 13px;
-  font-weight: 500;
-  display: flex;
-  align-items: center;
-}
-
-.form-actions {
-  padding-top: 16px;
-}
-
-/* 审查目标卡片 - 已移除（仅保留规则库审查模式） */
-
-/* 证据源卡片 - 已移除（仅保留规则库审查模式） */
-
-/* 模式横幅 */
-.mode-banner {
-  display: flex;
-  align-items: center;
-  gap: 16px;
-  padding: 18px 22px;
-  background: linear-gradient(135deg, #F0F5FF 0%, #EFF6FF 50%, #F0FDF4 100%);
-  border-radius: 12px;
-  margin-bottom: 20px;
-}
-
-.mode-banner__icon {
-  width: 44px;
-  height: 44px;
-  border-radius: 12px;
-  background: linear-gradient(135deg, #3B82F6 0%, #6366F1 100%);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: white;
-  flex-shrink: 0;
-  box-shadow: 0 4px 12px rgba(59, 130, 246, 0.3);
-}
-
-.mode-banner__content {
-  flex: 1;
-  min-width: 0;
-}
-
-.mode-banner__title {
-  font-size: 17px;
-  font-weight: 700;
-  color: #1E293B;
-  margin-bottom: 2px;
-}
-
-.mode-banner__desc {
-  font-size: 13px;
-  color: #64748B;
-}
-
-.mode-banner__badge {
-  flex-shrink: 0;
-}
-
-/* 配置区域 */
-.review-item-config {
-  padding: 0;
-}
-
-.config-section {
-  padding: 20px 24px 24px;
-}
-
-.config-section-label {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 15px;
-  font-weight: 600;
-  color: #374151;
-  margin-bottom: 16px;
-}
-
-.section-label-num {
-  width: 24px;
-  height: 24px;
-  border-radius: 50%;
-  background: #3B82F6;
-  color: white;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 13px;
-  font-weight: 600;
-}
-
-/* 规则前缀面板 */
-.rule-prefix-panel {
-  background: white;
-  border-radius: 8px;
-  border: 1px solid #E5E7EB;
-  overflow: hidden;
-}
-
-.rule-prefix-group {
-  border-bottom: 1px solid #F3F4F6;
-}
-
-.rule-prefix-group:last-child {
-  border-bottom: none;
-}
-
-.rule-prefix-group__header {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 12px 14px;
-  cursor: pointer;
-  background: #F9FAFB;
-  transition: background 0.2s;
-}
-
-.rule-prefix-group__header:hover {
-  background: #F3F4F6;
-}
-
-.rule-prefix-group__title {
-  flex: 1;
-  font-size: 14px;
-  font-weight: 600;
-  color: #1F2937;
-}
-
-.rule-prefix-group__count {
-  font-size: 12px;
-  color: #6B7280;
-  font-variant-numeric: tabular-nums;
-}
-
-.rule-prefix-group__items {
-  padding: 8px 14px;
-  background: white;
-}
-
-.rule-prefix-item {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 10px 12px;
-  border-radius: 6px;
-  cursor: pointer;
-  transition: background 0.2s;
-}
-
-.rule-prefix-item:hover {
-  background: #F9FAFB;
-}
-
-.rule-prefix-item--active {
-  background: #EFF6FF;
-}
-
-.rule-prefix-item__info {
-  flex: 1;
-}
-
-.rule-prefix-item__label {
-  display: block;
-  font-size: 13px;
-  font-weight: 500;
-  color: #1F2937;
-}
-
-.rule-prefix-item__desc {
-  display: block;
-  font-size: 11px;
-  color: #9CA3AF;
-  margin-top: 2px;
-}
-
-/* 执行方式选项 - 已移除（仅保留规则库审查模式） */
-
 /* 工具类 */
 .w-full {
   width: 100%;
@@ -3876,16 +2991,6 @@ onUnmounted(() => {
   .resize-divider {
     display: none;
   }
-
-  .workspace-guide {
-    padding: 40px 24px;
-    min-height: auto;
-  }
-
-  .guide-cards {
-    grid-template-columns: 1fr;
-    gap: 16px;
-  }
 }
 
 @media (max-width: 1024px) {
@@ -3971,19 +3076,6 @@ onUnmounted(() => {
   .live-issue-count {
     font-size: 11px;
     padding: 3px 6px;
-  }
-
-  .guide-title {
-    font-size: 20px;
-  }
-
-  .guide-actions {
-    flex-direction: column;
-    width: 100%;
-  }
-
-  .guide-actions .el-button {
-    width: 100%;
   }
 }
 </style>

@@ -38,11 +38,12 @@
                 v-for="item in group.items"
                 :key="item.id"
                 class="nav-item"
-                :class="{ active: activeNav === item.id }"
+                :class="{ active: activeNav === item.id, hot: item.hot }"
                 @click="selectNav(item)"
               >
                 <el-icon><component :is="iconMap[item.icon]" /></el-icon>
                 <span>{{ item.name }}</span>
+                <span v-if="item.hot" class="hot-icon">🔥</span>
                 <el-badge v-if="item.badge" :value="item.badge" type="warning" />
               </li>
             </ul>
@@ -166,11 +167,11 @@ const navGroups = ref([
     name: '规范与知识',
     icon: 'Files',
     items: [
-      { id: 'standards', name: '标准库清单管理', icon: 'Reading', description: '管理标准清单' },
+      { id: 'knowledge', name: '知识库管理', icon: 'FolderOpened', description: '管理知识库分类和文档', hot: true },
+      { id: 'rules', name: '语义知识库', icon: 'Document', description: '管理语义知识库和规则库', hot: true },
+      { id: 'standards', name: '标准库清单管理', icon: 'Reading', description: '管理标准清单', hot: true },
       { id: 'terminology', name: '白名单库', icon: 'Key', description: '管理白名单术语库' },
       { id: 'falsePositive', name: '误报标记库', icon: 'Warning', description: '管理误报标记记录' },
-      { id: 'knowledge', name: '知识库管理', icon: 'FolderOpened', description: '管理知识库分类和文档' },
-      { id: 'rules', name: '语义知识库', icon: 'Document', description: '管理语义知识库和规则库' },
     ]
   },
   {
@@ -514,6 +515,20 @@ const refreshCurrent = () => {
   background: linear-gradient(135deg, #eff6ff 0%, #dbeafe 100%);
   color: #3b82f6;
   font-weight: 500;
+}
+
+.nav-item.hot {
+  color: #1e40af;
+}
+
+.nav-item.hot .el-icon {
+  color: #3b82f6;
+}
+
+.hot-icon {
+  font-size: 12px;
+  margin-left: auto;
+  filter: drop-shadow(0 0 2px rgba(239, 68, 68, 0.5));
 }
 
 .content-area {

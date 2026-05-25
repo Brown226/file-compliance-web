@@ -10,6 +10,9 @@
               <el-tag size="small" type="info">{{ terminologyTotal }} 词</el-tag>
             </div>
           </template>
+          <div class="folder-search">
+            <el-input v-model="categorySearchQuery" placeholder="搜索分类..." clearable size="small" :prefix-icon="Search" />
+          </div>
           <div class="folder-tree-wrapper">
             <div
               class="folder-node"
@@ -21,7 +24,7 @@
               <span class="folder-count">{{ terminologyTotal }}</span>
             </div>
             <div
-              v-for="cat in terminologyCategories"
+              v-for="cat in filteredCategories"
               :key="cat.category"
               class="folder-node"
               :class="{ active: termFilterCategory === cat.category }"
@@ -52,17 +55,32 @@
                   :prefix-icon="Search"
                   @input="handleTermSearch"
                   @clear="handleTermSearch"
-                  style="width:200px"
                 />
                 <!-- 新增按钮：仅 ADMIN/MANAGER 可见 -->
                 <el-button v-if="canManage" type="primary" :icon="Plus" @click="openTermDialog('add')">新增术语</el-button>
+                <el-button
+                  v-if="canManage && selectedRows.length > 0"
+                  type="danger"
+                  :icon="Delete"
+                  size="default"
+                  @click="handleBatchDelete"
+                >
+                  批量删除 ({{ selectedRows.length }})
+                </el-button>
               </div>
             </div>
           </template>
 
-          <el-table :data="terminologyList" style="width:100%" v-loading="terminologyLoading" border>
-            <el-table-column prop="term" label="术语" width="200" />
-            <el-table-column prop="category" label="分类" width="120" align="center">
+          <el-table
+            :data="terminologyList"
+            style="width:100%"
+            v-loading="terminologyLoading"
+            border
+            @selection-change="handleSelectionChange"
+          >
+            <el-table-column v-if="canManage" type="selection" width="45" align="center" />
+            <el-table-column prop="term" label="术语" width="200" sortable="custom" />
+            <el-table-column prop="category" label="分类" width="120" align="center" sortable="custom">
               <template #default="{ row }">
                 <el-tag size="small" :type="termCategoryTagType(row.category)">{{ row.category }}</el-tag>
               </template>
@@ -70,8 +88,20 @@
             <el-table-column label="别名" min-width="280">
               <template #default="{ row }">
                 <template v-if="row.aliases?.length">
-                  <el-tag v-for="(alias, i) in row.aliases.slice(0, 5)" :key="i" size="small" type="info" style="margin:2px 4px 2px 0;">{{ alias }}</el-tag>
-                  <el-tag v-if="row.aliases.length > 5" size="small" type="info" style="margin:2px;">+{{ row.aliases.length - 5 }}</el-tag>
+                  <el-popover v-if="row.aliases.length > 5" trigger="hover" placement="top" :width="240">
+                    <template #reference>
+                      <div class="alias-preview">
+                        <el-tag v-for="(alias, i) in row.aliases.slice(0, 5)" :key="i" size="small" type="info" style="margin:2px 4px 2px 0;">{{ alias }}</el-tag>
+                        <el-tag size="small" type="primary" style="margin:2px;">+{{ row.aliases.length - 5 }}</el-tag>
+                      </div>
+                    </template>
+                    <div class="alias-full-list">
+                      <el-tag v-for="(alias, i) in row.aliases" :key="i" size="small" type="info" style="margin:2px 4px 2px 0;">{{ alias }}</el-tag>
+                    </div>
+                  </el-popover>
+                  <template v-else>
+                    <el-tag v-for="(alias, i) in row.aliases" :key="i" size="small" type="info" style="margin:2px 4px 2px 0;">{{ alias }}</el-tag>
+                  </template>
                 </template>
                 <span v-else style="color:var(--el-text-color-secondary);">—</span>
               </template>
@@ -85,10 +115,14 @@
             <el-table-column v-if="canManage" label="操作" width="150" align="center" fixed="right">
               <template #default="scope">
                 <el-button size="small" type="primary" link @click="openTermDialog('edit', scope.row)">编辑</el-button>
-                <el-button size="small" type="danger" link @click="handleDeleteTerm(scope.row)" :disabled="scope.row.isBuiltin">删除</el-button>
+                <el-tooltip :content="scope.row.isBuiltin ? '内置术语不可删除' : '删除此术语'" placement="top">
+                  <el-button size="small" type="danger" link @click="handleDeleteTerm(scope.row)" :disabled="scope.row.isBuiltin">删除</el-button>
+                </el-tooltip>
               </template>
             </el-table-column>
           </el-table>
+
+          <el-empty v-if="!terminologyLoading && terminologyList.length === 0" description="暂无术语数据" :image-size="100" />
 
           <div class="pagination-container">
             <el-pagination
@@ -118,7 +152,7 @@
           <el-input v-model="termFormData.term" placeholder="请输入专业术语" />
         </el-form-item>
         <el-form-item label="分类" prop="category">
-          <el-select v-model="termFormData.category" placeholder="选择分类" style="width:100%">
+          <el-select v-model="termFormData.category" placeholder="选择或输入新分类" style="width:100%" filterable allow-create default-first-option>
             <el-option v-for="cat in termCategoryOptions" :key="cat" :label="cat" :value="cat" />
           </el-select>
         </el-form-item>
@@ -156,7 +190,7 @@
 
 <script setup lang="ts">
 import { ref, reactive, onMounted, computed, watch } from 'vue'
-import { Plus, Search, Folder, Files } from '@element-plus/icons-vue'
+import { Plus, Search, Folder, Files, Delete } from '@element-plus/icons-vue'
 import { useEnterToConfirm } from '@/composables/useEnterToConfirm'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import type { FormInstance, FormRules } from 'element-plus'
@@ -186,6 +220,8 @@ const termSearchQuery = ref('')
 const termFilterCategory = ref('')
 const termCurrentPage = ref(1)
 const termPageSize = ref(50)
+const categorySearchQuery = ref('')
+const selectedRows = ref<TerminologyEntry[]>([])
 
 // 术语编辑对话框
 const termDialogVisible = ref(false)
@@ -208,6 +244,12 @@ const termCategoryOptions = computed(() => {
   const cats = terminologyCategories.value.map(c => c.category)
   if (!cats.includes('自定义')) cats.push('自定义')
   return cats
+})
+
+const filteredCategories = computed(() => {
+  const q = categorySearchQuery.value.trim().toLowerCase()
+  if (!q) return terminologyCategories.value
+  return terminologyCategories.value.filter(c => c.category.toLowerCase().includes(q))
 })
 
 const termCategoryTagType = (cat: string): 'warning' | 'info' | 'success' | 'danger' | 'primary' => {
@@ -335,6 +377,36 @@ const handleDeleteTerm = async (row: TerminologyEntry) => {
   }
 }
 
+const handleSelectionChange = (rows: TerminologyEntry[]) => {
+  selectedRows.value = rows
+}
+
+const handleBatchDelete = async () => {
+  const rows = selectedRows.value.filter(r => !r.isBuiltin)
+  if (rows.length === 0) {
+    ElMessage.warning('所选术语均为内置项，不可删除')
+    return
+  }
+  const builtinCount = selectedRows.value.length - rows.length
+  const hint = builtinCount > 0 ? `\n（已自动排除 ${builtinCount} 个内置术语）` : ''
+  try {
+    await ElMessageBox.confirm(`确认删除选中的 ${rows.length} 条术语吗？${hint}`, '批量删除', {
+      confirmButtonText: '确定', cancelButtonText: '取消', type: 'warning',
+    })
+    for (const row of rows) {
+      await deleteTerminologyApi(row.id)
+    }
+    ElMessage.success(`成功删除 ${rows.length} 条术语`)
+    selectedRows.value = []
+    fetchTerminologyList()
+    fetchTerminologyCategories()
+  } catch (e: any) {
+    if (e !== 'cancel') {
+      ElMessage.error(e?.response?.data?.error || '批量删除失败')
+    }
+  }
+}
+
 onMounted(() => {
   fetchTerminologyCategories()
   fetchTerminologyList()
@@ -449,6 +521,23 @@ onMounted(() => {
   border-radius: 10px;
   min-width: 20px;
   text-align: center;
+}
+
+.folder-search {
+  padding: 0 12px 8px;
+}
+
+.alias-preview {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.alias-full-list {
+  max-height: 160px;
+  overflow-y: auto;
+  display: flex;
+  flex-wrap: wrap;
 }
 
 .card-header { display: flex; justify-content: space-between; align-items: center; }

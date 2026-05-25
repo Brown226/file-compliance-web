@@ -3,8 +3,8 @@ import fs from 'fs';
 import { PythonParserService, ParseResult } from './python-parser.service';
 
 /**
- * 文件解析服务 - 通过 MarkItDown 微服务提取文本内容
- * MarkItDown 为唯一解析入口，不再提供 Node.js 回退
+ * 文件解析服务 - 通过 Python 解析微服务提取文本内容
+ * Python 微服务为唯一解析入口，不再提供 Node.js 回退
  * 支持: docx, xlsx, xls, pdf, pptx, ppt
  * DWG 文件已改为前端 WASM 解析（@mlightcad/libredwg-web），后端不再处理
  */
@@ -33,7 +33,7 @@ export class ParserService {
   /**
    * 解析文件，返回提取的文本内容
    * 纯文本格式 (txt, md, csv, json, xml, html) 直接读取
-   * 其他格式通过 MarkItDown 微服务解析
+   * 其他格式通过 Python 解析微服务解析
    */
   static async parseFile(filePath: string, fileType: string): Promise<string> {
     const { text } = await this.parseFileWithResult(filePath, fileType);
@@ -57,7 +57,7 @@ export class ParserService {
       return { text: '', result: null };
     }
 
-    // 纯文本格式直接读取，无需 MarkItDown
+    // 纯文本格式直接读取，无需调用解析服务
     const textFormats = ['txt', 'md', 'csv', 'json', 'xml', 'html', 'htm', 'log', 'ini', 'yaml', 'yml'];
     if (textFormats.includes(fileType.toLowerCase())) {
       const text = fs.readFileSync(absolutePath, 'utf-8');
