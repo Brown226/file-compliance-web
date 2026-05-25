@@ -101,7 +101,6 @@ const treeRef = ref()
 const treeProps = {
   label: 'name',
   children: 'children',
-  disabled: (node: any) => !!node.children?.length && !node.isLeaf,
   icon: (node: any) => {
     if (node.isLeaf || !node.children?.length) {
       return { component: 'Collection', props: { size: 16, color: '#3B82F6' } }
@@ -155,16 +154,24 @@ const clearAll = () => {
 }
 
 const handleConfirm = () => {
-  emit('confirm', [...checkedIds.value])
+  const leafIds = checkedIds.value.filter((id: string) => {
+    const node = findNode(id, props.treeData)
+    return node && (node.isLeaf || !node.children?.length)
+  })
+  emit('confirm', [...leafIds])
   emit('update:visible', false)
-  ElMessage.success(`已选择 ${checkedIds.value.length} 个知识库`)
+  ElMessage.success(`已选择 ${leafIds.length} 个知识库`)
 }
 
 watch(() => props.visible, async (val) => {
   if (val) {
     searchQuery.value = ''
     await nextTick()
-    treeRef.value?.setCheckedKeys([...props.selectedIds])
+    const leafIds = props.selectedIds.filter(id => {
+      const node = findNode(id, props.treeData)
+      return node && (node.isLeaf || !node.children?.length)
+    })
+    treeRef.value?.setCheckedKeys(leafIds)
   }
 })
 </script>

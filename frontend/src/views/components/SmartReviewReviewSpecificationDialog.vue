@@ -136,6 +136,7 @@ const getStatusLabel = (status: string) => {
 
 const handleConfirm = () => {
   emit('confirm', tempSelectedId.value)
+  emit('update:visible', false)
 }
 
 useEnterToConfirm(computed(() => props.visible), handleConfirm)

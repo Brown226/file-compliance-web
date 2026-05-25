@@ -845,7 +845,7 @@ const entryModuleLabel = computed(() =>
 
 const showEvidenceSection = computed(() => {
   if (!entryModule.value) return true
-  return ['LIBRARY', 'RULE_ONLY', 'MULTIMODAL', 'DOC_REVIEW'].includes(entryModule.value)
+  return ['LIBRARY', 'RULE_ONLY', 'DOC_REVIEW'].includes(entryModule.value)
 })
 
 const showObjectiveSelector = computed(() =>
@@ -913,7 +913,9 @@ const applyEntryModulePreset = (module: EntryModule) => {
 
   if (module === 'MULTIMODAL') {
     reviewPlanDraft.objective = 'COMPLIANCE'
-    reviewPlanDraft.evidence.sources = ['STANDARD']
+    reviewPlanDraft.evidence.sources = []
+    reviewPlanDraft.evidence.reviewSpecificationId = null
+    reviewPlanDraft.evidence.knowledgeCategoryIds = []
     reviewPlanDraft.enhancements.intraFileConsistency = true
     reviewPlanDraft.enhancements.crossFileConsistency = true
     reviewPlanDraft.execution.profile = 'RULE_ONLY'
@@ -1278,7 +1280,7 @@ const startAnalysis = async () => {
       reasons.push('以文审文/参照比对模式需要上传参照文件（在参考文件区上传）')
     if (reviewPlanDraft.evidence.sources.includes('REVIEW_SPECIFICATION') && !reviewPlanDraft.evidence.reviewSpecificationId)
       reasons.push('语义规范库模式需要选择具体的语义规范库')
-    const allowEmptySources = ['PROOFREAD'].includes(reviewPlanDraft.objective) || entryModule.value === 'CONSISTENCY' || entryModule.value === 'RULE_ONLY'
+    const allowEmptySources = ['PROOFREAD'].includes(reviewPlanDraft.objective) || ['CONSISTENCY', 'RULE_ONLY', 'MULTIMODAL'].includes(entryModule.value as EntryModule)
     if (!allowEmptySources && reviewPlanDraft.evidence.sources.length === 0)
       reasons.push('请至少选择一项审查依据（标准库/知识库/语义规范库/参照文件）')
     ElMessage.warning(reasons.length > 0 ? reasons[0] : '请完善审查配置后再开始分析')
@@ -1306,7 +1308,7 @@ const canSubmit = computed(() => {
   if (!form.title.trim()) return false
   if (reviewPlanDraft.objective === 'COMPARE' && refFileList.value.length === 0) return false
   if (reviewPlanDraft.evidence.sources.includes('REVIEW_SPECIFICATION') && !reviewPlanDraft.evidence.reviewSpecificationId) return false
-  const allowEmptySources = ['PROOFREAD'].includes(reviewPlanDraft.objective) || entryModule.value === 'CONSISTENCY' || entryModule.value === 'RULE_ONLY'
+  const allowEmptySources = ['PROOFREAD'].includes(reviewPlanDraft.objective) || ['CONSISTENCY', 'RULE_ONLY', 'MULTIMODAL'].includes(entryModule.value as EntryModule)
   if (!allowEmptySources && reviewPlanDraft.evidence.sources.length === 0) return false
   return true
 })
