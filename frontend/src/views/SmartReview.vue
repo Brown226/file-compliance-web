@@ -365,647 +365,86 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, computed, watch, onMounted, nextTick } from 'vue'
-import { useRouter, useRoute } from 'vue-router'
+import { ref, onMounted, nextTick } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import type { UploadFile, FormInstance, FormRules } from 'element-plus'
 import {
   Check, MagicStick, WarningFilled,
   RemoveFilled, CirclePlusFilled, Document, Link,
-  Loading, ArrowUp, EditPen, DataAnalysis, Files,
-  Connection, Monitor, CircleCheck,
+  Loading, ArrowUp,
 } from '@element-plus/icons-vue'
-import { createTaskApi, preAnalyzeApi, uploadOnlyApi, exportTaskReportApi, exportTaskReportWordApi } from '@/api/task'
-import type { ReviewPlan, ReviewObjective, ReviewEvidenceSource } from '@/types/models'
 import { getAllKnowledgeCategoriesApi, getKnowledgeTreeApi } from '@/api/knowledge-category'
 import { getRuleLibrariesApi } from '@/api/rule-library'
-import { getRuleRegistryApi, type RuleGroupMeta, type RuleMetaItem } from '@/api/system'
-import { useUserStore } from '@/stores/user'
+import { getRuleRegistryApi, type RuleGroupMeta } from '@/api/system'
 import SmartReviewUploadStep from './components/SmartReviewUploadStep.vue'
 import SmartReviewKnowledgeDialog from './components/SmartReviewKnowledgeDialog.vue'
 import SmartReviewReviewSpecificationDialog from './components/SmartReviewReviewSpecificationDialog.vue'
+import { useSmartReviewState } from './composables/useSmartReviewState'
+import { usePreAnalysis } from './composables/usePreAnalysis'
+import { useReviewPlan } from './composables/useReviewPlan'
+import { useTaskSubmission } from './composables/useTaskSubmission'
+import {
+  OBJECTIVE_ICON_MAP,
+  EVIDENCE_ICON_MAP,
+  PROGRESS_STEP_LABELS,
+  PROGRESS_STATUS_LABELS,
+} from './constants/review-config'
+import type { EntryModule } from './types/smart-review'
+
+const state = useSmartReviewState()
+const preAnalysis = usePreAnalysis(state)
+const plan = useReviewPlan(state)
+const submission = useTaskSubmission(state, plan, preAnalysis)
+
+const { objectiveIconMap } = { objectiveIconMap: OBJECTIVE_ICON_MAP }
+const { evidenceIconMap } = { evidenceIconMap: EVIDENCE_ICON_MAP }
 
-const router = useRouter()
-const route = useRoute()
-const userStore = useUserStore()
-const formRef = ref<FormInstance>()
-
-// ===== 入口来源判断 =====
-// 当路由包含 :id 参数时（如 /review/123），说明是从历史记录入口访问，应隐藏步骤条以释放空间
-// 从新建流程访问时路由为 /review（无参数），步骤条正常显示
-const isFromHistory = computed(() => !!route.params.id)
-
-// ===== 步骤控制 =====
-const currentStep = ref(0) // 0: 上传, 1: 确认, 2: 审查中
-
-// ===== 文件上传 =====
-const fileList = ref<UploadFile[]>([])
-const refFileList = ref<UploadFile[]>([])
-const dwgParsedDataMap = ref<Record<string, any>>({})
-
-const onDwgParsed = (fileName: string, data: any) => {
-  dwgParsedDataMap.value[fileName] = data
-}
-const onDwgParseError = (fileName: string, _err: any) => {
-  console.warn('[SmartReview] DWG parse error:', fileName)
-}
-
-// ===== 表单 =====
-const form = reactive({ title: '' })
-const rules: FormRules = {
-  title: [{ required: true, message: '请输入任务标题', trigger: 'blur' }],
-}
-
-// ===== 预分析 =====
-const preAnalyzed = ref(false)
-const preAnalyzing = ref(false)
-const tempUploadedFilePaths = ref<string[]>([])
-const isUploadingForPreAnalysis = ref(false)
-const preAnalysisData = reactive({
-  contractType: '',
-  noResultReason: '',
-  potentialParties: [] as string[],
-  suggestedReviewPoints: [] as string[],
-  suggestedCorePurposes: [] as string[],
-  llmAnalyzed: false,
-})
-
-const aiSuggestedTitle = computed(() => {
-  if (!preAnalyzed.value || form.title) return ''
-  if (preAnalysisData.noResultReason) return ''
-  const type = preAnalysisData.contractType
-  const firstFile = fileList.value[0]?.name?.replace(/\.[^.]+$/, '') || ''
-  if (type && firstFile) return `${firstFile}-${type}审查`
-  if (type) return `${type}智能审查`
-  if (firstFile) return `${firstFile}-文件合规审查`
-  return ''
-})
-
-let preAnalyzeTimer: ReturnType<typeof setTimeout> | null = null
-
-// 监听文件列表变化，后台进行预分析（不自动跳转步骤）
-// 仅在已在步骤1时触发（如用户返回重新上传），步骤0的预分析由 goToStep1 处理
-watch(fileList, (newList) => {
-  if (preAnalyzeTimer) clearTimeout(preAnalyzeTimer)
-  if (newList.length > 0) {
-    // 标记预分析未完成（因为文件列表变化了）
-    preAnalyzed.value = false
-    preAnalyzing.value = true
-
-    // 仅在已在步骤1时自动触发预分析（用户返回修改文件的场景）
-    if (currentStep.value === 1) {
-      preAnalyzeTimer = setTimeout(() => {
-        const metaList = newList.map(f => ({ name: f.name, size: f.size || 0 }))
-        runPreAnalysisWithSignal(metaList, currentPreAnalysisAbortController?.signal)
-      }, 800)
-    }
-  } else {
-    // 文件列表为空时，重置预分析状态
-    preAnalyzed.value = false
-    preAnalyzing.value = false
-  }
-}, { deep: true })
-
-// 应用预分析数据到界面
-const applyPreAnalysisData = (data: any) => {
-  console.log('[SmartReview] applyPreAnalysisData 接收到的数据:', JSON.stringify({
-    suggestedReviewPoints: data.suggestedReviewPoints,
-    suggestedCorePurposes: data.suggestedCorePurposes,
-    contractType: data.contractType,
-    documentTypeLabel: data.documentTypeLabel,
-    recommendations: data.recommendations,
-    llmAnalyzed: data.llmAnalyzed,
-  }, null, 2))
-
-  // 记录是否经过真实AI分析
-  preAnalysisData.llmAnalyzed = !!data.llmAnalyzed
-
-  // 应用推荐结果
-  if (data.suggestedPerspective) {
-    config.perspective = data.suggestedPerspective
-  } else if (!config.perspective) {
-    config.perspective = 'general'
-  }
-  // 兼容两种字段名：contractType 或 documentType
-  if (data.contractType) {
-    preAnalysisData.contractType = data.contractType
-  } else if (data.documentTypeLabel) {
-    preAnalysisData.contractType = data.documentTypeLabel
-  }
-  preAnalysisData.noResultReason = data.noResultReason || ''
-
-  // 根据预分析结果设置审查项
-  const rec = data.recommendations
-  if (!rec) {
-    console.log('[SmartReview] 无推荐数据，跳过审查项设置')
-    return
-  }
-
-  // 新流程(ReviewPlanDraft)直接填充：预分析推荐作用于新版配置面板
-  if (rec.libraryReview?.categoryId) {
-    const ids = reviewPlanDraft.evidence.knowledgeCategoryIds
-    if (!ids.includes(rec.libraryReview.categoryId)) {
-      ids.push(rec.libraryReview.categoryId)
-    }
-  }
-  if (rec.reviewSpecification?.specificationId) {
-    reviewPlanDraft.evidence.reviewSpecificationId = rec.reviewSpecification.specificationId
-    if (!reviewPlanDraft.evidence.sources.includes('REVIEW_SPECIFICATION')) {
-      reviewPlanDraft.evidence.sources.push('REVIEW_SPECIFICATION')
-    }
-  }
-
-  // 保存推荐理由
-  preAnalysisReasons.value = {
-    library: rec.libraryReview?.reason,
-    reviewSpecification: rec.reviewSpecification?.reason,
-    typo: rec.generalChecks?.typoCheck?.reason,
-    crossFile: rec.generalChecks?.crossFileCheck?.reason,
-  }
-
-  // 更新预分析数据（只在真实AI分析成功时更新）
-  const suggestedPoints = data.suggestedReviewPoints || []
-  console.log('[SmartReview] suggestedReviewPoints 长度:', suggestedPoints.length, '内容:', suggestedPoints, 'llmAnalyzed:', data.llmAnalyzed)
-  
-  if (data.llmAnalyzed && suggestedPoints.length > 0) {
-    preAnalysisData.suggestedReviewPoints = suggestedPoints
-    allSuggestedReviewPoints.value = [...suggestedPoints]
-    selectedReviewPoints.value = [...suggestedPoints]
-    console.log('[SmartReview] 已更新审查点为AI生成的值')
-  } else if (!data.llmAnalyzed) {
-    console.warn('[SmartReview] LLM分析未执行，使用默认审查点模板')
-  }
-  
-  const suggestedPurposes = data.suggestedCorePurposes || []
-  console.log('[SmartReview] suggestedCorePurposes 长度:', suggestedPurposes.length, '内容:', suggestedPurposes, 'llmAnalyzed:', data.llmAnalyzed)
-  
-  if (data.llmAnalyzed && suggestedPurposes.length > 0) {
-    preAnalysisData.suggestedCorePurposes = suggestedPurposes
-    allSuggestedCorePurposes.value = [...suggestedPurposes]
-    customPurposes.value = suggestedPurposes.map((p: string) => ({ value: p }))
-    console.log('[SmartReview] 已更新核心目的为AI生成的值')
-  } else if (!data.llmAnalyzed) {
-    console.warn('[SmartReview] LLM分析未执行，使用默认核心目的模板')
-  }
-}
-
-// 下一步：进入预审配置（先上传文件，再进行AI预分析）
-const goToStep1 = async () => {
-  if (fileList.value.length === 0) {
-    ElMessage.warning('请至少选择一个待审文件')
-    return
-  }
-
-  currentStep.value = 1
-  if (!config.perspective) {
-    config.perspective = 'general'
-  }
-
-  // RULE_ONLY 模式无需 AI 预分析，直接跳过
-  if (entryModule.value === 'RULE_ONLY') {
-    return
-  }
-
-  if (preAnalyzed.value) {
-    backgroundStatus.value = 'idle'
-    return
-  }
-
-  // 阶段1：先上传文件到服务器（获取实际文件路径）
-  backgroundStatus.value = 'pre-analyzing'
-  currentPreAnalysisAbortController = new AbortController()
-
-  try {
-    isUploadingForPreAnalysis.value = true
-
-    // 构建FormData并上传文件
-    const formData = new FormData()
-    fileList.value.forEach(f => {
-      if (f.raw) {
-        formData.append('files', f.raw)
-      }
-    })
-
-    const uploadRes = await uploadOnlyApi(formData)
-
-    // 保存返回的文件路径
-    const uploadedFiles = uploadRes.data?.files || []
-    tempUploadedFilePaths.value = uploadedFiles.map((f: any) => f.filePath)
-
-    console.log('[SmartReview] 文件已上传用于预分析，路径:', tempUploadedFilePaths.value)
-
-    isUploadingForPreAnalysis.value = false
-
-    // 阶段2：使用实际文件路径进行预分析
-    const fileMetaWithPaths = uploadedFiles.map((f: any) => ({
-      name: f.fileName,
-      size: f.fileSize,
-      filePath: f.filePath  // 关键：传入实际路径
-    }))
-
-    await runPreAnalysisWithSignal(fileMetaWithPaths, currentPreAnalysisAbortController.signal)
-
-    backgroundStatus.value = 'done'
-    ElMessage.success('AI 预分析完成，已自动填入推荐配置')
-    if (backgroundStatusHideTimer) clearTimeout(backgroundStatusHideTimer)
-    backgroundStatusHideTimer = setTimeout(() => { backgroundStatus.value = 'idle' }, 3000)
-
-  } catch (err: any) {
-    if (err?.name === 'AbortError') return
-    console.error('[SmartReview] 预分析流程失败:', err)
-    backgroundStatus.value = 'failed'
-    ElMessage.warning('预分析失败，您可手动配置后直接开始分析')
-  } finally {
-    isUploadingForPreAnalysis.value = false
-  }
-}
-
-// 带取消信号的预分析（用于解决竞态问题）
-let currentPreAnalysisAbortController: AbortController | null = null
-
-const handleKnowledgeConfirm = (selectedIds: string[]) => {
-  reviewPlanDraft.evidence.knowledgeCategoryIds = selectedIds
-}
-const handleReviewSpecificationConfirm = (specificationId: string | null) => {
-  reviewPlanDraft.evidence.reviewSpecificationId = specificationId
-}
-
-const runPreAnalysisWithSignal = async (files: Array<{ name: string; size: number }>, signal?: AbortSignal) => {
-  preAnalyzing.value = true
-  try {
-    const { data } = await preAnalyzeApi(files)
-    if (signal?.aborted) throw new DOMException('Aborted', 'AbortError')
-    applyPreAnalysisData(data)
-    preAnalyzed.value = true
-  } catch (e: any) {
-    if (e?.name === 'AbortError') throw e
-    console.warn('[SmartReview] 预分析失败:', e)
-    throw e
-  } finally {
-    preAnalyzing.value = false
-  }
-}
-
-const preAnalysisReasons = ref<Record<string, string>>({})
-
-// ===== 后台预分析状态跟踪 =====
-// 'idle' | 'pre-analyzing' | 'done' | 'failed'
-const backgroundStatus = ref<'idle' | 'pre-analyzing' | 'done' | 'failed'>('idle')
-let backgroundStatusHideTimer: ReturnType<typeof setTimeout> | null = null
-
-// ===== localStorage 状态持久化 =====
-const STORAGE_KEY = 'smartReview_draft_v3'
-
-interface PersistedState {
-  currentStep: number
-  title: string
-  preAnalyzed: boolean
-  preAnalysisData: typeof preAnalysisData
-  selectedReviewPoints: string[]
-  customPurposes: Array<{ value: string }>
-  allSuggestedReviewPoints: string[]
-  allSuggestedCorePurposes: string[]
-  fileNames: string[]
-  refFileNames: string[]
-  savedAt: number
-}
-
-const saveState = () => {
-  try {
-    const state: PersistedState = {
-      currentStep: currentStep.value,
-      title: form.title,
-      preAnalyzed: preAnalyzed.value,
-      preAnalysisData: { ...preAnalysisData },
-      selectedReviewPoints: [...selectedReviewPoints.value],
-      customPurposes: customPurposes.value.map(p => ({ value: p.value })),
-      allSuggestedReviewPoints: [...allSuggestedReviewPoints.value],
-      allSuggestedCorePurposes: [...allSuggestedCorePurposes.value],
-      fileNames: fileList.value.map(f => f.name),
-      refFileNames: refFileList.value.map(f => f.name),
-      savedAt: Date.now(),
-    }
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(state))
-  } catch (e) {
-    // localStorage 不可用或存储满时静默失败
-  }
-}
-
-const restoreState = (): boolean => {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY)
-    if (!raw) return false
-    const state: PersistedState = JSON.parse(raw)
-    // 30分钟内有效
-    if (Date.now() - state.savedAt > 30 * 60 * 1000) {
-      clearSavedState()
-      return false
-    }
-    if (state.currentStep !== undefined) currentStep.value = state.currentStep
-    if (state.title) form.title = state.title
-    if (state.preAnalyzed) preAnalyzed.value = state.preAnalyzed
-    if (state.preAnalysisData) {
-      if (state.preAnalysisData.contractType) preAnalysisData.contractType = state.preAnalysisData.contractType
-      if (state.preAnalysisData.potentialParties?.length) preAnalysisData.potentialParties = state.preAnalysisData.potentialParties
-      if (state.preAnalysisData.suggestedReviewPoints?.length) preAnalysisData.suggestedReviewPoints = state.preAnalysisData.suggestedReviewPoints
-      if (state.preAnalysisData.suggestedCorePurposes?.length) preAnalysisData.suggestedCorePurposes = state.preAnalysisData.suggestedCorePurposes
-    }
-    if (state.selectedReviewPoints?.length) selectedReviewPoints.value = state.selectedReviewPoints
-    if (state.customPurposes?.length) customPurposes.value = state.customPurposes
-    if (state.allSuggestedReviewPoints?.length) allSuggestedReviewPoints.value = state.allSuggestedReviewPoints
-    if (state.allSuggestedCorePurposes?.length) allSuggestedCorePurposes.value = state.allSuggestedCorePurposes
-    return true
-  } catch (e) {
-    return false
-  }
-}
-
-const clearSavedState = () => {
-  try { localStorage.removeItem(STORAGE_KEY) } catch (e) { /* ignore */ }
-}
-
-// ===== 审查配置（需求驱动） =====
-const config = reactive({
-  perspective: '',
-})
-
-
-
-type EntryModule = 'LIBRARY' | 'CONSISTENCY' | 'PROOFREAD' | 'RULE_ONLY' | 'MULTIMODAL' | 'DOC_REVIEW'
-
-const ENTRY_MODULE_LABEL: Record<EntryModule, string> = {
-  LIBRARY: '以库审文',
-  CONSISTENCY: '一致性审查',
-  PROOFREAD: '基础校对审查',
-  RULE_ONLY: '规则库审查',
-  MULTIMODAL: '多模态识别',
-  DOC_REVIEW: '以文审文',
-}
-
-const modeHintMap: Partial<Record<EntryModule, string>> = {
-  CONSISTENCY: '本模式检查文件内部/之间的数据参数是否自洽（如"设计压力"在前后文中是否一致），使用规则引擎精确数值比对。如需与参照文件做语义级比对，请选择「以文审文」。',
-  DOC_REVIEW: '本模式将待审文件与参照文件进行 AI 语义级逐项比对，可发现内容缺失、偏差和条款遗漏。需上传参照文件。',
-}
-
-const modeDescriptionMap: Record<EntryModule, { title: string; desc: string; icon: string }> = {
-  LIBRARY: { title: '以库审文模式', desc: '基于知识库进行合规性审查，适用于合同、规范等标准化文档的全面检查。', icon: 'FolderOpened' },
-  CONSISTENCY: { title: '一致性审查模式', desc: '检查文件内部及跨文件的数据参数一致性，支持数值容差和维度自定义。', icon: 'Connection' },
-  PROOFREAD: { title: '基础校对模式', desc: '专注于文本层面的错别字、语法、标点和格式错误检测与纠正。', icon: 'EditPen' },
-  RULE_ONLY: { title: '规则库审查模式', desc: '仅使用自定义规则库进行结构化审查，适合有明确规则的标准化检查场景。', icon: 'Files' },
-  MULTIMODAL: { title: '多模态识别模式', desc: '综合处理文本、表格、图片、图纸等多种格式，AI智能识别并提取关键信息。', icon: 'Monitor' },
-  DOC_REVIEW: { title: '以文审文模式', desc: '将待审文件与参照文件进行AI语义级逐项比对，发现内容遗漏、偏差和冲突。', icon: 'Document' },
-}
-
-const getModeBadgeType = (mode: EntryModule): '' | 'success' | 'warning' | 'danger' | 'info' => {
-  const map: Record<EntryModule, '' | 'success' | 'warning' | 'danger' | 'info'> = {
-    LIBRARY: '', CONSISTENCY: 'success', PROOFREAD: 'info', RULE_ONLY: 'warning', MULTIMODAL: 'danger', DOC_REVIEW: '',
-  }
-  return map[mode] || ''
-}
-
-const getModeBadgeLabel = (mode: EntryModule) => {
-  const map: Record<EntryModule, string> = {
-    LIBRARY: '常用', CONSISTENCY: '精确', PROOFREAD: '轻量', RULE_ONLY: '专业', MULTIMODAL: '高级', DOC_REVIEW: '对比',
-  }
-  return map[mode] || ''
-}
-
-const scrollToUpload = () => {
-  currentStep.value = 0
-}
-
-const entryModule = ref<EntryModule | ''>('')
-
-const entryModuleLabel = computed(() =>
-  entryModule.value ? ENTRY_MODULE_LABEL[entryModule.value] : '',
-)
-
-const showEvidenceSection = computed(() => {
-  if (!entryModule.value) return true
-  return ['LIBRARY', 'RULE_ONLY', 'DOC_REVIEW'].includes(entryModule.value)
-})
-
-const showObjectiveSelector = computed(() =>
-  !entryModule.value,
-)
-
-const showExecutionProfileSection = computed(() =>
-  !entryModule.value || entryModule.value === 'RULE_ONLY',
-)
-
-const ruleReviewEnabled = computed({
-  get: () => reviewPlanDraft.evidence.sources.includes('REVIEW_SPECIFICATION'),
-  set: (enabled: boolean) => {
-    const current = new Set(reviewPlanDraft.evidence.sources)
-    if (enabled) {
-      current.add('REVIEW_SPECIFICATION')
-    } else {
-      current.delete('REVIEW_SPECIFICATION')
-      reviewPlanDraft.evidence.reviewSpecificationId = null
-    }
-    reviewPlanDraft.evidence.sources = Array.from(current)
-  },
-})
-
-const isEvidenceLocked = (source: ReviewEvidenceSource) => {
-  if (!entryModule.value) return reviewPlanDraft.objective === 'COMPARE'
-  if (entryModule.value === 'RULE_ONLY') return source !== 'REVIEW_SPECIFICATION'
-  if (entryModule.value === 'PROOFREAD') return true
-  if (entryModule.value === 'CONSISTENCY' && reviewPlanDraft.objective === 'COMPARE') {
-    return source !== 'REFERENCE'
-  }
-  return reviewPlanDraft.objective === 'COMPARE'
-}
-
-const applyEntryModulePreset = (module: EntryModule) => {
-  if (module === 'LIBRARY') {
-    reviewPlanDraft.objective = 'COMPLIANCE'
-    reviewPlanDraft.evidence.sources = ['STANDARD']
-    reviewPlanDraft.execution.profile = 'RULE_ONLY'
-    return
-  }
-
-  if (module === 'CONSISTENCY') {
-    reviewPlanDraft.objective = 'COMPLIANCE'
-    reviewPlanDraft.evidence.sources = []
-    reviewPlanDraft.evidence.reviewSpecificationId = null
-    reviewPlanDraft.evidence.knowledgeCategoryIds = []
-    reviewPlanDraft.evidence.refFileGroupId = null
-    reviewPlanDraft.enhancements.intraFileConsistency = true
-    reviewPlanDraft.enhancements.crossFileConsistency = true
-    reviewPlanDraft.execution.profile = 'RULE_ONLY'
-    return
-  }
-
-  if (module === 'PROOFREAD') {
-    reviewPlanDraft.objective = 'PROOFREAD'
-    reviewPlanDraft.evidence.sources = []
-    reviewPlanDraft.evidence.reviewSpecificationId = null
-    reviewPlanDraft.evidence.knowledgeCategoryIds = []
-    reviewPlanDraft.enhancements.intraFileConsistency = true
-    reviewPlanDraft.enhancements.crossFileConsistency = false
-    reviewPlanDraft.execution.profile = 'RULE_ONLY'
-    return
-  }
-
-  if (module === 'MULTIMODAL') {
-    reviewPlanDraft.objective = 'COMPLIANCE'
-    reviewPlanDraft.evidence.sources = []
-    reviewPlanDraft.evidence.reviewSpecificationId = null
-    reviewPlanDraft.evidence.knowledgeCategoryIds = []
-    reviewPlanDraft.enhancements.intraFileConsistency = true
-    reviewPlanDraft.enhancements.crossFileConsistency = true
-    reviewPlanDraft.execution.profile = 'RULE_ONLY'
-    return
-  }
-
-  if (module === 'DOC_REVIEW') {
-    reviewPlanDraft.objective = 'COMPARE'
-    reviewPlanDraft.evidence.sources = ['REFERENCE']
-    reviewPlanDraft.evidence.reviewSpecificationId = null
-    reviewPlanDraft.evidence.knowledgeCategoryIds = []
-    reviewPlanDraft.evidence.refFileGroupId = null
-    reviewPlanDraft.enhancements.intraFileConsistency = true
-    reviewPlanDraft.enhancements.crossFileConsistency = true
-    reviewPlanDraft.execution.profile = 'RULE_ONLY'
-    return
-  }
-
-  if (module === 'RULE_ONLY') {
-    reviewPlanDraft.objective = 'COMPLIANCE'
-    reviewPlanDraft.evidence.sources = []
-    reviewPlanDraft.evidence.reviewSpecificationId = null
-    reviewPlanDraft.evidence.knowledgeCategoryIds = []
-    reviewPlanDraft.evidence.refFileGroupId = null
-    reviewPlanDraft.enhancements.intraFileConsistency = false
-    reviewPlanDraft.enhancements.crossFileConsistency = false
-    reviewPlanDraft.execution.profile = 'RULE_ONLY'
-    return
-  }
-}
-
-const reviewPlanDraft = reactive<ReviewPlan>({
-  objective: 'COMPLIANCE',
-  evidence: {
-    sources: ['STANDARD'],
-    knowledgeCategoryIds: [],
-    reviewSpecificationId: null,
-    refFileGroupId: null,
-    enabledPrefixes: [],
-  },
-  enhancements: {
-    intraFileConsistency: false,
-    crossFileConsistency: false,
-  },
-  execution: {
-    profile: 'RULE_ONLY',
-  },
-  templateId: 'general',
-})
-
-const defaultEnabledPrefixes = [
-  'NAME', 'FORMAT', 'LAYOUT', 'HEADER', 'PAGE', 'CODE', 'UNIT', 'ATTR', 'TYPO',
-  'CONSIST', 'COMPL',
-  'DWG_TITLE', 'DWG_LAYER', 'DWG_DIM', 'DWG_STDREF', 'DWG_SCALE', 'DWG_OVERLAP',
-]
-
-const enabledRulePrefixes = ref<string[]>([])
-
-const rulePrefixGroups = ref<RuleGroupMeta[]>([])
-const ruleRegistryLoaded = ref(false)
-
-async function loadRuleRegistry() {
-  try {
-    const { data } = await getRuleRegistryApi()
-    rulePrefixGroups.value = data.groups || []
-    if (!enabledRulePrefixes.value.length && data.allPrefixes?.length) {
-      enabledRulePrefixes.value = [...data.allPrefixes]
-    }
-    ruleRegistryLoaded.value = true
-    console.log(`[SmartReview] 规则注册表加载成功: ${data.total} 项, ${data.groups?.length || 0} 组`)
-  } catch (e) {
-    console.warn('[SmartReview] 规则注册表加载失败，使用空列表:', e)
-    ruleRegistryLoaded.value = true
-  }
-}
-
-const reviewPlanPayload = computed<ReviewPlan>(() => {
-  return {
-    ...reviewPlanDraft,
-      evidence: {
-        ...reviewPlanDraft.evidence,
-        knowledgeCategoryIds: [...(reviewPlanDraft.evidence.knowledgeCategoryIds || [])],
-        sources: [...(reviewPlanDraft.evidence.sources || [])],
-        reviewSpecificationId: reviewPlanDraft.evidence.reviewSpecificationId || null,
-        refFileGroupId: reviewPlanDraft.evidence.refFileGroupId || null,
-        enabledPrefixes: [...enabledRulePrefixes.value],
-      },
-      enhancements: {
-        ...reviewPlanDraft.enhancements,
-      },
-      execution: {
-        ...reviewPlanDraft.execution,
-      },
-      templateId: reviewPlanDraft.templateId,
-    }
-  })
-
-const objectiveOptions: Array<{ value: ReviewObjective; label: string; desc: string }> = [
-  { value: 'COMPLIANCE', label: '合规审查', desc: '对照知识库或规则库检查文件是否合规。' },
-  { value: 'COMPARE', label: '参照比对', desc: '与参考文件逐项比对，识别差异和不一致。' },
-  { value: 'PROOFREAD', label: '文本校对', desc: '检查错别字、语病、术语一致性等文字问题。' },
-  { value: 'STRUCTURED', label: '结构化审查', desc: '检查图纸、表格、公式和结构化内容。' },
-]
-
-const objectiveIconMap: Record<string, any> = {
-  COMPLIANCE: 'MagicStick',
-  COMPARE: 'Document',
-  PROOFREAD: 'EditPen',
-  STRUCTURED: 'DataAnalysis',
-}
-
-const evidenceIconMap: Record<string, any> = {
-  STANDARD: 'FolderOpened',
-  REVIEW_SPECIFICATION: 'Files',
-  REFERENCE: 'Link',
-}
-
-const toggleEvidenceSource = (source: ReviewEvidenceSource) => {
-  if (isEvidenceLocked(source)) return
-  const current = new Set(reviewPlanDraft.evidence.sources)
-  if (current.has(source)) {
-    current.delete(source)
-    if (source === 'REVIEW_SPECIFICATION') reviewPlanDraft.evidence.reviewSpecificationId = null
-  } else {
-    current.add(source)
-  }
-  reviewPlanDraft.evidence.sources = Array.from(current)
-}
-
-// ===== 选择对话框相关 =====
 const knowledgeDialogVisible = ref(false)
 const reviewSpecificationDialogVisible = ref(false)
+const knowledgeCategories = ref<Array<{ id: string; name: string }>>([])
+const knowledgeTreeData = ref<any[]>([])
+const reviewSpecifications = ref<Array<{
+  id: string
+  name: string
+  status: string
+  itemCount: number
+  executableCount: number
+}>>([])
 
-const handleEvidenceCardClick = (source: ReviewEvidenceSource) => {
-  if (isEvidenceLocked(source)) return
+const progressStepLabel = (step: string) => PROGRESS_STEP_LABELS[step] || step || '处理中'
+const progressStatusLabel = (status: string) => PROGRESS_STATUS_LABELS[status] || status || '处理中'
+const progressStatusClass = (status: string) => {
+  if (status === 'completed') return 'completed'
+  if (status === 'failed') return 'failed'
+  return 'running'
+}
 
-  if (source === 'STANDARD') {
-    const current = new Set(reviewPlanDraft.evidence.sources)
-    if (!current.has(source)) {
-      current.add(source)
-      reviewPlanDraft.evidence.sources = Array.from(current)
-    }
-    openKnowledgeDialog()
-  } else if (source === 'REVIEW_SPECIFICATION') {
-    const current = new Set(reviewPlanDraft.evidence.sources)
-    if (!current.has(source)) {
-      current.add(source)
-      reviewPlanDraft.evidence.sources = Array.from(current)
-    }
-    openReviewSpecificationDialog()
-  } else {
-    toggleEvidenceSource(source)
+const goToStep1 = preAnalysis.goToStep1WithPreAnalysis
+
+const goBackToUpload = () => {
+  state.currentStep.value = 0
+  state.fileList.value = []
+  state.refFileList.value = []
+}
+
+const startAnalysis = async () => {
+  if (!state.form.title.trim()) {
+    ElMessage.warning('请输入任务标题')
+    return
   }
+  if (!plan.canSubmit.value) {
+    const reasons: string[] = []
+    if (!state.form.title.trim()) reasons.push('请输入任务标题')
+    if (state.reviewPlanDraft.objective === 'COMPARE' && state.refFileList.value.length === 0)
+      reasons.push('以文审文/参照比对模式需要上传参照文件（在参考文件区上传）')
+    if (state.reviewPlanDraft.evidence.sources.includes('REVIEW_SPECIFICATION') && !state.reviewPlanDraft.evidence.reviewSpecificationId)
+      reasons.push('语义规范库模式需要选择具体的语义规范库')
+    const allowEmptySources = ['PROOFREAD'].includes(state.reviewPlanDraft.objective) || ['CONSISTENCY', 'RULE_ONLY', 'MULTIMODAL'].includes(state.entryModule.value as EntryModule)
+    if (!allowEmptySources && state.reviewPlanDraft.evidence.sources.length === 0)
+      reasons.push('请至少选择一项审查依据（标准库/知识库/语义规范库/参照文件）')
+    ElMessage.warning(reasons.length > 0 ? reasons[0] : '请完善审查配置后再开始分析')
+    return
+  }
+  await submission.submitTask()
 }
 
 const openKnowledgeDialog = () => {
@@ -1016,9 +455,6 @@ const openReviewSpecificationDialog = async () => {
   reviewSpecificationDialogVisible.value = true
   try {
     const specRes = await getRuleLibrariesApi()
-    console.log('[SmartReview] API response:', specRes)
-    console.log('[SmartReview] specRes.data type:', typeof specRes.data, Array.isArray(specRes.data))
-    console.log('[SmartReview] specRes.data content:', JSON.stringify(specRes.data))
     reviewSpecifications.value = (specRes.data || []).map((l: any) => ({
       id: l.id,
       name: l.name,
@@ -1027,16 +463,23 @@ const openReviewSpecificationDialog = async () => {
       itemCount: l._count?.items || l.items?.length || 0,
       executableCount: l.enabledExecutableItemCount || l.executableItemCount || 0,
     }))
-    console.log('[SmartReview] reviewSpecifications.value:', reviewSpecifications.value)
   } catch (e) {
     console.warn('[SmartReview] 刷新语义规范库列表失败:', e)
   }
 }
 
+const handleKnowledgeConfirm = (selectedIds: string[]) => {
+  state.reviewPlanDraft.evidence.knowledgeCategoryIds = selectedIds
+}
+
+const handleReviewSpecificationConfirm = (specificationId: string | null) => {
+  state.reviewPlanDraft.evidence.reviewSpecificationId = specificationId
+}
+
 const removeKnowledgeCategory = (id: string) => {
-  const index = reviewPlanDraft.evidence.knowledgeCategoryIds.indexOf(id)
+  const index = state.reviewPlanDraft.evidence.knowledgeCategoryIds.indexOf(id)
   if (index > -1) {
-    reviewPlanDraft.evidence.knowledgeCategoryIds.splice(index, 1)
+    state.reviewPlanDraft.evidence.knowledgeCategoryIds.splice(index, 1)
   }
 }
 
@@ -1050,324 +493,22 @@ const getReviewSpecificationName = (id: string) => {
   return specification?.name || id
 }
 
-const evidenceSourceOptions: Record<ReviewObjective, Array<{ value: ReviewEvidenceSource; label: string }>> = {
-  COMPLIANCE: [
-    { value: 'STANDARD', label: '知识库' },
-    { value: 'REVIEW_SPECIFICATION', label: '语义规范库' },
-  ],
-  COMPARE: [
-    { value: 'REFERENCE', label: '参考文件' },
-  ],
-  PROOFREAD: [],
-  STRUCTURED: [
-    { value: 'STANDARD', label: '知识库' },
-    { value: 'REVIEW_SPECIFICATION', label: '语义规范库' },
-  ],
-}
-
-const availableEvidenceSources = computed(() => evidenceSourceOptions[reviewPlanDraft.objective] || [])
-
-watch(() => reviewPlanDraft.objective, (objective) => {
-  const allowed = new Set((evidenceSourceOptions[objective] || []).map(item => item.value))
-  if (objective === 'COMPARE') {
-    reviewPlanDraft.evidence.sources = ['REFERENCE']
-    reviewPlanDraft.execution.profile = 'HYBRID'
-  } else if (objective === 'PROOFREAD') {
-    reviewPlanDraft.evidence.sources = []
-    reviewPlanDraft.evidence.reviewSpecificationId = null
-    reviewPlanDraft.evidence.knowledgeCategoryIds = []
-    reviewPlanDraft.evidence.refFileGroupId = null
-    reviewPlanDraft.execution.profile = 'HYBRID'
-  } else {
-    const next = reviewPlanDraft.evidence.sources.filter(source => allowed.has(source))
-    reviewPlanDraft.evidence.sources = next.length > 0 ? next : (allowed.has('STANDARD') ? ['STANDARD'] : [])
-  }
-
-  if (!reviewPlanDraft.evidence.sources.includes('REVIEW_SPECIFICATION')) {
-    reviewPlanDraft.evidence.reviewSpecificationId = null
-  }
-  if (!reviewPlanDraft.evidence.sources.includes('STANDARD')) {
-    reviewPlanDraft.evidence.knowledgeCategoryIds = []
-  }
-  if (!reviewPlanDraft.evidence.sources.includes('REFERENCE')) {
-    reviewPlanDraft.evidence.refFileGroupId = null
-  }
-})
-
-// 知识库子库列表
-const knowledgeCategories = ref<Array<{ id: string; name: string }>>([])
-const knowledgeTreeData = ref<any[]>([])
-
-const togglePrefix = (prefix: string) => {
-  const idx = enabledRulePrefixes.value.indexOf(prefix)
-  if (idx >= 0) {
-    enabledRulePrefixes.value.splice(idx, 1)
-  } else {
-    enabledRulePrefixes.value.push(prefix)
-  }
-}
-
-const toggleGroup = (prefixes: string[], enabled: boolean) => {
-  if (enabled) {
-    prefixes.forEach(p => {
-      if (!enabledRulePrefixes.value.includes(p)) {
-        enabledRulePrefixes.value.push(p)
-      }
-    })
-  } else {
-    enabledRulePrefixes.value = enabledRulePrefixes.value.filter(p => !prefixes.includes(p))
-  }
-}
-
-// 语义规范库列表
-const reviewSpecifications = ref<Array<{
-  id: string
-  name: string
-  status: string
-  itemCount: number
-  executableCount: number
-}>>([])
-
-// 审查点和核心目的
-const allSuggestedReviewPoints = ref<string[]>([])
-const allSuggestedCorePurposes = ref<string[]>([])
-const selectedReviewPoints = ref<string[]>([])
-const customPurposes = ref<Array<{ value: string }>>([{ value: '' }])
-
-// 监听关键状态变化，自动保存到 localStorage
-watch([currentStep, () => form.title, preAnalyzed], () => saveState(), { deep: true })
-watch(preAnalysisData, () => saveState(), { deep: true })
-watch([selectedReviewPoints, customPurposes], () => saveState(), { deep: true })
-
-// ===== 结果展示 =====
-const loading = ref(false)
-const loadingMessage = ref('')
-const analysisProgress = ref<Array<any>>([])
-
-const visibleAnalysisProgress = computed(() => analysisProgress.value.slice(-6))
-
-const progressStepLabels: Record<string, string> = {
-  pre_analysis: '文档预分析',
-  extract_text: '提取文件正文',
-  knowledge_search: '检索知识与标准',
-  llm_review: 'AI 深度审查',
-  finalize: '保存审查结果',
-}
-
-const progressStatusLabels: Record<string, string> = {
-  running: '进行中',
-  completed: '已完成',
-  failed: '失败',
-}
-
-const progressStepLabel = (step: string) => progressStepLabels[step] || step || '处理中'
-const progressStatusLabel = (status: string) => progressStatusLabels[status] || status || '处理中'
-const progressStatusClass = (status: string) => {
-  if (status === 'completed') return 'completed'
-  if (status === 'failed') return 'failed'
-  return 'running'
-}
-
-// ===== 操作函数 =====
-const goBackToUpload = () => {
-  currentStep.value = 0
-  fileList.value = []
-  refFileList.value = []
-}
-
-const goBackToConfirm = () => {
-  currentStep.value = 1
-}
-
-const startAnalysis = async () => {
-  if (!form.title.trim()) {
-    ElMessage.warning('请输入任务标题')
-    return
-  }
-  if (!canSubmit.value) {
-    const reasons: string[] = []
-    if (!form.title.trim()) reasons.push('请输入任务标题')
-    if (reviewPlanDraft.objective === 'COMPARE' && refFileList.value.length === 0)
-      reasons.push('以文审文/参照比对模式需要上传参照文件（在参考文件区上传）')
-    if (reviewPlanDraft.evidence.sources.includes('REVIEW_SPECIFICATION') && !reviewPlanDraft.evidence.reviewSpecificationId)
-      reasons.push('语义规范库模式需要选择具体的语义规范库')
-    const allowEmptySources = ['PROOFREAD'].includes(reviewPlanDraft.objective) || ['CONSISTENCY', 'RULE_ONLY', 'MULTIMODAL'].includes(entryModule.value as EntryModule)
-    if (!allowEmptySources && reviewPlanDraft.evidence.sources.length === 0)
-      reasons.push('请至少选择一项审查依据（标准库/知识库/语义规范库/参照文件）')
-    ElMessage.warning(reasons.length > 0 ? reasons[0] : '请完善审查配置后再开始分析')
-    return
-  }
-  await submitTask()
-}
-
-const addPurpose = () => {
-  customPurposes.value.push({ value: '' })
-}
-
-const removePurpose = (index: number) => {
-  if (customPurposes.value.length <= 1) {
-    ElMessage.warning('至少保留一个目的输入框')
-    return
-  }
-  ElMessageBox.confirm('确认删除该审查目的？', '提示', { confirmButtonText: '确定', cancelButtonText: '取消', type: 'warning' })
-    .then(() => { customPurposes.value.splice(index, 1) })
-    .catch(() => {})
-}
-
-
-
-const querySearchCorePurposes = (queryString: string, cb: any) => {
-  const results = queryString
-    ? allSuggestedCorePurposes.value.filter(p => p.toLowerCase().includes(queryString.toLowerCase()))
-    : allSuggestedCorePurposes.value
-  cb(results.map(p => ({ value: p })))
-}
-
-const canSubmit = computed(() => {
-  if (!form.title.trim()) return false
-  if (reviewPlanDraft.objective === 'COMPARE' && refFileList.value.length === 0) return false
-  if (reviewPlanDraft.evidence.sources.includes('REVIEW_SPECIFICATION') && !reviewPlanDraft.evidence.reviewSpecificationId) return false
-  const allowEmptySources = ['PROOFREAD'].includes(reviewPlanDraft.objective) || ['CONSISTENCY', 'RULE_ONLY', 'MULTIMODAL'].includes(entryModule.value as EntryModule)
-  if (!allowEmptySources && reviewPlanDraft.evidence.sources.length === 0) return false
-  return true
-})
-
-// ===== 提交 =====
-const submitting = ref(false)
-
-const submitTask = async () => {
-  if (!userStore.token) {
-    ElMessage.error('请先登录后再创建任务')
-    router.push('/login')
-    return
-  }
-
-  // 表单验证
-  try {
-    await formRef.value?.validate()
-  } catch {
-    return
-  }
-
-  const submitPlan = reviewPlanPayload.value
-
-  if (submitPlan.objective === 'COMPARE') {
-    if (!submitPlan.evidence.sources.includes('REFERENCE')) {
-      ElMessage.warning('参照比对模式必须使用参考文件作为审查依据')
-      return
-    }
-    if (refFileList.value.length === 0) {
-      ElMessage.warning('参照比对模式必须上传至少一个参考文件')
-      return
-    }
-  }
-
-  if (submitPlan.execution.profile !== 'RULE_ONLY' && submitPlan.evidence.sources.includes('REVIEW_SPECIFICATION') && !submitPlan.evidence.reviewSpecificationId) {
-    ElMessage.warning('已选择语义规范库依据，请先选择具体规范库')
-    return
-  }
-
-  if (submitPlan.execution.profile === 'RULE_ONLY' && enabledRulePrefixes.value.length === 0) {
-    ElMessage.warning('请至少启用一个检查项目')
-    return
-  }
-
-  submitting.value = true
-  try {
-    const fd = new FormData()
-    fd.append('title', form.title)
-
-    // 知识库（规范性审查启用时）
-    if (submitPlan.evidence.sources.includes('STANDARD') && submitPlan.evidence.knowledgeCategoryIds?.length) {
-      fd.append('knowledgeCategoryIds', JSON.stringify(submitPlan.evidence.knowledgeCategoryIds))
-    }
-
-    if (submitPlan.evidence.sources.includes('REVIEW_SPECIFICATION') && submitPlan.evidence.reviewSpecificationId) {
-      fd.append('ruleLibraryId', submitPlan.evidence.reviewSpecificationId)
-    }
-
-    // 预分析数据（完整对象，包含文件类型、签约方等）
-    if (preAnalyzed.value) {
-      fd.append('preAnalysisData', JSON.stringify(preAnalysisData))
-    }
-
-    fd.append('reviewPlan', JSON.stringify(submitPlan))
-
-    // 用户选中的审查点
-    if (selectedReviewPoints.value.length > 0) {
-      fd.append('reviewPoints', JSON.stringify(selectedReviewPoints.value))
-    }
-
-    // 用户自定义的核心目的（过滤空值）
-    const validPurposes = customPurposes.value
-      .map(p => p.value.trim())
-      .filter(v => v.length > 0)
-    if (validPurposes.length > 0) {
-      fd.append('corePurposes', JSON.stringify(validPurposes))
-    }
-
-    // 文件
-    fileList.value.forEach(f => { if (f.raw) fd.append('files', f.raw) })
-
-    // 参照文件
-    refFileList.value.forEach(f => { if (f.raw) fd.append('refFiles', f.raw) })
-
-    // DWG 解析数据（带结构校验）
-    const dwgEntries = Object.entries(dwgParsedDataMap.value)
-    if (dwgEntries.length > 0) {
-      try {
-        const validatedDwgData: Record<string, any> = {}
-        for (const [fileName, data] of dwgEntries) {
-          if (!data || typeof data !== 'object') continue
-          if (!data.layers && !data.dimensions && !data.textEntities && !data.standardRefs) {
-            console.warn(`[SmartReview] DWG数据缺少预期字段: ${fileName}`)
-          }
-          validatedDwgData[fileName] = data
-        }
-        if (Object.keys(validatedDwgData).length > 0) {
-          fd.append('dwgParsedData', JSON.stringify(validatedDwgData))
-        }
-      } catch (jsonErr) {
-        console.error('[SmartReview] DWG数据序列化失败:', jsonErr)
-      }
-    }
-
-    const { data } = await createTaskApi(fd)
-    ElMessage.success('审查任务已创建')
-    clearSavedState() // 任务创建成功，清除草稿
-    router.push(`/review/${data.id}`)
-  } catch (e: any) {
-    console.error('[SmartReview] 创建任务失败详细错误:', e)
-    console.error('[SmartReview] 响应数据:', e?.response?.data)
-    console.error('[SmartReview] 响应状态:', e?.response?.status)
-    console.error('[SmartReview] 请求配置:', e?.config?.url, e?.config?.method)
-    ElMessage.error(e?.response?.data?.message || e?.message || '创建任务失败')
-  } finally {
-    submitting.value = false
-  }
-}
-
-// ===== 初始化 =====
 onMounted(async () => {
-  // 恢复上次的草稿状态
-  const restored = restoreState()
-  if (restored && currentStep.value > 0) {
-    console.log('[SmartReview] 已恢复草稿状态, step:', currentStep.value)
-    // 草稿恢复时文件无法持久化（File对象无法序列化），提示用户重新上传
+  const restored = state.restoreState()
+  if (restored && state.currentStep.value > 0) {
     nextTick(() => {
-      if (currentStep.value >= 1 && fileList.value.length === 0) {
+      if (state.currentStep.value >= 1 && state.fileList.value.length === 0) {
         ElMessage.warning('已恢复之前的配置草稿，但文件需要重新上传')
       }
     })
   }
 
-  // 消费新版入口传入的模块选择，并应用模块预设
   const entry = sessionStorage.getItem('smartReview.entryModule') as EntryModule | null
   if (entry && ['LIBRARY', 'CONSISTENCY', 'PROOFREAD', 'RULE_ONLY', 'MULTIMODAL', 'DOC_REVIEW'].includes(entry)) {
-    entryModule.value = entry
-    applyEntryModulePreset(entry)
+    state.entryModule.value = entry
+    plan.applyEntryModulePreset(entry)
   }
-  
+
   try {
     const [catRes, treeRes, specRes, ruleRegRes] = await Promise.all([
       getAllKnowledgeCategoriesApi(),
@@ -1385,21 +526,14 @@ onMounted(async () => {
       itemCount: l._count?.items || l.items?.length || 0,
       executableCount: l.enabledExecutableItemCount || l.executableItemCount || 0,
     }))
-    
-    console.log('[SmartReview] 知识库列表加载成功:', knowledgeCategories.value.length, '个')
-    console.log('[SmartReview] 知识库树形结构加载成功:', knowledgeTreeData.value.length, '个根节点')
-    console.log('[SmartReview] 语义规范库列表加载成功:', reviewSpecifications.value.length, '个')
-    console.log('[SmartReview] 语义规范库详情:', JSON.stringify(reviewSpecifications.value, null, 2))
-    
+
     if (ruleRegRes.data) {
-      rulePrefixGroups.value = ruleRegRes.data.groups || []
-      if (!enabledRulePrefixes.value.length && ruleRegRes.data.allPrefixes?.length) {
-        enabledRulePrefixes.value = [...ruleRegRes.data.allPrefixes]
+      state.rulePrefixGroups.value = ruleRegRes.data.groups || []
+      if (!state.enabledRulePrefixes.value.length && ruleRegRes.data.allPrefixes?.length) {
+        state.enabledRulePrefixes.value = [...ruleRegRes.data.allPrefixes]
       }
-      ruleRegistryLoaded.value = true
-      console.log(`[SmartReview] 规则注册表加载成功: ${ruleRegRes.data.total} 项, ${ruleRegRes.data.groups?.length || 0} 组`)
+      state.ruleRegistryLoaded.value = true
     }
-    
   } catch (e) {
     console.warn('[SmartReview] 加载知识库/语义规范库列表失败:', e)
   }
@@ -1862,14 +996,6 @@ onMounted(async () => {
   flex-wrap: wrap;
 }
 
-.rule-library-select {
-  margin-top: 10px;
-  padding: 10px;
-  background: #F8FAFC;
-  border-radius: 8px;
-  border: 1px dashed #CBD5E1;
-}
-
 .execution-options {
   display: flex;
   gap: 8px;
@@ -1982,325 +1108,6 @@ onMounted(async () => {
 
 
 
-
-/* ========== 模式说明横幅 ========== */
-.mode-banner {
-  display: flex;
-  align-items: center;
-  gap: 16px;
-  padding: 18px 22px;
-  background: linear-gradient(135deg, #F0F5FF 0%, #EFF6FF 50%, #F0FDF4 100%);
-  border-radius: 14px;
-  margin-bottom: 20px;
-  border: 1px solid #E0E7FF;
-  animation: bannerFadeIn 0.4s ease-out;
-}
-
-@keyframes bannerFadeIn {
-  from { opacity: 0; transform: translateY(-8px); }
-  to { opacity: 1; transform: translateY(0); }
-}
-
-.mode-banner__icon {
-  width: 48px;
-  height: 48px;
-  border-radius: 12px;
-  background: linear-gradient(135deg, #3B82F6, #6366F1);
-  color: white;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-  box-shadow: 0 4px 12px rgba(59, 130, 246, 0.25);
-}
-
-.mode-banner__content {
-  flex: 1;
-  min-width: 0;
-}
-
-.mode-banner__title {
-  font-size: 16px;
-  font-weight: 700;
-  color: #1E293B;
-  margin-bottom: 3px;
-}
-
-.mode-banner__desc {
-  font-size: 13px;
-  color: #64748B;
-  line-height: 1.5;
-}
-
-/* ========== 通用：带图标的section标签 ========== */
-.section-label-with-icon {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 15px;
-  font-weight: 700;
-  color: #1E293B;
-  margin-bottom: 14px;
-}
-
-.section-label-with-icon .el-icon {
-  color: #3B82F6;
-}
-
-/* ========== DOC_REVIEW：参照文件 ========== */
-.ref-file-status {
-  margin-bottom: 12px;
-}
-
-.ref-file-status.is-valid :deep(.el-alert) {
-  background: #F0FDF4;
-  border-color: #86EFAC;
-}
-
-.ref-file-list {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  margin-bottom: 12px;
-}
-
-.ref-file-item {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 10px 14px;
-  background: #F8FAFC;
-  border-radius: 8px;
-  border: 1px solid #E2E8F0;
-}
-
-.ref-file-icon {
-  color: #3B82F6;
-  font-size: 18px;
-}
-
-.ref-file-name {
-  flex: 1;
-  font-size: 13px;
-  color: #334155;
-  font-weight: 500;
-}
-
-.upload-ref-btn {
-  width: 100%;
-  justify-content: center;
-  padding: 10px;
-  border: 2px dashed #CBD5E1;
-  border-radius: 10px;
-  transition: all 0.25s ease;
-}
-
-.upload-ref-btn:hover {
-  border-color: #3B82F6;
-  background: #EFF6FF;
-}
-
-/* 审查步骤 */
-.review-step {
-  background: white;
-  border-radius: 12px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
-  border: 1px solid #E5E7EB;
-}
-
-.review-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 20px 24px;
-  border-bottom: 1px solid #E5E7EB;
-}
-
-.review-title {
-  font-size: 20px;
-  font-weight: 700;
-  color: #111827;
-  margin: 0;
-}
-
-.review-actions {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-
-.review-tabs {
-  padding: 24px;
-}
-
-.tab-content h3 {
-  font-size: 16px;
-  font-weight: 700;
-  color: #111827;
-  margin: 0 0 16px;
-}
-
-.issues-list, .suggestions-list, .laws-list {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-}
-
-.batch-actions-bar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 12px 16px;
-  background: #F0F7FF;
-  border: 1px solid #BAE0FF;
-  border-radius: 8px;
-  margin-bottom: 16px;
-}
-
-.issue-card, .suggestion-card, .law-card {
-  padding: 16px;
-  background: #FAFAFA;
-  border-radius: 8px;
-  border: 1px solid #E5E7EB;
-  transition: border-color 0.2s, box-shadow 0.2s;
-}
-
-.suggestion-card.batch-selected {
-  border-color: #1890FF;
-  box-shadow: 0 0 0 1px rgba(24, 144, 255, 0.2);
-}
-
-.suggestion-header {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  margin-bottom: 8px;
-}
-
-.issue-title, .suggestion-title, .law-title {
-  font-size: 15px;
-  font-weight: 600;
-  color: #111827;
-  margin: 0 0 8px;
-}
-
-.issue-desc, .law-clause, .law-content {
-  font-size: 14px;
-  color: #6B7280;
-  margin: 0;
-  line-height: 1.6;
-}
-
-/* 大白话模式 */
-.plain-language-box {
-  margin-top: 12px;
-  padding: 12px;
-  background: #F0FDF4;
-  border-radius: 8px;
-  border-left: 4px solid #10B981;
-}
-
-.plain-label {
-  font-size: 12px;
-  font-weight: 700;
-  color: #15803D;
-  margin: 0 0 4px;
-}
-
-.plain-text {
-  font-size: 14px;
-  color: #15803D;
-  margin: 0;
-  line-height: 1.6;
-}
-
-/* 详细模式 */
-.detail-mode {
-  margin-top: 12px;
-}
-
-.detail-item {
-  margin-bottom: 12px;
-}
-
-.detail-label {
-  font-size: 12px;
-  font-weight: 600;
-  color: #6B7280;
-  margin: 0 0 4px;
-}
-
-.detail-quote {
-  padding: 12px;
-  border-radius: 6px;
-  font-size: 14px;
-  line-height: 1.6;
-  margin: 0;
-}
-
-.detail-quote.original {
-  background: #FEF2F2;
-  border-left: 4px solid #EF4444;
-  color: #991B1B;
-}
-
-.detail-quote.suggested {
-  background: #F0FDF4;
-  border-left: 4px solid #10B981;
-  color: #15803D;
-}
-
-.detail-reason {
-  font-size: 14px;
-  color: #374151;
-  margin: 0;
-  line-height: 1.6;
-}
-
-.suggestion-actions {
-  margin-top: 16px;
-  padding-top: 16px;
-  border-top: 1px solid #E5E7EB;
-  display: flex;
-  justify-content: flex-end;
-  gap: 8px;
-}
-
-.workspace-section {
-  margin-bottom: 24px;
-}
-
-.workspace-actions {
-  margin-top: 12px;
-}
-
-.focused-result {
-  padding: 16px;
-  background: #FAFAFA;
-  border-radius: 8px;
-  border: 1px solid #E5E7EB;
-}
-
-.result-summary {
-  font-size: 14px;
-  color: #374151;
-  margin: 12px 0;
-  line-height: 1.6;
-}
-
-.suggested-text-box {
-  margin-top: 12px;
-}
-
-.suggested-text {
-  padding: 12px;
-  background: #F0FDF4;
-  border-radius: 6px;
-  font-size: 14px;
-  color: #15803D;
-  line-height: 1.6;
-  margin: 8px 0 0;
-}
 
 .empty-state {
   text-align: center;
