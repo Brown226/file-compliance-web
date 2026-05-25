@@ -920,7 +920,7 @@ const submitUsernameChange = async () => {
 }
 
 .user-avatar {
-  background: #111111;
+  background: #3B82F6;
   color: #FFFFFF;
   font-weight: 700;
   font-size: 12px;

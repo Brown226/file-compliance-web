@@ -72,6 +72,7 @@
 <script setup lang="ts">
 import { ref, computed, watch } from 'vue'
 import { Search, Document, Check, Files } from '@element-plus/icons-vue'
+import { useEnterToConfirm } from '@/composables/useEnterToConfirm'
 
 export interface ReviewSpecificationItem {
   id: string
@@ -102,7 +103,12 @@ watch(() => props.visible, (val) => {
   }
 })
 
+watch(() => props.specifications, (val) => {
+  console.log('[Dialog] specifications prop updated:', val)
+}, { immediate: true, deep: true })
+
 const filteredList = computed(() => {
+  console.log('[Dialog] filteredList computed, specifications:', props.specifications)
   if (!searchQuery.value.trim()) return props.specifications
   const query = searchQuery.value.toLowerCase()
   return props.specifications.filter(spec =>
@@ -131,6 +137,8 @@ const getStatusLabel = (status: string) => {
 const handleConfirm = () => {
   emit('confirm', tempSelectedId.value)
 }
+
+useEnterToConfirm(computed(() => props.visible), handleConfirm)
 </script>
 
 <style scoped>

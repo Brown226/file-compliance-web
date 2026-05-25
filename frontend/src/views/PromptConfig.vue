@@ -323,6 +323,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import { useEnterToConfirm } from '@/composables/useEnterToConfirm'
 import {
   Edit, View, Lock, Key, Folder, Refresh, RefreshRight, Delete, Minus,
   MagicStick, VideoPlay, RefreshLeft, Document
@@ -564,6 +565,8 @@ const handleSave = async () => {
     saveLoading.value = false
   }
 }
+
+useEnterToConfirm(editDialogVisible, handleSave, { disabled: saveLoading })
 
 const handleReset = async (key: string) => {
   try {

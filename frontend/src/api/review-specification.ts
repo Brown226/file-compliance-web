@@ -59,7 +59,10 @@ export const getReviewSpecificationsApi = (params?: {
   folderId?: string
   keyword?: string
   status?: string
-}) => request.get<ReviewSpecification[]>('/review-specifications', { params })
+}) => request.get<ReviewSpecification[]>('/review-specifications', {
+  params,
+  headers: { 'Cache-Control': 'no-cache', 'Pragma': 'no-cache' },
+})
 
 export const getReviewSpecificationApi = (id: string) =>
   request.get<ReviewSpecification>(`/review-specifications/${id}`)

@@ -627,6 +627,9 @@
           >
             <span class="para-toc__item-index">{{ idx + 1 }}</span>
             <span class="para-toc__item-text" :title="item.label">{{ item.label }}</span>
+            <span v-if="item.hasTable" class="para-toc__item-tag" title="包含表格">
+              <el-icon :size="12"><Grid /></el-icon>
+            </span>
           </div>
         </div>
 
@@ -1312,6 +1315,7 @@ interface TocItem {
   id: string
   label: string
   index: number
+  hasTable: boolean
 }
 
 const tocCollapsed = ref(false)
@@ -1323,6 +1327,7 @@ const tocItems = computed<TocItem[]>(() => {
     id: p.id,
     label: p.content.trim().replace(/\n/g, ' ').slice(0, 50),
     index: idx,
+    hasTable: p.content.includes('<table') || p.content.includes('| ---'),
   }))
 })
 
@@ -1475,6 +1480,11 @@ const hitTestForm = reactive({
   searchMode: 'hybrid' as 'vector' | 'keyword' | 'hybrid',
   topNumber: 10,
 })
+
+const modeLabel = (mode: string) => {
+  const map: Record<string, string> = { vector: '向量检索', keyword: '关键词检索', hybrid: '混合检索' }
+  return map[mode] || mode
+}
 
 const handleHitTest = async () => {
   if (!hitTestForm.query.trim()) return
@@ -1704,6 +1714,7 @@ onBeforeUnmount(() => { stopPolling(); stopTaskPolling() })
 }
 .kd-main--full {
   max-width: 900px;
+  margin: 0 auto;
 }
 
 /* ===== 知识库设置页 ===== */
@@ -2635,6 +2646,21 @@ onBeforeUnmount(() => { stopPolling(); stopTaskPolling() })
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+.para-toc__item-tag {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 16px;
+  background: #e2e8f0;
+  border-radius: 3px;
+  color: #718096;
+}
+.para-toc__item--active .para-toc__item-tag {
+  background: #bee3f8;
+  color: #3182ce;
 }
 
 .para-toc__mini {

@@ -12,7 +12,7 @@ export const createTask = async (req: AuthRequest, res: Response): Promise<void>
   try {
     const { title, description, standardId, standardIds, knowledgeCategoryId, knowledgeCategoryIds,
       perspective, preAnalysisData, reviewPoints, corePurposes, selectedTemplateId, intraFileConsistency,
-      reviewPlan, reviewSpecificationId } = req.body;
+      reviewPlan, reviewSpecificationId, ruleLibraryId } = req.body;
     const creatorId = req.user?.id;
     const files = req.files as Express.Multer.File[];
 
@@ -107,6 +107,7 @@ export const createTask = async (req: AuthRequest, res: Response): Promise<void>
       preAnalysisData: parsedPreAnalysisData,
       reviewPlan: parsedReviewPlan,
       reviewSpecificationId: typeof reviewSpecificationId === 'string' && reviewSpecificationId.trim() ? reviewSpecificationId.trim() : undefined,
+      ruleLibraryId: typeof ruleLibraryId === 'string' && ruleLibraryId.trim() ? ruleLibraryId.trim() : undefined,
       reviewPoints: parsedReviewPoints,
       corePurposes: parsedCorePurposes,
       selectedTemplateId,
@@ -237,6 +238,7 @@ function mapTaskForFrontend(task: any) {
     user: task.creator ? { nick_name: task.creator.name, username: task.creator.username } : null,
     create_time: task.createdAt,
     reviewSpecificationId: task.reviewSpecificationId || null,
+    ruleLibraryId: task.ruleLibraryId || null,
     reviewPlan: task.reviewPlan || null,
     reviewSpecification: task.reviewSpecification || null,
     files: (task.files || []).map(mapFileForFrontend),

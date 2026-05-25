@@ -71,6 +71,7 @@
 <script setup lang="ts">
 import { ref, computed, watch } from 'vue'
 import { Search, Document, Check, Files } from '@element-plus/icons-vue'
+import { useEnterToConfirm } from '@/composables/useEnterToConfirm'
 
 export interface RuleLibraryItem {
   id: string
@@ -129,6 +130,8 @@ const getStatusLabel = (status: string) => {
 const handleConfirm = () => {
   emit('confirm', tempSelectedId.value)
 }
+
+useEnterToConfirm(computed(() => props.visible), handleConfirm)
 </script>
 
 <style scoped>

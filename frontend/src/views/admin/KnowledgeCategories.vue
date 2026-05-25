@@ -274,6 +274,7 @@
 import { ref, reactive, computed, onMounted, watch, nextTick } from 'vue'
 import { useRouter } from 'vue-router'
 import { useUserStore } from '@/stores/user'
+import { useEnterToConfirm } from '@/composables/useEnterToConfirm'
 import {
   Plus, Upload, Edit, Delete, Search,
   FolderOpened, Collection, Document, MoreFilled,
@@ -602,6 +603,8 @@ const handleSubmit = async () => {
     finally { submitting.value = false }
   })
 }
+
+useEnterToConfirm(dialogVisible, handleSubmit, { disabled: submitting })
 
 const handleDelete = async (id: string) => {
   try {

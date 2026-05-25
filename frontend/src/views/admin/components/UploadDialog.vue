@@ -25,6 +25,7 @@
         :limit="limit"
         :accept="accept"
         :on-change="handleFileChange"
+        :on-exceed="handleExceed"
         :on-remove="handleFileRemove"
         :file-list="fileList"
         class="upload-dragger"
@@ -94,6 +95,7 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue'
 import { UploadFilled, Upload, Document, CircleCheck, CircleClose, Loading } from '@element-plus/icons-vue'
+import { useEnterToConfirm } from '@/composables/useEnterToConfirm'
 import { ElMessage } from 'element-plus'
 import { uploadDocumentAsyncApi } from '@/api/knowledge-category'
 
@@ -132,6 +134,31 @@ const lastError = ref('')
 const acceptLabel = computed(() => {
   return props.accept.replace(/\./g, '').toUpperCase().replace(/,/g, '/')
 })
+
+const handleExceed = (files: File[]) => {
+  const remaining = props.limit - fileList.value.length
+  if (remaining <= 0) {
+    ElMessage.warning(`已达最大文件数量限制（${props.limit} 个），无法继续添加。`)
+    return
+  }
+  
+  const filesToAdd = files.slice(0, remaining)
+  const ignoredCount = files.length - remaining
+  
+  filesToAdd.forEach(file => {
+    fileList.value.push({
+      name: file.name,
+      size: file.size,
+      raw: file,
+    })
+  })
+  
+  if (ignoredCount > 0) {
+    ElMessage.warning(`已添加前 ${remaining} 个文件，忽略 ${ignoredCount} 个超出限制的文件。`)
+  } else {
+    ElMessage.success(`已成功添加 ${remaining} 个文件。`)
+  }
+}
 
 const handleFileChange = (_uploadFile: any, files: any[]) => {
   fileList.value = files
@@ -181,6 +208,8 @@ const handleUpload = async () => {
     uploading.value = false
   }
 }
+
+useEnterToConfirm(computed(() => props.modelValue), handleUpload, { disabled: computed(() => uploading.value || fileList.value.length === 0) })
 </script>
 
 <style scoped>

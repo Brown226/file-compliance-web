@@ -43,19 +43,33 @@
       <!-- 顶部：知识库选择和参数 -->
       <header class="qa-header">
         <div class="qa-header__left">
-          <el-tree-select
-            v-model="selectedCategoryIds"
-            :data="categoryTree"
-            :props="treeProps"
-            node-key="id"
-            placeholder="选择知识库（可多选）"
-            check-strictly
-            multiple
-            filterable
-            collapse-tags
-            collapse-tags-tooltip
-            class="kb-select"
-          />
+          <el-button class="kb-select-btn" @click="showKbSelector = true">
+            <el-icon><Collection /></el-icon>
+            <span v-if="selectedCategoryIds.length === 0">选择知识库</span>
+            <span v-else>已选 {{ selectedCategoryIds.length }} 个知识库</span>
+            <el-icon class="kb-select-btn__arrow"><ArrowDown /></el-icon>
+          </el-button>
+          <div v-if="selectedCategoryIds.length > 0" class="kb-selected-tags">
+            <el-tag
+              v-for="id in selectedCategoryIds.slice(0, 3)"
+              :key="id"
+              size="small"
+              type="primary"
+              effect="plain"
+              closable
+              @close="removeKb(id)"
+            >
+              {{ getKbName(id) }}
+            </el-tag>
+            <el-tag
+              v-if="selectedCategoryIds.length > 3"
+              size="small"
+              type="info"
+              effect="plain"
+            >
+              +{{ selectedCategoryIds.length - 3 }}
+            </el-tag>
+          </div>
         </div>
         <div class="qa-header__right">
           <el-popover placement="bottom-end" :width="320" trigger="click">
@@ -196,12 +210,20 @@
         </el-button>
       </footer>
     </main>
+
+    <KnowledgeBaseSelector
+      v-model:visible="showKbSelector"
+      :tree-data="categoryTree"
+      :selected-ids="selectedCategoryIds"
+      @confirm="handleKbConfirm"
+    />
   </div>
 </template>
 
 <script setup lang="ts">
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
-import { Plus, Delete, ChatDotRound, ChatLineSquare, Setting, Document, Promotion, WarningFilled } from '@element-plus/icons-vue'
+import { Plus, Delete, ChatDotRound, ChatLineSquare, Setting, Document, Promotion, WarningFilled, FolderOpened, Collection, ArrowDown } from '@element-plus/icons-vue'
+import KnowledgeBaseSelector from '@/views/components/KnowledgeBaseSelector.vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useUserStore } from '@/stores/user'
 import { useMarkdown } from '@/composables/useMarkdown'
@@ -252,6 +274,7 @@ const inputQuestion = ref('')
 const messages = ref<ChatMessage[]>([])
 const isProcessing = ref(false)
 const selectedCategoryIds = ref<string[]>([])
+const showKbSelector = ref(false)
 const searchParams = ref<SearchParams>({ ...DEFAULT_SEARCH_PARAMS })
 const chatContainer = ref<HTMLElement | null>(null)
 const categoryTree = ref<KnowledgeTreeNode[]>([])
@@ -259,7 +282,29 @@ const conversations = ref<Conversation[]>([])
 const currentConversationId = ref<string | null>(null)
 const pollingTimers = ref<Map<string, ReturnType<typeof setInterval>>>(new Map())
 
-const treeProps = { label: 'name', value: 'id', children: 'children' } as any
+const findKbNode = (id: string, nodes: any[]): any => {
+  for (const node of nodes) {
+    if (node.id === id) return node
+    if (node.children) {
+      const found = findKbNode(id, node.children)
+      if (found) return found
+    }
+  }
+  return null
+}
+
+const getKbName = (id: string) => {
+  const node = findKbNode(id, categoryTree.value)
+  return node?.name || id
+}
+
+const removeKb = (id: string) => {
+  selectedCategoryIds.value = selectedCategoryIds.value.filter(i => i !== id)
+}
+
+const handleKbConfirm = (ids: string[]) => {
+  selectedCategoryIds.value = ids
+}
 
 const examplePrompts = [
   'GB/T 50265 中对泵站厂房的防火分区和疏散要求有哪些？',
@@ -620,11 +665,41 @@ onUnmounted(() => {
 
 .qa-header__left {
   flex: 1;
-  max-width: 400px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
 }
 
-.kb-select {
-  width: 100%;
+.kb-select-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 14px;
+  border: 1px solid #E2E8F0;
+  border-radius: 8px;
+  background: #fff;
+  color: #606266;
+  font-size: 13px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.kb-select-btn:hover {
+  border-color: #409eff;
+  color: #409eff;
+}
+
+.kb-select-btn__arrow {
+  margin-left: 4px;
+  font-size: 12px;
+}
+
+.kb-selected-tags {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
 }
 
 /* 参数面板 */

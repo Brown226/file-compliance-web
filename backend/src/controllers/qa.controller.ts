@@ -70,6 +70,11 @@ export const listSessions = async (req: AuthRequest, res: Response): Promise<voi
 export const createSession = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const userId = req.user!.id;
+    const userExists = await prisma.user.findUnique({ where: { id: userId }, select: { id: true } });
+    if (!userExists) {
+      error(res, '用户不存在，请重新登录', 401);
+      return;
+    }
     const { title, taskId } = (req.body || {}) as { title?: string; taskId?: string | null };
     const session = await prisma.qASession.create({
       data: { userId, title: title || '新对话', taskId: taskId || null },
@@ -99,6 +104,12 @@ export const askStream = async (req: AuthRequest, res: Response): Promise<void> 
   if (!question) { error(res, '请输入问题', 400); return; }
 
   const userId = req.user!.id;
+
+  const userExists = await prisma.user.findUnique({ where: { id: userId }, select: { id: true } });
+  if (!userExists) {
+    error(res, '用户不存在，请重新登录', 401);
+    return;
+  }
 
   // 设置 SSE 响应头
   res.setHeader('Content-Type', 'text/event-stream; charset=utf-8');

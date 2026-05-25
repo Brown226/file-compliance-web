@@ -111,6 +111,8 @@ model Task {
   knowledgeCategoryId String?       // 关联的知识子库 ID
   reviewSpecificationId String?      // 关联的审查规范集 ID
   reviewSpecification   ReviewSpecification?   @relation(fields: [reviewSpecificationId], references: [id])
+  ruleLibraryId       String?        @map("rule_library_id")  // 关联的规则库 ID
+  ruleLibrary         RuleLibrary?   @relation(fields: [ruleLibraryId], references: [id], onDelete: SetNull)
   files              TaskFile[]
   details            TaskDetail[]
   taskStandards      TaskStandard[]
@@ -746,6 +748,7 @@ model RuleLibrary {
   status          RuleLibraryStatus   @default(DRAFT)
   createdBy       String
   items           RuleLibraryItem[]
+  tasks           Task[]
   createdAt       DateTime            @default(now())
   updatedAt       DateTime            @updatedAt
 

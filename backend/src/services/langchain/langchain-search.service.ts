@@ -8,8 +8,10 @@ export interface LangChainSearchResult {
   title: string | null;
   clauseId: string | null;
   content: string;
-  score: number;
+  vectorScore: number;
+  keywordScore: number;
   rerankScore?: number;
+  comprehensiveScore: number;
   chunkIndex: number;
   isTable: boolean;
   metadata: any;
@@ -101,18 +103,24 @@ export class LangChainSearchService {
     return allDocs
       .sort((a, b) => (b.metadata.rerank_score ?? b.metadata.score) - (a.metadata.rerank_score ?? a.metadata.score))
       .slice(0, limit)
-      .map(doc => ({
-        id: doc.metadata.id,
-        title: doc.metadata.title,
-        clauseId: doc.metadata.clause_id,
-        content: doc.pageContent,
-        score: doc.metadata.score,
-        rerankScore: doc.metadata.rerank_score,
-        chunkIndex: doc.metadata.chunk_index,
-        isTable: doc.metadata.is_table,
-        metadata: doc.metadata,
-        source: 'langchain',
-      }));
+      .map(doc => {
+        const vectorScore = doc.metadata.score ?? 0;
+        const rerankScore = doc.metadata.rerank_score;
+        return {
+          id: doc.metadata.id,
+          title: doc.metadata.title,
+          clauseId: doc.metadata.clause_id,
+          content: doc.pageContent,
+          vectorScore,
+          keywordScore: 0,
+          rerankScore,
+          comprehensiveScore: rerankScore ?? vectorScore,
+          chunkIndex: doc.metadata.chunk_index,
+          isTable: doc.metadata.is_table,
+          metadata: doc.metadata,
+          source: 'langchain',
+        };
+      });
   }
 
   static async hitTest(options: {
@@ -198,18 +206,25 @@ export class LangChainSearchService {
     const results = allDocs
       .sort((a, b) => (b.metadata.rerank_score ?? b.metadata.score) - (a.metadata.rerank_score ?? a.metadata.score))
       .slice(0, topNumber)
-      .map(doc => ({
-        id: doc.metadata.id,
-        title: doc.metadata.title,
-        clauseId: doc.metadata.clause_id,
-        content: doc.pageContent,
-        score: doc.metadata.score,
-        rerankScore: doc.metadata.rerank_score,
-        chunkIndex: doc.metadata.chunk_index,
-        isTable: doc.metadata.is_table,
-        metadata: doc.metadata,
-        source: 'langchain',
-      }));
+      .map(doc => {
+        const vectorScore = doc.metadata.score ?? 0;
+        const rerankScore = doc.metadata.rerank_score;
+        const comprehensiveScore = rerankScore ?? vectorScore;
+        return {
+          id: doc.metadata.id,
+          title: doc.metadata.title,
+          clauseId: doc.metadata.clause_id,
+          content: doc.pageContent,
+          vectorScore,
+          keywordScore: 0,
+          rerankScore,
+          comprehensiveScore,
+          chunkIndex: doc.metadata.chunk_index,
+          isTable: doc.metadata.is_table,
+          metadata: doc.metadata,
+          source: 'langchain',
+        };
+      });
 
     return {
       originalQuery: query,

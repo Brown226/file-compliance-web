@@ -73,6 +73,7 @@
               :accept="accept"
               :show-file-list="false"
               :on-change="handleFileChange"
+              :on-exceed="handleExceed"
               :file-list="fileList"
               class="iw-upload"
               :class="{ 'iw-upload--compact': fileList.length > 0 }"
@@ -244,6 +245,7 @@ import {
   InfoFilled,
   Loading,
 } from '@element-plus/icons-vue'
+import { useEnterToConfirm } from '@/composables/useEnterToConfirm'
 import { ElMessage } from 'element-plus'
 import {
   uploadDocumentAsyncApi,
@@ -284,6 +286,31 @@ const fileList = ref<any[]>([])
 
 const handleFileChange = (_file: any, files: any[]) => {
   fileList.value = files
+}
+
+const handleExceed = (files: File[]) => {
+  const remaining = props.limit - fileList.value.length
+  if (remaining <= 0) {
+    ElMessage.warning(`已达最大文件数量限制（${props.limit} 个），无法继续添加。`)
+    return
+  }
+  
+  const filesToAdd = files.slice(0, remaining)
+  const ignoredCount = files.length - remaining
+  
+  filesToAdd.forEach(file => {
+    fileList.value.push({
+      name: file.name,
+      size: file.size,
+      raw: file,
+    })
+  })
+  
+  if (ignoredCount > 0) {
+    ElMessage.warning(`已添加前 ${remaining} 个文件，忽略 ${ignoredCount} 个超出限制的文件。`)
+  } else {
+    ElMessage.success(`已成功添加 ${remaining} 个文件。`)
+  }
 }
 
 const removeFileByIndex = (idx: number) => {
@@ -427,7 +454,7 @@ const handleConfirmImport = async () => {
       title: f.title,
       chunks: f.chunks,
     }))
-    await confirmImportApi(props.targetId, {
+    const { data } = await confirmImportApi(props.targetId, {
       documents,
       metadata: {
         chunkMode: chunkConfig.value.mode,
@@ -437,8 +464,12 @@ const handleConfirmImport = async () => {
         contextualRetrieval: chunkConfig.value.contextualRetrieval,
       },
     })
-    ElMessage.success(`导入成功，${fileList.value.length} 个文档`)
-    emit('imported')
+
+    const taskIds = data?.taskIds || []
+    ElMessage.success(`导入任务已创建，正在后台处理 ${taskIds.length} 个文档`)
+
+    // 立即关闭对话框，传递 taskIds 给父组件
+    emit('imported', taskIds)
     resetAndClose()
   } catch (err: any) {
     lastError.value = err?.response?.data?.message || err?.message || '导入失败'
@@ -447,6 +478,10 @@ const handleConfirmImport = async () => {
     importing.value = false
   }
 }
+
+useEnterToConfirm(computed(() => props.modelValue), handleConfirmImport, {
+  disabled: computed(() => importing.value || processing.value || currentStep.value !== 1)
+})
 
 // ===== 对话框管理 =====
 const resetState = () => {

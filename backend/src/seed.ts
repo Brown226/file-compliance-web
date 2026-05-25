@@ -283,7 +283,21 @@ async function seed() {
     });
   }
 
-  // 9. 创建 V2.0 版本更新公告
+  // 9. 初始化知识库根目录
+  await prisma.knowledgeCategory.upsert({
+    where: { id: 'knowledge-root' },
+    update: {},
+    create: {
+      id: 'knowledge-root',
+      name: '根目录',
+      description: '知识库根目录',
+      status: 'ACTIVE',
+      isLeaf: false,
+    },
+  });
+  console.log('✅ 知识库根目录初始化完成');
+
+  // 10. 创建 V2.0 版本更新公告
   const adminUser = await prisma.user.findUnique({ where: { username: 'admin' } });
   if (adminUser) {
     await prisma.systemAnnouncement.upsert({

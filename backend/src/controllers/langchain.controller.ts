@@ -308,6 +308,12 @@ export const langchainAskBackground = async (req: AuthRequest, res: Response): P
       return;
     }
 
+    const userExists = await prisma.user.findUnique({ where: { id: userId }, select: { id: true } });
+    if (!userExists) {
+      error(res, '用户不存在，请重新登录', 401);
+      return;
+    }
+
     // 确定会话 ID
     let actualSessionId = sessionId;
     if (actualSessionId) {
@@ -335,17 +341,15 @@ export const langchainAskBackground = async (req: AuthRequest, res: Response): P
         sessionId: actualSessionId,
         role: 'user',
         content: question,
-        status: 'completed',
       },
     });
 
-    // 创建助手消息（初始状态为 processing）
+    // 创建助手消息
     const assistantMessage = await prisma.qAMessage.create({
       data: {
         sessionId: actualSessionId,
         role: 'assistant',
         content: '',
-        status: 'processing',
       },
     });
 
@@ -507,6 +511,12 @@ export const createConversation = async (req: AuthRequest, res: Response): Promi
   try {
     const userId = req.user!.id;
     const { title } = req.body;
+
+    const userExists = await prisma.user.findUnique({ where: { id: userId }, select: { id: true } });
+    if (!userExists) {
+      error(res, '用户不存在，请重新登录', 401);
+      return;
+    }
 
     const conversation = await prisma.qASession.create({
       data: {

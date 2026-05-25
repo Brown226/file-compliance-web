@@ -1,8 +1,8 @@
 <template>
   <div class="upload-step">
     <div class="step-title">
-      <h1 class="page-title">智能文件审查</h1>
-      <p class="page-subtitle">上传您的文件，AI 将为您深度分析、识别风险、守护合规。</p>
+      <h1 class="page-title">{{ pageTitle }}</h1>
+      <p class="page-subtitle">{{ pageSubtitle }}</p>
     </div>
 
     <div class="upload-container">
@@ -31,14 +31,23 @@
               <span class="upload-link">点击上传</span>
               <span>或将文件拖到此处</span>
             </div>
-            <p class="upload-hint">支持 .docx .pdf .dwg .xls .ppt 格式</p>
+            <div class="format-tags">
+              <span class="format-tag">.docx</span>
+              <span class="format-tag">.pdf</span>
+              <span class="format-tag">.dwg</span>
+              <span class="format-tag">.xls</span>
+              <span class="format-tag">.ppt</span>
+              <span class="format-tag">更多</span>
+            </div>
           </div>
         </el-upload>
 
         <div v-if="fileList.length > 0" class="file-list-section">
           <div class="file-list">
             <div v-for="(file, index) in fileList" :key="index" class="file-item">
-              <el-icon class="file-icon"><Document /></el-icon>
+              <el-icon class="file-icon" :style="{ color: getFileMeta(file.name).color }">
+                <component :is="getFileMeta(file.name).icon" />
+              </el-icon>
               <span class="file-name">{{ file.name }}</span>
               <span class="file-size">{{ formatFileSize(file.size || 0) }}</span>
               <el-button
@@ -53,6 +62,10 @@
           </div>
         </div>
       </div>
+
+      <p v-if="fileList.length === 0 && entryModule !== 'RULE_ONLY'" class="empty-hint">
+        至少上传一个待审文件后可继续
+      </p>
 
       <div v-if="entryModule === 'DOC_REVIEW'" class="reference-upload-section">
         <h3 class="section-title">
@@ -81,14 +94,21 @@
               <span class="upload-link">选择参考文件</span>
               <span>或拖到此处</span>
             </div>
-            <p class="upload-hint">支持 .docx .pdf .dwg 等格式，最多 5 个文件</p>
+            <div class="format-tags">
+              <span class="format-tag">.docx</span>
+              <span class="format-tag">.pdf</span>
+              <span class="format-tag">.dwg</span>
+              <span class="format-tag">最多5个</span>
+            </div>
           </div>
         </el-upload>
 
         <div v-if="refFileList.length > 0" class="file-list-section">
           <div class="file-list">
             <div v-for="(file, index) in refFileList" :key="index" class="file-item reference-file">
-              <el-icon class="file-icon"><Document /></el-icon>
+              <el-icon class="file-icon" :style="{ color: getFileMeta(file.name).color }">
+                <component :is="getFileMeta(file.name).icon" />
+              </el-icon>
               <span class="file-name">{{ file.name }}</span>
               <span class="file-size">{{ formatFileSize(file.size || 0) }}</span>
               <el-button
@@ -124,6 +144,7 @@ import { ElMessage } from 'element-plus'
 import type { UploadFile } from 'element-plus'
 import {
   UploadFilled, Document, Delete, Link, FolderAdd,
+  PictureFilled, Files, Grid,
 } from '@element-plus/icons-vue'
 
 type EntryModule = 'LIBRARY' | 'CONSISTENCY' | 'PROOFREAD' | 'RULE_ONLY' | 'MULTIMODAL' | 'DOC_REVIEW'
@@ -143,8 +164,47 @@ const emit = defineEmits<{
   fileRemove: [file: UploadFile, fileList: UploadFile[]]
 }>()
 
-const uploadRef = ref()
-const referenceUploadRef = ref()
+// ===== 模块说明映射 =====
+const moduleMeta: Record<string, { title: string; subtitle: string }> = {
+  LIBRARY: {
+    title: '以库审文',
+    subtitle: '基于知识库和标准库进行综合合规审查，上传文件后 AI 将自动匹配审查规则，双重检查确保合规。',
+  },
+  CONSISTENCY: {
+    title: '一致性审查',
+    subtitle: '多份文件间或文件内部的数据一致性检查，上传待比对文件，系统将自动校验参数与数据的自洽性。',
+  },
+  PROOFREAD: {
+    title: '基础校对',
+    subtitle: '错别字、语病、标点符号与术语规范检查，快速完成文字层面的质量把关。',
+  },
+  MULTIMODAL: {
+    title: '多模态识别',
+    subtitle: '针对含图纸、表格、公式的复杂文件进行专项识别，上传文件后 AI 将解析结构化内容并审查。',
+  },
+  DOC_REVIEW: {
+    title: '以文审文',
+    subtitle: '将待审文件与参考文件逐项比对，上传待审文件和参考文件，AI 将语义级分析差异与遗漏。',
+  },
+  RULE_ONLY: {
+    title: '规则库审查',
+    subtitle: '仅执行预定义规则检查，不调用 AI，速度最快。上传文件后自动按规则进行格式、编码等检查。',
+  },
+}
+
+const pageTitle = computed(() => {
+  if (props.entryModule && moduleMeta[props.entryModule]) {
+    return moduleMeta[props.entryModule].title
+  }
+  return '智能文件审查'
+})
+
+const pageSubtitle = computed(() => {
+  if (props.entryModule && moduleMeta[props.entryModule]) {
+    return moduleMeta[props.entryModule].subtitle
+  }
+  return '上传您的文件，AI 将为您深度分析、识别风险、守护合规。'
+})
 
 const totalFileSize = computed(() =>
   props.fileList.reduce((sum, f) => sum + (f.size || 0), 0) +
@@ -190,6 +250,26 @@ const formatFileSize = (bytes: number) => {
   if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB'
   return (bytes / (1024 * 1024)).toFixed(1) + ' MB'
 }
+
+// ===== 文件类型图标映射 =====
+const getFileMeta = (fileName: string) => {
+  const ext = fileName.split('.').pop()?.toLowerCase() || ''
+  const map: Record<string, { icon: any; color: string }> = {
+    pdf: { icon: PictureFilled, color: '#EF4444' },
+    doc: { icon: Document, color: '#2563EB' },
+    docx: { icon: Document, color: '#2563EB' },
+    xls: { icon: Grid, color: '#16A34A' },
+    xlsx: { icon: Grid, color: '#16A34A' },
+    ppt: { icon: Files, color: '#E9730F' },
+    pptx: { icon: Files, color: '#E9730F' },
+    dwg: { icon: PictureFilled, color: '#8B5CF6' },
+    jpg: { icon: PictureFilled, color: '#EC4899' },
+    jpeg: { icon: PictureFilled, color: '#EC4899' },
+    png: { icon: PictureFilled, color: '#EC4899' },
+    txt: { icon: Document, color: '#6B7280' },
+  }
+  return map[ext] || { icon: Document, color: '#6B7280' }
+}
 </script>
 
 <style scoped>
@@ -198,19 +278,19 @@ const formatFileSize = (bytes: number) => {
 }
 
 .step-title {
-  margin-bottom: 20px;
+  margin-bottom: 16px;
 }
 
 .page-title {
-  font-size: 28px;
-  font-weight: 800;
+  font-size: 24px;
+  font-weight: 700;
   color: #111827;
-  margin: 0 0 6px;
+  margin: 0 0 4px;
 }
 
 .page-subtitle {
-  font-size: 14px;
-  color: #6B7280;
+  font-size: 13px;
+  color: #9CA3AF;
   margin: 0;
 }
 
@@ -333,14 +413,19 @@ const formatFileSize = (bytes: number) => {
 .upload-dragger :deep(.el-upload-dragger) {
   padding: 36px 20px;
   border-radius: 10px;
-  border: 2px dashed #E5E7EB;
-  background: #FAFAFA;
-  transition: all 0.15s;
+  border: 2px dashed #D1D5DB;
+  background: #F8FAFC;
 }
 
 .upload-dragger :deep(.el-upload-dragger:hover) {
   border-color: #3B82F6;
   background: #EFF6FF;
+}
+
+.upload-dragger :deep(.el-upload-dragger.is-dragover) {
+  border-color: #2563EB;
+  border-style: solid;
+  background: #DBEAFE;
 }
 
 /* 隐藏 el-upload 内部的文件列表（使用自定义列表） */
@@ -370,9 +455,32 @@ const formatFileSize = (bytes: number) => {
   cursor: pointer;
 }
 
-.upload-hint {
-  font-size: 12px;
+.format-tags {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+
+.format-tag {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  font-size: 11px;
+  font-weight: 500;
+  color: #6B7280;
+  background: #F3F4F6;
+  border-radius: 4px;
+  border: 1px solid #E5E7EB;
+  line-height: 1.6;
+}
+
+.empty-hint {
+  margin: 8px 0 0;
+  font-size: 14px;
   color: #9CA3AF;
-  margin: 0;
+  text-align: center;
+  font-weight: 500;
 }
 </style>

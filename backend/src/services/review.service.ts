@@ -12,6 +12,7 @@ import { IntraFileConsistencyService } from './intra-file-consistency.service';
 import { WebSocketService } from './websocket.service';
 import { ConcurrencyService } from './concurrency.service';
 import { ReviewSpecificationService } from './review-specification.service';
+import { RuleLibraryService } from './rule-library.service';
 import { TableExtractionService } from './table-extraction.service';
 import { FormulaOcrService } from './formula-ocr.service';
 import { TerminologyService } from './terminology.service';
@@ -104,7 +105,7 @@ export class ReviewService {
       plan,
       reviewMode,
       ruleSource,
-      reviewSpecificationId: ruleSource === 'REVIEW_SPECIFICATION' && !hasDirectPrefixes ? plan.evidence.reviewSpecificationId || undefined : undefined,
+      reviewSpecificationId: ruleSource === 'REVIEW_SPECIFICATION' && !hasDirectPrefixes ? plan.evidence.reviewSpecificationId || plan.evidence.ruleLibraryId || undefined : undefined,
       enabledPrefixes: hasDirectPrefixes ? plan.evidence.enabledPrefixes : undefined,
       knowledgeCategoryIds: Array.isArray(plan.evidence.knowledgeCategoryIds) ? plan.evidence.knowledgeCategoryIds : [],
       refFileGroupRequired: plan.objective === 'COMPARE' || plan.evidence.sources.includes('REFERENCE'),
@@ -359,15 +360,17 @@ export class ReviewService {
       const behavior = getModeBehavior(reviewMode);
       const needsAI = behavior.ai;
       const modeDisplayName = MODE_DISPLAY_NAMES[reviewMode as ReviewModeType] || reviewMode;
-      // 优先使用前端传入的启用前缀，否则从审查规范集加载
-      const ruleExecutionPlan = directPrefixes && directPrefixes.length > 0
+      // 优先使用前端传入的启用前缀，否则从审查规范集/规则库加载
+      let ruleExecutionPlan = directPrefixes && directPrefixes.length > 0
         ? { enabledPrefixes: directPrefixes, executableItems: [] }
-        : reviewSpecificationId
-          ? await ReviewSpecificationService.getExecutionPlan(reviewSpecificationId).catch((error) => {
-              console.warn('[Review] 审查规范集执行计划加载失败:', error);
-              return null;
-            })
-          : null;
+        : null;
+      if (!ruleExecutionPlan && reviewSpecificationId) {
+        ruleExecutionPlan = await ReviewSpecificationService.getExecutionPlan(reviewSpecificationId).catch(() => null)
+          || await RuleLibraryService.getExecutionPlan(reviewSpecificationId).catch(() => null) as any;
+        if (!ruleExecutionPlan) {
+          console.warn('[Review] 审查规范集/规则库执行计划加载失败, ID:', reviewSpecificationId);
+        }
+      }
 
       // 从 preAnalysisData 读取文件内一致性开关和审查点/核心目的
       const taskPreAnalysis = (task as any).preAnalysisData;
@@ -396,15 +399,22 @@ export class ReviewService {
         knowledgeCategoryIds = [knowledgeCategoryId];
       }
 
-      // ===== 加载语义规范库条目（用于 AI 语义审查） =====
+      // ===== 加载语义规范库/规则库条目（用于 AI 语义审查） =====
       let semanticItems: PipelineContext['semanticItems'] = undefined;
-      const effectiveSpecId = executionPlan.reviewSpecificationId || (task as any).reviewSpecificationId;
+      const effectiveSpecId = executionPlan.reviewSpecificationId || (task as any).reviewSpecificationId || (task as any).ruleLibraryId;
       if (effectiveSpecId) {
         try {
-          const specItems = await prisma.reviewSpecificationItem.findMany({
+          // 先尝试 review_specification_items，再尝试 rule_library_items
+          let specItems = await prisma.reviewSpecificationItem.findMany({
             where: { specificationId: effectiveSpecId, enabled: true },
             select: { ruleCode: true, ruleName: true, category: true, description: true, severity: true },
           });
+          if (specItems.length === 0) {
+            specItems = await prisma.ruleLibraryItem.findMany({
+              where: { libraryId: effectiveSpecId, enabled: true },
+              select: { ruleCode: true, ruleName: true, category: true, description: true, severity: true },
+            });
+          }
           if (specItems.length > 0) {
             semanticItems = specItems;
             console.log(`[Review] 加载语义规范库条目: ${specItems.length} 条`);

@@ -266,6 +266,7 @@ import {
   Edit, Delete, CircleCheck, CloseBold,
   Reading, Check,
 } from '@element-plus/icons-vue'
+import { useEnterToConfirm } from '@/composables/useEnterToConfirm'
 import { ElMessage, ElMessageBox, type FormInstance, type TableInstance } from 'element-plus'
 import {
   getStandardsApi,
@@ -392,6 +393,8 @@ const handleSizeChange = (size: number) => {
   currentPage.value = 1
   fetchTableData()
 }
+
+useEnterToConfirm(editDialogVisible, handleSubmitEdit, { disabled: editLoading })
 
 const handleSelectionChange = (rows: Standard[]) => {
   selectedRows.value = rows

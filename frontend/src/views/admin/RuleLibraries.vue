@@ -4,11 +4,11 @@
       <section class="toolbar">
           <div class="toolbar-left">
             <div class="toolbar-stats">
-              <span class="stat-item"><strong>{{ libraries.length }}</strong> 个规则库</span>
+              <span class="stat-item"><strong>{{ libraries.length }}</strong> 规则库</span>
               <span class="stat-sep">·</span>
               <span class="stat-item"><strong>{{ publishedCount }}</strong> 已发布</span>
               <span class="stat-sep">·</span>
-              <span class="stat-item"><strong>{{ executableCount }}</strong> 条可执行</span>
+              <span class="stat-item"><strong>{{ executableCount }}</strong> 可执行</span>
             </div>
           </div>
           <div class="toolbar-right">
@@ -32,76 +32,52 @@
           </div>
         </section>
 
-        <!-- 规则库表格 -->
-        <el-card shadow="never" class="rl-card rl-table-card">
-          <el-table
-            :data="libraries"
-            v-loading="loading"
-            empty-text="暂无规则库"
-            stripe
-            row-class-name="rl-table-row"
+        <!-- 规则库卡片网格 -->
+        <div class="rl-library-grid">
+          <div
+            v-for="library in libraries"
+            :key="library.id"
+            class="rl-library-card"
+            :class="{ 'rl-library-card--active': selectedLibrary?.id === library.id }"
           >
-            <el-table-column prop="name" label="规则库名称" min-width="180">
-              <template #default="{ row }">
-                <div class="lib-name-cell">
-                  <div :class="['status-indicator', getStatusClass(row.status)]"></div>
-                  <span class="lib-name">{{ row.name }}</span>
-                </div>
-              </template>
-            </el-table-column>
-            <el-table-column prop="description" label="描述" min-width="200" show-overflow-tooltip>
-              <template #default="{ row }">
-                <span class="cell-muted">{{ row.description || '—' }}</span>
-              </template>
-            </el-table-column>
-            <el-table-column prop="sourceFileName" label="源文件" width="150" show-overflow-tooltip>
-              <template #default="{ row }">
-                <span class="cell-muted">{{ row.sourceFileName || '—' }}</span>
-              </template>
-            </el-table-column>
-            <el-table-column label="规则数" width="90" align="center">
-              <template #default="{ row }">
-                <span class="cell-num">{{ row._count?.items || 0 }}</span>
-              </template>
-            </el-table-column>
-            <el-table-column label="可执行" width="90" align="center">
-              <template #default="{ row }">
-                <span class="cell-num cell-num--success">{{ row.enabledExecutableItemCount || 0 }}</span>
-              </template>
-            </el-table-column>
-            <el-table-column label="待结构化" width="90" align="center">
-              <template #default="{ row }">
-                <span class="cell-num cell-num--warning">{{ row.pendingStructuredItemCount || 0 }}</span>
-              </template>
-            </el-table-column>
-            <el-table-column prop="status" label="状态" width="90">
-              <template #default="{ row }">
-                <el-tag :type="getStatusTagType(row.status)" size="small" effect="light">
-                  {{ getStatusLabel(row.status) }}
-                </el-tag>
-              </template>
-            </el-table-column>
-            <el-table-column label="操作" :width="canManage ? 180 : 100" fixed="right">
-              <template #default="{ row }">
-                <el-button type="primary" link size="small" @click="showDetail(row)">查看规则</el-button>
-                <el-button v-if="canManage" type="primary" link size="small" @click="showEditDialog(row)">编辑</el-button>
-                <el-dropdown v-if="canManage" trigger="click" @command="(cmd: string) => handleRowCommand(cmd, row)">
-                  <el-button type="primary" link size="small">
-                    更多<el-icon class="el-icon--right"><ArrowDown /></el-icon>
-                  </el-button>
+            <div class="card-header">
+              <div :class="['status-badge', getStatusClass(library.status)]"></div>
+              <h3 class="card-title">{{ library.name }}</h3>
+            </div>
+            <p class="card-desc">{{ library.description || '暂无描述' }}</p>
+            <div class="card-stats">
+              <div class="stat">
+                <span class="stat-value">{{ library._count?.items || 0 }}</span>
+                <span class="stat-label">规则数</span>
+              </div>
+              <div class="stat stat--success">
+                <span class="stat-value">{{ library.enabledExecutableItemCount || 0 }}</span>
+                <span class="stat-label">可执行</span>
+              </div>
+              <div class="stat stat--warning">
+                <span class="stat-value">{{ library.pendingStructuredItemCount || 0 }}</span>
+                <span class="stat-label">待结构化</span>
+              </div>
+            </div>
+            <div class="card-footer">
+              <el-tag :type="getStatusTagType(library.status)" size="small" effect="light">{{ getStatusLabel(library.status) }}</el-tag>
+              <div class="card-actions">
+                <el-button type="primary" size="small" @click.stop="showDetail(library)">查看详情</el-button>
+                <el-button type="success" size="small" @click.stop="showUploadRules(library)">AI 解析</el-button>
+                <el-dropdown trigger="click" @command="(cmd: string) => handleRowCommand(cmd, library)">
+                  <el-button type="text" size="small">更多</el-button>
                   <template #dropdown>
                     <el-dropdown-menu>
-                      <el-dropdown-item command="ai-parse">
-                        <el-icon><UploadFilled /></el-icon> AI 解析
+                      <el-dropdown-item command="edit">
+                        <el-icon><Edit /></el-icon> 编辑
                       </el-dropdown-item>
-                      <el-dropdown-item command="publish" :disabled="row.status === 'PUBLISHED' || (row.enabledExecutableItemCount || 0) === 0">
+                      <el-dropdown-item command="publish" :disabled="library.status === 'PUBLISHED' || (library.enabledExecutableItemCount || 0) === 0">
                         <el-icon><CircleCheck /></el-icon> 发布
-                        <span v-if="(row.enabledExecutableItemCount || 0) === 0" class="publish-hint">（无可执行规则）</span>
                       </el-dropdown-item>
-                      <el-dropdown-item command="draft" :disabled="row.status === 'DRAFT'">
+                      <el-dropdown-item command="draft" :disabled="library.status === 'DRAFT'">
                         <el-icon><Edit /></el-icon> 撤回草稿
                       </el-dropdown-item>
-                      <el-dropdown-item command="archive" :disabled="row.status === 'ARCHIVED'">
+                      <el-dropdown-item command="archive" :disabled="library.status === 'ARCHIVED'">
                         <el-icon><Folder /></el-icon> 归档
                       </el-dropdown-item>
                       <el-dropdown-item command="delete" divided>
@@ -110,91 +86,92 @@
                     </el-dropdown-menu>
                   </template>
                 </el-dropdown>
-              </template>
-            </el-table-column>
-          </el-table>
-        </el-card>
-
-        <!-- 规则详情面板 -->
-        <el-card v-if="selectedLibrary" shadow="never" class="rl-card detail-card">
-          <template #header>
-            <div class="detail-header">
-              <div>
-                <span>{{ selectedLibrary.name }} — 规则列表（{{ filteredItems.length }} / {{ selectedLibrary.items?.length || 0 }}）</span>
-                <div class="detail-stats">
-                  <el-tag type="success" size="small">启用且可执行 {{ selectedLibrary.enabledExecutableItemCount || 0 }}</el-tag>
-                  <el-tag type="warning" size="small">待结构化 {{ selectedLibrary.pendingStructuredItemCount || 0 }}</el-tag>
-                </div>
-              </div>
-              <div>
-                <el-button v-if="canManage" type="primary" size="small" @click="showAddItemDialog">手动添加</el-button>
-                <el-button type="primary" link @click="selectedLibrary = null">关闭</el-button>
               </div>
             </div>
-          </template>
-
-          <div class="filters">
-            <el-input v-model="itemFilters.keyword" placeholder="搜索规则名/代码/描述" clearable class="filter-input" />
-            <el-select v-model="itemFilters.category" placeholder="分类" clearable class="filter-select">
-              <el-option v-for="category in categoryOptions" :key="category" :label="category" :value="category" />
-            </el-select>
-            <el-select v-model="itemFilters.severity" placeholder="严重度" clearable class="filter-select">
-              <el-option label="error" value="error" />
-              <el-option label="warning" value="warning" />
-              <el-option label="info" value="info" />
-            </el-select>
-            <el-select v-model="itemFilters.enabled" placeholder="启用状态" clearable class="filter-select">
-              <el-option label="启用" value="enabled" />
-              <el-option label="停用" value="disabled" />
-            </el-select>
           </div>
+        </div>
 
-          <el-table :data="filteredItems" empty-text="暂无规则">
-            <el-table-column prop="ruleCode" label="规则代码" width="120" />
-            <el-table-column prop="ruleName" label="规则名称" min-width="180" />
-            <el-table-column prop="category" label="分类" width="120">
-              <template #default="{ row }">
-                <el-tag v-if="row.category" size="small" type="info">{{ row.category }}</el-tag>
-              </template>
-            </el-table-column>
-            <el-table-column label="执行类型" width="130">
-              <template #default="{ row }">
-                <el-tag :type="row.executionType === 'MANUAL' ? 'info' : 'success'" size="small">
-                  {{ row.executionType || 'BUILTIN_PREFIX' }}
-                </el-tag>
-              </template>
-            </el-table-column>
-            <el-table-column label="内置前缀" width="110">
-              <template #default="{ row }">
-                <span>{{ row.builtinPrefix || '—' }}</span>
-              </template>
-            </el-table-column>
-            <el-table-column prop="severity" label="严重度" width="90">
-              <template #default="{ row }">
-                <el-tag :type="row.severity === 'error' ? 'danger' : row.severity === 'warning' ? 'warning' : 'info'" size="small">
-                  {{ row.severity }}
-                </el-tag>
-              </template>
-            </el-table-column>
-            <el-table-column prop="description" label="描述" min-width="250" show-overflow-tooltip />
-            <el-table-column prop="enabled" label="启用" width="70" align="center">
-              <template #default="{ row }">
-                <el-switch v-if="canManage" v-model="row.enabled" size="small" @change="toggleItem(row)" />
-                <span v-else>{{ row.enabled ? '是' : '否' }}</span>
-              </template>
-            </el-table-column>
-            <el-table-column v-if="canManage" label="操作" width="120" fixed="right">
-              <template #default="{ row }">
-                <el-button type="primary" link size="small" @click="showEditItemDialog(row)">编辑</el-button>
-                <el-popconfirm title="确认删除？" @confirm="handleDeleteItem(row.id)">
-                  <template #reference>
-                    <el-button type="danger" link size="small">删除</el-button>
-                  </template>
-                </el-popconfirm>
-              </template>
-            </el-table-column>
-          </el-table>
-        </el-card>
+        <!-- 空状态 -->
+        <div v-if="libraries.length === 0 && !loading" class="empty-state">
+          <div class="empty-icon">
+            <el-icon :size="48"><Folder /></el-icon>
+          </div>
+          <h3 class="empty-title">暂无规则库</h3>
+          <p class="empty-desc">点击右上角按钮创建第一个规则库</p>
+          <el-button v-if="canManage" type="primary" @click="showCreateDialog">
+            <el-icon><Plus /></el-icon> 新建规则库
+          </el-button>
+        </div>
+
+        <!-- 右侧抽屉详情面板 -->
+        <el-drawer 
+          v-model="drawerVisible" 
+          :title="selectedLibrary?.name || '规则详情'" 
+          :direction="'rtl'"
+          :size="620"
+          class="detail-drawer"
+        >
+          <div v-if="selectedLibrary" class="drawer-content">
+            <div class="drawer-header-info">
+              <div class="header-stats">
+                <el-tag type="success" size="small">启用且可执行 {{ selectedLibrary.enabledExecutableItemCount || 0 }}</el-tag>
+                <el-tag type="warning" size="small">待结构化 {{ selectedLibrary.pendingStructuredItemCount || 0 }}</el-tag>
+              </div>
+              <div class="header-actions">
+                <el-button v-if="canManage" type="primary" size="small" @click="showAddItemDialog">手动添加</el-button>
+              </div>
+            </div>
+
+            <div class="filters">
+              <el-input v-model="itemFilters.keyword" placeholder="搜索规则名/描述" clearable class="filter-input" />
+              <el-select v-model="itemFilters.severity" placeholder="验证程度" clearable class="filter-select">
+                <el-option label="错误" value="error" />
+                <el-option label="警告" value="warning" />
+                <el-option label="提示" value="info" />
+              </el-select>
+              <el-select v-model="itemFilters.enabled" placeholder="启用状态" clearable class="filter-select">
+                <el-option label="启用" value="enabled" />
+                <el-option label="停用" value="disabled" />
+              </el-select>
+            </div>
+
+            <el-table :data="filteredItems" empty-text="暂无规则" max-height="500">
+              <el-table-column prop="ruleName" label="规则名称" min-width="180" show-overflow-tooltip>
+                <template #default="{ row }">
+                  <span class="rule-name-cell">{{ row.ruleName || '-' }}</span>
+                </template>
+              </el-table-column>
+              <el-table-column prop="description" label="规则内容" min-width="250" show-overflow-tooltip>
+                <template #default="{ row }">
+                  <span class="rule-desc-cell">{{ row.description || row.checkMethod || '-' }}</span>
+                </template>
+              </el-table-column>
+              <el-table-column prop="severity" label="验证程度" width="100" align="center">
+                <template #default="{ row }">
+                  <el-tag :type="row.severity === 'error' ? 'danger' : row.severity === 'warning' ? 'warning' : 'info'" size="small" effect="dark">
+                    {{ row.severity === 'error' ? '错误' : row.severity === 'warning' ? '警告' : '提示' }}
+                  </el-tag>
+                </template>
+              </el-table-column>
+              <el-table-column prop="enabled" label="启用" width="70" align="center">
+                <template #default="{ row }">
+                  <el-switch v-if="canManage" v-model="row.enabled" size="small" @change="toggleItem(row)" />
+                  <span v-else>{{ row.enabled ? '是' : '否' }}</span>
+                </template>
+              </el-table-column>
+              <el-table-column v-if="canManage" label="操作" width="100" fixed="right">
+                <template #default="{ row }">
+                  <el-button type="text" size="small" @click="showEditItemDialog(row)">编辑</el-button>
+                  <el-popconfirm title="确认删除？" @confirm="handleDeleteItem(row.id)">
+                    <template #reference>
+                      <el-button type="danger" text size="small">删除</el-button>
+                    </template>
+                  </el-popconfirm>
+                </template>
+              </el-table-column>
+            </el-table>
+          </div>
+        </el-drawer>
     </div>
 
     <!-- 新建/编辑规则库对话框 -->
@@ -286,53 +263,20 @@
     </el-dialog>
 
     <!-- 编辑规则对话框 -->
-    <el-dialog v-model="itemDialogVisible" :title="itemDialogMode === 'edit' ? '编辑规则' : '手动添加规则'" width="620px">
-      <el-form :model="itemForm" label-width="100px">
-        <el-form-item label="规则代码">
-          <el-input v-model="itemForm.ruleCode" placeholder="如 NAME_001" />
-        </el-form-item>
+    <el-dialog v-model="itemDialogVisible" :title="itemDialogMode === 'edit' ? '编辑规则' : '手动添加规则'" width="560px">
+      <el-form :model="itemForm" label-width="80px">
         <el-form-item label="规则名称" required>
-          <el-input v-model="itemForm.ruleName" />
+          <el-input v-model="itemForm.ruleName" placeholder="请输入规则名称" />
         </el-form-item>
-        <el-form-item label="分类">
-          <el-select v-model="itemForm.category">
-            <el-option v-for="cat in categories" :key="cat.id" :label="cat.name" :value="cat.name" />
-            <el-option label="自定义" value="" />
+        <el-form-item label="验证程度">
+          <el-select v-model="itemForm.severity" style="width: 100%">
+            <el-option label="错误 (必须修改)" value="error" />
+            <el-option label="警告 (建议修改)" value="warning" />
+            <el-option label="提示 (仅供参考)" value="info" />
           </el-select>
         </el-form-item>
-        <el-form-item label="执行类型">
-          <el-select v-model="itemForm.executionType">
-            <el-option label="BUILTIN_PREFIX" value="BUILTIN_PREFIX" />
-            <el-option label="REGEX" value="REGEX" />
-            <el-option label="KEYWORD_REQUIRED" value="KEYWORD_REQUIRED" />
-            <el-option label="KEYWORD_FORBIDDEN" value="KEYWORD_FORBIDDEN" />
-            <el-option label="MANUAL" value="MANUAL" />
-          </el-select>
-        </el-form-item>
-        <el-form-item label="内置前缀">
-          <el-input v-model="itemForm.builtinPrefix" placeholder="NAME / FORMAT / DWG" />
-        </el-form-item>
-        <el-form-item label="目标范围">
-          <el-select v-model="itemForm.targetScope">
-            <el-option label="TEXT" value="TEXT" />
-            <el-option label="FILE_NAME" value="FILE_NAME" />
-            <el-option label="HEADER" value="HEADER" />
-            <el-option label="TABLE" value="TABLE" />
-            <el-option label="DWG" value="DWG" />
-          </el-select>
-        </el-form-item>
-        <el-form-item label="严重度">
-          <el-select v-model="itemForm.severity">
-            <el-option label="error" value="error" />
-            <el-option label="warning" value="warning" />
-            <el-option label="info" value="info" />
-          </el-select>
-        </el-form-item>
-        <el-form-item label="描述">
-          <el-input v-model="itemForm.description" type="textarea" :rows="3" />
-        </el-form-item>
-        <el-form-item label="检查方法">
-          <el-input v-model="itemForm.checkMethod" type="textarea" :rows="3" />
+        <el-form-item label="规则内容">
+          <el-input v-model="itemForm.description" type="textarea" :rows="4" placeholder="请输入规则的具体描述或检查方法" />
         </el-form-item>
       </el-form>
       <template #footer>
@@ -345,8 +289,9 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from 'vue'
 import { useUserStore } from '@/stores/user'
+import { useEnterToConfirm } from '@/composables/useEnterToConfirm'
 import {
-  Plus, UploadFilled, CircleCheck, Edit, Delete, ArrowDown, Loading
+  Plus, UploadFilled, CircleCheck, Edit, Delete, Folder, Loading, Search, Sparkles
 } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
@@ -365,7 +310,6 @@ import {
   type RuleLibraryPreviewItem,
 } from '@/api/rule-library'
 
-// 加载状态
 const userStore = useUserStore()
 const canManage = computed(() => userStore.isAdminOrManager())
 
@@ -374,15 +318,13 @@ const submitting = ref(false)
 const parsing = ref(false)
 const importing = ref(false)
 
-// 数据
 const libraries = ref<RuleLibrary[]>([])
 const selectedLibrary = ref<RuleLibrary | null>(null)
+const drawerVisible = ref(false)
 
-// 搜索与筛选
 const searchKeyword = ref('')
 const statusFilter = ref<string>('')
 
-// 对话框状态
 const dialogVisible = ref(false)
 const isEdit = ref(false)
 const editId = ref('')
@@ -395,7 +337,7 @@ const parseFile = ref<File | null>(null)
 const previewItems = ref<RuleLibraryPreviewItem[]>([])
 const previewSourceFileName = ref('')
 const importMode = ref<'merge' | 'replace'>('merge')
-const isParsing = ref(false) // 新增：解析中的状态标记
+const isParsing = ref(false)
 
 const itemDialogVisible = ref(false)
 const itemDialogMode = ref<'create' | 'edit'>('create')
@@ -419,7 +361,6 @@ const itemFilters = reactive({
   enabled: '',
 })
 
-// 计算属性
 const categoryOptions = computed(() => {
   const values = new Set<string>()
   ;(selectedLibrary.value?.items || []).forEach((item) => {
@@ -446,7 +387,6 @@ const filteredItems = computed(() => {
   return items
 })
 
-// 获取状态相关方法
 const getStatusClass = (status: string) => {
   const map: Record<string, string> = {
     DRAFT: 'status-draft',
@@ -514,11 +454,9 @@ const refreshSelectedLibrary = async () => {
 }
 
 const showCreateDialog = () => {
-  console.debug('[RuleLibraries] showCreateDialog called')
   isEdit.value = false
   resetLibraryForm()
   dialogVisible.value = true
-  console.debug('[RuleLibraries] dialogVisible set to:', dialogVisible.value)
 }
 
 const showEditDialog = (row: RuleLibrary) => {
@@ -557,11 +495,16 @@ const handleSubmit = async () => {
   }
 }
 
+useEnterToConfirm(dialogVisible, handleSubmit, { disabled: submitting })
+
 const handleDelete = async (id: string) => {
   try {
     await deleteRuleLibraryApi(id)
     ElMessage.success('删除成功')
-    if (selectedLibrary.value?.id === id) selectedLibrary.value = null
+    if (selectedLibrary.value?.id === id) {
+      selectedLibrary.value = null
+      drawerVisible.value = false
+    }
     await fetchLibraries()
   } catch (e: any) {
     ElMessage.error(e?.response?.data?.message || '删除失败')
@@ -584,6 +527,9 @@ const handleRowCommand = (cmd: string, row: RuleLibrary) => {
     case 'ai-parse':
       showUploadRules(row)
       break
+    case 'edit':
+      showEditDialog(row)
+      break
     case 'publish':
       changeStatus(row, 'PUBLISHED')
       break
@@ -605,6 +551,7 @@ const showDetail = async (row: RuleLibrary) => {
   try {
     const { data } = await getRuleLibraryApi(row.id)
     selectedLibrary.value = data
+    drawerVisible.value = true
   } catch (e: any) {
     ElMessage.error(e?.response?.data?.message || '获取详情失败')
   }
@@ -628,7 +575,6 @@ const handleParsePreview = async () => {
     return
   }
 
-  // 文件大小检查（前端预检）
   const fileSizeMB = parseFile.value.size / (1024 * 1024)
   if (fileSizeMB > 50) {
     ElMessage.error('文件大小超过50MB限制，请选择更小的文件')
@@ -636,7 +582,7 @@ const handleParsePreview = async () => {
   }
 
   parsing.value = true
-  isParsing.value = true // 标记解析中状态
+  isParsing.value = true
 
   try {
     const fd = new FormData()
@@ -655,15 +601,12 @@ const handleParsePreview = async () => {
     parseDialogVisible.value = false
     previewDialogVisible.value = true
   } catch (e: any) {
-    // 区分不同类型的错误
     if (e?.code === 'ECONNABORTED' || e?.message?.includes('timeout')) {
       ElMessage.error('文件解析超时，可能是文件过大或服务器繁忙，请稍后重试')
     } else if (e?.message === 'canceled') {
       ElMessage.info('请求已取消')
     } else {
       const errorMsg = e?.response?.data?.message || e?.message || '解析预览失败'
-
-      // 针对常见错误提供更友好的提示
       if (errorMsg.includes('文件大小') || errorMsg.includes('file size')) {
         ElMessage.error('文件过大，请压缩后重试（最大支持50MB）')
       } else if (errorMsg.includes('解析失败') || errorMsg.includes('parse')) {
@@ -674,7 +617,7 @@ const handleParsePreview = async () => {
     }
   } finally {
     parsing.value = false
-    isParsing.value = false // 解析完成
+    isParsing.value = false
   }
 }
 
@@ -788,7 +731,6 @@ onMounted(() => {
   background: var(--bg-body);
 }
 
-/* 工具栏 */
 .toolbar {
   display: flex;
   justify-content: space-between;
@@ -851,126 +793,199 @@ onMounted(() => {
   color: #dcdfe6;
 }
 
-/* 卡片样式 */
-.rl-card {
-  border-radius: var(--radius-xl);
+/* 卡片网格布局 */
+.rl-library-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  gap: var(--space-5);
+  padding: 0 var(--space-6) var(--space-6);
+}
+
+/* 规则库卡片 */
+.rl-library-card {
+  background: var(--bg-surface);
   border: 1px solid var(--corp-border-light);
-  overflow: hidden;
-  box-shadow: var(--shadow-surface);
-  transition: all var(--corp-transition-base);
+  border-radius: var(--radius-xl);
+  padding: var(--space-5);
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+
+  &:hover {
+    border-color: var(--corp-border-heavy);
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.08);
+  }
+  
+  &--active {
+    border-color: var(--corp-primary);
+    background: linear-gradient(135deg, var(--bg-surface) 0%, rgba(59, 130, 246, 0.05) 100%);
+  }
 }
 
-.rl-card:hover {
-  box-shadow: var(--shadow-card);
-}
-
-.rl-table-card :deep(.el-card__body),
-.detail-card :deep(.el-card__body) {
-  padding: var(--space-6);
-}
-
-.rl-table-card :deep(.el-table th.el-table__cell) {
-  background: var(--bg-elevated);
-  color: var(--corp-text-secondary);
-  font-weight: 600;
-  font-size: var(--text-sm);
-  border-bottom: 2px solid var(--corp-border-light);
-}
-
-.rl-table-card :deep(.el-table th.el-table__cell):first-child {
-  border-radius: var(--radius-lg) 0 0 0;
-}
-
-.rl-table-card :deep(.el-table th.el-table__cell):last-child {
-  border-radius: 0 var(--radius-lg) 0 0;
-}
-
-.rl-table-card :deep(.el-table--striped .el-table__body tr.el-table__row--striped td.el-table__cell) {
-  background: #fafbfc;
-}
-
-.rl-table-card :deep(.el-table tr:hover > td.el-table__cell),
-.detail-card :deep(.el-table tr:hover > td.el-table__cell) {
-  background: #f0f5ff !important;
-}
-
-.rl-table-card :deep(.el-table__row) {
-  transition: all var(--corp-transition-fast);
-}
-
-.rl-table-card :deep(.el-table__body tr:last-child td.el-table__cell):first-child {
-  border-radius: 0 0 0 var(--radius-lg);
-}
-
-.rl-table-card :deep(.el-table__body tr:last-child td.el-table__cell):last-child {
-  border-radius: 0 0 var(--radius-lg) 0;
-}
-
-.detail-card {
-  margin-top: var(--space-6);
-}
-
-.lib-name-cell {
+.card-header {
   display: flex;
   align-items: center;
   gap: var(--space-3);
+  margin-bottom: var(--space-3);
 }
 
-.cell-muted {
-  color: var(--corp-text-tertiary);
-  font-size: var(--text-sm);
-}
-
-.cell-num {
-  font-weight: 700;
-  font-size: var(--text-sm);
-  color: var(--corp-text-primary);
-}
-.cell-num--success { color: #10b981; }
-.cell-num--warning { color: #f59e0b; }
-
-.status-indicator {
-  width: 8px;
-  height: 8px;
-  border-radius: var(--radius-full);
+.status-badge {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
   flex-shrink: 0;
+  
+  &.status-draft { background: var(--corp-warning); }
+  &.status-published { background: var(--corp-success); }
+  &.status-archived { background: var(--color-primary-500); }
 }
 
-.status-indicator.status-draft {
-  background: var(--corp-warning);
-}
-
-.status-indicator.status-published {
-  background: var(--corp-success);
-}
-
-.status-indicator.status-archived {
-  background: var(--color-primary-500);
-}
-
-.lib-name {
+.card-title {
+  font-size: var(--text-lg);
   font-weight: 600;
   color: var(--corp-text-primary);
+  margin: 0;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-.detail-header {
+.card-desc {
+  font-size: var(--text-sm);
+  color: var(--corp-text-secondary);
+  margin: 0 0 var(--space-4);
+  line-height: 1.6;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.card-stats {
+  display: flex;
+  gap: var(--space-4);
+  padding: var(--space-4);
+  background: var(--bg-elevated);
+  border-radius: var(--radius-lg);
+  margin-bottom: var(--space-4);
+}
+
+.stat {
+  flex: 1;
+  text-align: center;
+  
+  .stat-value {
+    display: block;
+    font-size: var(--text-xl);
+    font-weight: 700;
+    color: var(--corp-text-primary);
+  }
+  
+  .stat-label {
+    font-size: var(--text-xs);
+    color: var(--corp-text-tertiary);
+  }
+  
+  &--success .stat-value { color: var(--corp-success); }
+  &--warning .stat-value { color: var(--corp-warning); }
+}
+
+.card-footer {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  gap: var(--space-4);
 }
 
-.detail-stats {
+.card-actions {
   display: flex;
   gap: var(--space-2);
-  margin-top: var(--space-2);
+  align-items: center;
+}
+
+.card-actions :deep(.el-button) {
+  font-size: var(--text-xs);
+  padding: 4px 12px;
+  border-radius: 6px;
+  font-weight: 500;
+  
+  &.el-button--primary,
+  &.el-button--success {
+    width: 80px;
+    height: 32px;
+    margin-left: 0;
+  }
+  
+  &.el-button--text {
+    color: var(--corp-text-secondary);
+    
+    &:hover {
+      color: var(--corp-primary);
+    }
+  }
+}
+
+/* 空状态 */
+.empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-16) var(--space-6);
+  text-align: center;
+}
+
+.empty-icon {
+  color: var(--corp-text-tertiary);
+  margin-bottom: var(--space-4);
+}
+
+.empty-title {
+  font-size: var(--text-lg);
+  font-weight: 600;
+  color: var(--corp-text-primary);
+  margin: 0 0 var(--space-2);
+}
+
+.empty-desc {
+  font-size: var(--text-base);
+  color: var(--corp-text-secondary);
+  margin: 0 0 var(--space-5);
+}
+
+/* 抽屉样式 */
+.detail-drawer :deep(.el-drawer__body) {
+  padding: var(--space-6);
+}
+
+.drawer-content {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+.drawer-header-info {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: var(--space-5);
+  padding-bottom: var(--space-4);
+  border-bottom: 1px solid var(--corp-border-light);
+}
+
+.header-stats {
+  display: flex;
+  gap: var(--space-2);
+}
+
+.header-actions {
+  display: flex;
+  gap: var(--space-2);
 }
 
 .filters {
   display: flex;
   gap: var(--space-4);
   margin-bottom: var(--space-5);
-  padding: var(--space-5);
+  padding: var(--space-4);
   border-radius: var(--radius-lg);
   background: var(--bg-elevated);
   border: 1px solid var(--corp-border-light);
@@ -978,11 +993,11 @@ onMounted(() => {
 }
 
 .filter-input {
-  width: 260px;
+  width: 220px;
 }
 
 .filter-select {
-  width: 140px;
+  width: 120px;
 }
 
 .helper-text {
@@ -1044,6 +1059,7 @@ onMounted(() => {
   color: var(--corp-text-tertiary);
 }
 
+/* 响应式 */
 @media (max-width: 1200px) {
   .filters {
     flex-wrap: wrap;
@@ -1052,17 +1068,43 @@ onMounted(() => {
 
   .filter-input {
     width: 100%;
-    max-width: 300px;
+    max-width: 280px;
   }
 
   .filter-select {
-    width: 140px;
+    width: 120px;
   }
 }
 
 @media (max-width: 768px) {
+  .toolbar {
+    padding: var(--space-3);
+  }
+
+  .rl-library-grid {
+    padding: 0 var(--space-3) var(--space-4);
+    grid-template-columns: 1fr;
+  }
+
+  .search-input {
+    width: 100%;
+  }
+
+  .status-filter {
+    width: 100%;
+  }
+
+  .card-stats {
+    gap: var(--space-2);
+    padding: var(--space-3);
+  }
+
+  .stat .stat-value {
+    font-size: var(--text-base);
+  }
+
   .filters {
-    padding: var(--space-4);
+    padding: var(--space-3);
     gap: var(--space-3);
   }
 
@@ -1074,19 +1116,16 @@ onMounted(() => {
   .filter-select {
     width: calc(50% - var(--space-2));
   }
-
-  .detail-header {
-    flex-direction: column;
-    align-items: flex-start;
-    gap: var(--space-4);
-  }
 }
 
-@media (max-width: 480px) {
-  .lib-name-cell {
-    flex-direction: column;
-    align-items: flex-start;
-    gap: var(--space-1);
-  }
+.rule-name-cell {
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.rule-desc-cell {
+  color: var(--text-secondary);
+  font-size: 13px;
+  line-height: 1.5;
 }
 </style>

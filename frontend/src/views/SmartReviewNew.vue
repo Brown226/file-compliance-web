@@ -1,8 +1,8 @@
 <template>
   <div class="smart-review-new-page">
     <div v-if="!selectedModule" class="module-step-card">
-      <h3 class="module-title">先选择审查模块</h3>
-      <p class="module-desc">在上传文件前先确认审查目标，后续会按该目标默认配置审查项。</p>
+      <h3 class="module-title">选择审查模块</h3>
+      <p class="module-desc">不同模块对应不同的审查策略和配置,选择后将自动加载对应的审查项。</p>
 
       <div class="module-grid">
         <button
@@ -10,6 +10,7 @@
           :key="item.id"
           type="button"
           class="module-item"
+          :class="{ 'is-selected': selectedModule === item.id }"
           :data-module="item.id"
           @click="selectModule(item.id)"
         >
@@ -21,9 +22,17 @@
       </div>
     </div>
 
-    <div v-else class="module-selected-bar">
-      <span>已选模块：{{ selectedModuleLabel }}</span>
-      <el-button text type="primary" @click="selectedModule = ''">重新选择</el-button>
+    <div v-else-if="selectedModule" class="module-selected-bar">
+      <div class="selected-info">
+        <span class="selected-label">已选模块</span>
+        <span class="selected-module-name">{{ selectedModuleLabel }}</span>
+      </div>
+      <div class="selected-actions">
+        <el-button text type="primary" @click="selectedModule = ''">
+          <el-icon><RefreshLeft /></el-icon>
+          重新选择
+        </el-button>
+      </div>
     </div>
 
     <SmartReviewLegacy v-if="selectedModule && selectedModule !== 'SELF_CHECK'" />
@@ -33,6 +42,7 @@
 
 <script setup lang="ts">
 import { computed, ref } from 'vue'
+import { RefreshLeft } from '@element-plus/icons-vue'
 import SmartReviewLegacy from './SmartReview.vue'
 import SelfCheck from './SelfCheck/index.vue'
 
@@ -48,6 +58,12 @@ const modules: Array<{ id: ModuleId; title: string; desc: string; scenario: stri
     scenario: '适用：首次审查、合规性检查、标准符合性验证（最常用）'
   },
   {
+    id: 'DOC_REVIEW',
+    title: '📄 以文审文',
+    desc: '将待审文件与参照文件(模板/旧版/标准)逐项比对，AI 语义级分析差异与遗漏',
+    scenario: '适用：合同vs模板核对、新版vs旧版变更审查、投标文件vs招标要求对照'
+  },
+  {
     id: 'CONSISTENCY',
     title: '🔗 一致性审查',
     desc: '检查多份文件之间或同一文件内部的数据/参数是否自洽（数值精确比对，非语义比对）',
@@ -60,18 +76,6 @@ const modules: Array<{ id: ModuleId; title: string; desc: string; scenario: stri
     scenario: '适用：终稿校对、发布前文字把关、格式规范化检查'
   },
   {
-    id: 'MULTIMODAL',
-    title: '🖼️ 多模态识别',
-    desc: '针对含图纸(DWG)、表格、公式的结构化内容进行专项识别与审查',
-    scenario: '适用：工程设计图纸审核、带复杂表格的说明书、含公式计算书'
-  },
-  {
-    id: 'DOC_REVIEW',
-    title: '📄 以文审文',
-    desc: '将待审文件与参照文件(模板/旧版/标准)逐项比对，AI 语义级分析差异与遗漏',
-    scenario: '适用：合同vs模板核对、新版vs旧版变更审查、投标文件vs招标要求对照'
-  },
-  {
     id: 'RULE_ONLY',
     title: '📋 规则库审查',
     desc: '仅执行预定义规则检查（命名/编码/格式/页码等），不调用 AI，速度最快',
@@ -82,6 +86,12 @@ const modules: Array<{ id: ModuleId; title: string; desc: string; scenario: stri
     title: '✅ 标准引用自检',
     desc: '提取设计文件中引用的标准规范，与标准库逐条比对，检查编号/名称/版本/废止状态',
     scenario: '适用：设计文件标准引用核查、规范清单校对、废止标准排查'
+  },
+  {
+    id: 'MULTIMODAL',
+    title: '🖼️ 多模态识别',
+    desc: '针对含图纸(DWG)、表格、公式的结构化内容进行专项识别与审查',
+    scenario: '适用：工程设计图纸审核、带复杂表格的说明书、含公式计算书'
   },
 ]
 
@@ -132,7 +142,7 @@ const selectModule = (id: ModuleId) => {
   gap: 16px;
 }
 
-/* ===== 模块卡片（基础样式）===== */
+/* ===== 模块卡片(基础样式)===== */
 .module-item {
   position: relative;
   text-align: left;
@@ -143,6 +153,63 @@ const selectModule = (id: ModuleId) => {
   cursor: pointer;
   transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
   overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+/* 选中状态 */
+.module-item.is-selected {
+  border-color: var(--module-color);
+  background: linear-gradient(135deg, var(--module-color-ultra-light) 0%, #ffffff 100%);
+  box-shadow: 
+    0 8px 16px -4px var(--module-color-alpha),
+    0 0 0 1px var(--module-color);
+}
+
+.module-item.is-selected::before {
+  opacity: 1;
+  height: 5px;
+}
+
+.module-item.is-selected .module-item-title {
+  color: var(--module-color);
+}
+
+.module-item.is-selected .module-icon-emoji {
+  transform: scale(1.1);
+}
+
+.module-item.is-selected::after {
+  content: '✓';
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  width: 24px;
+  height: 24px;
+  background: var(--module-color);
+  color: white;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  font-weight: bold;
+  animation: checkPop 0.3s ease-out;
+}
+
+@keyframes checkPop {
+  0% {
+    transform: scale(0);
+    opacity: 0;
+  }
+  50% {
+    transform: scale(1.2);
+  }
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
 }
 
 .module-item::before {
@@ -159,24 +226,14 @@ const selectModule = (id: ModuleId) => {
 
 /* Hover 状态 */
 .module-item:hover {
-  transform: translateY(-4px);
   border-color: var(--module-color);
   box-shadow: 
-    0 20px 25px -5px rgba(0, 0, 0, 0.08),
-    0 10px 10px -5px rgba(0, 0, 0, 0.04),
-    0 0 0 1px var(--module-color-alpha);
+    0 8px 16px -4px rgba(0, 0, 0, 0.08),
+    0 4px 6px -2px rgba(0, 0, 0, 0.04);
 }
 
 .module-item:hover::before {
   opacity: 1;
-}
-
-.module-item:hover .module-item-title {
-  color: var(--module-color);
-}
-
-.module-item:hover .module-icon-emoji {
-  transform: scale(1.15) rotate(-5deg);
 }
 
 /* Focus 状态（键盘导航） */
@@ -305,12 +362,44 @@ const selectModule = (id: ModuleId) => {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 16px 20px;
-  background: linear-gradient(135deg, #f0f9ff 0%, #e0f2fe 100%);
-  border: 2px solid #bae6fd;
-  border-radius: 12px;
-  box-shadow: 0 2px 8px rgba(14, 165, 233, 0.08);
+  padding: 10px 16px;
+  background: #f8faff;
+  border: 1px solid #dbeafe;
+  border-radius: 8px;
+  box-shadow: 0 1px 3px rgba(14, 165, 233, 0.06);
   animation: slideIn 0.3s ease-out;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.selected-info {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+  min-width: 200px;
+}
+
+.selected-label {
+  color: #94a3b8;
+  font-size: 13px;
+  font-weight: 400;
+}
+
+.selected-module-name {
+  color: #3b82f6;
+  font-size: 14px;
+  font-weight: 600;
+  padding: 2px 10px;
+  background: white;
+  border-radius: 4px;
+  border: 1px solid #dbeafe;
+}
+
+.selected-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 
 @keyframes slideIn {
@@ -326,27 +415,24 @@ const selectModule = (id: ModuleId) => {
 
 /* ===== 响应式适配 ===== */
 
-/* 中等屏幕：保持2列但调整间距 */
-@media (max-width: 1200px) {
+/* 大屏幕:3列布局 */
+@media (min-width: 1400px) {
   .module-grid {
-    gap: 14px;
-  }
-  
-  .module-item {
-    padding: 18px;
-  }
-  
-  .module-icon-emoji {
-    font-size: 26px;
-  }
-  
-  .module-item-title {
-    font-size: 16px;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 18px;
   }
 }
 
-/* 小屏幕/平板：单列布局 */
-@media (max-width: 900px) {
+/* 中等屏幕:2列布局 */
+@media (min-width: 1000px) and (max-width: 1399px) {
+  .module-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 16px;
+  }
+}
+
+/* 小屏幕/平板:单列布局 */
+@media (max-width: 999px) {
   .module-step-card {
     padding: 24px;
   }
@@ -380,6 +466,27 @@ const selectModule = (id: ModuleId) => {
   .module-item-scenario {
     font-size: 11.5px;
     padding: 6px 12px;
+  }
+}
+
+/* 已选模块栏响应式 */
+@media (max-width: 768px) {
+  .module-selected-bar {
+    flex-direction: column;
+    align-items: stretch;
+    padding: 16px;
+  }
+  
+  .selected-info {
+    justify-content: center;
+  }
+  
+  .selected-actions {
+    justify-content: stretch;
+  }
+  
+  .selected-actions .el-button {
+    flex: 1;
   }
 }
 </style>

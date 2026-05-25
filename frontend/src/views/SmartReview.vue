@@ -284,8 +284,8 @@
                     </div>
                   </div>
                 </template>
-                <!-- 其他模式：标准展示证据源卡片 -->
-                <template v-else>
+                <!-- 其他模式（非 RULE_ONLY 且非 DOC_REVIEW）：标准展示证据源卡片 -->
+                <template v-else-if="entryModule !== 'DOC_REVIEW'">
                   <div class="evidence-cards">
                     <div
                       v-for="option in availableEvidenceSources"
@@ -328,8 +328,8 @@
                   </div>
                   <div v-if="reviewPlanDraft.evidence.sources.includes('REVIEW_SPECIFICATION')" class="selected-items-display">
                     <div class="selected-items-header">
-                      <span class="selected-items-count">{{ reviewPlanDraft.evidence.reviewSpecificationId ? '已选择' : '未选择' }}审查规范集</span>
-                      <el-button type="primary" link size="small" @click="openReviewSpecificationDialog">选择审查规范集</el-button>
+                      <span class="selected-items-count">{{ reviewPlanDraft.evidence.reviewSpecificationId ? '已选择' : '未选择' }}语义规范库</span>
+                      <el-button type="primary" link size="small" @click="openReviewSpecificationDialog">选择语义规范库</el-button>
                     </div>
                     <div v-if="reviewPlanDraft.evidence.reviewSpecificationId" class="selected-item-single">
                       <el-tag closable type="info" size="small" @close="reviewPlanDraft.evidence.reviewSpecificationId = null">
@@ -415,7 +415,7 @@
     @confirm="handleKnowledgeConfirm"
   />
 
-  <!-- 审查规范集选择对话框 -->
+  <!-- 语义规范库选择对话框 -->
   <SmartReviewReviewSpecificationDialog
     v-model:visible="reviewSpecificationDialogVisible"
     :specifications="reviewSpecifications"
@@ -453,7 +453,7 @@ import {
 import { createTaskApi, preAnalyzeApi, uploadOnlyApi, exportTaskReportApi, exportTaskReportWordApi } from '@/api/task'
 import type { ReviewPlan, ReviewObjective, ReviewEvidenceSource } from '@/types/models'
 import { getAllKnowledgeCategoriesApi, getKnowledgeTreeApi } from '@/api/knowledge-category'
-import { getReviewSpecificationsApi } from '@/api/review-specification'
+import { getRuleLibrariesApi } from '@/api/rule-library'
 import { useUserStore } from '@/stores/user'
 import SmartReviewUploadStep from './components/SmartReviewUploadStep.vue'
 import SmartReviewKnowledgeDialog from './components/SmartReviewKnowledgeDialog.vue'
@@ -811,7 +811,7 @@ const modeHintMap: Partial<Record<EntryModule, string>> = {
 }
 
 const modeDescriptionMap: Record<EntryModule, { title: string; desc: string; icon: string }> = {
-  LIBRARY: { title: '以库审文模式', desc: '基于标准知识库进行合规性审查，适用于合同、规范等标准化文档的全面检查。', icon: 'FolderOpened' },
+  LIBRARY: { title: '以库审文模式', desc: '基于知识库进行合规性审查，适用于合同、规范等标准化文档的全面检查。', icon: 'FolderOpened' },
   CONSISTENCY: { title: '一致性审查模式', desc: '检查文件内部及跨文件的数据参数一致性，支持数值容差和维度自定义。', icon: 'Connection' },
   PROOFREAD: { title: '基础校对模式', desc: '专注于文本层面的错别字、语法、标点和格式错误检测与纠正。', icon: 'EditPen' },
   RULE_ONLY: { title: '规则库审查模式', desc: '仅使用自定义规则库进行结构化审查，适合有明确规则的标准化检查场景。', icon: 'Files' },
@@ -1038,7 +1038,7 @@ const reviewPlanPayload = computed<ReviewPlan>(() => {
   })
 
 const objectiveOptions: Array<{ value: ReviewObjective; label: string; desc: string }> = [
-  { value: 'COMPLIANCE', label: '合规审查', desc: '对照标准知识库或规则库检查文件是否合规。' },
+  { value: 'COMPLIANCE', label: '合规审查', desc: '对照知识库或规则库检查文件是否合规。' },
   { value: 'COMPARE', label: '参照比对', desc: '与参考文件逐项比对，识别差异和不一致。' },
   { value: 'PROOFREAD', label: '文本校对', desc: '检查错别字、语病、术语一致性等文字问题。' },
   { value: 'STRUCTURED', label: '结构化审查', desc: '检查图纸、表格、公式和结构化内容。' },
@@ -1099,8 +1099,25 @@ const openKnowledgeDialog = () => {
   knowledgeDialogVisible.value = true
 }
 
-const openReviewSpecificationDialog = () => {
+const openReviewSpecificationDialog = async () => {
   reviewSpecificationDialogVisible.value = true
+  try {
+    const specRes = await getRuleLibrariesApi()
+    console.log('[SmartReview] API response:', specRes)
+    console.log('[SmartReview] specRes.data type:', typeof specRes.data, Array.isArray(specRes.data))
+    console.log('[SmartReview] specRes.data content:', JSON.stringify(specRes.data))
+    reviewSpecifications.value = (specRes.data || []).map((l: any) => ({
+      id: l.id,
+      name: l.name,
+      status: l.status || 'DRAFT',
+      description: l.description || '',
+      itemCount: l._count?.items || l.items?.length || 0,
+      executableCount: l.enabledExecutableItemCount || l.executableItemCount || 0,
+    }))
+    console.log('[SmartReview] reviewSpecifications.value:', reviewSpecifications.value)
+  } catch (e) {
+    console.warn('[SmartReview] 刷新语义规范库列表失败:', e)
+  }
 }
 
 const removeKnowledgeCategory = (id: string) => {
@@ -1122,16 +1139,16 @@ const getReviewSpecificationName = (id: string) => {
 
 const evidenceSourceOptions: Record<ReviewObjective, Array<{ value: ReviewEvidenceSource; label: string }>> = {
   COMPLIANCE: [
-    { value: 'STANDARD', label: '标准知识库' },
-    { value: 'REVIEW_SPECIFICATION', label: '审查规范集' },
+    { value: 'STANDARD', label: '知识库' },
+    { value: 'REVIEW_SPECIFICATION', label: '语义规范库' },
   ],
   COMPARE: [
     { value: 'REFERENCE', label: '参考文件' },
   ],
   PROOFREAD: [],
   STRUCTURED: [
-    { value: 'STANDARD', label: '标准知识库' },
-    { value: 'REVIEW_SPECIFICATION', label: '审查规范集' },
+    { value: 'STANDARD', label: '知识库' },
+    { value: 'REVIEW_SPECIFICATION', label: '语义规范库' },
   ],
 }
 
@@ -1189,7 +1206,7 @@ const toggleGroup = (prefixes: string[], enabled: boolean) => {
   }
 }
 
-// 审查规范集列表
+// 语义规范库列表
 const reviewSpecifications = ref<Array<{
   id: string
   name: string
@@ -1260,10 +1277,10 @@ const startAnalysis = async () => {
     if (reviewPlanDraft.objective === 'COMPARE' && refFileList.value.length === 0)
       reasons.push('以文审文/参照比对模式需要上传参照文件（在参考文件区上传）')
     if (reviewPlanDraft.evidence.sources.includes('REVIEW_SPECIFICATION') && !reviewPlanDraft.evidence.reviewSpecificationId)
-      reasons.push('审查规范集模式需要选择具体的审查规范集')
+      reasons.push('语义规范库模式需要选择具体的语义规范库')
     const allowEmptySources = ['PROOFREAD'].includes(reviewPlanDraft.objective) || entryModule.value === 'CONSISTENCY' || entryModule.value === 'RULE_ONLY'
     if (!allowEmptySources && reviewPlanDraft.evidence.sources.length === 0)
-      reasons.push('请至少选择一项审查依据（标准库/知识库/审查规范集/参照文件）')
+      reasons.push('请至少选择一项审查依据（标准库/知识库/语义规范库/参照文件）')
     ElMessage.warning(reasons.length > 0 ? reasons[0] : '请完善审查配置后再开始分析')
     return
   }
@@ -1325,7 +1342,7 @@ const submitTask = async () => {
   }
 
   if (submitPlan.execution.profile !== 'RULE_ONLY' && submitPlan.evidence.sources.includes('REVIEW_SPECIFICATION') && !submitPlan.evidence.reviewSpecificationId) {
-    ElMessage.warning('已选择审查规范集依据，请先选择具体规范集')
+    ElMessage.warning('已选择语义规范库依据，请先选择具体规范库')
     return
   }
 
@@ -1345,7 +1362,7 @@ const submitTask = async () => {
     }
 
     if (submitPlan.evidence.sources.includes('REVIEW_SPECIFICATION') && submitPlan.evidence.reviewSpecificationId) {
-      fd.append('reviewSpecificationId', submitPlan.evidence.reviewSpecificationId)
+      fd.append('ruleLibraryId', submitPlan.evidence.reviewSpecificationId)
     }
 
     // 预分析数据（完整对象，包含文件类型、签约方等）
@@ -1434,7 +1451,7 @@ onMounted(async () => {
     const [catRes, treeRes, specRes] = await Promise.all([
       getAllKnowledgeCategoriesApi(),
       getKnowledgeTreeApi(),
-      getReviewSpecificationsApi(),
+      getRuleLibrariesApi(),
     ])
     knowledgeCategories.value = (catRes.data || []).map((c: any) => ({ id: c.id, name: c.name }))
     knowledgeTreeData.value = treeRes.data || []
@@ -1442,17 +1459,18 @@ onMounted(async () => {
       id: l.id,
       name: l.name,
       status: l.status || 'DRAFT',
+      description: l.description || '',
       itemCount: l._count?.items || l.items?.length || 0,
-      executableCount: l.executableItemCount || 0,
+      executableCount: l.enabledExecutableItemCount || l.executableItemCount || 0,
     }))
     
     console.log('[SmartReview] 知识库列表加载成功:', knowledgeCategories.value.length, '个')
     console.log('[SmartReview] 知识库树形结构加载成功:', knowledgeTreeData.value.length, '个根节点')
-    console.log('[SmartReview] 审查规范集列表加载成功:', reviewSpecifications.value.length, '个')
-    console.log('[SmartReview] 审查规范集详情:', JSON.stringify(reviewSpecifications.value, null, 2))
+    console.log('[SmartReview] 语义规范库列表加载成功:', reviewSpecifications.value.length, '个')
+    console.log('[SmartReview] 语义规范库详情:', JSON.stringify(reviewSpecifications.value, null, 2))
     
   } catch (e) {
-    console.warn('[SmartReview] 加载知识库/审查规范集列表失败:', e)
+    console.warn('[SmartReview] 加载知识库/语义规范库列表失败:', e)
   }
 })
 </script>

@@ -356,6 +356,7 @@
 <script setup lang="ts">
 import { ref, computed, watch, onMounted } from 'vue'
 import { Plus, Edit, Delete, ArrowRight, Files, Upload, Warning } from '@element-plus/icons-vue'
+import { useEnterToConfirm } from '@/composables/useEnterToConfirm'
 import { ElMessageBox } from 'element-plus'
 import type { ReviewSpecification, ReviewSpecificationItem, SpecificationPreviewItem } from '@/api/review-specification'
 import type { SpecificationFolderTreeNode } from '@/api/specification-folder'
@@ -545,6 +546,9 @@ const handleCreateFolder = async () => {
     ElMessage.error('创建失败')
   }
 }
+
+useEnterToConfirm(createDialogVisible, handleCreate)
+useEnterToConfirm(createFolderDialogVisible, handleCreateFolder)
 
 const handleDeleteFolder = async (id: string) => {
   const confirm = await ElMessageBox.confirm('确定删除该目录？目录下的规范库将被移动到根目录。', '提示', { type: 'warning' })

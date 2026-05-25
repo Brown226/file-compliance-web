@@ -20,7 +20,8 @@
 </template>
 
 <script setup lang="ts">
-import { ref, watch } from 'vue'
+import { ref, watch, computed } from 'vue'
+import { useEnterToConfirm } from '@/composables/useEnterToConfirm'
 
 const props = defineProps<{
   modelValue: boolean
@@ -47,4 +48,6 @@ watch(dialogVisible, (val) => {
 const handleConfirm = () => {
   emit('confirm', reasonInput.value.trim())
 }
+
+useEnterToConfirm(dialogVisible, handleConfirm, { disabled: computed(() => props.submitting) })
 </script>

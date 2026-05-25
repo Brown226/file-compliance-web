@@ -26,10 +26,10 @@
         <div class="tree-container">
           <el-tree
             :data="filteredKnowledgeTree"
-            :props="{ label: 'name', children: 'children', disabled: (node: any) => !!node.children?.length }"
+            :props="treeProps"
             node-key="id"
             :expand-on-click-node="false"
-            :default-expand-all="false"
+            :default-expand-all="true"
             highlight-current
             show-checkbox
             check-strictly
@@ -98,7 +98,8 @@
 <script setup lang="ts">
 import { ref, computed, watch, nextTick } from 'vue'
 import { ElMessage } from 'element-plus'
-import { Delete, Search, FolderOpened } from '@element-plus/icons-vue'
+import { useEnterToConfirm } from '@/composables/useEnterToConfirm'
+import { Delete, Search, FolderOpened, Collection } from '@element-plus/icons-vue'
 
 const props = defineProps<{
   visible: boolean
@@ -113,6 +114,24 @@ const emit = defineEmits<{
 
 const knowledgeSearchQuery = ref('')
 const knowledgeTreeRef = ref()
+
+const treeProps = {
+  label: 'name',
+  children: 'children',
+  disabled: (node: any) => !!node.children?.length,
+  icon: (node: any) => {
+    if (!node.children?.length || node.isLeaf) {
+      return {
+        component: 'Collection',
+        props: { size: 16, color: '#3B82F6' }
+      }
+    }
+    return {
+      component: 'FolderOpened',
+      props: { size: 16, color: '#F59E0B' }
+    }
+  }
+}
 
 const filteredKnowledgeTree = computed(() => {
   if (!knowledgeSearchQuery.value.trim()) return props.knowledgeTreeData
@@ -197,6 +216,8 @@ const handleConfirm = () => {
 const handleCancel = () => {
   emit('update:visible', false)
 }
+
+useEnterToConfirm(computed(() => props.visible), handleConfirm)
 
 watch(() => props.visible, async (val) => {
   if (val) {

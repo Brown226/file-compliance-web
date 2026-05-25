@@ -135,6 +135,7 @@
               :auto-upload="false"
               :accept="'.doc,.docx,.xls,.xlsx,.pdf,.ppt,.pptx,.dwg,.txt'"
               :limit="20"
+              :on-exceed="handleExceed"
               multiple
               drag
               class="upload-area--compact"
@@ -170,14 +171,6 @@
             <el-icon><Search /></el-icon>
             {{ checkRunning ? '正在检查中...' : '开始自检' }}
           </el-button>
-          <div class="action-btns--secondary">
-            <el-button size="large" :disabled="!report" @click="handleExportReport">
-              <el-icon><Download /></el-icon> 导出 Excel
-            </el-button>
-            <el-button size="large" :disabled="!report || checkRunning" @click="handleClearResult" plain>
-              <el-icon><RefreshRight /></el-icon> 清空重做
-            </el-button>
-          </div>
         </div>
 
         <!-- 结果展示卡片 -->
@@ -362,6 +355,33 @@ const fileList = ref<UploadFile[]>([])
 
 const canRunCheck = computed(() => fileList.value.length > 0 && !checkRunning.value)
 
+const handleExceed = (files: File[]) => {
+  const limit = 20
+  const remaining = limit - fileList.value.length
+  if (remaining <= 0) {
+    ElMessage.warning(`已达最大文件数量限制（${limit} 个），无法继续添加。`)
+    return
+  }
+  
+  const filesToAdd = files.slice(0, remaining)
+  const ignoredCount = files.length - remaining
+  
+  filesToAdd.forEach(file => {
+    fileList.value.push({
+      name: file.name,
+      size: file.size,
+      raw: file,
+      uid: Date.now() + Math.random(),
+    } as UploadFile)
+  })
+  
+  if (ignoredCount > 0) {
+    ElMessage.warning(`已添加前 ${remaining} 个文件，忽略 ${ignoredCount} 个超出限制的文件。`)
+  } else {
+    ElMessage.success(`已成功添加 ${remaining} 个文件。`)
+  }
+}
+
 const removeFile = (file: UploadFile) => {
   const idx = fileList.value.findIndex(f => f.uid === file.uid)
   if (idx >= 0) fileList.value.splice(idx, 1)
@@ -487,11 +507,6 @@ const handleExportReport = async () => {
   }
 }
 
-const handleClearResult = () => {
-  report.value = null
-  fileList.value = []
-}
-
 // ==================== 初始化 ====================
 onMounted(() => {
   fetchLibraryInfo()
@@ -541,6 +556,7 @@ onMounted(() => {
 .step-bar {
   display: flex;
   align-items: center;
+  justify-content: center;
   gap: 0;
   padding: 14px 24px;
   background: #fff;
@@ -918,6 +934,7 @@ onMounted(() => {
 .action-bar {
   display: flex;
   align-items: center;
+  justify-content: flex-end;
   gap: 16px;
   padding: 4px 0;
 }

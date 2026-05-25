@@ -39,9 +39,10 @@ export class TaskService {
           knowledgeCategoryIds: Array.isArray(input?.evidence?.knowledgeCategoryIds) ? input.evidence.knowledgeCategoryIds : [],
           reviewSpecificationId: typeof input?.evidence?.reviewSpecificationId === 'string' && input.evidence.reviewSpecificationId.trim()
             ? input.evidence.reviewSpecificationId.trim()
-            : (typeof input?.evidence?.ruleLibraryId === 'string' && input.evidence.ruleLibraryId.trim()
-              ? input.evidence.ruleLibraryId.trim()
-              : null),
+            : null,
+          ruleLibraryId: typeof input?.evidence?.ruleLibraryId === 'string' && input.evidence.ruleLibraryId.trim()
+            ? input.evidence.ruleLibraryId.trim()
+            : null,
           refFileGroupId: typeof input?.evidence?.refFileGroupId === 'string' && input.evidence.refFileGroupId.trim()
             ? input.evidence.refFileGroupId.trim()
             : null,
@@ -93,6 +94,7 @@ export class TaskService {
     knowledgeCategoryId?: string;  // 用户选择的知识库ID
     knowledgeCategoryIds?: string[];  // 用户选择的多个知识库ID
     reviewSpecificationId?: string;
+    ruleLibraryId?: string;  // 关联的规则库 ID
     perspective?: string;  // 审查立场
     preAnalysisData?: any;  // 预分析完整数据
     reviewPlan?: any;       // 审查方案
@@ -104,7 +106,7 @@ export class TaskService {
     dwgParsedData?: Record<string, any>;  // 前端 WASM 解析的 DWG 数据（按文件名映射）
   }): Promise<Task> {
     const { title, description, creatorId, standardId, standardIds = [], knowledgeCategoryId, knowledgeCategoryIds,
-      reviewSpecificationId, perspective, preAnalysisData, reviewPlan, reviewPoints, corePurposes, selectedTemplateId, intraFileConsistency,
+      reviewSpecificationId, ruleLibraryId, perspective, preAnalysisData, reviewPlan, reviewPoints, corePurposes, selectedTemplateId, intraFileConsistency,
       files = [], dwgParsedData } = data;
 
     // 合并标准 ID：保留单选兼容，同时写入多选
@@ -120,7 +122,7 @@ export class TaskService {
     }
     if (normalizedReviewPlan.execution.profile === 'RULE_ONLY') {
       const hasDirectPrefixes = Array.isArray(normalizedReviewPlan.evidence.enabledPrefixes) && normalizedReviewPlan.evidence.enabledPrefixes.length > 0;
-      if (!hasDirectPrefixes && !normalizedReviewPlan.evidence.reviewSpecificationId && !reviewSpecificationId) {
+      if (!hasDirectPrefixes && !normalizedReviewPlan.evidence.reviewSpecificationId && !normalizedReviewPlan.evidence.ruleLibraryId && !reviewSpecificationId && !ruleLibraryId) {
         throw new Error('仅规则执行模式必须指定审查规范集或启用的规则前缀');
       }
     }
@@ -154,10 +156,12 @@ export class TaskService {
 
     normalizedReviewPlan.evidence.knowledgeCategoryIds = knowledgeCategoryIds || normalizedReviewPlan.evidence.knowledgeCategoryIds || [];
     if (reviewSpecificationId) normalizedReviewPlan.evidence.reviewSpecificationId = reviewSpecificationId;
+    if (ruleLibraryId) normalizedReviewPlan.evidence.ruleLibraryId = ruleLibraryId;
     if (intraFileConsistency !== undefined) normalizedReviewPlan.enhancements.intraFileConsistency = !!intraFileConsistency;
 
-    const shouldBindRuleLibrary = (normalizedReviewPlan.evidence.sources.includes('REVIEW_SPECIFICATION') || normalizedReviewPlan.evidence.sources.includes('RULE_LIBRARY')) && !!normalizedReviewPlan.evidence.reviewSpecificationId;
-    const effectiveStandardIds = shouldBindRuleLibrary ? [] : allStandardIds;
+    const hasRuleSource = (normalizedReviewPlan.evidence.sources.includes('REVIEW_SPECIFICATION') || normalizedReviewPlan.evidence.sources.includes('RULE_LIBRARY'))
+      && (!!(normalizedReviewPlan.evidence.reviewSpecificationId || normalizedReviewPlan.evidence.ruleLibraryId));
+    const effectiveStandardIds = hasRuleSource ? [] : allStandardIds;
 
     // 创建任务
     const task = await prisma.task.create({
@@ -165,10 +169,11 @@ export class TaskService {
         title,
         description,
         creatorId,
-        standardId: shouldBindRuleLibrary ? null : (standardId || effectiveStandardIds[0] || null),
+        standardId: hasRuleSource ? null : (standardId || effectiveStandardIds[0] || null),
         reviewMode: resolvedReviewMode as any,
         knowledgeCategoryId: knowledgeIdForDb,
-        reviewSpecificationId: shouldBindRuleLibrary ? normalizedReviewPlan.evidence.reviewSpecificationId || null : null,
+        reviewSpecificationId: normalizedReviewPlan.evidence.reviewSpecificationId || null,
+        ruleLibraryId: normalizedReviewPlan.evidence.ruleLibraryId || null,
         perspective: perspective || null,
         preAnalysisData: preAnalysisJson || undefined,
         reviewPlan: normalizedReviewPlan as any,
@@ -971,6 +976,7 @@ export class TaskService {
         status: task.status,
         reviewMode: task.reviewMode,
         reviewSpecificationId: (task as any).reviewSpecificationId || null,
+        ruleLibraryId: (task as any).ruleLibraryId || null,
         reviewPlan: (task as any).reviewPlan || null,
         reviewSpecification: (task as any).reviewSpecification || null,
         perspective: task.perspective,

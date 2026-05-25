@@ -84,7 +84,8 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, watch } from 'vue'
+import { ref, reactive, watch, computed } from 'vue'
+import { useEnterToConfirm } from '@/composables/useEnterToConfirm'
 
 export interface VectorizeConfig {
   splitStrategy: 'auto' | 'fixed' | 'clause'
@@ -123,6 +124,8 @@ const handleConfirm = () => {
   // 父组件负责关闭对话框和重置loading
   setTimeout(() => { loading.value = false }, 300)
 }
+
+useEnterToConfirm(computed(() => props.modelValue), handleConfirm, { disabled: loading })
 </script>
 
 <style scoped>

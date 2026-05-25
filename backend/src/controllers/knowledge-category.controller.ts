@@ -287,7 +287,7 @@ export const previewDocument = async (req: AuthRequest, res: Response): Promise<
   }
 };
 
-/** 确认导入 — 用户确认分段后批量入库（保留用户编辑的分段，不重新分块） */
+/** 确认导入 — 异步处理，立即返回任务ID */
 export const confirmImport = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const id = req.params.id as string;
@@ -324,33 +324,28 @@ export const confirmImport = async (req: AuthRequest, res: Response): Promise<vo
       },
     }));
 
-    const result = await VectorService.importDocuments(entries);
-    if (result.errors?.length) {
-      console.warn(`[ConfirmImport] ${result.errors.length} 个文档导入失败:`, result.errors);
-    }
-
-    // 同步创建 Document 记录，确保 Document ↔ VectorDocument 数据一致
+    // 创建任务追踪
+    const taskIds: string[] = [];
     for (const entry of entries) {
-      if (!entry.title) continue;
-      const totalChars = entry.content?.length || 0;
-      const totalChunks = entry.preChunkedParagraphs?.length || 0;
-      await prisma.document.upsert({
-        where: { categoryId_title: { categoryId: id, title: entry.title } },
-        update: { totalChunks, totalChars, isVectorized: true, vectorStatus: 'SUCCESS' },
-        create: {
-          categoryId: id,
-          title: entry.title,
-          sourceType: 'standard',
-          status: 'ACTIVE',
-          totalChunks,
-          totalChars,
-          isVectorized: true,
-          vectorStatus: 'SUCCESS',
-        },
-      });
+      const taskId = UploadTaskService.createTask(entry.title);
+      taskIds.push(taskId);
     }
 
-    success(res, { imported: result.imported, deduped: result.deduped, errors: result.errors }, `导入完成：${result.imported} 成功，${result.errors.length} 失败`);
+    // 动态导入队列服务
+    const { knowledgeImportQueue } = await import('../services/queue.service');
+
+    // 将导入任务添加到队列
+    await knowledgeImportQueue.add('import', {
+      taskIds,
+      categoryId: id,
+      entries,
+    }, {
+      jobId: `kb-import:${taskIds[0]}`,
+    });
+
+    console.log(`[ConfirmImport] 异步导入任务已入队: ${entries.length} 个文档, taskIds=${taskIds.join(',')}`);
+
+    success(res, { taskIds }, '导入任务已创建，正在后台处理');
   } catch (err: any) {
     console.error('Confirm Import Error:', err);
     error(res, err.message || '导入失败', err instanceof AppError ? err.statusCode : 500);

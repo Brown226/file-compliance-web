@@ -44,7 +44,7 @@ const routes: Array<RouteRecordRaw> = [
         path: 'langchain/qa',
         name: 'LangChainQA',
         component: () => import('../views/langchain/LangChainQA.vue'),
-        meta: { title: 'LC 智能问答' }
+        meta: { title: '知识库智能问答' }
       },
       {
         path: 'tasks',

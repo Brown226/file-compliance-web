@@ -293,6 +293,7 @@
 <script setup lang="ts">
 import { ref, reactive, computed, onMounted } from 'vue'
 import { useUserStore } from '@/stores/user'
+import { useEnterToConfirm } from '@/composables/useEnterToConfirm'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Search, Plus, Upload, Delete, MagicStick } from '@element-plus/icons-vue'
 import type { FormInstance, FormRules } from 'element-plus'
@@ -675,6 +676,9 @@ const submitEditForm = async () => {
     }
   })
 }
+
+useEnterToConfirm(createDialogVisible, submitCreateForm, { disabled: createSubmitLoading })
+useEnterToConfirm(editDialogVisible, submitEditForm, { disabled: editSubmitLoading })
 
 // ========== 测试匹配 ==========
 const testDialogVisible = ref(false)

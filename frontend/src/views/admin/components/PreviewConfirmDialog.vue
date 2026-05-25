@@ -140,8 +140,9 @@
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue'
+import { ref, computed } from 'vue'
 import { UploadFilled, Loading, ArrowLeft, Document } from '@element-plus/icons-vue'
+import { useEnterToConfirm } from '@/composables/useEnterToConfirm'
 import { ElMessage } from 'element-plus'
 import { previewDocumentApi, confirmImportApi, type PreviewResult, type ParagraphSegment } from '@/api/knowledge-category'
 
@@ -227,6 +228,8 @@ const handleConfirm = async () => {
     confirming.value = false
   }
 }
+
+useEnterToConfirm(computed(() => props.modelValue), handleConfirm, { disabled: computed(() => confirming.value || step.value !== 'preview') })
 </script>
 
 <style scoped>

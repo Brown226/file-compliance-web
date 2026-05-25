@@ -80,7 +80,10 @@ export class PreAnalysisService {
     const matchedCategory = this.matchCategory(categories, docType.type, fileNames);
     const matchedRuleLib = this.matchRuleLibrary(ruleLibs, docType.type);
 
-    const llmAnalysis: LlmPreAnalysis = await this.runLlmPreAnalysis(files).catch(() => ({} as LlmPreAnalysis));
+    const llmAnalysis: LlmPreAnalysis = await this.runLlmPreAnalysis(files).catch((e) => {
+      console.warn('[PreAnalysis] runLlmPreAnalysis 异常:', e);
+      return {} as LlmPreAnalysis;
+    });
 
     const llmAnalyzed = llmAnalysis.__llmAnalyzed === true;
 
@@ -149,29 +152,36 @@ export class PreAnalysisService {
 
     const fileType = firstFile.name.split('.').pop()?.toLowerCase() || '';
     if (!['doc', 'docx', 'pdf', 'txt', 'xls', 'xlsx'].includes(fileType)) {
+      console.log('[PreAnalysis] 跳过LLM分析：不支持的文件类型', fileType);
       return {};
     }
 
-    let filePath = firstFile.filePath;
-    if (!filePath) {
-      filePath = `uploads/${firstFile.name}`;
+    const path = await import('path');
+    const fs = await import('fs');
+
+    let absolutePath: string;
+    if (firstFile.filePath) {
+      // filePath 形如 "/uploads/1234567890_filename.docx"，需去掉 /uploads/ 前缀
+      const relativePath = firstFile.filePath.replace(/^\/uploads\//, '');
+      absolutePath = path.resolve(__dirname, '../../uploads', relativePath);
+    } else {
+      absolutePath = path.resolve(__dirname, '../../uploads', firstFile.name);
     }
 
-    const path = await import('path');
-    const absolutePath = path.resolve(filePath);
-    const fs = await import('fs');
-    
     if (!fs.existsSync(absolutePath)) {
+      console.warn('[PreAnalysis] 跳过LLM分析：文件不存在', absolutePath);
       return {};
     }
 
     const fileText = await ParserService.parseFile(absolutePath, fileType);
     if (!fileText || fileText.trim().length < 100) {
+      console.warn('[PreAnalysis] 跳过LLM分析：文件内容过短或解析失败', { textLen: fileText?.length || 0 });
       return {};
     }
 
     const llmConfig = await LlmService.getLlmConfig();
     if (!llmConfig) {
+      console.warn('[PreAnalysis] 跳过LLM分析：未配置LLM');
       return {};
     }
 
@@ -195,23 +205,26 @@ ${fileText.substring(0, 3000)}
 
     let llmResponse: string;
     try {
-      llmResponse = await LlmService.chat(prompt, { 
-        maxTokens: llmConfig.maxTokens, 
-        timeout: llmConfig.timeout 
+      llmResponse = await LlmService.chat(prompt, {
+        maxTokens: llmConfig.maxTokens,
+        timeout: llmConfig.timeout
       });
-    } catch {
+    } catch (e) {
+      console.warn('[PreAnalysis] 跳过LLM分析：LLM调用失败', e);
       return {};
     }
 
     const jsonMatch = llmResponse.match(/\{[\s\S]*\}/);
     if (!jsonMatch) {
+      console.warn('[PreAnalysis] 跳过LLM分析：LLM响应无JSON', llmResponse.substring(0, 200));
       return {};
     }
 
     try {
       const parsed = JSON.parse(jsonMatch[0]);
       return typeof parsed === 'object' && parsed ? { ...parsed, __llmAnalyzed: true } : {};
-    } catch {
+    } catch (e) {
+      console.warn('[PreAnalysis] 跳过LLM分析：JSON解析失败', jsonMatch[0].substring(0, 200));
       return {};
     }
   }

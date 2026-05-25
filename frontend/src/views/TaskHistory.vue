@@ -467,7 +467,7 @@ const objectiveLabelMap: Record<string, string> = {
 }
 
 const evidenceLabelMap: Record<string, string> = {
-  STANDARD: '标准知识库',
+  STANDARD: '知识库',
   REVIEW_SPECIFICATION: '语义规范库',
   REFERENCE: '参考文件',
 }

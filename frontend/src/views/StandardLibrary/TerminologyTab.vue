@@ -157,6 +157,7 @@
 <script setup lang="ts">
 import { ref, reactive, onMounted, computed, watch } from 'vue'
 import { Plus, Search, Folder, Files } from '@element-plus/icons-vue'
+import { useEnterToConfirm } from '@/composables/useEnterToConfirm'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import type { FormInstance, FormRules } from 'element-plus'
 import {
@@ -315,6 +316,8 @@ const submitTermForm = async () => {
     }
   })
 }
+
+useEnterToConfirm(termDialogVisible, submitTermForm, { disabled: termSubmitLoading })
 
 const handleDeleteTerm = async (row: TerminologyEntry) => {
   try {

@@ -325,6 +325,7 @@
 <script setup lang="ts">
 import { ref, reactive, computed, onMounted, onUnmounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import { useEnterToConfirm } from '@/composables/useEnterToConfirm'
 import { Plus, Search, Folder, Edit, Delete, Upload, Download, User, Key, Check, Close, RefreshRight, UploadFilled, OfficeBuilding } from '@element-plus/icons-vue'
 import * as XLSX from 'xlsx'
 import {
@@ -410,6 +411,8 @@ const submitDeptForm = async () => {
   } catch (e: any) { ElMessage.error(e.response?.data?.message || '操作失败') }
   finally { deptSubmitting.value = false }
 }
+
+useEnterToConfirm(deptDialogVisible, submitDeptForm, { disabled: deptSubmitting })
 
 // ========== 员工管理 ==========
 const employeeData = ref<any[]>([])
@@ -686,6 +689,8 @@ const submitAccountForm = async () => {
   } catch (e: any) { ElMessage.error(e.response?.data?.message || '操作失败') }
   finally { accountSubmitting.value = false }
 }
+
+useEnterToConfirm(accountDialogVisible, submitAccountForm, { disabled: accountSubmitting })
 
 // ========== 批量导入 ==========
 const showBatchImportDialog = ref(false)

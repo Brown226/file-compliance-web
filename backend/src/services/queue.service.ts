@@ -24,6 +24,12 @@ export interface KnowledgeUploadJobData {
   originalName: string;
 }
 
+export interface KnowledgeImportJobData {
+  taskIds: string[];
+  categoryId: string;
+  entries: any[];
+}
+
 /** 审查任务队列 */
 export const reviewQueue = new Bull<ReviewJobData>('review', env.redisUrl, {
   defaultJobOptions: {
@@ -39,6 +45,16 @@ export const knowledgeUploadQueue = new Bull<KnowledgeUploadJobData>('knowledge-
   defaultJobOptions: {
     attempts: 2,
     backoff: { type: 'fixed', delay: 10000 },
+    removeOnComplete: { age: 3600, count: 200 },
+    removeOnFail: { age: 86400, count: 100 },
+  },
+});
+
+/** 知识库导入队列 — 确认导入后的异步处理 */
+export const knowledgeImportQueue = new Bull<KnowledgeImportJobData>('knowledge-import', env.redisUrl, {
+  defaultJobOptions: {
+    attempts: 2,
+    backoff: { type: 'fixed', delay: 15000 },
     removeOnComplete: { age: 3600, count: 200 },
     removeOnFail: { age: 86400, count: 100 },
   },
@@ -112,8 +128,88 @@ export function initQueueProcessors(): void {
     }
   });
 
+  // ── 知识库导入队列处理器 ──
+  knowledgeImportQueue.process('import', 2, async (job) => {
+    const { taskIds, categoryId, entries } = job.data;
+    const docTitle = entries[0]?.title || '未知文档';
+    console.log(`[KB-Import] 开始处理导入: ${entries.length} 个文档 (attempt ${job.attemptsMade + 1})`);
+
+    try {
+      const { VectorService } = await import('./vector.service');
+      const totalEntries = entries.length;
+
+      for (let i = 0; i < entries.length; i++) {
+        const entry = entries[i];
+        const taskId = taskIds[i];
+
+        UploadTaskService.updateTask(taskId, {
+          status: 'processing',
+          progress: Math.round(((i) / totalEntries) * 80) + 10,
+          message: `正在导入 ${i + 1}/${totalEntries}: ${entry.title}`,
+        });
+
+        try {
+          const result = await VectorService.importDocument(entry);
+
+          // 创建 Document 记录
+          const totalChars = entry.content?.length || 0;
+          const totalChunks = entry.preChunkedParagraphs?.length || 0;
+          await prisma.document.upsert({
+            where: { categoryId_title: { categoryId, title: entry.title } },
+            update: { totalChunks, totalChars, isVectorized: true, vectorStatus: 'SUCCESS' },
+            create: {
+              categoryId,
+              title: entry.title,
+              sourceType: 'standard',
+              status: 'ACTIVE',
+              totalChunks,
+              totalChars,
+              isVectorized: true,
+              vectorStatus: 'SUCCESS',
+            },
+          });
+
+          UploadTaskService.updateTask(taskId, {
+            status: 'completed',
+            progress: 100,
+            message: `完成，${result.chunks} 个分段`,
+            chunks: result.chunks,
+          });
+
+          console.log(`[KB-Import] 文档导入完成: ${entry.title}`);
+        } catch (err: any) {
+          console.error(`[KB-Import] 文档导入失败: ${entry.title}`, err.message);
+          UploadTaskService.updateTask(taskId, {
+            status: 'failed',
+            progress: 0,
+            message: '导入失败',
+            error: err.message,
+          });
+        }
+      }
+
+      console.log(`[KB-Import] 批量导入完成: ${entries.length} 个文档`);
+      return { completed: true };
+    } catch (err: any) {
+      console.error(`[KB-Import] 批量导入失败: ${docTitle}`, err.message);
+      // 将所有未完成的任务标记为失败
+      for (const taskId of taskIds) {
+        const task = UploadTaskService.getTask(taskId);
+        if (task && task.status !== 'completed') {
+          UploadTaskService.updateTask(taskId, {
+            status: 'failed',
+            progress: 0,
+            message: '导入失败',
+            error: err.message,
+          });
+        }
+      }
+      throw err;
+    }
+  });
+
   // ── 全局事件 ──
-  for (const q of [reviewQueue, knowledgeUploadQueue]) {
+  for (const q of [reviewQueue, knowledgeUploadQueue, knowledgeImportQueue]) {
     q.on('completed', (job, result) => {
       if (result?.skipped) {
         console.log(`[Queue] Job ${job.id} 跳过: ${result.reason}`);

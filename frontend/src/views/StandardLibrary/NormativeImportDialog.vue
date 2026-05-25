@@ -72,6 +72,7 @@ import { ref, reactive, computed } from 'vue'
 import {
   UploadFilled, Download,
 } from '@element-plus/icons-vue'
+import { useEnterToConfirm } from '@/composables/useEnterToConfirm'
 import { ElMessage } from 'element-plus'
 import type { UploadFile } from 'element-plus'
 import {
@@ -140,6 +141,8 @@ const handleImport = async () => {
     importLoading.value = false
   }
 }
+
+useEnterToConfirm(visible, handleImport, { disabled: computed(() => importLoading.value || !selectedFile.value) })
 
 // 关闭弹窗
 const handleClose = () => {
