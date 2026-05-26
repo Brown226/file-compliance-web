@@ -723,9 +723,25 @@ const fileStatusSummary = computed(() => {
 })
 
 const isDwgFileSelected = computed(() => {
-  if (!selectedFileId.value) return false
+  // #region debug-point isDwgFileSelected
+  console.group('[🔍 DEBUG] isDwgFileSelected 计算')
+  console.log('selectedFileId:', selectedFileId.value)
+  // #endregion
+  if (!selectedFileId.value) {
+    console.warn('⚠️ selectedFileId 为空，返回 false')
+    console.groupEnd()
+    return false
+  }
   const file = files.value.find((f: any) => f.id === selectedFileId.value) as any
-  return file?.fileType === 'dwg' || file?.file_type === 'dwg'
+  // #region debug-point isDwgFileSelected
+  console.log('找到的文件对象:', file)
+  console.log('file.fileType:', file?.fileType)
+  console.log('file.file_type:', file?.file_type)
+  const result = file?.fileType === 'dwg' || file?.file_type === 'dwg'
+  console.log('最终判断结果:', result)
+  console.groupEnd()
+  // #endregion
+  return result
 })
 
 const isDocxFileSelected = computed(() => {
@@ -740,6 +756,11 @@ const dwgParseFailed = ref(false)
 
 /** 下载 DWG 原始文件并在前端创建 File 对象供 WASM 解析 */
 async function loadDwgFile(fileId: string) {
+  // #region debug-point loadDwgFile
+  console.group('[🔍 DEBUG] loadDwgFile 开始')
+  console.log('fileId:', fileId)
+  console.log('taskId:', taskId.value)
+  // #endregion
   dwgParseFailed.value = false
   dwgFileForPreview.value = null
 
@@ -748,11 +769,29 @@ async function loadDwgFile(fileId: string) {
       `/tasks/${taskId.value}/files/${fileId}/raw`,
       { responseType: 'arraybuffer' }
     )
+    // #region debug-point loadDwgFile
+    console.log('API 响应状态:', resp.status)
+    console.log('响应数据类型:', typeof resp.data)
+    console.log('响应数据大小:', resp.data?.byteLength || resp.data?.length || 0)
+    // #endregion
     const file = files.value.find((f: any) => f.id === fileId) as any
     const fileName = file?.fileName || 'drawing.dwg'
     const blob = new Blob([resp.data])
     dwgFileForPreview.value = new File([blob], fileName, { type: 'application/octet-stream' })
+    // #region debug-point loadDwgFile
+    console.log('创建的 File 对象:', dwgFileForPreview.value)
+    console.log('文件名:', dwgFileForPreview.value?.name)
+    console.log('文件大小:', dwgFileForPreview.value?.size)
+    console.groupEnd()
+    // #endregion
   } catch (e: any) {
+    // #region debug-point loadDwgFile-error
+    console.error('[❌ DEBUG] loadDwgFile 失败:')
+    console.error('错误对象:', e)
+    console.error('错误消息:', e?.message)
+    console.error('错误响应:', e?.response?.status, e?.response?.data)
+    console.groupEnd()
+    // #endregion
     console.error('[TaskResultsView] DWG 文件下载失败:', e)
     dwgParseFailed.value = true
   }
@@ -760,13 +799,27 @@ async function loadDwgFile(fileId: string) {
 
 // 监听文件切换：选中 DWG 时自动下载原始文件
 watch(() => selectedFileId.value, (fileId) => {
+  // #region debug-point watch-selectedFileId
+  console.group('[🔍 DEBUG] selectedFileId 变化')
+  console.log('新的 fileId:', fileId)
+  console.log('当前 files 数组长度:', files.value.length)
+  console.log('dwgParseFailed 当前值:', dwgParseFailed.value)
+  console.log('dwgFileForPreview 当前值:', dwgFileForPreview.value)
+  // #endregion
   if (!fileId) {
+    console.log('⚠️ fileId 为空，清空 DWG 状态')
     dwgFileForPreview.value = null
     dwgParseFailed.value = false
+    console.groupEnd()
     return
   }
   const file = files.value.find((f: any) => f.id === fileId) as any
   const isDwg = file?.fileType === 'dwg' || file?.file_type === 'dwg'
+  // #region debug-point watch-selectedFileId
+  console.log('找到的文件:', file)
+  console.log('是否为 DWG 文件:', isDwg)
+  console.groupEnd()
+  // #endregion
   if (isDwg) {
     loadDwgFile(fileId)
   } else {

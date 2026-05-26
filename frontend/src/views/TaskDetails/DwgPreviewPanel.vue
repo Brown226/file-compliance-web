@@ -160,6 +160,12 @@ const canvasTransform = computed(() => ({
 // ==================== SVG 生成 ====================
 
 async function generateSvg(file: File) {
+  // #region debug-point generateSvg-start
+  console.group('[🔍 DEBUG] generateSvg 开始')
+  console.log('输入文件:', file)
+  console.log('文件名:', file.name)
+  console.log('文件大小:', file.size, 'bytes')
+  // #endregion
   loading.value = true
   error.value = false
   parseFailed.value = false
@@ -174,7 +180,18 @@ async function generateSvg(file: File) {
   }, FALLBACK_TIMEOUT_MS)
 
   try {
+    // #region debug-point generateSvg-dwgToSvg
+    console.log('[🔍 DEBUG] 调用 dwgToSvg()...')
+    const startTime = performance.now()
+    // #endregion
     const result: DwgSvgResult = await dwgToSvg(file)
+    const endTime = performance.now()
+    // #region debug-point generateSvg-dwgToSvg-result
+    console.log(`[✅ DEBUG] dwgToSvg 成功! 耗时: ${(endTime - startTime).toFixed(0)}ms`)
+    console.log('返回的 result 对象:', result)
+    console.log('result.svg 长度:', result?.svg?.length)
+    console.log('result.handleMap:', result?.handleMap)
+    // #endregion
 
     // 安全过滤 SVG（保留 data-handle 和 data-entity-type 属性）
     const rawSvg = result.svg
@@ -196,6 +213,14 @@ async function generateSvg(file: File) {
     await nextTick()
     setTimeout(fitToWindow, 100)
   } catch (e: any) {
+    // #region debug-point generateSvg-error
+    console.error('[❌ DEBUG] generateSvg/dwgToSvg 失败:')
+    console.error('错误对象:', e)
+    console.error('错误消息:', e?.message)
+    console.error('错误堆栈:', e?.stack)
+    console.error('错误名称:', e?.name)
+    console.groupEnd()
+    // #endregion
     console.error('[DwgPreviewPanel] SVG 生成失败:', e)
     error.value = true
     const msg = e?.message || ''
@@ -206,6 +231,13 @@ async function generateSvg(file: File) {
     }
     parseFailed.value = true
   } finally {
+    // #region debug-point generateSvg-finally
+    console.log('[🔍 DEBUG] generateSvg 执行完毕')
+    console.log('loading:', loading.value)
+    console.log('error:', error.value)
+    console.log('svgContent 长度:', svgContent.value.length)
+    console.groupEnd()
+    // #endregion
     if (fallbackTimeoutId) {
       clearTimeout(fallbackTimeoutId)
       fallbackTimeoutId = null
@@ -216,9 +248,20 @@ async function generateSvg(file: File) {
 
 // 监听文件变化
 watch(() => props.file, (newFile) => {
+  // #region debug-point DwgPreviewPanel-watch-file
+  console.group('[🔍 DEBUG] DwgPreviewPanel - file prop 变化')
+  console.log('新的 file 值:', newFile)
+  console.log('文件名:', newFile?.name)
+  console.log('文件大小:', newFile?.size)
+  console.log('文件类型:', newFile?.type)
+  // #endregion
   if (newFile) {
+    console.log('✅ 文件存在，开始调用 generateSvg')
+    console.groupEnd()
     generateSvg(newFile)
   } else {
+    console.warn('⚠️ 文件为空，清空 SVG 内容')
+    console.groupEnd()
     svgContent.value = ''
     handleMap.value = {}
   }
