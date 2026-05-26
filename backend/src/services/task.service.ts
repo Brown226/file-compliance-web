@@ -70,7 +70,7 @@ export class TaskService {
           crossFileConsistency: !!input?.enhancements?.crossFileConsistency,
         },
         execution: {
-          profile: input?.execution?.profile === 'RULE_ONLY' ? 'RULE_ONLY' : 'HYBRID',
+          profile: input?.execution?.profile === 'RULE_ONLY' ? 'RULE_ONLY' : 'AI_ONLY',
         },
         templateId: typeof input?.templateId === 'string' && input.templateId.trim() ? input.templateId.trim() : undefined,
       };
@@ -80,7 +80,7 @@ export class TaskService {
       objective: 'COMPLIANCE',
       evidence: { sources: ['STANDARD'], knowledgeCategoryIds: [], reviewSpecificationId: null, refFileGroupId: null },
       enhancements: { intraFileConsistency: false, crossFileConsistency: false },
-      execution: { profile: 'HYBRID' },
+      execution: { profile: 'AI_ONLY' },
     };
   }
 

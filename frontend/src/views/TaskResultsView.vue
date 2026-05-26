@@ -969,7 +969,7 @@ const evidenceLabelMap: Record<string, string> = {
 }
 
 const executionLabelMap: Record<string, string> = {
-  HYBRID: '混合执行（规则 + AI）',
+  AI_ONLY: 'AI 审查',
   RULE_ONLY: '仅规则执行',
 }
 

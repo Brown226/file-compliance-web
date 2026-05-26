@@ -96,14 +96,13 @@ export class ReviewService {
     }
     const hasStandard = ruleSource.includes('STANDARD');
     const hasReviewSpec = ruleSource.includes('REVIEW_SPECIFICATION');
-    // DOC_REVIEW 和 CONSISTENCY 模式强制启用 AI（即使前端误传 RULE_ONLY）
-    const effectiveProfile = (reviewMode === 'DOC_REVIEW' || reviewMode === 'CONSISTENCY')
-      ? 'HYBRID'
-      : plan.execution.profile;
+    const effectiveProfile = plan.execution.profile;
     const stages =
       effectiveProfile === 'RULE_ONLY'
         ? { ai: false, rules: true, stdRef: false }
-        : undefined;
+        : effectiveProfile === 'AI_ONLY'
+          ? { ai: true, rules: false, stdRef: false }
+          : undefined;
     const crossFileConsistency = !!plan.enhancements.crossFileConsistency;
 
     const hasDirectPrefixes = Array.isArray(plan.evidence.enabledPrefixes) && plan.evidence.enabledPrefixes.length > 0;

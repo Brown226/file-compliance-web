@@ -105,7 +105,7 @@ export function useReviewPlan(state: ReturnType<typeof import('./useSmartReviewS
       case 'LIBRARY':
         draft.objective = 'COMPLIANCE'
         draft.evidence.sources = ['STANDARD', 'REVIEW_SPECIFICATION']
-        draft.execution.profile = 'HYBRID'
+        draft.execution.profile = 'AI_ONLY'
         break
 
       case 'CONSISTENCY':
@@ -115,7 +115,7 @@ export function useReviewPlan(state: ReturnType<typeof import('./useSmartReviewS
         draft.evidence.knowledgeCategoryIds = []
         draft.enhancements.intraFileConsistency = true
         draft.enhancements.crossFileConsistency = true
-        draft.execution.profile = 'RULE_ONLY'
+        draft.execution.profile = 'AI_ONLY'
         break
 
       case 'PROOFREAD':
@@ -125,7 +125,7 @@ export function useReviewPlan(state: ReturnType<typeof import('./useSmartReviewS
         draft.evidence.knowledgeCategoryIds = []
         draft.enhancements.intraFileConsistency = true
         draft.enhancements.crossFileConsistency = false
-        draft.execution.profile = 'RULE_ONLY'
+        draft.execution.profile = 'AI_ONLY'
         break
 
       case 'MULTIMODAL':
@@ -135,7 +135,7 @@ export function useReviewPlan(state: ReturnType<typeof import('./useSmartReviewS
         draft.evidence.knowledgeCategoryIds = []
         draft.enhancements.intraFileConsistency = true
         draft.enhancements.crossFileConsistency = true
-        draft.execution.profile = 'RULE_ONLY'
+        draft.execution.profile = 'AI_ONLY'
         break
 
       case 'DOC_REVIEW':
@@ -145,7 +145,7 @@ export function useReviewPlan(state: ReturnType<typeof import('./useSmartReviewS
         draft.evidence.knowledgeCategoryIds = []
         draft.enhancements.intraFileConsistency = true
         draft.enhancements.crossFileConsistency = true
-        draft.execution.profile = 'RULE_ONLY'
+        draft.execution.profile = 'AI_ONLY'
         break
 
       case 'RULE_ONLY':
@@ -166,12 +166,12 @@ export function useReviewPlan(state: ReturnType<typeof import('./useSmartReviewS
     
     if (objective === 'COMPARE') {
       state.reviewPlanDraft.evidence.sources = ['REFERENCE']
-      state.reviewPlanDraft.execution.profile = 'HYBRID'
+      state.reviewPlanDraft.execution.profile = 'AI_ONLY'
     } else if (objective === 'PROOFREAD') {
       state.reviewPlanDraft.evidence.sources = []
       state.reviewPlanDraft.evidence.reviewSpecificationId = null
       state.reviewPlanDraft.evidence.knowledgeCategoryIds = []
-      state.reviewPlanDraft.execution.profile = 'HYBRID'
+      state.reviewPlanDraft.execution.profile = 'AI_ONLY'
     } else {
       const next = state.reviewPlanDraft.evidence.sources.filter(source => allowed.has(source))
       state.reviewPlanDraft.evidence.sources = next.length > 0 ? next : (allowed.has('STANDARD') ? ['STANDARD'] : [])

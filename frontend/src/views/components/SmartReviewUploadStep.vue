@@ -1,6 +1,6 @@
 <template>
   <div class="upload-step">
-    <div class="step-title">
+    <div v-if="!hideActions" class="step-title">
       <h1 class="page-title">{{ pageTitle }}</h1>
       <p class="page-subtitle">{{ pageSubtitle }}</p>
     </div>
@@ -63,7 +63,7 @@
         </div>
       </div>
 
-      <p v-if="fileList.length === 0 && entryModule !== 'RULE_ONLY'" class="empty-hint">
+      <p v-if="fileList.length === 0 && entryModule !== 'RULE_ONLY' && !hideActions" class="empty-hint">
         至少上传一个待审文件后可继续
       </p>
 
@@ -124,7 +124,7 @@
         </div>
       </div>
 
-      <div class="step-actions">
+      <div v-if="!hideActions" class="step-actions">
         <el-button
           type="primary"
           size="large"
@@ -154,6 +154,7 @@ const props = defineProps<{
   refFileList: UploadFile[]
   entryModule: EntryModule | ''
   dwgParsedDataMap: Record<string, any>
+  hideActions?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -277,6 +278,10 @@ const getFileMeta = (fileName: string) => {
   text-align: center;
 }
 
+.upload-container {
+  max-width: 100%;
+}
+
 .step-title {
   margin-bottom: 16px;
 }
@@ -295,8 +300,7 @@ const getFileMeta = (fileName: string) => {
 }
 
 .upload-container {
-  max-width: 800px;
-  margin: 0 auto;
+  max-width: 100%;
 }
 
 .primary-upload-section {
@@ -304,9 +308,9 @@ const getFileMeta = (fileName: string) => {
 }
 
 .reference-upload-section {
-  margin-top: 20px;
-  padding-top: 20px;
-  border-top: 2px dashed #E5E7EB;
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: 1px dashed #E2E8F0;
 }
 
 .section-title {
@@ -411,10 +415,10 @@ const getFileMeta = (fileName: string) => {
 }
 
 .upload-dragger :deep(.el-upload-dragger) {
-  padding: 36px 20px;
+  padding: 40px 20px;
   border-radius: 10px;
-  border: 2px dashed #D1D5DB;
-  background: #F8FAFC;
+  border: 2px dashed #CBD5E1;
+  background: white;
 }
 
 .upload-dragger :deep(.el-upload-dragger:hover) {

@@ -159,7 +159,7 @@ export interface LocateMeta {
 
 export type ReviewObjective = 'COMPLIANCE' | 'COMPARE' | 'PROOFREAD' | 'STRUCTURED'
 export type ReviewEvidenceSource = 'STANDARD' | 'REVIEW_SPECIFICATION' | 'REFERENCE'
-export type ReviewExecutionProfile = 'HYBRID' | 'RULE_ONLY'
+export type ReviewExecutionProfile = 'AI_ONLY' | 'RULE_ONLY'
 
 export interface ReviewPlan {
   objective: ReviewObjective
