@@ -5,7 +5,7 @@ import { SystemConfigEmbeddings } from './langchain-embedding.adapter';
 import { PgVectorRetriever } from './langchain-retriever';
 import { VectorService } from '../../services/vector.service';
 import { LlmService, ReviewIssue, SourceReference } from '../../services/llm.service';
-import { PromptTemplateService } from '../../services/prompt-template.service';
+import { PromptLoader } from '../../services/prompts';
 import { EmbeddingService } from '../../services/embedding.service';
 
 export interface LangChainRAGOptions {
@@ -98,33 +98,19 @@ export class LangChainRAGService {
         }
 
         // 有标准上下文时用 default 变体（以库为本），无上下文时用 no_context 变体（降级路径）
-        const systemPrompt = standardContext
-          ? await PromptTemplateService.getPromptByScene(
-              scene, 'system', 'default',
-              '你是文件合规审查专家。请根据知识库检索到的标准规范，检查文本中的合规性问题。严格按照 JSON 数组格式输出审查结果。',
-            )
-          : await PromptTemplateService.getPromptByScene(
-              scene, 'system', 'no_context',
-              '你是文件合规审查专家。请检查文本中的通用合规性问题。standardRef 字段统一填 null。严格按照 JSON 数组格式输出审查结果。',
-            );
+        const systemPrompt = await PromptLoader.loadSystemPrompt(scene, {
+          hasContext: !!standardContext,
+        });
 
-        let userPrompt: string;
-        if (standardContext) {
-          const tpl = await PromptTemplateService.getPromptByScene(
-            scene, 'user', 'with_context',
-            '【知识库检索到的相关标准规范】\n${ragContext}\n\n【待审查文本】\n${text}\n\n请根据以上标准规范检查"待审查文本"中的合规性问题。严格按照 JSON 数组格式输出审查结果。',
-          );
-          userPrompt = tpl
-            .replace(/\$\{ragContext\}/g, standardContext)
-            .replace(/\$\{standardContext\}/g, standardContext)
-            .replace(/\$\{text\}/g, chunk.text);
-        } else {
-          const tpl = await PromptTemplateService.getPromptByScene(
-            scene, 'user', 'no_context',
-            '【待审查文本】\n${text}\n\n请检查以上文本的合规性问题。严格按照 JSON 数组格式输出审查结果。',
-          );
-          userPrompt = tpl.replace(/\$\{text\}/g, chunk.text);
-        }
+        const userPrompt = standardContext
+          ? await PromptLoader.loadUserPrompt(scene, 'with_context', {
+              ragContext: standardContext,
+              standardContext,
+              text: chunk.text,
+            })
+          : await PromptLoader.loadUserPrompt(scene, 'no_context', {
+              text: chunk.text,
+            });
 
         const issues = await LlmService.reviewText(userPrompt, {
           maxTokens: llmMaxTokens,

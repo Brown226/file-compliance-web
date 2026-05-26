@@ -10,6 +10,7 @@ import { ReviewIssue, SourceReference, LlmService } from '../llm.service';
 import { LangChainRAGService } from '../langchain/langchain-rag.service';
 import { VectorService } from '../vector.service';
 import { PromptTemplateService } from '../prompt-template.service';
+import { PromptLoader } from '../prompts';
 import { StandardTraceabilityService } from '../standard-traceability.service';
 
 export class AiReviewService {
@@ -106,137 +107,22 @@ export class AiReviewService {
     const chunks = LlmService.splitText(text, chunkSize, true);
     const totalChunks = chunks.length;
 
-    // 按场景加载系统提示词
+    // 按场景加载提示词（统一使用 PromptLoader，回退链：DB → Registry → 兜底）
     const scene = AiReviewService.resolveScene(ctx);
-    const sceneFallbacks: Record<string, string> = {
-      multimodal: `你是核电工程文件多模态审查专家。请重点检查以下内容：
-1. 表格数据的完整性和一致性
-2. 数值数据的合理性（单位、量级）
-3. 公式和计算的正确性
-4. 图纸和图表中的标注规范性
-
-## 输出要求
-严格按照 JSON 数组格式输出，每个问题包含:
-- issueType: FORMAT/COMPLETENESS/CONSISTENCY/VIOLATION
-- originalText: 原始问题文本
-- suggestedText: 建议修改内容
-- description: 问题描述
-- plain_language: 用通俗易懂的语言解释这个问题（让非专业人员也能理解）
-
-如果没有发现问题，输出空数组 []`,
-      typo_grammar: `你是核电工程文件文字校对与语句通顺性审查专家。请检查文本中的错别字、语法错误、语句通顺性和术语一致性问题。
-
-## 检查重点
-
-1. **错别字**：同音字混淆、形近字误用、多字漏字
-2. **语法错误**：主谓不一致、成分残缺、语序不当、关联词搭配不当
-3. **语句通顺性**：语句是否通顺、表达是否清晰、逻辑是否连贯、是否存在语病（如句式杂糅、前后矛盾、指代不明、语义重复）
-4. **术语一致性**：同一术语在全文中是否统一（如专有名词、缩写）
-5. **标点符号**：标点使用错误、中英文标点混用
-6. **单位符号**：物理量单位书写是否规范（如 kW/kW·h/MPa）
-
-## 注意事项
-- 不要报告合规性、格式规范、内容完整性等非文字问题
-- 专有名词和行业术语不是错别字，除非确实写错了
-- 如果某术语在核电行业中有标准写法，请指出非标准写法
-- 语句通顺性问题应标注为 FLUENCY 类型，错别字和语法问题标注为 TYPO 类型
-
-## 输出要求
-严格按照 JSON 数组格式输出，每个问题包含:
-- issueType: TYPO（错别字/语法错误）或 FLUENCY（语句不通顺/语病）
-- originalText: 原始问题文本
-- suggestedText: 建议修改内容
-- description: 问题描述（如"错别字：'XX'应为'YY'"或"语句不通顺：句式杂糅，建议拆分为两句"）
-- ruleCode: TYPO_001（错别字/语法）或 FLUENCY_001（语句通顺性）
-- standardRef: null
-- plain_language: 用通俗易懂的语言解释这个问题（让非专业人员也能理解）
-
-如果没有发现问题，输出空数组 []
-不要输出任何其他文字说明`,
-      library_review: `你是核电工程文件合规审查专家（CNPE/核工业标准）。
-
-## 核心原则
-1. **以库为本**：唯一审查依据是下方提供的"知识库检索到的相关标准规范"，不得凭主观判断报告问题。
-2. **仅审所涉**：只审查标准规范明确覆盖的方面，标准未涉及的方面不要主动检查。
-3. **有据必引**：每个问题必须明确引用违反的具体标准条文（standardRef 字段）。
-4. **宁缺毋滥**：不确定是否违规的内容，不要报告。
-
-## 排除项
-- 纯空格/间距差异、排版小瑕疵、无法确认违规的、无法给出有意义修改建议的
-
-## 输出要求
-严格按照 JSON 数组格式输出，每个问题包含:
-- issueType: TYPO/FORMAT/COMPLETENESS/CONSISTENCY/VIOLATION/FLUENCY/CROSS_REFERENCE
-- originalText: 原始问题文本
-- suggestedText: 建议修改内容
-- description: 问题描述，必须说明违反了哪条标准规范的什么要求
-- ruleCode: 问题类型编码
-- standardRef: 违反的具体标准条文引用，从检索到的标准中提取，无法确定则填null
-- plain_language: 用通俗易懂的语言解释
-
-如果没有发现问题，输出空数组 []
-不要输出任何其他文字说明`,
-      consistency: `你是核电工程文件一致性审查专家（CNPE/核工业标准）。请重点检查文档内部和文档之间的数据一致性问题。
-
-## 一致性检查重点
-
-### C1 - 编码一致性（P0-必须）
-- 封面页眉编码与文件名外部编码一致
-- 目录中的文件编码与正文中的引用编码匹配
-- 同一文件内对同一对象的引用编码必须完全一致
-
-### C2 - 参数一致性（P0-必须）
-- 同一参数在不同位置（封面、目录、正文、表格）的取值必须一致
-- 技术参数（电压等级、型号规格等）在全文中必须统一
-- 数值数据的单位必须前后一致
-
-### C3 - 命名一致性（P1-重要）
-- 项目名称、系统名称、设备名称在全文中必须统一
-- 同一概念的用词必须一致，不得混用同义词
-- 中英文术语对照必须前后一致
-
-### C4 - 交叉引用一致性（P1-重要）
-- 引用的其他文件编号必须存在且正确
-- 引用的标准规范版本必须与实际一致
-- 参照文件列表与正文引用必须对应
-
-## 输出要求
-严格按照 JSON 数组格式输出，每个问题包含:
-- issueType: CONSISTENCY/COMPLETENESS/VIOLATION
-- originalText: 原始问题文本
-- suggestedText: 建议修改内容
-- description: 问题描述，说明哪些位置存在不一致
-- ruleCode: 违反的规则编号(如C1/C2/C3/C4)
-- standardRef: 违反的具体标准条文引用，如果无法确定则写null
-- plain_language: 用通俗易懂的语言解释这个问题（让非专业人员也能理解）
-
-如果没有发现问题，输出空数组 []
-不要输出任何其他文字说明`,
-    };
-    // 根据是否有知识库上下文选择系统提示词变体
-    const systemVariant = knowledgeContext ? 'default' : 'no_context';
-    const systemFallback = knowledgeContext
-      ? (sceneFallbacks[scene] || '你是文件合规审查专家。请检查文本中的问题，严格按照 JSON 数组格式输出。')
-      : '你是文件合规审查专家。请检查文本中的通用合规性问题，standardRef 字段统一填 null。严格按照 JSON 数组格式输出。';
-    const rawSystemPrompt = await PromptTemplateService.getPromptByScene(
-      scene, 'system', systemVariant,
-      systemFallback,
-    );
+    const rawSystemPrompt = await PromptLoader.loadSystemPrompt(scene, {
+      hasContext: !!knowledgeContext,
+    });
     const systemPrompt = AiReviewService.injectSemanticContext(rawSystemPrompt, ctx);
 
     for (const chunk of chunks) {
       try {
         let llmIssues: ReviewIssue[];
         if (knowledgeContext) {
-          // 将知识库内容作为标准上下文传给 LLM
-          const userTpl = await PromptTemplateService.getPromptByScene(
-            scene, 'user', 'with_context',
-            `【审查标准】\n${knowledgeContext}\n\n【待审查文本】\n${chunk.text}\n\n请根据以上审查标准，检查待审查文本的合规性问题。`,
-          );
-          const userContent = userTpl
-            .replace(/\$\{ragContext\}/g, knowledgeContext)
-            .replace(/\$\{standardContext\}/g, knowledgeContext)
-            .replace(/\$\{text\}/g, chunk.text);
+          const userContent = await PromptLoader.loadUserPrompt(scene, 'with_context', {
+            ragContext: knowledgeContext,
+            standardContext: knowledgeContext,
+            text: chunk.text,
+          });
 
           llmIssues = await LlmService.reviewText(userContent, {
             maxTokens: llmMaxTokens,
@@ -250,11 +136,9 @@ export class AiReviewService {
             },
           });
         } else {
-          const userTpl = await PromptTemplateService.getPromptByScene(
-            scene, 'user', 'no_context',
-            `【待审查文本】\n${chunk.text}\n\n请检查以上文本的合规性问题。`,
-          );
-          const userContent = userTpl.replace(/\$\{text\}/g, chunk.text);
+          const userContent = await PromptLoader.loadUserPrompt(scene, 'no_context', {
+            text: chunk.text,
+          });
 
           llmIssues = await LlmService.reviewText(userContent, {
             maxTokens: llmMaxTokens,
@@ -348,146 +232,13 @@ export class AiReviewService {
     const llmTimeout = config.llmTimeout || 180;
     const issues: ReviewIssue[] = [];
 
-    // 按场景提供匹配的回退提示词（DB 模板不存在时使用）
-    const SCENE_FALLBACKS: Record<string, { system: string; user: string }> = {
-      multimodal: {
-        system: `你是核电工程文件多模态审查专家。请重点检查以下内容：
-1. 表格数据的完整性和一致性
-2. 数值数据的合理性（单位、量级）
-3. 公式和计算的正确性
-4. 图纸和图表中的标注规范性
-
-## 输出要求
-严格按照 JSON 数组格式输出，每个问题包含:
-- issueType: FORMAT/COMPLETENESS/CONSISTENCY/VIOLATION
-- originalText: 原始问题文本
-- suggestedText: 建议修改内容
-- description: 问题描述
-- plain_language: 用通俗易懂的语言解释这个问题（让非专业人员也能理解）
-
-如果没有发现问题，输出空数组 []`,
-        user: '【待审查文本】\n${chunk}\n\n请重点检查表格数据、数值和公式的正确性。',
-      },
-      typo_grammar: {
-        system: `你是核电工程文件文字校对与语句通顺性审查专家。请检查文本中的错别字、语法错误、语句通顺性和术语一致性问题。
-
-## 检查重点
-
-1. **错别字**：同音字混淆、形近字误用、多字漏字
-2. **语法错误**：主谓不一致、成分残缺、语序不当、关联词搭配不当
-3. **语句通顺性**：语句是否通顺、表达是否清晰、逻辑是否连贯、是否存在语病（如句式杂糅、前后矛盾、指代不明、语义重复）
-4. **术语一致性**：同一术语在全文中是否统一（如专有名词、缩写）
-5. **标点符号**：标点使用错误、中英文标点混用
-6. **单位符号**：物理量单位书写是否规范（如 kW/kW·h/MPa）
-
-## 注意事项
-- 不要报告合规性、格式规范、内容完整性等非文字问题
-- 专有名词和行业术语不是错别字，除非确实写错了
-- 如果某术语在核电行业中有标准写法，请指出非标准写法
-- 语句通顺性问题应标注为 FLUENCY 类型，错别字和语法问题标注为 TYPO 类型
-
-## 输出要求
-严格按照 JSON 数组格式输出，每个问题包含:
-- issueType: TYPO（错别字/语法错误）或 FLUENCY（语句不通顺/语病）
-- originalText: 原始问题文本
-- suggestedText: 建议修改内容
-- description: 问题描述（如"错别字：'XX'应为'YY'"或"语句不通顺：句式杂糅，建议拆分为两句"）
-- ruleCode: TYPO_001（错别字/语法）或 FLUENCY_001（语句通顺性）
-- standardRef: null
-- plain_language: 用通俗易懂的语言解释这个问题（让非专业人员也能理解）
-
-如果没有发现问题，输出空数组 []
-不要输出任何其他文字说明`,
-        user: '【待审查文本】\n${text}\n\n请检查以上文本中的错别字、语法错误和术语一致性问题。',
-      },
-      library_review: {
-        system: `你是核电工程文件通用审查专家（CNPE/核工业标准）。
-
-## 重要说明
-本次审查不包含外部标准规范作为参考依据，请仅报告明显、确定无疑的合规性问题。
-
-## 审查原则
-1. 宁缺毋滥：不确定是否违规的内容不要报告
-2. 不得编造或引用虚构的标准条文，standardRef 字段统一填 null
-3. 不得将合理的技术表述、行业惯用写法误报为问题
-
-## 审查重点
-仅报告以下明显问题：
-- 明显的内容缺失（缺少必要章节、关键字段）
-- 明显的术语错误或混用
-- 明显的语句不通顺或歧义表达
-- 明显的格式问题（编号混乱、层级错误）
-
-## 输出要求
-严格按照 JSON 数组格式输出，每个问题包含:
-- issueType: TYPO/FORMAT/COMPLETENESS/CONSISTENCY/VIOLATION/FLUENCY/CROSS_REFERENCE
-- originalText: 原始问题文本
-- suggestedText: 建议修改内容
-- description: 问题描述
-- ruleCode: 问题类型编码
-- standardRef: 统一填 null（本次审查无标准规范可引用）
-- plain_language: 用通俗易懂的语言解释
-
-如果没有发现问题，输出空数组 []
-不要输出任何其他文字说明`,
-        user: '【待审查文本】\n${text}\n\n请检查以上文本的通用合规性问题，standardRef 字段统一填 null。严格按照 JSON 数组格式输出审查结果。',
-      },
-      consistency: {
-        system: `你是核电工程文件一致性审查专家（CNPE/核工业标准）。请重点检查文档内部和文档之间的数据一致性问题。
-
-## 一致性检查重点
-
-### C1 - 编码一致性（P0-必须）
-- 封面页眉编码与文件名外部编码一致
-- 目录中的文件编码与正文中的引用编码匹配
-- 同一文件内对同一对象的引用编码必须完全一致
-
-### C2 - 参数一致性（P0-必须）
-- 同一参数在不同位置（封面、目录、正文、表格）的取值必须一致
-- 技术参数（电压等级、型号规格等）在全文中必须统一
-- 数值数据的单位必须前后一致
-
-### C3 - 命名一致性（P1-重要）
-- 项目名称、系统名称、设备名称在全文中必须统一
-- 同一概念的用词必须一致，不得混用同义词
-- 中英文术语对照必须前后一致
-
-### C4 - 交叉引用一致性（P1-重要）
-- 引用的其他文件编号必须存在且正确
-- 引用的标准规范版本必须与实际一致
-- 参照文件列表与正文引用必须对应
-
-## 输出要求
-严格按照 JSON 数组格式输出，每个问题包含:
-- issueType: CONSISTENCY/COMPLETENESS/VIOLATION
-- originalText: 原始问题文本
-- suggestedText: 建议修改内容
-- description: 问题描述，说明哪些位置存在不一致
-- ruleCode: 违反的规则编号(如C1/C2/C3/C4)
-- standardRef: 违反的具体标准条文引用，如果无法确定则写null
-- plain_language: 用通俗易懂的语言解释这个问题（让非专业人员也能理解）
-
-如果没有发现问题，输出空数组 []
-不要输出任何其他文字说明`,
-        user: '【待审查文本】\n${text}\n\n请重点检查以上文本内部的数据一致性问题（编码、参数、命名、交叉引用等）。严格按照 JSON 数组格式输出审查结果。',
-      },
-    };
-    const fallbacks = SCENE_FALLBACKS[scene] || {
-      system: '你是文件审查专家。请检查文本中的问题，严格按照 JSON 数组格式输出。',
-      user: '【待审查文本】\n${text}\n\n请检查以上文本的合规性问题。',
-    };
-
     try {
       // runLLMDirect 始终无标准上下文，使用 no_context 变体
-      const rawSystemPrompt = await PromptTemplateService.getPromptByScene(
-        scene, 'system', 'no_context',
-        fallbacks.system,
-      );
+      const rawSystemPrompt = await PromptLoader.loadSystemPrompt(scene, {
+        hasContext: false,
+      });
       const systemPrompt = AiReviewService.injectSemanticContext(rawSystemPrompt, ctx);
-      const userTpl = await PromptTemplateService.getPromptByScene(
-        scene, 'user', 'no_context',
-        fallbacks.user,
-      );
+      const userTpl = await PromptLoader.loadUserPrompt(scene, 'no_context');
 
       const chunks = LlmService.splitText(text, chunkSize, true);
       const totalChunks = chunks.length;
@@ -549,84 +300,8 @@ export class AiReviewService {
     const llmMaxTokens = config.llmMaxTokens || 4096;
     const llmTimeout = config.llmTimeout || 180;
 
-    // 按场景提供匹配的回退提示词
-    const SCENE_FALLBACKS: Record<string, { system: string; user: string }> = {
-      typo_grammar: {
-        system: `你是核电工程文件文字校对与语句通顺性审查专家。请检查文本中的错别字、语法错误、语句通顺性和术语一致性问题。
-
-## 检查重点
-
-1. **错别字**：同音字混淆、形近字误用、多字漏字
-2. **语法错误**：主谓不一致、成分残缺、语序不当、关联词搭配不当
-3. **语句通顺性**：语句是否通顺、表达是否清晰、逻辑是否连贯、是否存在语病（如句式杂糅、前后矛盾、指代不明、语义重复）
-4. **术语一致性**：同一术语在全文中是否统一（如专有名词、缩写）
-5. **标点符号**：标点使用错误、中英文标点混用
-6. **单位符号**：物理量单位书写是否规范（如 kW/kW·h/MPa）
-
-## 注意事项
-- 不要报告合规性、格式规范、内容完整性等非文字问题
-- 专有名词和行业术语不是错别字，除非确实写错了
-- 如果某术语在核电行业中有标准写法，请指出非标准写法
-- 语句通顺性问题应标注为 FLUENCY 类型，错别字和语法问题标注为 TYPO 类型
-
-## 输出要求
-严格按照 JSON 数组格式输出，每个问题包含:
-- issueType: TYPO（错别字/语法错误）或 FLUENCY（语句不通顺/语病）
-- originalText: 原始问题文本
-- suggestedText: 建议修改内容
-- description: 问题描述（如"错别字：'XX'应为'YY'"或"语句不通顺：句式杂糅，建议拆分为两句"）
-- ruleCode: TYPO_001（错别字/语法）或 FLUENCY_001（语句通顺性）
-- standardRef: null
-- plain_language: 用通俗易懂的语言解释这个问题（让非专业人员也能理解）
-
-如果没有发现问题，输出空数组 []
-不要输出任何其他文字说明`,
-        user: '【待审查文本】\n${text}\n\n请检查以上文本中的错别字、语法错误和术语一致性问题。',
-      },
-      library_review: {
-        system: `你是核电工程文件合规审查专家（CNPE/核工业标准）。请根据知识库中检索到的相关标准规范，逐条检查待审查文本中的合规性问题。
-
-## 审查原则
-1. 严格以检索到的标准规范为依据，不得凭主观判断报告问题
-2. 每个问题必须明确引用违反的具体标准条文
-3. 重点关注：格式规范性、内容完整性、数据一致性、编码规范性、术语准确性
-4. 对于标准中明确要求的必填项、必含字段，缺失即视为违规
-5. 不得将合理的技术表述、行业惯用写法误报为问题
-
-## 审查范围
-根据检索到的标准规范，重点检查以下方面（以实际检索到的标准为准）：
-- **格式规范**：封面、目录、页眉页脚、编号体系是否符合标准要求
-- **内容完整性**：必填字段、必要信息是否缺失
-- **数据一致性**：编码、参数、命名在文档内部及与引用文件之间是否一致
-- **引用规范**：引用文件格式、标准版本引用是否正确；交叉项目引用是否准确一致
-- **术语规范**：专有名词、技术术语是否全文统一且符合标准
-- **语句通顺性**：语句是否通顺、表达是否清晰、逻辑是否连贯、是否存在语法错误
-
-## 输出要求
-严格按照 JSON 数组格式输出，每个问题包含:
-- issueType: TYPO/FORMAT/COMPLETENESS/CONSISTENCY/VIOLATION/FLUENCY/CROSS_REFERENCE
-- originalText: 原始问题文本
-- suggestedText: 建议修改内容
-- description: 问题描述，必须说明违反了哪条标准规范的什么要求
-- ruleCode: 问题类型编码（如 FORMAT_001、COMPLETENESS_001、CONSISTENCY_001、VIOLATION_001）
-- standardRef: 违反的具体标准条文引用（如"GB/T 50265-2010 第5.2.1条"），如果无法确定具体条文则写null
-- plain_language: 用通俗易懂的语言解释这个问题（让非专业人员也能理解）
-
-如果没有发现问题，输出空数组 []
-不要输出任何其他文字说明`,
-        user: '【待审查文本】\n${text}\n\n请检查以上文本的合规性问题。严格按照 JSON 数组格式输出审查结果。',
-      },
-    };
-    const fallbacks = SCENE_FALLBACKS[scene] || {
-      system: '你是文件审查专家。请检查文本中的问题，严格按照 JSON 数组格式输出。',
-      user: '【待审查文本】\n${text}\n\n请检查以上文本的问题。',
-    };
-
     try {
-      const rawSystemPrompt = await PromptTemplateService.getPromptByScene(
-        scene, 'system', 'default',
-        fallbacks.system,
-      );
+      const rawSystemPrompt = await PromptLoader.loadSystemPrompt(scene, { hasContext: false });
       const systemPrompt = AiReviewService.injectSemanticContext(rawSystemPrompt, ctx);
 
       const chunks = LlmService.splitText(text, chunkSize, true);
@@ -634,10 +309,7 @@ export class AiReviewService {
       const issues: ReviewIssue[] = [];
       for (const chunk of chunks) {
         try {
-          const userTpl = await PromptTemplateService.getPromptByScene(
-            scene, 'user', 'default',
-            fallbacks.user,
-          );
+          const userTpl = await PromptLoader.loadUserPrompt(scene, 'default');
           const userContent = userTpl.replace(/\$\{text\}/g, chunk.text);
 
           const llmIssues = await LlmService.reviewText(userContent, {

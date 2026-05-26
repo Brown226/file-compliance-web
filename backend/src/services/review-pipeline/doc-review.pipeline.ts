@@ -13,7 +13,7 @@ import { BasePipeline } from './base-pipeline';
 import { PipelineContext, ReviewModeType } from './types';
 import { ReviewIssue, LlmService } from '../llm.service';
 import { ParserService } from '../parser.service';
-import { PromptTemplateService } from '../prompt-template.service';
+import { PromptLoader } from '../prompts';
 import { ModeCapabilities } from './mode-config';
 
 const DEFAULT_CAPABILITIES: ModeCapabilities = {
@@ -100,27 +100,9 @@ export class DocReviewPipeline extends BasePipeline {
         console.warn(`[DocReview] 参照文本已截断至 ${MAX_REF_CHARS} 字符（原始 ${rawRefTextsJoined.length} 字符）`);
       }
 
-      // 按场景加载比对系统提示词
-      const comparePromptTpl = await PromptTemplateService.getPromptByScene(
-        this.scene, 'system', 'default',
-        `你是核电工程文件比对专家。请比较【待审文件】与【参照文件】之间的差异，找出待审文件中可能存在的错误或不一致。
-
-## 参照文件内容
-${refTextsJoined}
-
-## 输出要求
-严格按照 JSON 数组格式输出，每个问题包含:
-- issueType: VIOLATION/FORMAT/COMPLETENESS/CONSISTENCY
-- originalText: 待审文件中的问题文本
-- suggestedText: 建议修改内容（参照文件中的对应内容）
-- description: 问题描述和差异说明
-- ruleCode: 问题类型编码
-- standardRef: 违反的具体标准规范引用，如果无法确定则写null
-
-如果没有发现差异问题，输出空数组 []
-不要输出任何其他文字说明`,
-      );
-      const comparePrompt = comparePromptTpl.replace(/\$\{refTexts\}/g, refTextsJoined);
+      // 按场景加载比对系统提示词（回退链：DB → Registry）
+      const comparePromptTpl = await PromptLoader.loadSystemPrompt(this.scene, { hasContext: true });
+      const comparePrompt = PromptLoader.fillTemplate(comparePromptTpl, { refTexts: refTextsJoined });
 
       // 按分片处理，确保 textPosition 精确
       const chunks = LlmService.splitText(text, chunkSize, true);
@@ -132,11 +114,9 @@ ${refTextsJoined}
       for (const chunk of chunks) {
         try {
           // 按场景加载比对用户提示词
-          const userContentTpl = await PromptTemplateService.getPromptByScene(
-            this.scene, 'user', 'comparison',
-            `【待审文件】\n${chunk.text}\n\n请与参照文件比对，找出差异和问题。`,
-          );
-          const userContent = userContentTpl.replace(/\$\{text\}/g, chunk.text);
+          const userContent = await PromptLoader.loadUserPrompt(this.scene, 'comparison', {
+            text: chunk.text,
+          });
 
           const issues = await LlmService.reviewText(userContent, {
             maxTokens: llmMaxTokens,

@@ -12,11 +12,11 @@
 
 import { BasePipeline } from './base-pipeline';
 import { PipelineContext, ReviewModeType } from './types';
+import { PromptLoader } from '../prompts';
 import { RuleIssue } from '../rules/types';
 import { LlmService, ReviewIssue } from '../llm.service';
 import { TableExtractionService } from '../table-extraction.service';
 import { FormulaOcrService } from '../formula-ocr.service';
-import { PromptTemplateService } from '../prompt-template.service';
 import prisma from '../../config/db';
 import { ModeCapabilities } from './mode-config';
 
@@ -90,29 +90,9 @@ export class MultimodalPipeline extends BasePipeline {
     const llmMaxTokens = config.llmMaxTokens || 4096;
     const llmTimeout = config.llmTimeout || 180;
 
-    const defaultMultimodalPrompt = `你是核电工程文件多模态审查专家。请重点检查以下内容：
-1. 表格数据的完整性和一致性
-2. 数值数据的合理性（单位、量级）
-3. 公式和计算的正确性
-4. 图纸和图表中的标注规范性
-
-## 输出要求
-严格按照 JSON 数组格式输出，每个问题包含:
-- issueType: FORMAT/COMPLETENESS/CONSISTENCY/VIOLATION
-- originalText: 原始问题文本
-- suggestedText: 建议修改内容
-- description: 问题描述
-
-如果没有发现问题，输出空数组 []`;
-
     try {
-      // 动态加载多模态专用系统提示词
-      const multimodalPrompt = await PromptTemplateService.getPromptByScene(
-        this.scene, 'system', 'default',
-        defaultMultimodalPrompt,
-      );
-
-      const defaultUserContent = `【待审查文本】\n${text}\n\n请重点检查表格数据、数值和公式的正确性。`;
+      // 动态加载多模态专用系统提示词（回退链：DB → Registry）
+      const multimodalPrompt = await PromptLoader.loadSystemPrompt(this.scene, { hasContext: false });
 
       const chunks = LlmService.splitText(text, chunkSize, true);
       const totalChunks = chunks.length;
@@ -120,12 +100,10 @@ export class MultimodalPipeline extends BasePipeline {
 
       for (const chunk of chunks) {
         try {
-          // 动态加载多模态专用用户提示词
-          const userContentTpl = await PromptTemplateService.getPromptByScene(
-            this.scene, 'user', 'structural',
-            defaultUserContent,
-          );
-          const userContent = userContentTpl.replace(/\$\{chunk\}/g, chunk.text).replace(/\$\{text\}/g, chunk.text);
+          const userContent = await PromptLoader.loadUserPrompt(this.scene, 'structural', {
+            chunk: chunk.text,
+            text: chunk.text,
+          });
 
           const issues = await LlmService.reviewText(userContent, {
             maxTokens: llmMaxTokens,
