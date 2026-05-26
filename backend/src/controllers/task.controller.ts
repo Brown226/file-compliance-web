@@ -2,7 +2,6 @@ import { Request, Response } from 'express';
 import path from 'path';
 import fs from 'fs';
 import { TaskService } from '../services/task.service';
-import { PreAnalysisService } from '../services/pre-analysis.service';
 import { AuthRequest } from '../middlewares/auth.middleware';
 import { getTaskFilterByRole } from '../middlewares/rbac.middleware';
 import { TaskStatus } from '@prisma/client';
@@ -11,7 +10,7 @@ import { success, error, paginated } from '../utils/response';
 export const createTask = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const { title, description, standardId, standardIds, knowledgeCategoryId, knowledgeCategoryIds,
-      perspective, preAnalysisData, reviewPoints, corePurposes, selectedTemplateId, intraFileConsistency,
+      perspective, selectedTemplateId, intraFileConsistency,
       reviewPlan, reviewSpecificationId, ruleLibraryId, entryModule } = req.body;
     const creatorId = req.user?.id;
     const files = req.files as Express.Multer.File[];
@@ -58,39 +57,12 @@ export const createTask = async (req: AuthRequest, res: Response): Promise<void>
       parsedDwgData = dwgParsedData;
     }
 
-    // 解析 preAnalysisData（通过 FormData 传 JSON 字符串）
-    let parsedPreAnalysisData: any = undefined;
-    if (typeof preAnalysisData === 'string') {
-      try { parsedPreAnalysisData = JSON.parse(preAnalysisData); }
-      catch { /* 忽略解析错误 */ }
-    } else if (typeof preAnalysisData === 'object' && preAnalysisData !== null) {
-      parsedPreAnalysisData = preAnalysisData;
-    }
-
     let parsedReviewPlan: any = undefined;
     if (typeof reviewPlan === 'string') {
       try { parsedReviewPlan = JSON.parse(reviewPlan); }
       catch { /* 忽略解析错误 */ }
     } else if (typeof reviewPlan === 'object' && reviewPlan !== null) {
       parsedReviewPlan = reviewPlan;
-    }
-
-    // 解析 reviewPoints（通过 FormData 传 JSON 字符串）
-    let parsedReviewPoints: string[] | undefined;
-    if (typeof reviewPoints === 'string') {
-      try { parsedReviewPoints = JSON.parse(reviewPoints); }
-      catch { /* 忽略解析错误 */ }
-    } else if (Array.isArray(reviewPoints)) {
-      parsedReviewPoints = reviewPoints;
-    }
-
-    // 解析 corePurposes（通过 FormData 传 JSON 字符串）
-    let parsedCorePurposes: string[] | undefined;
-    if (typeof corePurposes === 'string') {
-      try { parsedCorePurposes = JSON.parse(corePurposes); }
-      catch { /* 忽略解析错误 */ }
-    } else if (Array.isArray(corePurposes)) {
-      parsedCorePurposes = corePurposes;
     }
 
     const task = await TaskService.createTask({
@@ -104,12 +76,9 @@ export const createTask = async (req: AuthRequest, res: Response): Promise<void>
       files: files || [],
       dwgParsedData: parsedDwgData,
       perspective,
-      preAnalysisData: parsedPreAnalysisData,
       reviewPlan: parsedReviewPlan,
       reviewSpecificationId: typeof reviewSpecificationId === 'string' && reviewSpecificationId.trim() ? reviewSpecificationId.trim() : undefined,
       ruleLibraryId: typeof ruleLibraryId === 'string' && ruleLibraryId.trim() ? ruleLibraryId.trim() : undefined,
-      reviewPoints: parsedReviewPoints,
-      corePurposes: parsedCorePurposes,
       selectedTemplateId,
       intraFileConsistency: intraFileConsistency === 'true' || intraFileConsistency === true,
       entryModule,
@@ -623,40 +592,5 @@ export const getReviewSummary = async (req: Request, res: Response): Promise<voi
   } catch (err) {
     console.error('Get Review Summary Error:', err);
     error(res, '服务器内部错误', 500);
-  }
-};
-
-/** 预分析 — 根据文件信息智能推荐审查方案 */
-export const preAnalyze = async (req: Request, res: Response): Promise<void> => {
-  try {
-    const { files, reviewMode } = req.body;
-    if (!Array.isArray(files) || files.length === 0) {
-      error(res, '请提供文件列表', 400);
-      return;
-    }
-
-    // 记录请求详情（便于调试）
-    console.log('[PreAnalysis API] 收到预分析请求:', {
-      fileCount: files.length,
-      fileNames: files.map((f: any) => f.name),
-      hasFilePath: files.some((f: any) => !!f.filePath),
-      reviewMode: reviewMode || '未指定',
-      timestamp: new Date().toISOString()
-    });
-
-    const result = await PreAnalysisService.analyzeFiles(files, reviewMode);
-
-    // 记录结果摘要
-    console.log('[PreAnalysis API] 预分析完成:', {
-      documentType: result.documentType,
-      hasContractType: !!result.contractType,
-      reviewPointsCount: result.suggestedReviewPoints?.length || 0,
-      corePurposesCount: result.suggestedCorePurposes?.length || 0,
-    });
-
-    success(res, result);
-  } catch (err) {
-    console.error('PreAnalyze Error:', err);
-    error(res, '预分析失败', 500);
   }
 };

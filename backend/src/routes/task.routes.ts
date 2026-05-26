@@ -25,7 +25,6 @@ import {
   toggleFalsePositive,
   getModeCapabilities,
   saveModeCapabilities,
-  preAnalyze,
   getReviewSummary,
 } from '../controllers/task.controller';
 
@@ -116,9 +115,6 @@ router.post('/', async (req, res, next) => {
 
 // 审查模式列表（必须在 /:id 路由之前）
 router.get('/review-modes', getReviewModes);
-
-// 预分析 — 智能推荐审查方案（必须在 /:id 路由之前）
-router.post('/pre-analyze', preAnalyze);
 
 // 审查模式能力配置（读写）
 router.get('/mode-capabilities', getModeCapabilities);

@@ -113,10 +113,7 @@ export class TaskService {
     reviewSpecificationId?: string;
     ruleLibraryId?: string;  // 关联的规则库 ID
     perspective?: string;  // 审查立场
-    preAnalysisData?: any;  // 预分析完整数据
     reviewPlan?: any;       // 审查方案
-    reviewPoints?: string[];  // 用户选中的审查点
-    corePurposes?: string[];  // 用户自定义的核心目的
     selectedTemplateId?: string;  // 选择的审查模板ID
     intraFileConsistency?: boolean;  // 文件内一致性检查
     entryModule?: string;             // 前端入口模块（LIBRARY/CONSISTENCY/PROOFREAD/RULE_ONLY/MULTIMODAL/DOC_REVIEW）
@@ -124,7 +121,7 @@ export class TaskService {
     dwgParsedData?: Record<string, any>;  // 前端 WASM 解析的 DWG 数据（按文件名映射）
   }): Promise<Task> {
     const { title, description, creatorId, standardId, standardIds = [], knowledgeCategoryId, knowledgeCategoryIds,
-      reviewSpecificationId, ruleLibraryId, perspective, preAnalysisData, reviewPlan, reviewPoints, corePurposes,
+      reviewSpecificationId, ruleLibraryId, perspective, reviewPlan,
       selectedTemplateId, intraFileConsistency, entryModule,
       files = [], dwgParsedData } = data;
 
@@ -159,22 +156,6 @@ export class TaskService {
       knowledgeIdForDb = knowledgeCategoryId;
     }
 
-    // 构建 preAnalysisData JSON（合并预分析结果和用户选择）
-    const preAnalysisJson = preAnalysisData
-      ? {
-          ...(typeof preAnalysisData === 'string' ? JSON.parse(preAnalysisData) : preAnalysisData),
-          reviewPoints: reviewPoints || [],
-          corePurposes: corePurposes || [],
-          selectedTemplateId: selectedTemplateId || 'general',
-          intraFileConsistency: !!intraFileConsistency,
-        }
-      : (reviewPoints || corePurposes || selectedTemplateId || intraFileConsistency) ? {
-          reviewPoints: reviewPoints || [],
-          corePurposes: corePurposes || [],
-          selectedTemplateId: selectedTemplateId || 'general',
-          intraFileConsistency: !!intraFileConsistency,
-        } : undefined;
-
     normalizedReviewPlan.evidence.knowledgeCategoryIds = knowledgeCategoryIds || normalizedReviewPlan.evidence.knowledgeCategoryIds || [];
     if (reviewSpecificationId) normalizedReviewPlan.evidence.reviewSpecificationId = reviewSpecificationId;
     if (ruleLibraryId) normalizedReviewPlan.evidence.ruleLibraryId = ruleLibraryId;
@@ -198,7 +179,7 @@ export class TaskService {
         reviewSpecificationId: normalizedReviewPlan.evidence.reviewSpecificationId || null,
         ruleLibraryId: normalizedReviewPlan.evidence.ruleLibraryId || null,
         perspective: perspective || null,
-        preAnalysisData: preAnalysisJson || undefined,
+        preAnalysisData: undefined,
         reviewPlan: normalizedReviewPlan as any,
         // DOC_REVIEW 需要先上传参照文件，创建时先保持 PENDING，待 ref-files 上传后再触发
         status: files.length > 0 && !shouldDelayReview ? 'PROCESSING' : 'PENDING',

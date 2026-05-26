@@ -2,7 +2,7 @@ import { ref, reactive, computed, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import type { UploadFile } from 'element-plus'
 import type { ReviewPlan } from '@/types/models'
-import type { EntryModule, PersistedState, PreAnalysisData, BackgroundStatus } from '../types/smart-review'
+import type { EntryModule, PersistedState } from '../types/smart-review'
 
 const STORAGE_KEY = 'smartReview_draft_v3'
 
@@ -59,7 +59,7 @@ export function useSmartReviewState() {
   const loading = ref(false)
   const loadingMessage = ref('')
   const analysisProgress = ref<Array<any>>([])
-  const backgroundStatus = ref<BackgroundStatus>('idle')
+  const backgroundStatus = ref<'idle' | 'analyzing' | 'done'>('idle')
   const submitting = ref(false)
 
   // ===== 计算属性 =====

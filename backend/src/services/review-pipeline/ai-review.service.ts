@@ -498,31 +498,39 @@ ${refTextsJoined}
    * 将语义规范库上下文、审查点和核心目的注入系统提示词
    */
   /**
-   * 为系统提示词注入用户选择的审查点和核心目的
+   * 为系统提示词注入审查点与核心目的
    *
-   * 注意：TYPO_GRAMMAR 模式不注入审查点，因为该模式专门检查错别字/语法，
-   * 提示词中已有"不要报告合规性、格式规范"的明确指令，
-   * 注入审查点会与之矛盾，导致 LLM 输出合规性问题而非文字问题。
+   * 平衡机制（防确认偏误）：
+   * 1. TYPO_GRAMMAR / CONSISTENCY 模式不注入（前者有冲突，后者有精确定义）
+   * 2. 审查点注入在系统指令之前，降低 recency bias
+   * 3. 语言从"请重点关注"改为"仅供参考，不限制审查范围"
+   * 4. 追加反指令强制 LLM 报告审查点之外的问题
    */
   static injectSemanticContext(systemPrompt: string, ctx: PipelineContext): string {
-    let enhancedPrompt = systemPrompt;
+    // 跳过模式：TYPO_GRAMMAR（与自身指令冲突）、CONSISTENCY（有精确定义C1-C4）
+    const skipModes = ['TYPO_GRAMMAR', 'CONSISTENCY'];
+    const hasReviewPoints = ctx.reviewPoints && ctx.reviewPoints.length > 0;
+    const hasPurposes = ctx.corePurposes && ctx.corePurposes.length > 0;
+
+    let prefix = '';
+
+    // 审查点作为辅助参考（非强制指令），插入到 prompt 前面降低 recency bias
+    if (!skipModes.includes(ctx.reviewMode || '') && hasReviewPoints) {
+      prefix += `\n【辅助参考 — 以下审查点仅供参考，不限制审查范围，请全面检查所有问题】\n参考方向：${ctx.reviewPoints!.join('；')}\n`;
+    }
+    if (!skipModes.includes(ctx.reviewMode || '') && hasPurposes) {
+      prefix += `\n【审查背景】目标：${ctx.corePurposes!.join('；')}\n`;
+    }
+    // 追加防偏误提示
+    if (prefix) {
+      prefix += '注意：以上仅作辅助参考，你必须依据系统规则全面审查，发现审查点之外的任何问题也应如实报告。\n\n';
+    }
+
+    let enhancedPrompt = prefix + systemPrompt;
 
     // 注入语义规范库上下文
     if (ctx._semanticPromptContext) {
       enhancedPrompt += ctx._semanticPromptContext;
-    }
-
-    // TYPO_GRAMMAR 模式跳过审查点注入（避免与"不报告合规性问题"指令冲突）
-    if (ctx.reviewMode !== 'TYPO_GRAMMAR') {
-      // 注入用户选择的审查点
-      if (ctx.reviewPoints && ctx.reviewPoints.length > 0) {
-        enhancedPrompt += `\n\n【用户关注的审查点】\n请重点关注以下方面：\n${ctx.reviewPoints.map((p, i) => `${i + 1}. ${p}`).join('\n')}`;
-      }
-
-      // 注入用户定义的核心目的
-      if (ctx.corePurposes && ctx.corePurposes.length > 0) {
-        enhancedPrompt += `\n\n【审查核心目的】\n本次审查的核心目标：\n${ctx.corePurposes.map((p, i) => `${i + 1}. ${p}`).join('\n')}`;
-      }
     }
 
     return enhancedPrompt;

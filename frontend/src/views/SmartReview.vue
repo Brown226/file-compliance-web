@@ -113,16 +113,6 @@
             <el-icon><Document /></el-icon>
             {{ fileList.length }} 个文件已就绪
           </span>
-          <template v-if="entryModule !== 'RULE_ONLY'">
-            <span v-if="isUploadingForPreAnalysis || preAnalyzing" class="status-loading">
-              <el-icon class="is-loading"><Loading /></el-icon>
-              AI分析中...
-            </span>
-            <span v-else-if="preAnalyzed && preAnalysisData.contractType" class="status-done">
-              <el-icon><CircleCheck /></el-icon>
-              {{ preAnalysisData.contractType }}
-            </span>
-          </template>
         </div>
 
         <!-- 核心配置区：始终展开 -->
@@ -156,52 +146,6 @@
                     <el-icon><Check /></el-icon>
                   </div>
                 </div>
-              </div>
-            </div>
-
-            <!-- 审查点及核心目的（非 RULE_ONLY） -->
-            <div v-if="entryModule !== 'RULE_ONLY'" class="config-section">
-              <div class="config-section-label">
-                <span class="section-label-num">2</span>
-                审查点与核心目的
-                <el-tag v-if="selectedReviewPoints.length > 0" size="small" type="info" style="margin-left: auto">{{ selectedReviewPoints.length }}项</el-tag>
-              </div>
-              <div class="sub-area">
-                <div class="review-points-section">
-                <h4 class="section-label">
-                  审查点选择 (可多选)
-                  <el-tag v-if="preAnalysisData.llmAnalyzed" type="success" size="small">AI推荐</el-tag>
-                </h4>
-                <el-checkbox-group v-model="selectedReviewPoints" class="review-points-group">
-                  <el-tooltip
-                    v-for="point in allSuggestedReviewPoints"
-                    :key="point"
-                    :content="point"
-                    placement="top"
-                    :show-after="300"
-                  >
-                    <el-checkbox :label="point" :value="point" border class="review-point-checkbox"></el-checkbox>
-                  </el-tooltip>
-                </el-checkbox-group>
-              </div>
-              </div>
-              <div class="sub-area sub-area--alt">
-              <div class="review-purposes-section">
-                <h4 class="section-label">
-                  审查核心目的 (可自定义)
-                  <el-tag v-if="preAnalysisData.llmAnalyzed" type="success" size="small">AI推荐</el-tag>
-                </h4>
-                <div v-for="(purpose, index) in customPurposes" :key="index" class="purpose-row">
-                  <el-autocomplete v-model="purpose.value" :fetch-suggestions="querySearchCorePurposes" placeholder="搜索或输入新目的" class="w-full" trigger-on-focus></el-autocomplete>
-                  <el-button type="primary" link @click="removePurpose(index)" class="remove-btn">
-                    <el-icon><RemoveFilled /></el-icon>
-                  </el-button>
-                </div>
-                <el-button type="primary" link @click="addPurpose" class="add-purpose-btn">
-                  <el-icon><CirclePlusFilled /></el-icon>
-                  添加目的
-                </el-button>
-              </div>
               </div>
             </div>
 
@@ -379,7 +323,6 @@ import SmartReviewUploadStep from './components/SmartReviewUploadStep.vue'
 import SmartReviewKnowledgeDialog from './components/SmartReviewKnowledgeDialog.vue'
 import SmartReviewReviewSpecificationDialog from './components/SmartReviewReviewSpecificationDialog.vue'
 import { useSmartReviewState } from './SmartReview/composables/useSmartReviewState'
-import { usePreAnalysis } from './SmartReview/composables/usePreAnalysis'
 import { useReviewPlan } from './SmartReview/composables/useReviewPlan'
 import { useTaskSubmission } from './SmartReview/composables/useTaskSubmission'
 import {
@@ -398,14 +341,10 @@ const {
   ruleRegistryLoaded, loading, loadingMessage, analysisProgress, backgroundStatus,
   submitting, visibleAnalysisProgress, showEvidenceSection, showObjectiveSelector,
   showExecutionProfileSection,
-  selectedReviewPoints, customPurposes, allSuggestedReviewPoints, allSuggestedCorePurposes,
 } = state
-const preAnalysis = usePreAnalysis(state)
 const plan = useReviewPlan(state)
-const submission = useTaskSubmission(state, plan, preAnalysis)
+const submission = useTaskSubmission(state, plan)
 
-// 将 composable 中的属性解构暴露到模板作用域（模板中直接使用裸变量名）
-const { aiSuggestedTitle, preAnalysisData, preAnalyzed, preAnalyzing, isUploadingForPreAnalysis } = preAnalysis
 const {
   availableEvidenceSources, isEvidenceLocked, handleEvidenceCardClick,
   togglePrefix, toggleGroup, canSubmit,
@@ -434,7 +373,7 @@ const progressStatusClass = (status: string) => {
   return 'running'
 }
 
-const goToStep1 = preAnalysis.goToStep1WithPreAnalysis
+const goToStep1 = () => { state.currentStep.value = 1 }
 
 const goBackToUpload = () => {
   state.currentStep.value = 0

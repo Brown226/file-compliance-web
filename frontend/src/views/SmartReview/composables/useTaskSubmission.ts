@@ -7,7 +7,6 @@ import { useUserStore } from '@/stores/user'
 export function useTaskSubmission(
   state: ReturnType<typeof import('./useSmartReviewState').default>,
   plan: ReturnType<typeof import('./useReviewPlan').default>,
-  preAnalysis: ReturnType<typeof import('./usePreAnalysis').default>
 ) {
   const router = useRouter()
   const userStore = useUserStore()
@@ -30,29 +29,11 @@ export function useTaskSubmission(
       fd.append('ruleLibraryId', submitPlan.evidence.reviewSpecificationId)
     }
 
-    // 预分析数据
-    if (preAnalysis.preAnalyzed.value) {
-      fd.append('preAnalysisData', JSON.stringify(preAnalysis.preAnalysisData))
-    }
-
     fd.append('reviewPlan', JSON.stringify(submitPlan))
 
     // 入口模块（用于区分 COMPLIANCE 目标下的 LIBRARY / CONSISTENCY / RULE_ONLY）
     if (state.entryModule.value) {
       fd.append('entryModule', state.entryModule.value)
-    }
-
-    // 审查点
-    if (state.selectedReviewPoints.value.length > 0) {
-      fd.append('reviewPoints', JSON.stringify(state.selectedReviewPoints.value))
-    }
-
-    // 核心目的（过滤空值）
-    const validPurposes = state.customPurposes.value
-      .map(p => p.value.trim())
-      .filter(v => v.length > 0)
-    if (validPurposes.length > 0) {
-      fd.append('corePurposes', JSON.stringify(validPurposes))
     }
 
     // 文件

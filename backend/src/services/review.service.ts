@@ -381,24 +381,9 @@ export class ReviewService {
         }
       }
 
-      // 从 preAnalysisData 读取文件内一致性开关和审查点/核心目的
-      const taskPreAnalysis = (task as any).preAnalysisData;
-      const intraFileConsistency = !!(
-        executionPlan.intraFileConsistency
-        || (taskPreAnalysis && typeof taskPreAnalysis === 'object' && taskPreAnalysis.intraFileConsistency)
-      );
-
-      // 提取用户选择的审查点和核心目的
-      const reviewPoints: string[] = (taskPreAnalysis && typeof taskPreAnalysis === 'object' && Array.isArray(taskPreAnalysis.reviewPoints))
-        ? taskPreAnalysis.reviewPoints
-        : [];
-      const corePurposes: string[] = (taskPreAnalysis && typeof taskPreAnalysis === 'object' && Array.isArray(taskPreAnalysis.corePurposes))
-        ? taskPreAnalysis.corePurposes
-        : [];
-
-      if (reviewPoints.length > 0 || corePurposes.length > 0) {
-        console.log(`[Review] 用户审查点: ${reviewPoints.length} 个, 核心目的: ${corePurposes.length} 个`);
-      }
+      const intraFileConsistency = !!executionPlan.intraFileConsistency;
+      const reviewPoints: string[] = [];
+      const corePurposes: string[] = [];
 
       // 解析多知识子库 ID
       let knowledgeCategoryIds: string[] | undefined;

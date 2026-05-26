@@ -10,4 +10,4 @@
 
 export { PromptLoader } from './loader';
 export type { PromptData, LoadSystemOptions } from './loader';
-export { BUILTIN_TEMPLATES, resolveModule, SCENE_MODULE_MAP, getPromptFallback, getModeHint } from './registry';
+export { BUILTIN_TEMPLATES, resolveModule, SCENE_MODULE_MAP, getPromptFallback } from './registry';

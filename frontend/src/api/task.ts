@@ -135,31 +135,7 @@ export function uploadOnlyApi(formData: FormData) {
   })
 }
 
-// 预分析 — 智能推荐审查方案（增强版：支持传入实际文件路径）
-export function preAnalyzeApi(files: Array<{
-  name: string;
-  size: number;
-  filePath?: string;  // 新增：实际文件路径（uploadOnly返回）
-}>) {
-  return request.post<{
-    documentType: string;
-    documentTypeLabel: string;
-    contractType?: string; // 文件类型（兼容字段）
-    suggestedPerspective?: string;
-    suggestedReviewPoints?: string[]; // 推荐的审查点
-    suggestedCorePurposes?: string[]; // 推荐的核心目的
-    recommendations: {
-      libraryReview: { enabled: boolean; categoryId?: string; reason: string };
-      docReview: { enabled: boolean; reason: string };
-      ruleLibrary: { enabled: boolean; libraryId?: string; reason: string };
-      generalChecks: {
-        ruleCheck: { enabled: boolean; reason: string };
-        typoCheck: { enabled: boolean; reason: string };
-        crossFileCheck: { enabled: boolean; reason: string };
-      };
-    };
-  }>('/tasks/pre-analyze', { files }, { timeout: 120000 }) // LLM分析需要更长时间，设置为2分钟
-}
+
 
 // 获取任务审查摘要（聚合统计）
 export function getReviewSummaryApi(id: string) {
