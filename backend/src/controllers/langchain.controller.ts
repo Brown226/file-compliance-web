@@ -4,6 +4,7 @@ import { LangChainSearchService } from '../services/langchain/langchain-search.s
 import { LangChainRAGService } from '../services/langchain/langchain-rag.service';
 import { SearchMode } from '../services/langchain/langchain-retriever';
 import { success, error } from '../utils/response';
+import { PromptTemplateService } from '../services/prompt-template.service';
 import prisma from '../config/db';
 
 export const langchainSearch = async (req: AuthRequest, res: Response): Promise<void> => {
@@ -160,12 +161,15 @@ export const langchainAskStream = async (req: AuthRequest, res: Response): Promi
     const config = await LlmService.getLlmConfig();
     if (!config) throw new Error('LLM 未配置');
 
-    const systemPrompt = [
-      '你是核审通智能问答助手，专注于核电工程文件合规审查领域。',
-      '使用与用户相同的语言回答问题。',
-      '不要编造法规条文编号、标准名称或案例信息。',
-      '如果知识库中没有足够的依据，请明确告知用户。',
-    ].join('\n');
+    const systemPrompt = await PromptTemplateService.getPromptByScene(
+      'langchain_qa', 'system', 'default',
+      [
+        '你是核审通智能问答助手，专注于核电工程文件合规审查领域。',
+        '使用与用户相同的语言回答问题。',
+        '不要编造法规条文编号、标准名称或案例信息。',
+        '如果知识库中没有足够的依据，请明确告知用户。',
+      ].join('\n'),
+    );
 
     const knowledgeContext = LangChainRAGService.formatContext(
       searchResult.sources.map(s => ({

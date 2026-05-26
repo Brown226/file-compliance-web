@@ -61,10 +61,15 @@ export function useReviewPlan(state: ReturnType<typeof import('./useSmartReviewS
 
     if (source === 'STANDARD' || source === 'REVIEW_SPECIFICATION') {
       const current = new Set(state.reviewPlanDraft.evidence.sources)
-      if (!current.has(source)) {
+      if (current.has(source)) {
+        current.delete(source)
+        // 取消选中时清空关联数据
+        if (source === 'REVIEW_SPECIFICATION') state.reviewPlanDraft.evidence.reviewSpecificationId = null
+        if (source === 'STANDARD') state.reviewPlanDraft.evidence.knowledgeCategoryIds = []
+      } else {
         current.add(source)
-        state.reviewPlanDraft.evidence.sources = Array.from(current)
       }
+      state.reviewPlanDraft.evidence.sources = Array.from(current)
     } else {
       toggleEvidenceSource(source)
     }
@@ -99,8 +104,8 @@ export function useReviewPlan(state: ReturnType<typeof import('./useSmartReviewS
     switch (module) {
       case 'LIBRARY':
         draft.objective = 'COMPLIANCE'
-        draft.evidence.sources = ['STANDARD']
-        draft.execution.profile = 'RULE_ONLY'
+        draft.evidence.sources = ['STANDARD', 'REVIEW_SPECIFICATION']
+        draft.execution.profile = 'HYBRID'
         break
 
       case 'CONSISTENCY':
@@ -187,12 +192,8 @@ export function useReviewPlan(state: ReturnType<typeof import('./useSmartReviewS
   const canSubmit = computed(() => {
     if (!state.form.title.trim()) return false
     if (state.reviewPlanDraft.objective === 'COMPARE' && state.refFileList.value.length === 0) return false
+    // 仅当用户选择了语义规范库时，才要求选择具体库
     if (state.reviewPlanDraft.evidence.sources.includes('REVIEW_SPECIFICATION') && !state.reviewPlanDraft.evidence.reviewSpecificationId) return false
-    
-    const allowEmptySources = ['PROOFREAD'].includes(state.reviewPlanDraft.objective) ||
-      ['CONSISTENCY', 'RULE_ONLY', 'MULTIMODAL'].includes(state.entryModule.value as EntryModule)
-    
-    if (!allowEmptySources && state.reviewPlanDraft.evidence.sources.length === 0) return false
     
     return true
   })

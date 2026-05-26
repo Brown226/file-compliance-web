@@ -85,7 +85,7 @@ export interface PipelineContext {
   extractedText: string;
   pdfPages?: string[];
   reviewMode: ReviewModeType;
-  ruleSource?: 'STANDARD' | 'REVIEW_SPECIFICATION';
+  ruleSource?: ('STANDARD' | 'REVIEW_SPECIFICATION')[];
   reviewSpecificationId?: string;
   rulePlan?: {
     enabledPrefixes: string[];

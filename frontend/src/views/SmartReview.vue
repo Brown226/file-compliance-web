@@ -454,9 +454,6 @@ const startAnalysis = async () => {
       reasons.push('以文审文/参照比对模式需要上传参照文件（在参考文件区上传）')
     if ((state.reviewPlanDraft?.evidence?.sources ?? []).includes('REVIEW_SPECIFICATION') && !state.reviewPlanDraft?.evidence?.reviewSpecificationId)
       reasons.push('语义规范库模式需要选择具体的语义规范库')
-    const allowEmptySources = ['PROOFREAD'].includes(state.reviewPlanDraft?.objective ?? '') || ['CONSISTENCY', 'RULE_ONLY', 'MULTIMODAL'].includes(state.entryModule.value as EntryModule)
-    if (!allowEmptySources && (state.reviewPlanDraft?.evidence?.sources ?? []).length === 0)
-      reasons.push('请至少选择一项审查依据（标准库/知识库/语义规范库/参照文件）')
     ElMessage.warning(reasons.length > 0 ? reasons[0] : '请完善审查配置后再开始分析')
     return
   }
@@ -891,7 +888,6 @@ onMounted(async () => {
   padding: 4px;
   box-shadow: 0 1px 6px rgba(0, 0, 0, 0.06);
   border: 1px solid #E5E7EB;
-  width: 550px;
 }
 
 .config-section {

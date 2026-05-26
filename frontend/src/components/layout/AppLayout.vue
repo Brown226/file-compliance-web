@@ -179,7 +179,7 @@
           <el-input v-model="passwordForm.oldPassword" type="password" show-password />
         </el-form-item>
         <el-form-item label="新密码" prop="newPassword">
-          <el-input v-model="passwordForm.newPassword" type="password" show-password />
+          <el-input v-model="passwordForm.newPassword" type="password" show-password placeholder="须包含大小写字母、数字、特殊符号，至少8位" />
         </el-form-item>
         <el-form-item label="确认新密码" prop="confirmPassword">
           <el-input v-model="passwordForm.confirmPassword" type="password" show-password />
@@ -361,11 +361,35 @@ const validateConfirmPassword = (_rule: any, value: string, callback: any) => {
   }
 }
 
+const PASSWORD_COMPLEXITY_DESC = '密码须包含大写字母、小写字母、数字、特殊符号，至少8位'
+
+const validatePasswordComplexity = (_rule: any, value: string, callback: any) => {
+  if (value === '') {
+    callback(new Error('请输入新密码'))
+    return
+  }
+  if (value.length < 8) {
+    callback(new Error('密码长度不能小于8位'))
+    return
+  }
+  const checks = [
+    { regex: /[A-Z]/, msg: '大写字母' },
+    { regex: /[a-z]/, msg: '小写字母' },
+    { regex: /[0-9]/, msg: '数字' },
+    { regex: /[!@#$%^&*()_+\-=\[\]{}|;':",./<>?~`\\]/, msg: '特殊符号' },
+  ]
+  const missing = checks.filter(c => !c.regex.test(value)).map(c => c.msg)
+  if (missing.length > 0) {
+    callback(new Error(`密码缺少：${missing.join('、')}`))
+    return
+  }
+  callback()
+}
+
 const passwordRules = reactive<FormRules>({
   oldPassword: [{ required: true, message: '请输入原密码', trigger: 'blur' }],
   newPassword: [
-    { required: true, message: '请输入新密码', trigger: 'blur' },
-    { min: 6, message: '密码长度不能小于6位', trigger: 'blur' }
+    { required: true, validator: validatePasswordComplexity, trigger: 'blur' },
   ],
   confirmPassword: [
     { required: true, validator: validateConfirmPassword, trigger: 'blur' }

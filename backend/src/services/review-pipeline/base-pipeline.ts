@@ -183,7 +183,7 @@ export abstract class BasePipeline {
   }
 
   protected decorateRuleIssues(ctx: PipelineContext, issues: RuleIssue[]): RuleIssue[] {
-    if (ctx.ruleSource !== 'REVIEW_SPECIFICATION') return issues;
+    if (!ctx.ruleSource?.includes('REVIEW_SPECIFICATION')) return issues;
     return issues.map((issue) => ({
       ...issue,
       ruleCode: issue.ruleCode,
@@ -301,7 +301,7 @@ export abstract class BasePipeline {
       (async () => {
         if (!this.capabilities.rules) return [];
         if (!this.shouldRunStage(ctx, 'rules')) return [];
-        const prefixes = ctx.ruleSource === 'REVIEW_SPECIFICATION' && ctx.rulePlan?.enabledPrefixes?.length
+        const prefixes = ctx.ruleSource?.includes('REVIEW_SPECIFICATION') && ctx.rulePlan?.enabledPrefixes?.length
           ? ctx.rulePlan.enabledPrefixes
           : [];
         const baseIssues = await this.runRules(ctx, prefixes);
@@ -309,7 +309,7 @@ export abstract class BasePipeline {
       })(),
       // 标准引用检查（受 capabilities.standardRef + stages.stdRef 控制）
       (async () => {
-        if (ctx.ruleSource === 'REVIEW_SPECIFICATION') return [];
+        if (ctx.ruleSource?.includes('REVIEW_SPECIFICATION')) return [];
         if (!this.capabilities.standardRef) return [];
         if (!this.shouldRunStage(ctx, 'stdRef') || !text.trim()) return [];
         return this.runStandardRefCheck(ctx, text);

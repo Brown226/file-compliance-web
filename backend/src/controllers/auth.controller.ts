@@ -4,6 +4,7 @@ import prisma from '../config/db';
 import { TokenService } from '../services/token.service';
 import { AuthRequest } from '../middlewares/auth.middleware';
 import { success, error } from '../utils/response';
+import { validatePasswordComplexity } from '../utils/password-validator';
 
 export const login = async (req: Request, res: Response): Promise<void> => {
   try {
@@ -87,8 +88,10 @@ export const changePassword = async (req: AuthRequest, res: Response): Promise<v
       return;
     }
 
-    if (newPassword.length < 6) {
-      error(res, '新密码长度不能小于6位', 400);
+    // 密码复杂度验证：必须同时包含大小写字母、数字、特殊符号
+    const passwordCheck = validatePasswordComplexity(newPassword);
+    if (!passwordCheck.valid) {
+      error(res, passwordCheck.message, 400);
       return;
     }
 

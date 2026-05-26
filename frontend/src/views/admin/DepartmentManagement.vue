@@ -188,7 +188,7 @@
           <el-col :span="12">
             <el-form-item label="初始密码" required>
               <div style="display:flex;gap:8px">
-                <el-input v-model="accountForm.password" placeholder="自动生成" style="flex:1" />
+                <el-input v-model="accountForm.password" placeholder="须含大小写字母+数字+特殊符号，至少8位" style="flex:1" />
                 <el-button @click="generatePassword">生成</el-button>
               </div>
             </el-form-item>
@@ -207,7 +207,7 @@
           </el-col>
           <el-col :span="12">
             <el-form-item label="修改密码">
-              <el-input v-model="accountForm.password" placeholder="留空则保持不变" show-password />
+              <el-input v-model="accountForm.password" placeholder="须含大小写字母+数字+特殊符号，至少8位" show-password />
             </el-form-item>
           </el-col>
         </el-row>
@@ -637,9 +637,24 @@ const accountSubmitting = ref(false)
 const accountForm = reactive({ id: '', username: '', name: '', password: '', role: 'USER', email: '', departmentId: [] as string[] })
 
 const generatePassword = () => {
-  const chars = 'ABCDEFGHJKMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789!@#'
+  // 确保生成包含大小写字母、数字、特殊符号的密码
+  const upper = 'ABCDEFGHJKMNPQRSTUVWXYZ'
+  const lower = 'abcdefghjkmnpqrstuvwxyz'
+  const digits = '23456789'
+  const specials = '!@#$%^&*'
+  const all = upper + lower + digits + specials
+  // 先确保每种类型至少一个
   let pwd = ''
-  for (let i = 0; i < 10; i++) pwd += chars.charAt(Math.floor(Math.random() * chars.length))
+  pwd += upper.charAt(Math.floor(Math.random() * upper.length))
+  pwd += lower.charAt(Math.floor(Math.random() * lower.length))
+  pwd += digits.charAt(Math.floor(Math.random() * digits.length))
+  pwd += specials.charAt(Math.floor(Math.random() * specials.length))
+  // 补齐到至少10位
+  for (let i = 4; i < 10; i++) {
+    pwd += all.charAt(Math.floor(Math.random() * all.length))
+  }
+  // 随机打乱顺序
+  pwd = pwd.split('').sort(() => Math.random() - 0.5).join('')
   accountForm.password = pwd
 }
 
@@ -667,12 +682,33 @@ const handleDeleteEmployee = (row: any) => {
 
 const handleResetPassword = (row: any) => {
   ElMessageBox.confirm(`确认重置账号 "${row.username}" 的密码？`, '重置密码', { type: 'warning' })
-    .then(async () => { try { await resetPasswordApi(row.id); ElMessage.success('密码已重置为默认密码: 123456') } catch (e: any) { ElMessage.error(e.response?.data?.message || '重置失败') } })
+    .then(async () => { try { await resetPasswordApi(row.id); ElMessage.success('密码已重置为默认密码: User@12345') } catch (e: any) { ElMessage.error(e.response?.data?.message || '重置失败') } })
     .catch(() => {})
+}
+
+const PASSWORD_COMPLEXITY_DESC = '密码须包含大写字母、小写字母、数字、特殊符号，至少8位'
+
+const validatePwdComplexity = (pwd: string): string | null => {
+  if (!pwd || pwd.length < 8) return '密码长度不能小于8位'
+  if (!/[A-Z]/.test(pwd)) return '密码缺少大写字母'
+  if (!/[a-z]/.test(pwd)) return '密码缺少小写字母'
+  if (!/[0-9]/.test(pwd)) return '密码缺少数字'
+  if (!/[!@#$%^&*()_+\-=\[\]{}|;':",./<>?~`\\]/.test(pwd)) return '密码缺少特殊符号'
+  return null
 }
 
 const submitAccountForm = async () => {
   if (!accountForm.username || !accountForm.name) { ElMessage.warning('请填写完整的账号信息'); return }
+  // 新建时必须验证密码复杂度
+  if (accountDialogType.value === 'add') {
+    const pwdErr = validatePwdComplexity(accountForm.password)
+    if (pwdErr) { ElMessage.warning(pwdErr); return }
+  }
+  // 编辑时如果填写了新密码也要验证
+  if (accountDialogType.value === 'edit' && accountForm.password && accountForm.password.trim()) {
+    const pwdErr = validatePwdComplexity(accountForm.password)
+    if (pwdErr) { ElMessage.warning(pwdErr); return }
+  }
   const deptId = Array.isArray(accountForm.departmentId) && accountForm.departmentId.length > 0 ? accountForm.departmentId[accountForm.departmentId.length - 1] : null
   accountSubmitting.value = true
   try {
@@ -701,8 +737,8 @@ const uploadedFile = ref<File | null>(null)
 
 const downloadTemplate = () => {
   const templateData = [
-    { '登录账号': 'zhangsan', '真实姓名': '张三', '密码': '123456', '角色': 'USER', '一级部门': '总公司', '二级部门': '研发部', '三级部门': '', '邮箱': 'zhangsan@example.com' },
-    { '登录账号': 'lisi', '真实姓名': '李四', '密码': '123456', '角色': 'MANAGER', '一级部门': '总公司', '二级部门': '结构设计部', '三级部门': '', '邮箱': 'lisi@example.com' },
+    { '登录账号': 'zhangsan', '真实姓名': '张三', '密码': 'User@12345', '角色': 'USER', '一级部门': '总公司', '二级部门': '研发部', '三级部门': '', '邮箱': 'zhangsan@example.com' },
+    { '登录账号': 'lisi', '真实姓名': '李四', '密码': 'User@12345', '角色': 'MANAGER', '一级部门': '总公司', '二级部门': '结构设计部', '三级部门': '', '邮箱': 'lisi@example.com' },
   ]
   const ws = XLSX.utils.json_to_sheet(templateData)
   const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, '员工导入模板')

@@ -43,6 +43,13 @@ const MODULE_LABELS: Record<string, string> = {
   doc_review: '以文审文',
   multimodal: '多模态审查',
   ocr: 'OCR文字识别',
+  rule_library: '规则库AI解析',
+  review_specification: '规范集AI解析',
+  pre_analysis: '文件预分析',
+  contextual_retrieval: '上下文检索增强',
+  qa: '智能问答',
+  langchain_qa: 'LangChain问答',
+  semantic_spec: '语义规范库审查',
 };
 
 // ==================== 内置模板定义 ====================
@@ -330,6 +337,231 @@ const BUILTIN_TEMPLATES: PromptTemplateData[] = [
     description: 'OCR 图片/PDF 文字识别时的用户指令',
     content: '<image>\n<|grounding|>OCR this image. 将所有识别到的文字按原文顺序输出。',
     placeholders: JSON.stringify([]),
+    isBuiltin: true,
+    enabled: true,
+  },
+
+  // ==========================================
+  // 规则库 AI 解析（rule_library）
+  // ==========================================
+  {
+    key: 'rule_library_system',
+    module: 'rule_library',
+    role: 'system',
+    variant: 'default',
+    name: '规则库解析-系统提示词',
+    description: '从规范文档中提取结构化审查规则时使用的系统提示词',
+    content: `你是规范标准解析专家。请从以下规范文档中提取结构化的审查规则。
+每个规则输出一个 JSON 数组元素，格式如下：
+{
+  "rule_code": "规则代码（如 NAMING_001）",
+  "rule_name": "规则名称",
+  "category": "分类（NAMING/ENCODING/ATTRIBUTE/HEADER/PAGE/FORMAT/CONSISTENCY/COMPLETENESS/DWG）",
+  "description": "规则描述",
+  "check_method": "检查方法说明",
+  "severity": "严重程度（error/warning/info）"
+}
+
+只输出 JSON 数组，不要输出其他内容。如果文本中没有明确的规则，返回空数组 []。`,
+    placeholders: JSON.stringify([]),
+    isBuiltin: true,
+    enabled: true,
+  },
+
+  // ==========================================
+  // 审查规范集 AI 解析（review_specification）
+  // ==========================================
+  {
+    key: 'review_specification_system',
+    module: 'review_specification',
+    role: 'system',
+    variant: 'default',
+    name: '规范集解析-系统提示词',
+    description: '从审查规范集中提取结构化审查规则时使用的系统提示词',
+    content: `你是规范标准解析专家。请从以下规范文档中提取结构化的审查规则。
+每个规则输出一个 JSON 数组元素，格式如下：
+{
+  "rule_code": "规则代码（如 NAMING_001）",
+  "rule_name": "规则名称",
+  "category": "分类（NAMING/ENCODING/ATTRIBUTE/HEADER/PAGE/FORMAT/CONSISTENCY/COMPLETENESS/DWG）",
+  "description": "规则描述",
+  "check_method": "检查方法说明",
+  "severity": "严重程度（error/warning/info）"
+}
+
+只输出 JSON 数组，不要输出其他内容。如果文本中没有明确的规则，返回空数组 []。`,
+    placeholders: JSON.stringify([]),
+    isBuiltin: true,
+    enabled: true,
+  },
+
+  // ==========================================
+  // 文件预分析（pre_analysis）
+  // ==========================================
+  {
+    key: 'pre_analysis_user',
+    module: 'pre_analysis',
+    role: 'user',
+    variant: 'default',
+    name: '文件预分析-用户提示词',
+    description: '上传文件后 LLM 预分析文档类型、建议审查点和核心目的的提示词',
+    content: `你是文件审查预分析助手。请阅读下面的文件内容，并只输出 JSON：
+{
+  "contractType": "文档类型中文名称",
+  "potentialParties": ["建议的审查立场，可选值：builder, contractor, supervisor, designer, general"],
+  "suggestedReviewPoints": ["关键审查点1", "关键审查点2"],
+  "suggestedCorePurposes": ["核心目的1", "核心目的2"]
+}
+
+要求：
+- 只输出 JSON，不要解释
+- 审查点和目的必须具体、可执行
+- 如果无法判断立场，返回 general
+
+文件内容：
+---
+\${text}
+---`,
+    placeholders: JSON.stringify(['${text}']),
+    isBuiltin: true,
+    enabled: true,
+  },
+
+  // ==========================================
+  // 上下文检索增强（contextual_retrieval）
+  // ==========================================
+  {
+    key: 'contextual_retrieval_system',
+    module: 'contextual_retrieval',
+    role: 'system',
+    variant: 'default',
+    name: '上下文检索-系统提示词',
+    description: 'Contextual Retrieval 生成 chunk 上下文摘要时的系统提示词',
+    content: `你是一个文档上下文分析专家。你的任务是为给定的文档片段生成简短的上下文描述，帮助在检索时更好地定位该片段。只输出上下文描述，不要输出其他内容。`,
+    placeholders: JSON.stringify([]),
+    isBuiltin: true,
+    enabled: true,
+  },
+  {
+    key: 'contextual_retrieval_user',
+    module: 'contextual_retrieval',
+    role: 'user',
+    variant: 'default',
+    name: '上下文检索-用户提示词',
+    description: 'Contextual Retrieval 生成 chunk 上下文摘要时的用户提示词模板',
+    content: `<document>
+\${wholeDocument}
+</document>
+
+Here is the chunk we want to situate within the whole document:
+<chunk>
+\${chunkContent}
+</chunk>
+
+Please give a short succinct context to situate this chunk within the overall document for the purposes of improving search retrieval of the chunk. Answer only with the succinct context and nothing else.`,
+    placeholders: JSON.stringify(['${wholeDocument}', '${chunkContent}']),
+    isBuiltin: true,
+    enabled: true,
+  },
+
+  // ==========================================
+  // 智能问答（qa）
+  // ==========================================
+  {
+    key: 'qa_system',
+    module: 'qa',
+    role: 'system',
+    variant: 'default',
+    name: '智能问答-系统提示词',
+    description: 'QA 智能问答（非 LangChain 路径）的系统角色提示词',
+    content: `你是核审通智能问答助手，专注于核电工程文件合规审查领域。
+使用与用户相同的语言回答问题。
+你可以基于知识库中的标准规范、法律法规和审查规则来回答问题。
+不要编造法规条文编号、标准名称或案例信息。
+如果知识库中没有足够的依据，请明确告知用户。
+对于技术问题，优先引用知识库中的标准规范作为依据。`,
+    placeholders: JSON.stringify([]),
+    isBuiltin: true,
+    enabled: true,
+  },
+
+  // ==========================================
+  // LangChain 流式问答（langchain_qa）
+  // ==========================================
+  {
+    key: 'langchain_qa_system',
+    module: 'langchain_qa',
+    role: 'system',
+    variant: 'default',
+    name: 'LangChain问答-系统提示词',
+    description: 'LangChain 流式问答的系统角色提示词',
+    content: `你是核审通智能问答助手，专注于核电工程文件合规审查领域。
+使用与用户相同的语言回答问题。
+不要编造法规条文编号、标准名称或案例信息。
+如果知识库中没有足够的依据，请明确告知用户。`,
+    placeholders: JSON.stringify([]),
+    isBuiltin: true,
+    enabled: true,
+  },
+
+  // ==========================================
+  // 语义规范库逐条审查（semantic_spec）
+  // ==========================================
+  {
+    key: 'semantic_spec_system',
+    module: 'semantic_spec',
+    role: 'system',
+    variant: 'default',
+    name: '语义规范库-系统提示词',
+    description: '语义规范库逐条匹配审查时使用的系统提示词，包含动态规则条文的占位符',
+    content: `你是文件合规审查专家。请严格根据以下规范条文，逐条检查待审文本是否存在违规。
+
+## 必须逐条检查的规范条文
+\${rulesText}
+
+\${ragContext}
+
+## 输出要求
+严格按照 JSON 数组格式输出，每个问题包含：
+- issueType: "VIOLATION"
+- severity: 使用条文定义的严重度，默认 "warning"
+- ruleCode: 必须引用条文编号
+- originalText: 文档中的违规原文
+- suggestedText: 建议修改内容
+- description: 说明违反了哪条条文及其原因
+- standardRef: 引用的条文内容摘要
+
+如果没有发现违规，输出空数组 []。不要输出任何其他文字说明。`,
+    placeholders: JSON.stringify(['${rulesText}', '${ragContext}']),
+    isBuiltin: true,
+    enabled: true,
+  },
+  {
+    key: 'semantic_spec_user',
+    module: 'semantic_spec',
+    role: 'user',
+    variant: 'default',
+    name: '语义规范库-用户提示词',
+    description: '语义规范库逐条审查时，发送待审文本分片的用户提示词',
+    content: `【待审查文本】\n\${text}\n\n请逐条检查以上文本是否违反规范条文，输出 JSON 数组。`,
+    placeholders: JSON.stringify(['${text}']),
+    isBuiltin: true,
+    enabled: true,
+  },
+  {
+    key: 'semantic_spec_context',
+    module: 'semantic_spec',
+    role: 'system',
+    variant: 'context',
+    name: '语义规范库-条文上下文',
+    description: '将语义规范库条目列表格式化为提示词上下文的模板',
+    content: `## 语义规范库条文（审查依据）
+以下是本次审查必须依据的规范条文，请逐条检查文件是否违反：
+
+\${items}
+
+输出时，每条问题的 ruleCode 必须引用上述条文编号（如 [条文编号]），description 中必须说明违反了哪条具体条文。`,
+    placeholders: JSON.stringify(['${items}']),
     isBuiltin: true,
     enabled: true,
   },

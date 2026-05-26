@@ -11,6 +11,7 @@
 
 import prisma from '../config/db';
 import { LlmService } from './llm.service';
+import { PromptTemplateService } from './prompt-template.service';
 
 export type RuleSourceType = 'STANDARD' | 'REVIEW_SPECIFICATION';
 export type RuleExecutionType = 'BUILTIN_PREFIX' | 'REGEX' | 'KEYWORD_REQUIRED' | 'KEYWORD_FORBIDDEN' | 'MANUAL';
@@ -371,7 +372,9 @@ export class ReviewSpecificationService {
     if (!specification) throw new Error('审查规范集不存在');
 
     const truncatedText = text.slice(0, 20000);
-    const systemPrompt = `你是规范标准解析专家。请从以下规范文档中提取结构化的审查规则。
+    const systemPrompt = await PromptTemplateService.getPromptByScene(
+      'review_specification', 'system', 'default',
+      `你是规范标准解析专家。请从以下规范文档中提取结构化的审查规则。
 每个规则输出一个 JSON 数组元素，格式如下：
 {
   "rule_code": "规则代码（如 NAMING_001）",
@@ -382,7 +385,8 @@ export class ReviewSpecificationService {
   "severity": "严重程度（error/warning/info）"
 }
 
-只输出 JSON 数组，不要输出其他内容。如果文本中没有明确的规则，返回空数组 []。`;
+只输出 JSON 数组，不要输出其他内容。如果文本中没有明确的规则，返回空数组 []。`,
+    );
     const userPrompt = `请从以下规范文档中提取审查规则：\n\n${truncatedText}`;
     const result = await LlmService.chat(userPrompt, { systemPrompt, maxTokens: 4096, timeout: 120 });
     const jsonMatch = result.match(/\[[\s\S]*\]/);

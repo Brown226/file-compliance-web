@@ -208,13 +208,39 @@ const clearAllSelection = () => {
 }
 
 const handleConfirm = () => {
-  emit('confirm', [...checkedIds.value])
+  // 确认时再次过滤，确保只返回叶子节点 ID
+  const result = sanitizeCheckedIds(checkedIds.value)
+  emit('confirm', result)
   emit('update:visible', false)
-  ElMessage.success(`已选择 ${checkedIds.value.length} 个知识库`)
+  ElMessage.success(`已选择 ${result.length} 个知识库`)
 }
 
 const handleCancel = () => {
   emit('update:visible', false)
+}
+
+// 收集所有叶子节点 ID（用于过滤掉目录节点）
+const collectLeafIds = (nodes: any[]): string[] => {
+  const leafs: string[] = []
+  const walk = (items: any[]) => {
+    for (const node of items) {
+      if (!node.children?.length || node.isLeaf) {
+        leafs.push(node.id)
+      } else if (node.children) {
+        walk(node.children)
+      }
+    }
+  }
+  walk(nodes)
+  return leafs
+}
+
+const validLeafIds = computed(() => collectLeafIds(props.knowledgeTreeData))
+
+// 过滤掉非法 ID（非叶子节点 / 已不存在的节点）
+const sanitizeCheckedIds = (ids: string[]): string[] => {
+  const validSet = new Set(validLeafIds.value)
+  return ids.filter(id => validSet.has(id))
 }
 
 useEnterToConfirm(computed(() => props.visible), handleConfirm)
@@ -223,7 +249,9 @@ watch(() => props.visible, async (val) => {
   if (val) {
     knowledgeSearchQuery.value = ''
     await nextTick()
-    knowledgeTreeRef.value?.setCheckedKeys([...props.currentCheckedKnowledgeIds])
+    // 只恢复合法的叶子节点 ID，防止根目录等被错误选中
+    const sanitized = sanitizeCheckedIds(props.currentCheckedKnowledgeIds)
+    knowledgeTreeRef.value?.setCheckedKeys(sanitized)
   }
 })
 </script>

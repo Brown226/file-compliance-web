@@ -15,6 +15,7 @@
  */
 
 import { LlmService } from './llm.service';
+import { PromptTemplateService } from './prompt-template.service';
 
 export interface ContextualRetrievalOptions {
   /** 是否启用上下文检索（默认 false） */
@@ -172,12 +173,20 @@ export class ContextualRetrievalService {
     chunkContent: string,
     timeout: number
   ): Promise<string> {
-    const prompt = CONTEXTUAL_PROMPT
-      .replace('{{WHOLE_DOCUMENT}}', wholeDocument)
-      .replace('{{CHUNK_CONTENT}}', chunkContent);
+    const systemPrompt = await PromptTemplateService.getPromptByScene(
+      'contextual_retrieval', 'system', 'default',
+      '你是一个文档上下文分析专家。你的任务是为给定的文档片段生成简短的上下文描述，帮助在检索时更好地定位该片段。只输出上下文描述，不要输出其他内容。',
+    );
+    const userTpl = await PromptTemplateService.getPromptByScene(
+      'contextual_retrieval', 'user', 'default',
+      CONTEXTUAL_PROMPT,
+    );
+    const prompt = userTpl
+      .replace(/\$\{wholeDocument\}/g, wholeDocument)
+      .replace(/\$\{chunkContent\}/g, chunkContent);
 
     const result = await LlmService.chat(prompt, {
-      systemPrompt: '你是一个文档上下文分析专家。你的任务是为给定的文档片段生成简短的上下文描述，帮助在检索时更好地定位该片段。只输出上下文描述，不要输出其他内容。',
+      systemPrompt,
       maxTokens: 150,
       timeout,
       temperature: 0.1,

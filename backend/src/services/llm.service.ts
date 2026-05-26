@@ -78,16 +78,33 @@ export interface TextChunk {
 export class LlmService {
 
   /** 默认 LLM 审查 Prompt */
-  static readonly DEFAULT_REVIEW_PROMPT = `你是核电工程文件合规审查专家（CNPE/核工业标准）。请检查文本中的合规性问题。
+  static readonly DEFAULT_REVIEW_PROMPT = `你是核电工程文件合规审查专家（CNPE/核工业标准）。请根据知识库中检索到的相关标准规范，逐条检查待审查文本中的合规性问题。
+
+## 审查原则
+1. 严格以检索到的标准规范为依据，不得凭主观判断报告问题
+2. 每个问题必须明确引用违反的具体标准条文
+3. 重点关注：格式规范性、内容完整性、数据一致性、编码规范性、术语准确性
+4. 对于标准中明确要求的必填项、必含字段，缺失即视为违规
+5. 不得将合理的技术表述、行业惯用写法误报为问题
+
+## 审查范围
+根据检索到的标准规范，重点检查以下方面（以实际检索到的标准为准）：
+- **格式规范**：封面、目录、页眉页脚、编号体系是否符合标准要求
+- **内容完整性**：必填字段、必要信息是否缺失
+- **数据一致性**：编码、参数、命名在文档内部及与引用文件之间是否一致
+- **引用规范**：引用文件格式、标准版本引用是否正确；交叉项目引用是否准确一致
+- **术语规范**：专有名词、技术术语是否全文统一且符合标准
+- **语句通顺性**：语句是否通顺、表达是否清晰、逻辑是否连贯、是否存在语法错误
 
 ## 输出要求
 严格按照 JSON 数组格式输出，每个问题包含:
-- issueType: TYPO/FORMAT/COMPLETENESS/CONSISTENCY/VIOLATION
+- issueType: TYPO/FORMAT/COMPLETENESS/CONSISTENCY/VIOLATION/FLUENCY/CROSS_REFERENCE
 - originalText: 原始问题文本
 - suggestedText: 建议修改内容
-- description: 问题描述
-- ruleCode: 问题类型编码(如TYPO_001/FORMAT_001/COMPLETENESS_001/CONSISTENCY_001/VIOLATION_001)
-- standardRef: 违反的具体标准规范引用(如"GB/T 50265-2010 第5.2.1条")，如果无法确定则写null
+- description: 问题描述，必须说明违反了哪条标准规范的什么要求
+- ruleCode: 问题类型编码（如 FORMAT_001、COMPLETENESS_001、CONSISTENCY_001、VIOLATION_001）
+- standardRef: 违反的具体标准条文引用（如"GB/T 50265-2010 第5.2.1条"），如果无法确定具体条文则写null
+- plain_language: 用通俗易懂的语言解释这个问题（让非专业人员也能理解）
 
 如果没有发现问题，输出空数组 []
 不要输出任何其他文字说明`;
@@ -681,7 +698,7 @@ export class LlmService {
     } else if (options?.standardContext) {
       const tpl = await PromptTemplateService.getPromptByScene(
         'library_review', 'user', 'with_context',
-        `【审查标准】\n${options.standardContext}\n\n【待审查文本】\n${text}\n\n请根据以上审查标准，检查待审查文本的合规性问题。`
+        `【知识库检索到的相关标准规范】\n${options.standardContext}\n\n【待审查文本】\n${text}\n\n请根据以上标准规范检查"待审查文本"中的合规性问题。严格按照 JSON 数组格式输出审查结果。`
       );
       userContent = tpl
         .replace(/\$\{ragContext\}/g, options.standardContext)
@@ -690,7 +707,7 @@ export class LlmService {
     } else {
       const tpl = await PromptTemplateService.getPromptByScene(
         'library_review', 'user', 'no_context',
-        `【待审查文本】\n${text}\n\n请检查以上文本的合规性问题。`
+        `【待审查文本】\n${text}\n\n请检查以上文本的合规性问题。严格按照 JSON 数组格式输出审查结果。`
       );
       userContent = tpl.replace(/\$\{text\}/g, text);
     }

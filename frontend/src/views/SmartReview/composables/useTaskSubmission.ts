@@ -105,12 +105,6 @@ export function useTaskSubmission(
       if (state.reviewPlanDraft.evidence.sources.includes('REVIEW_SPECIFICATION') && !state.reviewPlanDraft.evidence.reviewSpecificationId)
         reasons.push('语义规范库模式需要选择具体的语义规范库')
 
-      const allowEmptySources = ['PROOFREAD'].includes(state.reviewPlanDraft.objective) ||
-        ['CONSISTENCY', 'RULE_ONLY', 'MULTIMODAL'].includes(state.entryModule.value as any)
-      
-      if (!allowEmptySources && state.reviewPlanDraft.evidence.sources.length === 0)
-        reasons.push('请至少选择一项审查依据')
-
       ElMessage.warning(reasons.length > 0 ? reasons[0] : '请完善审查配置后再开始分析')
       return
     }

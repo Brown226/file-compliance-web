@@ -1,6 +1,7 @@
 import prisma from '../config/db';
 import { ParserService } from './parser.service';
 import { LlmService } from './llm.service';
+import { PromptTemplateService } from './prompt-template.service';
 
 export interface PreAnalysisInput {
   name: string;
@@ -185,7 +186,9 @@ export class PreAnalysisService {
       return {};
     }
 
-    const prompt = `你是文件审查预分析助手。请阅读下面的文件内容，并只输出 JSON：
+    const tpl = await PromptTemplateService.getPromptByScene(
+      'pre_analysis', 'user', 'default',
+      `你是文件审查预分析助手。请阅读下面的文件内容，并只输出 JSON：
 {
   "contractType": "文档类型中文名称",
   "potentialParties": ["建议的审查立场，可选值：builder, contractor, supervisor, designer, general"],
@@ -200,8 +203,10 @@ export class PreAnalysisService {
 
 文件内容：
 ---
-${fileText.substring(0, 3000)}
----`;
+\${text}
+---`,
+    );
+    const prompt = tpl.replace(/\$\{text\}/g, fileText.substring(0, 3000));
 
     let llmResponse: string;
     try {

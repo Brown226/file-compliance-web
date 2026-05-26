@@ -30,7 +30,7 @@ async function seed() {
 
   // 2. 创建默认管理员用户
   const adminSalt = await bcrypt.genSalt(10);
-  const adminHash = await bcrypt.hash('admin123', adminSalt);
+  const adminHash = await bcrypt.hash('Admin@12345', adminSalt);
   const admin = await prisma.user.upsert({
     where: { username: 'admin' },
     update: {},
@@ -352,7 +352,7 @@ async function seed() {
   console.log('✅ 数据库初始化完成！');
   console.log('');
   console.log('📋 默认账号信息:');
-  console.log('  管理员: admin / admin123');
+  console.log('  管理员: admin / Admin@12345');
   console.log('');
   console.log('🤖 LLM 默认配置:');
   console.log('  对话模型: gpt-5.4-mini');

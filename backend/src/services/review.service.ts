@@ -70,7 +70,7 @@ export class ReviewService {
   private static adaptReviewPlanForExecution(task: any): {
     plan: ReviewPlan;
     reviewMode: string;
-    ruleSource: 'STANDARD' | 'REVIEW_SPECIFICATION';
+    ruleSource: ('STANDARD' | 'REVIEW_SPECIFICATION')[];
     reviewSpecificationId?: string;
     enabledPrefixes?: string[];
     knowledgeCategoryIds: string[];
@@ -88,7 +88,14 @@ export class ReviewService {
   } {
     const plan = TaskService.normalizeReviewPlan(task?.reviewPlan);
     const reviewMode = TaskService.resolvePipelineSelector(plan);
-    const ruleSource = plan.evidence.sources.includes('REVIEW_SPECIFICATION') || plan.evidence.sources.includes('RULE_LIBRARY') ? 'REVIEW_SPECIFICATION' : 'STANDARD';
+    // 支持同时选择知识库(STANDARD)和语义规范库(REVIEW_SPECIFICATION)
+    const ruleSource: ('STANDARD' | 'REVIEW_SPECIFICATION')[] = [];
+    if (plan.evidence.sources.includes('STANDARD')) ruleSource.push('STANDARD');
+    if (plan.evidence.sources.includes('REVIEW_SPECIFICATION') || plan.evidence.sources.includes('RULE_LIBRARY')) {
+      ruleSource.push('REVIEW_SPECIFICATION');
+    }
+    const hasStandard = ruleSource.includes('STANDARD');
+    const hasReviewSpec = ruleSource.includes('REVIEW_SPECIFICATION');
     // DOC_REVIEW 和 CONSISTENCY 模式强制启用 AI（即使前端误传 RULE_ONLY）
     const effectiveProfile = (reviewMode === 'DOC_REVIEW' || reviewMode === 'CONSISTENCY')
       ? 'HYBRID'
@@ -105,9 +112,11 @@ export class ReviewService {
       plan,
       reviewMode,
       ruleSource,
-      reviewSpecificationId: ruleSource === 'REVIEW_SPECIFICATION' && !hasDirectPrefixes ? plan.evidence.reviewSpecificationId || plan.evidence.ruleLibraryId || undefined : undefined,
+      // 语义规范库：有 REVIEW_SPECIFICATION 源且无直接规则前缀时传递
+      reviewSpecificationId: hasReviewSpec && !hasDirectPrefixes ? plan.evidence.reviewSpecificationId || plan.evidence.ruleLibraryId || undefined : undefined,
       enabledPrefixes: hasDirectPrefixes ? plan.evidence.enabledPrefixes : undefined,
-      knowledgeCategoryIds: Array.isArray(plan.evidence.knowledgeCategoryIds) ? plan.evidence.knowledgeCategoryIds : [],
+      // 知识库：有 STANDARD 源时传递 knowledgeCategoryIds
+      knowledgeCategoryIds: hasStandard ? (Array.isArray(plan.evidence.knowledgeCategoryIds) ? plan.evidence.knowledgeCategoryIds : []) : [],
       refFileGroupRequired: plan.objective === 'COMPARE' || plan.evidence.sources.includes('REFERENCE'),
       intraFileConsistency: !!plan.enhancements.intraFileConsistency,
       crossFileConsistency,
@@ -479,11 +488,11 @@ export class ReviewService {
             enabledPrefixes: ruleExecutionPlan.enabledPrefixes,
             itemIds: ruleExecutionPlan.executableItems.map((item) => item.id),
           } : undefined,
-          standardIds: executionPlan.ruleSource === 'STANDARD'
+          standardIds: executionPlan.ruleSource.includes('STANDARD')
             ? task.taskStandards.map((item: any) => item.standardId)
             : [],
-          knowledgeCategoryId: executionPlan.ruleSource === 'STANDARD' ? (knowledgeCategoryId || undefined) : undefined,
-          knowledgeCategoryIds: executionPlan.ruleSource === 'STANDARD' ? (knowledgeCategoryIds || undefined) : undefined,
+          knowledgeCategoryId: executionPlan.ruleSource.includes('STANDARD') ? (knowledgeCategoryId || undefined) : undefined,
+          knowledgeCategoryIds: executionPlan.ruleSource.includes('STANDARD') ? (knowledgeCategoryIds || undefined) : undefined,
           pipelineConfig,
           executionOverrides: executionPlan.executionOverrides,
           refFileGroup: refFileGroupCtx,
@@ -1045,7 +1054,7 @@ export class ReviewService {
 
     // 标准引用检查
     let stdRefIssues: any[] = [];
-    if (behavior.standardRef && ctx.ruleSource !== 'REVIEW_SPECIFICATION' && ctx.extractedText?.trim()) {
+    if (behavior.standardRef && !ctx.ruleSource?.includes('REVIEW_SPECIFICATION') && ctx.extractedText?.trim()) {
       const stagesOverride = ctx.executionOverrides?.stages;
       if (stagesOverride?.stdRef !== false) {
         stdRefIssues = await StandardRefCheckService.runStandardRefCheck(ctx, ctx.extractedText);
@@ -1063,7 +1072,7 @@ export class ReviewService {
         taskId, fileId: file.id,
         issueType: issue.issueType, ruleCode: issue.ruleCode,
         severity: issue.severity,
-        reviewSource: ctx.ruleSource === 'REVIEW_SPECIFICATION' ? 'RULE_LIBRARY' : 'RULE_ENGINE',
+        reviewSource: ctx.ruleSource?.includes('REVIEW_SPECIFICATION') ? 'RULE_LIBRARY' : 'RULE_ENGINE',
         originalText: issue.originalText,
         suggestedText: issue.suggestedText || null,
         description: issue.description,
@@ -1362,11 +1371,6 @@ export class ReviewService {
     const config = getEffectiveConfig(ctx);
     const text = ctx.extractedText || '';
 
-    // 预构建语义规范库提示词上下文（所有 AI 策略共用）
-    if (ctx.semanticItems && ctx.semanticItems.length > 0) {
-      ctx._semanticPromptContext = AiReviewService.formatSemanticItems(ctx.semanticItems);
-    }
-
     let aiResult: { issues: ReviewIssue[]; engine: string };
     switch (ctx.reviewMode) {
       case 'TYPO_GRAMMAR':
@@ -1382,9 +1386,45 @@ export class ReviewService {
         break;
       case 'LIBRARY_REVIEW':
       case 'CONSISTENCY':
-      default:
-        aiResult = await AiReviewService.runAIReview(text, ctx, scene, config);
+      default: {
+        // 方案 B：双轨并行 — 知识库 RAG + 语义规范库逐条匹配
+        const hasKnowledge = ctx.ruleSource?.includes('STANDARD')
+          && (ctx.knowledgeCategoryIds?.length || ctx.knowledgeCategoryId);
+        const hasSemanticSpec = ctx.semanticItems && ctx.semanticItems.length > 0;
+
+        if (hasKnowledge && hasSemanticSpec) {
+          // 双轨并行
+          console.log(`[Review] 双轨审查: 知识库RAG + 语义规范库(${ctx.semanticItems!.length}条)`);
+          const [ragResult, specResult] = await Promise.all([
+            AiReviewService.runAIReview(text, ctx, scene, config),
+            AiReviewService.runSemanticSpecReview(text, ctx, config),
+          ]);
+
+          // 合并去重
+          const mergedIssues = [...ragResult.issues];
+          const ragKeys = new Set(ragResult.issues.map(i => (i.originalText || '').slice(0, 60).trim()));
+          for (const issue of specResult.issues) {
+            const key = (issue.originalText || '').slice(0, 60).trim();
+            if (key && !ragKeys.has(key)) {
+              mergedIssues.push(issue);
+            }
+          }
+          aiResult = {
+            issues: mergedIssues,
+            engine: `${ragResult.engine}+${specResult.engine}`,
+          };
+        } else if (hasKnowledge) {
+          // 仅知识库 RAG
+          aiResult = await AiReviewService.runAIReview(text, ctx, scene, config);
+        } else if (hasSemanticSpec) {
+          // 仅语义规范库逐条匹配
+          aiResult = await AiReviewService.runSemanticSpecReview(text, ctx, config);
+        } else {
+          // 都没选，降级到普通 LLM 审查
+          aiResult = await AiReviewService.runAIReview(text, ctx, scene, config);
+        }
         break;
+      }
     }
     const slowResult = { aiIssues: aiResult.issues, usedEngine: aiResult.engine };
 

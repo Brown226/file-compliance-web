@@ -2,6 +2,7 @@ import bcrypt from 'bcryptjs';
 import prisma from '../config/db';
 import { Prisma } from '@prisma/client';
 import { AppError } from '../middlewares/error.middleware';
+import { validatePasswordComplexity } from '../utils/password-validator';
 
 /**
  * 递归获取所有下属部门ID
@@ -127,9 +128,16 @@ export class EmployeeService {
       throw new Error('Username already exists');
     }
 
+    // 密码复杂度验证
+    const finalPassword = password || 'User@12345';
+    const passwordCheck = validatePasswordComplexity(finalPassword);
+    if (!passwordCheck.valid) {
+      throw new AppError(400, `密码不符合要求：${passwordCheck.message}`);
+    }
+
     // 哈希密码
     const salt = await bcrypt.genSalt(10);
-    const passwordHash = await bcrypt.hash(password || '123456', salt); // 默认密码 123456
+    const passwordHash = await bcrypt.hash(finalPassword, salt);
 
     const user = await prisma.user.create({
       data: {
@@ -214,8 +222,15 @@ export class EmployeeService {
 
         // 加入哈希任务（并行计算）
         const task = (async () => {
+          const finalPassword = emp.password || 'User@12345';
+          const passwordCheck = validatePasswordComplexity(finalPassword);
+          if (!passwordCheck.valid) {
+            results.failCount++;
+            results.errors.push(`第${rowNum}行: 密码不符合要求 - ${passwordCheck.message}`);
+            return;
+          }
           const salt = await bcrypt.genSalt(10);
-          const passwordHash = await bcrypt.hash(emp.password || '123456', salt);
+          const passwordHash = await bcrypt.hash(finalPassword, salt);
           validEmployees.push({
             username: emp.username,
             name: emp.name,
@@ -296,7 +311,14 @@ export class EmployeeService {
    * 重置密码
    */
   async resetPassword(id: string, newPassword?: string) {
-    const password = newPassword || '123456'; // 默认密码
+    const password = newPassword || 'User@12345'; // 默认密码
+
+    // 密码复杂度验证
+    const passwordCheck = validatePasswordComplexity(password);
+    if (!passwordCheck.valid) {
+      throw new AppError(400, `密码不符合要求：${passwordCheck.message}`);
+    }
+
     const salt = await bcrypt.genSalt(10);
     const passwordHash = await bcrypt.hash(password, salt);
 
@@ -330,6 +352,10 @@ export class EmployeeService {
     }
     
     if (password) {
+      const passwordCheck = validatePasswordComplexity(password);
+      if (!passwordCheck.valid) {
+        throw new AppError(400, `密码不符合要求：${passwordCheck.message}`);
+      }
       const salt = await bcrypt.genSalt(10);
       updateData.passwordHash = await bcrypt.hash(password, salt);
     }

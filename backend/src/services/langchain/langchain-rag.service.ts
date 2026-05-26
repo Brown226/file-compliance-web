@@ -99,14 +99,14 @@ export class LangChainRAGService {
 
         const systemPrompt = await PromptTemplateService.getPromptByScene(
           scene, 'system', 'default',
-          '你是文件合规审查专家。请检查文本中的问题，严格按照 JSON 数组格式输出。',
+          '你是文件合规审查专家。请根据知识库检索到的标准规范，检查文本中的合规性问题。严格按照 JSON 数组格式输出审查结果。',
         );
 
         let userPrompt: string;
         if (standardContext) {
           const tpl = await PromptTemplateService.getPromptByScene(
             scene, 'user', 'with_context',
-            '【参考标准】\n${ragContext}\n\n【待审查文本】\n${text}\n\n请检查以上文本的合规性问题。严格按照 JSON 数组格式输出审查结果。',
+            '【知识库检索到的相关标准规范】\n${ragContext}\n\n【待审查文本】\n${text}\n\n请根据以上标准规范检查"待审查文本"中的合规性问题。严格按照 JSON 数组格式输出审查结果。',
           );
           userPrompt = tpl
             .replace(/\$\{ragContext\}/g, standardContext)

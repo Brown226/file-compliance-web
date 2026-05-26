@@ -3,6 +3,7 @@ import { AuthRequest } from '../middlewares/auth.middleware';
 import prisma from '../config/db';
 import { VectorService } from '../services/vector.service';
 import { LlmService } from '../services/llm.service';
+import { PromptTemplateService } from '../services/prompt-template.service';
 import { success, error } from '../utils/response';
 
 const MAX_HISTORY_MESSAGES = 12;
@@ -25,14 +26,19 @@ const normalizeHistory = (history: QAMessage[]): QAMessage[] => {
     .slice(-MAX_HISTORY_MESSAGES);
 };
 
-const buildSystemPrompt = () => [
-  '你是核审通智能问答助手，专注于核电工程文件合规审查领域。',
-  '使用与用户相同的语言回答问题。',
-  '你可以基于知识库中的标准规范、法律法规和审查规则来回答问题。',
-  '不要编造法规条文编号、标准名称或案例信息。',
-  '如果知识库中没有足够的依据，请明确告知用户。',
-  '对于技术问题，优先引用知识库中的标准规范作为依据。',
-].join('\n');
+const buildSystemPrompt = async (): Promise<string> => {
+  return PromptTemplateService.getPromptByScene(
+    'qa', 'system', 'default',
+    [
+      '你是核审通智能问答助手，专注于核电工程文件合规审查领域。',
+      '使用与用户相同的语言回答问题。',
+      '你可以基于知识库中的标准规范、法律法规和审查规则来回答问题。',
+      '不要编造法规条文编号、标准名称或案例信息。',
+      '如果知识库中没有足够的依据，请明确告知用户。',
+      '对于技术问题，优先引用知识库中的标准规范作为依据。',
+    ].join('\n'),
+  );
+};
 
 /** 获取会话历史 */
 export const getHistory = async (req: AuthRequest, res: Response): Promise<void> => {
@@ -191,7 +197,7 @@ export const askStream = async (req: AuthRequest, res: Response): Promise<void> 
         ].join('\n');
 
     const llmMessages = [
-      { role: 'system' as const, content: buildSystemPrompt() },
+      { role: 'system' as const, content: await buildSystemPrompt() },
       ...normalizedHistory,
       { role: 'system' as const, content: evidencePrompt },
       { role: 'user' as const, content: question },

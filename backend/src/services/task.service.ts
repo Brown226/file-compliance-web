@@ -180,9 +180,11 @@ export class TaskService {
     if (ruleLibraryId) normalizedReviewPlan.evidence.ruleLibraryId = ruleLibraryId;
     if (intraFileConsistency !== undefined) normalizedReviewPlan.enhancements.intraFileConsistency = !!intraFileConsistency;
 
-    const hasRuleSource = (normalizedReviewPlan.evidence.sources.includes('REVIEW_SPECIFICATION') || normalizedReviewPlan.evidence.sources.includes('RULE_LIBRARY'))
+    // 仅当选择了语义规范库/规则库且未选择知识库时，清空标准库关联
+    const hasOnlyReviewSpec = (normalizedReviewPlan.evidence.sources.includes('REVIEW_SPECIFICATION') || normalizedReviewPlan.evidence.sources.includes('RULE_LIBRARY'))
+      && !normalizedReviewPlan.evidence.sources.includes('STANDARD')
       && (!!(normalizedReviewPlan.evidence.reviewSpecificationId || normalizedReviewPlan.evidence.ruleLibraryId));
-    const effectiveStandardIds = hasRuleSource ? [] : allStandardIds;
+    const effectiveStandardIds = hasOnlyReviewSpec ? [] : allStandardIds;
 
     // 创建任务
     const task = await prisma.task.create({
@@ -190,7 +192,7 @@ export class TaskService {
         title,
         description,
         creatorId,
-        standardId: hasRuleSource ? null : (standardId || effectiveStandardIds[0] || null),
+        standardId: hasOnlyReviewSpec ? null : (standardId || effectiveStandardIds[0] || null),
         reviewMode: resolvedReviewMode as any,
         knowledgeCategoryId: knowledgeIdForDb,
         reviewSpecificationId: normalizedReviewPlan.evidence.reviewSpecificationId || null,
