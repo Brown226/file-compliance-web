@@ -497,6 +497,13 @@ ${refTextsJoined}
   /**
    * 将语义规范库上下文、审查点和核心目的注入系统提示词
    */
+  /**
+   * 为系统提示词注入用户选择的审查点和核心目的
+   *
+   * 注意：TYPO_GRAMMAR 模式不注入审查点，因为该模式专门检查错别字/语法，
+   * 提示词中已有"不要报告合规性、格式规范"的明确指令，
+   * 注入审查点会与之矛盾，导致 LLM 输出合规性问题而非文字问题。
+   */
   static injectSemanticContext(systemPrompt: string, ctx: PipelineContext): string {
     let enhancedPrompt = systemPrompt;
 
@@ -505,14 +512,17 @@ ${refTextsJoined}
       enhancedPrompt += ctx._semanticPromptContext;
     }
 
-    // 注入用户选择的审查点
-    if (ctx.reviewPoints && ctx.reviewPoints.length > 0) {
-      enhancedPrompt += `\n\n【用户关注的审查点】\n请重点关注以下方面：\n${ctx.reviewPoints.map((p, i) => `${i + 1}. ${p}`).join('\n')}`;
-    }
+    // TYPO_GRAMMAR 模式跳过审查点注入（避免与"不报告合规性问题"指令冲突）
+    if (ctx.reviewMode !== 'TYPO_GRAMMAR') {
+      // 注入用户选择的审查点
+      if (ctx.reviewPoints && ctx.reviewPoints.length > 0) {
+        enhancedPrompt += `\n\n【用户关注的审查点】\n请重点关注以下方面：\n${ctx.reviewPoints.map((p, i) => `${i + 1}. ${p}`).join('\n')}`;
+      }
 
-    // 注入用户定义的核心目的
-    if (ctx.corePurposes && ctx.corePurposes.length > 0) {
-      enhancedPrompt += `\n\n【审查核心目的】\n本次审查的核心目标：\n${ctx.corePurposes.map((p, i) => `${i + 1}. ${p}`).join('\n')}`;
+      // 注入用户定义的核心目的
+      if (ctx.corePurposes && ctx.corePurposes.length > 0) {
+        enhancedPrompt += `\n\n【审查核心目的】\n本次审查的核心目标：\n${ctx.corePurposes.map((p, i) => `${i + 1}. ${p}`).join('\n')}`;
+      }
     }
 
     return enhancedPrompt;

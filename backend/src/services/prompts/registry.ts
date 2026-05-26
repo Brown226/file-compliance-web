@@ -641,3 +641,44 @@ export function getPromptFallback(module: string, role: string, variant: string)
   }
   return undefined;
 }
+
+// ============================================================
+// 预分析审查点引导（根据审查模式生成对应的 LLM 引导语）
+// ============================================================
+const MODE_HINTS: Record<string, string> = {
+  TYPO_GRAMMAR: `## 审查模式：错别字/语法检查
+当前用户选择了"错别字/语法"审查模式，请仅从文字审查角度分析：
+- suggestedReviewPoints 应聚焦：错别字检查、语法错误、语句通顺性、术语一致性、标点符号
+- suggestedCorePurposes 应聚焦：保证文字准确性、术语规范统一
+- 不要建议合规性、内容完整性、格式规范等非文字类审查点`,
+
+  CONSISTENCY: `## 审查模式：一致性审查
+当前用户选择了"一致性审查"模式，请从数据一致性角度分析：
+- suggestedReviewPoints 应聚焦：编码一致性、参数一致性、命名一致性、交叉引用一致性
+- suggestedCorePurposes 应聚焦：确保数据统一、避免引用不一致`,
+
+  DOC_REVIEW: `## 审查模式：以文审文
+当前用户选择了"以文审文"模式，请从文档比对角度分析：
+- suggestedReviewPoints 应聚焦：关键数据差异、结构和章节对比
+- suggestedCorePurposes 应聚焦：确保文件一致性、降低版本偏差风险`,
+
+  MULTIMODAL: `## 审查模式：多模态识别
+当前用户选择了"多模态"模式，请从表格/公式/图纸角度分析：
+- suggestedReviewPoints 应聚焦：表格数据完整性、数值合理性、公式正确性、图纸标注规范性
+- suggestedCorePurposes 应聚焦：确保数值准确、图表信息完整`,
+
+  RULE_ONLY: `## 审查模式：规则库审查
+当前用户选择了"规则库审查"模式，请从规则匹配角度分析：
+- suggestedReviewPoints 应聚焦：格式规范符合度、命名编码规则符合度
+- suggestedCorePurposes 应聚焦：确保文件符合既定规则库、减少格式违规`,
+
+  default: `审查点建议：从格式规范、内容完整性、数据一致性、引用规范、术语准确性等维度考虑。`,
+};
+
+/**
+ * 获取审查模式对应的预分析引导提示词
+ */
+export function getModeHint(reviewMode?: string): string {
+  if (!reviewMode) return MODE_HINTS.default;
+  return MODE_HINTS[reviewMode] || MODE_HINTS.default;
+}

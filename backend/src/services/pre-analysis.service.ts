@@ -2,6 +2,7 @@ import prisma from '../config/db';
 import { ParserService } from './parser.service';
 import { LlmService } from './llm.service';
 import { PromptTemplateService } from './prompt-template.service';
+import { getModeHint } from './prompts';
 
 export interface PreAnalysisInput {
   name: string;
@@ -61,7 +62,7 @@ const DOC_TYPE_RULES: DocTypeRule[] = [
 ];
 
 export class PreAnalysisService {
-  static async analyzeFiles(files: PreAnalysisInput[]): Promise<PreAnalysisResult> {
+  static async analyzeFiles(files: PreAnalysisInput[], reviewMode?: string): Promise<PreAnalysisResult> {
     const fileNames = files.map(f => f.name);
     const extensions = fileNames.map(name => name.split('.').pop()?.toLowerCase() || '');
     const hasMultipleFiles = files.length > 1;
@@ -81,7 +82,7 @@ export class PreAnalysisService {
     const matchedCategory = this.matchCategory(categories, docType.type, fileNames);
     const matchedRuleLib = this.matchRuleLibrary(ruleLibs, docType.type);
 
-    const llmAnalysis: LlmPreAnalysis = await this.runLlmPreAnalysis(files).catch((e) => {
+    const llmAnalysis: LlmPreAnalysis = await this.runLlmPreAnalysis(files, reviewMode).catch((e) => {
       console.warn('[PreAnalysis] runLlmPreAnalysis 异常:', e);
       return {} as LlmPreAnalysis;
     });
@@ -100,10 +101,10 @@ export class PreAnalysisService {
       potentialParties: llmAnalyzed && Array.isArray(llmAnalysis.potentialParties) ? llmAnalysis.potentialParties : [],
       suggestedReviewPoints: llmAnalyzed && llmAnalysis.suggestedReviewPoints?.length > 0
         ? llmAnalysis.suggestedReviewPoints
-        : this.getDefaultReviewPoints(docType.type),
+        : this.getDefaultReviewPoints(docType.type, reviewMode),
       suggestedCorePurposes: llmAnalyzed && llmAnalysis.suggestedCorePurposes?.length > 0
         ? llmAnalysis.suggestedCorePurposes
-        : this.getDefaultCorePurposes(docType.type),
+        : this.getDefaultCorePurposes(docType.type, reviewMode),
       suggestedPerspective: docType.perspective || 'general',
       llmAnalyzed,
       recommendations: {
@@ -147,7 +148,7 @@ export class PreAnalysisService {
     };
   }
 
-  private static async runLlmPreAnalysis(files: PreAnalysisInput[]): Promise<LlmPreAnalysis> {
+  private static async runLlmPreAnalysis(files: PreAnalysisInput[], reviewMode?: string): Promise<LlmPreAnalysis> {
     const firstFile = files[0];
     if (!firstFile) return {};
 
@@ -186,6 +187,9 @@ export class PreAnalysisService {
       return {};
     }
 
+    // 根据审查模式生成对应的审查点引导
+    const modeHint = getModeHint(reviewMode);
+
     const tpl = await PromptTemplateService.getPromptByScene(
       'pre_analysis', 'user', 'default',
       `你是文件审查预分析助手。请阅读下面的文件内容，并只输出 JSON：
@@ -196,7 +200,7 @@ export class PreAnalysisService {
   "suggestedCorePurposes": ["核心目的1", "核心目的2"]
 }
 
-要求：
+${modeHint}
 - 只输出 JSON，不要解释
 - 审查点和目的必须具体、可执行
 - 如果无法判断立场，返回 general
@@ -242,7 +246,17 @@ export class PreAnalysisService {
     return normalized.length > 0 ? normalized : fallback;
   }
 
-  private static getDefaultReviewPoints(docType: string): string[] {
+  private static getDefaultReviewPoints(docType: string, reviewMode?: string): string[] {
+    // TYPO_GRAMMAR 模式：生成错别字/语法相关的审查点
+    if (reviewMode === 'TYPO_GRAMMAR' || reviewMode === 'PROOFREAD') {
+      return [
+        '检查文本中是否存在错别字、同音字混用',
+        '检查语句是否通顺，有无语法错误和语病',
+        '检查专有术语和缩写是否前后统一',
+        '检查标点符号使用是否正确',
+      ];
+    }
+
     const defaults: Record<string, string[]> = {
       contract: [
         '核对合同主体资格与履约责任',
@@ -283,7 +297,14 @@ export class PreAnalysisService {
     ];
   }
 
-  private static getDefaultCorePurposes(docType: string): string[] {
+  private static getDefaultCorePurposes(docType: string, reviewMode?: string): string[] {
+    if (reviewMode === 'TYPO_GRAMMAR' || reviewMode === 'PROOFREAD') {
+      return [
+        '确保文档没有错别字和语法错误',
+        '保证术语使用规范统一',
+      ];
+    }
+
     const defaults: Record<string, string[]> = {
       contract: [
         '降低合同履约与法律争议风险',
