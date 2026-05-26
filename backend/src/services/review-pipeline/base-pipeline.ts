@@ -116,12 +116,38 @@ export abstract class BasePipeline {
   /**
    * AI 结果后处理钩子：子类可对 AI 结果做过滤/增强
    * 如 TypoGrammarPipeline 的术语白名单过滤
+   *
+   * 基类实现通用无效问题过滤：
+   * 1. originalText 与 suggestedText 完全相同 → 无实际修改，丢弃
+   * 2. 描述中明确表示"不构成/无法确认为问题" → 不确定问题，丢弃
    */
   protected async postProcessAIResult(
     _text: string,
     aiIssues: ReviewIssue[],
   ): Promise<ReviewIssue[]> {
-    return aiIssues;
+    return aiIssues.filter(issue => {
+      // 过滤1：原文和建议修改完全一致（无实际改动建议）
+      if (issue.originalText && issue.suggestedText &&
+          issue.originalText.trim() === issue.suggestedText.trim()) {
+        return false;
+      }
+
+      // 过滤2：描述中明确表示不是问题/无法确认（如"不构成明确问题"、"无法直接确认为违规"）
+      if (issue.description) {
+        const uncertainPatterns = [
+          /不构(?:成)?\s*(?:明确|确实)\s*(?:问题|错误|违规|违规)/,
+          /无法\s*(?:直接|明确|确定)\s*(?:确认|认定|判定).{0,10}(?:为)?\s*(?:违规|问题|错误)/,
+          /(?:但|然而|不过).{0,20}(?:不构成|非|不属于|不算).{0,10}(?:明确)?\s*(?:问题|违规|错误)/,
+        ];
+        for (const pattern of uncertainPatterns) {
+          if (pattern.test(issue.description)) {
+            return false;
+          }
+        }
+      }
+
+      return true;
+    });
   }
 
   // ==================== 公共步骤实现 ====================

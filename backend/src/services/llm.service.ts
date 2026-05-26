@@ -87,6 +87,14 @@ export class LlmService {
 4. 对于标准中明确要求的必填项、必含字段，缺失即视为违规
 5. 不得将合理的技术表述、行业惯用写法误报为问题
 
+## 排除项（不要报告的问题）
+以下情况**不视为问题**，请直接忽略，不要输出到结果中：
+- **纯空格/间距差异**：原文与正确写法之间仅相差空格（如 `<0.02` vs `< 0.02`），不影响数据含义和可读性
+- **纯排版细节**：标点符号前后空格不一致、全角半角混用但不影响理解、换行位置差异等排版层面的小瑕疵
+- **无实际影响的格式偏差**：未导致数据错误、歧义或违反强制性标准条款的轻微格式不一致
+- **不确定的问题**：如果你无法确定某处是否违规（如"无法确认为违规"、"不构成明确问题"等），**不要输出**到结果中。宁可漏报也不要误报
+- **无法给出修改建议**：如果原文已经是正确或可接受的写法，你无法提供有意义的修改建议（originalText 与 suggestedText 相同），则**不要报告**该条
+
 ## 审查范围
 根据检索到的标准规范，重点检查以下方面（以实际检索到的标准为准）：
 - **格式规范**：封面、目录、页眉页脚、编号体系是否符合标准要求
@@ -675,13 +683,18 @@ export class LlmService {
       throw new Error('LLM 未配置，请在系统配置中设置 LLM API');
     }
 
-    // 系统提示词：优先使用调用方传入的（场景化），否则从 library_review 场景加载，最终 fallback 到默认
+    // 系统提示词：优先使用调用方传入的（场景化），否则从 library_review 场景按上下文情况加载
     let systemPrompt: string;
     if (options?.systemPrompt) {
       systemPrompt = options.systemPrompt;
     } else {
       try {
-        systemPrompt = await PromptTemplateService.getPromptByScene('library_review', 'system', 'default', LlmService.DEFAULT_REVIEW_PROMPT);
+        // 有标准上下文时用 default 变体（以库为本），无上下文时用 no_context 变体（降级路径）
+        const variant = options?.standardContext ? 'default' : 'no_context';
+        systemPrompt = await PromptTemplateService.getPromptByScene(
+          'library_review', 'system', variant,
+          LlmService.DEFAULT_REVIEW_PROMPT,
+        );
       } catch (e) {
         systemPrompt = LlmService.DEFAULT_REVIEW_PROMPT;
       }

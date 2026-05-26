@@ -97,10 +97,16 @@ export class LangChainRAGService {
           }));
         }
 
-        const systemPrompt = await PromptTemplateService.getPromptByScene(
-          scene, 'system', 'default',
-          '你是文件合规审查专家。请根据知识库检索到的标准规范，检查文本中的合规性问题。严格按照 JSON 数组格式输出审查结果。',
-        );
+        // 有标准上下文时用 default 变体（以库为本），无上下文时用 no_context 变体（降级路径）
+        const systemPrompt = standardContext
+          ? await PromptTemplateService.getPromptByScene(
+              scene, 'system', 'default',
+              '你是文件合规审查专家。请根据知识库检索到的标准规范，检查文本中的合规性问题。严格按照 JSON 数组格式输出审查结果。',
+            )
+          : await PromptTemplateService.getPromptByScene(
+              scene, 'system', 'no_context',
+              '你是文件合规审查专家。请检查文本中的通用合规性问题。standardRef 字段统一填 null。严格按照 JSON 数组格式输出审查结果。',
+            );
 
         let userPrompt: string;
         if (standardContext) {

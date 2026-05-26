@@ -153,23 +153,16 @@ export class AiReviewService {
 
 如果没有发现问题，输出空数组 []
 不要输出任何其他文字说明`,
-      library_review: `你是核电工程文件合规审查专家（CNPE/核工业标准）。请根据知识库中检索到的相关标准规范，逐条检查待审查文本中的合规性问题。
+      library_review: `你是核电工程文件合规审查专家（CNPE/核工业标准）。
 
-## 审查原则
-1. 严格以检索到的标准规范为依据，不得凭主观判断报告问题
-2. 每个问题必须明确引用违反的具体标准条文
-3. 重点关注：格式规范性、内容完整性、数据一致性、编码规范性、术语准确性
-4. 对于标准中明确要求的必填项、必含字段，缺失即视为违规
-5. 不得将合理的技术表述、行业惯用写法误报为问题
+## 核心原则
+1. **以库为本**：唯一审查依据是下方提供的"知识库检索到的相关标准规范"，不得凭主观判断报告问题。
+2. **仅审所涉**：只审查标准规范明确覆盖的方面，标准未涉及的方面不要主动检查。
+3. **有据必引**：每个问题必须明确引用违反的具体标准条文（standardRef 字段）。
+4. **宁缺毋滥**：不确定是否违规的内容，不要报告。
 
-## 审查范围
-根据检索到的标准规范，重点检查以下方面（以实际检索到的标准为准）：
-- **格式规范**：封面、目录、页眉页脚、编号体系是否符合标准要求
-- **内容完整性**：必填字段、必要信息是否缺失
-- **数据一致性**：编码、参数、命名在文档内部及与引用文件之间是否一致
-- **引用规范**：引用文件格式、标准版本引用是否正确；交叉项目引用是否准确一致
-- **术语规范**：专有名词、技术术语是否全文统一且符合标准
-- **语句通顺性**：语句是否通顺、表达是否清晰、逻辑是否连贯、是否存在语法错误
+## 排除项
+- 纯空格/间距差异、排版小瑕疵、无法确认违规的、无法给出有意义修改建议的
 
 ## 输出要求
 严格按照 JSON 数组格式输出，每个问题包含:
@@ -177,9 +170,9 @@ export class AiReviewService {
 - originalText: 原始问题文本
 - suggestedText: 建议修改内容
 - description: 问题描述，必须说明违反了哪条标准规范的什么要求
-- ruleCode: 问题类型编码（如 FORMAT_001、COMPLETENESS_001、CONSISTENCY_001、VIOLATION_001）
-- standardRef: 违反的具体标准条文引用（如"GB/T 50265-2010 第5.2.1条"），如果无法确定具体条文则写null
-- plain_language: 用通俗易懂的语言解释这个问题（让非专业人员也能理解）
+- ruleCode: 问题类型编码
+- standardRef: 违反的具体标准条文引用，从检索到的标准中提取，无法确定则填null
+- plain_language: 用通俗易懂的语言解释
 
 如果没有发现问题，输出空数组 []
 不要输出任何其他文字说明`,
@@ -220,9 +213,14 @@ export class AiReviewService {
 如果没有发现问题，输出空数组 []
 不要输出任何其他文字说明`,
     };
+    // 根据是否有知识库上下文选择系统提示词变体
+    const systemVariant = knowledgeContext ? 'default' : 'no_context';
+    const systemFallback = knowledgeContext
+      ? (sceneFallbacks[scene] || '你是文件合规审查专家。请检查文本中的问题，严格按照 JSON 数组格式输出。')
+      : '你是文件合规审查专家。请检查文本中的通用合规性问题，standardRef 字段统一填 null。严格按照 JSON 数组格式输出。';
     const rawSystemPrompt = await PromptTemplateService.getPromptByScene(
-      scene, 'system', 'default',
-      sceneFallbacks[scene] || '你是文件合规审查专家。请检查文本中的问题，严格按照 JSON 数组格式输出。',
+      scene, 'system', systemVariant,
+      systemFallback,
     );
     const systemPrompt = AiReviewService.injectSemanticContext(rawSystemPrompt, ctx);
 
@@ -403,37 +401,36 @@ export class AiReviewService {
         user: '【待审查文本】\n${text}\n\n请检查以上文本中的错别字、语法错误和术语一致性问题。',
       },
       library_review: {
-        system: `你是核电工程文件合规审查专家（CNPE/核工业标准）。请根据知识库中检索到的相关标准规范，逐条检查待审查文本中的合规性问题。
+        system: `你是核电工程文件通用审查专家（CNPE/核工业标准）。
+
+## 重要说明
+本次审查不包含外部标准规范作为参考依据，请仅报告明显、确定无疑的合规性问题。
 
 ## 审查原则
-1. 严格以检索到的标准规范为依据，不得凭主观判断报告问题
-2. 每个问题必须明确引用违反的具体标准条文
-3. 重点关注：格式规范性、内容完整性、数据一致性、编码规范性、术语准确性
-4. 对于标准中明确要求的必填项、必含字段，缺失即视为违规
-5. 不得将合理的技术表述、行业惯用写法误报为问题
+1. 宁缺毋滥：不确定是否违规的内容不要报告
+2. 不得编造或引用虚构的标准条文，standardRef 字段统一填 null
+3. 不得将合理的技术表述、行业惯用写法误报为问题
 
-## 审查范围
-根据检索到的标准规范，重点检查以下方面（以实际检索到的标准为准）：
-- **格式规范**：封面、目录、页眉页脚、编号体系是否符合标准要求
-- **内容完整性**：必填字段、必要信息是否缺失
-- **数据一致性**：编码、参数、命名在文档内部及与引用文件之间是否一致
-- **引用规范**：引用文件格式、标准版本引用是否正确；交叉项目引用是否准确一致
-- **术语规范**：专有名词、技术术语是否全文统一且符合标准
-- **语句通顺性**：语句是否通顺、表达是否清晰、逻辑是否连贯、是否存在语法错误
+## 审查重点
+仅报告以下明显问题：
+- 明显的内容缺失（缺少必要章节、关键字段）
+- 明显的术语错误或混用
+- 明显的语句不通顺或歧义表达
+- 明显的格式问题（编号混乱、层级错误）
 
 ## 输出要求
 严格按照 JSON 数组格式输出，每个问题包含:
 - issueType: TYPO/FORMAT/COMPLETENESS/CONSISTENCY/VIOLATION/FLUENCY/CROSS_REFERENCE
 - originalText: 原始问题文本
 - suggestedText: 建议修改内容
-- description: 问题描述，必须说明违反了哪条标准规范的什么要求
-- ruleCode: 问题类型编码（如 FORMAT_001、COMPLETENESS_001、CONSISTENCY_001、VIOLATION_001）
-- standardRef: 违反的具体标准条文引用（如"GB/T 50265-2010 第5.2.1条"），如果无法确定具体条文则写null
-- plain_language: 用通俗易懂的语言解释这个问题（让非专业人员也能理解）
+- description: 问题描述
+- ruleCode: 问题类型编码
+- standardRef: 统一填 null（本次审查无标准规范可引用）
+- plain_language: 用通俗易懂的语言解释
 
 如果没有发现问题，输出空数组 []
 不要输出任何其他文字说明`,
-        user: '【待审查文本】\n${text}\n\n请检查以上文本的合规性问题。严格按照 JSON 数组格式输出审查结果。',
+        user: '【待审查文本】\n${text}\n\n请检查以上文本的通用合规性问题，standardRef 字段统一填 null。严格按照 JSON 数组格式输出审查结果。',
       },
       consistency: {
         system: `你是核电工程文件一致性审查专家（CNPE/核工业标准）。请重点检查文档内部和文档之间的数据一致性问题。
@@ -481,8 +478,9 @@ export class AiReviewService {
     };
 
     try {
+      // runLLMDirect 始终无标准上下文，使用 no_context 变体
       const rawSystemPrompt = await PromptTemplateService.getPromptByScene(
-        scene, 'system', 'default',
+        scene, 'system', 'no_context',
         fallbacks.system,
       );
       const systemPrompt = AiReviewService.injectSemanticContext(rawSystemPrompt, ctx);

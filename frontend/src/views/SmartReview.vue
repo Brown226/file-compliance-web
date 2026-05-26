@@ -820,9 +820,15 @@ onMounted(async () => {
 
 /* 紧凑变体：用于证据源等小卡片 */
 .selectable-card--compact {
-  padding: 10px 14px;
+  padding: 12px 16px;
   flex: 1;
-  min-width: 120px;
+  min-width: 0;
+}
+
+.selectable-card--compact .selectable-card__icon {
+  width: 28px;
+  height: 28px;
+  border-radius: 7px;
 }
 
 /* 内联变体：用于执行方式 */
@@ -1010,9 +1016,9 @@ onMounted(async () => {
 
 /* 证据源卡片容器 */
 .evidence-cards {
-  display: flex;
-  gap: 8px;
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
 }
 
 .execution-options {
@@ -1093,23 +1099,36 @@ onMounted(async () => {
 /* 已选择项显示区域 */
 .selected-items-display {
   margin-top: 14px;
-  padding: 14px 16px;
-  background: #F8FAFC;
+  padding: 14px 18px;
+  background: linear-gradient(135deg, #FAFBFC 0%, #F8FAFC 100%);
   border-radius: 10px;
-  border: 1px dashed #CBD5E1;
+  border: 1px solid #E2E8F0;
+  position: relative;
+  overflow: hidden;
+}
+
+.selected-items-display::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 3px;
+  background: linear-gradient(180deg, #3B82F6, #60A5FA);
+  border-radius: 1px 0 0 1px;
 }
 
 .selected-items-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 10px;
+  margin-bottom: 12px;
 }
 
 .selected-items-count {
   font-size: 13px;
   font-weight: 600;
-  color: #64748B;
+  color: #475569;
 }
 
 .selected-items-tags {
@@ -1120,6 +1139,30 @@ onMounted(async () => {
 
 .selected-item-single {
   display: flex;
+}
+
+/* 选中项内的标签美化 */
+.selected-items-display :deep(.el-tag) {
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 500;
+  transition: all 0.2s ease;
+}
+
+.selected-items-display :deep(.el-tag:hover) {
+  transform: translateY(-1px);
+}
+
+.selected-items-display :deep(.el-tag .el-tag__close) {
+  margin-left: 4px;
+}
+
+/* 操作按钮样式 */
+.selected-items-header :deep(.el-button--primary) {
+  font-weight: 600;
+  font-size: 12px;
+  padding: 4px 10px;
+  border-radius: 6px;
 }
 
 
