@@ -378,17 +378,17 @@ import { getRuleRegistryApi, type RuleGroupMeta } from '@/api/system'
 import SmartReviewUploadStep from './components/SmartReviewUploadStep.vue'
 import SmartReviewKnowledgeDialog from './components/SmartReviewKnowledgeDialog.vue'
 import SmartReviewReviewSpecificationDialog from './components/SmartReviewReviewSpecificationDialog.vue'
-import { useSmartReviewState } from './composables/useSmartReviewState'
-import { usePreAnalysis } from './composables/usePreAnalysis'
-import { useReviewPlan } from './composables/useReviewPlan'
-import { useTaskSubmission } from './composables/useTaskSubmission'
+import { useSmartReviewState } from './SmartReview/composables/useSmartReviewState'
+import { usePreAnalysis } from './SmartReview/composables/usePreAnalysis'
+import { useReviewPlan } from './SmartReview/composables/useReviewPlan'
+import { useTaskSubmission } from './SmartReview/composables/useTaskSubmission'
 import {
   OBJECTIVE_ICON_MAP,
   EVIDENCE_ICON_MAP,
   PROGRESS_STEP_LABELS,
   PROGRESS_STATUS_LABELS,
-} from './constants/review-config'
-import type { EntryModule } from './types/smart-review'
+} from './SmartReview/constants/review-config'
+import type { EntryModule } from './SmartReview/types/smart-review'
 
 const state = useSmartReviewState()
 const preAnalysis = usePreAnalysis(state)

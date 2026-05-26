@@ -543,6 +543,8 @@ const {
   border-color: #D97706 !important;
   color: #92400E !important;
   background: #FEF3C7 !important;
+  width: 62px;
+  height: 32px;
 }
 .action-fp-btn.el-button:hover { background: #FDE68A !important; }
 

@@ -158,7 +158,7 @@
           </div>
           <div class="header-right">
             <!-- 主操作：导出Word（最突出） -->
-            <el-tooltip content="导出 Word 报告" placement="bottom">
+            <el-tooltip v-if="!isSelfCheck" content="导出 Word 报告" placement="bottom">
               <el-button type="primary" @click="handleExportWord" class="export-word-btn">
                 <el-icon><Document /></el-icon>
                 导出Word
@@ -166,7 +166,7 @@
             </el-tooltip>
 
             <!-- 次操作：更多导出（次级） -->
-            <el-dropdown @command="handleExportCommand" trigger="click">
+            <el-dropdown v-if="!isSelfCheck" @command="handleExportCommand" trigger="click">
               <el-button class="more-export-btn">
                 更多导出
                 <el-icon class="el-icon--right"><ArrowDown /></el-icon>
@@ -246,7 +246,16 @@
             :class="['tab-item', { active: activeTab === tab.key }]"
             @click="activeTab = tab.key"
           >
-            {{ tab.label }}
+            <el-icon v-if="tab.icon" class="tab-icon"><component :is="tab.icon" /></el-icon>
+            <span class="tab-label">{{ tab.label }}</span>
+
+            <el-badge
+              v-if="getTabBadge(tab.key)"
+              :value="getTabBadge(tab.key).value"
+              :type="getTabBadge(tab.key).type"
+              :max="99"
+              class="tab-badge"
+            />
           </button>
         </div>
 
@@ -304,13 +313,22 @@
 
         <!-- Tab内容区 -->
         <div v-if="!isSelfCheck" class="tab-content">
-          <!-- Tab 1: 审查概览 -->
+          <!-- Tab 1: 审查摘要 -->
           <div v-if="activeTab === 'overview'" class="tab-pane">
             <!-- 风险点/争议点 -->
             <div v-if="errorIssues.length > 0" class="issue-section">
               <h4 class="section-title">🔴 严重错误（{{ errorIssues.length }}条）</h4>
-              <div v-for="(issue, index) in errorIssues.slice(0, 5)" :key="issue.id" class="issue-card">
-                <p class="issue-title">{{ getIssueTitle(issue, index) }}</p>
+              <div
+                v-for="(issue, index) in errorIssues.slice(0, 5)"
+                :key="issue.id"
+                class="issue-card clickable"
+                @click="navigateToIssue(issue)"
+                title="点击查看详情"
+              >
+                <p class="issue-title">
+                  {{ getIssueTitle(issue, index) }}
+                  <el-icon class="jump-icon"><ArrowRight /></el-icon>
+                </p>
                 <div v-if="showPlainLanguage && issue.plainLanguage" class="plain-language-box">
                   <p class="plain-label">📢 大白话解释：</p>
                   <p>{{ issue.plainLanguage }}</p>
@@ -319,14 +337,41 @@
                   <p class="issue-desc">{{ issue.description }}</p>
                 </div>
               </div>
+
+              <!-- 查看全部按钮 -->
+              <div v-if="errorIssues.length > 5" class="view-all-wrapper">
+                <button class="view-all-btn" @click="activeTab = 'suggestions'">
+                  还有 {{ errorIssues.length - 5 }} 条严重错误未显示
+                  <el-icon><ArrowRight /></el-icon>
+                  查看全部 →
+                </button>
+              </div>
             </div>
 
             <!-- 违约成本分析（如果有） -->
             <div v-if="warningIssues.length > 0" class="issue-section warning-section">
               <h4 class="section-title">🟡 警告（{{ warningIssues.length }}条）</h4>
-              <div v-for="(issue, index) in warningIssues.slice(0, 5)" :key="issue.id" class="issue-card warning">
-                <p class="issue-title">{{ getIssueTitle(issue, index) }}</p>
+              <div
+                v-for="(issue, index) in warningIssues.slice(0, 5)"
+                :key="issue.id"
+                class="issue-card warning clickable"
+                @click="navigateToIssue(issue)"
+                title="点击查看详情"
+              >
+                <p class="issue-title">
+                  {{ getIssueTitle(issue, index) }}
+                  <el-icon class="jump-icon"><ArrowRight /></el-icon>
+                </p>
                 <p class="issue-desc">{{ issue.description }}</p>
+              </div>
+
+              <!-- 查看全部按钮 -->
+              <div v-if="warningIssues.length > 5" class="view-all-wrapper">
+                <button class="view-all-btn view-all-btn-warning" @click="activeTab = 'suggestions'">
+                  还有 {{ warningIssues.length - 5 }} 条警告未显示
+                  <el-icon><ArrowRight /></el-icon>
+                  查看全部 →
+                </button>
               </div>
             </div>
 
@@ -387,9 +432,29 @@
             </div>
           </div>
 
-          <!-- Tab 2: 问题明细（使用重构后的 IssueCardList 组件）-->
+          <!-- Tab 2: 问题清单（使用重构后的 IssueCardList 组件）-->
           <div v-if="activeTab === 'suggestions'" class="tab-pane" style="height:100%; display:flex; flex-direction:column;">
+            <!-- 审查通过空状态 -->
+            <div v-if="!loading && issueDetails.length === 0" class="empty-state-pass">
+              <el-icon :size="64" color="#67C23A"><CircleCheckFilled /></el-icon>
+              <h3>审查通过 ✅</h3>
+              <p>未发现需要处理的问题</p>
+
+              <div class="empty-actions">
+                <el-button type="primary" @click="activeTab = 'overview'">
+                  📊 查看审查摘要
+                </el-button>
+                <el-button @click="handleExportReport">
+                  📤 导出审查报告
+                </el-button>
+              </div>
+
+              <p class="empty-hint">提示：即使没有问题，也可以在"审查摘要"中查看完整的审查统计信息</p>
+            </div>
+
+            <!-- 有问题时显示问题列表 -->
             <IssueCardList
+              v-else
               ref="issueListRef"
               :details="issueDetails"
               :loading="loading"
@@ -406,7 +471,7 @@
             />
           </div>
 
-          <!-- Tab 3: 依据（标准引用/法律法条） -->
+          <!-- Tab 3: 标准引用 -->
           <div v-if="activeTab === 'knowledge'" class="tab-pane">
             <div v-if="standardRefIssues.length > 0" class="knowledge-list">
               <div
@@ -428,7 +493,31 @@
                 <p class="knowledge-content">{{ item.description }}</p>
               </div>
             </div>
-            <el-empty v-else description="未命中相关标准引用" />
+
+            <!-- 标准引用空状态引导 -->
+            <div v-else class="empty-state-knowledge">
+              <el-icon :size="64" color="#E6A23C"><Reading /></el-icon>
+              <h4>暂无标准引用</h4>
+              <p class="empty-reason">本次审查未命中相关标准条款</p>
+
+              <div class="possible-reasons">
+                <p><strong>可能的原因：</strong></p>
+                <ul>
+                  <li>当前审查模式未启用标准比对功能</li>
+                  <li>文档内容与知识库中的标准条款无关联</li>
+                  <li>知识库尚未导入相关领域的标准文件</li>
+                </ul>
+              </div>
+
+              <div class="empty-actions">
+                <el-button type="warning" @click="$router.push('/admin/knowledge')">
+                  ⚙️ 配置知识库
+                </el-button>
+                <el-button @click="activeTab = 'overview'">
+                  ← 返回审查摘要
+                </el-button>
+              </div>
+            </div>
           </div>
 
         </div>
@@ -463,6 +552,7 @@ import {
   FolderOpened,
   Files,
   Link,
+  Reading,
 } from '@element-plus/icons-vue'
 import {
   getTaskByIdApi,
@@ -589,7 +679,7 @@ const skippedNoTextFiles = ref<string[]>([])
 const runtimeFileStatus = ref<Record<string, 'completed' | 'failed' | 'skipped'>>({})
 let unsubscribeWs: (() => void) | null = null
 const currentStep = ref(2)
-const activeTab = ref('suggestions')
+const activeTab = ref((route.query.tab as string) || 'overview')
 const showPlainLanguage = ref(false)
 const leftPanel = ref<HTMLDivElement | null>(null)
 
@@ -723,25 +813,9 @@ const fileStatusSummary = computed(() => {
 })
 
 const isDwgFileSelected = computed(() => {
-  // #region debug-point isDwgFileSelected
-  console.group('[🔍 DEBUG] isDwgFileSelected 计算')
-  console.log('selectedFileId:', selectedFileId.value)
-  // #endregion
-  if (!selectedFileId.value) {
-    console.warn('⚠️ selectedFileId 为空，返回 false')
-    console.groupEnd()
-    return false
-  }
+  if (!selectedFileId.value) return false
   const file = files.value.find((f: any) => f.id === selectedFileId.value) as any
-  // #region debug-point isDwgFileSelected
-  console.log('找到的文件对象:', file)
-  console.log('file.fileType:', file?.fileType)
-  console.log('file.file_type:', file?.file_type)
-  const result = file?.fileType === 'dwg' || file?.file_type === 'dwg'
-  console.log('最终判断结果:', result)
-  console.groupEnd()
-  // #endregion
-  return result
+  return file?.fileType === 'dwg' || file?.file_type === 'dwg'
 })
 
 const isDocxFileSelected = computed(() => {
@@ -756,11 +830,6 @@ const dwgParseFailed = ref(false)
 
 /** 下载 DWG 原始文件并在前端创建 File 对象供 WASM 解析 */
 async function loadDwgFile(fileId: string) {
-  // #region debug-point loadDwgFile
-  console.group('[🔍 DEBUG] loadDwgFile 开始')
-  console.log('fileId:', fileId)
-  console.log('taskId:', taskId.value)
-  // #endregion
   dwgParseFailed.value = false
   dwgFileForPreview.value = null
 
@@ -769,29 +838,11 @@ async function loadDwgFile(fileId: string) {
       `/tasks/${taskId.value}/files/${fileId}/raw`,
       { responseType: 'arraybuffer' }
     )
-    // #region debug-point loadDwgFile
-    console.log('API 响应状态:', resp.status)
-    console.log('响应数据类型:', typeof resp.data)
-    console.log('响应数据大小:', resp.data?.byteLength || resp.data?.length || 0)
-    // #endregion
     const file = files.value.find((f: any) => f.id === fileId) as any
     const fileName = file?.fileName || 'drawing.dwg'
     const blob = new Blob([resp.data])
     dwgFileForPreview.value = new File([blob], fileName, { type: 'application/octet-stream' })
-    // #region debug-point loadDwgFile
-    console.log('创建的 File 对象:', dwgFileForPreview.value)
-    console.log('文件名:', dwgFileForPreview.value?.name)
-    console.log('文件大小:', dwgFileForPreview.value?.size)
-    console.groupEnd()
-    // #endregion
   } catch (e: any) {
-    // #region debug-point loadDwgFile-error
-    console.error('[❌ DEBUG] loadDwgFile 失败:')
-    console.error('错误对象:', e)
-    console.error('错误消息:', e?.message)
-    console.error('错误响应:', e?.response?.status, e?.response?.data)
-    console.groupEnd()
-    // #endregion
     console.error('[TaskResultsView] DWG 文件下载失败:', e)
     dwgParseFailed.value = true
   }
@@ -799,27 +850,13 @@ async function loadDwgFile(fileId: string) {
 
 // 监听文件切换：选中 DWG 时自动下载原始文件
 watch(() => selectedFileId.value, (fileId) => {
-  // #region debug-point watch-selectedFileId
-  console.group('[🔍 DEBUG] selectedFileId 变化')
-  console.log('新的 fileId:', fileId)
-  console.log('当前 files 数组长度:', files.value.length)
-  console.log('dwgParseFailed 当前值:', dwgParseFailed.value)
-  console.log('dwgFileForPreview 当前值:', dwgFileForPreview.value)
-  // #endregion
   if (!fileId) {
-    console.log('⚠️ fileId 为空，清空 DWG 状态')
     dwgFileForPreview.value = null
     dwgParseFailed.value = false
-    console.groupEnd()
     return
   }
   const file = files.value.find((f: any) => f.id === fileId) as any
   const isDwg = file?.fileType === 'dwg' || file?.file_type === 'dwg'
-  // #region debug-point watch-selectedFileId
-  console.log('找到的文件:', file)
-  console.log('是否为 DWG 文件:', isDwg)
-  console.groupEnd()
-  // #endregion
   if (isDwg) {
     loadDwgFile(fileId)
   } else {
@@ -830,10 +867,72 @@ watch(() => selectedFileId.value, (fileId) => {
 
 // ===== Tab 配置 =====
 const tabs = [
-  { key: 'overview', label: '审查概览' },
-  { key: 'suggestions', label: '问题明细' },
-  { key: 'knowledge', label: '依据' },
+  { key: 'overview', label: '审查摘要', icon: 'DataAnalysis' },
+  { key: 'suggestions', label: '问题清单', icon: 'WarningFilled' },
+  { key: 'knowledge', label: '标准引用', icon: 'Reading' },
 ]
+
+// ===== Tab Badge 徽标系统 =====
+const tabBadges = computed(() => ({
+  overview: {
+    total: issueDetails.value.length,
+    errors: errorIssues.value.length,
+    warnings: warningIssues.value.length,
+    hasIssues: issueDetails.value.length > 0
+  },
+  suggestions: {
+    total: issueDetails.value.length,
+    errorCount: errorIssues.value.length,
+    warningCount: warningIssues.value.length
+  },
+  knowledge: {
+    count: standardRefIssues.value.length,
+    isEmpty: standardRefIssues.value.length === 0
+  }
+}))
+
+const getTabBadge = (key: string) => {
+  const badges = tabBadges.value
+
+  switch (key) {
+    case 'overview':
+      return badges.overview.hasIssues
+        ? { value: badges.overview.total, type: 'danger' as const }
+        : { value: '✓', type: 'success' as const }
+
+    case 'suggestions':
+      if (badges.suggestions.total === 0) return null
+      return {
+        value: `${badges.suggestions.errorCount}/${badges.suggestions.total}`,
+        type: 'danger' as const
+      }
+
+    case 'knowledge':
+      return badges.knowledge.isEmpty
+        ? null
+        : { value: badges.knowledge.count, type: 'success' as const }
+
+    default:
+      return null
+  }
+}
+
+// 从审查摘要跳转到问题明细
+const navigateToIssue = (issue: TaskDetail) => {
+  activeTab.value = 'suggestions'
+
+  nextTick(() => {
+    issueListRef.value?.scrollToIssue?.(issue.id)
+  })
+
+  if (issue.fileId) {
+    switchToFileContext(issue.fileId)
+  }
+
+  router.replace({
+    query: { ...route.query, tab: 'suggestions', issueId: issue.id }
+  })
+}
 
 // ===== 采纳预览 =====
 const selectedSuggestionPreview = ref<{
@@ -1396,6 +1495,13 @@ const handleBatchFalsePositiveFromIssueList = async (issueIds: string[], reason?
 const goBack = () => {
   router.push('/tasks/history')
 }
+
+// Tab 切换时同步 URL 参数（支持浏览器前进/后退）
+watch(activeTab, (newTab) => {
+  if (route.query.tab !== newTab) {
+    router.replace({ query: { ...route.query, tab: newTab } })
+  }
+})
 
 // ===== 生命周期 =====
 onMounted(async () => {
@@ -1979,6 +2085,31 @@ onUnmounted(() => {
   border-bottom-color: #3B82F6;
 }
 
+.tab-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.tab-icon {
+  font-size: 14px;
+}
+
+.tab-label {
+  white-space: nowrap;
+}
+
+.tab-badge {
+  margin-left: 2px;
+}
+
+.tab-badge :deep(.el-badge__content) {
+  font-size: 10px;
+  padding: 0 4px;
+  height: 16px;
+  line-height: 16px;
+}
+
 /* Tab内容 */
 .tab-content {
   flex: 1;
@@ -2013,6 +2144,67 @@ onUnmounted(() => {
   background: #FFFBEB;
   border-color: #FDE68A;
   border-left-color: #F59E0B;
+}
+
+.issue-card.clickable {
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.issue-card.clickable:hover {
+  transform: translateX(4px);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+.jump-icon {
+  font-size: 12px;
+  opacity: 0;
+  transition: opacity 0.2s;
+  margin-left: auto;
+}
+
+.issue-card.clickable:hover .jump-icon {
+  opacity: 1;
+}
+
+/* 查看全部按钮 */
+.view-all-wrapper {
+  margin-top: 12px;
+  text-align: center;
+}
+
+.view-all-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 20px;
+  font-size: 13px;
+  color: #3B82F6;
+  background: #EFF6FF;
+  border: 1px solid #BFDBFE;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.view-all-btn:hover {
+  background: #DBEAFE;
+  border-color: #93C5FD;
+  color: #2563EB;
+  transform: translateY(-1px);
+  box-shadow: 0 2px 8px rgba(59, 130, 246, 0.15);
+}
+
+.view-all-btn-warning {
+  background: #FFFBEB;
+  border-color: #FDE68A;
+  color: #D97706;
+}
+
+.view-all-btn-warning:hover {
+  background: #FEF3C7;
+  border-color: #FCD34D;
+  color: #B45309;
 }
 
 .issue-title {
@@ -2755,5 +2947,67 @@ onUnmounted(() => {
     font-size: 11px;
     padding: 3px 6px;
   }
+}
+
+/* ===== 空状态样式 ===== */
+.empty-state-pass,
+.empty-state-knowledge {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 60px 20px;
+  text-align: center;
+}
+
+.empty-state-pass h3,
+.empty-state-knowledge h4 {
+  margin: 16px 0 8px;
+  font-size: 18px;
+  color: #374151;
+}
+
+.empty-state-pass p,
+.empty-state-knowledge .empty-reason {
+  margin: 0 0 24px;
+  font-size: 14px;
+  color: #6B7280;
+}
+
+.empty-actions {
+  display: flex;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.empty-hint {
+  font-size: 12px;
+  color: #9CA3AF;
+  max-width: 400px;
+  line-height: 1.6;
+}
+
+.empty-state-knowledge .possible-reasons {
+  text-align: left;
+  background: #FFFBEB;
+  border: 1px solid #FDE68A;
+  border-radius: 8px;
+  padding: 16px 20px;
+  margin-bottom: 24px;
+  max-width: 440px;
+}
+
+.empty-state-knowledge .possible-reasons p {
+  margin: 0 0 8px;
+  color: #92400E;
+  font-size: 13px;
+}
+
+.empty-state-knowledge .possible-reasons ul {
+  margin: 0;
+  padding-left: 20px;
+  color: #78716C;
+  font-size: 13px;
+  line-height: 1.8;
 }
 </style>

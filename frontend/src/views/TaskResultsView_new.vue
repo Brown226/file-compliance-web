@@ -1,4 +1,4 @@
-﻿<template>
+<template>
   <div class="task-results-view">
     <!-- 步骤条头部（仅在新任务流程中显示；本组件专用于 /review/:id 历史记录入口，故默认隐藏） -->
     <!-- <div class="step-header">
@@ -158,7 +158,7 @@
           </div>
           <div class="header-right">
             <!-- 主操作：导出Word（最突出） -->
-            <el-tooltip content="导出 Word 报告" placement="bottom">
+            <el-tooltip v-if="!isSelfCheck" content="导出 Word 报告" placement="bottom">
               <el-button type="primary" @click="handleExportWord" class="export-word-btn">
                 <el-icon><Document /></el-icon>
                 导出Word
@@ -166,7 +166,7 @@
             </el-tooltip>
 
             <!-- 次操作：更多导出（次级） -->
-            <el-dropdown @command="handleExportCommand" trigger="click">
+            <el-dropdown v-if="!isSelfCheck" @command="handleExportCommand" trigger="click">
               <el-button class="more-export-btn">
                 更多导出
                 <el-icon class="el-icon--right"><ArrowDown /></el-icon>

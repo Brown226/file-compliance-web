@@ -134,7 +134,7 @@ const emit = defineEmits<{
 }>()
 
 // 视图变换参数
-const scale = ref(1)
+const scale = ref(0.05)  // 初始设为 5%，确保能看到图纸
 const translateX = ref(0)
 const translateY = ref(0)
 const viewportRef = ref<HTMLElement | null>(null)
@@ -160,12 +160,6 @@ const canvasTransform = computed(() => ({
 // ==================== SVG 生成 ====================
 
 async function generateSvg(file: File) {
-  // #region debug-point generateSvg-start
-  console.group('[🔍 DEBUG] generateSvg 开始')
-  console.log('输入文件:', file)
-  console.log('文件名:', file.name)
-  console.log('文件大小:', file.size, 'bytes')
-  // #endregion
   loading.value = true
   error.value = false
   parseFailed.value = false
@@ -180,18 +174,7 @@ async function generateSvg(file: File) {
   }, FALLBACK_TIMEOUT_MS)
 
   try {
-    // #region debug-point generateSvg-dwgToSvg
-    console.log('[🔍 DEBUG] 调用 dwgToSvg()...')
-    const startTime = performance.now()
-    // #endregion
     const result: DwgSvgResult = await dwgToSvg(file)
-    const endTime = performance.now()
-    // #region debug-point generateSvg-dwgToSvg-result
-    console.log(`[✅ DEBUG] dwgToSvg 成功! 耗时: ${(endTime - startTime).toFixed(0)}ms`)
-    console.log('返回的 result 对象:', result)
-    console.log('result.svg 长度:', result?.svg?.length)
-    console.log('result.handleMap:', result?.handleMap)
-    // #endregion
 
     // 安全过滤 SVG（保留 data-handle 和 data-entity-type 属性）
     const rawSvg = result.svg
@@ -209,18 +192,12 @@ async function generateSvg(file: File) {
       highlightEntity(props.locateTarget.cadHandleId, props.locateTarget.description)
     }
 
-    // 初始适应窗口
+    // 初始适应窗口 - 添加重试机制确保 DOM 更新完成
     await nextTick()
-    setTimeout(fitToWindow, 100)
+    setTimeout(() => {
+      fitToWindowWithRetry()
+    }, 150)
   } catch (e: any) {
-    // #region debug-point generateSvg-error
-    console.error('[❌ DEBUG] generateSvg/dwgToSvg 失败:')
-    console.error('错误对象:', e)
-    console.error('错误消息:', e?.message)
-    console.error('错误堆栈:', e?.stack)
-    console.error('错误名称:', e?.name)
-    console.groupEnd()
-    // #endregion
     console.error('[DwgPreviewPanel] SVG 生成失败:', e)
     error.value = true
     const msg = e?.message || ''
@@ -231,13 +208,6 @@ async function generateSvg(file: File) {
     }
     parseFailed.value = true
   } finally {
-    // #region debug-point generateSvg-finally
-    console.log('[🔍 DEBUG] generateSvg 执行完毕')
-    console.log('loading:', loading.value)
-    console.log('error:', error.value)
-    console.log('svgContent 长度:', svgContent.value.length)
-    console.groupEnd()
-    // #endregion
     if (fallbackTimeoutId) {
       clearTimeout(fallbackTimeoutId)
       fallbackTimeoutId = null
@@ -248,24 +218,27 @@ async function generateSvg(file: File) {
 
 // 监听文件变化
 watch(() => props.file, (newFile) => {
-  // #region debug-point DwgPreviewPanel-watch-file
-  console.group('[🔍 DEBUG] DwgPreviewPanel - file prop 变化')
-  console.log('新的 file 值:', newFile)
-  console.log('文件名:', newFile?.name)
-  console.log('文件大小:', newFile?.size)
-  console.log('文件类型:', newFile?.type)
-  // #endregion
+  console.log('[DwgPreview] 监听到文件变化:', newFile?.name || 'null')
   if (newFile) {
-    console.log('✅ 文件存在，开始调用 generateSvg')
-    console.groupEnd()
+    // 重置视图参数
+    scale.value = 0.05
+    translateX.value = 0
+    translateY.value = 0
+    console.log('[DwgPreview] 重置视图参数:', { scale: scale.value, tx: translateX.value, ty: translateY.value })
     generateSvg(newFile)
   } else {
-    console.warn('⚠️ 文件为空，清空 SVG 内容')
-    console.groupEnd()
     svgContent.value = ''
     handleMap.value = {}
   }
 }, { immediate: true })
+
+// 确保 SVG 内容更新后自动适应窗口
+watch(svgContent, (newContent) => {
+  console.log('[DwgPreview] svgContent 变化，长度:', newContent?.length || 0)
+  if (newContent && newContent.length > 0) {
+    setTimeout(fitToWindow, 150)
+  }
+})
 
 /** 用户主动降级：点击"查看文本内容"时通知父组件切换到文本预览 */
 function fallbackToText() {
@@ -280,8 +253,8 @@ function fallbackToText() {
 }
 
 // ==================== 缩放和平移 ====================
-
-const MIN_SCALE = 0.05
+// 缩放参数
+const MIN_SCALE = 0.001  // 允许更小的缩放，适应大图纸
 const MAX_SCALE = 20
 const ZOOM_FACTOR = 1.15
 
@@ -300,42 +273,90 @@ function resetView() {
 }
 
 function fitToWindow() {
-  if (!viewportRef.value || !canvasRef.value) return
+  console.log('[DwgPreview] fitToWindow 开始执行')
+  
+  if (!viewportRef.value || !canvasRef.value) {
+    console.warn('[DwgPreview] fitToWindow: 容器未准备好')
+    return
+  }
 
   const vpRect = viewportRef.value.getBoundingClientRect()
+  console.log('[DwgPreview] fitToWindow: 视口尺寸', vpRect.width, 'x', vpRect.height)
+
   const svgEl = canvasRef.value.querySelector('svg')
   if (!svgEl) {
     console.warn('[DwgPreview] fitToWindow: SVG 元素未找到')
     return
   }
 
-  // 获取 SVG 视图框（兼容 viewBox/viewBox 大小写）
+  // 获取 SVG 视图框
   const vb = svgEl.getAttribute('viewBox') || svgEl.getAttribute('viewbox')
-  let svgW: number, svgH: number
+  console.log('[DwgPreview] fitToWindow: viewBox =', vb)
 
-  if (vb) {
-    const parts = vb.split(/[\s,]+/).map(Number)
-    svgW = Math.abs(parts[2]) || 800
-    svgH = Math.abs(parts[3]) || 600
-  } else {
-    svgW = parseFloat(svgEl.getAttribute('width') || '800')
-    svgH = parseFloat(svgEl.getAttribute('height') || '600')
+  if (!vb) {
+    console.warn('[DwgPreview] fitToWindow: 无 viewBox')
+    return
   }
 
-  console.log('[DwgPreview] fitToWindow:', { vb, svgW, svgH, vpW: vpRect.width, vpH: vpRect.height })
+  const parts = vb.split(/[\s,]+/).map(Number)
+  const vbX = parts[0] || 0
+  const vbY = parts[1] || 0
+  const vbW = Math.abs(parts[2]) || 800
+  const vbH = Math.abs(parts[3]) || 600
 
-  const vpW = vpRect.width - 20  // 留边距
+  console.log('[DwgPreview] fitToWindow: 图纸尺寸', vbW, 'x', vbH)
+
+  // 留边距
+  const vpW = vpRect.width - 20
   const vpH = vpRect.height - 20
-  const scaleX = vpW / svgW
-  const scaleY = vpH / svgH
-  // 最小缩放 0.01（防止内容太大导致缩放值过小不可见），最大 200%
-  scale.value = Math.min(scaleX, scaleY, 2) || 0.1
 
-  // 居中
-  translateX.value = (vpRect.width - svgW * scale.value) / 2
-  translateY.value = (vpRect.height - svgH * scale.value) / 2
+  // 计算缩放比例（保持宽高比，适应视口）
+  const scaleX = vpW / vbW
+  const scaleY = vpH / vbH
+  const newScale = Math.min(scaleX, scaleY)
 
-  console.log('[DwgPreview] fitToWindow 结果:', { scale: scale.value, tx: translateX.value, ty: translateY.value })
+  console.log('[DwgPreview] fitToWindow: 计算比例', { scaleX: scaleX.toFixed(6), scaleY: scaleY.toFixed(6), final: newScale.toFixed(6) })
+
+  // 如果缩放比例太小，设置一个最小值确保能看到图纸
+  const originalScale = Math.min(scaleX, scaleY)
+  const isForcedScale = originalScale < 0.05
+  const finalScale = Math.max(originalScale, 0.05) // 最小 5%
+  scale.value = finalScale
+
+  // 居中策略：
+  // - 如果缩放是强制的（图纸太大），优先显示左上角区域
+  // - 如果缩放是自然计算的，正常居中
+  if (isForcedScale) {
+    // 强制缩放时，让图纸左上角区域可见
+    translateX.value = -vbX * scale.value
+    translateY.value = -vbY * scale.value
+  } else {
+    // 正常居中
+    translateX.value = (vpRect.width - vbW * scale.value) / 2 - vbX * scale.value
+    translateY.value = (vpRect.height - vbH * scale.value) / 2 - vbY * scale.value
+  }
+
+  console.log('[DwgPreview] fitToWindow: 最终结果', { scale: scale.value.toFixed(6), tx: translateX.value.toFixed(0), ty: translateY.value.toFixed(0), isForcedScale })
+}
+
+// 带重试机制的 fitToWindow，确保 DOM 更新完成后执行
+function fitToWindowWithRetry(retries = 3, delay = 200) {
+  console.log('[DwgPreview] fitToWindowWithRetry 开始，剩余重试:', retries)
+  
+  const svgEl = canvasRef.value?.querySelector('svg')
+  
+  if (svgEl) {
+    fitToWindow()
+    return
+  }
+  
+  if (retries > 0) {
+    setTimeout(() => {
+      fitToWindowWithRetry(retries - 1, delay * 1.5)
+    }, delay)
+  } else {
+    console.warn('[DwgPreview] fitToWindowWithRetry: 重试耗尽，SVG 仍未找到')
+  }
 }
 
 function onWheel(e: WheelEvent) {
@@ -493,6 +514,7 @@ onUnmounted(() => {
   background-color: var(--corp-bg-panel, #f8fafc);
   overflow: hidden;
   min-width: 0;
+  min-height: 0; /* 关键修复：允许在 flex 容器中正确收缩 */
   position: relative;
 }
 
@@ -516,20 +538,20 @@ onUnmounted(() => {
 .preview-title {
   font-weight: 600;
   font-size: 13px;
-  color: var(--corp-text-primary, #1f2937);
+  color: #f1f5f9; /* 浅色文字 - 适配深色背景 */
 }
 
 .preview-filename {
   font-size: 12px;
-  color: var(--corp-text-secondary, #6b7280);
-  background: var(--color-gray-50, #f9fafb);
+  color: #94a3b8; /* 灰色文字 - 适配深色背景 */
+  background: rgba(255, 255, 255, 0.1); /* 半透明背景 */
   padding: 3px 10px;
   border-radius: 12px;
   max-width: 200px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  border: 1px solid var(--corp-border-light, #e5e7eb);
+  border: 1px solid rgba(255, 255, 255, 0.2);
 }
 
 .toolbar-right {
@@ -586,15 +608,9 @@ onUnmounted(() => {
   flex: 1;
   overflow: hidden;
   position: relative;
-  background: #ffffff;
+  background: #1e293b; /* 深色背景 - 类似 AutoCAD 经典界面 */
   cursor: grab;
-  background-image:
-    linear-gradient(45deg, #f0f0f0 25%, transparent 25%),
-    linear-gradient(-45deg, #f0f0f0 25%, transparent 25%),
-    linear-gradient(45deg, transparent 75%, #f0f0f0 75%),
-    linear-gradient(-45deg, transparent 75%, #f0f0f0 75%);
-  background-size: 20px 20px;
-  background-position: 0 0, 0 10px, 10px -10px, -10px 0px;
+  min-height: 400px; /* 关键修复：防止高度塌陷为 0 */
 }
 
 .svg-viewport:active {
@@ -607,8 +623,10 @@ onUnmounted(() => {
   left: 0;
 }
 
+/* SVG 保持原始尺寸，通过 transform 进行缩放 - 防止模糊 */
 .svg-canvas :deep(svg) {
   display: block;
+  overflow: visible;
 }
 
 /* ===== 高亮样式 ===== */

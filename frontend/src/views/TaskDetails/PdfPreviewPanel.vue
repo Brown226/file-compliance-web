@@ -30,7 +30,6 @@ const pdfEmbedRef = ref<any>(null)
 const pdfSource = ref<any>(null)
 const totalPages = ref(0)
 const currentPage = ref(1)
-const scale = ref(1)
 const containerWidth = ref(800)
 
 const HIGHLIGHT_CLASS = 'pdf-highlight-yellow'
@@ -43,25 +42,103 @@ const goPage = (p: number) => {
 const MIN_SCALE = 0.1
 const MAX_SCALE = 10
 
+let renderDebounceTimer: number | null = null
+
+// 当前显示的缩放（CSS transform）
+const displayScale = ref(1)
+// 实际渲染的缩放（传递给 vue-pdf-embed）
+const renderScale = ref(1)
+
+// 拖拽平移相关
+let isDragging = false
+let startX = 0
+let startY = 0
+let startScrollLeft = 0
+let startScrollTop = 0
+
 const zoomIn = () => {
-  scale.value = Math.min(scale.value + 0.25, MAX_SCALE)
+  updateScale(renderScale.value + 0.25)
 }
 const zoomOut = () => {
-  scale.value = Math.max(scale.value - 0.25, MIN_SCALE)
+  updateScale(renderScale.value - 0.25)
 }
 const resetZoom = () => {
-  scale.value = 1
+  updateScale(1)
 }
 
-// 缩放后重新计算 PDF 渲染宽度
-const pdfRenderWidth = computed(() => Math.round(containerWidth.value * scale.value))
+// 更新缩放（分离显示和渲染）
+function updateScale(newScale: number) {
+  newScale = Math.max(MIN_SCALE, Math.min(MAX_SCALE, newScale))
+  
+  displayScale.value = newScale
+  
+  if (renderDebounceTimer !== null) {
+    clearTimeout(renderDebounceTimer)
+  }
+  
+  renderDebounceTimer = window.setTimeout(() => {
+    renderScale.value = displayScale.value
+    renderDebounceTimer = null
+  }, 500)
+}
 
-// 鼠标滚轮缩放（Ctrl/Cmd + 滚轮）
+// 缩放后重新计算 PDF 渲染宽度（使用实际渲染的缩放）
+const pdfRenderWidth = computed(() => Math.round(containerWidth.value * renderScale.value))
+
+// 鼠标滚轮缩放（直接滚动即可，带节流优化）
 function onWheel(e: WheelEvent) {
-  if (!e.ctrlKey && !e.metaKey) return
   e.preventDefault()
+  
   const factor = e.deltaY < 0 ? 1.15 : 1 / 1.15
-  scale.value = Math.min(MAX_SCALE, Math.max(MIN_SCALE, +(scale.value * factor).toFixed(2)))
+  const newScale = Math.max(MIN_SCALE, Math.min(MAX_SCALE, +((displayScale.value) * factor).toFixed(2)))
+  
+  updateScale(newScale)
+}
+
+// 鼠标拖拽平移
+function onMouseDown(e: MouseEvent) {
+  if (!containerRef.value) return
+  
+  const target = e.target as HTMLElement
+  if (target.tagName === 'CANVAS' || target.closest('.textLayer')) {
+    e.preventDefault()
+  }
+  
+  isDragging = true
+  startX = e.clientX
+  startY = e.clientY
+  startScrollLeft = containerRef.value.scrollLeft
+  startScrollTop = containerRef.value.scrollTop
+  
+  containerRef.value.style.cursor = 'grabbing'
+  containerRef.value.style.userSelect = 'none'
+  
+  document.addEventListener('mousemove', onMouseMove, { passive: true })
+  document.addEventListener('mouseup', onMouseUp)
+  document.addEventListener('mouseleave', onMouseUp)
+}
+
+function onMouseMove(e: MouseEvent) {
+  if (!isDragging || !containerRef.value) return
+  
+  const deltaX = e.clientX - startX
+  const deltaY = e.clientY - startY
+  
+  containerRef.value.scrollLeft = startScrollLeft - deltaX
+  containerRef.value.scrollTop = startScrollTop - deltaY
+}
+
+function onMouseUp() {
+  isDragging = false
+  
+  if (containerRef.value) {
+    containerRef.value.style.cursor = 'grab'
+    containerRef.value.style.userSelect = ''
+  }
+  
+  document.removeEventListener('mousemove', onMouseMove)
+  document.removeEventListener('mouseup', onMouseUp)
+  document.removeEventListener('mouseleave', onMouseUp)
 }
 
 const updateContainerWidth = () => {
@@ -365,25 +442,27 @@ defineExpose({ clearHighlights, loadPdf })
     </div>
 
     <template v-else-if="pdfSource">
-      <div ref="containerRef" class="pdf-container" @wheel.prevent="onWheel">
-        <VuePdfEmbed
-          ref="pdfEmbedRef"
-          :source="pdfSource"
-          text-layer
-          :width="pdfRenderWidth"
-          @rendered="onPdfRendered"
-          @loading-failed="onLoadingFailed"
-        />
+      <div ref="containerRef" class="pdf-container" @wheel.prevent="onWheel" @mousedown="onMouseDown">
+        <div class="pdf-zoom-wrapper" :style="{ transform: `scale(${displayScale})`, transformOrigin: 'top left' }">
+          <VuePdfEmbed
+            ref="pdfEmbedRef"
+            :source="pdfSource"
+            text-layer
+            :width="pdfRenderWidth"
+            @rendered="onPdfRendered"
+            @loading-failed="onLoadingFailed"
+          />
+        </div>
       </div>
 
       <div class="pdf-toolbar" v-if="totalPages > 0">
         <span class="page-info">第 {{ currentPage }} / {{ totalPages }} 页</span>
-        <div class="zoom-hint">Ctrl + 滚轮缩放（10%~1000%）</div>
+        <div class="zoom-hint">滚轮缩放 · 拖拽平移（10%~1000%）</div>
         <div class="zoom-controls">
           <el-button size="small" @click="zoomOut">-</el-button>
-          <el-button size="small" link @click="resetZoom" class="zoom-percent">{{ Math.round(scale * 100) }}%</el-button>
+          <el-button size="small" link @click="resetZoom" class="zoom-percent">{{ Math.round(displayScale * 100) }}%</el-button>
           <el-button size="small" @click="zoomIn">+</el-button>
-          <el-button size="small" @click="resetZoom" :disabled="scale === 1">重置</el-button>
+          <el-button size="small" @click="resetZoom" :disabled="displayScale === 1">重置</el-button>
         </div>
       </div>
     </template>
@@ -435,6 +514,20 @@ defineExpose({ clearHighlights, loadPdf })
   overflow-y: auto;
   padding: var(--space-8) var(--space-6);
   background: #525659;
+  cursor: grab;
+  user-select: none;
+  will-change: scroll-position;
+  contain: layout style paint;
+  backface-visibility: hidden;
+  transform: translateZ(0);
+}
+
+.pdf-zoom-wrapper {
+  transform-origin: top left;
+  will-change: transform;
+  backface-visibility: hidden;
+  transform: translateZ(0);
+  transition: transform 0.05s ease-out;
 }
 
 .pdf-container :deep(.vue-pdf-embed) {
