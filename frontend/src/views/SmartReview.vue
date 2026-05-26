@@ -139,7 +139,7 @@
                   v-for="option in objectiveOptions"
                   :key="option.value"
                   class="selectable-card"
-                  :class="{ 'selectable-card--active': reviewPlanDraft.objective === option.value }"
+                  :class="{ 'selectable-card--active': (reviewPlanDraft?.objective ?? '') === option.value }"
                   @click="reviewPlanDraft.objective = option.value as any"
                   tabindex="0"
                   role="button"
@@ -152,7 +152,7 @@
                     <div class="selectable-card__label">{{ option.label }}</div>
                     <div class="selectable-card__desc">{{ option.desc }}</div>
                   </div>
-                  <div class="selectable-card__check" v-if="reviewPlanDraft.objective === option.value">
+                  <div class="selectable-card__check" v-if="(reviewPlanDraft?.objective ?? '') === option.value">
                     <el-icon><Check /></el-icon>
                   </div>
                 </div>
@@ -210,8 +210,8 @@
               <div class="config-section-label">
                 <span class="section-label-num">3</span>
                 {{ entryModule === 'RULE_ONLY' ? '检查项目' : '审查依据' }}
-                <el-tag v-if="reviewPlanDraft.evidence.sources.length > 0 || enabledRulePrefixes.length > 0" size="small" type="info" style="margin-left: auto">
-                  {{ entryModule === 'RULE_ONLY' ? enabledRulePrefixes.length + '项' : reviewPlanDraft.evidence.sources.length + '个来源' }}
+                <el-tag v-if="(reviewPlanDraft?.evidence?.sources?.length ?? 0) > 0 || enabledRulePrefixes.length > 0" size="small" type="info" style="margin-left: auto">
+                  {{ entryModule === 'RULE_ONLY' ? enabledRulePrefixes.length + '项' : (reviewPlanDraft?.evidence?.sources?.length ?? 0) + '个来源' }}
                 </el-tag>
               </div>
               <!-- RULE_ONLY: 规则前缀开关面板 -->
@@ -243,36 +243,36 @@
               <!-- 其他模式：证据源卡片 -->
               <template v-else-if="entryModule !== 'DOC_REVIEW'">
                 <div class="evidence-cards">
-                  <div v-for="option in availableEvidenceSources" :key="option.value" class="selectable-card selectable-card--compact" :class="{ 'selectable-card--active': reviewPlanDraft.evidence.sources.includes(option.value), 'selectable-card--disabled': isEvidenceLocked(option.value) }" @click="handleEvidenceCardClick(option.value)" tabindex="0" role="button" @keydown.enter="handleEvidenceCardClick(option.value)">
+                  <div v-for="option in availableEvidenceSources" :key="option.value" class="selectable-card selectable-card--compact" :class="{ 'selectable-card--active': (reviewPlanDraft?.evidence?.sources ?? []).includes(option.value), 'selectable-card--disabled': isEvidenceLocked(option.value) }" @click="handleEvidenceCardClick(option.value)" tabindex="0" role="button" @keydown.enter="handleEvidenceCardClick(option.value)">
                     <div class="selectable-card__icon">
                       <el-icon :size="14"><component :is="evidenceIconMap[option.value]" /></el-icon>
                     </div>
                     <span class="selectable-card__label">{{ option.label }}</span>
-                    <div class="selectable-card__check" v-if="reviewPlanDraft.evidence.sources.includes(option.value)">
+                    <div class="selectable-card__check" v-if="(reviewPlanDraft?.evidence?.sources ?? []).includes(option.value)">
                       <el-icon><Check /></el-icon>
                     </div>
                   </div>
                 </div>
-                <div v-if="reviewPlanDraft.evidence.sources.includes('STANDARD')" class="selected-items-display">
+                <div v-if="(reviewPlanDraft?.evidence?.sources ?? []).includes('STANDARD')" class="selected-items-display">
                   <div class="selected-items-header">
-                    <span class="selected-items-count">已选 {{ reviewPlanDraft.evidence.knowledgeCategoryIds.length }} 个知识库</span>
+                    <span class="selected-items-count">已选 {{ (reviewPlanDraft?.evidence?.knowledgeCategoryIds ?? []).length }} 个知识库</span>
                     <el-button type="primary" link size="small" @click="openKnowledgeDialog">管理</el-button>
                   </div>
-                  <div v-if="reviewPlanDraft.evidence.knowledgeCategoryIds.length > 0" class="selected-items-tags">
-                    <el-tag v-for="id in reviewPlanDraft.evidence.knowledgeCategoryIds" :key="id" closable type="info" size="small" @close="removeKnowledgeCategory(id)">{{ getKnowledgeCategoryName(id) }}</el-tag>
+                  <div v-if="(reviewPlanDraft?.evidence?.knowledgeCategoryIds ?? []).length > 0" class="selected-items-tags">
+                    <el-tag v-for="id in (reviewPlanDraft?.evidence?.knowledgeCategoryIds ?? [])" :key="id" closable type="info" size="small" @close="removeKnowledgeCategory(id)">{{ getKnowledgeCategoryName(id) }}</el-tag>
                   </div>
                 </div>
-                <div v-if="reviewPlanDraft.evidence.sources.includes('REVIEW_SPECIFICATION')" class="selected-items-display">
+                <div v-if="(reviewPlanDraft?.evidence?.sources ?? []).includes('REVIEW_SPECIFICATION')" class="selected-items-display">
                   <div class="selected-items-header">
-                    <span class="selected-items-count">{{ reviewPlanDraft.evidence.reviewSpecificationId ? '已选择' : '未选择' }}语义规范库</span>
+                    <span class="selected-items-count">{{ reviewPlanDraft?.evidence?.reviewSpecificationId ? '已选择' : '未选择' }}语义规范库</span>
                     <el-button type="primary" link size="small" @click="openReviewSpecificationDialog">选择</el-button>
                   </div>
-                  <div v-if="reviewPlanDraft.evidence.reviewSpecificationId" class="selected-item-single">
-                    <el-tag closable type="info" size="small" @close="reviewPlanDraft.evidence.reviewSpecificationId = null">{{ getReviewSpecificationName(reviewPlanDraft.evidence.reviewSpecificationId) }}</el-tag>
+                  <div v-if="reviewPlanDraft?.evidence?.reviewSpecificationId" class="selected-item-single">
+                    <el-tag closable type="info" size="small" @close="reviewPlanDraft.evidence.reviewSpecificationId = null">{{ getReviewSpecificationName(reviewPlanDraft?.evidence?.reviewSpecificationId ?? '') }}</el-tag>
                   </div>
                 </div>
               </template>
-              <div v-if="entryModule === 'DOC_REVIEW' && reviewPlanDraft.objective === 'COMPARE'" class="config-reason config-reason--warning">
+              <div v-if="entryModule === 'DOC_REVIEW' && reviewPlanDraft?.objective === 'COMPARE'" class="config-reason config-reason--warning">
                 <el-icon><WarningFilled /></el-icon>
                 参照比对目标强制使用参考文件，未上传参考文件将无法提交。
               </div>
@@ -285,12 +285,12 @@
                 执行方式
               </div>
               <div class="execution-options">
-                <div class="selectable-card selectable-card--inline" :class="{ 'selectable-card--active': reviewPlanDraft.execution.profile === 'HYBRID' }" @click="reviewPlanDraft.execution.profile = 'HYBRID'" tabindex="0" role="button" @keydown.enter="reviewPlanDraft.execution.profile = 'HYBRID'">
+                <div class="selectable-card selectable-card--inline" :class="{ 'selectable-card--active': (reviewPlanDraft?.execution?.profile ?? '') === 'HYBRID' }" @click="reviewPlanDraft.execution.profile = 'HYBRID'" tabindex="0" role="button" @keydown.enter="reviewPlanDraft.execution.profile = 'HYBRID'">
                   <el-icon :size="14"><MagicStick /></el-icon>
                   <span>标准执行</span>
                   <span class="execution-option__badge">AI + 规则</span>
                 </div>
-                <div class="selectable-card selectable-card--inline" :class="{ 'selectable-card--active': reviewPlanDraft.execution.profile === 'RULE_ONLY' }" @click="reviewPlanDraft.execution.profile = 'RULE_ONLY'" tabindex="0" role="button" @keydown.enter="reviewPlanDraft.execution.profile = 'RULE_ONLY'">
+                <div class="selectable-card selectable-card--inline" :class="{ 'selectable-card--active': (reviewPlanDraft?.execution?.profile ?? '') === 'RULE_ONLY' }" @click="reviewPlanDraft.execution.profile = 'RULE_ONLY'" tabindex="0" role="button" @keydown.enter="reviewPlanDraft.execution.profile = 'RULE_ONLY'">
                   <el-icon :size="14"><Check /></el-icon>
                   <span>仅规则执行</span>
                   <span class="execution-option__badge">快速</span>
@@ -334,7 +334,7 @@
   <SmartReviewKnowledgeDialog
     v-model:visible="knowledgeDialogVisible"
     :knowledge-tree-data="knowledgeTreeData"
-    :current-checked-knowledge-ids="reviewPlanDraft.evidence.knowledgeCategoryIds"
+    :current-checked-knowledge-ids="reviewPlanDraft?.evidence?.knowledgeCategoryIds ?? []"
     @confirm="handleKnowledgeConfirm"
   />
 
@@ -391,9 +391,25 @@ import {
 import type { EntryModule } from './SmartReview/types/smart-review'
 
 const state = useSmartReviewState()
+// 将 state 属性解构暴露到模板作用域（模板中直接使用 currentStep 等裸变量名）
+const {
+  currentStep, isFromHistory, fileList, refFileList, dwgParsedDataMap,
+  form, entryModule, reviewPlanDraft, enabledRulePrefixes, rulePrefixGroups,
+  ruleRegistryLoaded, loading, loadingMessage, analysisProgress, backgroundStatus,
+  submitting, visibleAnalysisProgress, showEvidenceSection, showObjectiveSelector,
+  showExecutionProfileSection,
+  selectedReviewPoints, customPurposes, allSuggestedReviewPoints, allSuggestedCorePurposes,
+} = state
 const preAnalysis = usePreAnalysis(state)
 const plan = useReviewPlan(state)
 const submission = useTaskSubmission(state, plan, preAnalysis)
+
+// 将 composable 中的属性解构暴露到模板作用域（模板中直接使用裸变量名）
+const { aiSuggestedTitle, preAnalysisData, preAnalyzed, preAnalyzing, isUploadingForPreAnalysis } = preAnalysis
+const {
+  availableEvidenceSources, isEvidenceLocked, handleEvidenceCardClick,
+  togglePrefix, toggleGroup, canSubmit,
+} = plan
 
 const { objectiveIconMap } = { objectiveIconMap: OBJECTIVE_ICON_MAP }
 const { evidenceIconMap } = { evidenceIconMap: EVIDENCE_ICON_MAP }
@@ -434,12 +450,12 @@ const startAnalysis = async () => {
   if (!plan.canSubmit.value) {
     const reasons: string[] = []
     if (!state.form.title.trim()) reasons.push('请输入任务标题')
-    if (state.reviewPlanDraft.objective === 'COMPARE' && state.refFileList.value.length === 0)
+    if ((state.reviewPlanDraft?.objective ?? '') === 'COMPARE' && state.refFileList.value.length === 0)
       reasons.push('以文审文/参照比对模式需要上传参照文件（在参考文件区上传）')
-    if (state.reviewPlanDraft.evidence.sources.includes('REVIEW_SPECIFICATION') && !state.reviewPlanDraft.evidence.reviewSpecificationId)
+    if ((state.reviewPlanDraft?.evidence?.sources ?? []).includes('REVIEW_SPECIFICATION') && !state.reviewPlanDraft?.evidence?.reviewSpecificationId)
       reasons.push('语义规范库模式需要选择具体的语义规范库')
-    const allowEmptySources = ['PROOFREAD'].includes(state.reviewPlanDraft.objective) || ['CONSISTENCY', 'RULE_ONLY', 'MULTIMODAL'].includes(state.entryModule.value as EntryModule)
-    if (!allowEmptySources && state.reviewPlanDraft.evidence.sources.length === 0)
+    const allowEmptySources = ['PROOFREAD'].includes(state.reviewPlanDraft?.objective ?? '') || ['CONSISTENCY', 'RULE_ONLY', 'MULTIMODAL'].includes(state.entryModule.value as EntryModule)
+    if (!allowEmptySources && (state.reviewPlanDraft?.evidence?.sources ?? []).length === 0)
       reasons.push('请至少选择一项审查依据（标准库/知识库/语义规范库/参照文件）')
     ElMessage.warning(reasons.length > 0 ? reasons[0] : '请完善审查配置后再开始分析')
     return
@@ -469,17 +485,23 @@ const openReviewSpecificationDialog = async () => {
 }
 
 const handleKnowledgeConfirm = (selectedIds: string[]) => {
-  state.reviewPlanDraft.evidence.knowledgeCategoryIds = selectedIds
+  if (state.reviewPlanDraft?.evidence) {
+    state.reviewPlanDraft.evidence.knowledgeCategoryIds = selectedIds
+  }
 }
 
 const handleReviewSpecificationConfirm = (specificationId: string | null) => {
-  state.reviewPlanDraft.evidence.reviewSpecificationId = specificationId
+  if (state.reviewPlanDraft?.evidence) {
+    state.reviewPlanDraft.evidence.reviewSpecificationId = specificationId
+  }
 }
 
 const removeKnowledgeCategory = (id: string) => {
-  const index = state.reviewPlanDraft.evidence.knowledgeCategoryIds.indexOf(id)
-  if (index > -1) {
-    state.reviewPlanDraft.evidence.knowledgeCategoryIds.splice(index, 1)
+  if (state.reviewPlanDraft?.evidence?.knowledgeCategoryIds) {
+    const index = state.reviewPlanDraft.evidence.knowledgeCategoryIds.indexOf(id)
+    if (index > -1) {
+      state.reviewPlanDraft.evidence.knowledgeCategoryIds.splice(index, 1)
+    }
   }
 }
 
@@ -499,6 +521,8 @@ onMounted(async () => {
     nextTick(() => {
       if (state.currentStep.value >= 1 && state.fileList.value.length === 0) {
         ElMessage.warning('已恢复之前的配置草稿，但文件需要重新上传')
+        state.currentStep.value = 0
+        state.clearSavedState()
       }
     })
   }
@@ -614,10 +638,9 @@ onMounted(async () => {
 
 /* 主容器 */
 .smart-review {
-  width: 600px;
-  height: 1000px;
+  max-width: 860px;
   margin: 0 auto;
-  padding: 16px 32px;
+  padding: 24px 32px 80px;
   position: relative;
 }
 

@@ -117,6 +117,8 @@ self.onmessage = async (e: MessageEvent<WorkerMessage>) => {
     }
 
     // Step 4: 构建 handleMap 并注入 data-handle 属性
+    // 注意：假设 dwg_to_svg 按实体顺序生成 <g> 元素，即 entities[i] ↔ SVG 中第 i 个 <g>
+    // 如果 SVG 中有额外的包裹层 <g>（如图层编组），可能导致错位
     const handleMap: Record<string, string> = {}
     const entities = db.entities as any[] | undefined
     if (entities) {
@@ -127,24 +129,43 @@ self.onmessage = async (e: MessageEvent<WorkerMessage>) => {
       }
     }
 
+    /** 转义 HTML 属性值中的特殊字符 */
+    function escapeAttr(val: string): string {
+      return val.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    }
+
     let enrichedSvg = svg
     if (entities && entities.length > 0) {
+      // 匹配所有 <g 后跟空格或 > 的位置（即 <g> / <g / <g\n 等实体容器标签）
+      // 注意：假设 dwg_to_svg 按 entities 顺序输出实体 <g>，不存在额外包裹层
       const positions: number[] = []
-      const re = /<g\s/g
+      const re = /<g[\s>]/g
       let match: RegExpExecArray | null
       while ((match = re.exec(svg)) !== null) {
         positions.push(match.index)
       }
 
-      for (let i = Math.min(positions.length, entities.length) - 1; i >= 0; i--) {
+      // 实体组数不匹配时记录警告（不影响继续执行）
+      if (positions.length !== entities.length) {
+        console.warn(
+          `[dwg-worker] SVG <g> 元素数 (${positions.length}) 与实体数 (${entities.length}) 不一致，`,
+          'handle 注入可能错位。文件:', fileName,
+        )
+      }
+
+      // 反向遍历注入，避免前面的注入影响后面的位置索引
+      const count = Math.min(positions.length, entities.length)
+      for (let i = count - 1; i >= 0; i--) {
         const entity = entities[i]
-        if (entity.handle) {
-          const pos = positions[i]
-          enrichedSvg =
-            enrichedSvg.substring(0, pos + 2) +
-            ` data-handle="${entity.handle}" data-entity-type="${entity.type || ''}" id="dwg-entity-${i}" ` +
-            enrichedSvg.substring(pos + 2)
-        }
+        if (!entity.handle) continue
+        // <g[\s>] 匹配 3 个字符 (<, g, \s 或 >)，insertAt = pos + 2 正好指向 g 之后
+        const insertAt = positions[i] + 2
+        const escapedHandle = escapeAttr(entity.handle)
+        const escapedType = escapeAttr(entity.type || '')
+        enrichedSvg =
+          enrichedSvg.substring(0, insertAt) +
+          ` data-handle="${escapedHandle}" data-entity-type="${escapedType}" id="dwg-entity-${i}"` +
+          enrichedSvg.substring(insertAt)
       }
     }
 

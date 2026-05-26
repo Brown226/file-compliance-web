@@ -460,6 +460,8 @@
               :loading="loading"
               :selected-file-id="selectedFileId"
               :is-docx-selected="isDocxFileSelected"
+              :review-mode="(task as any)?.reviewMode"
+              :enabled-prefixes="(task as any)?.reviewPlan?.evidence?.enabledPrefixes"
               @update:selected-file-id="(id) => { if (id) switchToFileContext(id) }"
               @select-file-by-id="switchToFileContext"
               @copy-handle-id="handleCopyCadHandle"
@@ -510,9 +512,6 @@
               </div>
 
               <div class="empty-actions">
-                <el-button type="warning" @click="$router.push('/admin/knowledge')">
-                  ⚙️ 配置知识库
-                </el-button>
                 <el-button @click="activeTab = 'overview'">
                   ← 返回审查摘要
                 </el-button>

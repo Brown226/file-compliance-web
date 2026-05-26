@@ -10,13 +10,30 @@ import { ReviewPlan, ReviewEvidenceSource, normalizeEvidenceSources, isReviewObj
 import { ReviewModeType } from './review-pipeline/types';
 
 export class TaskService {
+  /** 将前端 entryModule 映射为 ReviewMode 枚举值 */
+  static mapEntryModule(entryModule: string): string {
+    const map: Record<string, string> = {
+      LIBRARY: 'LIBRARY_REVIEW',
+      CONSISTENCY: 'CONSISTENCY',
+      PROOFREAD: 'TYPO_GRAMMAR',
+      RULE_ONLY: 'CUSTOM_RULE',   // 仅规则执行，无AI
+      MULTIMODAL: 'MULTIMODAL',
+      DOC_REVIEW: 'DOC_REVIEW',
+    }
+    return map[entryModule] || 'LIBRARY_REVIEW'
+  }
+
   /** 从 ReviewPlan 推导 Pipeline 需要的模式标识（内部分发用，不暴露给前端） */
   static resolvePipelineSelector(plan: ReviewPlan): ReviewModeType {
     if (plan.objective === 'COMPARE') return 'DOC_REVIEW';
     if (plan.objective === 'PROOFREAD') return 'TYPO_GRAMMAR';
     if (plan.objective === 'STRUCTURED') return 'MULTIMODAL';
-    if (plan.execution.profile === 'RULE_ONLY' && plan.evidence.sources.includes('REVIEW_SPECIFICATION')) {
-      return 'CUSTOM_RULE';
+    if (plan.execution.profile === 'RULE_ONLY') {
+      // RULE_ONLY 模式：有审查规范集/规则库来源，或有直接启用的规则前缀
+      const hasDirectPrefixes = Array.isArray(plan.evidence.enabledPrefixes) && plan.evidence.enabledPrefixes.length > 0;
+      if (plan.evidence.sources.includes('REVIEW_SPECIFICATION') || hasDirectPrefixes) {
+        return 'CUSTOM_RULE';
+      }
     }
     // crossFile 由 enhancements 动态控制，模式本身用 LIBRARY_REVIEW
     return 'LIBRARY_REVIEW';
@@ -102,11 +119,13 @@ export class TaskService {
     corePurposes?: string[];  // 用户自定义的核心目的
     selectedTemplateId?: string;  // 选择的审查模板ID
     intraFileConsistency?: boolean;  // 文件内一致性检查
+    entryModule?: string;             // 前端入口模块（LIBRARY/CONSISTENCY/PROOFREAD/RULE_ONLY/MULTIMODAL/DOC_REVIEW）
     files?: Express.Multer.File[];
     dwgParsedData?: Record<string, any>;  // 前端 WASM 解析的 DWG 数据（按文件名映射）
   }): Promise<Task> {
     const { title, description, creatorId, standardId, standardIds = [], knowledgeCategoryId, knowledgeCategoryIds,
-      reviewSpecificationId, ruleLibraryId, perspective, preAnalysisData, reviewPlan, reviewPoints, corePurposes, selectedTemplateId, intraFileConsistency,
+      reviewSpecificationId, ruleLibraryId, perspective, preAnalysisData, reviewPlan, reviewPoints, corePurposes,
+      selectedTemplateId, intraFileConsistency, entryModule,
       files = [], dwgParsedData } = data;
 
     // 合并标准 ID：保留单选兼容，同时写入多选
@@ -126,7 +145,9 @@ export class TaskService {
         throw new Error('仅规则执行模式必须指定审查规范集或启用的规则前缀');
       }
     }
-    const resolvedReviewMode = this.resolvePipelineSelector(normalizedReviewPlan);
+    const resolvedReviewMode = entryModule
+      ? this.mapEntryModule(entryModule)
+      : this.resolvePipelineSelector(normalizedReviewPlan);
     const shouldDelayReview = normalizedReviewPlan.objective === 'COMPARE';
 
     // 知识库 ID：多选优先，回退到单选

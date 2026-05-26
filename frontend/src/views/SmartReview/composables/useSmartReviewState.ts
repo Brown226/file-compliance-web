@@ -114,6 +114,10 @@ export function useSmartReviewState() {
         clearSavedState()
         return false
       }
+      if (state.currentStep !== undefined && state.currentStep > 0) {
+        clearSavedState()
+        return false
+      }
       if (state.currentStep !== undefined) currentStep.value = state.currentStep
       if (state.title) form.title = state.title
       if (state.selectedReviewPoints?.length) selectedReviewPoints.value = state.selectedReviewPoints

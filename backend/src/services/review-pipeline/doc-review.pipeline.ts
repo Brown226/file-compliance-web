@@ -17,8 +17,8 @@ import { PromptTemplateService } from '../prompt-template.service';
 import { ModeCapabilities } from './mode-config';
 
 const DEFAULT_CAPABILITIES: ModeCapabilities = {
-  rules: true,
-  standardRef: true,
+  rules: false,
+  standardRef: false,
   ai: true,
   aiStrategy: 'refCompare',
   crossFile: false,

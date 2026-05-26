@@ -85,9 +85,21 @@
           <template #prefix><el-icon><Search /></el-icon></template>
         </el-input>
       </div>
-      <el-button link type="info" size="small" @click="resetFilters">
-        <el-icon><RefreshRight /></el-icon> 重置
-      </el-button>
+      <div class="filter-actions">
+        <!-- 分组切换 -->
+        <el-button
+          :type="groupMode ? 'primary' : 'default'"
+          size="small"
+          plain
+          @click="groupMode = !groupMode"
+          :disabled="batchMode"
+        >
+          <el-icon><Collection /></el-icon> {{ groupMode ? '已分组' : '分组' }}
+        </el-button>
+        <el-button link type="info" size="small" @click="resetFilters">
+          <el-icon><RefreshRight /></el-icon> 重置
+        </el-button>
+      </div>
     </div>
 
     <!-- 批量操作工具栏 -->
@@ -172,23 +184,116 @@
 
     <div class="error-content" :class="{ 'batch-mode-active': batchMode }" ref="errorContentRef" v-loading="loading">
       <template v-if="filteredAndSearched.length > 0">
-        <IssueCard
-          v-for="detail in filteredAndSearched"
-          :key="detail.id"
-          :detail="detail"
-          :batch-mode="batchMode"
-          :selected="selectedIssueIds.includes(detail.id)"
-          :is-docx-selected="isDocxSelected"
-          :highlighted-id="highlightedId"
-          :selected-file-id="selectedFileId"
-          @locate-text="(payload) => $emit('locateText', payload)"
-          @copy-handle-id="(handleId) => $emit('copyHandleId', handleId)"
-          @open-fp-dialog="(detail) => $emit('openFpDialog', detail)"
-          @adopt-suggestion="(detail) => $emit('adoptSuggestion', detail)"
-          @cancel-fp="(detail) => $emit('cancelFp', detail)"
-          @toggle-select="toggleIssueSelection"
-          @select-file-by-id="(fileId) => $emit('selectFileById', fileId)"
-        />
+        <!-- CUSTOM_RULE 模式：按检查项分组 -->
+        <template v-if="isCustomRuleMode && ruleRegistryLoaded && !batchMode">
+          <div v-for="group in issuesByRuleGroup" :key="group.groupName" class="rule-group-section">
+            <div class="rule-group-title">
+              <span class="rule-group-icon">📋</span>
+              {{ group.groupName }}
+            </div>
+            <div
+              v-for="rule in group.rules"
+              :key="rule.prefix"
+              class="rule-group-card"
+              :class="{ 'rule-group-card--empty': rule.items.length === 0 }"
+            >
+              <div class="rule-group-header" @click="toggleRuleGroup(rule.prefix)">
+                <el-icon class="rule-group-arrow" :class="{ expanded: expandedRuleGroups.has(rule.prefix) }">
+                  <ArrowRight />
+                </el-icon>
+                <span class="rule-group-label">{{ rule.label }}</span>
+                <span class="rule-group-desc" v-if="rule.description">{{ rule.description }}</span>
+                <div class="rule-group-stats">
+                  <el-tag v-if="rule.errorCount > 0" size="small" type="danger" round>
+                    {{ rule.errorCount }} 错误
+                  </el-tag>
+                  <el-tag v-if="rule.warningCount > 0" size="small" type="warning" round>
+                    {{ rule.warningCount }} 警告
+                  </el-tag>
+                  <el-tag v-if="rule.infoCount > 0" size="small" type="info" round>
+                    {{ rule.infoCount }} 提示
+                  </el-tag>
+                  <span v-if="rule.items.length === 0" class="rule-pass-badge">
+                    <el-icon color="#67C23A"><CircleCheck /></el-icon> 通过
+                  </span>
+                </div>
+              </div>
+              <div v-show="expandedRuleGroups.has(rule.prefix) && rule.items.length > 0" class="rule-group-items">
+                <IssueCard
+                  v-for="detail in rule.items"
+                  :key="detail.id"
+                  :detail="detail"
+                  :batch-mode="false"
+                  :selected="false"
+                  :is-docx-selected="isDocxSelected"
+                  :highlighted-id="highlightedId"
+                  :selected-file-id="selectedFileId"
+                  @locate-text="(payload: any) => $emit('locateText', payload)"
+                  @copy-handle-id="(handleId: string) => $emit('copyHandleId', handleId)"
+                  @open-fp-dialog="(detail: IssueDetail) => $emit('openFpDialog', detail)"
+                  @adopt-suggestion="(detail: IssueDetail) => $emit('adoptSuggestion', detail)"
+                  @cancel-fp="(detail: IssueDetail) => $emit('cancelFp', detail)"
+                  @toggle-select="toggleIssueSelection"
+                  @select-file-by-id="(fileId: string) => $emit('selectFileById', fileId)"
+                />
+              </div>
+            </div>
+          </div>
+        </template>
+        <!-- 分组模式 -->
+        <template v-else-if="groupMode && !batchMode && !isCustomRuleMode">
+          <div v-for="group in groupedIssues" :key="group.key" class="issue-group">
+            <div class="group-header" @click="toggleGroup(group.key)">
+              <el-icon class="group-arrow" :class="{ expanded: expandedGroups.has(group.key) }">
+                <ArrowRight />
+              </el-icon>
+              <span class="group-label">{{ group.label }}</span>
+              <el-tag size="small" :type="group.severity === 'error' ? 'danger' : 'warning'" round>
+                {{ group.count }} 条
+              </el-tag>
+              <span class="group-sample">例：{{ group.sampleDesc }}</span>
+            </div>
+            <div v-show="expandedGroups.has(group.key)" class="group-items">
+              <IssueCard
+                v-for="detail in group.items"
+                :key="detail.id"
+                :detail="detail"
+                :batch-mode="false"
+                :selected="false"
+                :is-docx-selected="isDocxSelected"
+                :highlighted-id="highlightedId"
+                :selected-file-id="selectedFileId"
+                @locate-text="(payload) => $emit('locateText', payload)"
+                @copy-handle-id="(handleId) => $emit('copyHandleId', handleId)"
+                @open-fp-dialog="(detail) => $emit('openFpDialog', detail)"
+                @adopt-suggestion="(detail) => $emit('adoptSuggestion', detail)"
+                @cancel-fp="(detail) => $emit('cancelFp', detail)"
+                @toggle-select="toggleIssueSelection"
+                @select-file-by-id="(fileId) => $emit('selectFileById', fileId)"
+              />
+            </div>
+          </div>
+        </template>
+        <!-- 普通列表模式 -->
+        <template v-else>
+          <IssueCard
+            v-for="detail in filteredAndSearched"
+            :key="detail.id"
+            :detail="detail"
+            :batch-mode="batchMode"
+            :selected="selectedIssueIds.includes(detail.id)"
+            :is-docx-selected="isDocxSelected"
+            :highlighted-id="highlightedId"
+            :selected-file-id="selectedFileId"
+            @locate-text="(payload) => $emit('locateText', payload)"
+            @copy-handle-id="(handleId) => $emit('copyHandleId', handleId)"
+            @open-fp-dialog="(detail) => $emit('openFpDialog', detail)"
+            @adopt-suggestion="(detail) => $emit('adoptSuggestion', detail)"
+            @cancel-fp="(detail) => $emit('cancelFp', detail)"
+            @toggle-select="toggleIssueSelection"
+            @select-file-by-id="(fileId) => $emit('selectFileById', fileId)"
+          />
+        </template>
       </template>
       <el-empty v-else description="该任务暂无审查结果（或筛选无匹配）" />
     </div>
@@ -196,7 +301,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, nextTick } from 'vue'
+import { ref, reactive, computed, nextTick, onMounted, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
   Search,
@@ -204,17 +309,25 @@ import {
   Check,
   Operation,
   WarningFilled,
+  Collection,
+  ArrowRight,
+  CircleCheck,
 } from '@element-plus/icons-vue'
 import IssueCard from './IssueCard.vue'
 import { useIssueFilter, useBatchSelection } from './composables'
 import { ALL_CATEGORIES, DWG_RULE_TYPE_OPTIONS } from './constants/issue-config'
 import type { IssueDetail } from './types/issue'
+import { getRuleRegistryApi, type RuleGroupMeta, type RuleMetaItem } from '@/api/system'
 
 const props = defineProps<{
   details: IssueDetail[]
   loading: boolean
   selectedFileId: string | null
   isDocxSelected?: boolean
+  /** 审查模式（用于按检查项分组，仅 CUSTOM_RULE 模式生效） */
+  reviewMode?: string
+  /** CUSTOM_RULE 模式启用的规则前缀列表 */
+  enabledPrefixes?: string[]
 }>()
 
 const emit = defineEmits<{
@@ -273,6 +386,197 @@ const {
 // 常量配置
 const allCategories = ALL_CATEGORIES
 const dwgRuleTypeOptions = DWG_RULE_TYPE_OPTIONS
+
+// ===== 分组功能 =====
+const groupMode = ref(false)
+const expandedGroups = reactive(new Set<string>())
+
+/** 按描述模式将问题分组 */
+const groupedIssues = computed(() => {
+  const groups = new Map<string, { key: string; label: string; count: number; severity: string; sampleDesc: string; items: IssueDetail[] }>()
+
+  for (const issue of filteredAndSearched.value) {
+    const key = getGroupKey(issue)
+    if (!groups.has(key)) {
+      groups.set(key, {
+        key,
+        label: getGroupLabel(issue),
+        count: 0,
+        severity: issue.severity,
+        sampleDesc: getShortDesc(issue.description || ''),
+        items: [],
+      })
+    }
+    const g = groups.get(key)!
+    g.count++
+    // 保留更高严重级别的
+    if (issue.severity === 'error') g.severity = 'error'
+    g.items.push(issue)
+  }
+
+  // 如果只有一个组，返回空（不需要分组）
+  const result = Array.from(groups.values())
+  if (result.length <= 1) return []
+
+  // 自动展开所有组
+  if (result.length > 0 && expandedGroups.size === 0) {
+    for (const g of result) {
+      expandedGroups.add(g.key)
+    }
+  }
+
+  return result.sort((a, b) => b.count - a.count)
+})
+
+/** 提取分组键：截取描述的前14个字符作为分组依据 */
+function getGroupKey(issue: IssueDetail): string {
+  const desc = (issue.description || '').trim()
+  // 提取冒号或逗号前的核心问题描述
+  const short = desc.split(/[：:，,。]/)[0].trim()
+  return short.slice(0, 14) + '_' + issue.severity
+}
+
+/** 获取分组标签 */
+function getGroupLabel(issue: IssueDetail): string {
+  const desc = (issue.description || '').trim()
+  const short = desc.split(/[：:，,。]/)[0].trim()
+  return short.length > 20 ? short.slice(0, 20) + '...' : short
+}
+
+/** 获取简短描述作为示例 */
+function getShortDesc(desc: string): string {
+  const after = desc.split(/[：:]/, 2)[1] || desc
+  return after.trim().slice(0, 30) + (after.trim().length > 30 ? '...' : '')
+}
+
+/** 切换分组展开/折叠 */
+function toggleGroup(key: string) {
+  if (expandedGroups.has(key)) {
+    expandedGroups.delete(key)
+  } else {
+    expandedGroups.add(key)
+  }
+}
+
+// ===== CUSTOM_RULE 模式：按检查项分组 =====
+const isCustomRuleMode = computed(() => props.reviewMode === 'CUSTOM_RULE')
+
+/** 规则注册表数据（按需加载） */
+const ruleRegistry = ref<{ groups: RuleGroupMeta[]; prefixMap: Map<string, RuleMetaItem> } | null>(null)
+const ruleRegistryLoaded = ref(false)
+
+/** 从 ruleCode 提取规则前缀（如 NAME_001 → NAME, DWG_TITLE_001 → DWG_TITLE） */
+function extractRulePrefix(ruleCode: string): string {
+  if (!ruleCode) return 'OTHER'
+  // 匹配前缀：取最后一个下划线之前的部分
+  const match = ruleCode.match(/^(.+)_\d+$/)
+  return match ? match[1] : ruleCode
+}
+
+/** 按检查项分组的结果（仅 CUSTOM_RULE 模式） */
+const issuesByRuleGroup = computed(() => {
+  if (!isCustomRuleMode.value || !ruleRegistryLoaded.value) return []
+
+  const prefixMap = ruleRegistry.value?.prefixMap
+  if (!prefixMap) return []
+
+  // 按规则前缀分组
+  const groupMap = new Map<
+    string,
+    {
+      prefix: string
+      label: string
+      description: string
+      group: string
+      icon: string
+      enabled: boolean
+      errorCount: number
+      warningCount: number
+      infoCount: number
+      items: IssueDetail[]
+    }
+  >()
+
+  for (const issue of filteredAndSearched.value) {
+    const prefix = extractRulePrefix(issue.ruleCode || '')
+    const meta = prefixMap.get(prefix)
+
+    if (!groupMap.has(prefix)) {
+      groupMap.set(prefix, {
+        prefix,
+        label: meta?.label || prefix,
+        description: meta?.description || '',
+        group: meta?.group || '其他',
+        icon: meta?.icon || 'WarningFilled',
+        enabled: props.enabledPrefixes?.includes(prefix) ?? false,
+        errorCount: 0,
+        warningCount: 0,
+        infoCount: 0,
+        items: [],
+      })
+    }
+
+    const g = groupMap.get(prefix)!
+    g.items.push(issue)
+    if (issue.severity === 'error') g.errorCount++
+    else if (issue.severity === 'warning') g.warningCount++
+    else g.infoCount++
+  }
+
+  // 按组（group）分组排序，每组内按数量降序
+  const byGroup = new Map<string, typeof groupMap extends Map<any, infer V> ? V[] : never>()
+  for (const g of groupMap.values()) {
+    const groupName = g.group
+    if (!byGroup.has(groupName)) byGroup.set(groupName, [])
+    byGroup.get(groupName)!.push(g)
+  }
+
+  return Array.from(byGroup.entries()).map(([groupName, rules]) => ({
+    groupName,
+    rules: rules.sort((a, b) => b.items.length - a.items.length),
+  }))
+})
+
+/** 切换规则组展开/折叠 */
+function toggleRuleGroup(key: string) {
+  if (expandedRuleGroups.has(key)) {
+    expandedRuleGroups.delete(key)
+  } else {
+    expandedRuleGroups.add(key)
+  }
+}
+
+/** 规则组展开状态 */
+const expandedRuleGroups = reactive(new Set<string>())
+// 默认全部展开
+watch(() => issuesByRuleGroup.value, (groups) => {
+  if (groups.length > 0 && expandedRuleGroups.size === 0) {
+    for (const g of groups) {
+      for (const r of g.rules) {
+        expandedRuleGroups.add(r.prefix)
+      }
+    }
+  }
+}, { immediate: true })
+
+// 组件挂载时，仅 CUSTOM_RULE 模式加载规则注册表
+onMounted(async () => {
+  if (!isCustomRuleMode.value) return
+  try {
+    const res = await getRuleRegistryApi()
+    const data = res.data
+    const prefixMap = new Map<string, RuleMetaItem>()
+    for (const group of data.groups) {
+      for (const item of group.items) {
+        prefixMap.set(item.prefix, item)
+      }
+    }
+    ruleRegistry.value = { groups: data.groups, prefixMap }
+    ruleRegistryLoaded.value = true
+  } catch (e) {
+    console.error('[IssueCardList] 加载规则注册表失败:', e)
+  }
+})
 
 // 高亮状态
 const highlightedId = ref<string | null>(null)
@@ -528,4 +832,163 @@ defineExpose({
   .filter-group { flex-wrap: wrap; }
 }
 .filter-toolbar .el-select .el-tag { max-width: 80px; }
+
+/* ===== 分组样式 ===== */
+.filter-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.issue-group {
+  margin-bottom: 4px;
+}
+
+.group-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  background: #F8FAFC;
+  border: 1px solid #E2E8F0;
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  user-select: none;
+  transition: background 0.15s, box-shadow 0.15s;
+  margin-bottom: 2px;
+}
+.group-header:hover {
+  background: #F1F5F9;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+}
+
+.group-arrow {
+  font-size: 12px;
+  color: #64748B;
+  transition: transform 0.2s ease;
+  flex-shrink: 0;
+}
+.group-arrow.expanded {
+  transform: rotate(90deg);
+}
+
+.group-label {
+  font-size: 13px;
+  font-weight: 700;
+  color: #1E293B;
+  flex-shrink: 0;
+}
+
+.group-sample {
+  font-size: 12px;
+  color: #94A3B8;
+  margin-left: auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 200px;
+}
+
+.group-items {
+  padding-left: 4px;
+  border-left: 2px solid #E2E8F0;
+  margin-left: 8px;
+  margin-bottom: 8px;
+}
+
+/* ===== CUSTOM_RULE 模式：按检查项分组 ===== */
+.rule-group-section {
+  margin-bottom: 16px;
+}
+
+.rule-group-title {
+  font-size: 12px;
+  font-weight: 800;
+  color: #64748B;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  padding: 0 4px 8px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.rule-group-icon {
+  font-size: 13px;
+}
+
+.rule-group-card {
+  margin-bottom: 4px;
+  border: 1px solid #E2E8F0;
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  background: #FFFFFF;
+  transition: border-color 0.15s;
+}
+.rule-group-card:hover {
+  border-color: #CBD5E1;
+}
+.rule-group-card--empty {
+  opacity: 0.7;
+  background: #F8FAFC;
+}
+
+.rule-group-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  cursor: pointer;
+  user-select: none;
+  transition: background 0.12s;
+}
+.rule-group-header:hover {
+  background: #F8FAFC;
+}
+
+.rule-group-arrow {
+  font-size: 12px;
+  color: #94A3B8;
+  flex-shrink: 0;
+  transition: transform 0.2s ease;
+}
+.rule-group-arrow.expanded {
+  transform: rotate(90deg);
+}
+
+.rule-group-label {
+  font-size: 13px;
+  font-weight: 700;
+  color: #1E293B;
+  flex-shrink: 0;
+}
+
+.rule-group-desc {
+  font-size: 11px;
+  color: #94A3B8;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rule-group-stats {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.rule-pass-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 12px;
+  color: #67C23A;
+  font-weight: 600;
+}
+
+.rule-group-items {
+  padding: 0 14px 10px;
+  border-top: 1px solid #F0F0F0;
+}
 </style>

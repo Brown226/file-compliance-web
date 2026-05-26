@@ -120,7 +120,7 @@ import { getModeCapabilitiesApi, saveModeCapabilitiesApi } from '@/api/task'
 
 // 模式元信息（静态）
 const modeMeta: Record<string, { displayName: string; description: string; icon: any; color: string }> = {
-  LIBRARY_REVIEW: { displayName: '以库审文', description: '使用标准库+规则引擎+MaxKB/LLM进行合规检查', icon: Reading, color: '#2563EB' },
+  LIBRARY_REVIEW: { displayName: '以库审文', description: '使用标准库+规则引擎+AI引擎进行合规检查', icon: Reading, color: '#2563EB' },
   DOC_REVIEW: { displayName: '以文审文', description: '使用上游参照文件与待审文件进行比对审查', icon: Files, color: '#10B981' },
   CONSISTENCY: { displayName: '全文一致性', description: '跨文件参数和语义一致性检查', icon: Connection, color: '#F59E0B' },
   TYPO_GRAMMAR: { displayName: '错别字/语法', description: '轻量级错别字和语法检查', icon: EditPen, color: '#EF4444' },

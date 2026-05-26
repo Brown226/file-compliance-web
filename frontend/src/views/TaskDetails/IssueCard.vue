@@ -18,58 +18,131 @@
       />
     </div>
 
-    <!-- 卡片头部 -->
+    <!-- 卡片头部：标签 + 操作按钮并列 -->
     <div class="issue-header">
-      <div class="issue-tags">
-        <el-tag :type="getCategoryTagType(detail.issueType)" size="small" effect="dark" round>
-          {{ getIssueTypeLabel(detail.issueType) }}
-        </el-tag>
-        <el-tag
-          :type="getSeverityType(detail.severity)"
-          size="small"
-          :effect="detail.severity === 'error' ? 'dark' : 'plain'"
-          round
-          :class="['severity-tag', `severity-${detail.severity}`]"
-        >
-          {{ getSeverityLabel(detail.severity) }}
-        </el-tag>
-        <el-tag v-if="detail.isFalsePositive" type="info" size="small" effect="plain" round class="fp-tag">
-          误报
-        </el-tag>
+      <div class="header-left">
+        <div class="issue-tags">
+          <el-tag :type="getCategoryTagType(detail.issueType)" size="small" effect="dark" round>
+            {{ getIssueTypeLabel(detail.issueType) }}
+          </el-tag>
+          <el-tag
+            :type="getSeverityType(detail.severity)"
+            size="small"
+            :effect="detail.severity === 'error' ? 'dark' : 'plain'"
+            round
+            :class="['severity-tag', `severity-${detail.severity}`]"
+          >
+            {{ getSeverityLabel(detail.severity) }}
+          </el-tag>
+          <el-tag v-if="detail.isFalsePositive" type="info" size="small" effect="plain" round class="fp-tag">
+            误报
+          </el-tag>
+          <!-- 文件来源标签 -->
+          <el-tag v-if="detail.file && !selectedFileId" type="info" size="small" effect="plain" round class="file-source-tag">
+            <span class="file-icon-inline">{{ getFileEmoji(detail.file.fileType || detail.file.file_type) }}</span>
+            {{ detail.file.fileName }}
+          </el-tag>
+        </div>
+        <span class="issue-desc">{{ detail.description || '-' }}</span>
       </div>
-      <span class="issue-desc">{{ detail.description || '-' }}</span>
+      <!-- 操作按钮移至顶部右侧 -->
+      <div class="header-actions">
+        <el-button
+          v-if="detail.textPosition"
+          type="primary"
+          size="small"
+          @click="emit('locateText', { detail, elementId: `issue-${detail.id}` })"
+          class="action-btn locate-btn"
+        >
+          <el-icon><Location /></el-icon> 定位
+        </el-button>
+        <el-button
+          v-if="detail.cadHandleId"
+          type="primary"
+          size="small"
+          @click="emit('copyHandleId', detail.cadHandleId)"
+          class="action-btn cad-locate-btn"
+        >
+          <el-icon><CopyDocument /></el-icon> CAD 定位
+        </el-button>
+        <el-button
+          v-if="!detail.isFalsePositive"
+          type="warning"
+          size="small"
+          plain
+          @click="emit('openFpDialog', detail)"
+          class="action-btn action-fp-btn"
+        >
+          标记误报
+        </el-button>
+        <el-button
+          v-if="isDocxSelected && detail.suggestedText && !detail.isFalsePositive"
+          type="success"
+          size="small"
+          plain
+          @click="emit('adoptSuggestion', detail)"
+          class="action-btn adopt-btn"
+        >
+          <el-icon><Check /></el-icon> 采纳建议
+        </el-button>
+        <el-button
+          v-else-if="detail.isFalsePositive"
+          type="info"
+          size="small"
+          plain
+          @click="emit('cancelFp', detail)"
+          class="action-btn"
+        >
+          取消误报
+        </el-button>
+      </div>
     </div>
 
-    <!-- 大白话解释 -->
-    <div v-if="detail.plainLanguage" class="plain-language-section">
-      <div class="plain-language-header">
+    <!-- 大白话解释 — 默认折叠 -->
+    <div v-if="detail.plainLanguage" class="plain-language-section" :class="{ expanded: plainExpanded }">
+      <div class="plain-language-header" @click="plainExpanded = !plainExpanded">
         <el-icon><ChatLineRound /></el-icon>
         <span>通俗解释</span>
+        <el-icon class="expand-icon" :class="{ rotated: plainExpanded }"><ArrowRight /></el-icon>
       </div>
-      <div class="plain-language-content">
+      <div v-show="plainExpanded" class="plain-language-content">
         {{ detail.plainLanguage }}
       </div>
     </div>
 
     <!-- 卡片内容体 -->
     <div class="issue-body">
-      <div class="issue-row">
+      <!-- 原文 / 建议修改 — 双向 diff 高亮 -->
+      <div class="issue-row" v-if="detail.originalText">
         <span class="row-label">原文本</span>
         <span class="row-value original-text">
-          <template v-if="detail.diffRanges && detail.ruleCode?.startsWith('STD_')">
-            <DiffText :text="detail.originalText" :ranges="detail.diffRanges.original || []" mode="red" />
-          </template>
-          <template v-else>{{ detail.originalText }}</template>
+          <DiffHighlight
+            :original="detail.originalText"
+            :suggested="detail.suggestedText || ''"
+            mode="original"
+          />
         </span>
       </div>
       <div class="issue-row" v-if="detail.suggestedText">
         <span class="row-label">建议修改</span>
         <span class="row-value suggested-text">
-          <template v-if="detail.diffRanges && detail.ruleCode?.startsWith('STD_')">
-            <DiffText :text="detail.suggestedText" :ranges="detail.diffRanges.correct || []" mode="green" />
-          </template>
-          <template v-else>{{ detail.suggestedText }}</template>
+          <DiffHighlight
+            :original="detail.originalText || ''"
+            :suggested="detail.suggestedText"
+            mode="suggested"
+          />
         </span>
+      </div>
+
+      <!-- 标准条文 — 提权展示 -->
+      <div v-if="detail.standardRef" class="standard-ref-section">
+        <div class="standard-ref-header">
+          <el-icon><Reading /></el-icon>
+          <span>审查依据</span>
+        </div>
+        <div class="standard-ref-body">
+          {{ detail.standardRef }}
+        </div>
       </div>
 
       <!-- 标准引用匹配详情 -->
@@ -131,12 +204,8 @@
         <span class="row-label">CAD Handle</span>
         <span class="cad-handle-badge">{{ detail.cadHandleId }}</span>
       </div>
-      <div class="issue-row" v-if="detail.file && !selectedFileId">
-        <span class="row-label">所属文件</span>
-        <span class="row-value link-value" @click="emit('selectFileById', detail.fileId)">{{ detail.file.fileName }}</span>
-      </div>
 
-      <!-- 标准条文（相似文档） -->
+      <!-- 相似文档 -->
       <template v-if="detail.sourceReferences && detail.sourceReferences.length > 0">
         <div class="source-refs-section">
           <span class="row-label">相似文档</span>
@@ -164,10 +233,7 @@
           </div>
         </div>
       </template>
-      <div class="issue-row" v-else-if="detail.standardRef">
-        <span class="row-label">标准条文</span>
-        <span class="row-value standard-ref-value">{{ detail.standardRef }}</span>
-      </div>
+
       <div class="issue-row" v-if="detail.standardRefId">
         <span class="row-label">关联标准</span>
         <router-link :to="`/standards`" class="link-value">查看标准详情</router-link>
@@ -177,75 +243,21 @@
         <span class="fp-reason-text">{{ detail.fpReason }}</span>
       </div>
     </div>
-
-    <!-- 卡片底部操作栏 -->
-    <div class="issue-footer">
-      <div class="footer-actions">
-        <el-button
-          v-if="detail.textPosition"
-          type="primary"
-          size="small"
-          @click="emit('locateText', { detail, elementId: `issue-${detail.id}` })"
-          class="action-btn"
-        >
-          <el-icon><Location /></el-icon> 定位
-        </el-button>
-        <el-button
-          v-if="detail.cadHandleId"
-          type="primary"
-          size="small"
-          @click="emit('copyHandleId', detail.cadHandleId)"
-          class="action-btn cad-locate-btn"
-        >
-          <el-icon><CopyDocument /></el-icon> CAD 定位
-          <template #loading>
-            <el-icon class="is-loading"><CopyDocument /></el-icon> 复制中...
-          </template>
-        </el-button>
-        <el-button
-          v-if="!detail.isFalsePositive"
-          type="warning"
-          size="small"
-          plain
-          @click="emit('openFpDialog', detail)"
-          class="action-btn action-fp-btn"
-        >
-          标记误报
-        </el-button>
-        <el-button
-          v-if="isDocxSelected && detail.suggestedText && !detail.isFalsePositive"
-          type="success"
-          size="small"
-          plain
-          @click="emit('adoptSuggestion', detail)"
-          class="action-btn"
-        >
-          <el-icon><Check /></el-icon> 采纳建议
-        </el-button>
-        <el-button
-          v-else-if="detail.isFalsePositive"
-          type="info"
-          size="small"
-          plain
-          @click="emit('cancelFp', detail)"
-          class="action-btn"
-        >
-          取消误报
-        </el-button>
-      </div>
-    </div>
   </div>
 </template>
 
 <script setup lang="ts">
+import { ref } from 'vue'
 import type { IssueDetail } from './types/issue'
 import {
   CopyDocument,
   Location,
   ChatLineRound,
   Check,
+  ArrowRight,
+  Reading,
 } from '@element-plus/icons-vue'
-import DiffText from './DiffText.vue'
+import DiffHighlight from './DiffHighlight.vue'
 import { useIssueHelpers } from './composables'
 
 const props = defineProps<{
@@ -266,6 +278,21 @@ const emit = defineEmits<{
   toggleSelect: [issueId: string, isSelected: boolean]
   selectFileById: [fileId: string]
 }>()
+
+// 通俗解释折叠状态（默认折叠）
+const plainExpanded = ref(false)
+
+/** 根据文件类型返回 emoji 图标 */
+const getFileEmoji = (fileType: string | undefined): string => {
+  if (!fileType) return '📎'
+  const t = fileType.toLowerCase()
+  if (t === 'docx' || t === 'doc') return '📄'
+  if (t === 'dwg' || t === 'dxf') return '📐'
+  if (t === 'pdf') return '📕'
+  if (t === 'xlsx' || t === 'xls') return '📊'
+  if (t === 'pptx' || t === 'ppt') return '📽'
+  return '📎'
+}
 
 const {
   getIssueTypeLabel,
@@ -294,10 +321,24 @@ const {
 .issue-card.severity-info    { border-left-color: #6B7280; }
 .issue-card:hover { box-shadow: var(--border-inset), 0 4px 12px rgba(0, 0, 0, 0.06); }
 
+/* ===== 头部：标签 + 操作按钮并列 ===== */
 .issue-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
   padding: 10px 14px 8px;
   border-bottom: 1px solid #F0F0F0;
 }
+.header-left { flex: 1; min-width: 0; }
+.header-actions {
+  display: flex;
+  gap: 6px;
+  flex-shrink: 0;
+  align-items: center;
+  flex-wrap: nowrap;
+}
+
 .issue-tags { display: flex; align-items: center; gap: 5px; flex-wrap: wrap; margin-bottom: 6px; }
 .issue-desc {
   font-size: 14px;
@@ -313,6 +354,39 @@ const {
   background: #F3E8FF !important;
   color: #7C3AED !important;
 }
+
+/* 文件来源标签 */
+.file-source-tag {
+  max-width: 160px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.file-icon-inline { font-size: 11px; margin-right: 1px; }
+
+/* ===== 操作按钮 ===== */
+.action-btn {
+  font-size: var(--text-sm);
+  border-radius: var(--radius-md);
+  font-weight: 600;
+  padding: 5px 12px;
+  white-space: nowrap;
+}
+.locate-btn {
+  box-shadow: 0 1px 3px rgba(59, 130, 246, 0.2);
+}
+.adopt-btn.el-button {
+  color: #166534 !important;
+  background: #DCFCE7 !important;
+  border-color: #86EFAC !important;
+}
+.adopt-btn.el-button:hover { background: #BBF7D0 !important; }
+.action-fp-btn.el-button {
+  border-color: #D97706 !important;
+  color: #92400E !important;
+  background: #FEF3C7 !important;
+}
+.action-fp-btn.el-button:hover { background: #FDE68A !important; }
 
 /* 大白话解释 — 蓝色左侧竖条 */
 .plain-language-section {
@@ -333,7 +407,13 @@ const {
   color: #1E40AF;
   transition: background 0.12s;
 }
-.plain-language-header:hover { background: rgba(59, 130, 246, 0.06); }
+.plain-language-header:hover { background: rgba(59, 130, 246, 0.08); }
+.expand-icon {
+  margin-left: auto;
+  font-size: 12px;
+  transition: transform 0.2s ease;
+}
+.expand-icon.rotated { transform: rotate(90deg); }
 .plain-language-content {
   padding: 0 10px 8px;
   font-size: var(--text-base);
@@ -407,14 +487,32 @@ const {
   font-size: var(--text-base);
 }
 .link-value:hover { color: #2563EB; text-decoration: underline; }
-.standard-ref-value {
-  color: #1E40AF;
-  font-weight: 600;
-  background: #EFF6FF;
-  padding: 3px 10px;
-  border-radius: var(--radius-sm);
-  display: inline-block;
-  font-size: var(--text-sm);
+
+/* ===== 标准条文 — 提权展示 ===== */
+.standard-ref-section {
+  margin: 10px 0;
+  border-left: 4px solid #8B5CF6;
+  background: #F5F3FF;
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+  overflow: hidden;
+}
+.standard-ref-header {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 6px 10px;
+  font-size: 11px;
+  font-weight: 700;
+  color: #6D28D9;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+}
+.standard-ref-body {
+  padding: 0 10px 8px;
+  font-size: var(--text-base);
+  line-height: 1.6;
+  color: #5B21B6;
+  font-weight: 500;
 }
 
 /* 标准引用匹配详情 */
@@ -525,30 +623,8 @@ const {
   display: inline-block;
 }
 
-.issue-footer {
-  padding: 8px 14px;
-  border-top: 1px solid #F0F0F0;
-  background: #FAFAFA;
-  display: flex;
-  justify-content: flex-end;
-}
-.footer-actions { display: flex; gap: 8px; }
-.action-btn {
-  font-size: var(--text-sm);
-  border-radius: var(--radius-md);
-  font-weight: 600;
-  padding: 5px 12px;
-}
-.action-fp-btn.el-button {
-  border-color: #D97706 !important;
-  color: #92400E !important;
-  background: #FEF3C7 !important;
-  width: 62px;
-  height: 32px;
-}
-.action-fp-btn.el-button:hover { background: #FDE68A !important; }
-
-.false-positive-card.false-positive-card {
+/* ===== 状态卡片 ===== */
+.false-positive-card {
   opacity: 0.6;
   background: repeating-linear-gradient(-45deg, #FFFFFF, #FFFFFF 8px, #FAFAFA 8px, #FAFAFA 16px);
   border: 1px dashed #D1D5DB;

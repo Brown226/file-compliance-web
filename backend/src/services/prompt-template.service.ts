@@ -37,7 +37,7 @@ export interface PromptTemplateData {
 // ==================== 场景标签 ====================
 
 const MODULE_LABELS: Record<string, string> = {
-  library_review: '以库审文（合规审查）',
+  library_review: '以库审文',
   consistency: '一致性审查',
   typo_grammar: '错别字/语法',
   doc_review: '以文审文',

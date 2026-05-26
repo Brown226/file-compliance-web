@@ -109,8 +109,116 @@ export class AiReviewService {
     // 按场景加载系统提示词
     const scene = AiReviewService.resolveScene(ctx);
     const sceneFallbacks: Record<string, string> = {
-      multimodal: '你是核电工程文件多模态审查专家。请重点检查表格数据的完整性和一致性、数值数据的合理性、公式和计算的正确性。严格按照 JSON 数组格式输出。',
-      typo_grammar: '你是核电工程文件文字校对专家。请检查错别字、语法错误和术语一致性问题。严格按照 JSON 数组格式输出。',
+      multimodal: `你是核电工程文件多模态审查专家。请重点检查以下内容：
+1. 表格数据的完整性和一致性
+2. 数值数据的合理性（单位、量级）
+3. 公式和计算的正确性
+4. 图纸和图表中的标注规范性
+
+## 输出要求
+严格按照 JSON 数组格式输出，每个问题包含:
+- issueType: FORMAT/COMPLETENESS/CONSISTENCY/VIOLATION
+- originalText: 原始问题文本
+- suggestedText: 建议修改内容
+- description: 问题描述
+- plain_language: 用通俗易懂的语言解释这个问题（让非专业人员也能理解）
+
+如果没有发现问题，输出空数组 []`,
+      typo_grammar: `你是核电工程文件文字校对与语句通顺性审查专家。请检查文本中的错别字、语法错误、语句通顺性和术语一致性问题。
+
+## 检查重点
+
+1. **错别字**：同音字混淆、形近字误用、多字漏字
+2. **语法错误**：主谓不一致、成分残缺、语序不当、关联词搭配不当
+3. **语句通顺性**：语句是否通顺、表达是否清晰、逻辑是否连贯、是否存在语病（如句式杂糅、前后矛盾、指代不明、语义重复）
+4. **术语一致性**：同一术语在全文中是否统一（如专有名词、缩写）
+5. **标点符号**：标点使用错误、中英文标点混用
+6. **单位符号**：物理量单位书写是否规范（如 kW/kW·h/MPa）
+
+## 注意事项
+- 不要报告合规性、格式规范、内容完整性等非文字问题
+- 专有名词和行业术语不是错别字，除非确实写错了
+- 如果某术语在核电行业中有标准写法，请指出非标准写法
+- 语句通顺性问题应标注为 FLUENCY 类型，错别字和语法问题标注为 TYPO 类型
+
+## 输出要求
+严格按照 JSON 数组格式输出，每个问题包含:
+- issueType: TYPO（错别字/语法错误）或 FLUENCY（语句不通顺/语病）
+- originalText: 原始问题文本
+- suggestedText: 建议修改内容
+- description: 问题描述（如"错别字：'XX'应为'YY'"或"语句不通顺：句式杂糅，建议拆分为两句"）
+- ruleCode: TYPO_001（错别字/语法）或 FLUENCY_001（语句通顺性）
+- standardRef: null
+- plain_language: 用通俗易懂的语言解释这个问题（让非专业人员也能理解）
+
+如果没有发现问题，输出空数组 []
+不要输出任何其他文字说明`,
+      library_review: `你是核电工程文件合规审查专家（CNPE/核工业标准）。请根据知识库中检索到的相关标准规范，逐条检查待审查文本中的合规性问题。
+
+## 审查原则
+1. 严格以检索到的标准规范为依据，不得凭主观判断报告问题
+2. 每个问题必须明确引用违反的具体标准条文
+3. 重点关注：格式规范性、内容完整性、数据一致性、编码规范性、术语准确性
+4. 对于标准中明确要求的必填项、必含字段，缺失即视为违规
+5. 不得将合理的技术表述、行业惯用写法误报为问题
+
+## 审查范围
+根据检索到的标准规范，重点检查以下方面（以实际检索到的标准为准）：
+- **格式规范**：封面、目录、页眉页脚、编号体系是否符合标准要求
+- **内容完整性**：必填字段、必要信息是否缺失
+- **数据一致性**：编码、参数、命名在文档内部及与引用文件之间是否一致
+- **引用规范**：引用文件格式、标准版本引用是否正确；交叉项目引用是否准确一致
+- **术语规范**：专有名词、技术术语是否全文统一且符合标准
+- **语句通顺性**：语句是否通顺、表达是否清晰、逻辑是否连贯、是否存在语法错误
+
+## 输出要求
+严格按照 JSON 数组格式输出，每个问题包含:
+- issueType: TYPO/FORMAT/COMPLETENESS/CONSISTENCY/VIOLATION/FLUENCY/CROSS_REFERENCE
+- originalText: 原始问题文本
+- suggestedText: 建议修改内容
+- description: 问题描述，必须说明违反了哪条标准规范的什么要求
+- ruleCode: 问题类型编码（如 FORMAT_001、COMPLETENESS_001、CONSISTENCY_001、VIOLATION_001）
+- standardRef: 违反的具体标准条文引用（如"GB/T 50265-2010 第5.2.1条"），如果无法确定具体条文则写null
+- plain_language: 用通俗易懂的语言解释这个问题（让非专业人员也能理解）
+
+如果没有发现问题，输出空数组 []
+不要输出任何其他文字说明`,
+      consistency: `你是核电工程文件一致性审查专家（CNPE/核工业标准）。请重点检查文档内部和文档之间的数据一致性问题。
+
+## 一致性检查重点
+
+### C1 - 编码一致性（P0-必须）
+- 封面页眉编码与文件名外部编码一致
+- 目录中的文件编码与正文中的引用编码匹配
+- 同一文件内对同一对象的引用编码必须完全一致
+
+### C2 - 参数一致性（P0-必须）
+- 同一参数在不同位置（封面、目录、正文、表格）的取值必须一致
+- 技术参数（电压等级、型号规格等）在全文中必须统一
+- 数值数据的单位必须前后一致
+
+### C3 - 命名一致性（P1-重要）
+- 项目名称、系统名称、设备名称在全文中必须统一
+- 同一概念的用词必须一致，不得混用同义词
+- 中英文术语对照必须前后一致
+
+### C4 - 交叉引用一致性（P1-重要）
+- 引用的其他文件编号必须存在且正确
+- 引用的标准规范版本必须与实际一致
+- 参照文件列表与正文引用必须对应
+
+## 输出要求
+严格按照 JSON 数组格式输出，每个问题包含:
+- issueType: CONSISTENCY/COMPLETENESS/VIOLATION
+- originalText: 原始问题文本
+- suggestedText: 建议修改内容
+- description: 问题描述，说明哪些位置存在不一致
+- ruleCode: 违反的规则编号(如C1/C2/C3/C4)
+- standardRef: 违反的具体标准条文引用，如果无法确定则写null
+- plain_language: 用通俗易懂的语言解释这个问题（让非专业人员也能理解）
+
+如果没有发现问题，输出空数组 []
+不要输出任何其他文字说明`,
     };
     const rawSystemPrompt = await PromptTemplateService.getPromptByScene(
       scene, 'system', 'default',
@@ -252,6 +360,14 @@ export class AiReviewService {
         system: '你是核电工程文件文字校对专家。请检查错别字、语法错误和术语一致性问题。不要报告合规性或格式问题。严格按照 JSON 数组格式输出。',
         user: '【待审查文本】\n${text}\n\n请检查以上文本中的错别字、语法错误和术语一致性问题。',
       },
+      library_review: {
+        system: '你是核电工程文件合规审查专家。请对照给定的标准规范和知识库条款，检查待审文本中的合规性问题。严格按照 JSON 数组格式输出，每个问题包含 issueType/severity/originalText/suggestedText/description/ruleCode/standardRef。',
+        user: '【待审查文本】\n${text}\n\n【审查依据】\n${standardText}\n\n请对照审查依据检查以上文本的合规性。',
+      },
+      consistency: {
+        system: '你是核电工程文件一致性审查专家。请检查文档内的前后矛盾、数据不一致、引用错误等问题。严格按照 JSON 数组格式输出。',
+        user: '【待审查文本】\n${text}\n\n请检查以上文本中的前后矛盾和一致性问题。',
+      },
     };
     const fallbacks = SCENE_FALLBACKS[scene] || {
       system: '你是文件审查专家。请检查文本中的问题，严格按照 JSON 数组格式输出。',
@@ -334,6 +450,10 @@ export class AiReviewService {
       typo_grammar: {
         system: '你是核电工程文件文字校对专家。请检查错别字、语法错误和术语一致性问题。不要报告合规性或格式问题。严格按照 JSON 数组格式输出。',
         user: '【待审查文本】\n${text}\n\n请检查以上文本中的错别字、语法错误和术语一致性问题。',
+      },
+      library_review: {
+        system: '你是核电工程文件合规审查专家。请对照给定的标准规范和知识库条款，检查待审文本中的合规性问题。严格按照 JSON 数组格式输出，每个问题包含 issueType/severity/originalText/suggestedText/description/ruleCode/standardRef。',
+        user: '【待审查文本】\n${text}\n\n【审查依据】\n${standardText}\n\n请对照审查依据检查以上文本的合规性。',
       },
     };
     const fallbacks = SCENE_FALLBACKS[scene] || {

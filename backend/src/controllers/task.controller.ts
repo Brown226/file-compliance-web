@@ -12,7 +12,7 @@ export const createTask = async (req: AuthRequest, res: Response): Promise<void>
   try {
     const { title, description, standardId, standardIds, knowledgeCategoryId, knowledgeCategoryIds,
       perspective, preAnalysisData, reviewPoints, corePurposes, selectedTemplateId, intraFileConsistency,
-      reviewPlan, reviewSpecificationId, ruleLibraryId } = req.body;
+      reviewPlan, reviewSpecificationId, ruleLibraryId, entryModule } = req.body;
     const creatorId = req.user?.id;
     const files = req.files as Express.Multer.File[];
 
@@ -112,6 +112,7 @@ export const createTask = async (req: AuthRequest, res: Response): Promise<void>
       corePurposes: parsedCorePurposes,
       selectedTemplateId,
       intraFileConsistency: intraFileConsistency === 'true' || intraFileConsistency === true,
+      entryModule,
     });
 
     success(res, task, '任务创建成功');

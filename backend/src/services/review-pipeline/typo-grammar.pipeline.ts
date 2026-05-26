@@ -16,7 +16,7 @@ import { TerminologyService } from '../terminology.service';
 import { ModeCapabilities } from './mode-config';
 
 const DEFAULT_CAPABILITIES: ModeCapabilities = {
-  rules: true,
+  rules: false,
   standardRef: false,
   ai: true,
   aiStrategy: 'llmOnly',

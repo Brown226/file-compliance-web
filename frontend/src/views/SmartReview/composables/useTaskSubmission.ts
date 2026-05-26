@@ -37,6 +37,11 @@ export function useTaskSubmission(
 
     fd.append('reviewPlan', JSON.stringify(submitPlan))
 
+    // 入口模块（用于区分 COMPLIANCE 目标下的 LIBRARY / CONSISTENCY / RULE_ONLY）
+    if (state.entryModule.value) {
+      fd.append('entryModule', state.entryModule.value)
+    }
+
     // 审查点
     if (state.selectedReviewPoints.value.length > 0) {
       fd.append('reviewPoints', JSON.stringify(state.selectedReviewPoints.value))

@@ -331,6 +331,31 @@
 .el-select-dropdown__item,
 .el-tree,
 .el-tree-node,
-.el-tree-node__content {
+.el-tree-node__content,
+/* checkbox / radio / switch — Lightning CSS 降级误加 pointer-events:none */
+.el-checkbox,
+.el-checkbox__input,
+.el-checkbox__inner,
+.el-checkbox__label,
+.el-checkbox__original,
+.el-radio,
+.el-radio__input,
+.el-radio__inner,
+.el-radio__label,
+.el-switch,
+.el-switch__core,
+/* 确保规则前缀面板内的 checkbox 可交互 */
+.rule-prefix-group .el-checkbox,
+.rule-prefix-group .el-checkbox__input,
+.rule-prefix-group .el-checkbox__inner,
+.rule-prefix-group .el-checkbox__original,
+.rule-prefix-item .el-checkbox,
+.rule-prefix-item .el-checkbox__input,
+.rule-prefix-item .el-checkbox__inner,
+.rule-prefix-item .el-checkbox__original,
+.rule-prefix-group__header .el-checkbox,
+.rule-prefix-group__header .el-checkbox__input,
+.rule-prefix-group__header .el-checkbox__inner,
+.rule-prefix-group__header .el-checkbox__original {
   pointer-events: auto !important;
 }

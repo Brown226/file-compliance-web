@@ -58,8 +58,9 @@
         class="svg-canvas"
         ref="canvasRef"
         :style="canvasTransform"
-        v-html="svgContent"
-      />
+      >
+        <!-- SVG 通过 DOM API 直接插入，避免 v-html + XMLSerializer 的命名空间丢失问题 -->
+      </div>
     </div>
 
     <!-- 空状态 -->
@@ -164,7 +165,7 @@ async function generateSvg(file: File) {
   error.value = false
   parseFailed.value = false
   showTimeoutFallback.value = false
-  svgContent.value = ''
+  svgContent.value = ''       // 先清空，触发 v-if 隐藏 viewport
   handleMap.value = {}
   fileName.value = file.name
 
@@ -176,15 +177,75 @@ async function generateSvg(file: File) {
   try {
     const result: DwgSvgResult = await dwgToSvg(file)
 
-    // 安全过滤 SVG（保留 data-handle 和 data-entity-type 属性）
     const rawSvg = result.svg
     console.log('[DwgPreview] 原始 SVG 长度:', rawSvg.length, '前200字符:', rawSvg.slice(0, 200))
-    svgContent.value = DOMPurify.sanitize(rawSvg, {
-      ADD_TAGS: ['svg', 'path', 'g', 'circle', 'ellipse', 'line', 'polyline', 'polygon', 'rect', 'text', 'defs', 'use', 'clippath', 'lineargradient', 'radialgradient', 'stop', 'title', 'desc', 'marker'],
-      ADD_ATTR: ['d', 'cx', 'cy', 'r', 'rx', 'ry', 'x', 'y', 'width', 'height', 'x1', 'y1', 'x2', 'y2', 'points', 'transform', 'fill', 'stroke', 'stroke-width', 'stroke-dasharray', 'stroke-linecap', 'stroke-linejoin', 'opacity', 'font-size', 'font-family', 'text-anchor', 'dominant-baseline', 'viewBox', 'viewbox', 'preserveAspectRatio', 'preserveaspectratio', 'xmlns', 'id', 'class', 'style', 'data-handle', 'data-entity-type', 'href', 'clip-path', 'offset', 'stop-color', 'stop-opacity', 'marker-start', 'marker-end', 'ref-x', 'ref-y', 'marker-width', 'marker-height', 'orient', 'markerunits'],
-    })
-    console.log('[DwgPreview] 清洗后 SVG 长度:', svgContent.value.length, '前200字符:', svgContent.value.slice(0, 200))
+
+    // ★ 第一步：先设置 svgContent 以触发 viewport 渲染，等待 canvasRef 挂载
+    svgContent.value = 'active'
     handleMap.value = result.handleMap
+    await nextTick()
+
+    // 清理 canvasRef 中上次的 SVG
+    if (canvasRef.value) canvasRef.value.innerHTML = ''
+
+    // ★ 渲染策略：优先 innerHTML 直接注入（HTML 解析器对编码容错更好），
+    // DOMParser('image/svg+xml') 严格模式遇到非法 UTF-8 字节会直接失败。
+    // DOMPurify 消毒在 innerHTML 渲染后对 DOM 节点进行，保证安全。
+    let svgInserted = false
+    try {
+      // 步骤1：编码清洗 — 移除非法 XML/HTML 控制字符（保留 \t\n\r）
+      const cleanSvg = rawSvg
+        .replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, '')
+        .replace(/<script[\s\S]*?<\/script>/gi, '')
+        .replace(/\bon\w+\s*=\s*["'][^"']*["']/gi, '')
+
+      if (canvasRef.value) {
+        canvasRef.value.innerHTML = cleanSvg
+        const svgEl = canvasRef.value.querySelector('svg')
+        if (svgEl) {
+          // 步骤2：DOM 节点消毒（innerHTML 渲染后再对 DOM 节点消毒，保留命名空间）
+          try {
+            DOMPurify.sanitize(svgEl, {
+              ADD_TAGS: ['svg', 'path', 'g', 'circle', 'ellipse', 'line', 'polyline', 'polygon', 'rect', 'text', 'defs', 'use', 'clippath', 'lineargradient', 'radialgradient', 'stop', 'title', 'desc', 'marker', 'pattern', 'filter', 'fecolormatrix', 'fegaussianblur', 'femerge', 'femergenode', 'feoffset', 'fedropshadow', 'feflood', 'fecomposite', 'feblend', 'symbol', 'textpath', 'tspan', 'foreignobject', 'switch', 'image'],
+              ADD_ATTR: ['d', 'cx', 'cy', 'r', 'rx', 'ry', 'x', 'y', 'width', 'height', 'x1', 'y1', 'x2', 'y2', 'points', 'transform', 'fill', 'fill-opacity', 'fill-rule', 'stroke', 'stroke-width', 'stroke-dasharray', 'stroke-dashoffset', 'stroke-linecap', 'stroke-linejoin', 'stroke-opacity', 'opacity', 'font-size', 'font-family', 'font-weight', 'text-anchor', 'dominant-baseline', 'text-decoration', 'letter-spacing', 'word-spacing', 'viewBox', 'viewbox', 'preserveAspectRatio', 'preserveaspectratio', 'xmlns', 'version', 'id', 'class', 'style', 'data-handle', 'data-entity-type', 'href', 'xlink:href', 'clip-path', 'clip-rule', 'offset', 'stop-color', 'stop-opacity', 'marker-start', 'marker-end', 'marker-mid', 'ref-x', 'ref-y', 'marker-width', 'marker-height', 'orient', 'markerunits', 'patternUnits', 'patternTransform', 'patternunits', 'patterntransform', 'filterUnits', 'filterunits', 'result', 'in', 'in2', 'stdDeviation', 'stddeviation', 'dx', 'dy', 'rotate', 'textLength', 'textlength', 'lengthAdjust', 'lengthadjust', 'z-index', 'vector-effect', 'overflow', 'display', 'visibility', 'color'],
+            })
+          } catch (purifyErr: any) {
+            console.warn('[DwgPreview] DOMPurify 后消毒失败（DOM 节点仍保留）:', purifyErr?.message)
+          }
+          svgInserted = true
+          console.log('[DwgPreview] SVG innerHTML 注入 + DOMPurify DOM 消毒完成')
+        }
+      }
+    } catch (innerErr: any) {
+      console.error('[DwgPreview] innerHTML 注入失败:', innerErr)
+    }
+
+    // 诊断：打印实际渲染到 DOM 中的 SVG 信息
+    await nextTick()
+    if (canvasRef.value) {
+      const svgEl = canvasRef.value.querySelector('svg')
+      if (svgEl) {
+        const vb = svgEl.getAttribute('viewBox') || svgEl.getAttribute('viewbox')
+        const w = svgEl.getAttribute('width')
+        const h = svgEl.getAttribute('height')
+        const vpRect = viewportRef.value?.getBoundingClientRect()
+        console.log('[DwgPreview] ✓ SVG 渲染成功:', {
+          viewBox: vb || '(无)',
+          width: w, height: h,
+          childElementCount: svgEl.children.length,
+          innerHTML_len: svgEl.innerHTML.length,
+          viewportSize: vpRect ? `${Math.round(vpRect.width)}x${Math.round(vpRect.height)}` : 'N/A',
+          currentScale: scale.value.toFixed(4),
+          currentTranslate: `${translateX.value.toFixed(0)}, ${translateY.value.toFixed(0)}`,
+        })
+      } else {
+        console.error('[DwgPreview] ★ SVG 渲染失败！canvasRef 子节点数:', canvasRef.value.children.length,
+          'innerHTML 长度:', canvasRef.value.innerHTML.length,
+          '前300字符:', canvasRef.value.innerHTML.slice(0, 300))
+      }
+    } else {
+      console.error('[DwgPreview] ★ canvasRef 为 null！viewer 容器未挂载')
+    }
 
     // SVG 生成后检查是否有待定位的图元（locateTarget 可能在解析期间被设置）
     if (props.locateTarget?.cadHandleId) {
@@ -193,7 +254,6 @@ async function generateSvg(file: File) {
     }
 
     // 初始适应窗口 - 添加重试机制确保 DOM 更新完成
-    await nextTick()
     setTimeout(() => {
       fitToWindowWithRetry()
     }, 150)
@@ -229,6 +289,7 @@ watch(() => props.file, (newFile) => {
   } else {
     svgContent.value = ''
     handleMap.value = {}
+    if (canvasRef.value) canvasRef.value.innerHTML = ''
   }
 }, { immediate: true })
 
@@ -281,57 +342,84 @@ function fitToWindow() {
   }
 
   const vpRect = viewportRef.value.getBoundingClientRect()
+  if (vpRect.width <= 0 || vpRect.height <= 0) {
+    console.warn('[DwgPreview] fitToWindow: 视口尺寸为0，跳过')
+    return
+  }
   console.log('[DwgPreview] fitToWindow: 视口尺寸', vpRect.width, 'x', vpRect.height)
 
   const svgEl = canvasRef.value.querySelector('svg')
   if (!svgEl) {
-    console.warn('[DwgPreview] fitToWindow: SVG 元素未找到')
+    console.warn('[DwgPreview] fitToWindow: SVG 元素未找到（v-html 尚未渲染？）')
     return
   }
-
-  // 获取 SVG 视图框
-  const vb = svgEl.getAttribute('viewBox') || svgEl.getAttribute('viewbox')
-  console.log('[DwgPreview] fitToWindow: viewBox =', vb)
-
-  if (!vb) {
-    console.warn('[DwgPreview] fitToWindow: 无 viewBox')
-    return
-  }
-
-  const parts = vb.split(/[\s,]+/).map(Number)
-  const vbX = parts[0] || 0
-  const vbY = parts[1] || 0
-  const vbW = Math.abs(parts[2]) || 800
-  const vbH = Math.abs(parts[3]) || 600
-
-  console.log('[DwgPreview] fitToWindow: 图纸尺寸', vbW, 'x', vbH)
 
   // 留边距
   const vpW = vpRect.width - 20
   const vpH = vpRect.height - 20
 
+  // 获取 SVG 尺寸：优先 viewBox，其次 width/height 属性，最后用元素自身宽高
+  let vbX = 0, vbY = 0, vbW = 0, vbH = 0
+  let hasSize = false
+
+  const vb = svgEl.getAttribute('viewBox') || svgEl.getAttribute('viewbox')
+  if (vb) {
+    console.log('[DwgPreview] fitToWindow: viewBox =', vb)
+    const parts = vb.split(/[\s,]+/).map(Number)
+    vbX = parts[0] || 0
+    vbY = parts[1] || 0
+    vbW = Math.abs(parts[2]) || 0
+    vbH = Math.abs(parts[3]) || 0
+    if (vbW > 0 && vbH > 0) hasSize = true
+  }
+
+  // viewBox 无效时尝试 width/height 属性
+  if (!hasSize) {
+    const w = parseFloat(svgEl.getAttribute('width') || '')
+    const h = parseFloat(svgEl.getAttribute('height') || '')
+    if (w > 0 && h > 0) {
+      console.log('[DwgPreview] fitToWindow: 使用 width/height =', w, 'x', h)
+      vbW = w; vbH = h; hasSize = true
+    }
+  }
+
+  // 仍然无效时用元素实际渲染尺寸
+  if (!hasSize) {
+    const bbox = svgEl.getBBox?.()
+    if (bbox && bbox.width > 0 && bbox.height > 0) {
+      console.log('[DwgPreview] fitToWindow: 使用 getBBox =', bbox.width, 'x', bbox.height)
+      vbX = bbox.x; vbY = bbox.y
+      vbW = bbox.width; vbH = bbox.height; hasSize = true
+    }
+  }
+
+  // 所有方法都失败时使用默认尺寸并警告
+  if (!hasSize) {
+    console.warn('[DwgPreview] fitToWindow: 无法获取 SVG 尺寸，使用默认 800x600')
+    vbW = 800; vbH = 600; hasSize = true
+  }
+
+  console.log('[DwgPreview] fitToWindow: 图纸尺寸', vbW, 'x', vbH)
+
   // 计算缩放比例（保持宽高比，适应视口）
   const scaleX = vpW / vbW
   const scaleY = vpH / vbH
-  const newScale = Math.min(scaleX, scaleY)
+  const naturalScale = Math.min(scaleX, scaleY)
 
-  console.log('[DwgPreview] fitToWindow: 计算比例', { scaleX: scaleX.toFixed(6), scaleY: scaleY.toFixed(6), final: newScale.toFixed(6) })
+  console.log('[DwgPreview] fitToWindow: 计算比例', { scaleX: scaleX.toFixed(6), scaleY: scaleY.toFixed(6), natural: naturalScale.toFixed(6) })
 
   // 如果缩放比例太小，设置一个最小值确保能看到图纸
-  const originalScale = Math.min(scaleX, scaleY)
-  const isForcedScale = originalScale < 0.05
-  const finalScale = Math.max(originalScale, 0.05) // 最小 5%
+  const isForcedScale = naturalScale < 0.05
+  const finalScale = Math.max(naturalScale, 0.05) // 最小 5%
   scale.value = finalScale
 
   // 居中策略：
   // - 如果缩放是强制的（图纸太大），优先显示左上角区域
   // - 如果缩放是自然计算的，正常居中
   if (isForcedScale) {
-    // 强制缩放时，让图纸左上角区域可见
     translateX.value = -vbX * scale.value
     translateY.value = -vbY * scale.value
   } else {
-    // 正常居中
     translateX.value = (vpRect.width - vbW * scale.value) / 2 - vbX * scale.value
     translateY.value = (vpRect.height - vbH * scale.value) / 2 - vbY * scale.value
   }
@@ -525,8 +613,8 @@ onUnmounted(() => {
   align-items: center;
   justify-content: space-between;
   flex-shrink: 0;
-  border-bottom: 1px solid var(--corp-border-light, #e5e7eb);
-  background: var(--corp-bg-sunken, #f1f5f9);
+  border-bottom: 1px solid var(--corp-border-light, #475569);
+  background: var(--corp-bg-sunken, #334155);
 }
 
 .toolbar-left {
@@ -538,20 +626,20 @@ onUnmounted(() => {
 .preview-title {
   font-weight: 600;
   font-size: 13px;
-  color: #f1f5f9; /* 浅色文字 - 适配深色背景 */
+  color: var(--corp-text-primary, #e2e8f0);
 }
 
 .preview-filename {
   font-size: 12px;
-  color: #94a3b8; /* 灰色文字 - 适配深色背景 */
-  background: rgba(255, 255, 255, 0.1); /* 半透明背景 */
+  color: var(--corp-text-secondary, #94a3b8);
+  background: rgba(255, 255, 255, 0.08);
   padding: 3px 10px;
   border-radius: 12px;
   max-width: 200px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  border: 1px solid rgba(255, 255, 255, 0.2);
+  border: 1px solid rgba(255, 255, 255, 0.12);
 }
 
 .toolbar-right {
@@ -561,7 +649,8 @@ onUnmounted(() => {
 }
 
 .toolbar-right .el-button {
-  border-color: var(--corp-border-light, #e5e7eb);
+  border-color: var(--corp-border-light, #475569);
+  color: var(--corp-text-primary, #e2e8f0);
 }
 
 /* ===== 加载/错误/空状态 ===== */

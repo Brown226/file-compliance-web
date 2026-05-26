@@ -7,9 +7,9 @@
  * 仅在"是否启用 AI / 标准引用 / 跨文件检查"上有差异。
  *
  * 重构后合并为一个 StandardPipeline，通过 ModeCapabilities 配置区分行为：
- * - LIBRARY_REVIEW: rules=on, stdRef=on, ai=standard, crossFile=off
- * - CONSISTENCY:    rules=on, stdRef=on, ai=standard, crossFile=on
- * - CUSTOM_RULE:    rules=on, stdRef=config, ai=off, crossFile=off
+ * - LIBRARY_REVIEW: rules=off, stdRef=off, ai=standard, crossFile=off
+ * - CONSISTENCY:    rules=off, stdRef=off, ai=standard, crossFile=on
+ * - CUSTOM_RULE:    rules=on,  stdRef=off, ai=off, crossFile=off
  *
  * BasePipeline 已实现能力驱动的 runFastPhase/runSlowPhase/execute，
  * 本类无需覆盖任何方法，仅需声明对应的 capabilities 即可。

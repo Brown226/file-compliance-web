@@ -46,8 +46,10 @@
         >
           <el-option label="以库审文" value="LIBRARY_REVIEW" />
           <el-option label="以文审文" value="DOC_REVIEW" />
-          <el-option label="全文一致性" value="CONSISTENCY" />
+          <el-option label="一致性审查" value="CONSISTENCY" />
+          <el-option label="基础校对" value="PROOFREAD" />
           <el-option label="错别字/语法" value="TYPO_GRAMMAR" />
+          <el-option label="规则库审查" value="RULE_ONLY" />
           <el-option label="多模态识别" value="MULTIMODAL" />
           <el-option label="自定义规则" value="CUSTOM_RULE" />
           <el-option label="标准引用自检" value="SELF_CHECK" />
@@ -478,9 +480,10 @@ const reviewModeLabelMap: Record<string, string> = {
   TYPO_GRAMMAR: '错别字/语法',
   MULTIMODAL: '多模态识别',
   SELF_CHECK: '标准引用自检',
-  // 旧模式兼容映射（历史数据）
   CONSISTENCY: '一致性审查',
   CUSTOM_RULE: '自定义规则',
+  RULE_ONLY: '规则库审查',
+  PROOFREAD: '基础校对',
 }
 
 const getReviewPlanSummary = (row: any): string => {
@@ -502,6 +505,11 @@ const getReviewPlanSummary = (row: any): string => {
   const profile = plan.execution?.profile === 'RULE_ONLY' ? '仅规则' : '混合执行'
 
   const moduleLabel = (() => {
+    // 优先使用数据库存储的 mode（准确反映创建时的选择）
+    if (row?.reviewMode && reviewModeLabelMap[row.reviewMode]) {
+      return reviewModeLabelMap[row.reviewMode]
+    }
+    // 兜底：从 plan 推导
     if (plan.objective === 'COMPARE') return '一致性审查（对照）'
     if (plan.objective === 'PROOFREAD') return '基础校对审查'
     if (plan.objective === 'STRUCTURED') return '多模态审查'

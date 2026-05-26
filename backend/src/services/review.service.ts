@@ -993,6 +993,33 @@ export class ReviewService {
         });
       }
     }
+    // ★ MULTIMODAL 模式：立即保存表格/公式检测结果（不依赖 behavior.rules 门控）
+    if (extraRuleIssues.length > 0 && ctx.reviewMode === 'MULTIMODAL') {
+      const extraData = extraRuleIssues.map((issue) => ({
+        ...this.getConfidence(issue),
+        taskId, fileId: file.id,
+        issueType: issue.issueType, ruleCode: issue.ruleCode,
+        severity: issue.severity,
+        reviewSource: 'RULE_ENGINE',
+        originalText: issue.originalText,
+        suggestedText: issue.suggestedText || null,
+        description: issue.description,
+        cadHandleId: (issue as any).cadHandleId || null,
+        textPosition: this.buildLegacyTextPosition(
+          this.buildLocateMeta(ctx.extractedText, issue, { fileId: file.id }),
+          ctx.extractedText,
+          issue.originalText,
+        ),
+        locateMeta: this.buildLocateMeta(ctx.extractedText, issue, { fileId: file.id }),
+      }));
+      const strippedExtra = extraData.map((item) => this.stripDbUnsupportedFields(item));
+      try {
+        await prisma.taskDetail.createMany({ data: strippedExtra, skipDuplicates: true });
+        console.log(`[Review] ✅ MULTIMODAL 前置检测写入成功: ${extraData.length}条 (${file.fileName})`);
+      } catch (e) {
+        console.error(`[Review] ❌ MULTIMODAL 前置检测写入失败: ${file.fileName}`, e);
+      }
+    }
 
     // 规则引擎
     let ruleIssues: any[] = [];
