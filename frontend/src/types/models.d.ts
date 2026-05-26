@@ -413,6 +413,10 @@ export interface PromptTemplate {
   defaultValue?: string
   isBuiltin: boolean
   enabled: boolean
+  /** registry.ts 中当前最新默认值（后端实时注入） */
+  registryDefault: string
+  /** 用户是否在前端手动修改过此提示词 */
+  isModified: boolean
   createdAt: string
   updatedAt: string
 }

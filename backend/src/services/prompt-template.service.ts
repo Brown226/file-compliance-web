@@ -20,7 +20,7 @@
  */
 
 import prisma from '../config/db';
-import { BUILTIN_TEMPLATES } from './prompts';
+import { BUILTIN_TEMPLATES, getPromptFallback } from './prompts';
 
 // ==================== 类型定义 ====================
 
@@ -156,25 +156,30 @@ export class PromptTemplateService {
   static async resetToDefault(key: string): Promise<PromptTemplateData> {
     const tpl = await prisma.promptTemplate.findUnique({ where: { key } });
     if (!tpl) throw new Error(`模板不存在: ${key}`);
-    if (!tpl.defaultValue) throw new Error(`模板没有默认值: ${key}`);
+
+    // 从 registry 获取最新默认值（而非 DB 中可能已过期的 defaultValue）
+    const latestDefault = getPromptFallback(tpl.module, tpl.role, tpl.variant) || (tpl as any).defaultValue || '';
+    if (!latestDefault) throw new Error(`模板没有默认值: ${key}`);
 
     return prisma.promptTemplate.update({
       where: { key },
-      data: { content: tpl.defaultValue },
+      data: { content: latestDefault, defaultValue: latestDefault },
     }) as any;
   }
 
   static async resetAllToDefault(): Promise<{ count: number }> {
     const templates = await prisma.promptTemplate.findMany({
-      where: { isBuiltin: true, defaultValue: { not: null } },
+      where: { isBuiltin: true },
     });
 
     let count = 0;
     for (const tpl of templates) {
-      if (tpl.defaultValue) {
+      // 从 registry 获取最新默认值
+      const latestDefault = getPromptFallback(tpl.module, tpl.role, tpl.variant);
+      if (latestDefault) {
         await prisma.promptTemplate.update({
           where: { key: tpl.key },
-          data: { content: tpl.defaultValue },
+          data: { content: latestDefault, defaultValue: latestDefault },
         });
         count++;
       }
@@ -201,6 +206,41 @@ export class PromptTemplateService {
       console.warn(`[PromptTemplate] 读取模板 ${key} 失败，使用默认值:`, e);
     }
     return fallback || '';
+  }
+
+  /**
+   * 按场景获取提示词（含元数据），供 PromptLoader 判断用户是否修改过
+   */
+  static async getPromptBySceneWithMeta(
+    module: string,
+    role: 'system' | 'user',
+    variant: string = 'default',
+  ): Promise<{ content: string; defaultValue: string } | null> {
+    try {
+      const tpl = await prisma.promptTemplate.findFirst({
+        where: { module, role, variant, enabled: true },
+      });
+      if (tpl && tpl.content) {
+        return {
+          content: tpl.content,
+          defaultValue: (tpl as any).defaultValue || '',
+        };
+      }
+      if (variant !== 'default') {
+        const defaultTpl = await prisma.promptTemplate.findFirst({
+          where: { module, role, variant: 'default', enabled: true },
+        });
+        if (defaultTpl && defaultTpl.content) {
+          return {
+            content: defaultTpl.content,
+            defaultValue: (defaultTpl as any).defaultValue || '',
+          };
+        }
+      }
+    } catch (e) {
+      console.warn(`[PromptTemplate] 读取场景模板元数据 ${module}/${role}/${variant} 失败:`, e);
+    }
+    return null;
   }
 
   static async getPromptByScene(

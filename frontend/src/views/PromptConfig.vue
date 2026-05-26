@@ -132,8 +132,11 @@
                 <el-tag v-if="tpl.isBuiltin" type="info" size="default" effect="plain">
                   <el-icon><Lock /></el-icon> 系统内置
                 </el-tag>
-                <el-tag v-if="hasCustomContent(tpl)" type="warning" size="default" effect="plain">
+                <el-tag v-if="tpl.isModified" type="warning" size="default" effect="plain">
                   <el-icon><Edit /></el-icon> 已自定义
+                </el-tag>
+                <el-tag v-if="!tpl.isModified && tpl.registryDefault && tpl.registryDefault !== tpl.content" type="success" size="default" effect="plain">
+                  <el-icon><Promotion /></el-icon> 可更新
                 </el-tag>
                 <el-tag v-if="!tpl.enabled" type="danger" size="default" effect="plain">已禁用</el-tag>
               </div>
@@ -335,15 +338,15 @@
           <el-tab-pane label="📜 版本对比" name="history">
             <div class="history-content">
               <el-alert
-                v-if="hasCustomContent(editingTemplate!)"
-                title="以下对比默认值与当前自定义值的差异"
+                v-if="editingTemplate!.isModified"
+                title="以下对比 registry.ts 最新默认值与当前自定义值的差异"
                 type="success" :closable="false" show-icon
               />
-              <el-alert v-else title="该模板暂无自定义修改，无需对比" type="info" :closable="false" show-icon />
-              <div class="diff-view" v-if="hasCustomContent(editingTemplate!)">
+              <el-alert v-else title="该模板使用 registry.ts 最新默认值，无自定义修改" type="info" :closable="false" show-icon />
+              <div class="diff-view" v-if="editingTemplate!.isModified">
                 <div class="diff-pane default">
-                  <div class="diff-header"><el-icon><Document /></el-icon> 默认模板</div>
-                  <pre>{{ editingTemplate.defaultValue || '(无默认值)' }}</pre>
+                  <div class="diff-header"><el-icon><Document /></el-icon> registry 默认值</div>
+                  <pre>{{ editingTemplate.registryDefault || editingTemplate.defaultValue || '(无默认值)' }}</pre>
                 </div>
                 <div class="diff-pane current">
                   <div class="diff-header"><el-icon><Edit /></el-icon> 当前自定义</div>
@@ -371,7 +374,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { useEnterToConfirm } from '@/composables/useEnterToConfirm'
 import {
   Edit, View, Lock, Key, Folder, Refresh, RefreshRight, Delete, Minus,
-  MagicStick, VideoPlay, RefreshLeft, Document, Search, ArrowRight, Close
+  MagicStick, VideoPlay, RefreshLeft, Document, Search, ArrowRight, Close, Promotion
 } from '@element-plus/icons-vue'
 import {
   getPromptTemplatesApi,
@@ -398,6 +401,10 @@ interface PromptTemplate {
   defaultValue?: string
   isBuiltin: boolean
   enabled: boolean
+  /** registry.ts 最新默认值（后端注入，实时同步） */
+  registryDefault: string
+  /** 用户是否修改过此提示词 */
+  isModified: boolean
 }
 
 interface ModuleInfo {
@@ -455,7 +462,7 @@ const filteredTemplates = computed(() => {
   return list
 })
 
-const hasCustomContent = (tpl: PromptTemplate) => tpl.defaultValue && tpl.content !== tpl.defaultValue
+const hasCustomContent = (tpl: PromptTemplate) => tpl.isModified
 
 const parsePlaceholders = (placeholders?: string): string[] => {
   if (!placeholders) return []

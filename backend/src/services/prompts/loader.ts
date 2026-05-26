@@ -66,22 +66,37 @@ export class PromptLoader {
   /**
    * 通用提示词解析
    *
-   * 加载链：DB → Registry → fallback
+   * 优先级判断逻辑：
+   *  1. 查 DB 看 content 和 defaultValue
+   *  2. content === defaultValue → 用户没改过 → 用 registry.ts 最新值（热更新）
+   *  3. content !== defaultValue → 用户在前端改过 → 用 DB content
+   *  4. DB 不可达 → 用 registry 回退
    */
   static async resolve(module: string, role: string, variant: string, fallback: string): Promise<string> {
-    // 1. DB（用户可在管理界面修改）
+    // 从 registry 获取最新默认值（始终是代码中最新的）
+    const registryValue = getPromptFallback(module, role, variant);
+
+    // 查 DB，看用户是否手动修改过
     try {
-      const fromDb = await PromptTemplateService.getPromptByScene(module, role as 'system' | 'user', variant);
-      if (fromDb) return fromDb;
+      const meta = await PromptTemplateService.getPromptBySceneWithMeta(
+        module, role as 'system' | 'user', variant,
+      );
+      if (meta) {
+        // content === defaultValue → 用户没改过 → 用 registry 最新值
+        if (meta.content === meta.defaultValue && registryValue) {
+          return registryValue;
+        }
+        // content !== defaultValue → 用户在前端手动改过 → 用用户的版本
+        return meta.content;
+      }
     } catch (e) {
       // DB 不可达，继续降级
     }
 
-    // 2. Registry 回退（代码中的权威默认值）
-    const fromRegistry = getPromptFallback(module, role, variant);
-    if (fromRegistry) return fromRegistry;
+    // DB 不可达或无记录 → 用 registry 回退
+    if (registryValue) return registryValue;
 
-    // 3. 最终兜底
+    // 最终兜底
     return fallback;
   }
 
