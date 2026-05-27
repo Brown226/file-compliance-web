@@ -98,7 +98,7 @@ export function initQueueProcessors(): void {
     try {
       // 幂等检查：任务已失败/完成则跳过
       const existing = UploadTaskService.getTask(taskId);
-      if (existing && (existing.status === 'completed' || existing.status === 'failed' && job.attemptsMade > 0)) {
+      if (existing && (existing.status === 'completed' || (existing.status === 'failed' && job.attemptsMade > 0))) {
         console.log(`[KB-Queue] 任务已终结，跳过: ${taskId}`);
         return { skipped: true, reason: existing.status };
       }

@@ -172,7 +172,7 @@ const routes: Array<RouteRecordRaw> = [
         path: 'admin/feedback',
         name: 'AdminFeedback',
         component: () => import('../views/FeedbackManagement.vue'),
-        meta: { title: '反馈管理', requiresAdminOrManager: true }
+        meta: { title: '反馈管理', requiresAdmin: true }
       },
 
       // ===== 旧路由重定向（兼容已有书签）=====

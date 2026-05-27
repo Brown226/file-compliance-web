@@ -180,21 +180,32 @@ const handleUpload = async () => {
 
   uploading.value = true
   lastError.value = ''
+  uploadStatus.value = []
 
   try {
     const fd = new FormData()
     fileList.value.forEach(f => fd.append('files', f.raw))
     const { data } = await uploadDocumentAsyncApi(props.targetId, fd)
-    ElMessage.success(`${fileList.value.length} 个文件已提交，正在后台处理`)
-    uploadStatus.value = fileList.value.map(f => ({
-      name: f.name,
-      status: 'done' as const,
-      message: `任务已提交，任务ID: ${data.taskIds?.[0] || '-'}`,
+    const results = data?.results || []
+
+    uploadStatus.value = results.map(r => ({
+      name: r.name,
+      status: r.status.startsWith('失败') ? 'error' as const : 'done' as const,
+      message: r.status,
     }))
-    emit('uploaded', data.taskIds)
-    emit('update:modelValue', false)
-    fileList.value = []
-    progress.value = []
+
+    const failed = results.filter(r => r.status.startsWith('失败'))
+    if (failed.length === 0) {
+      ElMessage.success(`全部 ${results.length} 个文件处理完成`)
+      emit('uploaded')
+      emit('update:modelValue', false)
+      fileList.value = []
+      progress.value = []
+    } else {
+      const successCount = results.length - failed.length
+      ElMessage.warning(`${successCount}/${results.length} 个文件处理完成，${failed.length} 个失败`)
+      progress.value = []
+    }
   } catch (err: any) {
     const message = err?.response?.data?.message || err?.message || '上传失败'
     lastError.value = message

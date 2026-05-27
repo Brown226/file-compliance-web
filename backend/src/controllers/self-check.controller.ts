@@ -4,6 +4,7 @@ import fs from 'fs';
 import prisma from '../config/db';
 import { SelfCheckService, SelfCheckReport } from '../services/self-check.service';
 import { SelfCheckExportService } from '../services/self-check-export.service';
+import { WebSocketService } from '../services/websocket.service';
 import { success, error } from '../utils/response';
 
 // 内存中暂存最近一次报告结果，用于导出
@@ -59,19 +60,15 @@ export const runSelfCheck = async (req: Request, res: Response): Promise<void> =
       fileType: path.extname(f.originalname).slice(1).toLowerCase(),
     }));
 
-    // 执行自检（传入 DWG 解析数据）
-    const report = await SelfCheckService.execute(filePaths, standardFolderId, undefined, dwgParsedData);
-
-    // 持久化为任务记录（含 TaskFile，以便前端原文定位预览）
+    // 1. 创建任务（PROCESSING 状态）+ 文件记录
     const userId = (req as any).user?.id;
+    const title = `标准引用自检 - ${new Date().toLocaleString('zh-CN')}`;
     const task = await prisma.task.create({
       data: {
-        title: `标准引用自检 - ${new Date().toLocaleString('zh-CN')}`,
-        status: 'COMPLETED',
+        title,
+        status: 'PROCESSING',
         reviewMode: 'SELF_CHECK',
         creatorId: userId,
-        selfCheckReport: report as any,
-        // 创建 TaskFile 记录，让 TaskResultsView 左侧文件列表有数据
         files: {
           create: filePaths.map(f => ({
             fileName: f.originalName,
@@ -81,21 +78,92 @@ export const runSelfCheck = async (req: Request, res: Response): Promise<void> =
             status: 'COMPLETED',
             textLength: 0,
             processedLength: 0,
-            errorCount: report.items.filter((item: any) => item.sourceFile === f.originalName && item.errorTypes.length > 0).length,
+            errorCount: 0,
           })),
         },
       },
       include: { files: true },
     });
 
-    // 缓存报告用于导出（关联 taskId）
-    reportCache.set(task.id, report);
-    setTimeout(() => reportCache.delete(task.id), 60 * 60 * 1000); // 1小时
+    // 2. 立即返回 taskId，不阻塞
+    success(res, { taskId: task.id, status: 'PROCESSING' }, '自检任务已创建，正在后台执行');
 
-    success(res, { ...report, taskId: task.id }, `自检完成：${report.totalChecked} 条引用，${report.errorCount} 条存在错误`);
+    // 3. 后台异步执行自检
+    (async () => {
+      try {
+        WebSocketService.emitTaskProgress(task.id, {
+          type: 'self_check_start',
+          step: '标准引用自检',
+          progress: 5,
+          message: '正在初始化自检...',
+        });
+
+        const report = await SelfCheckService.execute(
+          filePaths,
+          standardFolderId,
+          (progress) => {
+            const pct = Math.round((progress.current / Math.max(progress.total, 1)) * 80) + 10;
+            WebSocketService.emitTaskProgress(task.id, {
+              type: 'self_check_progress',
+              step: `自检中 (${progress.current}/${progress.total})`,
+              progress: pct,
+              message: progress.message,
+            });
+          },
+          dwgParsedData
+        );
+
+        // 更新任务：写入报告 + 标记完成
+        await prisma.task.update({
+          where: { id: task.id },
+          data: {
+            status: 'COMPLETED',
+            selfCheckReport: report as any,
+          },
+        });
+
+        // 更新 TaskFile 的 errorCount
+        for (const tf of task.files) {
+          const fileErrors = report.items.filter(
+            (item: any) => item.sourceFile === tf.fileName && item.errorTypes.length > 0
+          ).length;
+          if (fileErrors > 0) {
+            await prisma.taskFile.update({
+              where: { id: tf.id },
+              data: { errorCount: fileErrors },
+            });
+          }
+        }
+
+        // 缓存报告用于导出
+        reportCache.set(task.id, report);
+        setTimeout(() => reportCache.delete(task.id), 60 * 60 * 1000);
+
+        WebSocketService.emitTaskProgress(task.id, {
+          type: 'completed',
+          step: '自检完成',
+          progress: 100,
+          message: `自检完成：${report.totalChecked} 条引用，${report.errorCount} 条存在错误`,
+        });
+
+        console.log(`[SelfCheck] 任务 ${task.id} 后台执行完成`);
+      } catch (err: any) {
+        console.error(`[SelfCheck] 任务 ${task.id} 后台执行失败:`, err);
+        await prisma.task.update({
+          where: { id: task.id },
+          data: { status: 'FAILED' },
+        }).catch(e => console.error('[SelfCheck] 更新失败状态失败:', e));
+        WebSocketService.emitTaskProgress(task.id, {
+          type: 'error',
+          step: '自检失败',
+          progress: 0,
+          message: err.message || '自检执行失败',
+        });
+      }
+    })();
   } catch (err: any) {
-    console.error('[SelfCheck] 执行失败:', err);
-    error(res, err.message || '自检执行失败', 500);
+    console.error('[SelfCheck] 创建任务失败:', err);
+    error(res, err.message || '创建自检任务失败', 500);
   }
 };
 

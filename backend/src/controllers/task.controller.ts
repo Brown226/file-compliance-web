@@ -11,7 +11,7 @@ export const createTask = async (req: AuthRequest, res: Response): Promise<void>
   try {
     const { title, description, standardId, standardIds, knowledgeCategoryId, knowledgeCategoryIds,
       perspective, selectedTemplateId, intraFileConsistency,
-      reviewPlan, reviewSpecificationId, ruleLibraryId, entryModule } = req.body;
+      reviewPlan, reviewSpecificationId, ruleLibraryId, entryModule, reviewMode } = req.body;
     const creatorId = req.user?.id;
     const files = req.files as Express.Multer.File[];
 
@@ -83,6 +83,7 @@ export const createTask = async (req: AuthRequest, res: Response): Promise<void>
       selectedTemplateId,
       intraFileConsistency: intraFileConsistency === 'true' || intraFileConsistency === true,
       entryModule,
+      reviewMode,
     });
 
     success(res, task, '任务创建成功');
@@ -316,7 +317,11 @@ export const getTaskFileRaw = async (req: Request, res: Response): Promise<void>
 
     let absPath: string
     const rawPath = file.filePath
-    if (path.isAbsolute(rawPath) && !rawPath.startsWith('/') && !rawPath.startsWith('\\')) {
+    // 处理 /uploads/ 开头的路径（数据库存储格式）
+    if (rawPath.startsWith('/uploads/') || rawPath.startsWith('\\uploads\\')) {
+      const relativePath = rawPath.replace(/^[/\\]+/, '')
+      absPath = path.join(__dirname, '..', '..', relativePath)
+    } else if (path.isAbsolute(rawPath)) {
       absPath = rawPath
     } else {
       const relativePath = rawPath.replace(/^[/\\]+/, '')

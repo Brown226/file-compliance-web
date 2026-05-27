@@ -116,12 +116,13 @@ export class TaskService {
     selectedTemplateId?: string;  // 选择的审查模板ID
     intraFileConsistency?: boolean;  // 文件内一致性检查
     entryModule?: string;             // 前端入口模块（LIBRARY/CONSISTENCY/PROOFREAD/RULE_ONLY/MULTIMODAL/DOC_REVIEW）
+    reviewMode?: string;              // 直接指定审查模式（如 SELF_CHECK）
     files?: Express.Multer.File[];
     dwgParsedData?: Record<string, any>;  // 前端 WASM 解析的 DWG 数据（按文件名映射）
   }): Promise<Task> {
     const { title, description, creatorId, standardId, standardIds = [], knowledgeCategoryId, knowledgeCategoryIds,
       reviewSpecificationId, ruleLibraryId, perspective, reviewPlan,
-      selectedTemplateId, intraFileConsistency, entryModule,
+      selectedTemplateId, intraFileConsistency, entryModule, reviewMode,
       files = [], dwgParsedData } = data;
 
     // 合并标准 ID：保留单选兼容，同时写入多选
@@ -144,9 +145,13 @@ export class TaskService {
         throw new Error('仅规则执行模式必须指定审查规范集或启用的规则前缀');
       }
     }
-    const resolvedReviewMode = entryModule
-      ? this.mapEntryModule(entryModule)
-      : this.resolvePipelineSelector(normalizedReviewPlan);
+    // 优先使用前端直接传的 reviewMode（如 SELF_CHECK），否则从 entryModule 或 reviewPlan 推导
+    const validReviewModes = ['LIBRARY_REVIEW', 'DOC_REVIEW', 'CONSISTENCY', 'TYPO_GRAMMAR', 'MULTIMODAL', 'RULE_ONLY', 'SELF_CHECK'];
+    const resolvedReviewMode = (reviewMode && validReviewModes.includes(reviewMode))
+      ? reviewMode
+      : entryModule
+        ? this.mapEntryModule(entryModule)
+        : this.resolvePipelineSelector(normalizedReviewPlan);
     const shouldDelayReview = normalizedReviewPlan.objective === 'COMPARE';
 
     // 知识库 ID：多选优先，回退到单选

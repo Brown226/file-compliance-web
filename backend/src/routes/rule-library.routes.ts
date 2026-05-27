@@ -11,6 +11,7 @@ import {
   deleteLibrary,
   parseRulesFromFile,
   parseRulesPreview,
+  parseRulesPreviewAsync,
   importPreviewItems,
   addItem,
   updateItem,
@@ -37,6 +38,7 @@ router.delete('/:id', requireRole('ADMIN', 'MANAGER'), deleteLibrary);
 // 上传文件解析规则
 router.post('/:id/parse', requireRole('ADMIN', 'MANAGER'), upload.single('file'), parseRulesFromFile);
 router.post('/:id/parse-preview', requireRole('ADMIN', 'MANAGER'), upload.single('file'), parseRulesPreview);
+router.post('/:id/parse-preview-async', requireRole('ADMIN', 'MANAGER'), upload.array('files', 5), parseRulesPreviewAsync);
 router.post('/:id/import', requireRole('ADMIN', 'MANAGER'), importPreviewItems);
 
 // 规则条目管理

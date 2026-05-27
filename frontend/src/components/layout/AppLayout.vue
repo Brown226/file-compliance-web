@@ -37,12 +37,14 @@
           <template #title><span>我的任务</span></template>
         </el-menu-item>
 
+        <!-- 反馈意见（所有角色可见） -->
+        <el-menu-item index="/feedback">
+          <el-icon><ChatLineRound /></el-icon>
+          <template #title><span>反馈意见</span></template>
+        </el-menu-item>
+
+        <!-- 系统公告（仅管理员可见） -->
         <template v-if="userStore.isAdmin()">
-          <div class="menu-divider" v-show="!sidebarCollapsed"></div>
-          <el-menu-item index="/feedback">
-            <el-icon><ChatLineRound /></el-icon>
-            <template #title><span>反馈意见</span></template>
-          </el-menu-item>
           <el-menu-item index="/announcements">
             <el-icon><Bell /></el-icon>
             <template #title><span>系统公告</span></template>
@@ -85,9 +87,7 @@
           <el-icon :size="14" color="#E6A23C"><WarningFilled /></el-icon>
           <span class="warning-text">
             <strong>AI 辅助审查</strong> · 生成内容仅供参考
-            <el-tooltip content="平台严禁处理、存储和传输涉密敏感信息。请确保上传的文档符合安全规定。" placement="bottom">
-              <el-button link type="primary" size="small" class="security-link">安全须知</el-button>
-            </el-tooltip>
+            <span class="security-detail">· 平台严禁处理、存储和传输涉密敏感信息。请确保上传的文档符合安全规定。</span>
           </span>
           <el-icon 
             class="warning-close" 
@@ -757,10 +757,10 @@ const submitUsernameChange = async () => {
   border-radius: 20px;
   color: #92400E;
   font-size: 12px;
-  white-space: nowrap;
+  white-space: normal;
   flex-shrink: 0;
   transition: all 0.3s ease;
-  max-width: 400px;
+  max-width: 800px;
 }
 
 .security-warning:hover {
@@ -784,6 +784,12 @@ const submitUsernameChange = async () => {
 .security-link {
   padding: 0 4px;
   font-size: 11px;
+  margin-left: 4px;
+}
+
+.security-detail {
+  color: #B45309;
+  font-size: 12px;
   margin-left: 4px;
 }
 

@@ -194,7 +194,7 @@
             <div class="kb-card__bottom">
               <span class="kb-card__meta">
                 <el-icon :size="12"><Document /></el-icon>
-                {{ item._count?.vectorDocuments || 0 }} 文档
+                {{ item._count?.documents || 0 }} 文档
               </span>
             </div>
 

@@ -7,6 +7,8 @@ import path from 'path';
 import fs from 'fs';
 import { v4 as uuidv4 } from 'uuid';
 import { FileTypeService } from '../services/file-type.service';
+import prisma from '../config/db';
+import { WebSocketService } from '../services/websocket.service';
 
 const UPLOAD_DIR = path.join(__dirname, '../../uploads/rule-libraries');
 if (!fs.existsSync(UPLOAD_DIR)) fs.mkdirSync(UPLOAD_DIR, { recursive: true });
@@ -124,6 +126,148 @@ export const parseRulesPreview = async (req: AuthRequest, res: Response): Promis
   } catch (err: any) {
     console.error('Parse Rules Preview Error:', err);
     error(res, err.message || '解析预览失败', 500);
+  }
+};
+
+/**
+ * POST /api/rule-libraries/:id/parse-preview-async
+ * 异步解析规则预览（适合大文件 / 长文档 / 多文件批量）
+ * 支持最多 5 个文件同时上传，后台按序解析，合并候选规则结果
+ */
+export const parseRulesPreviewAsync = async (req: AuthRequest, res: Response): Promise<void> => {
+  const savedPaths: string[] = [];
+  try {
+    const files = (req.files as Express.Multer.File[]) || [];
+    if (files.length === 0) { error(res, '请选择文件', 400); return; }
+    if (files.length > 5) {
+      // 清理已接收文件
+      files.forEach(f => { try { if (f.path && fs.existsSync(f.path)) fs.unlinkSync(f.path); } catch {} });
+      error(res, '最多支持同时上传 5 个文件', 400);
+      return;
+    }
+
+    const libraryId = req.params.id as string;
+    const userId = (req as any).user?.id as string | undefined;
+
+    // 1. 保存文件（重命名为 uuid，避免重名/中文问题）
+    const fileMetaList: Array<{ originalName: string; savedPath: string; ext: string }> = [];
+    for (const f of files) {
+      const ext = path.extname(f.originalname).toLowerCase();
+      const savedName = `${uuidv4()}${ext}`;
+      const savedPath = path.join(UPLOAD_DIR, savedName);
+      fs.renameSync(f.path, savedPath);
+      savedPaths.push(savedPath);
+      fileMetaList.push({ originalName: f.originalname, savedPath, ext });
+    }
+
+    const title = fileMetaList.length === 1
+      ? `AI 解析规则：${fileMetaList[0].originalName}`
+      : `AI 解析规则：${fileMetaList.length} 个文件`;
+
+    // 2. 创建 PROCESSING 任务
+    const task = await prisma.task.create({
+      data: {
+        title,
+        status: 'PROCESSING',
+        reviewMode: 'RULE_PARSING',
+        creatorId: userId || 'system',
+        selfCheckReport: {
+          libraryId,
+          fileCount: fileMetaList.length,
+          files: fileMetaList.map(m => m.originalName),
+          phase: 'upload',
+        } as any,
+      },
+    });
+
+    // 3. 立即返回
+    success(res, { taskId: task.id, status: 'PROCESSING' }, '解析任务已创建，正在后台执行');
+
+    // 4. 后台异步按序解析并合并结果
+    (async () => {
+      try {
+        const total = fileMetaList.length;
+        const allItems: any[] = [];
+
+        for (let i = 0; i < total; i++) {
+          const meta = fileMetaList[i];
+          const basePct = Math.floor((i / total) * 90); // 0..90 分配给各文件
+          WebSocketService.emitTaskProgress(task.id, {
+            type: 'rule_parsing_start',
+            step: `解析文件 (${i + 1}/${total})`,
+            progress: basePct + 5,
+            message: `正在解析：${meta.originalName}`,
+          });
+
+          const fileType = FileTypeService.getStandardizedType(meta.ext);
+          const text = await ParserService.parseFile(meta.savedPath, fileType);
+          if (!text || text.trim().length < 10) {
+            // 单文件失败跳过，不中断整体
+            WebSocketService.emitTaskProgress(task.id, {
+              type: 'rule_parsing_progress',
+              step: `跳过文件 (${i + 1}/${total})`,
+              progress: basePct + 40,
+              message: `${meta.originalName} 内容过少或解析失败，已跳过`,
+            });
+            continue;
+          }
+
+          WebSocketService.emitTaskProgress(task.id, {
+            type: 'rule_parsing_progress',
+            step: `提取规则 (${i + 1}/${total})`,
+            progress: basePct + 40,
+            message: `${meta.originalName} 已解析（${text.length} 字符），正在提取规则...`,
+          });
+
+          const preview = await RuleLibraryService.previewRulesFromText(libraryId, text, meta.originalName);
+          // 标记来源文件名
+          const tagged = (preview.items || []).map(it => ({
+            ...it,
+            sourceLocation: it.sourceLocation || meta.originalName,
+          }));
+          allItems.push(...tagged);
+        }
+
+        // 5. 写入任务结果
+        await prisma.task.update({
+          where: { id: task.id },
+          data: {
+            status: 'COMPLETED',
+            selfCheckReport: {
+              libraryId,
+              fileCount: total,
+              items: allItems,
+              sourceFileName: fileMetaList.map(m => m.originalName).join(', '),
+              count: allItems.length,
+            } as any,
+          },
+        });
+
+        WebSocketService.emitTaskProgress(task.id, {
+          type: 'rule_parsing_complete',
+          step: '解析完成',
+          progress: 100,
+          message: `成功解析 ${allItems.length} 条候选规则（共 ${total} 个文件）`,
+        });
+      } catch (err: any) {
+        console.error('Async Parse Rules Error:', err);
+        await prisma.task.update({
+          where: { id: task.id },
+          data: { status: 'FAILED' },
+        }).catch(() => {});
+        WebSocketService.emitTaskProgress(task.id, {
+          type: 'error',
+          step: '解析失败',
+          progress: 0,
+          message: err?.message || '规则解析失败',
+        });
+      }
+    })();
+  } catch (err: any) {
+    console.error('Create Async Parse Task Error:', err);
+    // 清理已保存文件
+    savedPaths.forEach(p => { try { if (fs.existsSync(p)) fs.unlinkSync(p); } catch {} });
+    error(res, err.message || '创建解析任务失败', 500);
   }
 };
 

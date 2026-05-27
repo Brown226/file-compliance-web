@@ -38,18 +38,20 @@
 
           <div v-if="activeTasks.length > 0" class="upload-progress-bar">
             <div v-for="task in activeTasks" :key="task.id" class="upload-progress-item">
-              <div class="upload-progress-info">
-                <el-icon class="is-loading" :size="14" v-if="task.status === 'processing'"><Loading /></el-icon>
-                <el-icon :size="14" v-else-if="task.status === 'completed'"><CircleCheck /></el-icon>
-                <el-icon :size="14" v-else-if="task.status === 'failed'"><CircleClose /></el-icon>
-                <el-icon class="is-loading" :size="14" v-else><Loading /></el-icon>
-                <span class="upload-progress-name">{{ task.fileName || '处理中...' }}</span>
-                <span class="upload-progress-msg">{{ task.message }}</span>
+              <div class="upload-progress-item__row">
+                <span class="upload-progress-item__icon">
+                  <el-icon class="is-loading" :size="13" v-if="task.status === 'processing'"><Loading /></el-icon>
+                  <el-icon :size="13" v-else-if="task.status === 'completed'"><CircleCheck /></el-icon>
+                  <el-icon :size="13" v-else-if="task.status === 'failed'"><CircleClose /></el-icon>
+                  <el-icon class="is-loading" :size="13" v-else><Loading /></el-icon>
+                </span>
+                <span class="upload-progress-item__name" :title="task.fileName">{{ task.fileName || '处理中...' }}</span>
+                <span class="upload-progress-item__msg">{{ task.message }}</span>
               </div>
               <el-progress
                 :percentage="task.progress"
                 :status="task.status === 'completed' ? 'success' : task.status === 'failed' ? 'exception' : undefined"
-                :stroke-width="4"
+                :stroke-width="3"
                 :show-text="false"
               />
             </div>
@@ -1190,18 +1192,7 @@ const stopTaskPolling = () => {
   if (taskPollTimer) { clearInterval(taskPollTimer); taskPollTimer = null }
 }
 
-const handleImportComplete = (taskIds?: string[]) => {
-  if (taskIds?.length) {
-    activeTasks.value = taskIds.map(id => ({
-      id,
-      fileName: '',
-      status: 'pending' as const,
-      progress: 0,
-      message: '等待处理...',
-      createdAt: Date.now(),
-    }))
-    startTaskPolling()
-  }
+const handleImportComplete = () => {
   fetchDocuments()
 }
 
@@ -1598,6 +1589,14 @@ onMounted(async () => {
   await fetchCategoryInfo()
   await fetchDocuments()
   startPolling()
+  // 检测是否有活跃的上传任务（从其他页面导航过来时触发轮询）
+  try {
+    const { data: tasks } = await getActiveTasksApi()
+    if (tasks && tasks.length > 0) {
+      activeTasks.value = tasks
+      startTaskPolling()
+    }
+  } catch { /* ignore */ }
 })
 
 onBeforeUnmount(() => { stopPolling(); stopTaskPolling() })
@@ -1950,31 +1949,54 @@ onBeforeUnmount(() => { stopPolling(); stopTaskPolling() })
 
 /* ===== 上传进度条 ===== */
 .upload-progress-bar {
-  padding: var(--space-3) var(--space-4);
-  background: var(--bg-surface-hover);
-  border-radius: var(--radius-md);
+  background: var(--bg-surface);
   border: 1px solid var(--corp-border-light);
+  border-radius: var(--radius-md);
+  overflow: hidden;
 }
 .upload-progress-item {
-  margin-bottom: var(--space-2);
+  padding: 10px 14px;
+  border-bottom: 1px solid #f0f1f3;
 }
 .upload-progress-item:last-child {
-  margin-bottom: 0;
+  border-bottom: none;
 }
-.upload-progress-info {
+.upload-progress-item__row {
   display: flex;
   align-items: center;
-  gap: var(--space-2);
-  margin-bottom: 4px;
-  font-size: var(--text-sm);
+  gap: 8px;
+  margin-bottom: 6px;
 }
-.upload-progress-name {
-  font-weight: 600;
-  color: var(--corp-text-primary);
-}
-.upload-progress-msg {
+.upload-progress-item__icon {
+  flex-shrink: 0;
+  display: inline-flex;
+  width: 18px;
+  height: 18px;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  background: #f5f6f8;
   color: var(--corp-text-tertiary);
-  flex: 1;
+}
+.upload-progress-item:first-child .upload-progress-item__icon {
+  color: var(--corp-primary);
+}
+.upload-progress-item__name {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--corp-text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 420px;
+  flex-shrink: 1;
+}
+.upload-progress-item__msg {
+  font-size: 12px;
+  color: var(--corp-text-tertiary);
+  white-space: nowrap;
+  margin-left: auto;
+  flex-shrink: 0;
 }
 
 /* ===== 检索测试 Tab（上下布局重构） ===== */

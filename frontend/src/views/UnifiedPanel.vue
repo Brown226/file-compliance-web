@@ -1,7 +1,7 @@
 <template>
   <div class="unified-panel">
     <section class="stats-panel">
-      <div class="stat-card" v-for="stat in stats" :key="stat.label" @click="navigateTo(stat.route)">
+      <div class="stat-card" v-for="stat in filteredStats" :key="stat.label" @click="navigateTo(stat.route)">
         <div class="stat-icon" :class="stat.color">
           <el-icon><component :is="iconMap[stat.icon]" /></el-icon>
         </div>
@@ -78,7 +78,7 @@
           <!-- 默认概览页（未选择管理项时显示） -->
           <div v-else class="overview-content">
             <div class="overview-grid">
-              <div class="overview-card" v-for="card in overviewCards" :key="card.title" @click="navigateTo(card.route)">
+              <div class="overview-card" v-for="card in filteredOverviewCards" :key="card.title" @click="navigateTo(card.route)">
                 <div class="card-header">
                   <el-icon><component :is="iconMap[card.icon]" /></el-icon>
                   <span>{{ card.title }}</span>
@@ -108,6 +108,9 @@ import {
   Reading, Connection, ChatLineSquare, Key, Warning
 } from '@element-plus/icons-vue'
 import { getDashboardStatsApi } from '@/api/dashboard'
+import { useUserStore } from '@/stores/user'
+
+const userStore = useUserStore()
 
 const iconMap: Record<string, any> = {
   DataBoard, Refresh, Menu, ArrowDown, ArrowRight,
@@ -117,6 +120,8 @@ const iconMap: Record<string, any> = {
 }
 
 const expandedGroups = ref(['organization', 'knowledge', 'review', 'operations', 'system', 'audit'])
+
+const isAdmin = computed(() => userStore.isAdmin())
 const activeNav = ref('overview')
 const loading = ref(false)
 
@@ -153,7 +158,25 @@ const activeComponent = computed(() => {
   return componentsMap[activeNav.value] || null
 })
 
-const navGroups = ref([
+interface NavItem {
+  id: string
+  name: string
+  icon: string
+  description: string
+  hot?: boolean
+  badge?: string
+  adminOnly?: boolean
+}
+
+interface NavGroup {
+  id: string
+  name: string
+  icon: string
+  items: NavItem[]
+}
+
+const navGroups = computed<NavGroup[]>(() => {
+  const groups: NavGroup[] = [
   {
     id: 'organization',
     name: '组织与权限',
@@ -188,7 +211,7 @@ const navGroups = ref([
     name: '运营与监控',
     icon: 'Bell',
     items: [
-      { id: 'feedback', name: '反馈管理', icon: 'ChatLineSquare', description: '查看和处理用户反馈' },
+      { id: 'feedback', name: '反馈管理', icon: 'ChatLineSquare', description: '查看和处理用户反馈', adminOnly: true },
     ]
   },
   {
@@ -210,7 +233,17 @@ const navGroups = ref([
       { id: 'audit', name: '审计日志', icon: 'Document', description: '查看系统操作记录和审计追踪' },
     ]
   },
-])
+  ]
+
+  // 非ADMIN用户过滤掉adminOnly的管理项
+  if (!isAdmin.value) {
+    for (const group of groups) {
+      group.items = group.items.filter(item => !item.adminOnly)
+    }
+  }
+
+  return groups.filter(g => g.items.length > 0)
+})
 
 const currentNav = computed(() => {
   for (const group of navGroups.value) {
@@ -231,13 +264,14 @@ const currentGroup = computed(() => {
 
 // 统计数据 - 从 API 获取真实数据
 const stats = ref([
-  { label: '员工总数', value: '-', icon: 'User', color: 'green', route: 'departments' },
-  { label: '知识库文档', value: '-', icon: 'FolderOpened', color: 'purple', route: 'knowledge' },
-  { label: '标准清单', value: '-', icon: 'Reading', color: 'blue', route: 'standards' },
-  { label: '语义知识库', value: '-', icon: 'Files', color: 'purple', route: 'rules' },
-  { label: '审查规则', value: '-', icon: 'Document', color: 'orange', route: 'reviewRules' },
-  { label: '待处理反馈', value: '-', icon: 'ChatDotRound', color: 'red', route: 'feedback' },
+  { label: '员工总数', value: '-', icon: 'User', color: 'green', route: 'departments', adminOnly: false },
+  { label: '知识库文档', value: '-', icon: 'FolderOpened', color: 'purple', route: 'knowledge', adminOnly: false },
+  { label: '标准清单', value: '-', icon: 'Reading', color: 'blue', route: 'standards', adminOnly: false },
+  { label: '语义知识库', value: '-', icon: 'Files', color: 'purple', route: 'rules', adminOnly: false },
+  { label: '审查规则', value: '-', icon: 'Document', color: 'orange', route: 'reviewRules', adminOnly: false },
+  { label: '待处理反馈', value: '-', icon: 'ChatDotRound', color: 'red', route: 'feedback', adminOnly: true },
 ])
+const filteredStats = computed(() => stats.value.filter(s => isAdmin.value || !s.adminOnly))
 
 const overviewCards = ref([
   {
@@ -245,44 +279,51 @@ const overviewCards = ref([
     value: '',
     description: '管理部门结构和员工账号',
     icon: 'OfficeBuilding',
-    route: 'departments'
+    route: 'departments',
+    adminOnly: false
   },
   {
     title: '标准清单',
     value: '',
     description: '管理审查标准清单、白名单库和误报标记库',
     icon: 'Reading',
-    route: 'standards'
+    route: 'standards',
+    adminOnly: false
   },
   {
     title: '知识库管理',
     value: '',
     description: '管理知识库分类和文档，支撑 RAG 智能审查',
     icon: 'FolderOpened',
-    route: 'knowledge'
+    route: 'knowledge',
+    adminOnly: false
   },
   {
     title: '语义知识库',
     value: '',
     description: '管理语义知识库和规则库，提升审查准确率',
     icon: 'Files',
-    route: 'rules'
+    route: 'rules',
+    adminOnly: false
   },
   {
     title: '审查规则',
     value: '',
     description: '配置审查规则的启停、严重级别和检查参数',
     icon: 'MagicStick',
-    route: 'reviewRules'
+    route: 'reviewRules',
+    adminOnly: false
   },
   {
     title: '反馈管理',
     value: '',
     description: '查看和处理用户反馈，持续优化系统',
     icon: 'ChatLineSquare',
-    route: 'feedback'
+    route: 'feedback',
+    adminOnly: true
   },
 ])
+const filteredOverviewCards = computed(() => overviewCards.value.filter(c => isAdmin.value || !c.adminOnly))
 
 const fetchStats = async () => {
   loading.value = true

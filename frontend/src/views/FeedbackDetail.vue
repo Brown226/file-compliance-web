@@ -18,7 +18,7 @@
               <el-tag :type="getCategoryTagType(feedback.category)" size="large" style="margin-left: 8px;">
                 {{ getCategoryLabel(feedback.category) }}
               </el-tag>
-              <el-button type="primary" size="large" @click="handleUpdateStatus" style="margin-left: 16px;">
+              <el-button v-if="isAdmin" type="primary" size="large" @click="handleUpdateStatus" style="margin-left: 16px;">
                 更新状态
               </el-button>
             </div>
@@ -136,9 +136,12 @@ import { useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { ArrowLeft, Document } from '@element-plus/icons-vue'
 import { getFeedbackDetailApi, downloadAttachmentApi, updateFeedbackStatusApi } from '@/api/feedback'
+import { useUserStore } from '@/stores/user'
 import type { Feedback, FeedbackStatus, FeedbackCategory } from '@/types/models'
 
 const route = useRoute()
+const userStore = useUserStore()
+const isAdmin = userStore.isAdmin()
 const loading = ref(false)
 const feedback = ref<Feedback | null>(null)
 

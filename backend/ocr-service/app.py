@@ -197,7 +197,7 @@ def recognize_via_paddleocr(file_bytes: bytes, file_type: str | None, file_name:
     results: List[str] = []
     for image in source_images[:MAX_PAGES]:
         try:
-            ocr_result = ocr.ocr(np.array(image), cls=True)
+            ocr_result = ocr.ocr(np.array(image))
             text = extract_text_from_result(ocr_result)
             if text:
                 results.append(text)

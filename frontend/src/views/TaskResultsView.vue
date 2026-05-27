@@ -171,7 +171,7 @@
           <div class="progress-top">
             <div class="progress-status">
               <el-icon class="is-loading" :size="16"><Loading /></el-icon>
-              <span class="progress-title">正在智能审查文档</span>
+              <span class="progress-title">{{ isSelfCheck ? '正在执行标准引用自检' : '正在智能审查文档' }}</span>
             </div>
             <span class="progress-percent">{{ reviewProgress }}%</span>
           </div>
@@ -1519,7 +1519,7 @@ onMounted(async () => {
   // 如果任务状态不是 COMPLETED/FAILED，进入审查中模式，订阅 WS 实时更新
   if (task.value?.status !== 'COMPLETED' && task.value?.status !== 'FAILED') {
     reviewing.value = true
-    reviewMessage.value = '正在初始化审查...'
+    reviewMessage.value = isSelfCheck.value ? '正在初始化自检...' : '正在初始化审查...'
     unsubscribeWs = subscribeTask(taskId.value, handleWsMessage)
 
     // WS 断连时使用轮询兜底（10秒后检查 WS 是否连接成功）

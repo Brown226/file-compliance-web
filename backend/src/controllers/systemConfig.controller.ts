@@ -130,7 +130,7 @@ export const testLlmConnection = async (req: AuthRequest, res: Response): Promis
         input: ['hello world'],
         encoding_format: 'float',
       };
-    } else if (modelType === 'rerank') {
+    } else if (modelType === 'rerank' || modelType === 'reranker') {
       // Rerank 模型：使用 /rerank 端点（硅基流动等 OpenAI 兼容格式）
       url = `${baseUrl.replace(/\/rerank$/, '')}/rerank`;
       body = {

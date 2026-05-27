@@ -173,7 +173,7 @@ export const uploadDocument = async (req: AuthRequest, res: Response): Promise<v
 
 // ==================== 异步上传 ====================
 
-/** 异步上传文档 — 立即返回任务ID，通过 Bull 队列后台处理 */
+/** 异步上传文档 — 同步处理，不经过队列 */
 export const uploadDocumentAsync = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const id = req.params.id as string;
@@ -182,35 +182,38 @@ export const uploadDocumentAsync = async (req: AuthRequest, res: Response): Prom
 
     await KnowledgeCategoryService.ensureLeafCategory(id);
 
-    // 动态导入避免循环依赖
-    const { knowledgeUploadQueue } = await import('../services/queue.service');
-
-    const taskIds: string[] = [];
+    const results: Array<{ name: string; chunks: number; status: string }> = [];
 
     for (const file of files) {
-      const originalName = Buffer.from(file.originalname, 'latin1').toString('utf8');
-      const ext = path.extname(originalName);
-      const savedName = `${uuidv4()}${ext}`;
-      const savedPath = path.join(UPLOAD_DIR, savedName);
-      fs.renameSync(file.path, savedPath);
+      let savedPath = '';
+      try {
+        const originalName = Buffer.from(file.originalname, 'latin1').toString('utf8');
+        const ext = path.extname(originalName);
+        const savedName = `${uuidv4()}${ext}`;
+        savedPath = path.join(UPLOAD_DIR, savedName);
+        fs.renameSync(file.path, savedPath);
 
-      const taskId = UploadTaskService.createTask(originalName);
-      taskIds.push(taskId);
+        const result = await KnowledgeCategoryService.uploadDocument(id, savedPath, originalName);
+        results.push({ name: originalName, chunks: result.chunks, status: `完成，${result.chunks} 个分段` });
 
-      // 通过 Bull 队列持久化处理（重启不丢任务，自动重试）
-      await knowledgeUploadQueue.add('upload', {
-        taskId,
-        categoryId: id,
-        savedPath,
-        originalName,
-      }, {
-        jobId: `kb-upload:${taskId}`,
-      });
-
-      console.log(`[KB-Upload] 任务已入队: ${originalName} (taskId=${taskId})`);
+        console.log(`[KB-Upload] 完成: ${originalName} (${result.chunks} chunks)`);
+      } catch (fileErr: any) {
+        const name = file.originalname || '未知文件';
+        console.error(`[KB-Upload] 失败: ${name}`, fileErr.message);
+        results.push({ name, chunks: 0, status: `失败: ${fileErr.message}` });
+        // 清理已移动的文件
+        if (savedPath && fs.existsSync(savedPath)) {
+          try { fs.unlinkSync(savedPath); } catch {}
+        }
+      }
     }
 
-    success(res, { taskIds }, '文件已接收，正在后台处理');
+    const successCount = results.filter(r => !r.status.startsWith('失败')).length;
+    const message = successCount > 0
+      ? `${successCount}/${files.length} 个文件处理完成`
+      : '所有文件处理失败';
+
+    success(res, { results }, message);
   } catch (err: any) {
     console.error('Upload Async Error:', err);
     error(res, err.message || '上传失败', err instanceof AppError ? err.statusCode : 500);
@@ -287,7 +290,7 @@ export const previewDocument = async (req: AuthRequest, res: Response): Promise<
   }
 };
 
-/** 确认导入 — 异步处理，立即返回任务ID */
+/** 确认导入 — 同步处理，直接入库 */
 export const confirmImport = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const id = req.params.id as string;
@@ -298,54 +301,70 @@ export const confirmImport = async (req: AuthRequest, res: Response): Promise<vo
     await KnowledgeCategoryService.ensureLeafCategory(id);
 
     const category = await prisma.knowledgeCategory.findUnique({ where: { id } });
-    const baseConfig = {
-      sourceType: 'standard' as const,
-      categoryId: id,
-      embeddingUseDocumentTitle: metadata?.embeddingUseDocumentTitle ?? category?.embeddingUseDocumentTitle ?? false,
-      embeddingUseClauseId: category?.embeddingUseClauseId ?? false,
+    const baseChunkConfig = {
+      mode: (metadata?.chunkMode || category?.chunkMode || 'auto') as 'auto' | 'fixed' | 'paragraph',
+      maxChars: metadata?.maxChars ?? category?.maxChars ?? 900,
+      overlap: metadata?.overlap ?? category?.overlap ?? 120,
       contextualRetrieval: metadata?.contextualRetrieval ?? category?.contextualRetrieval ?? false,
-      metadata: metadata || {},
     };
 
-    const entries = documents.map((doc: any) => ({
-      ...baseConfig,
-      title: (doc.title || '').trim(),
-      content: (doc.chunks || []).map((c: any) => typeof c === 'string' ? c : c.content || '').join('\n\n'),
-      preChunkedParagraphs: (doc.chunks || []).map((c: any) => {
-        const text = typeof c === 'string' ? c : (c.content || '');
-        const title = c.title || '';
-        return { title, content: text };
-      }).filter((p: any) => p.content.length > 0),
-      chunkConfig: {
-        mode: metadata?.chunkMode || 'auto',
-        maxChars: metadata?.maxChars || undefined,
-        overlap: metadata?.overlap || undefined,
-        contextualRetrieval: baseConfig.contextualRetrieval,
-      },
-    }));
+    const results: Array<{ name: string; chunks: number; status: string }> = [];
 
-    // 创建任务追踪
-    const taskIds: string[] = [];
-    for (const entry of entries) {
-      const taskId = UploadTaskService.createTask(entry.title);
-      taskIds.push(taskId);
+    for (const doc of documents) {
+      const docTitle = (doc.title || '').trim();
+      const fileName = (doc.fileName || docTitle).trim();
+      try {
+        const paragraphs = (doc.chunks || []).map((c: any) => {
+          const text = typeof c === 'string' ? c : (c.content || '');
+          const title = c.title || '';
+          return { title, content: text };
+        }).filter((p: any) => p.content.length > 0);
+
+        if (paragraphs.length === 0) {
+          results.push({ name: fileName, chunks: 0, status: '失败: 无有效分段' });
+          continue;
+        }
+
+        const result = await VectorService.importDocument({
+          sourceType: 'standard',
+          categoryId: id,
+          title: docTitle,
+          content: paragraphs.map(p => p.content).join('\n\n'),
+          preChunkedParagraphs: paragraphs,
+          chunkConfig: baseChunkConfig,
+          embeddingUseDocumentTitle: metadata?.embeddingUseDocumentTitle ?? category?.embeddingUseDocumentTitle ?? false,
+          embeddingUseClauseId: category?.embeddingUseClauseId ?? false,
+          metadata: {
+            original_file: fileName,
+          },
+        });
+
+        // 同步创建 Document 记录
+        await prisma.document.upsert({
+          where: { categoryId_title: { categoryId: id, title: docTitle } },
+          update: { totalChunks: result.chunks, isVectorized: true, vectorStatus: 'SUCCESS' },
+          create: {
+            categoryId: id,
+            title: docTitle,
+            sourceType: 'standard',
+            status: 'ACTIVE',
+            totalChunks: result.chunks,
+            isVectorized: true,
+            vectorStatus: 'SUCCESS',
+          },
+        });
+
+        results.push({ name: fileName, chunks: result.chunks, status: `完成，${result.chunks} 个分段` });
+        console.log(`[ConfirmImport] 完成: ${fileName} (${result.chunks} chunks)`);
+      } catch (fileErr: any) {
+        console.error(`[ConfirmImport] 失败: ${fileName}`, fileErr.message);
+        results.push({ name: fileName, chunks: 0, status: `失败: ${fileErr.message}` });
+      }
     }
 
-    // 动态导入队列服务
-    const { knowledgeImportQueue } = await import('../services/queue.service');
-
-    // 将导入任务添加到队列
-    await knowledgeImportQueue.add('import', {
-      taskIds,
-      categoryId: id,
-      entries,
-    }, {
-      jobId: `kb-import:${taskIds[0]}`,
-    });
-
-    console.log(`[ConfirmImport] 异步导入任务已入队: ${entries.length} 个文档, taskIds=${taskIds.join(',')}`);
-
-    success(res, { taskIds }, '导入任务已创建，正在后台处理');
+    const successCount = results.filter(r => !r.status.startsWith('失败')).length;
+    success(res, { results },
+      successCount > 0 ? `${successCount}/${documents.length} 个文档处理完成` : '所有文档处理失败');
   } catch (err: any) {
     console.error('Confirm Import Error:', err);
     error(res, err.message || '导入失败', err instanceof AppError ? err.statusCode : 500);
@@ -423,22 +442,22 @@ export const listGroupedDocuments = async (req: AuthRequest, res: Response): Pro
     const pageSizeNum = Number(pageSize) || 10;
     const offset = (pageNum - 1) * pageSizeNum;
 
-    // 构建 WHERE 条件
+    // 构建 WHERE 条件（按文档名分组，与主查询一致）
     const whereClauses: string[] = [`"categoryId" = $1`];
     const params: any[] = [categoryId];
     let paramIdx = 2;
 
     if (query) {
-      whereClauses.push(`title ILIKE $${paramIdx}`);
+      whereClauses.push(`COALESCE(metadata->>'original_file', title) ILIKE $${paramIdx}`);
       params.push(`%${query}%`);
       paramIdx++;
     }
 
     const whereSQL = whereClauses.join(' AND ');
 
-    // 分组查询：按title分组统计
+    // 分组查询：按文档名分组计数（与主查询 GROUP BY 一致）
     const countResult = await prisma.$queryRawUnsafe<any[]>(
-      `SELECT COUNT(DISTINCT title) as total FROM vector_documents WHERE ${whereSQL}`,
+      `SELECT COUNT(DISTINCT COALESCE(metadata->>'original_file', title)) as total FROM vector_documents WHERE ${whereSQL}`,
       ...params
     );
     const total = Number(countResult[0]?.total || 0);

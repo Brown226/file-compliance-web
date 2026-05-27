@@ -452,6 +452,7 @@ const handleConfirmImport = async () => {
   try {
     const documents = previewFileResults.value.map(f => ({
       title: f.title,
+      fileName: f.name || f.title,
       chunks: f.chunks,
     }))
     const { data } = await confirmImportApi(props.targetId, {
@@ -465,11 +466,18 @@ const handleConfirmImport = async () => {
       },
     })
 
-    const taskIds = data?.taskIds || []
-    ElMessage.success(`导入任务已创建，正在后台处理 ${taskIds.length} 个文档`)
+    const results = data?.results || []
+    const successCount = results.filter((r: any) => !r.status.startsWith('失败')).length
+    const failCount = results.length - successCount
 
-    // 立即关闭对话框，传递 taskIds 给父组件
-    emit('imported', taskIds)
+    if (failCount === 0) {
+      ElMessage.success(`全部 ${results.length} 个文档导入完成`)
+    } else {
+      ElMessage.warning(`${successCount}/${results.length} 个文档导入成功，${failCount} 个失败`)
+    }
+
+    // 同步完成，直接通知父组件刷新
+    emit('imported')
     resetAndClose()
   } catch (err: any) {
     lastError.value = err?.response?.data?.message || err?.message || '导入失败'

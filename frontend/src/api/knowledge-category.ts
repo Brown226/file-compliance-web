@@ -7,7 +7,7 @@ export interface KnowledgeCategory {
   status: 'ACTIVE' | 'ARCHIVED'
   parentId?: string
   children?: KnowledgeCategory[]
-  _count?: { vectorDocuments: number }
+  _count?: { documents: number; vectorDocuments?: number }
   chunkMode?: 'auto' | 'fixed' | 'paragraph'
   maxChars?: number
   overlap?: number
@@ -195,8 +195,9 @@ export interface UploadTaskStatus {
 }
 
 export const uploadDocumentAsyncApi = (categoryId: string, formData: FormData) =>
-  request.post<{ taskIds: string[] }>(`/knowledge-categories/${categoryId}/upload-async`, formData, {
+  request.post<{ results: Array<{ name: string; chunks: number; status: string }> }>(`/knowledge-categories/${categoryId}/upload-async`, formData, {
     headers: { 'Content-Type': 'multipart/form-data' },
+    timeout: 120000, // 同步处理可能耗时较长
   })
 
 export const getTaskStatusApi = (taskIds: string[]) =>
@@ -240,9 +241,10 @@ export const previewDocumentApi = (categoryId: string, formData: FormData) =>
   })
 
 export const confirmImportApi = (categoryId: string, data: {
-  documents?: Array<{ title: string; chunks: Array<{ title?: string; content: string }> }>
+  documents?: Array<{ title: string; fileName?: string; chunks: Array<{ title?: string; content: string }> }>
   metadata?: Record<string, any>
-}) => request.post<{ imported: number; deduped: number }>(`/knowledge-categories/${categoryId}/confirm-import`, data, {
+}) => request.post<{ results: Array<{ name: string; chunks: number; status: string }> }>(
+  `/knowledge-categories/${categoryId}/confirm-import`, data, {
   timeout: 300000,
 })
 

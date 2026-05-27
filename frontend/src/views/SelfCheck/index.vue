@@ -123,7 +123,7 @@
             @click="handleRunCheck"
           >
             <el-icon><Search /></el-icon>
-            {{ checkRunning ? '正在检查中...' : '开始自检' }}
+            {{ checkRunning ? '正在自检...' : '开始自检' }}
           </el-button>
         </div>
 
@@ -201,6 +201,7 @@ import {
   type LibraryInfoAPI,
   type SelfCheckReportAPI,
 } from '@/api/self-check'
+import { createTaskApi } from '@/api/task'
 
 const router = useRouter()
 
@@ -343,11 +344,13 @@ const handleRunCheck = async () => {
     }
 
     const { data } = await runSelfCheckApi(formData)
-    report.value = data
-    ElMessage.success(`自检完成：${data.totalChecked} 条引用，${data.errorCount} 条存在问题`)
-    const taskId = (data as any).taskId
+    const taskId = data.taskId
     if (taskId) {
+      ElMessage.success('自检任务已创建，正在后台执行')
       router.push(`/tasks/details/${taskId}`)
+    } else {
+      ElMessage.warning('任务创建成功，正在跳转到任务列表...')
+      router.push('/tasks')
     }
   } catch (e: any) {
     console.error('自检失败:', e)
@@ -361,6 +364,75 @@ const handleGoToDetail = () => {
   const taskId = (report.value as any)?.taskId
   if (taskId) {
     router.push(`/tasks/details/${taskId}`)
+  }
+}
+
+// ==================== 自动创建任务 ====================
+const handleCreateTask = async () => {
+  if (fileList.value.length === 0) {
+    ElMessage.warning('请先上传待检文件')
+    return
+  }
+
+  checkRunning.value = true
+
+  try {
+    const formData = new FormData()
+    const dwgParsedData: Record<string, any> = {}
+
+    for (const f of fileList.value) {
+      if (f.raw) {
+        formData.append('files', f.raw, f.name)
+        // DWG 文件在前端 WASM 解析，提取文本后传给后端
+        if (f.name.toLowerCase().endsWith('.dwg')) {
+          try {
+            const { parseDwgFile } = await import('@/utils/dwg-parser')
+            const parsed = await parseDwgFile(f.raw)
+            dwgParsedData[f.name] = parsed
+          } catch (dwgErr: any) {
+            console.error(`[SelfCheck] DWG 解析失败: ${f.name}`, dwgErr)
+            const msg = dwgErr?.message || ''
+            if (msg.includes('R2004') || msg.includes('decompress') || msg.includes('Assertion')) {
+              ElMessage.warning({
+                message: `图纸 ${f.name} 解析失败：DWG 版本格式不兼容（R2004/R2007 压缩编码）。请用 AutoCAD 另存为 R18 (2010) 或 R21 (2013) 格式后重试。`,
+                duration: 8000,
+              })
+            } else {
+              ElMessage.warning(`图纸 ${f.name} 解析失败：${msg || '未知错误'}`)
+            }
+          }
+        }
+      }
+    }
+
+    // 附带 DWG 解析数据
+    if (Object.keys(dwgParsedData).length > 0) {
+      formData.append('dwgParsedData', JSON.stringify(dwgParsedData))
+    }
+
+    // 自动生成标题：取前3个文件名
+    const fileNames = fileList.value.map(f => f.name)
+    const titlePrefix = fileNames.length <= 3
+      ? fileNames.join('、')
+      : fileNames.slice(0, 3).join('、') + ` 等${fileNames.length}个文件`
+    formData.append('title', `标准引用自检 - ${titlePrefix}`)
+    formData.append('reviewMode', 'SELF_CHECK')
+
+    // 创建任务
+    const { data } = await createTaskApi(formData)
+    ElMessage.success('任务创建成功，正在跳转...')
+
+    // 立即跳转到任务详情页
+    if (data?.id) {
+      router.push(`/tasks/details/${data.id}`)
+    } else {
+      router.push('/tasks')
+    }
+  } catch (e: any) {
+    console.error('创建任务失败:', e)
+    ElMessage.error(e?.response?.data?.error || '创建任务失败，请重试')
+  } finally {
+    checkRunning.value = false
   }
 }
 
@@ -399,6 +471,7 @@ onMounted(() => {
   margin: 0 auto;
   background: var(--el-fill-color-lighter);
   min-height: calc(100vh - 84px);
+  overflow: hidden;
 }
 
 /* ====== 头部区域 ====== */
@@ -504,7 +577,7 @@ onMounted(() => {
   display: grid;
   grid-template-columns: 340px 1fr;
   gap: 20px;
-  align-items: start;
+  align-items: stretch;
 }
 
 /* ====== 面板卡片通用样式 ====== */
@@ -513,6 +586,7 @@ onMounted(() => {
   border-radius: 12px;
   border: 1px solid var(--el-border-color-lighter);
   overflow: hidden;
+  max-width: 100%;
 }
 
 .panel-card__header {
@@ -587,6 +661,7 @@ onMounted(() => {
   display: flex;
   flex-direction: column;
   gap: 16px;
+  min-width: 0; /* 防止 flex/grid 子元素溢出 */
 }
 
 /* --- 上传卡片 --- */

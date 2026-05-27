@@ -53,11 +53,11 @@ export function getSelfCheckLibraryInfoApi() {
   return request.get<LibraryInfoAPI>('/self-check/library-info')
 }
 
-/** 执行标准引用自检 */
+/** 执行标准引用自检（异步，立即返回 taskId） */
 export function runSelfCheckApi(formData: FormData) {
-  return request.post<SelfCheckReportAPI>('/self-check/run', formData, {
+  return request.post<{ taskId: string; status: string }>('/self-check/run', formData, {
     headers: { 'Content-Type': 'multipart/form-data' },
-    timeout: 5 * 60 * 1000, // 5分钟超时（大文件+大标准库可能较慢）
+    timeout: 5 * 60 * 1000, // 5分钟超时（文件上传可能较慢）
   })
 }
 

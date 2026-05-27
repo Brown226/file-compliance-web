@@ -101,6 +101,7 @@ export class KnowledgeCategoryService {
       include: {
         _count: {
           select: {
+            documents: true,
             vectorDocuments: true,
             children: true,
           },
@@ -151,7 +152,7 @@ export class KnowledgeCategoryService {
   static async list() {
     const categories = await prisma.knowledgeCategory.findMany({
       include: {
-        _count: { select: { vectorDocuments: true } },
+        _count: { select: { documents: true } },
       },
       where: { status: 'ACTIVE' },
       orderBy: { name: 'asc' },
@@ -166,7 +167,7 @@ export class KnowledgeCategoryService {
 
   static async listAll() {
     const categories = await prisma.knowledgeCategory.findMany({
-      include: { _count: { select: { vectorDocuments: true, children: true } } },
+      include: { _count: { select: { documents: true, children: true } } },
       where: { status: 'ACTIVE' },
       orderBy: { name: 'asc' },
     });
@@ -247,7 +248,7 @@ export class KnowledgeCategoryService {
     if (existing._count.children > 0) {
       throw new AppError(409, '该节点下还有子节点，无法删除');
     }
-    if (existing._count.vectorDocuments > 0) {
+    if (existing._count.documents > 0) {
       throw new AppError(409, '该节点下还有文档，无法删除');
     }
 
@@ -493,7 +494,7 @@ export class KnowledgeCategoryService {
   static async getKnowledgeTree(): Promise<KnowledgeTreeNode[]> {
     const categories = await prisma.knowledgeCategory.findMany({
       where: { status: 'ACTIVE' },
-      include: { _count: { select: { vectorDocuments: true } } },
+      include: { _count: { select: { documents: true } } },
       orderBy: { name: 'asc' },
     });
 
@@ -507,7 +508,7 @@ export class KnowledgeCategoryService {
         parentId: cat.parentId,
         isLeaf: cat.isLeaf,
         type: cat.isLeaf ? 'knowledge' : 'folder',
-        documentCount: cat._count.vectorDocuments,
+        documentCount: cat._count.documents,
         children: [],
       });
     }

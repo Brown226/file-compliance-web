@@ -2,6 +2,17 @@
 node_modules/
 backend/doc-parser/.venv/
 
+# Temp / cache
+tmp/
+.codegraph/
+offline-deploy/
+offline-deploy.zip
+.cursor/
+token.txt
+login_response.txt
+manifest.json
+nul)
+
 # WASM files (large binary assets, should be downloaded separately)
 *.wasm
 

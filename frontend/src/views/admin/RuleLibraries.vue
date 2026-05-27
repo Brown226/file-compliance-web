@@ -191,42 +191,67 @@
     </el-dialog>
 
     <!-- AI解析对话框 -->
-    <el-dialog v-model="parseDialogVisible" :title="`AI 解析规则 — ${parseTarget?.name || ''}`" width="560px">
-      <p class="helper-text">上传规范文档后先生成候选规则，确认后再导入当前规则库。</p>
+    <el-dialog
+      v-model="parseDialogVisible"
+      :title="`AI 解析规则 — ${parseTarget?.name || ''}`"
+      width="560px"
+      :close-on-click-modal="!isParsing"
+      :close-on-press-escape="!isParsing"
+      :show-close="!isParsing"
+      :before-close="handleParseDialogClose"
+    >
+      <p class="helper-text">上传规范文档后先生成候选规则，确认后再导入当前规则库。支持大文档后台异步解析，无需等待。</p>
 
-      <!-- 解析中的局部加载状态 -->
+      <!-- 解析中的进度展示 -->
       <div v-if="isParsing" class="parse-loading-state">
-        <el-icon class="is-loading" :size="32"><Loading /></el-icon>
-        <div class="parse-loading-text">
-          <strong>正在解析文件...</strong>
-          <span v-if="parseFile">{{ parseFile.name }} ({{ (parseFile.size / (1024 * 1024)).toFixed(1) }}MB)</span>
+        <div class="parse-progress-header">
+          <el-icon class="is-loading" :size="24"><Loading /></el-icon>
+          <strong>{{ parseStep || '准备中...' }}</strong>
         </div>
-        <div class="parse-loading-hint">请耐心等待，大文件可能需要较长时间</div>
+        <el-progress
+          :percentage="parseProgress"
+          :stroke-width="10"
+          :indeterminate="parseProgress < 10"
+          style="margin: 14px 0 10px;"
+        />
+        <div class="parse-loading-text">
+          <span v-if="parseFiles.length > 0">📄 共 {{ parseFiles.length }} 个文件，合计 {{ (parseFiles.reduce((s, f) => s + f.size, 0) / (1024 * 1024)).toFixed(1) }}MB</span>
+        </div>
+        <div class="parse-loading-hint">{{ parseMessage || '请耐心等待，长文档可能需要数分钟' }}</div>
+        <div v-if="parseTaskId" class="parse-loading-hint" style="color: #909399; font-size: 12px; margin-top: 4px;">
+          任务 ID：{{ parseTaskId.slice(0, 8) }}... 可关闭对话框，稍后在“任务列表”中查看结果
+        </div>
       </div>
 
       <!-- 文件上传区域（非解析状态时显示） -->
       <template v-else>
         <el-upload
           drag
+          multiple
           :auto-upload="false"
-          :limit="1"
+          :limit="5"
           accept=".docx,.doc,.pdf,.xlsx,.xls,.txt,.md"
           :on-change="handleParseFileChange"
+          :on-remove="handleParseFileRemove"
+          :on-exceed="() => ElMessage.warning('最多只能上传 5 个文件')"
         >
           <el-icon class="el-icon--upload"><UploadFilled /></el-icon>
           <div class="el-upload__text">拖拽文件到此处，或 <em>点击选择</em></div>
+          <template #tip>
+            <div class="el-upload__tip">支持 .docx / .pdf / .xlsx / .txt / .md 等，单文件 ≤ 50MB，最多 5 个文件</div>
+          </template>
         </el-upload>
       </template>
 
       <template #footer>
-        <el-button @click="parseDialogVisible = false">取消</el-button>
+        <el-button @click="handleParseDialogClose">关闭</el-button>
         <el-button
+          v-if="!isParsing"
           type="primary"
           @click="handleParsePreview"
           :loading="parsing"
-          :disabled="isParsing"
         >
-          {{ isParsing ? '解析中...' : '生成候选规则' }}
+          生成候选规则
         </el-button>
       </template>
     </el-dialog>
@@ -287,7 +312,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import { useUserStore } from '@/stores/user'
 import { useEnterToConfirm } from '@/composables/useEnterToConfirm'
 import {
@@ -300,7 +325,8 @@ import {
   createRuleLibraryApi,
   updateRuleLibraryApi,
   deleteRuleLibraryApi,
-  parseRulesPreviewApi,
+  parseRulesPreviewAsyncApi,
+  getRuleParseTaskApi,
   importRulePreviewItemsApi,
   addRuleItemApi,
   updateRuleItemApi,
@@ -333,11 +359,18 @@ const formData = reactive({ name: '', description: '' })
 const parseDialogVisible = ref(false)
 const previewDialogVisible = ref(false)
 const parseTarget = ref<RuleLibrary | null>(null)
-const parseFile = ref<File | null>(null)
+const parseFiles = ref<File[]>([])
 const previewItems = ref<RuleLibraryPreviewItem[]>([])
 const previewSourceFileName = ref('')
 const importMode = ref<'merge' | 'replace'>('merge')
 const isParsing = ref(false)
+
+// 异步解析进度状态
+const parseTaskId = ref<string | null>(null)
+const parseProgress = ref(0)
+const parseMessage = ref('')
+const parseStep = ref('')
+const parsePollTimer = ref<number | null>(null)
 
 const itemDialogVisible = ref(false)
 const itemDialogMode = ref<'create' | 'edit'>('create')
@@ -559,65 +592,160 @@ const showDetail = async (row: RuleLibrary) => {
 
 const showUploadRules = (row: RuleLibrary) => {
   parseTarget.value = row
-  parseFile.value = null
+  parseFiles.value = []
   previewItems.value = []
   previewSourceFileName.value = ''
+  parseTaskId.value = null
+  parseProgress.value = 0
+  parseMessage.value = ''
+  parseStep.value = ''
+  stopParsePolling()
   parseDialogVisible.value = true
 }
 
-const handleParseFileChange = (file: any) => {
-  parseFile.value = file.raw
+const handleParseFileChange = (file: any, fileList: any[]) => {
+  parseFiles.value = fileList.map(f => f.raw).filter(Boolean)
+}
+
+const handleParseFileRemove = (file: any) => {
+  parseFiles.value = parseFiles.value.filter(f => f !== file.raw)
+}
+
+const stopParsePolling = () => {
+  if (parsePollTimer.value) {
+    window.clearInterval(parsePollTimer.value)
+    parsePollTimer.value = null
+  }
+}
+
+/** 轮询解析任务状态，直到完成或失败 */
+const startParsePolling = (taskId: string) => {
+  parseTaskId.value = taskId
+  let attempts = 0
+  const maxAttempts = 600 // 10 分钟（每秒 1 次）
+  parsePollTimer.value = window.setInterval(async () => {
+    attempts++
+    try {
+      const { data } = await getRuleParseTaskApi(taskId)
+      if (data?.status === 'COMPLETED') {
+        stopParsePolling()
+        parseProgress.value = 100
+        parseStep.value = '解析完成'
+        const report = data.selfCheckReport
+        const items = report?.items || []
+        previewItems.value = items
+        previewSourceFileName.value = report?.sourceFileName || report?.fileName || ''
+        parsing.value = false
+        isParsing.value = false
+        parseDialogVisible.value = false
+        previewDialogVisible.value = true
+        if (items.length === 0) {
+          ElMessage.warning('未解析出任何规则，请检查文件内容是否完整')
+        } else {
+          ElMessage.success(`成功解析 ${items.length} 条候选规则`)
+        }
+        return
+      }
+      if (data?.status === 'FAILED') {
+        stopParsePolling()
+        parsing.value = false
+        isParsing.value = false
+        ElMessage.error('规则解析失败，请稍后重试或检查文件内容')
+        return
+      }
+      if (attempts >= maxAttempts) {
+        stopParsePolling()
+        parsing.value = false
+        isParsing.value = false
+        ElMessage.warning('解析时间过长，已停止轮询。请稍后在“任务列表”中查看结果')
+        parseDialogVisible.value = false
+      }
+    } catch (err) {
+      // 轮询失败仅忽略，保持继续
+      console.warn('poll parse task failed', err)
+    }
+  }, 1000)
+}
+
+const handleParseDialogClose = () => {
+  if (isParsing.value) {
+    ElMessageBox.confirm(
+      '解析任务正在后台执行，关闭对话框不会停止解析。完成后可在“任务列表”中查看结果。确认关闭？',
+      '关闭解析对话框',
+      { type: 'info', confirmButtonText: '继续解析', cancelButtonText: '关闭' },
+    ).then(() => {
+      // 用户选择“继续解析”，不做任何操作
+    }).catch(() => {
+      // 用户选择“关闭”，停止轮询并关闭
+      stopParsePolling()
+      parsing.value = false
+      isParsing.value = false
+      parseDialogVisible.value = false
+    })
+  } else {
+    parseDialogVisible.value = false
+  }
 }
 
 const handleParsePreview = async () => {
-  if (!parseTarget.value?.id || !parseFile.value) {
-    ElMessage.warning('请选择文件')
+  if (!parseTarget.value?.id || parseFiles.value.length === 0) {
+    ElMessage.warning('请选择至少一个文件')
+    return
+  }
+  if (parseFiles.value.length > 5) {
+    ElMessage.error('最多支持同时上传 5 个文件')
     return
   }
 
-  const fileSizeMB = parseFile.value.size / (1024 * 1024)
-  if (fileSizeMB > 50) {
-    ElMessage.error('文件大小超过50MB限制，请选择更小的文件')
+  // 校验单文件大小
+  const oversize = parseFiles.value.find(f => f.size / (1024 * 1024) > 50)
+  if (oversize) {
+    ElMessage.error(`文件 "${oversize.name}" 超过 50MB 限制`)
     return
   }
 
   parsing.value = true
   isParsing.value = true
+  parseProgress.value = 5
+  parseStep.value = '上传文件'
+  parseMessage.value = `正在上传 ${parseFiles.value.length} 个文件...`
 
   try {
     const fd = new FormData()
-    fd.append('file', parseFile.value)
-    const { data } = await parseRulesPreviewApi(parseTarget.value.id, fd)
+    parseFiles.value.forEach(f => fd.append('files', f))
+    const { data } = await parseRulesPreviewAsyncApi(parseTarget.value.id, fd)
 
-    previewItems.value = data?.items || []
-    previewSourceFileName.value = data?.sourceFileName || parseFile.value.name
+    parseProgress.value = 10
+    parseStep.value = '排队解析'
+    parseMessage.value = `文件已上传，正在后台排队解析（共 ${parseFiles.value.length} 个文件）...`
 
-    if (previewItems.value.length === 0) {
-      ElMessage.warning('未解析出任何规则，请检查文件内容是否完整')
+    if (data?.taskId) {
+      startParsePolling(data.taskId)
     } else {
-      ElMessage.success(`成功解析 ${previewItems.value.length} 条候选规则`)
+      ElMessage.warning('任务创建异常，请重试')
+      parsing.value = false
+      isParsing.value = false
     }
-
-    parseDialogVisible.value = false
-    previewDialogVisible.value = true
   } catch (e: any) {
+    parsing.value = false
+    isParsing.value = false
+    parseProgress.value = 0
+    parseMessage.value = ''
+    parseStep.value = ''
     if (e?.code === 'ECONNABORTED' || e?.message?.includes('timeout')) {
-      ElMessage.error('文件解析超时，可能是文件过大或服务器繁忙，请稍后重试')
+      ElMessage.error('文件上传超时，可能是网络波动或服务器繁忙，请稍后重试')
     } else if (e?.message === 'canceled') {
       ElMessage.info('请求已取消')
     } else {
       const errorMsg = e?.response?.data?.message || e?.message || '解析预览失败'
       if (errorMsg.includes('文件大小') || errorMsg.includes('file size')) {
-        ElMessage.error('文件过大，请压缩后重试（最大支持50MB）')
+        ElMessage.error('文件过大，请压缩后重试（单文件最大 50MB）')
       } else if (errorMsg.includes('解析失败') || errorMsg.includes('parse')) {
-        ElMessage.error('文件解析失败，请检查文件格式是否支持（支持PDF/DOCX/TXT/MD等）')
+        ElMessage.error('文件解析失败，请检查文件格式是否支持（支持 PDF/DOCX/TXT/MD 等）')
       } else {
         ElMessage.error(errorMsg)
       }
     }
-  } finally {
-    parsing.value = false
-    isParsing.value = false
   }
 }
 
@@ -718,6 +846,10 @@ const handleDeleteItem = async (itemId: string) => {
     ElMessage.error(e?.response?.data?.message || '删除失败')
   }
 }
+
+onBeforeUnmount(() => {
+  stopParsePolling()
+})
 
 onMounted(() => {
   fetchLibraries()
@@ -1057,6 +1189,18 @@ onMounted(() => {
 .parse-loading-hint {
   font-size: var(--text-xs);
   color: var(--corp-text-tertiary);
+}
+
+.parse-progress-header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  color: var(--corp-primary);
+  font-size: var(--text-lg);
+}
+
+.parse-progress-header strong {
+  color: var(--corp-text-primary);
 }
 
 /* 响应式 */

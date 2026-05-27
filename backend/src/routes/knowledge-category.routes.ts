@@ -37,7 +37,19 @@ import {
 } from '../controllers/knowledge-category.controller';
 
 const router = Router();
-const upload = multer({ dest: path.join(__dirname, '../../uploads/tmp/') });
+const upload = multer({
+  dest: path.join(__dirname, '../../uploads/tmp/'),
+  limits: { fileSize: 50 * 1024 * 1024 }, // 50MB
+  fileFilter: (_req, file, cb) => {
+    const ext = path.extname(file.originalname).toLowerCase();
+    const allowed = ['.doc', '.docx', '.pdf', '.xlsx', '.xls', '.txt', '.md', '.ppt', '.pptx'];
+    if (allowed.includes(ext)) {
+      cb(null, true);
+    } else {
+      cb(new Error(`不支持的文件格式: ${ext}，仅支持 ${allowed.join('/')}`));
+    }
+  },
+});
 
 router.use(authenticate);
 
