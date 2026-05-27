@@ -118,11 +118,18 @@ const error = ref(false)
 const errorMsg = ref('')
 const svgContent = ref<string>('')
 const handleMap = ref<Record<string, string>>({})
+const textHandleMap = ref<Record<string, string>>({})
 const fileName = ref('')
+/** SVG 完全加载并注入 handle 完毕，可安全进行定位 */
+const svgReady = ref(false)
 
 /** 解析是否失败，供父组件降级到 TextPreviewPanel */
 const parseFailed = ref(false)
-defineExpose({ parseFailed })
+defineExpose({
+  parseFailed,
+  /** 获取文本→handle 映射表（用于外部定位查询） */
+  getTextHandleMap: () => textHandleMap.value,
+})
 
 /** 超时降级：解析超过 30 秒时允许用户跳过图纸预览 */
 const showTimeoutFallback = ref(false)
@@ -152,10 +159,29 @@ let dragStartY = 0
 let dragStartTX = 0
 let dragStartTY = 0
 
+// 基础 viewBox（归一化时记录，用于 viewBox 缩放的基准）
+let baseVbX = 0, baseVbY = 0, baseVbW = 0, baseVbH = 0
+
+/** 读取当前 SVG 元素 */
+function getSvgEl(): SVGSVGElement | null {
+  return canvasRef.value?.querySelector('svg') as unknown as SVGSVGElement | null
+}
+
+/** 根据 zoom（scale.value）和 pan（translateX/Y, SVG 单位）更新 SVG viewBox */
+function applyViewBox() {
+  const svgEl = getSvgEl()
+  if (!svgEl || !baseVbW) return
+  const cx = baseVbX + baseVbW / 2 - (translateX.value || 0)
+  const cy = baseVbY + baseVbH / 2 - (translateY.value || 0)
+  const vbW = baseVbW / (scale.value || 1)
+  const vbH = baseVbH / (scale.value || 1)
+  svgEl.setAttribute('viewBox', `${cx - vbW / 2} ${cy - vbH / 2} ${vbW} ${vbH}`)
+}
+
+// ★ 不再使用 CSS transform 缩放（位图缩放导致文字模糊）
+// 缩放/平移改为修改 SVG viewBox，让 SVG 引擎重新矢量渲染
 const canvasTransform = computed(() => ({
-  transform: `translate(${translateX.value}px, ${translateY.value}px) scale(${scale.value})`,
-  transformOrigin: '0 0',
-  transition: isDragging ? 'none' : 'transform 0.2s ease',
+  transform: 'translate(0px, 0px) scale(1)',
 }))
 
 // ==================== SVG 生成 ====================
@@ -180,9 +206,14 @@ async function generateSvg(file: File) {
     const rawSvg = result.svg
     console.log('[DwgPreview] 原始 SVG 长度:', rawSvg.length, '前200字符:', rawSvg.slice(0, 200))
 
-    // ★ 第一步：先设置 svgContent 以触发 viewport 渲染，等待 canvasRef 挂载
+    // ★ 关键修复：先结束 loading 状态释放 v-else-if 链，让 .svg-viewport 渲染
+    //   之前 loading=true 阻塞了 v-else-if 链，导致 svgContent 虽设置但 viewport
+    //     DOM 不渲染，canvasRef 为 null，SVG 注入全部失效。
+    loading.value = false
+    error.value = false
     svgContent.value = 'active'
     handleMap.value = result.handleMap
+    textHandleMap.value = result.textHandleMap || {}
     await nextTick()
 
     // 清理 canvasRef 中上次的 SVG
@@ -214,11 +245,105 @@ async function generateSvg(file: File) {
           }
           svgInserted = true
           console.log('[DwgPreview] SVG innerHTML 注入 + DOMPurify DOM 消毒完成')
+
+          // ★ 主线程 DOM 遍历注入 handle
+          // 遍历所有 <g> 元素，找到叶子 <g>（不包含子 <g> 的实体包裹），
+          // 跳过在 <defs>/<clipPath>/<pattern>/<marker>/<filter> 等非实体容器中的 <g>，
+          // 按 DOM 顺序为前 N 个注入 data-handle/id 属性。
+          try {
+            const allGs = svgEl.querySelectorAll('g')
+            const leafGs: SVGElement[] = []
+
+            // 判断一个 <g> 是否在非实体容器（defs/pattern/clipPath/marker/filter）中
+            function isInNonEntityContainer(el: Element): boolean {
+              const parent = el.closest('defs, clipPath, pattern, marker, filter, linearGradient, radialGradient, symbol')
+              return parent !== null
+            }
+
+            for (const g of allGs) {
+              // 只取叶子 <g>（不含子 <g>），且不在非实体容器内
+              if (!g.querySelector('g') && !isInNonEntityContainer(g)) {
+                leafGs.push(g)
+              }
+            }
+
+            const handles: string[] = result.handles || []
+            const injectCount = Math.min(leafGs.length, handles.length)
+            for (let i = 0; i < injectCount; i++) {
+              const handle = handles[i]
+              if (!handle) continue
+              const g = leafGs[i]
+              g.setAttribute('data-handle', handle)
+              g.setAttribute('id', `dwg-entity-${i}`)
+            }
+            console.log('[DwgPreview] DOM handle 注入:',
+              '叶子<g>=' + leafGs.length,
+              '实体=' + handles.length,
+              '注入=' + injectCount,
+            )
+          } catch (handleErr: any) {
+            console.warn('[DwgPreview] DOM handle 注入失败:', handleErr?.message || handleErr)
+          }
         }
       }
     } catch (innerErr: any) {
       console.error('[DwgPreview] innerHTML 注入失败:', innerErr)
     }
+
+    // ★ 视图归一化：将 SVG 的 viewBox 重设为实际内容包围盒，
+    //   让 SVG 自身的 viewBox → viewport 映射负责适配，
+    //   消除 CSS transform scale 与 SVG viewBox 之间的「双重缩放」。
+    //   (之前：viewBox=250k宽 → SVG填充470px → canvas scale(0.02) → 9px)
+    //   (现在：viewBox=内容包围盒 → SVG填充470px → canvas scale(1) → 470px)
+    try {
+      if (canvasRef.value) {
+        const svgEl = canvasRef.value.querySelector('svg') as unknown as SVGSVGElement | null
+        if (svgEl) {
+          // 计算所有 <g> 子元素的实际包围盒（排除 <defs> 等非渲染元素）
+          let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity
+          let found = false
+          const contentGs = svgEl.querySelectorAll('g:not(defs > g):not(clipPath > g):not(pattern > g):not(marker > g):not(filter > g)')
+          for (const g of contentGs) {
+            try {
+              const bbox = (g as SVGGraphicsElement).getBBox()
+              if (bbox && bbox.width > 0 && bbox.height > 0) {
+                minX = Math.min(minX, bbox.x)
+                minY = Math.min(minY, bbox.y)
+                maxX = Math.max(maxX, bbox.x + bbox.width)
+                maxY = Math.max(maxY, bbox.y + bbox.height)
+                found = true
+              }
+            } catch { /* skip */ }
+          }
+          if (found && isFinite(minX)) {
+            const cw = maxX - minX
+            const ch = maxY - minY
+            if (cw > 0 && ch > 0) {
+              // 边距留 5%
+              const margin = 1.05
+              const wm = cw * margin
+              const hm = ch * margin
+              const newVb = `${minX} ${minY} ${wm} ${hm}`
+              svgEl.setAttribute('viewBox', newVb)
+              // 改为居中对齐（原为 xMinYMin，内容偏左上角）
+              svgEl.setAttribute('preserveAspectRatio', 'xMidYMid meet')
+              // 记录基础 viewBox（含边距），供 applyViewBox 缩放/平移使用
+              baseVbX = minX; baseVbY = minY; baseVbW = wm; baseVbH = hm
+              console.log('[DwgPreview] viewBox 归一化:', newVb,
+                '旧viewBox:', svgEl.getAttribute('viewBox'),
+                'baseVb:', baseVbX, baseVbY, baseVbW, baseVbH)
+            }
+          }
+        }
+      }
+    } catch (normErr: any) {
+      console.warn('[DwgPreview] viewBox 归一化失败:', normErr?.message || normErr)
+    }
+
+    // 恢复视图参数为自然状态：scale=1 让 SVG viewBox 适配视口
+    scale.value = 1
+    translateX.value = 0
+    translateY.value = 0
 
     // 诊断：打印实际渲染到 DOM 中的 SVG 信息
     await nextTick()
@@ -247,10 +372,26 @@ async function generateSvg(file: File) {
       console.error('[DwgPreview] ★ canvasRef 为 null！viewer 容器未挂载')
     }
 
-    // SVG 生成后检查是否有待定位的图元（locateTarget 可能在解析期间被设置）
+    // SVG 加载完毕，标记可安全定位（watch(locateTarget) 会等待此标记）
+    svgReady.value = true
+
+    // SVG 生成后检查是否有待定位的图元
+    // 有 cadHandleId 直接定位；否则从 SVG DOM 搜索 originalText
     if (props.locateTarget?.cadHandleId) {
       await nextTick()
       highlightEntity(props.locateTarget.cadHandleId, props.locateTarget.description)
+    } else if (props.locateTarget?.originalText) {
+      await nextTick()
+      const rs = canvasRef.value?.querySelector('svg')
+      if (rs) {
+        const searchText = props.locateTarget.originalText.trim()
+        for (const g of rs.querySelectorAll('g[data-handle]')) {
+          if ((g.textContent || '').trim().includes(searchText)) {
+            const h = g.getAttribute('data-handle')
+            if (h) { highlightEntity(h, props.locateTarget.description); break }
+          }
+        }
+      }
     }
 
     // 初始适应窗口 - 添加重试机制确保 DOM 更新完成
@@ -280,8 +421,8 @@ async function generateSvg(file: File) {
 watch(() => props.file, (newFile) => {
   console.log('[DwgPreview] 监听到文件变化:', newFile?.name || 'null')
   if (newFile) {
-    // 重置视图参数
-    scale.value = 0.05
+    // 重置视图参数（viewBox 归一化后 scale=1 恰好适配视口）
+    scale.value = 1
     translateX.value = 0
     translateY.value = 0
     console.log('[DwgPreview] 重置视图参数:', { scale: scale.value, tx: translateX.value, ty: translateY.value })
@@ -293,12 +434,10 @@ watch(() => props.file, (newFile) => {
   }
 }, { immediate: true })
 
-// 确保 SVG 内容更新后自动适应窗口
+// svgContent 仅用于触发 viewport 显示/隐藏，不自动调用 fitToWindow
+// 适应窗口由 generateSvg() 末尾的 fitToWindowWithRetry() 统一负责
 watch(svgContent, (newContent) => {
   console.log('[DwgPreview] svgContent 变化，长度:', newContent?.length || 0)
-  if (newContent && newContent.length > 0) {
-    setTimeout(fitToWindow, 150)
-  }
 })
 
 /** 用户主动降级：点击"查看文本内容"时通知父组件切换到文本预览 */
@@ -321,110 +460,33 @@ const ZOOM_FACTOR = 1.15
 
 function zoomIn() {
   scale.value = Math.min(MAX_SCALE, scale.value * ZOOM_FACTOR)
+  applyViewBox()
 }
 
 function zoomOut() {
   scale.value = Math.max(MIN_SCALE, scale.value / ZOOM_FACTOR)
+  applyViewBox()
 }
 
 function resetView() {
-  scale.value = 1
-  translateX.value = 0
-  translateY.value = 0
+  fitToWindow()
 }
 
 function fitToWindow() {
   console.log('[DwgPreview] fitToWindow 开始执行')
-  
+
   if (!viewportRef.value || !canvasRef.value) {
     console.warn('[DwgPreview] fitToWindow: 容器未准备好')
     return
   }
 
-  const vpRect = viewportRef.value.getBoundingClientRect()
-  if (vpRect.width <= 0 || vpRect.height <= 0) {
-    console.warn('[DwgPreview] fitToWindow: 视口尺寸为0，跳过')
-    return
-  }
-  console.log('[DwgPreview] fitToWindow: 视口尺寸', vpRect.width, 'x', vpRect.height)
+  // 重置缩放/平移并应用 viewBox
+  scale.value = 1
+  translateX.value = 0
+  translateY.value = 0
+  applyViewBox()
 
-  const svgEl = canvasRef.value.querySelector('svg')
-  if (!svgEl) {
-    console.warn('[DwgPreview] fitToWindow: SVG 元素未找到（v-html 尚未渲染？）')
-    return
-  }
-
-  // 留边距
-  const vpW = vpRect.width - 20
-  const vpH = vpRect.height - 20
-
-  // 获取 SVG 尺寸：优先 viewBox，其次 width/height 属性，最后用元素自身宽高
-  let vbX = 0, vbY = 0, vbW = 0, vbH = 0
-  let hasSize = false
-
-  const vb = svgEl.getAttribute('viewBox') || svgEl.getAttribute('viewbox')
-  if (vb) {
-    console.log('[DwgPreview] fitToWindow: viewBox =', vb)
-    const parts = vb.split(/[\s,]+/).map(Number)
-    vbX = parts[0] || 0
-    vbY = parts[1] || 0
-    vbW = Math.abs(parts[2]) || 0
-    vbH = Math.abs(parts[3]) || 0
-    if (vbW > 0 && vbH > 0) hasSize = true
-  }
-
-  // viewBox 无效时尝试 width/height 属性
-  if (!hasSize) {
-    const w = parseFloat(svgEl.getAttribute('width') || '')
-    const h = parseFloat(svgEl.getAttribute('height') || '')
-    if (w > 0 && h > 0) {
-      console.log('[DwgPreview] fitToWindow: 使用 width/height =', w, 'x', h)
-      vbW = w; vbH = h; hasSize = true
-    }
-  }
-
-  // 仍然无效时用元素实际渲染尺寸
-  if (!hasSize) {
-    const bbox = svgEl.getBBox?.()
-    if (bbox && bbox.width > 0 && bbox.height > 0) {
-      console.log('[DwgPreview] fitToWindow: 使用 getBBox =', bbox.width, 'x', bbox.height)
-      vbX = bbox.x; vbY = bbox.y
-      vbW = bbox.width; vbH = bbox.height; hasSize = true
-    }
-  }
-
-  // 所有方法都失败时使用默认尺寸并警告
-  if (!hasSize) {
-    console.warn('[DwgPreview] fitToWindow: 无法获取 SVG 尺寸，使用默认 800x600')
-    vbW = 800; vbH = 600; hasSize = true
-  }
-
-  console.log('[DwgPreview] fitToWindow: 图纸尺寸', vbW, 'x', vbH)
-
-  // 计算缩放比例（保持宽高比，适应视口）
-  const scaleX = vpW / vbW
-  const scaleY = vpH / vbH
-  const naturalScale = Math.min(scaleX, scaleY)
-
-  console.log('[DwgPreview] fitToWindow: 计算比例', { scaleX: scaleX.toFixed(6), scaleY: scaleY.toFixed(6), natural: naturalScale.toFixed(6) })
-
-  // 如果缩放比例太小，设置一个最小值确保能看到图纸
-  const isForcedScale = naturalScale < 0.05
-  const finalScale = Math.max(naturalScale, 0.05) // 最小 5%
-  scale.value = finalScale
-
-  // 居中策略：
-  // - 如果缩放是强制的（图纸太大），优先显示左上角区域
-  // - 如果缩放是自然计算的，正常居中
-  if (isForcedScale) {
-    translateX.value = -vbX * scale.value
-    translateY.value = -vbY * scale.value
-  } else {
-    translateX.value = (vpRect.width - vbW * scale.value) / 2 - vbX * scale.value
-    translateY.value = (vpRect.height - vbH * scale.value) / 2 - vbY * scale.value
-  }
-
-  console.log('[DwgPreview] fitToWindow: 最终结果', { scale: scale.value.toFixed(6), tx: translateX.value.toFixed(0), ty: translateY.value.toFixed(0), isForcedScale })
+  console.log('[DwgPreview] fitToWindow: 重置为 scale=1, translate=(0,0)')
 }
 
 // 带重试机制的 fitToWindow，确保 DOM 更新完成后执行
@@ -451,18 +513,32 @@ function onWheel(e: WheelEvent) {
   const factor = e.deltaY < 0 ? ZOOM_FACTOR : 1 / ZOOM_FACTOR
   const newScale = Math.min(MAX_SCALE, Math.max(MIN_SCALE, scale.value * factor))
 
-  // 以鼠标位置为中心缩放
-  if (viewportRef.value) {
-    const rect = viewportRef.value.getBoundingClientRect()
-    const mouseX = e.clientX - rect.left
-    const mouseY = e.clientY - rect.top
+  // ★ viewBox 缩放（以鼠标位置为中心）
+  // 将鼠标在视口中的像素位置映射为 SVG 坐标，缩放后保持该点不动
+  if (viewportRef.value && baseVbW) {
+    const vpRect = viewportRef.value.getBoundingClientRect()
+    const mouseX = (e.clientX - vpRect.left) / vpRect.width  // 0~1
+    const mouseY = (e.clientY - vpRect.top) / vpRect.height  // 0~1
 
-    const ratio = newScale / scale.value
-    translateX.value = mouseX - ratio * (mouseX - translateX.value)
-    translateY.value = mouseY - ratio * (mouseY - translateY.value)
+    const oldVbW = baseVbW / scale.value
+    const oldVbH = baseVbH / scale.value
+    const svgAtMouseX = oldVbW * mouseX + baseVbX + baseVbW / 2 - (translateX.value || 0) - oldVbW / 2
+    const svgAtMouseY = oldVbH * mouseY + baseVbY + baseVbH / 2 - (translateY.value || 0) - oldVbH / 2
+
+    scale.value = newScale
+
+    const newVbW = baseVbW / newScale
+    const newVbH = baseVbH / newScale
+    const newCenterX = svgAtMouseX + (0.5 - mouseX) * newVbW
+    const newCenterY = svgAtMouseY + (0.5 - mouseY) * newVbH
+
+    translateX.value = baseVbX + baseVbW / 2 - newCenterX
+    translateY.value = baseVbY + baseVbH / 2 - newCenterY
+  } else {
+    scale.value = newScale
   }
 
-  scale.value = newScale
+  applyViewBox()
 }
 
 function onMouseDown(e: MouseEvent) {
@@ -475,14 +551,23 @@ function onMouseDown(e: MouseEvent) {
 
   const onMouseMove = (ev: MouseEvent) => {
     if (!isDragging) return
-    translateX.value = dragStartTX + (ev.clientX - dragStartX)
-    translateY.value = dragStartTY + (ev.clientY - dragStartY)
+    // ★ viewBox 平移：像素差 → SVG 单位偏移
+    if (viewportRef.value && baseVbW) {
+      const vpRect = viewportRef.value.getBoundingClientRect()
+      const pxPerSvgX = vpRect.width / (baseVbW / scale.value)
+      const pxPerSvgY = vpRect.height / (baseVbH / scale.value)
+      translateX.value = dragStartTX + (dragStartX - ev.clientX) / pxPerSvgX
+      translateY.value = dragStartTY + (dragStartY - ev.clientY) / pxPerSvgY
+      applyViewBox()
+    }
   }
 
   const onMouseUp = () => {
     isDragging = false
     document.removeEventListener('mousemove', onMouseMove)
     document.removeEventListener('mouseup', onMouseUp)
+    // 拖拽结束后立即应用最终 viewBox 并去掉 transition
+    applyViewBox()
   }
 
   document.addEventListener('mousemove', onMouseMove)
@@ -520,35 +605,38 @@ function highlightEntity(handle: string, description?: string): boolean {
   ;(el as SVGElement).style.filter = 'drop-shadow(0 0 6px #ef4444) drop-shadow(0 0 12px #ef4444)'
   ;(el as SVGElement).style.opacity = '1'
 
-  // 滚动到该图元位置
+  // ★ viewBox 定位：将图元居中到视口，自动适度放大
   const bbox = (el as SVGGraphicsElement).getBBox?.()
-  if (bbox && viewportRef.value) {
-    const vpRect = viewportRef.value.getBoundingClientRect()
-    // 计算图元中心在 viewport 中的位置
-    const centerX = translateX.value + (bbox.x + bbox.width / 2) * scale.value
-    const centerY = translateY.value + (bbox.y + bbox.height / 2) * scale.value
+  if (bbox && bbox.width > 0 && bbox.height > 0 && viewportRef.value && baseVbW) {
+    const entityCx = bbox.x + bbox.width / 2
+    const entityCy = bbox.y + bbox.height / 2
 
-    // 如果图元不在可视区域，平移到中心
-    if (
-      centerX < 0 || centerX > vpRect.width ||
-      centerY < 0 || centerY > vpRect.height
-    ) {
-      translateX.value = vpRect.width / 2 - (bbox.x + bbox.width / 2) * scale.value
-      translateY.value = vpRect.height / 2 - (bbox.y + bbox.height / 2) * scale.value
-    }
+    // 居中放大图元，但保留上下文可见范围
+    // 目标 viewBox 尺寸 = max(图元包围盒×10, 基础 viewBox × 5%)
+    // 确保既能看到图元，又能看到它在图纸中的位置
+    const minVbW = Math.max(bbox.width * 2, baseVbW * 0.03)
+    const minVbH = Math.max(bbox.height * 2, baseVbH * 0.03)
+    const targetScale = Math.min(
+      baseVbW / minVbW,
+      MAX_SCALE,
+    )
+    scale.value = Math.max(targetScale, 1)
+    translateX.value = baseVbX + baseVbW / 2 - entityCx
+    translateY.value = baseVbY + baseVbH / 2 - entityCy
+    applyViewBox()
+  }
 
-    // 显示高亮浮层
+  // 高亮浮层（通过 DOM getBoundingClientRect 映射到屏幕坐标，与 viewBox / 缩放无关）
+  if (viewportRef.value) {
     highlightInfo.value = {
       handle,
       description: description || '',
     }
-
-    // 计算浮层位置
     const elRect = (el as Element).getBoundingClientRect()
-    const vpRect2 = viewportRef.value.getBoundingClientRect()
+    const vpRect = viewportRef.value.getBoundingClientRect()
     highlightTooltipStyle.value = {
-      left: `${elRect.left - vpRect2.left + elRect.width / 2}px`,
-      top: `${elRect.top - vpRect2.top - 8}px`,
+      left: `${elRect.left - vpRect.left + elRect.width / 2}px`,
+      top: `${elRect.top - vpRect.top - 8}px`,
     }
   }
 
@@ -564,6 +652,9 @@ watch(() => props.locateTarget, (target) => {
   }
 
   const handle = target.cadHandleId
+  // SVG 尚未加载完成时跳过（generateSvg 末尾会检查并处理）
+  if (!svgReady.value) return
+
   if (handle) {
     nextTick(() => {
       const found = highlightEntity(handle, target.description)
@@ -581,6 +672,15 @@ watch(() => props.locateTarget, (target) => {
     mode: 'fallback',
     hint: target.description || '缺少 CAD 句柄，已降级到文本线索定位。',
   })
+})
+
+// SVG 加载完毕时重试待处理的定位
+watch(svgReady, (ready) => {
+  if (ready && props.locateTarget?.cadHandleId) {
+    nextTick(() => {
+      highlightEntity(props.locateTarget!.cadHandleId!, props.locateTarget!.description || '')
+    })
+  }
 })
 
 onUnmounted(() => {
@@ -694,12 +794,14 @@ onUnmounted(() => {
 
 /* ===== SVG 视口 ===== */
 .svg-viewport {
+  display: flex;
+  min-height: 0;
   flex: 1;
   overflow: hidden;
   position: relative;
   background: #1e293b; /* 深色背景 - 类似 AutoCAD 经典界面 */
   cursor: grab;
-  min-height: 400px; /* 关键修复：防止高度塌陷为 0 */
+  min-height: 0; /* 由父 flex 决定高度 */
 }
 
 .svg-viewport:active {
@@ -707,9 +809,12 @@ onUnmounted(() => {
 }
 
 .svg-canvas {
-  position: absolute;
+  flex: 1;
+  position: relative;
   top: 0;
   left: 0;
+  width: 100%;
+  height: 100%;
 }
 
 /* SVG 保持原始尺寸，通过 transform 进行缩放 - 防止模糊 */

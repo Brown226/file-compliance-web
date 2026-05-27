@@ -18,8 +18,8 @@
       />
     </div>
 
-    <!-- 卡片头部：标签 + 操作按钮并列 -->
-    <div class="issue-header">
+    <!-- 卡片头部：标签 + 描述 + 操作按钮 + 展开箭头 -->
+    <div class="issue-header" @click="cardExpanded = !cardExpanded">
       <div class="header-left">
         <div class="issue-tags">
           <el-tag :type="getCategoryTagType(detail.issueType)" size="small" effect="dark" round>
@@ -44,9 +44,30 @@
           </el-tag>
         </div>
         <span class="issue-desc">{{ detail.description || '-' }}</span>
+        <!-- 大白话解释，默认展示 -->
+        <span v-if="detail.plainLanguage" class="plain-language-preview">
+          · {{ detail.plainLanguage }}
+        </span>
+        <!-- 折叠态预览：原文/建议首行 -->
+        <div v-if="!cardExpanded" class="collapsed-preview">
+          <div v-if="detail.originalText" class="collapsed-row original">
+            <span class="collapsed-label">原：</span>{{ truncateIssueText(detail.originalText, 80) }}
+          </div>
+          <div v-if="detail.suggestedText" class="collapsed-row suggested">
+            <span class="collapsed-label">改：</span>{{ truncateIssueText(detail.suggestedText, 80) }}
+          </div>
+        </div>
       </div>
-      <!-- 操作按钮移至顶部右侧 -->
-      <div class="header-actions">
+      <div class="header-right">
+        <!-- 展开箭头 -->
+        <el-icon class="expand-arrow" :class="{ rotated: cardExpanded }"><ArrowDown /></el-icon>
+      </div>
+    </div>
+
+    <!-- 卡片内容体：可折叠 -->
+    <div v-show="cardExpanded" class="issue-body">
+      <!-- 操作按钮（展开后显示） -->
+      <div class="expanded-actions" @click.stop>
         <el-button
           v-if="detail.textPosition"
           type="primary"
@@ -54,16 +75,16 @@
           @click="emit('locateText', { detail, elementId: `issue-${detail.id}` })"
           class="action-btn locate-btn"
         >
-          <el-icon><Location /></el-icon> 定位
+          <el-icon><Location /></el-icon> 定位原文
         </el-button>
         <el-button
           v-if="detail.cadHandleId"
           type="primary"
           size="small"
-          @click="emit('copyHandleId', detail.cadHandleId)"
+          @click="emit('locateText', { detail, elementId: `issue-${detail.id}` })"
           class="action-btn cad-locate-btn"
         >
-          <el-icon><CopyDocument /></el-icon> CAD 定位
+          <el-icon><Location /></el-icon> CAD 定位
         </el-button>
         <el-button
           v-if="!detail.isFalsePositive"
@@ -76,17 +97,7 @@
           标记误报
         </el-button>
         <el-button
-          v-if="isDocxSelected && detail.suggestedText && !detail.isFalsePositive"
-          type="success"
-          size="small"
-          plain
-          @click="emit('adoptSuggestion', detail)"
-          class="action-btn adopt-btn"
-        >
-          <el-icon><Check /></el-icon> 采纳建议
-        </el-button>
-        <el-button
-          v-else-if="detail.isFalsePositive"
+          v-if="detail.isFalsePositive"
           type="info"
           size="small"
           plain
@@ -96,22 +107,7 @@
           取消误报
         </el-button>
       </div>
-    </div>
 
-    <!-- 大白话解释 — 默认折叠 -->
-    <div v-if="detail.plainLanguage" class="plain-language-section" :class="{ expanded: plainExpanded }">
-      <div class="plain-language-header" @click="plainExpanded = !plainExpanded">
-        <el-icon><ChatLineRound /></el-icon>
-        <span>通俗解释</span>
-        <el-icon class="expand-icon" :class="{ rotated: plainExpanded }"><ArrowRight /></el-icon>
-      </div>
-      <div v-show="plainExpanded" class="plain-language-content">
-        {{ detail.plainLanguage }}
-      </div>
-    </div>
-
-    <!-- 卡片内容体 -->
-    <div class="issue-body">
       <!-- 原文 / 建议修改 — 双向 diff 高亮 -->
       <div class="issue-row" v-if="detail.originalText">
         <span class="row-label">原文本</span>
@@ -157,7 +153,7 @@
                 </el-tag>
               </el-descriptions-item>
               <el-descriptions-item label="相似度" v-if="detail.similarity != null">
-                {{ (detail.similarity * 100).toFixed(1) }}%
+                {{ (Math.min(detail.similarity, 1) * 100).toFixed(1) }}%
               </el-descriptions-item>
               <el-descriptions-item label="标准编号" v-if="detail.suggestedText" :span="2">
                 <span class="correct-value">{{ detail.suggestedText }}</span>
@@ -223,7 +219,7 @@
                   <span class="source-title">
                     {{ ref.document_name || `参考文档 ${idx + 1}` }}
                     <el-tag size="small" type="info" effect="plain" round v-if="ref.similarity != null">
-                      {{ (ref.similarity * 100).toFixed(1) }}%
+                      {{ (Math.min(ref.similarity, 1) * 100).toFixed(1) }}%
                     </el-tag>
                   </span>
                 </template>
@@ -247,14 +243,12 @@
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue'
+import { ref, watch } from 'vue'
 import type { IssueDetail } from './types/issue'
 import {
   CopyDocument,
   Location,
-  ChatLineRound,
-  Check,
-  ArrowRight,
+  ArrowDown,
   Reading,
 } from '@element-plus/icons-vue'
 import DiffHighlight from './DiffHighlight.vue'
@@ -267,20 +261,32 @@ const props = defineProps<{
   isDocxSelected?: boolean
   highlightedId?: string | null
   selectedFileId?: string | null
+  forceExpanded?: boolean
 }>()
 
 const emit = defineEmits<{
   locateText: [payload: { detail: IssueDetail; elementId: string }]
   copyHandleId: [handleId: string]
   openFpDialog: [detail: IssueDetail]
-  adoptSuggestion: [detail: IssueDetail]
   cancelFp: [detail: IssueDetail]
   toggleSelect: [issueId: string, isSelected: boolean]
   selectFileById: [fileId: string]
 }>()
 
-// 通俗解释折叠状态（默认折叠）
-const plainExpanded = ref(false)
+// 卡片展开状态（默认折叠）
+const cardExpanded = ref(false)
+
+/** 截断文本（折叠态预览用） */
+const truncateIssueText = (text: string, maxLen: number): string => {
+  if (!text) return ''
+  const t = text.trim()
+  return t.length > maxLen ? t.slice(0, maxLen) + '...' : t
+}
+
+/** 响应外部全部展开/折叠控制 */
+watch(() => props.forceExpanded, (val) => {
+  if (val !== undefined) cardExpanded.value = val
+})
 
 /** 根据文件类型返回 emoji 图标 */
 const getFileEmoji = (fileType: string | undefined): string => {
@@ -306,49 +312,105 @@ const {
 </script>
 
 <style scoped>
-/* ===== 问题卡片 — 左侧彩色竖条（参考项目核心模式） ===== */
+/* ===== 问题卡片 — 简化紧凑版 ===== */
 .issue-card {
-  margin-bottom: 10px;
+  margin-bottom: 8px;
   background: #FFFFFF;
   border-radius: var(--radius-md);
-  box-shadow: var(--border-inset), 0 1px 2px rgba(0, 0, 0, 0.04);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
   overflow: hidden;
   transition: box-shadow 0.15s ease;
-  border-left: 4px solid transparent;
+  border-left: 3px solid transparent;
 }
 .issue-card.severity-error   { border-left-color: #EF4444; }
 .issue-card.severity-warning { border-left-color: #F59E0B; }
 .issue-card.severity-info    { border-left-color: #6B7280; }
-.issue-card:hover { box-shadow: var(--border-inset), 0 4px 12px rgba(0, 0, 0, 0.06); }
+.issue-card:hover { box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12); }
 
-/* ===== 头部：标签 + 操作按钮并列 ===== */
+/* ===== 头部：标签 + 描述 + 操作按钮 + 展开箭头 ===== */
 .issue-header {
   display: flex;
   justify-content: space-between;
   align-items: flex-start;
   gap: 12px;
-  padding: 10px 14px 8px;
-  border-bottom: 1px solid #F0F0F0;
+  padding: 10px 12px;
+  cursor: pointer;
+}
+.issue-header:hover {
+  background: #F9FAFB;
 }
 .header-left { flex: 1; min-width: 0; }
+.header-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
 .header-actions {
   display: flex;
-  gap: 6px;
+  gap: 4px;
   flex-shrink: 0;
   align-items: center;
   flex-wrap: nowrap;
 }
 
-.issue-tags { display: flex; align-items: center; gap: 5px; flex-wrap: wrap; margin-bottom: 6px; }
+.issue-tags { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; margin-bottom: 4px; }
 .issue-desc {
-  font-size: 14px;
-  font-weight: 700;
+  font-size: 13px;
+  font-weight: 600;
   color: #111827;
   line-height: 1.4;
   display: block;
 }
-.severity-tag { font-size: 11px; letter-spacing: 0.02em; }
-.severity-error { font-weight: 800; }
+.plain-language-preview {
+  font-size: 12px;
+  color: #6B7280;
+  line-height: 1.4;
+  margin-top: 2px;
+  display: block;
+}
+
+/* 折叠态预览：原文/建议首行 */
+.collapsed-preview {
+  margin-top: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.collapsed-row {
+  font-size: 12px;
+  line-height: 1.5;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding: 2px 6px;
+  border-radius: 3px;
+}
+.collapsed-row.original {
+  color: #DC2626;
+  background: #FEF2F2;
+}
+.collapsed-row.suggested {
+  color: #059669;
+  background: #ECFDF5;
+}
+.collapsed-label {
+  font-weight: 600;
+  margin-right: 3px;
+}
+
+/* 展开后的操作按钮栏 */
+.expanded-actions {
+  display: flex;
+  gap: 6px;
+  padding: 6px 0 10px;
+  border-bottom: 1px solid #F0F0F0;
+  margin-bottom: 8px;
+  flex-wrap: wrap;
+}
+
+.severity-tag { font-size: 11px; }
+.severity-error { font-weight: 700; }
 .fp-tag {
   font-style: italic;
   background: #F3E8FF !important;
@@ -357,30 +419,29 @@ const {
 
 /* 文件来源标签 */
 .file-source-tag {
-  max-width: 160px;
+  max-width: 140px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.file-icon-inline { font-size: 11px; margin-right: 1px; }
+.file-icon-inline {
+  margin-right: 3px;
+  font-size: 12px;
+}
 
-/* ===== 操作按钮 ===== */
+/* 操作按钮 */
 .action-btn {
-  font-size: var(--text-sm);
-  border-radius: var(--radius-md);
-  font-weight: 600;
-  padding: 5px 12px;
-  white-space: nowrap;
+  border-radius: var(--radius-sm);
+  padding: 5px 10px;
+  font-size: 12px;
 }
-.locate-btn {
-  box-shadow: 0 1px 3px rgba(59, 130, 246, 0.2);
+.locate-btn, .cad-locate-btn {
+  padding: 5px 10px;
 }
-.adopt-btn.el-button {
-  color: #166534 !important;
-  background: #DCFCE7 !important;
-  border-color: #86EFAC !important;
+.locate-btn .el-icon,
+.cad-locate-btn .el-icon {
+  font-size: 12px;
 }
-.adopt-btn.el-button:hover { background: #BBF7D0 !important; }
 .action-fp-btn.el-button {
   border-color: #D97706 !important;
   color: #92400E !important;
@@ -388,252 +449,190 @@ const {
 }
 .action-fp-btn.el-button:hover { background: #FDE68A !important; }
 
-/* 大白话解释 — 蓝色左侧竖条 */
-.plain-language-section {
-  margin: 0 14px 10px;
-  border-left: 4px solid #60A5FA;
-  background: #EFF6FF;
-  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
-  overflow: hidden;
-}
-.plain-language-header {
-  display: flex;
-  align-items: center;
-  gap: 5px;
-  padding: 6px 10px;
-  cursor: pointer;
-  font-size: var(--text-sm);
-  font-weight: 700;
-  color: #1E40AF;
-  transition: background 0.12s;
-}
-.plain-language-header:hover { background: rgba(59, 130, 246, 0.08); }
-.expand-icon {
-  margin-left: auto;
-  font-size: 12px;
+/* 展开箭头 */
+.expand-arrow {
+  font-size: 16px;
+  color: #9CA3AF;
   transition: transform 0.2s ease;
+  flex-shrink: 0;
 }
-.expand-icon.rotated { transform: rotate(90deg); }
-.plain-language-content {
-  padding: 0 10px 8px;
-  font-size: var(--text-base);
-  line-height: 1.6;
-  color: #1E40AF;
+.expand-arrow.rotated {
+  transform: rotate(180deg);
 }
 
+/* ===== 卡片内容体 ===== */
 .issue-body {
-  padding: 10px 14px;
-  font-size: var(--text-base);
-  color: #374151;
-  line-height: 1.6;
+  padding: 8px 12px 12px;
+  border-top: 1px solid #F0F0F0;
+  background: #FAFAFA;
 }
+
+/* ===== 问题行 ===== */
 .issue-row {
   display: flex;
+  gap: 8px;
   margin-bottom: 8px;
   align-items: flex-start;
-  gap: 10px;
 }
-.issue-row:last-child { margin-bottom: 0; }
 .row-label {
-  width: 72px;
+  font-size: 12px;
+  color: #6B7280;
+  font-weight: 500;
+  min-width: 65px;
   flex-shrink: 0;
-  color: #666666;
-  font-weight: 700;
-  font-size: 11px;
-  text-transform: uppercase;
-  letter-spacing: 0.3px;
   padding-top: 2px;
 }
-.row-value { flex: 1; word-break: break-all; line-height: 1.5; }
-
-/* 原文本 & 建议修改 — 参考项目的 blockquote 色块风格 */
-.original-text, .suggested-text {
-  padding: 6px 10px;
-  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
-  font-weight: 500;
-  display: inline-block;
-  max-width: 100%;
-  font-size: var(--text-base);
+.row-value {
+  flex: 1;
+  font-size: 13px;
+  color: #1F2937;
   line-height: 1.5;
+  word-break: break-word;
 }
-/* 红色竖条 = 原文 */
 .original-text {
-  color: #991B1B;
-  background: #FEE2E2;
-  border-left: 4px solid #F87171;
+  background: #FEF2F2;
+  padding: 6px 8px;
+  border-radius: 4px;
+  border: 1px solid #FECACA;
 }
-/* 绿色竖条 = 建议 */
 .suggested-text {
-  color: #166534;
-  background: #DCFCE7;
-  border-left: 4px solid #34D399;
+  background: #F0FDF4;
+  padding: 6px 8px;
+  border-radius: 4px;
+  border: 1px solid #BBF7D0;
 }
-
-.cad-handle-badge {
-  font-family: var(--font-mono);
-  background: #EFF6FF;
-  color: #3B82F6;
-  padding: 3px 10px;
-  border-radius: var(--radius-full);
-  font-size: var(--text-sm);
-  font-weight: 700;
-  display: inline-block;
+.fp-reason-row .fp-reason-text {
+  color: #7C3AED;
+  font-style: italic;
 }
 .link-value {
   color: #3B82F6;
-  cursor: pointer;
-  text-decoration: none;
-  font-weight: 600;
-  font-size: var(--text-base);
+  text-decoration: underline;
+  font-weight: 500;
 }
-.link-value:hover { color: #2563EB; text-decoration: underline; }
 
-/* ===== 标准条文 — 提权展示 ===== */
+/* ===== 标准依据块 ===== */
 .standard-ref-section {
-  margin: 10px 0;
-  border-left: 4px solid #8B5CF6;
-  background: #F5F3FF;
-  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
-  overflow: hidden;
+  margin: 8px 0;
+  padding: 6px 8px;
+  background: #EFF6FF;
+  border-radius: 4px;
+  border-left: 3px solid #60A5FA;
 }
 .standard-ref-header {
   display: flex;
   align-items: center;
-  gap: 5px;
-  padding: 6px 10px;
-  font-size: 11px;
-  font-weight: 700;
-  color: #6D28D9;
-  text-transform: uppercase;
-  letter-spacing: 0.3px;
+  gap: 4px;
+  color: #1E40AF;
+  font-size: 12px;
+  font-weight: 600;
+  margin-bottom: 4px;
 }
 .standard-ref-body {
-  padding: 0 10px 8px;
-  font-size: var(--text-base);
-  line-height: 1.6;
-  color: #5B21B6;
-  font-weight: 500;
+  font-size: 12px;
+  color: #1E3A8A;
+  line-height: 1.5;
 }
 
-/* 标准引用匹配详情 */
+/* ===== 标准引用详情块 ===== */
 .std-ref-detail-section {
-  display: flex;
-  margin-bottom: 8px;
-  align-items: flex-start;
-  gap: 10px;
+  margin: 8px 0;
 }
-.std-ref-detail { flex: 1; min-width: 0; }
-.std-ref-detail :deep(.el-descriptions) { margin: 0; }
-.std-ref-detail :deep(.el-descriptions__label) {
-  width: 72px;
-  font-size: var(--text-sm);
-  color: #666666;
-}
-.std-ref-detail :deep(.el-descriptions__content) { font-size: var(--text-sm); }
-.correct-value {
-  color: #10B981;
-  font-weight: 600;
-  font-family: var(--font-mono);
+.std-ref-detail {
+  margin-top: 4px;
 }
 
-/* DWG 专属信息区域 */
+/* ===== DWG 信息区域 ===== */
 .dwg-info-section {
-  margin-bottom: 8px;
-  padding: 6px 10px;
-  background: #FFF7ED;
-  border-radius: var(--radius-sm);
-  border-left: 4px solid #FB923C;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  margin-top: 8px;
 }
 .dwg-layer-badge {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
-  padding: 2px 10px;
-  border-radius: var(--radius-full);
-  background: #EFF6FF;
-  color: var(--layer-color, #3B82F6);
-  font-size: var(--text-sm);
-  font-weight: 700;
-  font-family: var(--font-mono);
+  gap: 4px;
+  padding: 2px 8px;
+  background: #F3F4F6;
+  border-radius: 4px;
+  font-size: 12px;
 }
-.dwg-layer-badge .layer-dot {
-  width: 7px;
-  height: 7px;
+.layer-dot {
+  width: 10px;
+  height: 10px;
   border-radius: 50%;
-  background: var(--layer-color, #3B82F6);
+  background: var(--layer-color, #6B7280);
   flex-shrink: 0;
 }
 .dwg-coord-text {
-  font-family: var(--font-mono);
-  font-size: 11px;
-  color: #6B7280;
-  background: #FAFAFA;
-  padding: 2px 8px;
-  border-radius: var(--radius-sm);
+  font-family: 'SF Mono', 'Monaco', 'Inconsolata', 'Roboto Mono', monospace;
+  font-size: 12px;
+  background: #F3F4F6;
+  padding: 2px 6px;
+  border-radius: 4px;
 }
 .dwg-block-text {
-  font-family: var(--font-mono);
-  font-size: var(--text-sm);
-  color: #3B82F6;
-  font-weight: 600;
+  font-size: 12px;
+  background: #F3F4F6;
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+.cad-handle-badge {
+  font-family: 'SF Mono', 'Monaco', 'Inconsolata', 'Roboto Mono', monospace;
+  font-size: 12px;
+  background: #F3F4F6;
+  padding: 3px 8px;
+  border-radius: 4px;
 }
 
-.cad-locate-btn {
-  position: relative;
-  transition: all 0.15s ease;
+/* ===== 来源参考块 ===== */
+.source-refs-section {
+  margin-top: 8px;
 }
-.cad-locate-btn:hover {
-  transform: translateY(-1px);
-  box-shadow: 0 2px 8px rgba(59, 130, 246, 0.2);
+.source-list {
+  margin-top: 4px;
 }
-
-.source-refs-section { margin-top: 4px; }
-.source-list { flex: 1; min-width: 0; }
-.source-top-hint { font-size: 11px; color: #6B7280; font-style: italic; margin-bottom: 4px; }
-::deep(.el-collapse) { border: none; }
-::deep(.el-collapse-item__header) {
-  height: auto; min-height: 28px; line-height: 1.5; font-size: var(--text-base);
-  border-bottom: none; padding: 3px 0; background: transparent;
+.source-top-hint {
+  font-size: 11px;
+  color: #9CA3AF;
+  margin-bottom: 4px;
 }
-::deep(.el-collapse-item__wrap) { border-bottom: none; }
-::deep(.el-collapse-item__content) { padding: 6px 0 3px 14px; }
 .source-title {
-  display: flex; align-items: center; gap: 6px;
-  font-size: var(--text-base); color: #3B82F6; font-weight: 600;
+  font-size: 12px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
 }
 .source-content {
-  padding: 8px 10px;
-  background: #EFF6FF;
-  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
-  border-left: 3px solid #3B82F6;
-  font-size: var(--text-sm);
-  line-height: 1.6;
-  color: #374151;
-  white-space: pre-wrap;
-  word-break: break-all;
-}
-
-.fp-reason-row .fp-reason-text {
+  font-size: 12px;
   color: #6B7280;
-  font-style: italic;
-  font-size: var(--text-sm);
-  padding: 3px 10px;
-  background: #FAFAFA;
-  border-radius: var(--radius-sm);
-  display: inline-block;
+  line-height: 1.5;
 }
+:deep(.el-collapse) { border: none; }
+:deep(.el-collapse-item__header) {
+  height: auto; min-height: 28px; line-height: 1.5; font-size: 13px;
+  border-bottom: none; padding: 3px 0; background: transparent;
+}
+:deep(.el-collapse-item__wrap) { border-bottom: none; }
+:deep(.el-collapse-item__content) { padding: 6px 0 3px 14px; }
 
-/* ===== 状态卡片 ===== */
+/* ===== 误报卡片样式 ===== */
 .false-positive-card {
-  opacity: 0.6;
-  background: repeating-linear-gradient(-45deg, #FFFFFF, #FFFFFF 8px, #FAFAFA 8px, #FAFAFA 16px);
-  border: 1px dashed #D1D5DB;
+  opacity: 0.5;
+  background: #F9FAFB;
 }
-.false-positive-card:hover { opacity: 0.8; }
+.false-positive-card .issue-header {
+  cursor: default;
+}
+.false-positive-card .issue-header:hover {
+  background: transparent;
+}
 
+/* ===== 高亮样式 ===== */
 .issue-highlighted {
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.5);
   animation: highlight-pulse 0.5s ease-out;
-  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.5) !important;
   z-index: 100;
 }
 @keyframes highlight-pulse {
@@ -642,51 +641,25 @@ const {
   100% { box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.5); }
 }
 
-/* 批量选择 Checkbox 样式 */
+/* ===== 批量选择样式 ===== */
 .batch-checkbox-wrapper {
   position: absolute;
-  top: 8px;
-  left: 8px;
-  z-index: 5;
-  background: white;
-  border-radius: 50%;
-  padding: 4px;
-  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.08);
-  transition: all 0.2s ease;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  padding: 10px 8px;
+  background: rgba(255, 255, 255, 0.95);
+  z-index: 10;
 }
-
-.batch-checkbox-wrapper:hover {
-  box-shadow: 0 3px 10px rgba(64, 158, 255, 0.2);
-  transform: scale(1.05);
+.batch-checkbox {
+  transform: scale(1.1);
 }
-
-.batch-checkbox :deep(.el-checkbox__inner) {
-  width: 18px;
-  height: 18px;
-  border-radius: 4px;
-}
-
-.batch-checkbox :deep(.el-checkbox__inner::after) {
-  width: 5px;
-  height: 9px;
-  left: 6px;
-  top: 2px;
-}
-
-/* 批量选中状态的卡片样式 */
 .issue-card.batch-selected {
   border-left-color: #409EFF !important;
-  box-shadow:
-    var(--border-inset),
-    0 0 0 2px rgba(64, 158, 255, 0.15),
-    0 4px 12px rgba(64, 158, 255, 0.1) !important;
+  box-shadow: 0 0 0 2px rgba(64, 158, 255, 0.15), 0 4px 12px rgba(64, 158, 255, 0.1) !important;
   transition: all 0.25s ease;
 }
-
 .issue-card.batch-selected:hover {
-  box-shadow:
-    var(--border-inset),
-    0 0 0 2px rgba(64, 158, 255, 0.25),
-    0 6px 20px rgba(64, 158, 255, 0.15) !important;
+  box-shadow: 0 0 0 2px rgba(64, 158, 255, 0.25), 0 6px 20px rgba(64, 158, 255, 0.15) !important;
 }
 </style>

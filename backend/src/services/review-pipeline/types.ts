@@ -12,31 +12,21 @@ export type ReviewModeType =
   | 'CONSISTENCY'
   | 'TYPO_GRAMMAR'
   | 'MULTIMODAL'
-  | 'CUSTOM_RULE';
+  | 'RULE_ONLY'
+  | 'SELF_CHECK';
 
-/** Pipeline 阶段开关配置 */
-export interface PipelineStageConfig {
-  rules: boolean;      // 是否执行规则引擎
-  ai: boolean;         // 是否执行 AI 审查
-  stdRef?: boolean;    // 是否执行标准引用检查（仅 LIBRARY_REVIEW / CONSISTENCY）
-}
-
-/** Pipeline 模式配置 */
-export interface PipelineModeConfig {
-  enabled: boolean;           // 该模式是否启用
-  stages: PipelineStageConfig; // 阶段开关
-}
-
-/** Pipeline 全局配置（存储在 SystemConfig 'pipeline_review_config' 中） */
+/** 审查全局配置（存储在 SystemConfig 'pipeline_review_config' 中） */
 export interface PipelineReviewConfig {
-  modes: Partial<Record<ReviewModeType, PipelineModeConfig>>;
   aiEngine: 'auto' | 'rag' | 'rag_llm' | 'llm_only' | 'disabled';  // AI 引擎策略
   chunkSize: number;           // 文本分片大小
-  llmMaxTokens: number;        // LLM max_tokens
+  llmMaxTokens: number;        // LLM max_tokens（输出上限）
   llmTimeout: number;          // LLM 超时（秒）
   ocrTimeout: number;          // OCR 超时（秒）
   maxConcurrentReviews: number;// 最大并发审查数
   logLevel: 'debug' | 'info' | 'warn' | 'error';  // 日志级别
+  /** 模型上下文窗口大小（字符数）。用于派生分片大小和摘要容量。
+   *  不设置则从 LLM 配置的 maxTokens 自动推导（maxTokens × 4）。 */
+  contextWindow?: number;
 }
 
 /** Word 文档结构化数据 */
@@ -147,6 +137,8 @@ export interface PipelineContext {
   corePurposes?: string[];
   /** 内部使用的语义规范库提示词上下文（由 AI 服务构建） */
   _semanticPromptContext?: string;
+  /** 审查场景名（供 prompt 加载用，从 ReviewMode 映射） */
+  scene?: string;
   /** Python 解析服务的结构化结果（可能为 null） */
   parseResult?: import('../python-parser.service').ParseResult | null;
   /** Word 文档结构化数据 */
@@ -155,51 +147,7 @@ export interface PipelineContext {
   dwgStructure?: DwgStructure;
 }
 
-/** 审查流水线接口 — 策略模式核心 */
-export interface ReviewPipeline {
-  /** 流水线对应的审查模式 */
-  readonly mode: ReviewModeType;
-
-  /** 流水线显示名称 */
-  readonly displayName: string;
-
-  /** 流水线描述 */
-  readonly description: string;
-
-  /** 是否需要 AI 审查（MaxKB/LLM） */
-  readonly needsAI: boolean;
-
-  /** 是否需要参照文件 */
-  readonly needsRefFiles: boolean;
-
-  /**
-   * 模式能力组合（数据驱动配置）
-   * 重构后新增：BasePipeline 统一读取此配置编排阶段1/2流程，
-   * 子类不再需要重复编写几乎相同的 execute() 逻辑。
-   */
-  readonly capabilities: import('./mode-config').ModeCapabilities;
-
-  /**
-   * 执行审查流水线
-   * @param ctx 文件审查上下文
-   * @returns 规则引擎问题 + AI 审查问题
-   */
-  execute(ctx: PipelineContext): Promise<PipelineResult>;
-
-  /**
-   * 阶段1: 规则审查（快速）
-   * 用于两阶段并行编排：所有文件分批并发执行阶段1，立即入库推送
-   */
-  runFastPhase(ctx: PipelineContext): Promise<FastPhaseResult>;
-
-  /**
-   * 阶段2: AI 深度审查（耗时）
-   * 用于两阶段并行编排：阶段1全部完成后，所有文件分批并发执行阶段2
-   */
-  runSlowPhase(ctx: PipelineContext): Promise<SlowPhaseResult>;
-}
-
-/** 流水线执行结果 */
+/** 审查处理结果 */
 export interface PipelineResult {
   ruleIssues: RuleIssue[];
   aiIssues: ReviewIssue[];

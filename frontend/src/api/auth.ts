@@ -5,7 +5,7 @@ import type { UserInfo } from '@/types/models'
 
 // 登录
 export function loginApi(data: { username: string; password: string }) {
-  return request.post<{ token: string; user: UserInfo }>('/auth/login', data)
+  return request.post<{ token: string; mustChangePassword: boolean; user: UserInfo }>('/auth/login', data)
 }
 
 // 登出

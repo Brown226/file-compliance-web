@@ -12,6 +12,12 @@ const routes: Array<RouteRecordRaw> = [
     meta: { title: '登录' }
   },
   {
+    path: '/change-password',
+    name: 'ChangePassword',
+    component: () => import('../views/ChangePassword.vue'),
+    meta: { title: '修改密码', requiresAuth: true }
+  },
+  {
     path: '/',
     component: AppLayout,
     redirect: '/workspace',

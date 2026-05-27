@@ -90,7 +90,7 @@
               <el-option label="标准AI" value="standard" />
               <el-option label="纯LLM" value="llmOnly" />
               <el-option label="参照比对" value="refCompare" />
-              <el-option label="多模态" value="multimodal" />
+              <el-option label="结构化审查" value="multimodal" />
             </el-select>
           </template>
         </el-table-column>
@@ -123,9 +123,9 @@ const modeMeta: Record<string, { displayName: string; description: string; icon:
   LIBRARY_REVIEW: { displayName: '以库审文', description: '使用标准库+规则引擎+AI引擎进行合规检查', icon: Reading, color: '#2563EB' },
   DOC_REVIEW: { displayName: '以文审文', description: '使用上游参照文件与待审文件进行比对审查', icon: Files, color: '#10B981' },
   CONSISTENCY: { displayName: '全文一致性', description: '跨文件参数和语义一致性检查', icon: Connection, color: '#F59E0B' },
-  TYPO_GRAMMAR: { displayName: '错别字/语法', description: '轻量级错别字和语法检查', icon: EditPen, color: '#EF4444' },
-  MULTIMODAL: { displayName: '多模态识别', description: '表格结构化、公式识别、图纸智能分析', icon: PictureFilled, color: '#6366F1' },
-  CUSTOM_RULE: { displayName: '自定义规则', description: '用户自定义规则审查（仅执行启用的规则）', icon: Setting, color: '#6B7280' },
+  TYPO_GRAMMAR: { displayName: '基础校对', description: '轻量级错别字和语法检查', icon: EditPen, color: '#EF4444' },
+  MULTIMODAL: { displayName: '结构化审查', description: '表格结构化、公式识别、图纸智能分析', icon: PictureFilled, color: '#6366F1' },
+  RULE_ONLY: { displayName: '仅规则审查', description: '仅执行预定义规则检查，不调用 AI，速度最快', icon: Setting, color: '#6B7280' },
 }
 
 // 默认配置（standardRef 为 boolean）
@@ -135,7 +135,7 @@ const defaultConfig: Record<string, any> = {
   CONSISTENCY: { enabled: true, rules: true, standardRef: true, ai: true, aiStrategy: 'standard', crossFile: true },
   TYPO_GRAMMAR: { enabled: true, rules: true, standardRef: false, ai: true, aiStrategy: 'llmOnly', crossFile: false },
   MULTIMODAL: { enabled: true, rules: true, standardRef: false, ai: true, aiStrategy: 'multimodal', crossFile: false },
-  CUSTOM_RULE: { enabled: true, rules: true, standardRef: false, ai: false, aiStrategy: 'standard', crossFile: false },
+  RULE_ONLY: { enabled: true, rules: true, standardRef: false, ai: false, aiStrategy: 'standard', crossFile: false },
 }
 
 // 原始数据（用于比较是否有修改）

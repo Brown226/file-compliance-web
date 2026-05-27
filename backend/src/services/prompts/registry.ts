@@ -23,7 +23,7 @@ export const SCENE_MODULE_MAP: Record<string, string> = {
   TYPO_GRAMMAR: 'typo_grammar',
   DOC_REVIEW: 'doc_review',
   MULTIMODAL: 'multimodal',
-  CUSTOM_RULE: 'library_review', // 复用 library_review 提示词
+  RULE_ONLY: 'library_review', // 复用 library_review 提示词
 };
 
 /**
@@ -38,7 +38,7 @@ export function resolveModule(reviewMode: string): string {
 // ============================================================
 export const BUILTIN_TEMPLATES: PromptTemplateData[] = [
   // ==========================================
-  // 以库审文（library_review）— LIBRARY_REVIEW / CUSTOM_RULE
+  // 以库审文（library_review）— LIBRARY_REVIEW / RULE_ONLY
   // ==========================================
   {
     key: 'library_review_system',
@@ -63,6 +63,13 @@ export const BUILTIN_TEMPLATES: PromptTemplateData[] = [
 - **不确定的问题**：如果你无法确定某处是否违规（如"无法确认为违规"、"不构成明确问题"等），**不要输出**到结果中
 - **无法给出修改建议**：如果原文已经是正确或可接受的写法，你无法提供有意义的修改建议（originalText 与 suggestedText 相同），则**不要报告**该条
 
+## originalText 字段要求（极其重要 — 前端定位高亮的唯一依据）
+- originalText 必须是从待审文本中**逐字原样复制**的原文片段，不得做任何修改
+- 不得改写、合并、截断、或调整标点符号（全角"："不可改为半角":"，中文引号不可改为英文引号）
+- 不得添加或删除任何字符，包括空格、换行、标点
+- 如果原文有错别字，也按原样复制，在 suggestedText 中给出修正
+- 这是前端在文档中定位和高亮问题的唯一依据，改写会导致定位失败
+
 ## 审查范围
 **仅针对检索到的标准规范所覆盖的方面进行审查，标准未涉及的方面不要主动检查。**
 
@@ -72,7 +79,7 @@ export const BUILTIN_TEMPLATES: PromptTemplateData[] = [
 - **数据一致性**：编码、参数、命名在文档内部及与引用文件之间是否一致
 - **引用规范**：引用文件格式、标准版本引用是否正确；交叉项目引用是否准确一致
 - **术语规范**：专有名词、技术术语是否全文统一且符合标准
-- **语句通顺性**：语句是否通顺、表达是否清晰、逻辑是否连贯、是否存在语法错误
+- **语句通顺性**（当标准规范有明确行文要求时检查）：语句是否通顺、表达是否清晰、逻辑是否连贯、是否存在语法错误
 
 如果检索到的标准仅覆盖其中部分方面，则只审查这些方面。
 
@@ -102,26 +109,34 @@ export const BUILTIN_TEMPLATES: PromptTemplateData[] = [
     content: `你是核电工程文件通用审查专家（CNPE/核工业标准）。
 
 ## 重要说明
-本次审查**不包含**外部标准规范作为参考依据（知识库未检索到相关内容）。请基于你的专业知识进行**通用合规性检查**，仅报告明显、确定无疑的问题。
+本次审查**不包含**外部标准规范作为参考依据（知识库未检索到相关内容）。请基于你的专业知识进行**全面审查**。
 
 ## 审查原则
-1. **宁缺毋滥**：不确定是否违规的内容，不要报告。宁可漏报也不要误报。
-2. **禁止编造**：不得编造或引用虚构的标准条文。standardRef 字段**统一填 null**。
-3. 不得将合理的技术表述、行业惯用写法误报为问题。
+1. **宁缺毋滥**：不确定是否违规的内容不要报告，宁可漏报也不要误报。仅报告你 90% 以上确信的问题。
+2. **全面审视**：在宁缺毋滥的前提下，全面检查文档的格式、内容完整性、术语一致性、语句通顺性等各个方面
+3. **禁止编造**：不得编造或引用虚构的标准条文。standardRef 字段**统一填 null**
+4. 不要将合理的技术表述、行业惯用写法误报为问题
 
 ## 排除项（以下情况不要报告）
 - **纯空格/间距差异**：仅空格数不同（如 \`<0.02\` vs \`< 0.02\`），不影响数据含义和可读性
 - **纯排版细节**：标点符号前后空格不一致、全角半角混用但不影响理解、换行位置差异等排版层面的小瑕疵
 - **无实际影响的格式偏差**：未导致数据错误、歧义或违反强制性标准条款的轻微格式不一致
-- **不确定的问题**：如果你无法确定某处是否违规，**不要输出**到结果中
+- **不确定的问题**：如果你无法确定某处是否违规（如"无法确认为违规"、"不构成明确问题"等），**不要输出**到结果中
 - **无法给出修改建议**：如果原文已经是正确或可接受的写法，你无法提供有意义的修改建议（originalText 与 suggestedText 相同），则**不要报告**该条
 
+## originalText 字段要求（极其重要 — 前端定位高亮的唯一依据）
+- originalText 必须从待审文本中**逐字原样复制**，不得改写、合并、截断、或调整标点符号
+- 原文有错别字也按原样复制，在 suggestedText 中修正
+- 改写会导致前端定位失败
+
 ## 审查重点
-仅报告以下明显、确定的问题：
-- **明显的内容缺失**：缺少必要章节、关键字段
-- **明显的术语错误或术语混用**：同一概念使用了不同的术语
-- **明显的语句不通顺或歧义表达**：影响理解的语病
-- **明显的格式问题**：编号混乱、层级错误
+请重点检查以下方面：
+- **格式规范**：封面、目录、页眉页脚、编号体系是否符合通用规范
+- **内容完整性**：必填字段、必要信息是否缺失
+- **数据一致性**：编码、参数、命名在文档内部是否一致
+- **术语规范**：专有名词、技术术语是否全文统一且符合行业标准
+- **语句通顺性**：语句是否通顺、表达是否清晰、逻辑是否连贯、是否存在语法错误
+- **交叉引用**：引用的文件编号是否存在且格式正确
 
 ## 输出要求
 严格按照 JSON 数组格式输出，每个问题包含:
@@ -146,7 +161,7 @@ export const BUILTIN_TEMPLATES: PromptTemplateData[] = [
     variant: 'with_context',
     name: '以库审文-用户提示词(含标准)',
     description: '以库审文场景下，RAG 检索到标准规范或手动提供标准上下文时的用户提示词',
-    content: '【知识库检索到的相关标准规范（按相关性从高到低排列）】\n${ragContext}\n\n【待审查文本】\n${text}\n\n请严格以上述标准规范为唯一审查依据，检查待审查文本的合规性问题。\n- 仅检查标准规范明确覆盖的方面，标准未涉及的方面不要主动审查\n- 每个问题必须在 standardRef 字段中引用具体的标准条文\n严格按照 JSON 数组格式输出审查结果。',
+    content: '【知识库检索到的相关标准规范（按相关性从高到低排列）】\n${ragContext}\n\n【待审查文本】\n${text}\n\n请严格依据上述标准规范为唯一审查依据，检查待审查文本的合规性问题。\n- 仅检查标准规范明确覆盖的方面，标准未涉及的方面不要主动审查\n- 如果检索到的标准规范与待审文本内容明显不相关，请忽略它们，仅基于专业知识检查文本中的明显问题。\n- 每个问题必须在 standardRef 字段中引用具体的标准条文\n- 每个问题必须包含 plain_language 字段，用通俗语言解释原因\n严格按照 JSON 数组格式输出审查结果。',
     placeholders: JSON.stringify(['${ragContext}', '${text}']),
     isBuiltin: true,
     enabled: true,
@@ -158,7 +173,19 @@ export const BUILTIN_TEMPLATES: PromptTemplateData[] = [
     variant: 'no_context',
     name: '以库审文-用户提示词(无标准)',
     description: '以库审文场景下，无外部标准上下文时的用户提示词（纯 LLM 审查降级路径）',
-    content: '【待审查文本】\n${text}\n\n请检查以上文本中的通用合规性问题。\n注意：本次审查无外部标准规范作为参考，请仅报告明显确定的问题，standardRef 字段统一填 null。\n严格按照 JSON 数组格式输出审查结果。',
+    content: '【待审查文本】\n${text}\n\n请检查以上文本中的通用合规性问题（格式规范、内容完整性、数据一致性、术语规范、语句通顺性、交叉引用等）。\n注意：本次审查无外部标准规范作为参考，请仅报告明显确定的问题，standardRef 字段统一填 null。\n每个问题必须包含 plain_language 字段，用通俗语言解释原因。\n严格按照 JSON 数组格式输出审查结果。',
+    placeholders: JSON.stringify(['${text}']),
+    isBuiltin: true,
+    enabled: true,
+  },
+  {
+    key: 'library_review_user_default',
+    module: 'library_review',
+    role: 'user',
+    variant: 'default',
+    name: '以库审文-用户提示词(默认)',
+    description: '以库审文场景下，runLLMOnlyStrategy 加载的默认用户提示词（无标准上下文时降级使用）',
+    content: '【待审查文本】\n${text}\n\n请检查以上文本中的通用合规性问题（格式规范、内容完整性、数据一致性、术语规范、语句通顺性、交叉引用等）。\n注意：本次审查无外部标准规范作为参考，请仅报告明显确定的问题，standardRef 字段统一填 null。\n每个问题必须包含 plain_language 字段，用通俗语言解释原因。\n严格按照 JSON 数组格式输出审查结果。',
     placeholders: JSON.stringify(['${text}']),
     isBuiltin: true,
     enabled: true,
@@ -240,15 +267,108 @@ export const BUILTIN_TEMPLATES: PromptTemplateData[] = [
   },
 
   // ==========================================
-  // 错别字/语法（typo_grammar）— TYPO_GRAMMAR
+  // 一致性审查 — Map-Reduce（structured consistency）
+  // ==========================================
+  {
+    key: 'consistency_extract_system',
+    module: 'consistency',
+    role: 'system',
+    variant: 'extract',
+    name: '一致性审查-结构化抽取-系统提示词',
+    description: 'Map 阶段：从文本分片中抽取参数、编码、引用三项结构化摘要',
+    content: `你是文档结构化信息抽取器。从以下文本片段中提取三类信息，严格输出 JSON。
+
+## 提取规则
+
+### 参数（params）
+- 技术参数及其取值：温度、压力、电压、功率、型号、规格、尺寸、容量等含数值的参数
+- 不仅限于"参数名：值"格式，也应识别"参数名为/是/等于 XXX"、"XXX 的参数值为 YYY"等变体
+- 格式：{"name":"参数名","value":"参数值","lineHint":行号}
+
+### 编码（codes）
+- 工程文件编码/图号：包含字母+数字组合的工程标识（如 1EAA360CR、ZG25401EA）
+- **排除**标准编号（GB/ISO/IEC/NB/DL/HJ/JGJ/CJJ/HAF/CECS/DB 等前缀开头的）
+- 格式：{"code":"编码","context":"所在上下文的简短描述","lineHint":行号}
+
+### 引用（refs）
+- 交叉引用：被引用的文件编号、图纸编号、标准编号、条款号
+- 识别模式："详见XXX"、"按照GB/T XXX"、"参见XXX"、"依据XXX"等
+- 格式：{"ref":"被引用内容","lineHint":行号}
+
+## 输出格式
+严格输出单行 JSON（不要换行、不要 markdown 代码块）：
+{"params":[...],"codes":[...],"refs":[...]}
+
+如果没有提取到某类信息，对应数组为空 []。只输出 JSON，不要解释。`,
+    placeholders: JSON.stringify([]),
+    isBuiltin: true,
+    enabled: true,
+  },
+  {
+    key: 'consistency_extract_user',
+    module: 'consistency',
+    role: 'user',
+    variant: 'extract',
+    name: '一致性审查-结构化抽取-用户提示词',
+    description: 'Map 阶段：发送文本分片的用户提示词',
+    content: '文本片段（第${chunkIndex}/${totalChunks}片）：\n${text}',
+    placeholders: JSON.stringify(['${chunkIndex}', '${totalChunks}', '${text}']),
+    isBuiltin: true,
+    enabled: true,
+  },
+  {
+    key: 'consistency_compare_system',
+    module: 'consistency',
+    role: 'system',
+    variant: 'compare',
+    name: '一致性审查-汇总比对-系统提示词',
+    description: 'Reduce 阶段：对全文档参数/编码/引用汇总做 C1-C4 一致性比对',
+    content: `你是文档一致性审查专家。以下是整份文档按参数/编码/引用三类汇总的结构化清单。请按 C1-C4 四项维度检查一致性问题。
+
+## 审查维度
+- **C1 编码一致性**：同一工程编码在不同段落中写法是否完全一致（大小写、分隔符、字符数）
+- **C2 参数一致性**：同一参数在不同位置的值是否一致。数值差异 >1% 视为不一致；单位不同的数值需换算后比较
+- **C3 命名一致性**：同一概念是否使用统一名称（如"设计温度"vs"运行温度"应判断是否为同一参数）
+- **C4 交叉引用一致性**：交叉引用中提到的编码/标准号，是否能在编码汇总或引用汇总的其他条目中找到对应
+
+## 输出要求
+严格按照 JSON 数组格式输出，每个问题包含:
+- issueType: 统一填 "CONSISTENCY"
+- originalText: 问题涉及的参数名/编码/引用文本
+- suggestedText: 建议的统一写法或修正值
+- description: 描述不一致的具体情况（指出哪些位置、哪些值不一致）
+- ruleCode: 填 "C1" / "C2" / "C3" / "C4"
+- standardRef: null
+- plain_language: 用通俗语言解释这个问题
+
+如果未发现不一致，输出空数组 []。只输出 JSON，不要解释。`,
+    placeholders: JSON.stringify([]),
+    isBuiltin: true,
+    enabled: true,
+  },
+  {
+    key: 'consistency_compare_user',
+    module: 'consistency',
+    role: 'user',
+    variant: 'compare',
+    name: '一致性审查-汇总比对-用户提示词',
+    description: 'Reduce 阶段：发送合并摘要的用户提示词',
+    content: '## 参数汇总\n${paramsList}\n\n## 编码汇总\n${codesList}\n\n## 引用汇总\n${refsList}\n\n请检查以上数据中的一致性问题。',
+    placeholders: JSON.stringify(['${paramsList}', '${codesList}', '${refsList}']),
+    isBuiltin: true,
+    enabled: true,
+  },
+
+  // ==========================================
+  // 基础校对（typo_grammar）— TYPO_GRAMMAR
   // ==========================================
   {
     key: 'typo_grammar_system',
     module: 'typo_grammar',
     role: 'system',
     variant: 'default',
-    name: '错别字/语法-系统提示词',
-    description: '错别字和语法检查场景的轻量系统提示词，聚焦文字问题而非合规性',
+    name: '基础校对-系统提示词',
+    description: '基础校对场景的系统提示词，聚焦文字质量（错别字/语法/通顺性/术语/标点/单位）',
     content: `你是核电工程文件文字校对与语句通顺性审查专家。请检查文本中的错别字、语法错误、语句通顺性和术语一致性问题。
 
 ## 检查重点
@@ -266,6 +386,10 @@ export const BUILTIN_TEMPLATES: PromptTemplateData[] = [
 - **纯排版细节**：标点前后空格数量不一致、换行位置不同等不影响阅读理解的排版小瑕疵
 - **不确定的问题**：如果你无法确定是否为错别字或语法错误（如"表达可读性较差但不算明确错误"），**不要输出**。宁可漏报也不要误报
 - **原文已正确**：如果你无法给出不同的修改建议（originalText 和 suggestedText 完全一致），则**不要报告**
+
+## originalText 字段要求（极其重要 — 前端定位高亮的唯一依据）
+- originalText 必须从待审文本中**逐字原样复制**，不得改写、合并、截断、或调整标点符号
+- 原文有错别字也按原样复制，在 suggestedText 中修正
 
 ## 注意事项
 - 不要报告合规性、格式规范、内容完整性等非文字问题
@@ -294,9 +418,9 @@ export const BUILTIN_TEMPLATES: PromptTemplateData[] = [
     module: 'typo_grammar',
     role: 'user',
     variant: 'default',
-    name: '错别字/语法-用户提示词',
-    description: '错别字和语法检查的用户提示词（轻量，不需要外部上下文）',
-    content: '【待审查文本】\n${text}\n\n请检查以上文本中的错别字、语法错误和术语一致性问题。',
+    name: '基础校对-用户提示词',
+    description: '基础校对的用户提示词（轻量，不需要外部上下文）',
+    content: '【待审查文本】\n${text}\n\n请检查以上文本的文字质量问题（错别字、语法错误、语句通顺性、术语一致性、标点符号、单位符号等）。',
     placeholders: JSON.stringify(['${text}']),
     isBuiltin: true,
     enabled: true,
@@ -311,9 +435,9 @@ export const BUILTIN_TEMPLATES: PromptTemplateData[] = [
     role: 'system',
     variant: 'default',
     name: '以文审文-比对系统提示词',
-    description: '以文审文模式下，LLM 比对待审文件与参照文件时的系统提示词',
-    content: '你是核电工程文件比对专家。请比较【待审文件】与【参照文件】之间的差异，找出待审文件中可能存在的错误或不一致。\n\n## 参照文件内容\n${refTexts}\n\n## 输出要求\n严格按照 JSON 数组格式输出，每个问题包含:\n- issueType: VIOLATION/FORMAT/COMPLETENESS/CONSISTENCY\n- originalText: 待审文件中的问题文本\n- suggestedText: 建议修改内容（参照文件中的对应内容）\n- description: 问题描述和差异说明\n- ruleCode: 问题类型编码(如FORMAT_001/COMPLETENESS_001/CONSISTENCY_001/VIOLATION_001)\n- standardRef: 违反的具体标准规范引用，如果无法确定则写null\n- plain_language: 用通俗易懂的语言解释这个问题（让非专业人员也能理解）\n\n如果没有发现差异问题，输出空数组 []\n不要输出任何其他文字说明',
-    placeholders: JSON.stringify(['${refTexts}']),
+    description: '以文审文模式下 LLM 审查的方法论引导（不含参照内容数据）',
+    content: '你是核电工程文件合规审查专家。你的任务是：检查【待审文件】是否忠实地遵循了【参照文件】中的规定。\n\n## 核心原则\n参照文件是权威基准（Ground Truth），待审文件是被审查对象。参照文件中的规定不可置疑，你必须以参照文件为标准来判定待审文件是否正确。\n\n## 审查策略（按优先级逐层检查）\n\n### 第一层：精确匹配核对\n- 数值参数：设计值、容许偏差、安全阈值、工程量等是否完全一致\n- 编码标识：设备编号、管道号、物资编码、文档号是否逐字符一致（注意连字符、大小写）\n- 名称术语：设备名称、材料名称、系统名称、厂房名称是否完全一致（注意"的"/"和"/空格等细节）\n- 型号规格：设备型号、阀门规格、仪表量程、管径壁厚是否一致\n- 标准引用：标准编号、版本号、条文号是否正确\n- 单位量纲：MPa vs kPa、mm vs cm 是否一致，防止数量级错误\n- 日期时间：合同节点、交付日期等是否一致\n\n### 第二层：结构化完整性核对\n- 表格行/列是否完整，有无漏项（参照有 N 行，待审是否也是 N 行）\n- 条文章节是否覆盖了参照要求的所有内容（有无缺失整节）\n- 参数列表是否全部出现在待审文件中\n- 签章/审批链是否齐全\n\n### 第三层：语义逻辑核对\n- 公式引用的中间结果是否正确带入\n- 条件依赖是否正确应用（如 "当温度>200°C时用A材料"）\n- 分级分类是否与参照统一\n- 范围边界是否一致\n- 工序逻辑链是否与参照一致\n\n### 第四层：元信息核对\n- 待审文件声明的"依据文件版本"是否与参照的实际版本一致\n- 全文术语是否与参照统一（同一概念是否存在多种称呼）\n- 图例/符号定义是否与参照一致\n\n## originalText 字段要求（极其重要 — 前端定位高亮的唯一依据）\n- originalText 必须从待审文件中**逐字原样复制**，不得改写、合并、截断、或调整标点符号\n- 原文即使是错的也按原样复制，在 suggestedText 中给出正确值\n\n## 输出要求\n严格按照 JSON 数组格式输出，每个问题包含:\n- issueType: VIOLATION（违规）/ FORMAT（格式）/ COMPLETENESS（不完整）/ CONSISTENCY（不一致）/ PARAM（参数错误）\n- originalText: 待审文件中的问题文本（**逐字复制，不得修改**）\n- suggestedText: 参照文件中对应的权威内容（即正确的内容是什么）\n- description: 问题描述和差异说明\n- checkDimension: 该问题属于哪个审查维度（value/encoding/name/spec/stdRef/unit/date/table/section/paramList/calc/condition/classify/scope/process/version/terminology/legend）\n- ruleCode: 问题类型编码（如 VALUE_001 / NAME_001 / COMPL_001 / STD_001）\n- standardRef: 违反的具体标准规范引用，如果无法确定则写 null\n- plain_language: 用通俗易懂的语言解释这个问题\n- confidence: 你必须自评本条审查结论的可靠度，取值为 HIGH（明确差异）/ MEDIUM（推断可能有问题）/ LOW（不确定）\n- refSource: 指出差异对应的参照文件名称或其内容片段，帮助用户溯源\n\n## 示例（Few-shot）\n\n输入待审文本："设备编码 EQ-202A，设计压力 2.3MPa，材料 Q345R"\n参照文本："设备编码 EQ-202-A01，设计压力 2.5MPa，材料 Q345B"\n\n应输出：\n[\n  {\n    "issueType": "VIOLATION",\n    "originalText": "EQ-202A",\n    "suggestedText": "EQ-202-A01",\n    "description": "设备编码存在差异：待审文件为 EQ-202A，参照文件为 EQ-202-A01，缺少子级编号",\n    "checkDimension": "encoding",\n    "ruleCode": "ENCODE_001",\n    "standardRef": null,\n    "plain_language": "设备编号写错了，少了一截。参考文件里写的是 EQ-202-A01，你写成了 EQ-202A，少了 -A01 这部分",\n    "confidence": "HIGH",\n    "refSource": "参照文件-设备数据手册"\n  },\n  {\n    "issueType": "PARAM",\n    "originalText": "2.3MPa",\n    "suggestedText": "2.5MPa",\n    "description": "设计压力不一致：待审文件为 2.3MPa，参照文件明确规定为 2.5MPa",\n    "checkDimension": "value",\n    "ruleCode": "VALUE_001",\n    "standardRef": null,\n    "plain_language": "设计压力这个数写错了。参考文件要求是 2.5 MPa，你写了 2.3，差 0.2 兆帕",\n    "confidence": "HIGH",\n    "refSource": "参照文件-总体设计规范 第3.2节"\n  },\n  {\n    "issueType": "VIOLATION",\n    "originalText": "Q345R",\n    "suggestedText": "Q345B",\n    "description": "材料牌号不一致：待审文件为 Q345R，参照文件为 Q345B（R=容器钢，B=结构钢，性能差异大）",\n    "checkDimension": "spec",\n    "ruleCode": "SPEC_001",\n    "standardRef": null,\n    "plain_language": "材料型号选错了。参考文件要求用的是 Q345B（结构钢），你写了 Q345R（容器钢），这两个不是同一种材料，用途不一样",\n    "confidence": "HIGH",\n    "refSource": "参照文件-材料规格书 第5页"\n  }\n]\n\n如果没有发现差异问题，输出空数组 []\n只输出 JSON 数组，不要输出任何其他文字说明',
+    placeholders: JSON.stringify([]),
     isBuiltin: true,
     enabled: true,
   },
@@ -323,33 +447,46 @@ export const BUILTIN_TEMPLATES: PromptTemplateData[] = [
     role: 'user',
     variant: 'comparison',
     name: '以文审文-比对用户提示词',
-    description: '以文审文模式下，发送待审文件内容的用户提示词',
-    content: '【待审文件】\n${text}\n\n请与参照文件比对，找出差异和问题。',
-    placeholders: JSON.stringify(['${text}']),
+    description: '以文审文模式下，同时发送参照文件与待审文件内容的用户提示词',
+    content: '## 参照文件（权威基准，以下内容均为正确规定）\n\n${refTexts}\n\n---\n\n## 待审文件（被审查对象）\n\n${text}\n\n---\n\n请按照系统指令中的四层审查策略，逐项核对以上待审文件是否与参照文件完全一致。输出 JSON 数组格式的审查结果。',
+    placeholders: JSON.stringify(['${refTexts}', '${text}']),
     isBuiltin: true,
     enabled: true,
   },
 
   // ==========================================
-  // 多模态审查（multimodal）— MULTIMODAL
+  // 结构化审查（multimodal）— MULTIMODAL
   // ==========================================
   {
     key: 'multimodal_review_system',
     module: 'multimodal',
     role: 'system',
     variant: 'default',
-    name: '多模态审查-系统提示词',
-    description: '多模态审查模式下，LLM 检查表格/公式/数值时的系统提示词',
-    content: `你是核电工程文件多模态审查专家。请重点检查以下内容：
+    name: '结构化审查-系统提示词',
+    description: '结构化审查模式下，LLM 检查表格/数值/公式/图纸标注时的系统提示词',
+    content: `你是核电工程文件结构化审查专家。请重点检查以下内容：
 1. 表格数据的完整性和一致性
 2. 数值数据的合理性（单位、量级）
 3. 公式和计算的正确性
 4. 图纸和图表中的标注规范性
 
+## 审查原则
+1. **宁缺毋滥**：不确定是否违规的内容不要报告，宁可漏报也不要误报。
+2. **有据必依**：每个问题必须有明确的依据（格式规范不一致、数据矛盾、计算错误等），不要报告主观感受。
+3. **仅审所列**：仅检查以上4项内容，不要扩展到合规性、错别字等其他方面。
+
+## originalText 字段要求（极其重要 — 前端定位高亮唯一依据）
+- originalText 必须从待审文本中**逐字原样复制**，不得改写、合并、截断、或调整标点符号
+
+## 排除项（以下情况不要报告）
+- **纯空格/间距差异**：仅空格数不同，不影响数据含义和可读性
+- **纯排版细节**：标点符号前后空格不一致、全角半角混用但不影响理解等排版层面的小瑕疵
+- **不确定的问题**：如果你无法确定某处是否存在问题，**不要输出**到结果中
+
 ## 输出要求
 严格按照 JSON 数组格式输出，每个问题包含:
 - issueType: FORMAT/COMPLETENESS/CONSISTENCY/VIOLATION
-- originalText: 原始问题文本
+- originalText: 原始问题文本（**逐字复制，不得修改**）
 - suggestedText: 建议修改内容
 - description: 问题描述
 - plain_language: 用通俗易懂的语言解释这个问题（让非专业人员也能理解）
@@ -364,10 +501,34 @@ export const BUILTIN_TEMPLATES: PromptTemplateData[] = [
     module: 'multimodal',
     role: 'user',
     variant: 'structural',
-    name: '多模态审查-用户提示词',
-    description: '多模态审查模式下，发送待审查文本的用户提示词',
-    content: '【待审查文本】\n${chunk}\n\n请重点检查表格数据、数值和公式的正确性。',
-    placeholders: JSON.stringify(['${chunk}']),
+    name: '结构化审查-用户提示词(结构化)',
+    description: '结构化审查模式下，发送带结构化标记的待审查文本的用户提示词',
+    content: '【待审查文本】\n${text}\n\n请重点检查表格数据、数值、公式和图纸标注的正确性。',
+    placeholders: JSON.stringify(['${text}']),
+    isBuiltin: true,
+    enabled: true,
+  },
+  {
+    key: 'multimodal_review_user_default',
+    module: 'multimodal',
+    role: 'user',
+    variant: 'default',
+    name: '结构化审查-用户提示词(默认)',
+    description: '结构化审查模式下，LLM 直接调用时的默认用户提示词',
+    content: '【待审查文本】\n${text}\n\n请重点检查表格数据、数值、公式和图纸标注的正确性。',
+    placeholders: JSON.stringify(['${text}']),
+    isBuiltin: true,
+    enabled: true,
+  },
+  {
+    key: 'multimodal_review_user_no_context',
+    module: 'multimodal',
+    role: 'user',
+    variant: 'no_context',
+    name: '结构化审查-用户提示词(无标准)',
+    description: '结构化审查模式下，无外部标准上下文时的用户提示词',
+    content: '【待审查文本】\n${text}\n\n请重点检查表格数据、数值、公式和图纸标注的正确性。',
+    placeholders: JSON.stringify(['${text}']),
     isBuiltin: true,
     enabled: true,
   },

@@ -1,12 +1,10 @@
 import prisma from '../config/db';
 import { ParserService } from './parser.service';
 import { LlmService, ReviewIssue } from './llm.service';
-import { PipelineContext, ReviewModeType, createPipelineAsync } from './review-pipeline';
+import { PipelineContext, ReviewModeType } from './review-pipeline';
+import { REVIEW_HANDLERS, getModeScene, getModeDisplayName } from './review-pipeline/review-handlers';
 import { TextExtractionService } from './review-pipeline/text-extraction.service';
-import { AiReviewService } from './review-pipeline/ai-review.service';
 import { RuleEngineService } from './rule-engine.service';
-import { StandardRefCheckService } from './review-pipeline/standard-ref-check.service';
-import { getEffectiveConfig } from './review-pipeline/pipeline-config';
 import { CrossFileConsistencyService } from './cross-file-consistency.service';
 import { IntraFileConsistencyService } from './intra-file-consistency.service';
 import { WebSocketService } from './websocket.service';
@@ -15,45 +13,10 @@ import { ReviewSpecificationService } from './review-specification.service';
 import { RuleLibraryService } from './rule-library.service';
 import { TableExtractionService } from './table-extraction.service';
 import { FormulaOcrService } from './formula-ocr.service';
-import { TerminologyService } from './terminology.service';
 import path from 'path';
 import { ReviewPlan } from '../types/review-plan';
 import { TaskService } from './task.service';
-
-/**
- * 固定模式行为配置 — 每种审查模式的硬编码行为声明
- * 这些模式的行为已固化，不会发生变化，无需通过流水线工厂动态分派
- *
- * CUSTOM_RULE 模式仍走流水线（行为由用户配置的规则前缀动态决定）
- */
-interface ModeBehavior {
-  rules: boolean;
-  standardRef: boolean;
-  ai: boolean;
-  scene: string;
-}
-
-const MODE_BEHAVIOR: Record<ReviewModeType, ModeBehavior> = {
-  LIBRARY_REVIEW: { rules: false, standardRef: false, ai: true, scene: 'library_review' },
-  CONSISTENCY:    { rules: false, standardRef: false, ai: true, scene: 'consistency' },
-  TYPO_GRAMMAR:   { rules: false, standardRef: false, ai: true, scene: 'typo_grammar' },
-  DOC_REVIEW:     { rules: false, standardRef: false, ai: true, scene: 'doc_review' },
-  MULTIMODAL:     { rules: false, standardRef: false, ai: true, scene: 'multimodal' },
-  CUSTOM_RULE:    { rules: true,  standardRef: false, ai: false, scene: 'library_review' },
-};
-
-const MODE_DISPLAY_NAMES: Record<ReviewModeType, string> = {
-  LIBRARY_REVIEW: '以库审文',
-  CONSISTENCY: '全文一致性',
-  TYPO_GRAMMAR: '错别字/语法',
-  DOC_REVIEW: '以文审文',
-  MULTIMODAL: '多模态识别',
-  CUSTOM_RULE: '自定义规则',
-};
-
-function getModeBehavior(mode: string): ModeBehavior {
-  return MODE_BEHAVIOR[mode as ReviewModeType] || MODE_BEHAVIOR.LIBRARY_REVIEW;
-}
+import { DwgHandlerService } from './dwg-handler.service';
 
 /**
  * 审查编排服务 - 两阶段分批并发编排
@@ -219,6 +182,74 @@ export class ReviewService {
   }
 
   /**
+   * 从 locateMeta 的字符位置推导所在页码
+   *
+   * PDF: 利用逐页文本数组计算字符偏移 → 页码
+   * DOCX/PPTX: 利用 parseResult.structure.paragraphs 的 page 信息
+   * 其他: 返回 undefined
+   */
+  /**
+   * DWG 文件在非 DWG 审查模式下，AI 输出 text 而非 cadHandleId。
+   * 从 ctx.dwgStructure.textEntities 中按文本匹配，回填 cadHandleId，
+   * 使前端能精确跳转到 CAD 实体。
+   */
+  private static enrichDwgHandle(
+    issue: { originalText?: string; cadHandleId?: string | null },
+    meta: any,
+    ctx: PipelineContext,
+  ): void {
+    if (ctx.fileType?.toLowerCase() !== 'dwg') return;
+    if (issue.cadHandleId || meta?.hint?.cadHandleId) return;
+    const entities = ctx.dwgStructure?.textEntities;
+    if (!entities || entities.length === 0) return;
+
+    const searchText = (issue.originalText || '').trim();
+    if (!searchText) return;
+
+    for (const entity of entities) {
+      if (entity.text && entity.text.trim() === searchText) {
+        if (!meta.hint) meta.hint = {};
+        meta.hint.cadHandleId = entity.handle;
+        meta.mode = 'dwg';
+        meta.confidence = 'exact';
+        return;
+      }
+    }
+  }
+
+  private static resolvePageHint(
+    locateMeta: any,
+    pdfPages?: string[],
+    parseResult?: any,
+  ): number | undefined {
+    const absStart = locateMeta?.absolute?.start;
+    if (absStart == null || absStart < 0) return undefined;
+
+    // PDF: 逐页累积字符偏移
+    if (pdfPages && pdfPages.length > 0) {
+      let offset = 0;
+      for (let i = 0; i < pdfPages.length; i++) {
+        offset += pdfPages[i].length + 1; // +1 for newline between pages
+        if (absStart < offset) return i + 1; // 1-indexed
+      }
+    }
+
+    // DOCX/PPTX: 按段落 page 字段估算
+    const paragraphs = parseResult?.structure?.paragraphs;
+    if (paragraphs && paragraphs.length > 0) {
+      let accumulated = 0;
+      for (const para of paragraphs) {
+        accumulated += (para.text?.length || 0) + 1;
+        if (absStart < accumulated && typeof para.page === 'number') {
+          return para.page;
+        }
+      }
+    }
+
+    return undefined;
+  }
+
+  /**
    * 获取用户当前正在进行的 AI 审查文件数量
    */
   static getUserProcessingCount(userId: string): number {
@@ -365,9 +396,8 @@ export class ReviewService {
       const directPrefixes = executionPlan.enabledPrefixes;
 
       // ===== 模式行为配置（固定模式直接查表，无需创建 Pipeline） =====
-      const behavior = getModeBehavior(reviewMode);
-      const needsAI = behavior.ai;
-      const modeDisplayName = MODE_DISPLAY_NAMES[reviewMode as ReviewModeType] || reviewMode;
+      const needsAI = reviewMode !== 'RULE_ONLY';
+      const modeDisplayName = getModeDisplayName(reviewMode as ReviewModeType);
       // 优先使用前端传入的启用前缀，否则从审查规范集/规则库加载
       let ruleExecutionPlan = directPrefixes && directPrefixes.length > 0
         ? { enabledPrefixes: directPrefixes, executableItems: [] }
@@ -486,99 +516,10 @@ export class ReviewService {
           corePurposes,
         };
 
-        // ★ DWG 前端 WASM 数据：如果 taskFile 已有 dwg_wasm_parsed 标记，
-        //   直接填充 ctx.extractedText 和 ctx.parseResult，跳过后端 Python 解析
+        // ★ DWG 前端 WASM 数据：使用 DwgHandlerService 统一处理
         const dwgMeta = (file as any).dwgMetadata as any;
         const wasmText = ((file as any).extractedText || '').trim();
-        if (file.fileType.toLowerCase() === 'dwg' && dwgMeta?.dwg_wasm_parsed && wasmText.length > 0) {
-          // 用前端 WASM 提取的文本预填充
-          ctx.extractedText = wasmText;
-
-          // ★ 从 WASM 数据动态计算 layer_stats（解锁 DWG_DIM_001 / DWG_OVERLAP_001 规则）
-          const textEntities: any[] = dwgMeta.dwg_text_entities || [];
-          const dimEntities: any[] = dwgMeta.dwg_dimensions || [];
-          const allLayers: string[] = dwgMeta.dwg_layers || [];
-          const totalEntityCount: number = dwgMeta.dwg_entity_count || 0;
-          const layerStatsMap: Record<string, { text: number; dimension: number; other: number }> = {};
-          for (const layer of allLayers) {
-            layerStatsMap[layer] = { text: 0, dimension: 0, other: 0 };
-          }
-          for (const e of textEntities) {
-            const layer = e.layer || '0';
-            if (!layerStatsMap[layer]) layerStatsMap[layer] = { text: 0, dimension: 0, other: 0 };
-            layerStatsMap[layer].text++;
-          }
-          for (const d of dimEntities) {
-            const layer = d.layer || '0';
-            if (!layerStatsMap[layer]) layerStatsMap[layer] = { text: 0, dimension: 0, other: 0 };
-            layerStatsMap[layer].dimension++;
-          }
-          // other = 总图元 - text - dimension（按比例分配到各层）
-          const countedEntities = textEntities.length + dimEntities.length;
-          const otherTotal = Math.max(0, totalEntityCount - countedEntities);
-          if (allLayers.length > 0 && otherTotal > 0) {
-            const otherPerLayer = Math.ceil(otherTotal / allLayers.length);
-            for (const layer of allLayers) {
-              layerStatsMap[layer].other = otherPerLayer;
-            }
-          }
-
-          // ★ 从文本实体中尝试提取标题栏信息（解锁 DWG_TITLE_001 / DWG_SCALE_001）
-          let titleBlock: any = undefined;
-          const titleKeywords = ['图名', '图号', '比例', '设计', '审核', '校对', '批准'];
-          const titleRelatedEntities = textEntities.filter(e =>
-            titleKeywords.some(kw => e.text?.includes(kw))
-          );
-          if (titleRelatedEntities.length > 0) {
-            titleBlock = { found: true };
-            // 尝试从标题栏相关实体中提取字段值
-            for (const e of titleRelatedEntities) {
-              const t = e.text || '';
-              if (t.includes('图名')) titleBlock.drawingName = t.replace(/图名[：:]\s*/, '').trim() || null;
-              if (t.includes('图号')) titleBlock.drawingNo = t.replace(/图号[：:]\s*/, '').trim() || null;
-              if (t.includes('设计')) titleBlock.designer = t.replace(/设计[：:]\s*/, '').trim() || null;
-              if (t.includes('校对')) titleBlock.checker = t.replace(/校对[：:]\s*/, '').trim() || null;
-              if (t.includes('审核') || t.includes('批准')) titleBlock.approver = t.replace(/[审核批准][：:]\s*/, '').trim() || null;
-              if (t.includes('比例')) {
-                const scaleMatch = t.match(/1\s*[:：]\s*\d+|\d+\s*[:：]\s*1/i);
-                titleBlock.scale = scaleMatch ? scaleMatch[0] : t.replace(/比例[：:]\s*/, '').trim() || null;
-              }
-            }
-          }
-
-          // 构建 parseResult 供 Pipeline 消费
-          ctx.parseResult = {
-            text: ctx.extractedText,
-            pages: [],
-            metadata: {
-              page_count: 0,
-              has_tables: false,
-              has_images: false,
-              dwg_layers: allLayers,
-              dwg_text_count: dwgMeta.dwg_text_count || 0,
-              dwg_dimension_count: dwgMeta.dwg_dimension_count || 0,
-              dwg_entity_count: totalEntityCount,
-              dwg_converted: dwgMeta.dwg_converted ?? true,
-              layer_stats: layerStatsMap,
-              title_block: titleBlock,
-            } as any,
-            structure: {
-              paragraphs: textEntities.map((e: any) => ({
-                text: e.text,
-                style: e.layer,
-                page: null,
-                handle: e.handle,
-                entityType: e.entityType,  // ★ 修复: 传递 entityType 以正确区分 TEXT/MTEXT
-              })),
-              tables: [],
-              headers: [],
-              dimensions: dimEntities,
-              standardRefs: dwgMeta.dwg_standard_refs || [],
-            },
-            markdown: ctx.extractedText,
-          };
-          console.log(`[Review] DWG WASM 数据已预填充: ${file.fileName}, 文本${ctx.extractedText.length}字符, 标注${dwgMeta.dwg_dimension_count || 0}个, 图层统计${Object.keys(layerStatsMap).length}层${titleBlock ? ', 标题栏已识别' : ''}`);
-        }
+        DwgHandlerService.populateContextFromWasm(ctx, dwgMeta, wasmText);
 
         return { file, ctx };
       });
@@ -904,8 +845,6 @@ export class ReviewService {
       data: { status: 'PROCESSING' },
     }).catch((e) => { console.warn(`[Review] 标记文件处理中失败 (${file.fileName}):`, e); });
 
-    const behavior = getModeBehavior(ctx.reviewMode);
-
     // 预提取文本（用于进度分母计算）
     // ★ 如果 ctx.extractedText 已有前端 WASM 数据，跳过 Python 解析
     let parseResultFromPreExtract: import('./python-parser.service').ParseResult | null = null;
@@ -988,23 +927,27 @@ export class ReviewService {
     }
     // ★ MULTIMODAL 模式：立即保存表格/公式检测结果（不依赖 behavior.rules 门控）
     if (extraRuleIssues.length > 0 && ctx.reviewMode === 'MULTIMODAL') {
-      const extraData = extraRuleIssues.map((issue) => ({
-        ...this.getConfidence(issue),
-        taskId, fileId: file.id,
-        issueType: issue.issueType, ruleCode: issue.ruleCode,
-        severity: issue.severity,
-        reviewSource: 'RULE_ENGINE',
-        originalText: issue.originalText,
-        suggestedText: issue.suggestedText || null,
-        description: issue.description,
-        cadHandleId: (issue as any).cadHandleId || null,
-        textPosition: this.buildLegacyTextPosition(
-          this.buildLocateMeta(ctx.extractedText, issue, { fileId: file.id }),
-          ctx.extractedText,
-          issue.originalText,
-        ),
-        locateMeta: this.buildLocateMeta(ctx.extractedText, issue, { fileId: file.id }),
-      }));
+      const extraData = extraRuleIssues.map((issue) => {
+        const meta = this.buildLocateMeta(ctx.extractedText, issue, { fileId: file.id });
+        if (meta) this.enrichDwgHandle(issue, meta, ctx);
+        if (meta && meta.absolute && !meta.hint?.pageHint) {
+          const pageHint = this.resolvePageHint(meta, ctx.pdfPages, ctx.parseResult);
+          if (pageHint != null) meta.hint = { ...(meta.hint || {}), pageHint };
+        }
+        return {
+          ...this.getConfidence(issue),
+          taskId, fileId: file.id,
+          issueType: issue.issueType, ruleCode: issue.ruleCode,
+          severity: issue.severity,
+          reviewSource: 'RULE_ENGINE',
+          originalText: issue.originalText,
+          suggestedText: issue.suggestedText || null,
+          description: issue.description,
+          cadHandleId: (issue as any).cadHandleId || null,
+          textPosition: this.buildLegacyTextPosition(meta, ctx.extractedText, issue.originalText),
+          locateMeta: meta,
+        };
+      });
       const strippedExtra = extraData.map((item) => this.stripDbUnsupportedFields(item));
       try {
         await prisma.taskDetail.createMany({ data: strippedExtra, skipDuplicates: true });
@@ -1016,11 +959,10 @@ export class ReviewService {
 
     // 规则引擎
     let ruleIssues: any[] = [];
-    if (behavior.rules) {
-      const stagesOverride = ctx.executionOverrides?.stages;
-      const rulesEnabled = stagesOverride?.rules !== false;
+    if (ctx.reviewMode === 'RULE_ONLY') {
+      const rulesEnabled = ctx.executionOverrides?.stages?.rules !== false;
       if (rulesEnabled) {
-        // 优先使用 rulePlan 中的前缀过滤（CUSTOM_RULE 模式用户选定的规则前缀）
+        // 优先使用 rulePlan 中的前缀过滤（RULE_ONLY 模式用户选定的规则前缀）
         const prefixes = ctx.rulePlan?.enabledPrefixes?.length
           ? ctx.rulePlan.enabledPrefixes
           : [];
@@ -1036,14 +978,8 @@ export class ReviewService {
       }
     }
 
-    // 标准引用检查
+    // 标准引用检查（当前 mode-config 中所有模式 standardRef=false，保留空数组供兼容）
     let stdRefIssues: any[] = [];
-    if (behavior.standardRef && !ctx.ruleSource?.includes('REVIEW_SPECIFICATION') && ctx.extractedText?.trim()) {
-      const stagesOverride = ctx.executionOverrides?.stages;
-      if (stagesOverride?.stdRef !== false) {
-        stdRefIssues = await StandardRefCheckService.runStandardRefCheck(ctx, ctx.extractedText);
-      }
-    }
 
     const fastResult = { ruleIssues, stdRefIssues, textLength: ctx.extractedText?.length || 0 };
 
@@ -1051,23 +987,27 @@ export class ReviewService {
     const allFastIssues: any[] = [];
 
     if (fastResult.ruleIssues.length > 0) {
-      const ruleData = fastResult.ruleIssues.map((issue) => ({
-        ...this.getConfidence(issue),
-        taskId, fileId: file.id,
-        issueType: issue.issueType, ruleCode: issue.ruleCode,
-        severity: issue.severity,
-        reviewSource: ctx.ruleSource?.includes('REVIEW_SPECIFICATION') ? 'RULE_LIBRARY' : 'RULE_ENGINE',
-        originalText: issue.originalText,
-        suggestedText: issue.suggestedText || null,
-        description: issue.description,
-        cadHandleId: (issue as any).cadHandleId || null,
-        textPosition: this.buildLegacyTextPosition(
-          this.buildLocateMeta(ctx.extractedText, issue, { fileId: file.id }),
-          ctx.extractedText,
-          issue.originalText,
-        ),
-        locateMeta: this.buildLocateMeta(ctx.extractedText, issue, { fileId: file.id }),
-      }));
+      const ruleData = fastResult.ruleIssues.map((issue) => {
+        const meta = this.buildLocateMeta(ctx.extractedText, issue, { fileId: file.id });
+        if (meta) this.enrichDwgHandle(issue, meta, ctx);
+        if (meta && meta.absolute && !meta.hint?.pageHint) {
+          const pageHint = this.resolvePageHint(meta, ctx.pdfPages, ctx.parseResult);
+          if (pageHint != null) meta.hint = { ...(meta.hint || {}), pageHint };
+        }
+        return {
+          ...this.getConfidence(issue),
+          taskId, fileId: file.id,
+          issueType: issue.issueType, ruleCode: issue.ruleCode,
+          severity: issue.severity,
+          reviewSource: ctx.ruleSource?.includes('REVIEW_SPECIFICATION') ? 'RULE_LIBRARY' : 'RULE_ENGINE',
+          originalText: issue.originalText,
+          suggestedText: issue.suggestedText || null,
+          description: issue.description,
+          cadHandleId: (issue as any).cadHandleId || null,
+          textPosition: this.buildLegacyTextPosition(meta, ctx.extractedText, issue.originalText),
+          locateMeta: meta,
+        };
+      });
 
       // 增强版：事务保护 + 重试机制
       const strippedRuleData = ruleData.map((item) => this.stripDbUnsupportedFields(item));
@@ -1101,26 +1041,30 @@ export class ReviewService {
     }
 
     if (fastResult.stdRefIssues.length > 0) {
-      const stdRefData = fastResult.stdRefIssues.map((issue) => ({
-        ...this.getConfidence(issue),
-        taskId, fileId: file.id,
-        issueType: issue.issueType,
-        ruleCode: issue.ruleCode || null,
-        severity: issue.severity || 'warning',
-        reviewSource: 'STANDARD_REF',
-        originalText: issue.originalText,
-        suggestedText: issue.suggestedText || null,
-        description: issue.description || null,
-        matchLevel: (issue as any).matchLevel || null,
-        similarity: (issue as any).similarity || null,
-        diffRanges: issue.diffRanges || null,
-        textPosition: this.buildLegacyTextPosition(
-          this.buildLocateMeta(ctx.extractedText, issue, { fileId: file.id }),
-          ctx.extractedText,
-          issue.originalText,
-        ),
-        locateMeta: this.buildLocateMeta(ctx.extractedText, issue, { fileId: file.id }),
-      }));
+      const stdRefData = fastResult.stdRefIssues.map((issue) => {
+        const meta = this.buildLocateMeta(ctx.extractedText, issue, { fileId: file.id });
+        if (meta) this.enrichDwgHandle(issue, meta, ctx);
+        if (meta && meta.absolute && !meta.hint?.pageHint) {
+          const pageHint = this.resolvePageHint(meta, ctx.pdfPages, ctx.parseResult);
+          if (pageHint != null) meta.hint = { ...(meta.hint || {}), pageHint };
+        }
+        return {
+          ...this.getConfidence(issue),
+          taskId, fileId: file.id,
+          issueType: issue.issueType,
+          ruleCode: issue.ruleCode || null,
+          severity: issue.severity || 'warning',
+          reviewSource: 'STANDARD_REF',
+          originalText: issue.originalText,
+          suggestedText: issue.suggestedText || null,
+          description: issue.description || null,
+          matchLevel: (issue as any).matchLevel || null,
+          similarity: (issue as any).similarity || null,
+          diffRanges: issue.diffRanges || null,
+          textPosition: this.buildLegacyTextPosition(meta, ctx.extractedText, issue.originalText),
+          locateMeta: meta,
+        };
+      });
 
       // 增强版：事务保护 + 重试机制
       const strippedStdRefData = stdRefData.map((item) => this.stripDbUnsupportedFields(item));
@@ -1266,32 +1210,41 @@ export class ReviewService {
 
       // 2. 该分片有问题时立即写入 DB
       if (issues && issues.length > 0) {
-        const aiData = issues.map((issue) => ({
-          ...this.getConfidence(issue),
-          taskId,
-          fileId: file.id,
-          issueType: issue.issueType,
-          ruleCode: issue.ruleCode || null,
-          severity: issue.severity || (['TYPO', 'FORMAT', 'NAMING', 'ENCODING', 'HEADER', 'PAGE'].includes(issue.issueType) ? 'warning' : 'error'),
-          reviewSource: 'AI',
+        const aiData = issues.map((issue) => {
+          // 统一计算 locateMeta（只算一次，避免 textPosition 和 locateMeta 字段各算一遍）
+          const meta = issue.locateMeta
+            || this.buildLocateMeta(ctx.extractedText, issue, { fileId: file.id });
+          // DWG 文件补 cadHandleId（AI 模式下丢失 Handle，从 dwgStructure 反查）
+          if (meta) this.enrichDwgHandle(issue, meta, ctx);
+          // 从字符位置反推页码
+          if (meta && meta.absolute && !meta.hint?.pageHint) {
+            const pageHint = this.resolvePageHint(meta, ctx.pdfPages, ctx.parseResult);
+            if (pageHint != null) {
+              meta.hint = { ...(meta.hint || {}), pageHint };
+            }
+          }
+          return {
+            ...this.getConfidence(issue),
+            taskId,
+            fileId: file.id,
+            issueType: issue.issueType,
+            ruleCode: issue.ruleCode || null,
+            severity: issue.severity || (['TYPO', 'FORMAT', 'NAMING', 'ENCODING', 'HEADER', 'PAGE'].includes(issue.issueType) ? 'warning' : 'error'),
+            reviewSource: 'AI',
             originalText: issue.originalText,
-          suggestedText: issue.suggestedText || null,
-          description: issue.description || null,
-          plainLanguage: issue.plainLanguage || null,
-          cadHandleId: issue.cadHandleId || null,
-          standardRef: issue.standardRef || null,
-          sourceReferences: issue.sourceReferences || null,
-          matchLevel: issue.matchLevel || null,
-          similarity: issue.similarity || null,
-          diffRanges: issue.diffRanges || null,
-          textPosition: this.buildLegacyTextPosition(
-            issue.locateMeta || this.buildLocateMeta(ctx.extractedText, issue, { fileId: file.id }),
-            ctx.extractedText,
-            issue.originalText,
-          ),
-          locateMeta: issue.locateMeta
-            || this.buildLocateMeta(ctx.extractedText, issue, { fileId: file.id }),
-        }));
+            suggestedText: issue.suggestedText || null,
+            description: issue.description || null,
+            plainLanguage: issue.plainLanguage || null,
+            cadHandleId: issue.cadHandleId || null,
+            standardRef: issue.standardRef || null,
+            sourceReferences: issue.sourceReferences || null,
+            matchLevel: issue.matchLevel || null,
+            similarity: issue.similarity || null,
+            diffRanges: issue.diffRanges || null,
+            textPosition: this.buildLegacyTextPosition(meta, ctx.extractedText, issue.originalText),
+            locateMeta: meta,
+          };
+        });
 
         // 增强版：事务保护 + 重试机制 + 失败时延迟推送
         let dbWriteSuccess = false;
@@ -1349,68 +1302,27 @@ export class ReviewService {
       }
     };
 
-    // ===== 阶段2：AI 深度审查（按模式直接分派，不走流水线） =====
-    const behavior = getModeBehavior(ctx.reviewMode);
-    const scene = behavior.scene;
-    const config = getEffectiveConfig(ctx);
-    const text = ctx.extractedText || '';
-
-    let aiResult: { issues: ReviewIssue[]; engine: string };
-    switch (ctx.reviewMode) {
-      case 'TYPO_GRAMMAR':
-        aiResult = await AiReviewService.runLLMOnlyStrategy(text, ctx, scene, config);
-        // 术语白名单过滤：避免正确术语被误报为错别字
-        aiResult.issues = await TerminologyService.filterTerminologyIssues(text, aiResult.issues);
-        break;
-      case 'DOC_REVIEW':
-        aiResult = await AiReviewService.runRefCompareStrategy(text, ctx, scene, config);
-        break;
-      case 'MULTIMODAL':
-        aiResult = await AiReviewService.runLLMDirect(text, ctx, scene, config);
-        break;
-      case 'LIBRARY_REVIEW':
-      case 'CONSISTENCY':
-      default: {
-        // 方案 B：双轨并行 — 知识库 RAG + 语义规范库逐条匹配
-        const hasKnowledge = ctx.ruleSource?.includes('STANDARD')
-          && (ctx.knowledgeCategoryIds?.length || ctx.knowledgeCategoryId);
-        const hasSemanticSpec = ctx.semanticItems && ctx.semanticItems.length > 0;
-
-        if (hasKnowledge && hasSemanticSpec) {
-          // 双轨并行
-          console.log(`[Review] 双轨审查: 知识库RAG + 语义规范库(${ctx.semanticItems!.length}条)`);
-          const [ragResult, specResult] = await Promise.all([
-            AiReviewService.runAIReview(text, ctx, scene, config),
-            AiReviewService.runSemanticSpecReview(text, ctx, config),
-          ]);
-
-          // 合并去重
-          const mergedIssues = [...ragResult.issues];
-          const ragKeys = new Set(ragResult.issues.map(i => (i.originalText || '').slice(0, 60).trim()));
-          for (const issue of specResult.issues) {
-            const key = (issue.originalText || '').slice(0, 60).trim();
-            if (key && !ragKeys.has(key)) {
-              mergedIssues.push(issue);
-            }
-          }
-          aiResult = {
-            issues: mergedIssues,
-            engine: `${ragResult.engine}+${specResult.engine}`,
-          };
-        } else if (hasKnowledge) {
-          // 仅知识库 RAG
-          aiResult = await AiReviewService.runAIReview(text, ctx, scene, config);
-        } else if (hasSemanticSpec) {
-          // 仅语义规范库逐条匹配
-          aiResult = await AiReviewService.runSemanticSpecReview(text, ctx, config);
-        } else {
-          // 都没选，降级到普通 LLM 审查
-          aiResult = await AiReviewService.runAIReview(text, ctx, scene, config);
-        }
-        break;
-      }
+    // ===== 阶段2：AI 深度审查 — 通过 handler 分发 =====
+    const handler = REVIEW_HANDLERS[ctx.reviewMode];
+    if (!handler) {
+      console.error(`[Review] 未知审查模式: ${ctx.reviewMode}`);
+      return { aiIssues: [], usedEngine: 'none' };
     }
-    const slowResult = { aiIssues: aiResult.issues, usedEngine: aiResult.engine };
+
+    ctx.scene = ctx.scene || getModeScene(ctx.reviewMode);
+
+    let aiResult;
+    try {
+      aiResult = await handler(ctx);
+    } catch (e) {
+      console.error(`[Review] handler 执行失败: ${ctx.fileName}`, e);
+      throw e;
+    }
+
+    if (aiResult.usedEngine === 'none' && aiResult.aiIssues.length === 0) {
+      console.log(`[Review] ${ctx.fileName}: handler 返回空结果（可能为 RULE_ONLY 或无文本模式）`);
+    }
+    const slowResult = { aiIssues: aiResult.aiIssues || [], usedEngine: aiResult.usedEngine || 'unknown' };
 
     // AI 结果已通过 ctx.onChunkProgress 增量写入（每个分片审查完成后立即入库 + 推送 WebSocket）
     // 此处仅做兜底：使用内存标记检查，若无分片成功写入则一次性写入（极端情况下 onChunkProgress 全部失败时的保底）
@@ -1418,32 +1330,36 @@ export class ReviewService {
     if (slowResult.aiIssues.length > 0 && !anyChunkWritten) {
       try {
         console.warn(`[Review] 兜底写入: ${slowResult.aiIssues.length} 条 (${file.fileName})`);
-        const aiData = slowResult.aiIssues.map((issue) => ({
-          ...this.getConfidence(issue),
-          taskId,
-          fileId: file.id,
-          issueType: issue.issueType,
-          ruleCode: issue.ruleCode || null,
-          severity: issue.severity || (['TYPO', 'FORMAT', 'NAMING', 'ENCODING', 'HEADER', 'PAGE'].includes(issue.issueType) ? 'warning' : 'error'),
-          reviewSource: 'AI',
+        const aiData = slowResult.aiIssues.map((issue) => {
+          const meta = issue.locateMeta
+            || this.buildLocateMeta(ctx.extractedText, issue, { fileId: file.id });
+          if (meta) this.enrichDwgHandle(issue, meta, ctx);
+          if (meta && meta.absolute && !meta.hint?.pageHint) {
+            const pageHint = this.resolvePageHint(meta, ctx.pdfPages, ctx.parseResult);
+            if (pageHint != null) meta.hint = { ...(meta.hint || {}), pageHint };
+          }
+          return {
+            ...this.getConfidence(issue),
+            taskId,
+            fileId: file.id,
+            issueType: issue.issueType,
+            ruleCode: issue.ruleCode || null,
+            severity: issue.severity || (['TYPO', 'FORMAT', 'NAMING', 'ENCODING', 'HEADER', 'PAGE'].includes(issue.issueType) ? 'warning' : 'error'),
+            reviewSource: 'AI',
             originalText: issue.originalText,
-          suggestedText: issue.suggestedText || null,
-          description: issue.description || null,
-          plainLanguage: issue.plainLanguage || null,
-          cadHandleId: issue.cadHandleId || null,
-          standardRef: issue.standardRef || null,
-          sourceReferences: issue.sourceReferences || null,
-          matchLevel: (issue as any).matchLevel || null,
-          similarity: (issue as any).similarity || null,
-          diffRanges: issue.diffRanges || null,
-          textPosition: this.buildLegacyTextPosition(
-            issue.locateMeta || this.buildLocateMeta(ctx.extractedText, issue, { fileId: file.id }),
-            ctx.extractedText,
-            issue.originalText,
-          ),
-          locateMeta: issue.locateMeta
-            || this.buildLocateMeta(ctx.extractedText, issue, { fileId: file.id }),
-        }));
+            suggestedText: issue.suggestedText || null,
+            description: issue.description || null,
+            plainLanguage: issue.plainLanguage || null,
+            cadHandleId: issue.cadHandleId || null,
+            standardRef: issue.standardRef || null,
+            sourceReferences: issue.sourceReferences || null,
+            matchLevel: (issue as any).matchLevel || null,
+            similarity: (issue as any).similarity || null,
+            diffRanges: issue.diffRanges || null,
+            textPosition: this.buildLegacyTextPosition(meta, ctx.extractedText, issue.originalText),
+            locateMeta: meta,
+          };
+        });
         await prisma.taskDetail.createMany({
           data: aiData.map((item) => this.stripDbUnsupportedFields(item)) as any,
         });
@@ -1609,10 +1525,13 @@ export class ReviewService {
       data: { textLength: ctx.extractedText?.length || 0, processedLength: 0 },
     }).catch(() => { /* ignore */ });
 
-    // 使用 pipeline（等同于原有逻辑）
+    // 使用 handler 执行 AI 审查
     try {
-      const pipeline = await createPipelineAsync(reviewMode as any);
-      const result = await pipeline.execute(ctx);
+      const handler = REVIEW_HANDLERS[reviewMode as any];
+      if (!handler) throw new Error(`未知审查模式: ${reviewMode}`);
+      ctx.scene = ctx.scene || getModeScene(reviewMode as any);
+      const aiResult = await handler(ctx);
+      const result = { ruleIssues: [], aiIssues: aiResult.aiIssues || [], stdRefIssues: undefined };
 
       // 写 AI 结果
       if (result.aiIssues.length > 0) {
@@ -1691,7 +1610,7 @@ export class ReviewService {
 
       await this.updateFileErrorCount(file.id);
     } catch (error) {
-      console.error(`[Review] Pipeline 执行失败: ${file.fileName}`, error);
+      console.error(`[Review] Handler 执行失败: ${file.fileName}`, error);
       await this.createErrorDetail(taskId, file.id, file.fileName, error);
     }
   }

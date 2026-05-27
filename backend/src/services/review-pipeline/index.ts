@@ -1,8 +1,15 @@
-export type { ReviewPipeline, PipelineContext, PipelineResult, ReviewModeType, PipelineReviewConfig, PipelineModeConfig, PipelineStageConfig } from './types';
-export { BasePipeline } from './base-pipeline';
-export { ModeCapabilities, getModeCapabilities, MODE_CAPABILITIES } from './mode-config';
-export { StandardPipeline } from './standard.pipeline';
-export { DocReviewPipeline } from './doc-review.pipeline';
-export { TypoGrammarPipeline } from './typo-grammar.pipeline';
-export { MultimodalPipeline } from './multimodal.pipeline';
-export { createPipeline, createPipelineAsync, getAvailableModes, clearCapabilitiesCache } from './factory';
+// 类型导出 — review.service.ts 通过此路径导入
+export type { PipelineContext, ReviewModeType, PipelineReviewConfig } from './types';
+
+// Handler 导出 — task.controller.ts 通过此路径导入
+export {
+  REVIEW_HANDLERS,
+  getAvailableModes,
+  clearCapabilitiesCache,
+  getModeCapabilitiesConfig,
+  saveModeCapabilitiesConfig,
+  getModeDisplayName,
+  getModeScene,
+} from './review-handlers';
+
+export type { ReviewHandler } from './review-handlers';

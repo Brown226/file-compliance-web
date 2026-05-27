@@ -412,6 +412,10 @@ export interface DwgSvgResult {
   svg: string
   /** Handle → SVG 元素 ID 映射（用于错误定位高亮） */
   handleMap: Record<string, string>
+  /** 按实体顺序排列的 handle 字符串数组（用于主线程 DOM handle 注入） */
+  handles: string[]
+  /** 文本内容 → handle 映射表（标准引用自检行→图元定位） */
+  textHandleMap: Record<string, string>
 }
 
 // ==================== Web Worker 版 dwgToSvg ====================
@@ -473,6 +477,8 @@ export async function dwgToSvg(file: File): Promise<DwgSvgResult> {
         resolve({
           svg: msg.payload.svg,
           handleMap: msg.payload.handleMap,
+          handles: msg.payload.handles || [],
+          textHandleMap: msg.payload.textHandleMap || {},
         })
       }
     }

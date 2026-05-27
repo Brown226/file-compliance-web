@@ -28,6 +28,7 @@ export interface VectorSearchResult {
   metadata: any;
   score: number;
   rerank_score?: number;
+  documentId?: string;
 }
 
 interface ImportEntry {
@@ -71,6 +72,7 @@ interface SearchOptions {
   limit?: number;
   sourceTypes?: string[];
   categoryId?: string;
+  minSimilarity?: number;
   rerank?: boolean;
 }
 
@@ -1281,6 +1283,11 @@ export class VectorService {
    * 三阶段混合检索：向量 + 关键词 + Rerank
    * FastGPT 风格增强版：RRF 融合 + jieba 分词 + Rerank 权重融合
    */
+  /** searchVectors — 别名，兼容 retrieval-evaluation 调用 */
+  static async searchVectors(query: string, options: SearchOptions = {}): Promise<VectorSearchResult[]> {
+    return VectorService.hybridSearch(query, options);
+  }
+
   static async hybridSearch(query: string, options: SearchOptions = {}): Promise<VectorSearchResult[]> {
     const { limit = 5, sourceTypes, categoryId, rerank = true } = options;
     const cleanQuery = query.replace(/\s+/g, ' ').trim();

@@ -59,7 +59,7 @@ export class HealthController {
    */
   static async getHistogram(req: Request, res: Response) {
     try {
-      const { name } = req.params;
+      const name = req.params.name as string;
       const stats = MetricsService.getHistogramStats(name);
 
       if (!stats) {

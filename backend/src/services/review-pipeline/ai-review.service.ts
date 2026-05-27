@@ -357,25 +357,28 @@ export class AiReviewService {
     scene: string,
     config: PipelineReviewConfig,
   ): Promise<{ issues: ReviewIssue[]; engine: string; sources?: SourceReference[] }> {
-    // 无参照文件时降级到标准 AI 审查（切换 scene 为通用合规审查，避免使用比对类提示词）
+    // 无参照文件时降级到标准 AI 审查
     if (!ctx.refFileGroup || ctx.refFileGroup.refFiles.length === 0) {
       console.log('[AiReview] 无参照文件，降级到标准 AI 审查');
       return AiReviewService.runAIReview(text, ctx, 'library_review', config);
     }
 
-    // 解析参照文件文本
+    // 解析参照文件文本，带来源标注
     const { ParserService } = await import('../parser.service');
     const refTexts: string[] = [];
+    const refFileNames: string[] = [];
     for (const refFile of ctx.refFileGroup.refFiles) {
-      if (refFile.extractedText) {
-        refTexts.push(refFile.extractedText);
-      } else {
+      let refContent = refFile.extractedText || null;
+      if (!refContent) {
         try {
-          const refText = await ParserService.parseFile(refFile.filePath, refFile.fileType);
-          if (refText) refTexts.push(refText);
+          refContent = await ParserService.parseFile(refFile.filePath, refFile.fileType);
         } catch (e) {
           console.warn(`[AiReview] 参照文件解析失败: ${refFile.fileName}`, e);
         }
+      }
+      if (refContent) {
+        refTexts.push(`【参照文件: ${refFile.fileName}】\n${refContent}`);
+        refFileNames.push(refFile.fileName);
       }
     }
 
@@ -384,44 +387,58 @@ export class AiReviewService {
       return AiReviewService.runAIReview(text, ctx, 'library_review', config);
     }
 
+    const refFileCount = refTexts.length;
+    console.log(`[AiReview] 以文审文: ${refFileCount} 个参照文件 (${refFileNames.join(', ')})`);
+
     const llmMaxTokens = config.llmMaxTokens || 4096;
     const llmTimeout = config.llmTimeout || 180;
     const chunkSize = config.chunkSize || 4000;
 
     try {
-      // 截断参照文本，防止超出 LLM 上下文窗口
-      const MAX_REF_CHARS = 12000;
-      const rawRefTextsJoined = refTexts.join('\n---\n');
-      const refTextsJoined = rawRefTextsJoined.length > MAX_REF_CHARS
-        ? rawRefTextsJoined.substring(0, MAX_REF_CHARS) + '\n...(参照文件内容过长，已截断)'
-        : rawRefTextsJoined;
-      if (rawRefTextsJoined.length > MAX_REF_CHARS) {
-        console.warn(`[AiReview] 参照文本已截断至 ${MAX_REF_CHARS} 字符（原始 ${rawRefTextsJoined.length} 字符）`);
+      // 动态计算参照内容可用空间：优先从 LLM 模型配置读取上下文窗口
+      let contextWindow = 131072; // 默认值（字符数）
+      try {
+        const { default: prisma } = await import('../../config/db');
+        const llmCfg = await prisma.systemConfig.findUnique({ where: { key: 'llm_chat_model' } });
+        if (llmCfg?.value && typeof llmCfg.value === 'object') {
+          const v = llmCfg.value as any;
+          if (typeof v.contextLength === 'number' && v.contextLength > 0) {
+            contextWindow = v.contextLength;
+          }
+        }
+      } catch (e) {
+        // 数据库不可达，使用默认值
       }
+      const outputBudget = llmMaxTokens * 3.5;             // 输出 token → 字符估算
+      const safetyMargin = 4000;                            // 安全裕量
+      const maxTargetChunkPerRequest = chunkSize;           // 单次请求的待审分片
 
-      // 按场景加载比对系统提示词
-      const rawComparePrompt = await PromptTemplateService.getPromptByScene(
+      // 验证系统提示词
+      const systemPrompt = await PromptTemplateService.getPromptByScene(
         scene, 'system', 'default',
-        `你是核电工程文件比对专家。请比较【待审文件】与【参照文件】之间的差异，找出待审文件中可能存在的错误或不一致。
-
-## 参照文件内容
-${refTextsJoined}
-
-## 输出要求
-严格按照 JSON 数组格式输出，每个问题包含:
-- issueType: VIOLATION/FORMAT/COMPLETENESS/CONSISTENCY
-- originalText: 待审文件中的问题文本
-- suggestedText: 建议修改内容（参照文件中的对应内容）
-- description: 问题描述和差异说明
-- ruleCode: 问题类型编码
-- standardRef: 违反的具体标准规范引用，如果无法确定则写null
-
-如果没有发现差异问题，输出空数组 []
-不要输出任何其他文字说明`,
+        '你是核电工程文件合规审查专家。请按照审查策略逐项核对待审文件是否与参照文件完全一致。严格按照 JSON 数组格式输出审查结果。',
       );
-      const comparePrompt = AiReviewService.injectSemanticContext(
-        rawComparePrompt.replace(/\$\{refTexts\}/g, refTextsJoined), ctx
-      );
+      const finalSystemPrompt = AiReviewService.injectSemanticContext(systemPrompt, ctx);
+      const actualSystemPromptLen = finalSystemPrompt.length;
+
+      // 可用参照空间 = 上下文 - 输出 - 系统提示词 - 待审分片 - 安全裕量 - userPrompt 模板开销
+      const maxRefChars = contextWindow - outputBudget - actualSystemPromptLen - maxTargetChunkPerRequest - safetyMargin;
+
+      // 全量参照文本
+      const rawRefTextsJoined = refTexts.join('\n\n---\n\n');
+
+      // 分支: 参照能放下 → 全量传递; 放不下 → 向量检索取最相关段落
+      const useFullRefs = rawRefTextsJoined.length <= maxRefChars;
+      let refTextsJoined: string;
+
+      if (useFullRefs) {
+        refTextsJoined = rawRefTextsJoined;
+        console.log(`[AiReview] 参照全量传递: ${rawRefTextsJoined.length} 字符 / 可用 ${Math.floor(maxRefChars)} 字符 (上下文=${contextWindow}, 输出=${Math.floor(outputBudget)}, 系统=${actualSystemPromptLen})`);
+      } else {
+        console.log(`[AiReview] 参照过长 (${rawRefTextsJoined.length} > ${Math.floor(maxRefChars)})，启用向量检索`);
+        // fallback: 简单截断到上限（向量检索路径在 per-chunk 循环中实现）
+        refTextsJoined = rawRefTextsJoined.substring(0, Math.floor(maxRefChars));
+      }
 
       const chunks = LlmService.splitText(text, chunkSize, true);
       const totalChunks = chunks.length;
@@ -429,18 +446,100 @@ ${refTextsJoined}
       let failedChunks = 0;
       const errors: string[] = [];
 
+      // 向量检索兜底: 只在参照过长时预先构建参照向量索引
+      let refChunks: string[] | null = null;
+      let refVectors: number[][] | null = null;
+      if (!useFullRefs) {
+        try {
+          const { EmbeddingService } = await import('../embedding.service');
+          // 将参照文本按段落分块（~1500 字符）
+          refChunks = [];
+          for (const refText of refTexts) {
+            const paras = refText.split('\n').reduce((acc: string[], line: string) => {
+              if (!line.trim()) { acc.push(''); return acc; }
+              const last = acc.length > 0 ? acc[acc.length - 1] : '';
+              if (last.length + line.length < 1500) {
+                acc[acc.length - 1] = last + '\n' + line;
+              } else {
+                acc.push(line);
+              }
+              return acc;
+            }, ['']);
+            refChunks.push(...paras.filter(p => p.length >= 50));
+          }
+          if (refChunks.length > 0) {
+            refVectors = await EmbeddingService.embedTexts(refChunks);
+            console.log(`[AiReview] 参照向量索引完成: ${refChunks.length} 个分块×${refVectors[0]?.length || 0}d`);
+          }
+        } catch (e: any) {
+          console.warn(`[AiReview] 参照向量索引失败: ${e.message}，回退到截断模式`);
+          refChunks = null;
+          refVectors = null;
+        }
+      }
+
+      // 每分片循环
       for (const chunk of chunks) {
         try {
+          let effectiveRefTexts: string;
+
+          if (useFullRefs || !refChunks || !refVectors) {
+            // 全量传递 或 向量索引失败 → 使用已截断/全量的参照文本
+            effectiveRefTexts = refTextsJoined;
+          } else {
+            // 向量检索: 嵌入当前待审分片 → 计算余弦相似度 → 取 Top-5 参照段落
+            try {
+              const { EmbeddingService } = await import('../embedding.service');
+              const chunkVec = await EmbeddingService.embedText(chunk.text);
+
+              // 余弦相似度计算
+              const scored = refChunks.map((rc, i) => {
+                const rv = refVectors![i];
+                let dot = 0, na = 0, nb = 0;
+                for (let j = 0; j < rv.length; j++) {
+                  dot += chunkVec[j] * rv[j];
+                  na += chunkVec[j] * chunkVec[j];
+                  nb += rv[j] * rv[j];
+                }
+                const sim = dot / (Math.sqrt(na) * Math.sqrt(nb) + 1e-10);
+                return { chunk: rc, sim };
+              });
+
+              scored.sort((a, b) => b.sim - a.sim);
+              const topK = scored.slice(0, Math.min(5, scored.length));
+
+              // 按原始顺序重建（保持参照文件间顺序感）
+              const selected = new Map<number, string>();
+              for (const s of scored.slice(0, Math.min(5, scored.length))) {
+                const idx = refChunks.indexOf(s.chunk);
+                if (idx >= 0 && !selected.has(idx)) selected.set(idx, s.chunk);
+              }
+              const ordered = Array.from(selected.entries())
+                .sort(([a], [b]) => a - b)
+                .map(([, c]) => c);
+
+              effectiveRefTexts = '## 参照文件（向量检索：以下为与待审内容最相关的参照段落）\n\n'
+                + ordered.join('\n\n---\n\n');
+              console.log(`[AiReview] 分片${chunk.chunkIndex + 1}: 向量检索 ${refChunks.length} 块→Top${topK.length}, 最佳=${topK[0]?.sim?.toFixed(3) || 'N/A'}`);
+            } catch (e: any) {
+              console.warn(`[AiReview] 分片${chunk.chunkIndex + 1} 向量检索失败: ${e.message}，使用截断参照`);
+              effectiveRefTexts = refTextsJoined;
+            }
+          }
+
+          // 组装 user prompt
           const userContentTpl = await PromptTemplateService.getPromptByScene(
             scene, 'user', 'comparison',
-            `【待审文件】\n${chunk.text}\n\n请与参照文件比对，找出差异和问题。`,
+            '## 参照文件（权威基准）\n\n${refTexts}\n\n---\n\n## 待审文件（被审查对象）\n\n${text}\n\n---\n\n请按照系统指令中的四层审查策略，逐项核对。输出 JSON 数组。',
           );
-          const userContent = userContentTpl.replace(/\$\{text\}/g, chunk.text);
+          const userContent = userContentTpl
+            .replace(/\$\{refTexts\}/g, effectiveRefTexts)
+            .replace(/\$\{text\}/g, chunk.text);
 
           const issues = await LlmService.reviewText(userContent, {
             maxTokens: llmMaxTokens,
             timeout: llmTimeout,
-            systemPrompt: comparePrompt,
+            systemPrompt: finalSystemPrompt,
             skipUserTemplate: true,
             positionInfo: {
               chunkIndex: chunk.chunkIndex,
@@ -462,6 +561,8 @@ ${refTextsJoined}
         throw new Error(`所有 ${totalChunks} 个分片比对均失败: ${errors[0]}`);
       }
 
+      const modeLabel = useFullRefs ? '全量' : (refVectors ? '向量检索' : '截断');
+      console.log(`[AiReview] 以文审文完成(${modeLabel}): ${allIssues.length} 条问题, ${refFileCount} 个参照, ${totalChunks} 个分片, ${failedChunks} 个失败`);
       return { issues: allIssues, engine: 'llm-ref-compare' };
     } catch (e: any) {
       if (e.name === 'AbortError') {
@@ -547,7 +648,7 @@ ${refTextsJoined}
       TYPO_GRAMMAR: 'typo_grammar',
       DOC_REVIEW: 'doc_review',
       MULTIMODAL: 'multimodal',
-      CUSTOM_RULE: 'library_review',
+      RULE_ONLY: 'library_review',
     };
     return modeMap[ctx.reviewMode] || 'library_review';
   }

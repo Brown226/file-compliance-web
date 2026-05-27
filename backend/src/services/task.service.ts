@@ -16,7 +16,7 @@ export class TaskService {
       LIBRARY: 'LIBRARY_REVIEW',
       CONSISTENCY: 'CONSISTENCY',
       PROOFREAD: 'TYPO_GRAMMAR',
-      RULE_ONLY: 'CUSTOM_RULE',   // 仅规则执行，无AI
+      RULE_ONLY: 'RULE_ONLY',   // 仅规则执行，无AI
       MULTIMODAL: 'MULTIMODAL',
       DOC_REVIEW: 'DOC_REVIEW',
     }
@@ -32,7 +32,7 @@ export class TaskService {
       // RULE_ONLY 模式：有审查规范集/规则库来源，或有直接启用的规则前缀
       const hasDirectPrefixes = Array.isArray(plan.evidence.enabledPrefixes) && plan.evidence.enabledPrefixes.length > 0;
       if (plan.evidence.sources.includes('REVIEW_SPECIFICATION') || hasDirectPrefixes) {
-        return 'CUSTOM_RULE';
+        return 'RULE_ONLY';
       }
     }
     // crossFile 由 enhancements 动态控制，模式本身用 LIBRARY_REVIEW
@@ -54,12 +54,11 @@ export class TaskService {
             ? (normalizedSources.includes('REFERENCE') ? normalizedSources : ['REFERENCE'] as ReviewEvidenceSource[])
             : normalizedSources,
           knowledgeCategoryIds: Array.isArray(input?.evidence?.knowledgeCategoryIds) ? input.evidence.knowledgeCategoryIds : [],
-          reviewSpecificationId: typeof input?.evidence?.reviewSpecificationId === 'string' && input.evidence.reviewSpecificationId.trim()
-            ? input.evidence.reviewSpecificationId.trim()
-            : null,
-          ruleLibraryId: typeof input?.evidence?.ruleLibraryId === 'string' && input.evidence.ruleLibraryId.trim()
-            ? input.evidence.ruleLibraryId.trim()
-            : null,
+          // ★ 以下两个 ID 由 createTask 方法根据控制器传参显式赋值（而非从输入 JSON 抄），
+          // ★ 防止前端同时通过 reviewPlan.evidence.reviewSpecificationId 和独立字段 ruleLibraryId
+          // ★ 传入同一个值，导致两个 FK 都去写同一个不存在的 ID 引发外键约束错误。
+          reviewSpecificationId: null,
+          ruleLibraryId: null,
           refFileGroupId: typeof input?.evidence?.refFileGroupId === 'string' && input.evidence.refFileGroupId.trim()
             ? input.evidence.refFileGroupId.trim()
             : null,
@@ -130,7 +129,10 @@ export class TaskService {
     const normalizedReviewPlan = this.normalizeReviewPlan(reviewPlan);
 
     // 服务端兜底校验：防止前端绕过约束
-    if (normalizedReviewPlan.objective === 'COMPARE' && files.length > 0 && !data.files?.length) {
+    if (files.length === 0) {
+      throw new Error('请至少上传一个待审文件');
+    }
+    if (normalizedReviewPlan.objective === 'COMPARE' && !data.files?.length) {
       throw new Error('参照比对模式缺少待审文件');
     }
     if (normalizedReviewPlan.objective === 'COMPARE' && !normalizedReviewPlan.evidence.sources.includes('REFERENCE')) {
@@ -359,10 +361,10 @@ export class TaskService {
             select: { id: true, username: true, name: true }
           },
           _count: {
-            select: { files: true, details: true }
+            select: { files: true }
           },
           files: {
-            select: { status: true, textLength: true, processedLength: true }
+            select: { status: true, textLength: true, processedLength: true, errorCount: true }
           }
         },
         orderBy: { createdAt: 'desc' }
@@ -387,10 +389,11 @@ export class TaskService {
       if (task.status === 'COMPLETED') progress = 100;
       if (task.status === 'PENDING') progress = 0;
 
+      // 统计真实问题数：对每个文件的 errorCount 求和（文件级 errorCount 已排除 NO_RESULT）
       const isSelfCheck = task.reviewMode === 'SELF_CHECK';
       const errorCount = isSelfCheck
         ? (task.selfCheckReport as any)?.errorCount ?? 0
-        : _count.details;
+        : files.reduce((sum, f) => sum + ((f as any).errorCount || 0), 0);
 
       return {
         ...task,

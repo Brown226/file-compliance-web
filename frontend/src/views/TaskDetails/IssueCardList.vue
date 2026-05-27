@@ -86,6 +86,17 @@
         </el-input>
       </div>
       <div class="filter-actions">
+        <!-- 全部展开/折叠 -->
+        <el-button
+          size="small"
+          plain
+          @click="toggleExpandAll"
+          :disabled="batchMode"
+          :title="allExpanded ? '全部折叠' : '全部展开'"
+        >
+          <el-icon><component :is="allExpanded ? Fold : Expand" /></el-icon>
+          {{ allExpanded ? '折叠' : '展开' }}
+        </el-button>
         <!-- 分组切换 -->
         <el-button
           :type="groupMode ? 'primary' : 'default'"
@@ -102,8 +113,8 @@
       </div>
     </div>
 
-    <!-- 批量操作工具栏 -->
-    <div class="batch-toolbar" v-if="filteredAndSearched.length > 0 && batchMode">
+    <!-- 批量操作工具栏（选中即显示，无需进入/退出模式） -->
+    <div class="batch-toolbar" v-if="selectedIssueIds.length > 0">
       <div class="batch-info">
         <el-checkbox
           :model-value="isAllSelected"
@@ -168,23 +179,22 @@
       </div>
     </div>
 
-    <!-- 进入批量模式按钮（非批量模式下显示） -->
-    <div class="enter-batch-bar" v-else-if="filteredAndSearched.length > 0 && !batchMode">
+    <!-- 批量操作入口（轻量切换） -->
+    <div class="enter-batch-bar" v-if="filteredAndSearched.length > 0 && !batchMode">
       <el-button
-        type="primary"
-        plain
+        type="default"
         size="small"
+        plain
         @click="enterBatchMode"
       >
-        <el-icon><Operation /></el-icon>
-        批量操作
+        <el-icon><Operation /></el-icon> 批量
       </el-button>
-      <span class="batch-hint">可批量采纳建议或标记误报</span>
+      <span class="batch-hint">勾选问题后可批量标记误报</span>
     </div>
 
     <div class="error-content" :class="{ 'batch-mode-active': batchMode }" ref="errorContentRef" v-loading="loading">
       <template v-if="filteredAndSearched.length > 0">
-        <!-- CUSTOM_RULE 模式：按检查项分组 -->
+        <!-- RULE_ONLY 模式：按检查项分组 -->
         <template v-if="isCustomRuleMode && ruleRegistryLoaded && !batchMode">
           <div v-for="group in issuesByRuleGroup" :key="group.groupName" class="rule-group-section">
             <div class="rule-group-title">
@@ -228,10 +238,10 @@
                   :is-docx-selected="isDocxSelected"
                   :highlighted-id="highlightedId"
                   :selected-file-id="selectedFileId"
+                  :force-expanded="allExpanded"
                   @locate-text="(payload: any) => $emit('locateText', payload)"
                   @copy-handle-id="(handleId: string) => $emit('copyHandleId', handleId)"
                   @open-fp-dialog="(detail: IssueDetail) => $emit('openFpDialog', detail)"
-                  @adopt-suggestion="(detail: IssueDetail) => $emit('adoptSuggestion', detail)"
                   @cancel-fp="(detail: IssueDetail) => $emit('cancelFp', detail)"
                   @toggle-select="toggleIssueSelection"
                   @select-file-by-id="(fileId: string) => $emit('selectFileById', fileId)"
@@ -263,10 +273,10 @@
                 :is-docx-selected="isDocxSelected"
                 :highlighted-id="highlightedId"
                 :selected-file-id="selectedFileId"
+                :force-expanded="allExpanded"
                 @locate-text="(payload) => $emit('locateText', payload)"
                 @copy-handle-id="(handleId) => $emit('copyHandleId', handleId)"
                 @open-fp-dialog="(detail) => $emit('openFpDialog', detail)"
-                @adopt-suggestion="(detail) => $emit('adoptSuggestion', detail)"
                 @cancel-fp="(detail) => $emit('cancelFp', detail)"
                 @toggle-select="toggleIssueSelection"
                 @select-file-by-id="(fileId) => $emit('selectFileById', fileId)"
@@ -285,10 +295,10 @@
             :is-docx-selected="isDocxSelected"
             :highlighted-id="highlightedId"
             :selected-file-id="selectedFileId"
+            :force-expanded="allExpanded"
             @locate-text="(payload) => $emit('locateText', payload)"
             @copy-handle-id="(handleId) => $emit('copyHandleId', handleId)"
             @open-fp-dialog="(detail) => $emit('openFpDialog', detail)"
-            @adopt-suggestion="(detail) => $emit('adoptSuggestion', detail)"
             @cancel-fp="(detail) => $emit('cancelFp', detail)"
             @toggle-select="toggleIssueSelection"
             @select-file-by-id="(fileId) => $emit('selectFileById', fileId)"
@@ -312,6 +322,8 @@ import {
   Collection,
   ArrowRight,
   CircleCheck,
+  Expand,
+  Fold,
 } from '@element-plus/icons-vue'
 import IssueCard from './IssueCard.vue'
 import { useIssueFilter, useBatchSelection } from './composables'
@@ -324,9 +336,9 @@ const props = defineProps<{
   loading: boolean
   selectedFileId: string | null
   isDocxSelected?: boolean
-  /** 审查模式（用于按检查项分组，仅 CUSTOM_RULE 模式生效） */
+  /** 审查模式（用于按检查项分组，仅 RULE_ONLY 模式生效） */
   reviewMode?: string
-  /** CUSTOM_RULE 模式启用的规则前缀列表 */
+  /** RULE_ONLY 模式启用的规则前缀列表 */
   enabledPrefixes?: string[]
 }>()
 
@@ -337,8 +349,6 @@ const emit = defineEmits<{
   openFpDialog: [detail: IssueDetail]
   cancelFp: [detail: IssueDetail]
   locateText: [payload: { detail: IssueDetail; elementId: string }]
-  adoptSuggestion: [detail: IssueDetail]
-  batchAdopt: [issueIds: string[]]
   batchFalsePositive: [issueIds: string[], reason?: string]
 }>()
 
@@ -390,6 +400,13 @@ const dwgRuleTypeOptions = DWG_RULE_TYPE_OPTIONS
 // ===== 分组功能 =====
 const groupMode = ref(false)
 const expandedGroups = reactive(new Set<string>())
+
+// ===== 全部展开/折叠 =====
+const allExpanded = ref(false)
+
+const toggleExpandAll = () => {
+  allExpanded.value = !allExpanded.value
+}
 
 /** 按描述模式将问题分组 */
 const groupedIssues = computed(() => {
@@ -458,8 +475,8 @@ function toggleGroup(key: string) {
   }
 }
 
-// ===== CUSTOM_RULE 模式：按检查项分组 =====
-const isCustomRuleMode = computed(() => props.reviewMode === 'CUSTOM_RULE')
+// ===== RULE_ONLY 模式：按检查项分组 =====
+const isCustomRuleMode = computed(() => props.reviewMode === 'RULE_ONLY')
 
 /** 规则注册表数据（按需加载） */
 const ruleRegistry = ref<{ groups: RuleGroupMeta[]; prefixMap: Map<string, RuleMetaItem> } | null>(null)
@@ -473,7 +490,7 @@ function extractRulePrefix(ruleCode: string): string {
   return match ? match[1] : ruleCode
 }
 
-/** 按检查项分组的结果（仅 CUSTOM_RULE 模式） */
+/** 按检查项分组的结果（仅 RULE_ONLY 模式） */
 const issuesByRuleGroup = computed(() => {
   if (!isCustomRuleMode.value || !ruleRegistryLoaded.value) return []
 
@@ -559,7 +576,7 @@ watch(() => issuesByRuleGroup.value, (groups) => {
   }
 }, { immediate: true })
 
-// 组件挂载时，仅 CUSTOM_RULE 模式加载规则注册表
+// 组件挂载时，仅 RULE_ONLY 模式加载规则注册表
 onMounted(async () => {
   if (!isCustomRuleMode.value) return
   try {
@@ -896,7 +913,7 @@ defineExpose({
   margin-bottom: 8px;
 }
 
-/* ===== CUSTOM_RULE 模式：按检查项分组 ===== */
+/* ===== RULE_ONLY 模式：按检查项分组 ===== */
 .rule-group-section {
   margin-bottom: 16px;
 }

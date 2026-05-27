@@ -844,7 +844,8 @@ export const getDocumentTags = async (req: AuthRequest, res: Response): Promise<
         where: { categoryId, documentTitle: title as string },
         include: { tag: true },
       });
-      return success(res, legacyTags.map(dt => dt.tag));
+      success(res, legacyTags.map(dt => dt.tag));
+      return;
     }
 
     const docTags = await prisma.documentTag.findMany({

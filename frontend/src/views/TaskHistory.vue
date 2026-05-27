@@ -47,13 +47,24 @@
           <el-option label="以库审文" value="LIBRARY_REVIEW" />
           <el-option label="以文审文" value="DOC_REVIEW" />
           <el-option label="一致性审查" value="CONSISTENCY" />
-          <el-option label="基础校对" value="PROOFREAD" />
           <el-option label="错别字/语法" value="TYPO_GRAMMAR" />
-          <el-option label="规则库审查" value="RULE_ONLY" />
-          <el-option label="多模态识别" value="MULTIMODAL" />
-          <el-option label="自定义规则" value="CUSTOM_RULE" />
+          <el-option label="结构化审查" value="MULTIMODAL" />
+          <el-option label="仅规则审查" value="RULE_ONLY" />
           <el-option label="标准引用自检" value="SELF_CHECK" />
         </el-select>
+
+        <!-- 创建人快速搜索（管理员可见：输入姓名或账号模糊搜索） -->
+        <el-input
+          v-if="userStore.isAdmin()"
+          v-model="filters.creator"
+          placeholder="搜索创建人..."
+          clearable
+          prefix-icon="Search"
+          @clear="fetchTasks"
+          @keyup.enter="fetchTasks"
+          class="filter-input"
+          style="width: 150px"
+        />
       </div>
 
       <!-- 右侧：操作按钮组 -->
@@ -107,17 +118,6 @@
       <transition name="slide-down">
         <div v-if="showAdvancedFilter" class="advanced-filter-enhanced">
           <div class="filter-row">
-            <el-form-item label="创建人">
-              <el-input
-                v-model="filters.creator"
-                placeholder="搜索创建人"
-                clearable
-                @clear="() => fetchTasks()"
-                @keyup.enter="fetchTasks"
-                style="width: 180px"
-              />
-            </el-form-item>
-
             <el-form-item label="创建时间">
               <el-date-picker
                 v-model="filters.dateRange"
@@ -406,10 +406,14 @@ import {
 } from '@/api/task'
 import { useFormatTime } from '@/composables/useFormatTime'
 import { useStatusHelpers } from '@/composables/useStatusHelpers'
+import { useUserStore } from '@/stores/user'
 
 const router = useRouter()
+const userStore = useUserStore()
 const { formatTime } = useFormatTime()
 const { getTaskStatusLabel } = useStatusHelpers()
+
+
 
 // 相对时间格式化（如：5分钟前、2小时前、昨天）
 const formatTimeRelative = (timeStr: string) => {
@@ -464,7 +468,7 @@ const getStatusLabel = getTaskStatusLabel
 const objectiveLabelMap: Record<string, string> = {
   COMPLIANCE: '合规审查',
   COMPARE: '参照比对',
-  PROOFREAD: '文本校对',
+  PROOFREAD: '基础校对',
   STRUCTURED: '结构化审查',
 }
 
@@ -477,13 +481,11 @@ const evidenceLabelMap: Record<string, string> = {
 const reviewModeLabelMap: Record<string, string> = {
   LIBRARY_REVIEW: '以库审文',
   DOC_REVIEW: '以文审文',
-  TYPO_GRAMMAR: '错别字/语法',
-  MULTIMODAL: '多模态识别',
+  TYPO_GRAMMAR: '基础校对',
+  MULTIMODAL: '结构化审查',
   SELF_CHECK: '标准引用自检',
   CONSISTENCY: '一致性审查',
-  CUSTOM_RULE: '自定义规则',
-  RULE_ONLY: '规则库审查',
-  PROOFREAD: '基础校对',
+  RULE_ONLY: '仅规则审查',
 }
 
 const getReviewPlanSummary = (row: any): string => {
@@ -511,8 +513,8 @@ const getReviewPlanSummary = (row: any): string => {
     }
     // 兜底：从 plan 推导
     if (plan.objective === 'COMPARE') return '一致性审查（对照）'
-    if (plan.objective === 'PROOFREAD') return '基础校对审查'
-    if (plan.objective === 'STRUCTURED') return '多模态审查'
+    if (plan.objective === 'PROOFREAD') return '基础校对'
+    if (plan.objective === 'STRUCTURED') return '结构化审查'
     if (plan.execution?.profile === 'RULE_ONLY' && sources.includes('REVIEW_SPECIFICATION')) return '语义规范库审查'
     if (sources.includes('REVIEW_SPECIFICATION') && sources.includes('STANDARD')) return '以库审文'
     if (sources.includes('REVIEW_SPECIFICATION')) return '语义规范库审查'
@@ -759,7 +761,9 @@ const handleReReview = async (row: any) => {
   }
 }
 
-onMounted(() => { fetchTasks() })
+onMounted(() => {
+  fetchTasks()
+})
 onUnmounted(() => { stopPolling() })
 </script>
 

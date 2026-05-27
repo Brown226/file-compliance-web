@@ -241,7 +241,7 @@ onMounted(async () => {
 
 /* ---- 提交按钮 ---- */
 .submit-bar { margin-top: 24px; display: flex; justify-content: flex-end; padding-top: 16px; border-top: 1px solid #F1F5F9; }
-.submit-btn { padding: 12px 36px; font-size: 15px; font-weight: 600; border-radius: 10px; min-width: 160px; }
+.submit-btn { padding: 12px 36px; font-size: 15px; font-weight: 600; border-radius: 8px; min-width: 160px; }
 
 /* ---- 配置区 ---- */
 .review-items-section { margin-top: 4px; }
@@ -252,13 +252,13 @@ onMounted(async () => {
 /* ---- 可选中卡片 ---- */
 .selectable-card { display: flex; align-items: center; gap: 10px; padding: 12px 14px; border: 2px solid #E2E8F0; border-radius: 10px; background: #FAFBFC; cursor: pointer; transition: all 0.2s; user-select: none; }
 .selectable-card:hover:not(.selectable-card--disabled) { border-color: #93C5FD; background: white; box-shadow: 0 2px 8px rgba(59,130,246,0.08); }
-.selectable-card--active { border-color: #3B82F6; background: linear-gradient(135deg,#EFF6FF,#F0F4FF); box-shadow: 0 2px 12px rgba(59,130,246,0.12); }
+.selectable-card--active { border-color: #2563EB; background: #EFF6FF; box-shadow: 0 0 0 1px #2563EB; }
 .selectable-card--disabled { opacity: 0.45; cursor: not-allowed; }
 .selectable-card--compact { padding: 11px 14px; }
-.selectable-card--compact .selectable-card__icon { width: 28px; height: 28px; border-radius: 7px; }
+.selectable-card--compact .selectable-card__icon { width: 28px; height: 28px; border-radius: 6px; }
 .selectable-card--inline { flex: 1; justify-content: center; }
 .selectable-card__icon { width: 30px; height: 30px; border-radius: 8px; background: #E0E7FF; color: #4F46E5; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
-.selectable-card--active .selectable-card__icon { background: linear-gradient(135deg,#3B82F6,#2563EB); color: white; }
+.selectable-card--active .selectable-card__icon { background: #2563EB; color: white; }
 .selectable-card__content { flex: 1; min-width: 0; }
 .selectable-card__label { font-size: 13px; font-weight: 600; color: #1E293B; }
 .selectable-card__desc { font-size: 12px; color: #94A3B8; margin-top: 1px; }
@@ -284,26 +284,26 @@ onMounted(async () => {
 
 /* ---- 规则前缀面板 ---- */
 .rule-prefix-panel { display: flex; flex-direction: column; gap: 10px; }
-.rule-prefix-group { background: #F8FAFC; border: 1px solid #E2E8F0; border-radius: 10px; overflow: hidden; }
-.rule-prefix-group__header { display: flex; align-items: center; gap: 8px; padding: 10px 14px; background: #F1F5F9; border-bottom:1px solid #E2E8F0; color:#475569; font-size:13px; font-weight:600; cursor:pointer; user-select:none; }
-.rule-prefix-group__header:hover { background: #E8EDF5; }
+.rule-prefix-group { border: 1px solid #E5E7EB; border-radius: 8px; overflow: hidden; }
+.rule-prefix-group__header { display: flex; align-items: center; gap: 8px; padding: 10px 14px; background: #F9FAFB; border-bottom: 1px solid #E5E7EB; color:#374151; font-size:13px; font-weight:600; cursor:pointer; user-select:none; }
+.rule-prefix-group__header:hover { background: #F3F4F6; }
 .rule-prefix-group__title { flex: 1; }
-.rule-prefix-group__count { font-size: 11px; color: #94A3B8; }
-.rule-prefix-group__items { display: grid; grid-template-columns: 1fr; gap: 1px; background: #E2E8F0; }
-.rule-prefix-item { display: flex; align-items: center; gap: 8px; padding: 9px 14px; background: white; cursor: pointer; transition: all 0.15s; user-select: none; }
-.rule-prefix-item:hover { background: #FAFBFC; }
-.rule-prefix-item--active { background: #F0F9FF; }
+.rule-prefix-group__count { font-size: 12px; color: #9CA3AF; font-weight: 500; }
+.rule-prefix-group__items { display: grid; grid-template-columns: 1fr; gap: 6px; padding: 8px; background: #FAFBFC; }
+.rule-prefix-item { display: flex; align-items: center; gap: 8px; padding: 10px 12px; background: white; border: 1px solid #E5E7EB; border-radius: 6px; cursor: pointer; transition: border-color 0.15s, background 0.15s; user-select: none; }
+.rule-prefix-item:hover { border-color: #93C5FD; background: #FAFBFC; }
+.rule-prefix-item--active { border-color: #2563EB; background: #EFF6FF; box-shadow: 0 0 0 1px #2563EB; }
 .rule-prefix-item__info { flex: 1; min-width: 0; }
 .rule-prefix-item__label { font-size: 13px; font-weight: 500; color: #1E293B; }
-.rule-prefix-item--active .rule-prefix-item__label { color: #0369A1; font-weight: 600; }
-.rule-prefix-item__desc { font-size: 11px; color: #94A3B8; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.rule-prefix-item--active .rule-prefix-item__label { color: #1D4ED8; font-weight: 600; }
+.rule-prefix-item__desc { font-size: 12px; color: #9CA3AF; line-height: 1.4; margin-top: 2px; white-space: normal; }
 
 /* ---- 加载遮罩 ---- */
 .loading-overlay { position: fixed; inset: 0; background: rgba(255,255,255,0.7); backdrop-filter: blur(4px); display: flex; align-items: center; justify-content: center; z-index: 9999; }
 .loading-content { background: white; border-radius: 12px; padding: 24px; box-shadow: 0 4px 16px rgba(0,0,0,0.1); border: 1px solid #E5E7EB; max-width: 480px; width: 100%; }
 .loading-title { font-size: 18px; font-weight: 700; color: #111827; margin: 0 0 16px; text-align: center; }
 .analysis-progress-steps { display: flex; flex-direction: column; gap: 12px; }
-.progress-step { display: flex; align-items: flex-start; gap: 12px; padding: 8px; border-radius: 6px; }
+.progress-step { display: flex; align-items: flex-start; gap: 12px; padding: 10px 12px; border-radius: 8px; }
 .progress-step--running { background: #EFF6FF; }
 .progress-step--completed { background: #F0FDF4; }
 .progress-step--failed { background: #FEF2F2; }

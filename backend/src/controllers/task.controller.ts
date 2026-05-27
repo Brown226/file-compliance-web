@@ -16,6 +16,7 @@ export const createTask = async (req: AuthRequest, res: Response): Promise<void>
     const files = req.files as Express.Multer.File[];
 
     if (!title) { error(res, '标题为必填项', 400); return; }
+    if (!files || files.length === 0) { error(res, '请至少上传一个待审文件', 400); return; }
     if (!creatorId) { 
       console.error('[Create Task] 未认证用户尝试创建任务:', {
         ip: req.ip,
@@ -122,6 +123,7 @@ export const getTasks = async (req: AuthRequest, res: Response): Promise<void> =
       create_time: t.createdAt,
       reviewMode: t.reviewMode,
       description: t.description,
+      selfCheckReport: t.selfCheckReport,
     }));
     paginated(res, items, result.total);
   } catch (err) {

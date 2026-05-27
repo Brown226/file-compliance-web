@@ -15,6 +15,7 @@ interface ParamEntry {
   paramName: string;
   value: string;
   position: number; // 在原文中的偏移位置
+  context: string;   // 匹配位置前后的原文片段（用于 buildLocateMeta 精确定位）
 }
 
 /** 按参数名分组的索引项 */
@@ -23,6 +24,7 @@ interface ParamIndexEntry {
   fileId: string;
   value: string;
   position: number;
+  context: string;   // 原文上下文片段
 }
 
 /** 不一致对 */
@@ -91,7 +93,7 @@ export class CrossFileConsistencyService {
         issueType: 'CONSISTENCY' as const,
         ruleCode: 'CROSS_CONSIST_001',
         severity: 'error' as const,
-        originalText: inc.paramName,
+        originalText: entry.context || inc.paramName,
         suggestedText: null,
         description: `参数 "${inc.paramName}" 在不同文件中取值不一致: ${valuesDesc}`,
       }));
@@ -168,10 +170,16 @@ export class CrossFileConsistencyService {
       const normalizedName = this.normalizeParamName(name);
       const normalizedValue = this.normalizeParamValue(value);
 
+      // 提取匹配位置前后各 40 字符作为上下文（用于精确定位）
+      const ctxStart = Math.max(0, match.index - 40);
+      const ctxEnd = Math.min(text.length, match.index + match[0].length + 40);
+      const context = text.substring(ctxStart, ctxEnd).replace(/\n/g, ' ').trim();
+
       params.push({
         paramName: normalizedName,
         value: normalizedValue,
         position: match.index,
+        context,
       });
     }
 
@@ -204,6 +212,7 @@ export class CrossFileConsistencyService {
           fileId: fileParams.fileId,
           value: param.value,
           position: param.position,
+          context: param.context,
         });
       }
     }

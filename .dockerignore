@@ -3,22 +3,40 @@ frontend/node_modules
 backend/node_modules
 .git
 .codebuddy
-offline-packages/maxkb-images
-offline-packages/compose-files
+.codegraph
+
+# 离线部署包（构建镜像时不需要）
+offline-deploy
+offline-packages
+
+# 大文件
 *.tar
 *.tar.gz
+
+# 文档和测试
 docs
-maxkb-runtime
-backend/doc-parser
+*.log
+docker-build.log
+test-*.py
+test-db-conn.sh
+rebuild-backend.sh
+
+# 运行时数据
 backend/uploads
+backend/doc-parser
+
+# 遗留/无关目录
+maxkb-runtime
 SmartDuctV3
 SmartDuct
 markitdown-main
-
-*.log
-docker-build.log
-test-db-conn.sh
-rebuild-backend.sh
 maxkb-v2.8.0-x86_64-offline-installer
 MaxKB-2.8.0
 Normative
+
+# 根目录杂项
+login_response.txt
+token.txt
+tsc_errors.txt
+temp_check.txt
+v2.0架构.md

@@ -320,11 +320,11 @@ export class KnowledgeCategoryService {
       paragraphs = chunks.map(chunk => ({ title: '', content: chunk.trim() })).filter(p => p.content.length > 0);
     } else if (effectiveMode === 'paragraph') {
       const rawParagraphs = VectorService.splitTextIntoChunks(content, { mode: 'paragraph', maxChars: effectiveMaxChars, overlap: effectiveOverlap });
-      paragraphs = rawParagraphs.map(p => ({ title: '', content: typeof p === 'string' ? p : p.content || '' }))
+      paragraphs = rawParagraphs.map(p => ({ title: '', content: p }))
         .filter(p => p.content.length > 0);
     } else {
       const parsed = VectorService.splitMarkdownIntoParagraphs(content, effectiveMaxChars);
-      paragraphs = parsed.map(paragraph => ({
+      paragraphs = (parsed as Array<{title: string; content: string}>).map(paragraph => ({
         title: paragraph.title,
         content: paragraph.content,
       })).filter(p => p.content.length > 0);

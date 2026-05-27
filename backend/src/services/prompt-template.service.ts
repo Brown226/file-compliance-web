@@ -43,9 +43,9 @@ export interface PromptTemplateData {
 const MODULE_LABELS: Record<string, string> = {
   library_review: '以库审文',
   consistency: '一致性审查',
-  typo_grammar: '错别字/语法',
+  typo_grammar: '基础校对',
   doc_review: '以文审文',
-  multimodal: '多模态审查',
+  multimodal: '结构化审查',
   ocr: 'OCR文字识别',
   rule_library: '规则库AI解析',
   review_specification: '规范集AI解析',

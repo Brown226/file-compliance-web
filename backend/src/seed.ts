@@ -33,15 +33,49 @@ async function seed() {
   const adminHash = await bcrypt.hash('Admin@12345', adminSalt);
   const admin = await prisma.user.upsert({
     where: { username: 'admin' },
-    update: {},
+    update: { passwordHash: adminHash, mustChangePassword: false },
     create: {
       username: 'admin',
       passwordHash: adminHash,
       name: '系统管理员',
       role: 'ADMIN',
       departmentId: null, // ADMIN 不归属于任何部门，拥有全局权限
+      mustChangePassword: false, // 管理员密码已是强密码
     },
   });
+
+  // 2.5 创建默认经理和用户（弱密码示例，首次登录需强制改密）
+  const managerSalt = await bcrypt.genSalt(10);
+  const managerHash = await bcrypt.hash('Manager@123', managerSalt);
+  await prisma.user.upsert({
+    where: { username: 'manager' },
+    update: {},
+    create: {
+      username: 'manager',
+      passwordHash: managerHash,
+      name: '部门经理',
+      role: 'MANAGER',
+      departmentId: 'dept-hebei-技术质量部',
+      mustChangePassword: true,
+    },
+  });
+
+  const userSalt = await bcrypt.genSalt(10);
+  const userHash = await bcrypt.hash('User@12345', userSalt);
+  await prisma.user.upsert({
+    where: { username: 'user' },
+    update: {},
+    create: {
+      username: 'user',
+      passwordHash: userHash,
+      name: '普通用户',
+      role: 'USER',
+      departmentId: 'dept-hebei-核工程所',
+      mustChangePassword: true,
+    },
+  });
+
+  console.log('✅ 测试用户创建完成（manager/user 需首次登录改密）');
 
   // 3. 创建测试标准数据（暂无，标准清单由用户导入）
   const standards: Array<{ id: string; title: string; standardNo: string; standardName: string; version: string; standardStatus: 'CURRENT' | 'UPCOMING' | 'ABOLISHED'; isActive: boolean }> = [];
@@ -353,6 +387,8 @@ async function seed() {
   console.log('');
   console.log('📋 默认账号信息:');
   console.log('  管理员: admin / Admin@12345');
+  console.log('  经理:   manager / Manager@123（首次登录需改密）');
+  console.log('  用户:   user / User@12345（首次登录需改密）');
   console.log('');
   console.log('🤖 LLM 默认配置:');
   console.log('  对话模型: gpt-5.4-mini');

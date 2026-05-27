@@ -276,7 +276,7 @@ export class MetricsService {
     }
   }
 
-  private getCacheStats() {
+  private static getCacheStats() {
     const { CacheService } = require('./cache.service');
     return CacheService.getStats();
   }

@@ -104,7 +104,7 @@ export function useReviewPlan(state: ReturnType<typeof import('./useSmartReviewS
     switch (module) {
       case 'LIBRARY':
         draft.objective = 'COMPLIANCE'
-        draft.evidence.sources = ['STANDARD', 'REVIEW_SPECIFICATION']
+        draft.evidence.sources = []
         draft.execution.profile = 'AI_ONLY'
         break
 
@@ -129,7 +129,7 @@ export function useReviewPlan(state: ReturnType<typeof import('./useSmartReviewS
         break
 
       case 'MULTIMODAL':
-        draft.objective = 'COMPLIANCE'
+        draft.objective = 'STRUCTURED'
         draft.evidence.sources = []
         draft.evidence.reviewSpecificationId = null
         draft.evidence.knowledgeCategoryIds = []
@@ -191,9 +191,11 @@ export function useReviewPlan(state: ReturnType<typeof import('./useSmartReviewS
   // ===== 提交验证 =====
   const canSubmit = computed(() => {
     if (!state.form.title.trim()) return false
+    if (state.fileList.value.length === 0) return false
     if (state.reviewPlanDraft.objective === 'COMPARE' && state.refFileList.value.length === 0) return false
-    // 仅当用户选择了语义规范库时，才要求选择具体库
+    // 勾选了证据源但未做具体选择时，阻断提交
     if (state.reviewPlanDraft.evidence.sources.includes('REVIEW_SPECIFICATION') && !state.reviewPlanDraft.evidence.reviewSpecificationId) return false
+    if (state.reviewPlanDraft.evidence.sources.includes('STANDARD') && (!state.reviewPlanDraft.evidence.knowledgeCategoryIds || state.reviewPlanDraft.evidence.knowledgeCategoryIds.length === 0)) return false
     
     return true
   })

@@ -490,8 +490,8 @@ const roleTagType = (role: string): 'warning' | 'info' | 'success' | 'danger' | 
 
 const moduleLabel = (mod: string): string => {
   const map: Record<string, string> = {
-    library_review: '以库审文', consistency: '一致性审查', typo_grammar: '错别字/语法',
-    doc_review: '以文审文', multimodal: '多模态审查', ocr: 'OCR文字识别',
+    library_review: '以库审文', consistency: '一致性审查', typo_grammar: '基础校对',
+    doc_review: '以文审文', multimodal: '结构化审查', ocr: 'OCR文字识别',
     semantic_spec: '语义规范库审查',
     rule_library: '规则库AI解析', review_specification: '规范集AI解析',
     pre_analysis: '文件预分析', contextual_retrieval: '上下文检索增强',

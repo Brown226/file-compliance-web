@@ -62,7 +62,7 @@ export class SystemConfigChatModel extends BaseChatModel {
 
   async _generate(
     messages: BaseMessage[],
-    options: this['ParsedOptions'],
+    options: Record<string, any>,
     runManager?: CallbackManagerForLLMRun,
   ): Promise<ChatResult> {
     const openaiMessages = convertMessages(messages);

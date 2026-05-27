@@ -146,6 +146,7 @@ export class EmployeeService {
         name,
         role: role || 'USER',
         departmentId,
+        mustChangePassword: true,
       },
     });
 
@@ -269,6 +270,7 @@ export class EmployeeService {
             role: emp.role as any,
             departmentId: emp.departmentId,
             email: emp.email,
+            mustChangePassword: true,
           },
         });
 

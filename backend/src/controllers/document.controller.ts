@@ -35,7 +35,7 @@ export class DocumentController {
    */
   static async getDocument(req: Request, res: Response) {
     try {
-      const { id } = req.params;
+      const id = req.params.id as string;
       const document = await DocumentService.getDocument(id);
 
       if (!document) {
@@ -55,7 +55,7 @@ export class DocumentController {
    */
   static async updateDocument(req: Request, res: Response) {
     try {
-      const { id } = req.params;
+      const id = req.params.id as string;
       const { title, status, metadata } = req.body;
 
       const document = await DocumentService.updateDocument(id, {
@@ -76,7 +76,7 @@ export class DocumentController {
    */
   static async deleteDocument(req: Request, res: Response) {
     try {
-      const { id } = req.params;
+      const id = req.params.id as string;
       await DocumentService.deleteDocument(id);
       success(res, { message: '文档已删除' });
     } catch (err: any) {
@@ -90,7 +90,7 @@ export class DocumentController {
    */
   static async archiveDocument(req: Request, res: Response) {
     try {
-      const { id } = req.params;
+      const id = req.params.id as string;
       await DocumentService.archiveDocument(id);
       success(res, { message: '文档已归档' });
     } catch (err: any) {
@@ -104,7 +104,7 @@ export class DocumentController {
    */
   static async unarchiveDocument(req: Request, res: Response) {
     try {
-      const { id } = req.params;
+      const id = req.params.id as string;
       await DocumentService.unarchiveDocument(id);
       success(res, { message: '文档已恢复' });
     } catch (err: any) {
@@ -118,7 +118,7 @@ export class DocumentController {
    */
   static async listVersions(req: Request, res: Response) {
     try {
-      const { id } = req.params;
+      const id = req.params.id as string;
       const versions = await DocumentService.listVersions(id);
       success(res, versions);
     } catch (err: any) {
@@ -132,7 +132,8 @@ export class DocumentController {
    */
   static async getVersion(req: Request, res: Response) {
     try {
-      const { id, version } = req.params;
+      const id = req.params.id as string;
+      const version = req.params.version as string;
       const versionData = await DocumentService.getVersion(id, parseInt(version));
 
       if (!versionData) {
@@ -152,7 +153,8 @@ export class DocumentController {
    */
   static async restoreVersion(req: Request, res: Response) {
     try {
-      const { id, version } = req.params;
+      const id = req.params.id as string;
+      const version = req.params.version as string;
       const { createdBy } = req.body;
 
       const document = await DocumentService.restoreVersion(id, parseInt(version), {
@@ -171,7 +173,7 @@ export class DocumentController {
    */
   static async getDocumentChunks(req: Request, res: Response) {
     try {
-      const { id } = req.params;
+      const id = req.params.id as string;
       const { page, pageSize } = req.query;
 
       const result = await DocumentService.getDocumentChunks(id, {
@@ -191,7 +193,7 @@ export class DocumentController {
    */
   static async addTag(req: Request, res: Response) {
     try {
-      const { id } = req.params;
+      const id = req.params.id as string;
       const { tagId } = req.body;
 
       await DocumentService.addTag(id, tagId);
@@ -207,7 +209,7 @@ export class DocumentController {
    */
   static async removeTag(req: Request, res: Response) {
     try {
-      const { id } = req.params;
+      const id = req.params.id as string;
       const { tagId } = req.body;
 
       await DocumentService.removeTag(id, tagId);

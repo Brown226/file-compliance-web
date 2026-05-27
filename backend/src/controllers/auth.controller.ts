@@ -32,6 +32,21 @@ export const login = async (req: Request, res: Response): Promise<void> => {
       return;
     }
 
+    // 密码弱口令检测：已存在但密码不满足复杂度要求时自动标记强制改密
+    let mustChangePassword = user.mustChangePassword;
+    if (!mustChangePassword) {
+      const { validatePasswordComplexity } = await import('../utils/password-validator');
+      const check = validatePasswordComplexity(password);
+      if (!check.valid) {
+        mustChangePassword = true;
+        // 异步更新 DB，不阻塞登录
+        prisma.user.update({
+          where: { id: user.id },
+          data: { mustChangePassword: true },
+        }).catch((e: any) => console.warn('[Auth] 自动标记强制改密失败:', e.message));
+      }
+    }
+
     // 生成 Token
     const payload = {
       id: user.id,
@@ -43,12 +58,14 @@ export const login = async (req: Request, res: Response): Promise<void> => {
 
     success(res, {
       token,
+      mustChangePassword,
       user: {
         id: user.id,
         username: user.username,
         name: user.name,
         role: user.role,
         departmentId: user.departmentId,
+        mustChangePassword,
       },
     }, '登录成功');
   } catch (err) {
@@ -112,12 +129,12 @@ export const changePassword = async (req: AuthRequest, res: Response): Promise<v
       return;
     }
 
-    // 更新密码
+    // 更新密码（同时清除强制改密标记）
     const salt = await bcrypt.genSalt(10);
     const newPasswordHash = await bcrypt.hash(newPassword, salt);
     await prisma.user.update({
       where: { id: userId },
-      data: { passwordHash: newPasswordHash },
+      data: { passwordHash: newPasswordHash, mustChangePassword: false },
     });
 
     success(res, null, '密码修改成功');

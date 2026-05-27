@@ -51,11 +51,11 @@ export function useTaskExport(taskId: () => string, taskTitle: () => string) {
 
   const handleExportCommand = (command: string) => {
     switch (command) {
+      case 'word':
+        exportToWord()
+        break
       case 'excel':
         exportToExcel()
-        break
-      case 'pdf':
-        ElMessage.info('PDF导出功能开发中，敬请期待')
         break
       case 'print':
         window.print()

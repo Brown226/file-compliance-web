@@ -1,12 +1,11 @@
 /**
- * 审查模式能力配置管理
+ * 审查模式配置管理
  *
- * 从 systemConfig 表读取/写入 pipeline_mode_capabilities 配置
- * standardRef 已简化为 boolean
+ * 从 systemConfig 表读取/写入模式配置（启用/禁用、AI 策略等）
+ * 不再依赖 MODE_CAPABILITIES 静态配置表，配置完全自包含。
  */
 import prisma from '../../config/db';
 import { ReviewModeType } from './types';
-import { MODE_CAPABILITIES } from './mode-config';
 
 const CONFIG_KEY = 'pipeline_mode_capabilities';
 
@@ -23,7 +22,25 @@ export interface ModeCapabilitiesConfig {
   [mode: string]: ModeConfigOverride;
 }
 
-/** 加载模式配置（合并默认配置） */
+/** 各模式的默认配置（自包含，不依赖外部模块） */
+const DEFAULT_MODE_CONFIGS: Record<ReviewModeType, {
+  enabled: boolean;
+  rules: boolean;
+  standardRef: boolean;
+  ai: boolean;
+  aiStrategy: 'standard' | 'llmOnly' | 'refCompare' | 'multimodal';
+  crossFile: boolean;
+}> = {
+  LIBRARY_REVIEW: { enabled: true, rules: false, standardRef: false, ai: true, aiStrategy: 'standard', crossFile: false },
+  DOC_REVIEW:     { enabled: true, rules: false, standardRef: false, ai: true, aiStrategy: 'refCompare', crossFile: false },
+  CONSISTENCY:    { enabled: true, rules: false, standardRef: false, ai: true, aiStrategy: 'standard', crossFile: true },
+  TYPO_GRAMMAR:   { enabled: true, rules: false, standardRef: false, ai: true, aiStrategy: 'llmOnly', crossFile: false },
+  MULTIMODAL:     { enabled: true, rules: false, standardRef: false, ai: true, aiStrategy: 'multimodal', crossFile: false },
+  RULE_ONLY:    { enabled: true, rules: true,  standardRef: false, ai: false, aiStrategy: 'standard', crossFile: false },
+  SELF_CHECK:     { enabled: true, rules: false, standardRef: false, ai: false, aiStrategy: 'standard', crossFile: false },
+};
+
+/** 加载模式配置（合并默认配置 + DB 覆盖） */
 export async function getModeCapabilitiesConfig(): Promise<Record<ReviewModeType, {
   enabled: boolean;
   rules: boolean;
@@ -32,17 +49,10 @@ export async function getModeCapabilitiesConfig(): Promise<Record<ReviewModeType
   aiStrategy: 'standard' | 'llmOnly' | 'refCompare' | 'multimodal';
   crossFile: boolean;
 }>> {
-  // 默认配置
+  // 以默认配置为基底
   const result: Record<string, any> = {};
-  for (const [mode, cap] of Object.entries(MODE_CAPABILITIES)) {
-    result[mode] = {
-      enabled: true,
-      rules: cap.rules,
-      standardRef: cap.standardRef,
-      ai: cap.ai,
-      aiStrategy: cap.aiStrategy,
-      crossFile: cap.crossFile,
-    };
+  for (const [mode, cfg] of Object.entries(DEFAULT_MODE_CONFIGS)) {
+    result[mode] = { ...cfg };
   }
 
   // 从数据库读取覆盖配置
@@ -56,9 +66,9 @@ export async function getModeCapabilitiesConfig(): Promise<Record<ReviewModeType
       for (const [mode, override] of Object.entries(overrides)) {
         const cfg = override as ModeConfigOverride | undefined;
         if (result[mode] && cfg) {
-          if (cfg.standardRef !== undefined) result[mode].standardRef = cfg.standardRef;
           if (cfg.enabled !== undefined) result[mode].enabled = cfg.enabled;
           if (cfg.rules !== undefined) result[mode].rules = cfg.rules;
+          if (cfg.standardRef !== undefined) result[mode].standardRef = cfg.standardRef;
           if (cfg.ai !== undefined) result[mode].ai = cfg.ai;
           if (cfg.aiStrategy !== undefined) result[mode].aiStrategy = cfg.aiStrategy;
           if (cfg.crossFile !== undefined) result[mode].crossFile = cfg.crossFile;
@@ -70,6 +80,11 @@ export async function getModeCapabilitiesConfig(): Promise<Record<ReviewModeType
   }
 
   return result as Record<ReviewModeType, any>;
+}
+
+/** 清除缓存（兼容性保留，新架构无缓存） */
+export function clearCapabilitiesCache(): void {
+  // 新架构中无缓存需要清除，保留空实现供调用方兼容
 }
 
 /** 保存模式配置 */

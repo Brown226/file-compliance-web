@@ -177,10 +177,10 @@ const moduleMeta: Record<string, { title: string; subtitle: string }> = {
   },
   PROOFREAD: {
     title: '基础校对',
-    subtitle: '错别字、语病、标点符号与术语规范检查，快速完成文字层面的质量把关。',
+    subtitle: '错别字、语法、语句通顺性、术语一致性等文字质量检查，快速完成文字层面的质量把关。',
   },
   MULTIMODAL: {
-    title: '多模态识别',
+    title: '结构化审查',
     subtitle: '针对含图纸、表格、公式的复杂文件进行专项识别，上传文件后 AI 将解析结构化内容并审查。',
   },
   DOC_REVIEW: {
@@ -332,10 +332,10 @@ const getFileMeta = (fileName: string) => {
 
 .reference-upload :deep(.el-upload-dragger) {
   padding: 24px 20px;
-  border-radius: 10px;
+  border-radius: 8px;
   border: 2px dashed #D1D5DB;
   background: #F9FAFB;
-  transition: all 0.15s;
+  transition: border-color 0.2s, background 0.2s;
 }
 
 .reference-upload :deep(.el-upload-dragger:hover) {
@@ -415,14 +415,15 @@ const getFileMeta = (fileName: string) => {
 }
 
 .upload-dragger :deep(.el-upload-dragger) {
-  padding: 40px 20px;
-  border-radius: 10px;
-  border: 2px dashed #CBD5E1;
-  background: white;
+  padding: 44px 20px;
+  border-radius: 8px;
+  border: 2px dashed #D1D5DB;
+  background: #FAFBFC;
+  transition: border-color 0.2s, background 0.2s;
 }
 
 .upload-dragger :deep(.el-upload-dragger:hover) {
-  border-color: #3B82F6;
+  border-color: #2563EB;
   background: #EFF6FF;
 }
 
@@ -470,14 +471,18 @@ const getFileMeta = (fileName: string) => {
 .format-tag {
   display: inline-flex;
   align-items: center;
-  padding: 2px 8px;
+  padding: 3px 10px;
   font-size: 11px;
   font-weight: 500;
   color: #6B7280;
   background: #F3F4F6;
-  border-radius: 4px;
+  border-radius: 6px;
   border: 1px solid #E5E7EB;
   line-height: 1.6;
+  transition: background 0.15s;
+}
+.format-tag:hover {
+  background: #E5E7EB;
 }
 
 .empty-hint {

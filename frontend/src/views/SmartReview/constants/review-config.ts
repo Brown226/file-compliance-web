@@ -3,16 +3,16 @@ import type { EntryModule, ReviewObjective, ReviewEvidenceSource } from '@/types
 export const ENTRY_MODULE_LABEL: Record<EntryModule, string> = {
   LIBRARY: '以库审文',
   CONSISTENCY: '一致性审查',
-  PROOFREAD: '基础校对审查',
+  PROOFREAD: '基础校对',
   RULE_ONLY: '规则库审查',
-  MULTIMODAL: '多模态识别',
+  MULTIMODAL: '结构化审查',
   DOC_REVIEW: '以文审文',
 }
 
 export const OBJECTIVE_OPTIONS: Array<{ value: ReviewObjective; label: string; desc: string }> = [
   { value: 'COMPLIANCE', label: '合规审查', desc: '对照知识库或规则库检查文件是否合规。' },
   { value: 'COMPARE', label: '参照比对', desc: '与参考文件逐项比对，识别差异和不一致。' },
-  { value: 'PROOFREAD', label: '文本校对', desc: '检查错别字、语病、术语一致性等文字问题。' },
+  { value: 'PROOFREAD', label: '基础校对', desc: '检查错别字、语病、术语一致性等文字问题。' },
   { value: 'STRUCTURED', label: '结构化审查', desc: '检查图纸、表格、公式和结构化内容。' },
 ]
 

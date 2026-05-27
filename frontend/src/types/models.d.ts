@@ -13,6 +13,7 @@ export interface UserInfo {
   role: UserRole | UserRole[]
   nick_name?: string
   email?: string
+  mustChangePassword?: boolean
   phone?: string
   departmentId?: string
   departmentName?: string

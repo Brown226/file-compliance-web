@@ -44,7 +44,7 @@
               @click="selectFile(f.id)"
               :title="f.fileName"
             >
-              <span class="file-tab-icon">{{ getFileIcon(f.fileType) }}</span>
+              <span class="file-tab-icon"><el-icon :size="14"><component :is="getFileIconComponent(f.fileType)" /></el-icon></span>
               <span class="file-tab-name">{{ f.fileName }}</span>
               <span class="file-tab-count" v-if="getFileIssueCount(f.id) > 0">{{ getFileIssueCount(f.id) }}</span>
             </button>
@@ -53,7 +53,7 @@
             <el-icon :size="24" color="#C0C4CC"><FolderOpened /></el-icon>
             <span>暂无文件，请先上传文档</span>
           </div>
-          <span v-else class="hint-text">📄 文件预览区 · 选中文本可进行专项审查</span>
+          <span v-else class="hint-text"><el-icon :size="14"><Document /></el-icon> 文件预览区 · 选中文本可进行专项审查</span>
         </div>
 
         <!-- 空状态提示（无文件时） -->
@@ -74,6 +74,7 @@
         <div v-else class="editor-container">
           <!-- DWG图纸预览（保留专用组件，支持图纸交互） -->
           <DwgPreviewPanel
+            ref="dwgPreviewRef"
             v-if="isDwgFileSelected && !dwgParseFailed"
             :file="dwgFileForPreview"
             :locateTarget="dwgLocateTarget"
@@ -92,25 +93,6 @@
           />
         </div>
 
-        <!-- 最近采纳预览面板 -->
-        <div v-if="selectedSuggestionPreview" class="adopt-preview-panel">
-          <div class="preview-header">
-            <span class="preview-title">最近采纳预览</span>
-            <el-tag :type="selectedSuggestionPreview.status === 'success' ? 'success' : 'info'" size="small">
-              {{ selectedSuggestionPreview.status }}
-            </el-tag>
-          </div>
-          <div class="preview-content">
-            <div class="preview-before">
-              <p class="preview-label">采纳前原文</p>
-              <div class="preview-text before">{{ selectedSuggestionPreview.before }}</div>
-            </div>
-            <div class="preview-after">
-              <p class="preview-label">采纳后文本</p>
-              <div class="preview-text after">{{ selectedSuggestionPreview.after }}</div>
-            </div>
-          </div>
-        </div>
       </div>
 
       <!-- 可拖拽分割条 -->
@@ -147,37 +129,25 @@
                 :label="f.fileName"
                 :value="f.id"
               >
-                <span>{{ getFileIcon(f.fileType) }} {{ f.fileName }}</span>
+                <span><el-icon :size="14"><component :is="getFileIconComponent(f.fileType)" /></el-icon> {{ f.fileName }}</span>
                 <span style="float: right; color: #9CA3AF; font-size: 11px;">{{ getFileIssueCount(f.id) }}</span>
               </el-option>
             </el-select>
-            <div v-if="!isSelfCheck" class="plain-mode-switch">
-              <span class="switch-label">大白话模式</span>
-              <el-switch v-model="showPlainLanguage" size="small" />
-            </div>
           </div>
           <div class="header-right">
-            <!-- 主操作：导出Word（最突出） -->
-            <el-tooltip v-if="!isSelfCheck" content="导出 Word 报告" placement="bottom">
-              <el-button type="primary" @click="handleExportWord" class="export-word-btn">
-                <el-icon><Document /></el-icon>
-                导出Word
-              </el-button>
-            </el-tooltip>
-
-            <!-- 次操作：更多导出（次级） -->
+            <!-- 导出操作（降级为次级样式）-->
             <el-dropdown v-if="!isSelfCheck" @command="handleExportCommand" trigger="click">
-              <el-button class="more-export-btn">
-                更多导出
+              <el-button class="export-action-btn">
+                <el-icon><Download /></el-icon> 导出报告
                 <el-icon class="el-icon--right"><ArrowDown /></el-icon>
               </el-button>
               <template #dropdown>
                 <el-dropdown-menu>
+                  <el-dropdown-item command="word">
+                    <el-icon><Document /></el-icon>导出 Word
+                  </el-dropdown-item>
                   <el-dropdown-item command="excel">
                     <el-icon><Tickets /></el-icon>导出 Excel
-                  </el-dropdown-item>
-                  <el-dropdown-item command="pdf">
-                    <el-icon><Notebook /></el-icon>导出 PDF（开发中）
                   </el-dropdown-item>
                   <el-dropdown-item divided command="print">
                     <el-icon><Printer /></el-icon>打印报告
@@ -186,7 +156,7 @@
               </template>
             </el-dropdown>
 
-            <!-- 分隔 + 导航：返回历史（最轻） -->
+            <!-- 分隔 + 导航 -->
             <div class="header-divider"></div>
             <el-tooltip content="返回任务列表" placement="bottom">
               <button class="back-btn" @click="goBack">
@@ -210,7 +180,7 @@
             :stroke-width="6"
             :show-text="false"
             :status="reviewProgress >= 100 ? 'success' : ''"
-            color="#409EFF"
+            color="#2563EB"
           />
           <div class="progress-details">
             <p class="progress-step">{{ reviewStep || '准备中...' }}</p>
@@ -315,127 +285,166 @@
         <div v-if="!isSelfCheck" class="tab-content">
           <!-- Tab 1: 审查摘要 -->
           <div v-if="activeTab === 'overview'" class="tab-pane">
-            <!-- 风险点/争议点 -->
-            <div v-if="errorIssues.length > 0" class="issue-section">
-              <h4 class="section-title">🔴 严重错误（{{ errorIssues.length }}条）</h4>
-              <div
-                v-for="(issue, index) in errorIssues.slice(0, 5)"
-                :key="issue.id"
-                class="issue-card clickable"
-                @click="navigateToIssue(issue)"
-                title="点击查看详情"
-              >
-                <p class="issue-title">
-                  {{ getIssueTitle(issue, index) }}
-                  <el-icon class="jump-icon"><ArrowRight /></el-icon>
-                </p>
-                <div v-if="showPlainLanguage && issue.plainLanguage" class="plain-language-box">
-                  <p class="plain-label">📢 大白话解释：</p>
-                  <p>{{ issue.plainLanguage }}</p>
+            <!-- ===== 统计看板（始终可见）===== -->
+            <div class="stats-dashboard">
+              <div class="stats-grid">
+                <div class="stat-card-dash">
+                  <span class="stat-icon-dash">📄</span>
+                  <div class="stat-body">
+                    <span class="stat-value-dash">{{ reviewSummary?.totalFiles || files.length || 0 }}</span>
+                    <span class="stat-label-dash">审查文件</span>
+                  </div>
                 </div>
-                <div v-else class="issue-content">
-                  <p class="issue-desc">{{ issue.description }}</p>
+                <div class="stat-card-dash">
+                  <span class="stat-icon-dash">🎯</span>
+                  <div class="stat-body">
+                    <span class="stat-value-dash">{{ reviewPlanSummary.taskMode }}</span>
+                    <span class="stat-label-dash">审查模式</span>
+                  </div>
+                </div>
+                <div class="stat-card-dash" :class="{ 'has-issues': issueDetails.length > 0 }">
+                  <span class="stat-icon-dash">{{ issueDetails.length > 0 ? '⚠️' : '✅' }}</span>
+                  <div class="stat-body">
+                    <span class="stat-value-dash">{{ issueDetails.length }}</span>
+                    <span class="stat-label-dash">发现问题</span>
+                  </div>
+                </div>
+                <div class="stat-card-dash">
+                  <span class="stat-icon-dash">📊</span>
+                  <div class="stat-body">
+                    <span class="stat-value-dash">{{ reviewSummary?.reviewMode ? getModeLabel(reviewSummary.reviewMode) : reviewPlanSummary.objective }}</span>
+                    <span class="stat-label-dash">审查目标</span>
+                  </div>
                 </div>
               </div>
 
-              <!-- 查看全部按钮 -->
-              <div v-if="errorIssues.length > 5" class="view-all-wrapper">
-                <button class="view-all-btn" @click="activeTab = 'suggestions'">
-                  还有 {{ errorIssues.length - 5 }} 条严重错误未显示
-                  <el-icon><ArrowRight /></el-icon>
-                  查看全部 →
-                </button>
+              <!-- 严重度分布条 -->
+              <div v-if="issueDetails.length > 0" class="severity-distribution">
+                <div class="severity-bar-row">
+                  <span class="sev-label sev-error">严重</span>
+                  <div class="sev-track"><div class="sev-fill sev-fill-error" :style="{ width: pct(errorIssues.length, issueDetails.length) }"></div></div>
+                  <span class="sev-count">{{ errorIssues.length }}</span>
+                </div>
+                <div class="severity-bar-row">
+                  <span class="sev-label sev-warning">警告</span>
+                  <div class="sev-track"><div class="sev-fill sev-fill-warning" :style="{ width: pct(warningIssues.length, issueDetails.length) }"></div></div>
+                  <span class="sev-count">{{ warningIssues.length }}</span>
+                </div>
+                <div class="severity-bar-row">
+                  <span class="sev-label sev-info">提示</span>
+                  <div class="sev-track"><div class="sev-fill sev-fill-info" :style="{ width: pct(infoIssues.length, issueDetails.length) }"></div></div>
+                  <span class="sev-count">{{ infoIssues.length }}</span>
+                </div>
+              </div>
+
+              <!-- 问题来源 -->
+              <div v-if="issueDetails.length > 0" class="source-tags">
+                <span class="source-tag" v-if="reviewSummary?.ruleIssues > 0">
+                  <span class="source-dot rule-dot"></span>规则引擎 {{ reviewSummary.ruleIssues }}
+                </span>
+                <span class="source-tag" v-if="reviewSummary?.aiIssues > 0">
+                  <span class="source-dot ai-dot"></span>AI 审查 {{ reviewSummary.aiIssues }}
+                </span>
+                <span class="source-tag" v-if="reviewSummary?.stdRefIssues > 0">
+                  <span class="source-dot std-dot"></span>标准引用 {{ reviewSummary.stdRefIssues }}
+                </span>
               </div>
             </div>
 
-            <!-- 违约成本分析（如果有） -->
-            <div v-if="warningIssues.length > 0" class="issue-section warning-section">
-              <h4 class="section-title">🟡 警告（{{ warningIssues.length }}条）</h4>
-              <div
-                v-for="(issue, index) in warningIssues.slice(0, 5)"
-                :key="issue.id"
-                class="issue-card warning clickable"
-                @click="navigateToIssue(issue)"
-                title="点击查看详情"
-              >
-                <p class="issue-title">
-                  {{ getIssueTitle(issue, index) }}
-                  <el-icon class="jump-icon"><ArrowRight /></el-icon>
-                </p>
-                <p class="issue-desc">{{ issue.description }}</p>
-              </div>
-
-              <!-- 查看全部按钮 -->
-              <div v-if="warningIssues.length > 5" class="view-all-wrapper">
-                <button class="view-all-btn view-all-btn-warning" @click="activeTab = 'suggestions'">
-                  还有 {{ warningIssues.length - 5 }} 条警告未显示
-                  <el-icon><ArrowRight /></el-icon>
-                  查看全部 →
-                </button>
-              </div>
+            <!-- ===== 审查通过（无问题）===== -->
+            <div v-if="task?.status === 'COMPLETED' && issueDetails.length === 0" class="summary-pass">
+              <el-icon color="#67c23a" :size="24"><CircleCheckFilled /></el-icon>
+              <span>审查完成，未发现需要处理的问题</span>
             </div>
 
-            <div v-if="issueDetails.length === 0" class="review-summary">
-              <h3 class="summary-title">审查摘要</h3>
-              <div v-if="reviewSummary" class="summary-cards">
-                <div class="summary-card">
-                  <span class="summary-label">审查目标</span>
-                  <span class="summary-value">{{ reviewPlanSummary.objective }}</span>
-                </div>
-                <div class="summary-card">
-                  <span class="summary-label">审查依据</span>
-                  <span class="summary-value">{{ reviewPlanSummary.evidence }}</span>
-                </div>
-                <div class="summary-card">
-                  <span class="summary-label">执行强度</span>
-                  <span class="summary-value">{{ reviewPlanSummary.execution }}</span>
-                </div>
-                <div class="summary-card" v-if="reviewPlanSummary.enhancements !== '无'">
-                  <span class="summary-label">增强项</span>
-                  <span class="summary-value">{{ reviewPlanSummary.enhancements }}</span>
-                </div>
-                <div class="summary-card sub">
-                  <span class="summary-label">审查模式</span>
-                  <span class="summary-value">{{ reviewPlanSummary.taskMode }}</span>
-                </div>
-                <div class="summary-card">
-                  <span class="summary-label">审查文件</span>
-                  <span class="summary-value">{{ reviewSummary.totalFiles }}个 ({{ (reviewSummary.fileTypes || []).join(', ') || '—' }})</span>
-                </div>
-                <div class="summary-card" :class="{ 'has-issues': reviewSummary.totalIssues > 0 }">
-                  <span class="summary-label">发现问题</span>
-                  <span class="summary-value">{{ reviewSummary.totalIssues }}条</span>
-                </div>
-                <div class="summary-card sub" v-if="reviewSummary.ruleIssues > 0">
-                  <span class="summary-label">· 规则引擎</span>
-                  <span class="summary-value">{{ reviewSummary.ruleIssues }}条</span>
-                </div>
-                <div class="summary-card sub" v-if="reviewSummary.stdRefIssues > 0">
-                  <span class="summary-label">· 标准引用</span>
-                  <span class="summary-value">{{ reviewSummary.stdRefIssues }}条</span>
-                </div>
-                <div class="summary-card sub" v-if="reviewSummary.aiIssues > 0">
-                  <span class="summary-label">· AI 审查</span>
-                  <span class="summary-value">{{ reviewSummary.aiIssues }}条</span>
-                </div>
-                <div class="summary-card" v-if="reviewSummary.fastFailedCount > 0 || reviewSummary.slowFailedCount > 0">
-                  <span class="summary-label" style="color: var(--el-color-danger)">处理异常</span>
-                  <span class="summary-value" style="color: var(--el-color-danger)">
-                    {{ reviewSummary.fastFailedCount + reviewSummary.slowFailedCount }}个文件处理失败
-                  </span>
+            <!-- ===== 问题预览列表 ===== -->
+            <div v-if="issueDetails.length > 0" class="overview-issue-list">
+              <div class="overview-issue-header">
+                <h4 class="overview-section-title">问题概览</h4>
+                <div class="overview-header-actions">
+                  <span class="switch-label">大白话</span>
+                  <el-switch v-model="showPlainLanguage" size="small" />
                 </div>
               </div>
-              <div v-if="totalIssuesExclSummary === 0" class="summary-pass">
-                <el-icon color="#67c23a" :size="24"><CircleCheckFilled /></el-icon>
-                <span>审查完成，未发现需要处理的问题</span>
-              </div>
+
+              <!-- 严重错误 -->
+              <template v-if="errorIssues.length > 0">
+                <div class="overview-severity-group">
+                  <div class="severity-group-header severity-error">
+                    <span class="severity-dot-sm error-dot"></span>
+                    严重错误 · {{ errorIssues.length }} 条
+                  </div>
+                  <div
+                    v-for="(issue, index) in errorIssues.slice(0, 5)"
+                    :key="issue.id"
+                    class="overview-issue-card"
+                    @click="navigateToIssue(issue)"
+                  >
+                    <div class="oic-tags">
+                      <el-tag :type="getCategoryTagType(issue.issueType)" size="small" effect="dark" round>
+                        {{ getIssueTypeLabel(issue.issueType) }}
+                      </el-tag>
+                      <el-tag type="danger" size="small" effect="plain" round>严重</el-tag>
+                    </div>
+                    <p class="oic-desc">{{ issue.description || '-' }}</p>
+                    <p v-if="showPlainLanguage && issue.plainLanguage" class="oic-plain">💡 {{ issue.plainLanguage }}</p>
+                    <div class="oic-preview-row" v-if="issue.originalText">
+                      <span class="oic-preview-label">原：</span>
+                      <span class="oic-preview-text original">{{ truncateText(issue.originalText, 80) }}</span>
+                    </div>
+                    <div class="oic-preview-row" v-if="issue.suggestedText">
+                      <span class="oic-preview-label">改：</span>
+                      <span class="oic-preview-text suggested">{{ truncateText(issue.suggestedText, 80) }}</span>
+                    </div>
+                    <el-icon class="oic-arrow"><ArrowRight /></el-icon>
+                  </div>
+                  <div v-if="errorIssues.length > 5" class="view-all-wrapper">
+                    <button class="view-all-btn" @click="activeTab = 'suggestions'">
+                      查看全部 {{ errorIssues.length }} 条严重错误
+                      <el-icon><ArrowRight /></el-icon>
+                    </button>
+                  </div>
+                </div>
+              </template>
+
+              <!-- 警告 -->
+              <template v-if="warningIssues.length > 0">
+                <div class="overview-severity-group">
+                  <div class="severity-group-header severity-warning">
+                    <span class="severity-dot-sm warning-dot"></span>
+                    警告 · {{ warningIssues.length }} 条
+                  </div>
+                  <div
+                    v-for="(issue, index) in warningIssues.slice(0, 5)"
+                    :key="issue.id"
+                    class="overview-issue-card warning"
+                    @click="navigateToIssue(issue)"
+                  >
+                    <div class="oic-tags">
+                      <el-tag :type="getCategoryTagType(issue.issueType)" size="small" effect="dark" round>
+                        {{ getIssueTypeLabel(issue.issueType) }}
+                      </el-tag>
+                      <el-tag type="warning" size="small" effect="plain" round>警告</el-tag>
+                    </div>
+                    <p class="oic-desc">{{ issue.description || '-' }}</p>
+                    <p v-if="showPlainLanguage && issue.plainLanguage" class="oic-plain">💡 {{ issue.plainLanguage }}</p>
+                    <el-icon class="oic-arrow"><ArrowRight /></el-icon>
+                  </div>
+                  <div v-if="warningIssues.length > 5" class="view-all-wrapper">
+                    <button class="view-all-btn view-all-btn-warning" @click="activeTab = 'suggestions'">
+                      查看全部 {{ warningIssues.length }} 条警告
+                      <el-icon><ArrowRight /></el-icon>
+                    </button>
+                  </div>
+                </div>
+              </template>
             </div>
           </div>
 
           <!-- Tab 2: 问题清单（使用重构后的 IssueCardList 组件）-->
           <div v-if="activeTab === 'suggestions'" class="tab-pane" style="height:100%; display:flex; flex-direction:column;">
             <!-- 审查通过空状态 -->
-            <div v-if="!loading && issueDetails.length === 0" class="empty-state-pass">
+            <div v-if="!loading && task?.status === 'COMPLETED' && issueDetails.length === 0" class="empty-state-pass">
               <el-icon :size="64" color="#67C23A"><CircleCheckFilled /></el-icon>
               <h3>审查通过 ✅</h3>
               <p>未发现需要处理的问题</p>
@@ -467,8 +476,6 @@
               @copy-handle-id="handleCopyCadHandle"
               @locate-text="handleLocateTextFromIssueList"
               @open-fp-dialog="(detail) => handleFalsePositive(detail)"
-              @adopt-suggestion="handleAdoptSuggestion"
-              @batch-adopt="handleBatchAdoptFromIssueList"
               @batch-false-positive="handleBatchFalsePositiveFromIssueList"
             />
           </div>
@@ -480,17 +487,30 @@
                 v-for="(item, index) in standardRefIssues"
                 :key="item.id || index"
                 class="knowledge-card"
+                :class="{ 'knowledge-card-clickable': item.fileId && item.originalText }"
+                @click="item.fileId && item.originalText && handleLocateKnowledgeItem(item)"
+                :title="item.fileId && item.originalText ? '点击定位到文件原文' : ''"
               >
                 <div class="knowledge-header">
                   <p class="knowledge-title">
                     {{ getStandardRefTitle(item) }}
                   </p>
-                  <el-tag
-                    type="success"
-                    size="small"
-                  >
-                    当前可参考
-                  </el-tag>
+                  <div class="knowledge-header-right">
+                    <el-tag
+                      v-if="item.fileId && item.originalText"
+                      type="primary"
+                      size="small"
+                      effect="plain"
+                    >
+                      <el-icon :size="12"><Location /></el-icon> 定位原文
+                    </el-tag>
+                    <el-tag
+                      type="success"
+                      size="small"
+                    >
+                      当前可参考
+                    </el-tag>
+                  </div>
                 </div>
                 <p class="knowledge-content">{{ item.description }}</p>
               </div>
@@ -512,7 +532,7 @@
               </div>
 
               <div class="empty-actions">
-                <el-button @click="activeTab = 'overview'">
+                <el-button type="primary" @click="activeTab = 'overview'">
                   ← 返回审查摘要
                 </el-button>
               </div>
@@ -552,6 +572,10 @@ import {
   Files,
   Link,
   Reading,
+  Document,
+  PictureFilled,
+  Grid,
+  Location,
 } from '@element-plus/icons-vue'
 import {
   getTaskByIdApi,
@@ -583,6 +607,9 @@ const { exportToWord: handleExportWord, exportToExcel: handleExportExcel, handle
   () => taskId.value,
   () => task.value?.title || '审查报告'
 )
+
+/** 快捷导出报告（无参数时默认导出 Word） */
+const handleExportReport = () => handleExportWord()
 
 // ===== 标准引用自检（SELF_CHECK）=====
 const isSelfCheck = computed(() => (task.value as any)?.reviewMode === 'SELF_CHECK')
@@ -617,6 +644,7 @@ const scSelectItem = (row: any) => {
     const file = files.value.find((f: TaskFile) => f.fileName === row.sourceFile)
     if (file) {
       selectFile(file.id)
+
       locateTarget.value = {
         originalText: row.fullMatch,
         textPosition: {
@@ -756,6 +784,7 @@ const {
 
   // 如果有定位选项，触发定位
   if (options?.locate) {
+    console.log('[DEBUG locateTarget SET by callback] cadHandleId =', options.locate.cadHandleId)
     locateTarget.value = {
       originalText: options.locate.originalText || '',
       locateCandidates: options.locate.locateCandidates || [],
@@ -782,13 +811,13 @@ const getFileNameById = (fileId: string): string => {
   return f?.fileName || '未知文件'
 }
 
-const getFileIcon = (fileType: string): string => {
+const getFileIconComponent = (fileType: string): any => {
   const t = (fileType || '').toLowerCase()
-  if (t === 'docx' || t === 'doc') return '📄'
-  if (t === 'dwg' || t === 'dxf') return '📐'
-  if (t === 'pdf') return '📕'
-  if (t === 'xlsx' || t === 'xls') return '📊'
-  return '📎'
+  if (t === 'docx' || t === 'doc') return Document
+  if (t === 'dwg' || t === 'dxf') return Files
+  if (t === 'pdf') return PictureFilled
+  if (t === 'xlsx' || t === 'xls') return Grid
+  return Document
 }
 
 const getFileIssueCount = (fileId: string): number => {
@@ -826,6 +855,7 @@ const isDocxFileSelected = computed(() => {
 
 const dwgFileForPreview = ref<File | null>(null)
 const dwgParseFailed = ref(false)
+const dwgPreviewRef = ref<any>(null)
 
 /** 下载 DWG 原始文件并在前端创建 File 对象供 WASM 解析 */
 async function loadDwgFile(fileId: string) {
@@ -933,13 +963,6 @@ const navigateToIssue = (issue: TaskDetail) => {
   })
 }
 
-// ===== 采纳预览 =====
-const selectedSuggestionPreview = ref<{
-  before: string
-  after: string
-  status: string
-} | null>(null)
-
 // ===== 误报标记 =====
 const fpDialogVisible = ref(false)
 const fpSubmitting = ref(false)
@@ -958,7 +981,7 @@ const reviewSummary = computed(() => {
 const objectiveLabelMap: Record<string, string> = {
   COMPLIANCE: '合规审查',
   COMPARE: '参照比对',
-  PROOFREAD: '文本校对',
+  PROOFREAD: '基础校对',
   STRUCTURED: '结构化审查',
 }
 
@@ -977,12 +1000,12 @@ const getModeLabel = (mode: string) => {
   const map: Record<string, string> = {
     LIBRARY_REVIEW: '以库审文',
     DOC_REVIEW: '以文审文',
-    TYPO_GRAMMAR: '错别字/语法',
-    MULTIMODAL: '多模态识别',
+    TYPO_GRAMMAR: '基础校对',
+    MULTIMODAL: '结构化审查',
     SELF_CHECK: '标准引用自检',
     // 旧模式兼容映射（历史数据）
     CONSISTENCY: '一致性审查',
-    CUSTOM_RULE: '自定义规则',
+    RULE_ONLY: '仅规则审查',
   }
   return map[mode] || mode
 }
@@ -1014,8 +1037,8 @@ const reviewPlanSummary = computed(() => {
 
   const module = (() => {
     if (plan.objective === 'COMPARE') return '一致性审查（对照）'
-    if (plan.objective === 'PROOFREAD') return '基础校对审查'
-    if (plan.objective === 'STRUCTURED') return '多模态审查'
+    if (plan.objective === 'PROOFREAD') return '基础校对'
+    if (plan.objective === 'STRUCTURED') return '结构化审查'
     if (plan.execution?.profile === 'RULE_ONLY' && sources.includes('REVIEW_SPECIFICATION')) return '语义规范库审查'
     if (sources.includes('REVIEW_SPECIFICATION') && sources.includes('STANDARD')) return '以库审文'
     if (sources.includes('REVIEW_SPECIFICATION')) return '语义规范库审查'
@@ -1139,6 +1162,19 @@ const getCategoryTagType = (type: string): any => {
     STD_REF: 'warning',
   }
   return m[type] || 'info'
+}
+
+/** 计算百分比（用于严重度分布条） */
+const pct = (part: number, total: number): string => {
+  if (total <= 0) return '0%'
+  return Math.round((part / total) * 100) + '%'
+}
+
+/** 截断文本 */
+const truncateText = (text: string, maxLen: number): string => {
+  if (!text) return ''
+  const t = text.trim()
+  return t.length > maxLen ? t.slice(0, maxLen) + '...' : t
 }
 
 // ===== WebSocket 实时进度处理 =====
@@ -1395,30 +1431,6 @@ const collectLocateAnchors = (item: TaskDetail): string[] => {
 }
 
 
-const handleAdoptSuggestion = async (item: TaskDetail) => {
-  if (!item.fileId || !item.originalText || !item.suggestedText) {
-    ElMessage.warning('缺少替换信息')
-    return
-  }
-
-  // 已移除 OnlyOffice 文本替换功能，仅展示采纳预览
-  item.adopted = true
-  selectedSuggestionPreview.value = {
-    before: item.originalText,
-    after: item.suggestedText,
-    status: 'success',
-  }
-  ElMessage.success('已标记为采纳')
-}
-
-const handlePreviewSuggestion = (item: TaskDetail) => {
-  selectedSuggestionPreview.value = {
-    before: item.originalText || '',
-    after: item.suggestedText || '',
-    status: 'preview',
-  }
-}
-
 const handleFalsePositive = (item: TaskDetail) => {
   fpTargetDetail.value = item
   fpDialogVisible.value = true
@@ -1445,28 +1457,6 @@ const handleConfirmFalsePositive = async (reason: string) => {
   }
 }
 
-// ===== 批量操作 =====
-const handleBatchAdopt = async (issueIds?: string[]) => {
-  if (!issueIds || issueIds.length === 0) return
-
-  let successCount = 0
-  let failCount = 0
-
-  for (const id of issueIds) {
-    const item = filteredDetails.value.find((d: any) => d.id === id)
-    if (item && !item.adopted && item.suggestedText) {
-      try {
-        await handleAdoptSuggestion(item)
-        successCount++
-      } catch {
-        failCount++
-      }
-    }
-  }
-
-  ElMessage.success(`批量完成：成功 ${successCount} 条，失败 ${failCount} 条`)
-}
-
 // ===== IssueCardList 桥接事件处理 =====
 
 const handleCopyCadHandle = (handleId: string) => {
@@ -1479,6 +1469,21 @@ const handleCopyCadHandle = (handleId: string) => {
 
 const handleLocateTextFromIssueList = (payload: { detail: any; elementId: string }) => {
   handleLocateText(payload.detail)
+}
+
+/** 知识库 Tab：点击标准引用卡片 → 定位到文件原文 */
+const handleLocateKnowledgeItem = (item: TaskDetail) => {
+  // 切换到对应文件
+  if (item.fileId) {
+    switchToFileContext(item.fileId)
+  }
+  // 定位到原文
+  handleLocateText(item)
+  // 切到左侧文件预览
+  nextTick(() => {
+    const leftPanel = document.querySelector('.left-panel')
+    leftPanel?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  })
 }
 
 const handleBatchAdoptFromIssueList = async (issueIds: string[]) => {
@@ -1626,10 +1631,10 @@ onUnmounted(() => {
 .inline-review-progress {
   margin: 8px 12px 0;
   padding: 10px 12px;
-  border: 1px solid #E4E7ED;
+  border: 1px solid #E5E7EB;
   border-radius: 8px;
-  background: linear-gradient(135deg, #F5F7FA 0%, #FFFFFF 100%);
-  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.03);
+  background: #FAFBFC;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
 }
 
 .progress-top {
@@ -1732,7 +1737,7 @@ onUnmounted(() => {
   border: 1px solid #E4E7ED;
   overflow: hidden;
   min-height: 0;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.02);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
 }
 
 .left-panel :deep(.file-preview-panel) {
@@ -1857,7 +1862,9 @@ onUnmounted(() => {
 
 .editor-container {
   flex: 1;
-  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
   min-height: 0;
   min-width: 0;
 }
@@ -1871,59 +1878,6 @@ onUnmounted(() => {
   gap: 10px;
   color: var(--corp-text-secondary, #6B7280);
   font-size: 13px;
-}
-
-.adopt-preview-panel {
-  border-top: 1px solid #E5E7EB;
-  padding: 8px 12px;
-  max-height: 180px;
-  overflow-y: auto;
-  background: #F9FAFB;
-}
-
-.preview-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 8px;
-}
-
-.preview-title {
-  font-size: 13px;
-  font-weight: 600;
-  color: #374151;
-}
-
-.preview-content {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 12px;
-}
-
-.preview-label {
-  font-size: 11px;
-  color: #6B7280;
-  margin-bottom: 4px;
-  font-weight: 500;
-}
-
-.preview-text {
-  padding: 8px;
-  border-radius: 4px;
-  font-size: 12px;
-  line-height: 1.6;
-}
-
-.preview-text.before {
-  background: #FEF2F2;
-  border: 1px solid #FECACA;
-  color: #991B1B;
-}
-
-.preview-text.after {
-  background: #F0FDF4;
-  border: 1px solid #BBF7D0;
-  color: #166534;
 }
 
 /* 右侧面板 */
@@ -1965,44 +1919,23 @@ onUnmounted(() => {
   min-width: 0;
 }
 
-/* ===== 导出Word：主操作，最突出 ===== */
-.export-word-btn {
-  font-weight: 600;
-  font-size: 14px;
-  padding: 8px 18px;
-  border-radius: 8px;
-  background: linear-gradient(135deg, #3B82F6, #2563EB) !important;
-  border: none !important;
-  box-shadow: 0 2px 8px rgba(37, 99, 235, 0.35);
-  letter-spacing: 0.3px;
-}
-
-.export-word-btn:hover,
-.export-word-btn:focus {
-  background: linear-gradient(135deg, #2563EB, #1D4ED8) !important;
-  box-shadow: 0 4px 14px rgba(37, 99, 235, 0.45);
-  transform: translateY(-1px);
-}
-
-/* ===== 更多导出：次操作，明显弱于主按钮 ===== */
-.more-export-btn {
+/* ===== 导出报告：统一的次级下拉按钮 ===== */
+.export-action-btn {
   font-weight: 500;
   font-size: 13px;
-  padding: 7px 12px;
-  border-radius: 8px;
-  color: #2563EB !important;
-  background: #EFF6FF !important;
-  border: 1px solid #BFDBFE !important;
-  letter-spacing: 0.2px;
-  transition: all 0.2s ease;
+  padding: 7px 14px;
+  border-radius: 6px;
+  color: #374151 !important;
+  background: #FFFFFF !important;
+  border: 1px solid #D1D5DB !important;
+  transition: all 0.15s ease;
 }
 
-.more-export-btn:hover,
-.more-export-btn:focus {
-  color: #1D4ED8 !important;
-  background: #DBEAFE !important;
+.export-action-btn:hover,
+.export-action-btn:focus {
+  color: #2563EB !important;
+  background: #F9FAFB !important;
   border-color: #93C5FD !important;
-  box-shadow: 0 2px 8px rgba(37, 99, 235, 0.15);
 }
 
 /* ===== 分隔线：区分导出组和导航 ===== */
@@ -2116,59 +2049,295 @@ onUnmounted(() => {
   padding: 16px;
 }
 
-.section-title {
-  font-size: 14px;
-  font-weight: 600;
-  color: #374151;
-  margin: 0 0 12px;
-  padding-bottom: 8px;
-  border-bottom: 2px solid #E5E7EB;
-}
-
-/* 问题卡片 */
-.issue-section {
+/* ===== Overview Tab: 统计看板 ===== */
+.stats-dashboard {
   margin-bottom: 20px;
 }
 
-.issue-card {
-  padding: 12px;
-  background: #FEF2F2;
-  border-radius: 6px;
-  border: 1px solid #FECACA;
-  border-left: 3px solid #EF4444;
-  margin-bottom: 8px;
+.stats-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 12px;
+  margin-bottom: 16px;
 }
 
-.issue-card.warning {
-  background: #FFFBEB;
-  border-color: #FDE68A;
+.stat-card-dash {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 16px;
+  background: #F9FAFB;
+  border: 1px solid #E5E7EB;
+  border-radius: 8px;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+.stat-card-dash:hover {
+  border-color: #D1D5DB;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.04);
+}
+.stat-card-dash.has-issues {
+  background: #FEF2F2;
+  border-color: #FECACA;
+}
+
+.stat-icon-dash {
+  font-size: 24px;
+  flex-shrink: 0;
+}
+
+.stat-body {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.stat-value-dash {
+  font-size: 18px;
+  font-weight: 700;
+  color: #111827;
+  line-height: 1.2;
+}
+
+.stat-label-dash {
+  font-size: 12px;
+  color: #6B7280;
+}
+
+/* 严重度分布条 */
+.severity-distribution {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 14px 16px;
+  background: #F9FAFB;
+  border: 1px solid #E5E7EB;
+  border-radius: 8px;
+  margin-bottom: 12px;
+}
+
+.severity-bar-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.sev-label {
+  font-size: 12px;
+  font-weight: 600;
+  min-width: 36px;
+  flex-shrink: 0;
+}
+.sev-error { color: #EF4444; }
+.sev-warning { color: #F59E0B; }
+.sev-info { color: #6B7280; }
+
+.sev-track {
+  flex: 1;
+  height: 8px;
+  background: #F3F4F6;
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.sev-fill {
+  height: 100%;
+  border-radius: 4px;
+  transition: width 0.4s ease;
+}
+.sev-fill-error { background: #EF4444; }
+.sev-fill-warning { background: #F59E0B; }
+.sev-fill-info { background: #6B7280; }
+
+.sev-count {
+  font-size: 13px;
+  font-weight: 700;
+  color: #374151;
+  min-width: 24px;
+  text-align: right;
+}
+
+/* 问题来源标签 */
+.source-tags {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.source-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 12px;
+  color: #6B7280;
+  padding: 4px 10px;
+  background: #F9FAFB;
+  border-radius: 16px;
+  border: 1px solid #E5E7EB;
+}
+
+.source-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.rule-dot { background: #8B5CF6; }
+.ai-dot { background: #3B82F6; }
+.std-dot { background: #10B981; }
+
+/* ===== Overview Tab: 问题预览列表 ===== */
+.overview-issue-list {
+  margin-top: 20px;
+}
+
+.overview-issue-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12px;
+}
+
+.overview-section-title {
+  font-size: 14px;
+  font-weight: 700;
+  color: #111827;
+  margin: 0;
+}
+
+.overview-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.overview-header-actions .switch-label {
+  font-size: 12px;
+  color: #6B7280;
+}
+
+/* 严重度分组 */
+.overview-severity-group {
+  margin-bottom: 16px;
+}
+
+.severity-group-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 700;
+  padding: 6px 0 8px;
+  margin-bottom: 6px;
+  border-bottom: 1px solid #F3F4F6;
+}
+.severity-group-header.severity-error { color: #DC2626; }
+.severity-group-header.severity-warning { color: #D97706; }
+
+.severity-dot-sm {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.error-dot { background: #EF4444; }
+.warning-dot { background: #F59E0B; }
+
+/* 概览问题卡片 */
+.overview-issue-card {
+  position: relative;
+  padding: 10px 36px 10px 12px;
+  background: #FFFFFF;
+  border: 1px solid #E5E7EB;
+  border-left: 3px solid #EF4444;
+  border-radius: 6px;
+  margin-bottom: 6px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+.overview-issue-card:hover {
+  border-color: #D1D5DB;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+  transform: translateX(2px);
+}
+.overview-issue-card.warning {
   border-left-color: #F59E0B;
 }
 
-.issue-card.clickable {
-  cursor: pointer;
-  transition: all 0.2s ease;
+.oic-tags {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-bottom: 4px;
 }
 
-.issue-card.clickable:hover {
-  transform: translateX(4px);
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+.oic-desc {
+  font-size: 13px;
+  font-weight: 600;
+  color: #111827;
+  margin: 0 0 4px;
+  line-height: 1.4;
 }
 
-.jump-icon {
+.oic-plain {
   font-size: 12px;
-  opacity: 0;
-  transition: opacity 0.2s;
-  margin-left: auto;
+  color: #6B7280;
+  margin: 0 0 6px;
+  line-height: 1.4;
 }
 
-.issue-card.clickable:hover .jump-icon {
+.oic-preview-row {
+  display: flex;
+  gap: 4px;
+  font-size: 12px;
+  line-height: 1.5;
+  margin-bottom: 2px;
+  overflow: hidden;
+}
+
+.oic-preview-label {
+  color: #9CA3AF;
+  flex-shrink: 0;
+  font-weight: 500;
+}
+
+.oic-preview-text {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.oic-preview-text.original {
+  color: #DC2626;
+  background: #FEF2F2;
+  padding: 1px 6px;
+  border-radius: 3px;
+}
+.oic-preview-text.suggested {
+  color: #059669;
+  background: #ECFDF5;
+  padding: 1px 6px;
+  border-radius: 3px;
+}
+
+.oic-arrow {
+  position: absolute;
+  right: 10px;
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: 14px;
+  color: #9CA3AF;
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+.overview-issue-card:hover .oic-arrow {
   opacity: 1;
+  color: #3B82F6;
 }
 
 /* 查看全部按钮 */
 .view-all-wrapper {
-  margin-top: 12px;
+  margin-top: 8px;
   text-align: center;
 }
 
@@ -2176,22 +2345,21 @@ onUnmounted(() => {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  padding: 8px 20px;
-  font-size: 13px;
+  padding: 6px 16px;
+  font-size: 12px;
   color: #3B82F6;
   background: #EFF6FF;
   border: 1px solid #BFDBFE;
-  border-radius: 8px;
+  border-radius: 6px;
   cursor: pointer;
-  transition: all 0.2s ease;
+  transition: all 0.15s ease;
+  font-weight: 500;
 }
 
 .view-all-btn:hover {
   background: #DBEAFE;
   border-color: #93C5FD;
   color: #2563EB;
-  transform: translateY(-1px);
-  box-shadow: 0 2px 8px rgba(59, 130, 246, 0.15);
 }
 
 .view-all-btn-warning {
@@ -2206,43 +2374,6 @@ onUnmounted(() => {
   color: #B45309;
 }
 
-.issue-title {
-  font-size: 13px;
-  font-weight: 600;
-  color: #374151;
-  margin: 0 0 6px;
-}
-
-.issue-desc {
-  font-size: 12px;
-  color: #6B7280;
-  margin: 0;
-  line-height: 1.6;
-}
-
-/* 大白话模式 */
-.plain-language-box {
-  padding: 12px;
-  background: #EFF6FF;
-  border-radius: 6px;
-  border-left: 3px solid #3B82F6;
-  margin-bottom: 8px;
-}
-
-.plain-label {
-  font-size: 11px;
-  font-weight: 700;
-  color: #1E40AF;
-  margin: 0 0 6px;
-}
-
-.plain-language-box p {
-  font-size: 12px;
-  color: #1E3A5F;
-  margin: 0;
-  line-height: 1.6;
-}
-
 /* 知识库卡片 */
 .knowledge-list {
   display: flex;
@@ -2255,6 +2386,17 @@ onUnmounted(() => {
   background: #EFF6FF;
   border-radius: 6px;
   border: 1px solid #BFDBFE;
+  transition: all 0.15s ease;
+}
+
+.knowledge-card-clickable {
+  cursor: pointer;
+}
+
+.knowledge-card-clickable:hover {
+  border-color: #93C5FD;
+  box-shadow: 0 2px 8px rgba(59, 130, 246, 0.12);
+  transform: translateX(3px);
 }
 
 .knowledge-header {
@@ -2262,6 +2404,12 @@ onUnmounted(() => {
   justify-content: space-between;
   align-items: center;
   margin-bottom: 8px;
+}
+
+.knowledge-header-right {
+  display: flex;
+  align-items: center;
+  gap: 6px;
 }
 
 .knowledge-title {

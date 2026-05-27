@@ -42,13 +42,28 @@
           </el-form-item>
 
           <div class="param-row">
-            <el-form-item label="最大 Tokens">
+            <el-form-item label="最大输出 Tokens">
               <el-input-number
                 v-model="chatModelConfig.maxTokens"
                 :min="1"
                 :max="100000"
                 controls-position="right"
               />
+              <div class="form-tip">模型单次请求的回复长度上限。</div>
+            </el-form-item>
+
+            <el-form-item label="上下文窗口">
+              <div class="inline-number">
+                <el-input-number
+                  v-model="chatModelConfig.contextLength"
+                  :min="4096"
+                  :max="1048576"
+                  :step="4096"
+                  controls-position="right"
+                />
+                <span class="unit-label">字符</span>
+              </div>
+              <div class="form-tip">模型的上下文窗口大小。128K 模型填 200000，32K 模型填 50000。查看模型文档获取准确值。</div>
             </el-form-item>
 
             <el-form-item label="超时时间">
@@ -120,6 +135,7 @@ interface ChatModelConfig {
   apiBaseUrl: string
   modelName: string
   maxTokens: number
+  contextLength: number
   temperature: number
   timeout: number
   enabled: boolean
@@ -143,6 +159,7 @@ const chatModelConfig = reactive<ChatModelConfig>({
   apiBaseUrl: 'https://api.siliconflow.cn/v1',
   modelName: 'Qwen/Qwen2.5t',
   maxTokens: 8192,
+  contextLength: 131072,
   temperature: 0.3,
   timeout: 120,
   enabled: true,

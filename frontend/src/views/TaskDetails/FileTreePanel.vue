@@ -325,9 +325,9 @@ const getDwgMeta = (file: any): { layerCount?: number; textCount?: number; dimCo
 
 /* 悬停效果 */
 .file-card:hover {
-  background: #f8faff;
-  border-color: rgba(102, 126, 234, 0.25);
-  box-shadow: 0 4px 16px rgba(102, 126, 234, 0.08), 0 1px 4px rgba(0, 0, 0, 0.04);
+  background: #F9FAFB;
+  border-color: #93C5FD;
+  box-shadow: 0 4px 12px rgba(37, 99, 235, 0.06);
   transform: translateX(3px);
 }
 
@@ -441,28 +441,13 @@ const getDwgMeta = (file: any): { layerCount?: number; textCount?: number; dimCo
   line-height: 1;
 }
 
-.status-dot.is-processing {
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-  color: #fff;
-  animation: spin 1.5s linear infinite;
-}
+.status-dot { display: inline-flex; align-items: center; }
 
-.status-dot.has-warning {
-  background: #fef2f2;
-  color: #dc2626;
-  border: 1px solid #fecaca;
-}
+.status-dot.is-processing { color: #F59E0B; }
 
-.status-dot.has-pass {
-  background: #f0fdf4;
-  color: #16a34a;
-  border: 1px solid #bbf7d0;
-}
+.status-dot.has-warning { color: #EF4444; }
 
-@keyframes spin {
-  from { transform: rotate(0deg); }
-  to { transform: rotate(360deg); }
-}
+.status-dot.has-pass { color: #10B981; }
 
 /* ===== 文件元信息行 ===== */
 .file-meta-row {

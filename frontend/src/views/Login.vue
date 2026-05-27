@@ -144,7 +144,7 @@ const handleLogin = async () => {
           username: loginForm.username,
           password: loginForm.password,
         })
-        const { token, user } = loginRes.data
+        const { token, mustChangePassword, user } = loginRes.data
         userStore.setToken(token)
         userStore.setUserInfo({
           id: user.id,
@@ -153,10 +153,16 @@ const handleLogin = async () => {
           role: user.role,
           departmentId: user.departmentId,
           departmentName: user.departmentName,
+          mustChangePassword: user.mustChangePassword,
         })
 
-        ElMessage.success('登录成功')
-        router.push('/')
+        if (mustChangePassword) {
+          ElMessage.warning('首次登录或密码为初始密码，请立即修改密码')
+          router.push('/change-password?force=true')
+        } else {
+          ElMessage.success('登录成功')
+          router.push('/')
+        }
       } catch (error: any) {
         const errorMsg = error?.response?.data?.message || error?.message || '登录失败，请检查账号和密码'
         loginError.value = errorMsg

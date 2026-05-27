@@ -29,7 +29,7 @@ export const updateFolder = async (req: AuthRequest, res: Response): Promise<voi
   try {
     const { name } = req.body || {};
     if (!name?.trim()) { error(res, '名称不能为空', 400); return; }
-    const folder = await SpecificationFolderService.update(req.params.id, { name: name.trim() });
+    const folder = await SpecificationFolderService.update(req.params.id as string, { name: name.trim() });
     success(res, folder, '更新成功');
   } catch (err) {
     console.error('Update SpecificationFolder Error:', err);
@@ -39,7 +39,7 @@ export const updateFolder = async (req: AuthRequest, res: Response): Promise<voi
 
 export const deleteFolder = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
-    await SpecificationFolderService.delete(req.params.id);
+    await SpecificationFolderService.delete(req.params.id as string);
     success(res, null, '删除成功');
   } catch (err: any) {
     console.error('Delete SpecificationFolder Error:', err);
