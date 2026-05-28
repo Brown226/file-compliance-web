@@ -108,7 +108,7 @@
           v-model="drawerVisible" 
           :title="selectedLibrary?.name || '规则详情'" 
           :direction="'rtl'"
-          :size="620"
+          :size="780"
           class="detail-drawer"
         >
           <div v-if="selectedLibrary" class="drawer-content">

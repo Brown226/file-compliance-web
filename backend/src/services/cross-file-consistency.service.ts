@@ -434,7 +434,10 @@ export class CrossFileConsistencyService {
    */
   private static async updateFileErrorCount(fileId: string): Promise<void> {
     const count = await prisma.taskDetail.count({
-      where: { fileId },
+      where: {
+        fileId,
+        ruleCode: { not: 'NO_RESULT' },
+      },
     });
     await prisma.taskFile.update({
       where: { id: fileId },

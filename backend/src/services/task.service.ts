@@ -682,7 +682,10 @@ export class TaskService {
     // 更新文件错误计数
     if (data.fileId) {
       const count = await prisma.taskDetail.count({
-        where: { fileId: data.fileId }
+        where: {
+          fileId: data.fileId,
+          ruleCode: { not: 'NO_RESULT' },
+        }
       });
       await prisma.taskFile.update({
         where: { id: data.fileId },
