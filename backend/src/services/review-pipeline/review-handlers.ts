@@ -191,7 +191,10 @@ export const REVIEW_HANDLERS: Record<ReviewModeType, ReviewHandler> = {
   CONSISTENCY:    handleConsistency,
   DOC_REVIEW:     handleDocReview,
   // SELF_CHECK 不走 handler 映射表，有独立的 SelfCheckController 处理
-  SELF_CHECK:     async () => ({ aiIssues: [], usedEngine: 'self_check' }),
+  SELF_CHECK:     async (_ctx) => {
+    console.warn('[Handler] SELF_CHECK 被 processTask 误调用，请使用独立的 /api/self-check/run 端点');
+    return { aiIssues: [], usedEngine: 'self_check' };
+  },
   MULTIMODAL:     handleMultimodal,
 };
 

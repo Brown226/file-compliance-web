@@ -3,7 +3,7 @@ version: '3.8'
 services:
   # ===== 后端服务（使用刚构建的镜像） =====
   backend:
-    image: file-review-backend:v2.0
+    image: file-review-backend:latest
     container_name: file_review_backend
     ports:
       - "3000:3000"
@@ -29,7 +29,7 @@ services:
 
   # ===== 前端服务（使用刚构建的镜像） =====
   frontend:
-    image: file-review-frontend:v2.0
+    image: file-review-frontend:latest
     container_name: file_review_frontend
     ports:
       - "80:80"

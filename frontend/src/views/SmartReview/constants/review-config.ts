@@ -1,4 +1,4 @@
-import type { EntryModule, ReviewObjective, ReviewEvidenceSource } from '@/types/models'
+import type { EntryModule, ReviewObjective, ReviewEvidenceSource } from '../types/smart-review'
 
 export const ENTRY_MODULE_LABEL: Record<EntryModule, string> = {
   LIBRARY: '以库审文',

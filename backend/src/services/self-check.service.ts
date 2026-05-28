@@ -6,10 +6,11 @@
  */
 
 import prisma from '../config/db';
-import { ParserService } from './parser.service';
 import { StandardExtractorService, ExtractedStandard } from './standard-extractor.service';
 import { StandardCheckService, StandardCheckItem } from './standard-check.service';
 import { CharDiffService, DiffResult } from './char-diff.service';
+import { TextExtractionService } from './review-pipeline/text-extraction.service';
+import { PipelineContext } from './review-pipeline/types';
 
 // ============ 类型定义 ============
 
@@ -100,23 +101,48 @@ export class SelfCheckService {
       onProgress?.({ current: i + 1, total: totalFiles, message: `正在检查: ${file.originalName}` });
 
       try {
-        // 2a. 解析文件文本（DWG 使用前端传来的预解析数据）
+        // 2a. 解析文件文本 — 复用主流程的文本提取管道（含 OCR 降级）
         let text: string;
         if (file.fileType === 'dwg' && dwgParsedData?.[file.originalName]?.text) {
           text = dwgParsedData[file.originalName].text;
         } else {
-          text = await ParserService.parseFile(file.path, file.fileType);
+          const pipeCtx: Partial<PipelineContext> = {
+            filePath: file.path,
+            fileType: file.fileType,
+            fileName: file.originalName,
+            extractedText: '',
+          };
+          text = await TextExtractionService.ensureText(pipeCtx as PipelineContext);
         }
+
         if (!text || text.trim().length < 5) {
           // 文件内容过短或解析失败，跳过
           continue;
         }
 
-        // 2b. 提取标准引用
+        // 2b. 提取标准引用（从全文提取）
         const extractedRefs = StandardExtractorService.extractFromText(text, file.fileType);
 
+        // 2b2. Excel 文件额外从固定列提取标准引用
+        const excelExtras: ExtractedStandard[] = [];
+        if (['xlsx', 'xls'].includes(file.fileType)) {
+          try {
+            const columnRefs = await StandardExtractorService.extractFromExcelByColumn(file.path);
+            const existingNos = new Set(extractedRefs.map(r => r.standardNo));
+            for (const ref of columnRefs) {
+              if (!existingNos.has(ref.standardNo)) {
+                excelExtras.push(ref);
+                existingNos.add(ref.standardNo);
+              }
+            }
+          } catch (e) {
+            console.warn(`[SelfCheck] Excel 列提取失败: ${file.originalName}`, e);
+          }
+        }
+        const allRefs = [...extractedRefs, ...excelExtras];
+
         // 2c. 逐条比对标准库
-        for (const ref of extractedRefs) {
+        for (const ref of allRefs) {
           const item = await SelfCheckService.checkSingleStandard(ref, standardLibrary, file.originalName, text);
           allItems.push(item);
         }

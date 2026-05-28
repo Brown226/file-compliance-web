@@ -364,14 +364,14 @@ export class AiReviewService {
     }
 
     // 解析参照文件文本，带来源标注
-    const { ParserService } = await import('../parser.service');
+    const { TextExtractionService } = await import('./text-extraction.service');
     const refTexts: string[] = [];
     const refFileNames: string[] = [];
     for (const refFile of ctx.refFileGroup.refFiles) {
       let refContent = refFile.extractedText || null;
       if (!refContent) {
         try {
-          refContent = await ParserService.parseFile(refFile.filePath, refFile.fileType);
+          refContent = await TextExtractionService.extractFileText(refFile.filePath, refFile.fileType, refFile.fileName);
         } catch (e) {
           console.warn(`[AiReview] 参照文件解析失败: ${refFile.fileName}`, e);
         }

@@ -472,13 +472,18 @@ const handleConfirmImport = async () => {
 
     if (failCount === 0) {
       ElMessage.success(`全部 ${results.length} 个文档导入完成`)
+      emit('imported')
+      resetAndClose()
     } else {
-      ElMessage.warning(`${successCount}/${results.length} 个文档导入成功，${failCount} 个失败`)
+      const failed = results.filter((r: any) => r.status.startsWith('失败'))
+      const reason = failed[0]?.status?.replace(/^失败[：:]\s*/, '') || ''
+      lastError.value = reason || `共 ${failCount} 个文档导入失败`
+      const msg = reason
+        ? `${successCount}/${results.length} 个文档导入成功，${failCount} 个失败。原因：${reason}`
+        : `${successCount}/${results.length} 个文档导入成功，${failCount} 个失败`
+      ElMessage.warning(msg)
+      // 有失败时不关闭对话框，让用户看到 el-alert 中的错误详情
     }
-
-    // 同步完成，直接通知父组件刷新
-    emit('imported')
-    resetAndClose()
   } catch (err: any) {
     lastError.value = err?.response?.data?.message || err?.message || '导入失败'
     ElMessage.error(lastError.value)

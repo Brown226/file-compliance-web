@@ -82,7 +82,7 @@ export class LlmService {
    * 解析 LLM 返回的审查结果（公开方法，供 ReviewService 调用）
    */
   static parseReviewResult(content: string): ReviewIssue[] {
-    const validTypes = ['TYPO', 'VIOLATION', 'FORMAT', 'COMPLETENESS', 'CONSISTENCY', 'LAYOUT', 'NAMING', 'ENCODING', 'ATTRIBUTE', 'HEADER', 'PAGE'];
+    const validTypes = ['TYPO', 'VIOLATION', 'FORMAT', 'COMPLETENESS', 'CONSISTENCY', 'LAYOUT', 'NAMING', 'ENCODING', 'ATTRIBUTE', 'HEADER', 'PAGE', 'FLUENCY', 'CROSS_REFERENCE'];
 
     try {
       // 尝试从内容中提取 JSON 数组

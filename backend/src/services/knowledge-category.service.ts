@@ -5,7 +5,7 @@
 import prisma from '../config/db';
 import { VectorService } from './vector.service';
 import path from 'path';
-import { ParserService } from './parser.service';
+import { TextExtractionService } from './review-pipeline/text-extraction.service';
 import { LlmService } from './llm.service';
 import { AppError } from '../middlewares/error.middleware';
 import { FileTypeService } from './file-type.service';
@@ -295,16 +295,13 @@ export class KnowledgeCategoryService {
     const ext = path.extname(fileName).toLowerCase().replace('.', '');
     const fileType = FileTypeService.getStandardizedType(ext);
 
-    const parsed = await ParserService.parseFileWithResult(filePath, fileType);
-    const markdown = parsed.result?.markdown || '';
-    const text = parsed.text || '';
-    const content = (markdown && markdown.trim().length > 10) ? markdown : text;
+    const text = await TextExtractionService.extractFileText(filePath, fileType, fileName);
+    const content = text;
 
     if (!content || content.trim().length < 10) {
       throw new Error('文件内容过少或解析失败');
     }
 
-    const parseResult = parsed.result;
     const parseQuality = this.buildParseQualityReport(content);
     const title = fileName.replace(/\.\w+$/, '');
 
@@ -338,9 +335,9 @@ export class KnowledgeCategoryService {
       canImport: parseQuality.passed,
       metadata: {
         original_file: fileName,
-        has_tables: parseResult?.metadata?.has_tables || false,
-        has_images: parseResult?.metadata?.has_images || false,
-        page_count: parseResult?.metadata?.page_count || null,
+        has_tables: false,
+        has_images: false,
+        page_count: null,
         chunkConfigUsed: {
           mode: effectiveMode,
           maxChars: effectiveMaxChars,
@@ -364,26 +361,19 @@ export class KnowledgeCategoryService {
 
     console.info('[KB][uploadDocument] start', { categoryId, fileName, fileType, filePath });
 
-    // 解析文件内容
-    const parsed = await ParserService.parseFileWithResult(filePath, fileType);
-    // 优先使用Markdown格式（保留表格结构），回退到纯文本
-    const markdown = parsed.result?.markdown || '';
-    const text = parsed.text || '';
-    const content = (markdown && markdown.trim().length > 10) ? markdown : text;
+    // 解析文件内容（统一管道：含 OCR 降级）
+    const content = await TextExtractionService.extractFileText(filePath, fileType, fileName);
 
     console.info('[KB][uploadDocument] parsed', {
       categoryId,
       fileName,
       contentLength: content.length,
-      hasMarkdown: Boolean(markdown),
-      textLength: text.length,
     });
 
     if (!content || content.trim().length < 10) {
       throw new Error('文件内容过少或解析失败');
     }
 
-    const parseResult = parsed.result;
     const parseQuality = this.buildParseQualityReport(content);
     console.info('[KB][uploadDocument] quality', { categoryId, fileName, score: parseQuality.score, passed: parseQuality.passed, reasons: parseQuality.reasons });
     if (!parseQuality.passed) {
@@ -406,9 +396,9 @@ export class KnowledgeCategoryService {
       embeddingUseClauseId: category.embeddingUseClauseId,
       metadata: {
         original_file: fileName,
-        has_tables: parseResult?.metadata?.has_tables || false,
-        has_images: parseResult?.metadata?.has_images || false,
-        page_count: parseResult?.metadata?.page_count || null,
+        has_tables: false,
+        has_images: false,
+        page_count: null,
       },
     });
 

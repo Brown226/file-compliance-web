@@ -96,12 +96,17 @@ export class ParserService {
 
   /**
    * 检查文件是否需要 OCR 处理
+   * 对 PDF/图片类型（扫描件）如果提取文本为空或极少则触发 OCR
    */
   static needsOcr(extractedText: string, fileType: string): boolean {
-    if (fileType.toLowerCase() === 'pdf' && extractedText.length < 20) {
+    const normalized = fileType.toLowerCase();
+    // PDF 或图片类型：文本过少时触发 OCR
+    const imageTypes = ['pdf', 'png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'tiff'];
+    if (imageTypes.includes(normalized) && extractedText.length < 20) {
       return true;
     }
-    if (['dwg', 'dxf'].includes(fileType.toLowerCase())) {
+    // DWG/DXF 不走 OCR
+    if (['dwg', 'dxf'].includes(normalized)) {
       return false;
     }
     return false;

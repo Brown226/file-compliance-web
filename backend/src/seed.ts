@@ -140,10 +140,10 @@ async function seed() {
 
   // 5.3 Embedding 向量化模型
   await prisma.systemConfig.upsert({
-    where: { key: 'llm_embedding_model' },
+    where: { key: 'embedding_model' },
     update: {},
     create: {
-      key: 'llm_embedding_model',
+      key: 'embedding_model',
       value: {
         serviceType: 'openai',
         apiKey: embedApiKey,
@@ -159,10 +159,10 @@ async function seed() {
 
   // 5.4 Rerank 重排序模型（复用对话模型）
   await prisma.systemConfig.upsert({
-    where: { key: 'llm_rerank_model' },
+    where: { key: 'reranker_model' },
     update: {},
     create: {
-      key: 'llm_rerank_model',
+      key: 'reranker_model',
       value: {
         serviceType: 'openai',
         apiKey: chatApiKey,

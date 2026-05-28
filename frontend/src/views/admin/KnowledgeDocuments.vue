@@ -1085,7 +1085,10 @@ const vectorizeDoc = async (row: any) => {
     await batchVectorizeApi(categoryId, [row.title])
     ElMessage.success('向量化完成')
     fetchDocuments()
-  } catch { ElMessage.error('向量化失败') }
+  } catch (e: any) {
+    const msg = e?.response?.data?.error || e?.message || '向量化失败'
+    ElMessage.error(msg)
+  }
 }
 
 const batchVectorize = async () => {
@@ -1101,7 +1104,10 @@ const batchVectorize = async () => {
     ElMessage.success('批量向量化完成')
     clearSelection()
     fetchDocuments()
-  } catch { ElMessage.error('批量向量化失败') }
+  } catch (e: any) {
+    const msg = e?.response?.data?.error || e?.message || '批量向量化失败'
+    ElMessage.error(msg)
+  }
 }
 
 // ===== 批量删除 =====

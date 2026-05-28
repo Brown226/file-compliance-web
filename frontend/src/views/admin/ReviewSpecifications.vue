@@ -211,11 +211,17 @@
           :action="''"
           :show-file-list="false"
           :auto-upload="false"
+          drag
           :on-change="handleParseFileChange"
           accept=".docx,.pdf,.xlsx,.txt,.md"
         >
-          <el-button type="primary" size="large" icon="Upload">选择文件</el-button>
-          <div class="upload-hint">支持 .docx, .pdf, .xlsx, .txt, .md 格式</div>
+          <div class="parse-upload__content">
+            <el-icon class="parse-upload__icon" :size="40"><UploadFilled /></el-icon>
+            <div class="parse-upload__text">
+              拖拽文件到此处，或 <em>点击选择</em>
+            </div>
+            <div class="parse-upload__tip">支持 .docx, .pdf, .xlsx, .txt, .md 格式</div>
+          </div>
         </el-upload>
       </div>
       <div v-else class="parse-preview-area">
@@ -1023,14 +1029,49 @@ onMounted(() => {
 }
 
 .parse-upload-area {
-  padding: 40px;
+  padding: 20px;
   text-align: center;
 }
 
-.upload-hint {
-  margin-top: 12px;
+.parse-upload :deep(.el-upload-dragger) {
+  padding: 44px 20px;
+  border-radius: 8px;
+  border: 2px dashed #D1D5DB;
+  background: #FAFBFC;
+  transition: border-color 0.2s, background 0.2s;
+}
+.parse-upload :deep(.el-upload-dragger:hover) {
+  border-color: #409eff;
+  background: #ecf5ff;
+}
+.parse-upload :deep(.el-upload-dragger.is-dragover) {
+  border-color: #409eff;
+  border-style: solid;
+  background: #d9ecff;
+}
+
+.parse-upload__content {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+}
+.parse-upload__icon {
+  color: #C0C4CC;
+}
+.parse-upload__text {
+  font-size: 14px;
+  color: #606266;
+}
+.parse-upload__text em {
+  color: #409eff;
+  font-style: normal;
+  font-weight: 600;
+}
+.parse-upload__tip {
+  margin-top: 4px;
+  font-size: 12px;
   color: #909399;
-  font-size: 13px;
 }
 
 .parse-preview-area {

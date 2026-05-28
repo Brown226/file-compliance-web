@@ -1,7 +1,7 @@
 import { Response } from 'express';
 import { AuthRequest } from '../middlewares/auth.middleware';
 import { RuleLibraryService } from '../services/rule-library.service';
-import { ParserService } from '../services/parser.service';
+import { TextExtractionService } from '../services/review-pipeline/text-extraction.service';
 import { success, error } from '../utils/response';
 import path from 'path';
 import fs from 'fs';
@@ -91,7 +91,7 @@ export const parseRulesFromFile = async (req: AuthRequest, res: Response): Promi
     fs.renameSync(file.path, savedPath);
 
     const fileType = FileTypeService.getStandardizedType(ext);
-    const text = await ParserService.parseFile(savedPath, fileType);
+    const text = await TextExtractionService.extractFileText(savedPath, fileType, file.originalname);
     if (!text || text.trim().length < 10) {
       error(res, '文件内容过少或解析失败', 400); return;
     }
@@ -116,7 +116,7 @@ export const parseRulesPreview = async (req: AuthRequest, res: Response): Promis
     fs.renameSync(file.path, savedPath);
 
     const fileType = FileTypeService.getStandardizedType(ext);
-    const text = await ParserService.parseFile(savedPath, fileType);
+    const text = await TextExtractionService.extractFileText(savedPath, fileType, file.originalname);
     if (!text || text.trim().length < 10) {
       error(res, '文件内容过少或解析失败', 400); return;
     }
@@ -200,7 +200,7 @@ export const parseRulesPreviewAsync = async (req: AuthRequest, res: Response): P
           });
 
           const fileType = FileTypeService.getStandardizedType(meta.ext);
-          const text = await ParserService.parseFile(meta.savedPath, fileType);
+          const text = await TextExtractionService.extractFileText(meta.savedPath, fileType, meta.originalName);
           if (!text || text.trim().length < 10) {
             // 单文件失败跳过，不中断整体
             WebSocketService.emitTaskProgress(task.id, {

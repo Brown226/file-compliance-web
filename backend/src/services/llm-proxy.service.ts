@@ -26,7 +26,7 @@ export class LlmProxyService {
     const configKeyMap = {
       chat: 'llm_chat_model',
       embedding: 'embedding_model',
-      rerank: 'llm_rerank_model',
+      rerank: 'reranker_model',
     };
 
     try {
@@ -42,7 +42,7 @@ export class LlmProxyService {
             apiKey: v.apiKey,
             modelName: v.modelName,
             maxTokens: typeof v.maxTokens === 'number' ? v.maxTokens : 8192,
-            temperature: typeof v.temperature === 'number' ? v.temperature : 0.7,
+            temperature: typeof v.temperature === 'number' ? v.temperature : 0.3,
             timeout: typeof v.timeout === 'number' ? v.timeout : 120,
           };
         }

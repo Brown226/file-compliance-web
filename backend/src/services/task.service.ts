@@ -5,7 +5,7 @@ import ExcelJS from 'exceljs';
 import { ReviewService } from './review.service';
 import { addReviewJob } from './queue.service';
 import FalsePositiveLibraryService from './falsePositiveLibrary.service';
-import { ParserService } from './parser.service';
+import { TextExtractionService } from './review-pipeline/text-extraction.service';
 import { ReviewPlan, ReviewEvidenceSource, normalizeEvidenceSources, isReviewObjective } from '../types/review-plan';
 import { ReviewModeType } from './review-pipeline/types';
 
@@ -579,8 +579,8 @@ export class TaskService {
       try {
         const fullFile = await prisma.taskFile.findUnique({ where: { id: fileId } });
         if (fullFile?.filePath) {
-          const text = await ParserService.parseFile(fullFile.filePath, fullFile.fileType);
-          const markdown = ParserService.getLastMarkdown() || text;
+          const text = await TextExtractionService.extractFileText(fullFile.filePath, fullFile.fileType, fullFile.fileName);
+          const markdown = text;
           if (text && text.trim().length > 0) {
             // 缓存到数据库
             await prisma.taskFile.update({

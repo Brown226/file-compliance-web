@@ -1,7 +1,7 @@
 import { ref, reactive, computed, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import type { UploadFile } from 'element-plus'
-import type { ReviewPlan } from '@/types/models'
+import type { ReviewPlan } from '../types/smart-review'
 import type { EntryModule, PersistedState } from '../types/smart-review'
 
 const STORAGE_KEY = 'smartReview_draft_v3'

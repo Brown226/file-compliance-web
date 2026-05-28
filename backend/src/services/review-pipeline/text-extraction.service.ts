@@ -8,14 +8,40 @@ import { ParserService } from '../parser.service';
 import { OcrService } from '../ocr.service';
 import { FileTypeService } from '../file-type.service';
 
+/** 图片类型列表（Python 解析服务不支持，需直接走 OCR） */
+const IMAGE_FILE_TYPES = new Set(['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'tiff']);
+
 export class TextExtractionService {
+  /**
+   * 统一文件文本提取入口 (供所有模块复用)
+   * 包含：图片→OCR、PDF空→OCR、docx/xlsx→Python解析器
+   * 这是代码库中唯一的文件解析入口，不要直接调 ParserService.parseFile()
+   */
+  static async extractFileText(filePath: string, fileType: string, fileName?: string): Promise<string> {
+    const ctx: Partial<PipelineContext> = {
+      filePath,
+      fileType,
+      fileName: fileName || '',
+      extractedText: '',
+    };
+    return this.ensureText(ctx as PipelineContext);
+  }
+
   /**
    * 确保文本已提取
    * 如果 ctx.extractedText 已有内容则跳过
+   * 对图片类型直接尝试 OCR（跳过 Python 解析服务）
    */
   static async ensureText(ctx: PipelineContext): Promise<string> {
     if (ctx.extractedText && ctx.extractedText.trim().length > 0) {
       return ctx.extractedText;
+    }
+
+    const normalizedType = FileTypeService.normalizeFileType(ctx.fileType, ctx.fileName).toLowerCase();
+
+    // 图片类型：直接走 OCR，跳过 Python 解析服务
+    if (IMAGE_FILE_TYPES.has(normalizedType)) {
+      return TextExtractionService.ocrForFile(ctx);
     }
 
     let text = '';
@@ -30,16 +56,28 @@ export class TextExtractionService {
       console.warn(`[Pipeline] 文件解析失败: ${ctx.fileName}, fileType=${ctx.fileType}, error=${(e as Error).message || e}`);
     }
 
+    // PDF 文本过少时 OCR 降级
     if (ParserService.needsOcr(text, ctx.fileType) && OcrService.isOcrSupported(ctx.fileType)) {
-      try {
-        const ocrText = await OcrService.recognizeFile(ctx.filePath, ctx.fileType);
-        if (ocrText) text = ocrText;
-      } catch (e) {
-        console.warn(`[Pipeline] OCR 处理失败: ${ctx.fileName}`, e);
-      }
+      return TextExtractionService.ocrForFile(ctx);
     }
 
     return text;
+  }
+
+  /**
+   * 对文件执行 OCR 识别
+   */
+  private static async ocrForFile(ctx: PipelineContext): Promise<string> {
+    try {
+      const ocrText = await OcrService.recognizeFile(ctx.filePath, ctx.fileType);
+      if (ocrText) {
+        console.log(`[Pipeline] OCR 识别成功: ${ctx.fileName}, ${ocrText.length} 字符`);
+        return ocrText;
+      }
+    } catch (e) {
+      console.warn(`[Pipeline] OCR 处理失败: ${ctx.fileName}`, e);
+    }
+    return '';
   }
 
   static async extractPdfPages(ctx: PipelineContext): Promise<string[] | undefined> {

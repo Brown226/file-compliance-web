@@ -42,7 +42,8 @@
             <ChatModelTab v-if="activeTab === 'chat'" />
             <EmbeddingModelTab v-else-if="activeTab === 'embedding'" />
             <RerankerModelTab v-else-if="activeTab === 'reranker'" />
-            <OcrConfigTab v-else-if="activeTab === 'ocr'" />
+            <OcrStatusTab v-else-if="activeTab === 'ocr'" />
+            <VisionModelTab v-else-if="activeTab === 'vision'" />
           </div>
         </section>
       </main>
@@ -56,7 +57,8 @@ import { useRouter } from 'vue-router'
 import ChatModelTab from '@/views/LLMConfig/ChatModelTab.vue'
 import EmbeddingModelTab from '@/views/LLMConfig/EmbeddingModelTab.vue'
 import RerankerModelTab from '@/views/LLMConfig/RerankerModelTab.vue'
-import OcrConfigTab from '@/views/LLMConfig/OcrConfigTab.vue'
+import OcrStatusTab from '@/views/LLMConfig/OcrStatusTab.vue'
+import VisionModelTab from '@/views/LLMConfig/VisionModelTab.vue'
 
 const router = useRouter()
 
@@ -64,7 +66,8 @@ const tabs = [
   { key: 'chat', label: '对话模型', short: 'CHAT MODEL', desc: '管理主聊天模型、API 密钥与兼容接口。' },
   { key: 'embedding', label: 'Embedding 模型', short: 'EMBEDDING', desc: '管理向量化模型，供知识库检索与语义召回使用。' },
   { key: 'reranker', label: 'Reranker 模型', short: 'RERANKER', desc: '管理重排序模型，优化候选结果排序质量。' },
-  { key: 'ocr', label: 'OCR 配置', short: 'OCR', desc: '管理图片与扫描文档识别能力。' },
+  { key: 'ocr', label: 'OCR 服务', short: 'PADDLE OCR', desc: '查看内嵌 PaddleOCR 引擎运行状态，无需额外配置。' },
+  { key: 'vision', label: '多模态视觉', short: 'VISION MODEL', desc: '配置视觉大模型作为 OCR 兜底，提升识别准确率。' },
 ]
 
 const activeTab = ref('chat')

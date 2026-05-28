@@ -3,7 +3,7 @@ import { Standard } from '@prisma/client';
 import ExcelJS from 'exceljs';
 import fs from 'fs';
 import path from 'path';
-import { ParserService } from './parser.service';
+import { TextExtractionService } from './review-pipeline/text-extraction.service';
 import { StandardFolderService } from './standardFolder.service';
 
 import { StandardExtractorService } from './standard-extractor.service';
@@ -101,7 +101,7 @@ export class StandardService {
     isActive?: boolean;
     folderId?: string;
   }): Promise<Standard> {
-    const parsedContent = await ParserService.parseFile(fileData.filePath, fileData.fileType);
+    const parsedContent = await TextExtractionService.extractFileText(fileData.filePath, fileData.fileType);
     
     if (!parsedContent || parsedContent.trim().length < 10) {
       throw new Error('文件内容为空或过短，无法作为标准规范');

@@ -1,12 +1,12 @@
 import { computed, watch } from 'vue'
-import type { ReviewPlan, ReviewObjective, ReviewEvidenceSource } from '@/types/models'
+import type { ReviewPlan, ReviewObjective, ReviewEvidenceSource } from '../types/smart-review'
 import type { EntryModule } from '../types/smart-review'
 import {
   OBJECTIVE_OPTIONS,
   EVIDENCE_SOURCE_OPTIONS,
 } from '../constants/review-config'
 
-export function useReviewPlan(state: ReturnType<typeof import('./useSmartReviewState').default>) {
+export function useReviewPlan(state: ReturnType<typeof useSmartReviewState>) {
   // ===== 审查目标选项 =====
   const objectiveOptions = OBJECTIVE_OPTIONS
 

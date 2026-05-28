@@ -12,7 +12,6 @@
 import prisma from '../config/db';
 import { CacheService } from './cache.service';
 
-const EMBEDDING_DIM = 4096;
 const EMBEDDING_BATCH_SIZE = 32;
 const EMBEDDING_CACHE_TTL = 3600;
 
@@ -20,6 +19,7 @@ interface EmbeddingConfig {
   baseUrl: string;
   apiKey: string;
   model: string;
+  dimensions: number;
 }
 
 interface RerankConfig {
@@ -42,6 +42,7 @@ export class EmbeddingService {
             baseUrl: v.apiBaseUrl || 'https://api.siliconflow.cn/v1',
             apiKey: v.apiKey,
             model: v.modelName || 'BAAI/bge-m3',
+            dimensions: typeof v.dimensions === 'number' ? v.dimensions : 4096,
           };
         }
       }
@@ -126,8 +127,8 @@ export class EmbeddingService {
       throw new Error(`Embedding 返回数量异常: expected=${texts.length}, actual=${embeddings.length}`);
     }
     for (const embedding of embeddings) {
-      if (!Array.isArray(embedding) || embedding.length !== EMBEDDING_DIM) {
-        throw new Error(`Embedding 维度异常: expected=${EMBEDDING_DIM}, actual=${Array.isArray(embedding) ? embedding.length : 'invalid'}`);
+      if (!Array.isArray(embedding) || embedding.length !== config.dimensions) {
+        throw new Error(`Embedding 维度异常: expected=${config.dimensions}, actual=${Array.isArray(embedding) ? embedding.length : 'invalid'}`);
       }
     }
 
@@ -154,7 +155,7 @@ export class EmbeddingService {
     if (!config) return false;
     try {
       const [embedding] = await this.embedTexts(['测试文本']);
-      return Array.isArray(embedding) && embedding.length === EMBEDDING_DIM;
+      return Array.isArray(embedding) && embedding.length === config.dimensions;
     } catch {
       return false;
     }

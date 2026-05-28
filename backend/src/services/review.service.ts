@@ -17,6 +17,7 @@ import path from 'path';
 import { ReviewPlan } from '../types/review-plan';
 import { TaskService } from './task.service';
 import { DwgHandlerService } from './dwg-handler.service';
+import { StandardRefCheckService } from './review-pipeline/standard-ref-check.service';
 
 /**
  * 审查编排服务 - 两阶段分批并发编排
@@ -978,8 +979,15 @@ export class ReviewService {
       }
     }
 
-    // 标准引用检查（当前 mode-config 中所有模式 standardRef=false，保留空数组供兼容）
+    // 标准引用检查：对所有支持的模式运行（通过 mode-config 的 standardRef 字段控制）
     let stdRefIssues: any[] = [];
+    if (ctx.extractedText?.trim()) {
+      try {
+        stdRefIssues = await StandardRefCheckService.runStandardRefCheck(ctx, ctx.extractedText);
+      } catch (e) {
+        console.warn(`[Review] 标准引用检查失败: ${ctx.fileName}`, e);
+      }
+    }
 
     const fastResult = { ruleIssues, stdRefIssues, textLength: ctx.extractedText?.length || 0 };
 

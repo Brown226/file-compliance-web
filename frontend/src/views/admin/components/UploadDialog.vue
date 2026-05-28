@@ -203,7 +203,12 @@ const handleUpload = async () => {
       progress.value = []
     } else {
       const successCount = results.length - failed.length
-      ElMessage.warning(`${successCount}/${results.length} 个文件处理完成，${failed.length} 个失败`)
+      const reason = failed[0]?.status?.replace(/^失败[：:]\s*/, '') || ''
+      lastError.value = reason || `共 ${failed.length} 个文件处理失败`
+      const msg = reason
+        ? `${successCount}/${results.length} 个文件处理完成，${failed.length} 个失败。原因：${reason}`
+        : `${successCount}/${results.length} 个文件处理完成，${failed.length} 个失败`
+      ElMessage.warning(msg)
       progress.value = []
     }
   } catch (err: any) {

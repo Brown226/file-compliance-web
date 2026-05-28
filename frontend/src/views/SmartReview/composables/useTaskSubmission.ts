@@ -3,10 +3,12 @@ import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { createTaskApi } from '@/api/task'
 import { useUserStore } from '@/stores/user'
+import type { useSmartReviewState } from './useSmartReviewState'
+import type { useReviewPlan } from './useReviewPlan'
 
 export function useTaskSubmission(
-  state: ReturnType<typeof import('./useSmartReviewState').default>,
-  plan: ReturnType<typeof import('./useReviewPlan').default>,
+  state: ReturnType<typeof useSmartReviewState>,
+  plan: ReturnType<typeof useReviewPlan>,
 ) {
   const router = useRouter()
   const userStore = useUserStore()

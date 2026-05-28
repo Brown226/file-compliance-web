@@ -174,8 +174,13 @@ backend/startup-*.sh
 frontend/src/views/*OPTIMIZATION*.md
 frontend/src/views/*SUMMARY*.md
 
-# AI Agent workspace (Trae AI agent)
+# AI Agent workspace
 .trae/
+.reasonix/
+
+# Backup/temp files
+*.copy
+"images/临时存放/"
 
 # Benchmark data (large generated files)
 backend/benchmarks/

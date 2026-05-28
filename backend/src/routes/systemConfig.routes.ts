@@ -7,8 +7,19 @@ import {
   testLlmConnection,
   sendLlmTest,
 } from '../controllers/systemConfig.controller';
+import { OcrService } from '../services/ocr.service';
 
 const router = Router();
+
+// OCR 服务状态检测 — 无需认证（健康检查，无敏感数据）
+router.get('/ocr-status', async (_req, res) => {
+  const result = await OcrService.healthCheck();
+  if (result.healthy) {
+    res.json({ success: true, data: result.info });
+  } else {
+    res.json({ success: false, error: result.error });
+  }
+});
 
 // 所有系统配置接口都需要认证
 router.use(authenticate);
