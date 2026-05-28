@@ -101,7 +101,7 @@ export function useReviewPlan(state: ReturnType<typeof import('./useSmartReviewS
   const applyEntryModulePreset = (module: EntryModule) => {
     const draft = state.reviewPlanDraft
 
-    switch (module) {![1779933023100](image/useReviewPlan/1779933023100.png)![1779933024930](image/useReviewPlan/1779933024930.png)![1779933032645](image/useReviewPlan/1779933032645.png)![1779933033749](image/useReviewPlan/1779933033749.png)![1779933042503](image/useReviewPlan/1779933042503.png)![1779933042740](image/useReviewPlan/1779933042740.png)![1779933042973](image/useReviewPlan/1779933042973.png)![1779933049544](image/useReviewPlan/1779933049544.png)
+    switch (module) {
       case 'LIBRARY':
         draft.objective = 'COMPLIANCE'
         draft.evidence.sources = []
