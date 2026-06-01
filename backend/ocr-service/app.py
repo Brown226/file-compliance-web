@@ -1,13 +1,14 @@
 from fastapi import FastAPI, HTTPException
 from paddleocr import PaddleOCR
 import io, base64
+
 ocr = PaddleOCR(use_angle_cls=True, lang="ch")
 app = FastAPI()
 
 @app.post("/api/ocr/base64")
-async def ocr_base64(data:dict):
-    b64 = data.get("image","")
-    if "data:image/" in b64: b64 = b64.split(",",1)[1]
+async def ocr_base64(data: dict):
+    b64 = data.get("image", "")
+    if "data:image/" in b64: b64 = b64.split(",", 1)[1]
     fb = base64.b64decode(b64)
     result = ocr.ocr(fb)
     text = ""
@@ -21,4 +22,8 @@ async def ocr_base64(data:dict):
 
 @app.get("/health")
 async def health():
-    return {"status":"healthy","service":"PaddleOCR"}
+    return {"status": "healthy", "service": "PaddleOCR"}
+
+@app.get("/models")
+async def get_models():
+    return {"models": ["PaddleOCR-v3.3.1 (ch)"]}

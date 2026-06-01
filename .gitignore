@@ -136,6 +136,9 @@ docs/
 # Python markitdown microservice (separate from Node.js backend)
 backend/doc-parser/
 
+# Temp Dockerfiles
+backend/ocr-service/Dockerfile.quickfix
+
 # Temp doc files (not source code)
 Tab导航调整与工作台功能说明.md
 TaskResultsView实现说明.md
@@ -180,7 +183,11 @@ frontend/src/views/*SUMMARY*.md
 
 # Backup/temp files
 *.copy
-"images/临时存放/"
+images/临时存放/
+images临时存放/
+
+# Root-level temp scripts
+scripts/
 
 # Benchmark data (large generated files)
 backend/benchmarks/

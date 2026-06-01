@@ -18,6 +18,7 @@ import { ReviewPlan } from '../types/review-plan';
 import { TaskService } from './task.service';
 import { DwgHandlerService } from './dwg-handler.service';
 import { StandardRefCheckService } from './review-pipeline/standard-ref-check.service';
+import { getModeCapabilitiesConfig } from './review-pipeline/mode-config.service';
 
 /**
  * 审查编排服务 - 两阶段分批并发编排
@@ -979,11 +980,15 @@ export class ReviewService {
       }
     }
 
-    // 标准引用检查：对所有支持的模式运行（通过 mode-config 的 standardRef 字段控制）
+    // 标准引用检查：仅当模式配置中 standardRef=true 才运行
     let stdRefIssues: any[] = [];
-    if (ctx.extractedText?.trim()) {
+    if (ctx.extractedText?.trim() && ctx.reviewMode) {
       try {
-        stdRefIssues = await StandardRefCheckService.runStandardRefCheck(ctx, ctx.extractedText);
+        const modeConfigs = await getModeCapabilitiesConfig();
+        const modeCfg = modeConfigs[ctx.reviewMode as keyof typeof modeConfigs];
+        if (modeCfg?.standardRef) {
+          stdRefIssues = await StandardRefCheckService.runStandardRefCheck(ctx, ctx.extractedText);
+        }
       } catch (e) {
         console.warn(`[Review] 标准引用检查失败: ${ctx.fileName}`, e);
       }

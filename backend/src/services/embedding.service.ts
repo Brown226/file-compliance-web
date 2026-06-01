@@ -112,7 +112,12 @@ export class EmbeddingService {
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${config.apiKey}`,
       },
-      body: JSON.stringify({ model: config.model, input: texts, encoding_format: 'float' }),
+      body: JSON.stringify({
+        model: config.model,
+        input: texts,
+        encoding_format: 'float',
+        dimensions: config.dimensions,
+      }),
       signal: AbortSignal.timeout(60000),
     });
 
