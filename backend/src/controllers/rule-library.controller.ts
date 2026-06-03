@@ -9,9 +9,9 @@ import { v4 as uuidv4 } from 'uuid';
 import { FileTypeService } from '../services/file-type.service';
 import prisma from '../config/db';
 import { WebSocketService } from '../services/websocket.service';
+import { getUploadPath } from '../config/upload';
 
-const UPLOAD_DIR = path.join(__dirname, '../../uploads/rule-libraries');
-if (!fs.existsSync(UPLOAD_DIR)) fs.mkdirSync(UPLOAD_DIR, { recursive: true });
+function UPLOAD_DIR() { return getUploadPath('rule-libraries'); }
 
 /** 获取规则库列表 */
 export const listLibraries = async (_req: AuthRequest, res: Response): Promise<void> => {
@@ -87,7 +87,7 @@ export const parseRulesFromFile = async (req: AuthRequest, res: Response): Promi
 
     const ext = path.extname(file.originalname).toLowerCase();
     const savedName = `${uuidv4()}${ext}`;
-    const savedPath = path.join(UPLOAD_DIR, savedName);
+    const savedPath = path.join(UPLOAD_DIR(), savedName);
     fs.renameSync(file.path, savedPath);
 
     const fileType = FileTypeService.getStandardizedType(ext);
@@ -112,7 +112,7 @@ export const parseRulesPreview = async (req: AuthRequest, res: Response): Promis
 
     const ext = path.extname(file.originalname).toLowerCase();
     const savedName = `${uuidv4()}${ext}`;
-    const savedPath = path.join(UPLOAD_DIR, savedName);
+    const savedPath = path.join(UPLOAD_DIR(), savedName);
     fs.renameSync(file.path, savedPath);
 
     const fileType = FileTypeService.getStandardizedType(ext);
@@ -154,7 +154,7 @@ export const parseRulesPreviewAsync = async (req: AuthRequest, res: Response): P
     for (const f of files) {
       const ext = path.extname(f.originalname).toLowerCase();
       const savedName = `${uuidv4()}${ext}`;
-      const savedPath = path.join(UPLOAD_DIR, savedName);
+      const savedPath = path.join(UPLOAD_DIR(), savedName);
       fs.renameSync(f.path, savedPath);
       savedPaths.push(savedPath);
       fileMetaList.push({ originalName: f.originalname, savedPath, ext });

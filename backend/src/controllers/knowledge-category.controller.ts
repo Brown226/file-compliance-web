@@ -10,9 +10,9 @@ import path from 'path';
 import fs from 'fs';
 import { v4 as uuidv4 } from 'uuid';
 import { AppError } from '../middlewares/error.middleware';
+import { getUploadPath } from '../config/upload';
 
-const UPLOAD_DIR = path.join(__dirname, '../../uploads/knowledge');
-if (!fs.existsSync(UPLOAD_DIR)) fs.mkdirSync(UPLOAD_DIR, { recursive: true });
+function UPLOAD_DIR() { return getUploadPath('knowledge'); }
 
 // ==================== 名称/描述校验工具 ====================
 
@@ -160,13 +160,51 @@ export const uploadDocument = async (req: AuthRequest, res: Response): Promise<v
     // 移动到永久目录
     const ext = path.extname(originalName);
     const savedName = `${uuidv4()}${ext}`;
-    const savedPath = path.join(UPLOAD_DIR, savedName);
+    const savedPath = path.join(UPLOAD_DIR(), savedName);
     fs.renameSync(file.path, savedPath);
 
     const result = await KnowledgeCategoryService.uploadDocument(id, savedPath, originalName);
     success(res, result, `上传成功，已分块 ${result.chunks} 个向量片段`);
   } catch (err: any) {
     console.error('Upload Document Error:', err);
+    error(res, err.message || '上传失败', err instanceof AppError ? err.statusCode : 500);
+  }
+};
+
+// ==================== 上传并异步处理 ====================
+
+/** 上传文件并异步处理：立即返回文档ID，后台完成解析+向量化 */
+export const uploadAndProcess = async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const id = req.params.id as string;
+    const files = req.files as Express.Multer.File[];
+    if (!files?.length) { error(res, '请选择文件', 400); return; }
+
+    await KnowledgeCategoryService.ensureLeafCategory(id);
+
+    const savedFiles: Array<{ savedPath: string; originalName: string }> = [];
+
+    for (const file of files) {
+      const originalName = Buffer.from(file.originalname, 'latin1').toString('utf8');
+      const ext = path.extname(originalName);
+      const savedName = `${uuidv4()}${ext}`;
+      const savedPath = path.join(UPLOAD_DIR(), savedName);
+      fs.renameSync(file.path, savedPath);
+      savedFiles.push({ savedPath, originalName });
+    }
+
+    const userConfig = {
+      chunkMode: req.body.chunkMode as string | undefined,
+      maxChars: req.body.maxChars ? Number(req.body.maxChars) : undefined,
+      overlap: req.body.overlap ? Number(req.body.overlap) : undefined,
+      embeddingUseDocumentTitle: req.body.embeddingUseDocumentTitle === 'true',
+      contextualRetrieval: req.body.contextualRetrieval === 'true',
+    };
+
+    const docs = await KnowledgeCategoryService.uploadAndProcess(id, savedFiles, userConfig);
+    success(res, { documents: docs }, `${docs.length} 个文件已提交处理`);
+  } catch (err: any) {
+    console.error('Upload And Process Error:', err);
     error(res, err.message || '上传失败', err instanceof AppError ? err.statusCode : 500);
   }
 };
@@ -190,7 +228,7 @@ export const uploadDocumentAsync = async (req: AuthRequest, res: Response): Prom
         const originalName = Buffer.from(file.originalname, 'latin1').toString('utf8');
         const ext = path.extname(originalName);
         const savedName = `${uuidv4()}${ext}`;
-        savedPath = path.join(UPLOAD_DIR, savedName);
+        savedPath = path.join(UPLOAD_DIR(), savedName);
         fs.renameSync(file.path, savedPath);
 
         const result = await KnowledgeCategoryService.uploadDocument(id, savedPath, originalName);
@@ -267,7 +305,7 @@ export const previewDocument = async (req: AuthRequest, res: Response): Promise<
       const originalName = Buffer.from(file.originalname, 'latin1').toString('utf8');
       const ext = path.extname(originalName);
       const savedName = `${uuidv4()}${ext}`;
-      const savedPath = path.join(UPLOAD_DIR, savedName);
+      const savedPath = path.join(UPLOAD_DIR(), savedName);
       fs.renameSync(file.path, savedPath);
 
       const preview = await KnowledgeCategoryService.previewDocument(id, savedPath, originalName, userConfig);
@@ -394,9 +432,19 @@ export const deleteDocuments = async (req: AuthRequest, res: Response): Promise<
   try {
     const { ids, categoryId } = req.body;
     if (ids?.length) {
+      // 先查出这些向量记录关联的 Document，再一起删
+      const docs = await prisma.$queryRawUnsafe<any[]>(
+        `SELECT DISTINCT document_id FROM vector_documents WHERE id = ANY($1::text[])`,
+        ids,
+      );
+      const docIds = docs.map(d => d.document_id).filter(Boolean);
       await VectorService.deleteDocuments({ ids });
+      if (docIds.length > 0) {
+        await prisma.document.deleteMany({ where: { id: { in: docIds } } });
+      }
     } else if (categoryId) {
       await VectorService.deleteDocuments({ categoryId });
+      await prisma.document.deleteMany({ where: { categoryId } });
     } else {
       error(res, '请指定删除条件', 400); return;
     }
@@ -442,30 +490,67 @@ export const listGroupedDocuments = async (req: AuthRequest, res: Response): Pro
     const pageSizeNum = Number(pageSize) || 10;
     const offset = (pageNum - 1) * pageSizeNum;
 
-    // 构建 WHERE 条件（按文档名分组，与主查询一致）
-    const whereClauses: string[] = [`"categoryId" = $1`];
-    const params: any[] = [categoryId];
-    let paramIdx = 2;
+    // 1. 从 documents 表查询所有文档（包括正在处理的）
+    const docWhereClauses: string[] = [`"categoryId" = $1`];
+    const docParams: any[] = [categoryId];
+    let docParamIdx = 2;
 
     if (query) {
-      whereClauses.push(`COALESCE(metadata->>'original_file', title) ILIKE $${paramIdx}`);
-      params.push(`%${query}%`);
-      paramIdx++;
+      docWhereClauses.push(`"title" ILIKE $${docParamIdx}`);
+      docParams.push(`%${query}%`);
+      docParamIdx++;
     }
 
-    const whereSQL = whereClauses.join(' AND ');
+    const docWhereSQL = docWhereClauses.join(' AND ');
 
-    // 分组查询：按文档名分组计数（与主查询 GROUP BY 一致）
-    const countResult = await prisma.$queryRawUnsafe<any[]>(
-      `SELECT COUNT(DISTINCT COALESCE(metadata->>'original_file', title)) as total FROM vector_documents WHERE ${whereSQL}`,
-      ...params
+    // 查询 documents 表的总数
+    const docCountResult = await prisma.$queryRawUnsafe<any[]>(
+      `SELECT COUNT(*) as total FROM documents WHERE ${docWhereSQL}`,
+      ...docParams
     );
-    const total = Number(countResult[0]?.total || 0);
+    const docTotal = Number(docCountResult[0]?.total || 0);
 
-    const rows = await prisma.$queryRawUnsafe<any[]>(
+    // 查询 documents 表（分页）
+    const docRows = await prisma.$queryRawUnsafe<any[]>(
+      `SELECT
+        "id",
+        "title",
+        "categoryId",
+        "source_file" as "sourceFile",
+        "total_chunks" as "totalChunks",
+        "total_chars" as "totalChars",
+        "is_vectorized" as "isVectorized",
+        "vector_status" as "vectorStatus",
+        "progress",
+        "error_message" as "errorMessage",
+        "created_at" as "createdAt",
+        "updated_at" as "updatedAt"
+      FROM documents
+      WHERE ${docWhereSQL}
+      ORDER BY "updated_at" DESC
+      LIMIT $${docParamIdx} OFFSET $${docParamIdx + 1}`,
+      ...docParams,
+      pageSizeNum,
+      offset
+    );
+
+    // 2. 从 vector_documents 表查询向量数据（按文档名分组）
+    const vecWhereClauses: string[] = [`"categoryId" = $1`];
+    const vecParams: any[] = [categoryId];
+    let vecParamIdx = 2;
+
+    if (query) {
+      vecWhereClauses.push(`COALESCE(metadata->>'original_file', title) ILIKE $${vecParamIdx}`);
+      vecParams.push(`%${query}%`);
+      vecParamIdx++;
+    }
+
+    const vecWhereSQL = vecWhereClauses.join(' AND ');
+
+    // 查询向量文档统计数据
+    const vecRows = await prisma.$queryRawUnsafe<any[]>(
       `SELECT
         COALESCE(metadata->>'original_file', title) as title,
-        "categoryId",
         COUNT(*) as paragraph_count,
         SUM(LENGTH(content)) as char_length,
         MIN(chunk_index) as min_chunk,
@@ -474,69 +559,71 @@ export const listGroupedDocuments = async (req: AuthRequest, res: Response): Pro
         MAX(updated_at) as update_time,
         COUNT(*) FILTER (WHERE embedding IS NOT NULL) as embedded_count
       FROM vector_documents
-      WHERE ${whereSQL}
-      GROUP BY COALESCE(metadata->>'original_file', title), "categoryId"
-      ORDER BY MAX(updated_at) DESC
-      LIMIT $${paramIdx} OFFSET $${paramIdx + 1}`,
-      ...params,
-      pageSizeNum,
-      offset
+      WHERE ${vecWhereSQL}
+      GROUP BY COALESCE(metadata->>'original_file', title)`,
+      ...vecParams
     );
 
-    const titles = rows.map(row => row.title).filter(Boolean);
+    // 3. 合并数据：以 documents 表为主，补充 vector_documents 的统计数据
+    // vector_documents 的 title 可能带扩展名（如 "file.xlsx"），documents 的 title 不带
+    // 需要统一去掉扩展名后匹配
+    const stripExt = (s: string) => s?.replace(/\.[^.]+$/, '') || s;
+    const vecMap = new Map<string, any>();
+    vecRows.forEach(row => vecMap.set(stripExt(row.title), row));
 
-    // 通过 Document 表将 title 映射到 documentId，再查 DocumentTag
-    const titleToDocId = new Map<string, string>();
-    if (titles.length > 0) {
-      const docs = await prisma.document.findMany({
-        where: { categoryId, title: { in: titles } },
-        select: { id: true, title: true },
-      });
-      docs.forEach(d => titleToDocId.set(d.title, d.id));
-    }
+    const items = docRows.map(doc => {
+      const vecInfo = vecMap.get(doc.title);
+      const paragraphCount = vecInfo ? Number(vecInfo.paragraph_count) : 0;
+      const charLength = vecInfo ? Number(vecInfo.char_length) : 0;
+      const embeddedCount = vecInfo ? Number(vecInfo.embedded_count) : 0;
 
-    const docIdToTitle = new Map<string, string>();
-    for (const [title, docId] of titleToDocId) {
-      docIdToTitle.set(docId, title);
-    }
-
-    const documentIds = [...titleToDocId.values()];
-    const tagRows = documentIds.length > 0
-      ? await prisma.documentTag.findMany({
-          where: { documentId: { in: documentIds } },
-          include: { tag: true },
-        })
-      : [];
-
-    const tagMap: Record<string, Array<{ id: string; key: string; value: string; categoryId?: string; createdAt: Date }>> = {};
-    tagRows.forEach(row => {
-      const title = docIdToTitle.get(row.documentId);
-      if (title) {
-        if (!tagMap[title]) tagMap[title] = [];
-        tagMap[title].push({
-          id: row.tag.id,
-          key: row.tag.key,
-          value: row.tag.value,
-          categoryId: row.tag.categoryId || undefined,
-          createdAt: row.tag.createdAt,
-        });
-      }
+      return {
+        title: doc.title,
+        categoryId: doc.categoryId,
+        paragraph_count: paragraphCount,
+        char_length: charLength,
+        chunk_range: vecInfo
+          ? { min: Number(vecInfo.min_chunk), max: Number(vecInfo.max_chunk) }
+          : { min: 0, max: 0 },
+        embedded_count: embeddedCount,
+        is_fully_embedded: paragraphCount > 0 && embeddedCount === paragraphCount,
+        vector_status: doc.vectorStatus || (paragraphCount > 0 && embeddedCount === paragraphCount ? 'SUCCESS' : 'PENDING'),
+        progress: doc.progress || (paragraphCount > 0 && embeddedCount === paragraphCount ? 100 : 0),
+        error_message: doc.errorMessage || null,
+        create_time: vecInfo?.create_time || doc.createdAt,
+        update_time: vecInfo?.update_time || doc.updatedAt,
+        tags: [], // 后面补充标签
+      };
     });
 
-    const items = rows.map(row => ({
-      title: row.title,
-      categoryId: row.categoryId,
-      paragraph_count: Number(row.paragraph_count),
-      char_length: Number(row.char_length),
-      chunk_range: { min: Number(row.min_chunk), max: Number(row.max_chunk) },
-      embedded_count: Number(row.embedded_count),
-      is_fully_embedded: Number(row.embedded_count) === Number(row.paragraph_count),
-      create_time: row.create_time,
-      update_time: row.update_time,
-      tags: tagMap[row.title] || [],
-    }));
+    // 4. 查询标签
+    const docIds = docRows.map(d => d.id);
+    if (docIds.length > 0) {
+      const tagRows = await prisma.documentTag.findMany({
+        where: { documentId: { in: docIds } },
+        include: { tag: true },
+      });
 
-    success(res, { page: pageNum, pageSize: pageSizeNum, total, items });
+      const docIdToTitle = new Map<string, string>();
+      docRows.forEach(d => docIdToTitle.set(d.id, d.title));
+
+      tagRows.forEach(row => {
+        const title = docIdToTitle.get(row.documentId);
+        const item = items.find(i => i.title === title);
+        if (item) {
+          if (!item.tags) item.tags = [];
+          item.tags.push({
+            id: row.tag.id,
+            key: row.tag.key,
+            value: row.tag.value,
+            categoryId: row.tag.categoryId || undefined,
+            createdAt: row.tag.createdAt,
+          });
+        }
+      });
+    }
+
+    success(res, { page: pageNum, pageSize: pageSizeNum, total: docTotal, items });
   } catch (err) {
     console.error('List GroupedDocuments Error:', err);
     error(res, '获取文档列表失败', 500);
@@ -587,7 +674,7 @@ export const updateDocument = async (req: AuthRequest, res: Response): Promise<v
   }
 };
 
-/** 删除文档（删除该分类下同一标题的所有向量片段） */
+/** 删除文档（删除该分类下同一标题的所有向量片段 + Document 记录） */
 export const deleteDocument = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const categoryId = req.params.id as string;
@@ -595,7 +682,10 @@ export const deleteDocument = async (req: AuthRequest, res: Response): Promise<v
 
     if (!title) { error(res, '文档名称不能为空', 400); return; }
 
+    // 先删向量记录
     const count = await VectorService.deleteDocuments({ categoryId, title });
+    // 再删 Document 记录（级联清理 tags/versions）
+    await prisma.document.deleteMany({ where: { categoryId, title } });
     success(res, { deletedCount: count }, '删除成功');
   } catch (err) {
     console.error('Delete Document Error:', err);
@@ -611,12 +701,18 @@ export const getDocumentParagraphs = async (req: AuthRequest, res: Response): Pr
 
     if (!title) { error(res, '文档名称不能为空', 400); return; }
 
+    // 兼容匹配：title 可能带扩展名也可能不带，需要同时匹配两种情况
     const paragraphs = await prisma.$queryRawUnsafe<any[]>(
       `SELECT id, title, clause_id as "clauseId", content, chunk_index as "chunkIndex",
               source_type as "sourceType", metadata, created_at as "createdAt", updated_at as "updatedAt"
        FROM vector_documents
        WHERE "categoryId" = $1
-         AND COALESCE(metadata->>'original_file', title) = $2
+         AND (
+           COALESCE(metadata->>'original_file', title) = $2
+           OR title = $2
+           OR COALESCE(metadata->>'original_file', title) = $2 || '.' || SPLIT_PART(COALESCE(metadata->>'original_file', title), '.', -1)
+           OR title = $2 || '.' || SPLIT_PART(COALESCE(metadata->>'original_file', title), '.', -1)
+         )
          AND vector_status = 'SUCCESS'
        ORDER BY chunk_index ASC`,
       categoryId, title

@@ -27,36 +27,6 @@
       <!-- 文档列表 Tab -->
       <template v-if="activeTab === 'documents'">
         <div class="kd-main">
-          <el-alert
-            v-if="activeTasks.some(task => task.status === 'failed')"
-            type="error"
-            show-icon
-            :closable="false"
-            class="kd-task-alert"
-            :title="`有 ${activeTasks.filter(task => task.status === 'failed').length} 个上传任务失败，请查看下方状态原因`"
-          />
-
-          <div v-if="activeTasks.length > 0" class="upload-progress-bar">
-            <div v-for="task in activeTasks" :key="task.id" class="upload-progress-item">
-              <div class="upload-progress-item__row">
-                <span class="upload-progress-item__icon">
-                  <el-icon class="is-loading" :size="13" v-if="task.status === 'processing'"><Loading /></el-icon>
-                  <el-icon :size="13" v-else-if="task.status === 'completed'"><CircleCheck /></el-icon>
-                  <el-icon :size="13" v-else-if="task.status === 'failed'"><CircleClose /></el-icon>
-                  <el-icon class="is-loading" :size="13" v-else><Loading /></el-icon>
-                </span>
-                <span class="upload-progress-item__name" :title="task.fileName">{{ task.fileName || '处理中...' }}</span>
-                <span class="upload-progress-item__msg">{{ task.message }}</span>
-              </div>
-              <el-progress
-                :percentage="task.progress"
-                :status="task.status === 'completed' ? 'success' : task.status === 'failed' ? 'exception' : undefined"
-                :stroke-width="3"
-                :show-text="false"
-              />
-            </div>
-          </div>
-
           <div class="kd-toolbar">
             <div class="kd-toolbar__left">
               <span class="kd-toolbar__title">文档列表({{ pagination.total }})</span>
@@ -225,15 +195,28 @@
                 </div>
               </template>
             </el-table-column>
-            <el-table-column label="状态" width="120" align="center">
+            <el-table-column label="状态" width="140" align="center">
               <template #default="{ row }">
-                <span
-                  class="status-tag"
-                  :class="statusTagClass(row)"
+                <el-tooltip
+                  :content="statusTagTooltip(row)"
+                  placement="top"
+                  :disabled="!statusTagTooltip(row)"
+                  :show-after="200"
                 >
-                  <span class="status-tag__dot" />
-                  {{ statusTagText(row) }}
-                </span>
+                  <span
+                    class="status-tag"
+                    :class="statusTagClass(row)"
+                  >
+                    <span class="status-tag__dot" />
+                    {{ statusTagText(row) }}
+                  </span>
+                </el-tooltip>
+                <div
+                  v-if="row.vector_status === 'PARSING' || row.vector_status === 'EMBEDDING'"
+                  class="status-progress"
+                >
+                  <div class="status-progress__bar" :style="{ width: (row.progress || 0) + '%' }" />
+                </div>
               </template>
             </el-table-column>
             <el-table-column prop="char_length" label="字符数" width="100" align="right" sortable>
@@ -802,12 +785,10 @@ import {
   removeDocumentTagApi,
   generateQuestionsApi,
   hitTestApi,
-  getActiveTasksApi,
   type GroupedDocument,
   type DocumentParagraph,
   type Tag,
   type HitTestResult,
-  type UploadTaskStatus,
 } from '@/api/knowledge-category'
 
 const router = useRouter()
@@ -941,16 +922,29 @@ const totalChars = computed(() =>
 
 // ===== 状态标签辅助 =====
 const statusTagClass = (row: any) => {
+  const vs = row.vector_status
+  if (vs === 'SUCCESS') return 'status-tag--success'
+  if (vs === 'PARSING' || vs === 'EMBEDDING' || vs === 'STARTED') return 'status-tag--warning'
+  if (vs === 'FAILURE') return 'status-tag--danger'
   if (row.is_fully_embedded) return 'status-tag--success'
-  if (row.vector_status === 'STARTED' || row.embedded_count > 0) return 'status-tag--warning'
+  if (row.embedded_count > 0) return 'status-tag--warning'
   return 'status-tag--danger'
 }
 
 const statusTagText = (row: any) => {
+  const vs = row.vector_status
+  if (vs === 'PARSING') return '解析中'
+  if (vs === 'EMBEDDING') return row.progress > 0 ? `向量化 ${row.progress}%` : '向量化中'
+  if (vs === 'SUCCESS') return '已完成'
+  if (vs === 'FAILURE') return '失败'
+  if (vs === 'STARTED') return '向量化中'
   if (row.is_fully_embedded) return '已完成'
-  if (row.vector_status === 'STARTED') return '向量化中'
   if (row.embedded_count > 0) return `${row.embedded_count}/${row.paragraph_count} 段`
   return '未向量化'
+}
+
+const statusTagTooltip = (row: any) => {
+  return row.error_message || ''
 }
 
 // ===== 数据加载 =====
@@ -997,7 +991,11 @@ const fetchDocuments = async () => {
 
     await fetchAllTags()
 
-    const hasPending = documentList.value.some(d => !d.is_fully_embedded)
+    const hasPending = documentList.value.some(d =>
+      !d.is_fully_embedded ||
+      d.vector_status === 'PARSING' ||
+      d.vector_status === 'EMBEDDING'
+    )
     if (hasPending && !pollTimer) {
       startPolling()
     } else if (!hasPending && pollTimer) {
@@ -1174,35 +1172,9 @@ const handleRowCommand = async (command: string, row: any) => {
 // ===== 上传 =====
 const importWizardVisible = ref(false)
 
-// ===== 异步上传任务追踪 =====
-const activeTasks = ref<UploadTaskStatus[]>([])
-let taskPollTimer: ReturnType<typeof setInterval> | null = null
-
-const startTaskPolling = () => {
-  if (taskPollTimer) return
-  taskPollTimer = setInterval(async () => {
-    try {
-      const { data } = await getActiveTasksApi()
-      const freshTasks = data || []
-      const failedTasks = activeTasks.value.filter(task => task.status === 'failed')
-      activeTasks.value = [...freshTasks, ...failedTasks.filter(ft => !freshTasks.some(t => t.id === ft.id))]
-      if (freshTasks.length === 0 && failedTasks.length === 0) {
-        stopTaskPolling()
-        fetchDocuments()
-      }
-    } catch { /* ignore */ }
-  }, 2000)
-}
-
-const stopTaskPolling = () => {
-  if (taskPollTimer) { clearInterval(taskPollTimer); taskPollTimer = null }
-}
-
 const handleImportComplete = () => {
   fetchDocuments()
 }
-
-const visibleTasks = computed(() => activeTasks.value)
 
 // ===== 标签管理 =====
 const allTags = ref<Tag[]>([])
@@ -1595,17 +1567,9 @@ onMounted(async () => {
   await fetchCategoryInfo()
   await fetchDocuments()
   startPolling()
-  // 检测是否有活跃的上传任务（从其他页面导航过来时触发轮询）
-  try {
-    const { data: tasks } = await getActiveTasksApi()
-    if (tasks && tasks.length > 0) {
-      activeTasks.value = tasks
-      startTaskPolling()
-    }
-  } catch { /* ignore */ }
 })
 
-onBeforeUnmount(() => { stopPolling(); stopTaskPolling() })
+onBeforeUnmount(() => { stopPolling() })
 </script>
 
 <style scoped>
@@ -1799,6 +1763,22 @@ onBeforeUnmount(() => { stopPolling(); stopTaskPolling() })
 .status-tag--danger { background: #fef2f2; color: #dc2626; }
 .status-tag--danger .status-tag__dot { background: #ef4444; }
 
+/* 状态进度条 */
+.status-progress {
+  width: 100%;
+  height: 3px;
+  background: #e4e7ed;
+  border-radius: 2px;
+  margin-top: 4px;
+  overflow: hidden;
+}
+.status-progress__bar {
+  height: 100%;
+  background: #f59e0b;
+  border-radius: 2px;
+  transition: width 0.6s ease;
+}
+
 /* ===== 工具栏 ===== */
 .kd-toolbar {
   display: flex;
@@ -1951,58 +1931,6 @@ onBeforeUnmount(() => { stopPolling(); stopTaskPolling() })
   justify-content: flex-end;
   padding-top: var(--space-4);
   border-top: 1px solid var(--corp-border-light);
-}
-
-/* ===== 上传进度条 ===== */
-.upload-progress-bar {
-  background: var(--bg-surface);
-  border: 1px solid var(--corp-border-light);
-  border-radius: var(--radius-md);
-  overflow: hidden;
-}
-.upload-progress-item {
-  padding: 10px 14px;
-  border-bottom: 1px solid #f0f1f3;
-}
-.upload-progress-item:last-child {
-  border-bottom: none;
-}
-.upload-progress-item__row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-bottom: 6px;
-}
-.upload-progress-item__icon {
-  flex-shrink: 0;
-  display: inline-flex;
-  width: 18px;
-  height: 18px;
-  align-items: center;
-  justify-content: center;
-  border-radius: 50%;
-  background: #f5f6f8;
-  color: var(--corp-text-tertiary);
-}
-.upload-progress-item:first-child .upload-progress-item__icon {
-  color: var(--corp-primary);
-}
-.upload-progress-item__name {
-  font-size: 13px;
-  font-weight: 500;
-  color: var(--corp-text-primary);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  max-width: 420px;
-  flex-shrink: 1;
-}
-.upload-progress-item__msg {
-  font-size: 12px;
-  color: var(--corp-text-tertiary);
-  white-space: nowrap;
-  margin-left: auto;
-  flex-shrink: 0;
 }
 
 /* ===== 检索测试 Tab（上下布局重构） ===== */

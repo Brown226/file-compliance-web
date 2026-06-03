@@ -349,6 +349,18 @@
                   <span class="source-dot std-dot"></span>标准引用 {{ reviewSummary.stdRefIssues }}
                 </span>
               </div>
+
+              <!-- AI 审查空结果警告 -->
+              <div v-if="showAiWarning" class="ai-warning-banner">
+                <el-icon color="#E6A23C" :size="16"><WarningFilled /></el-icon>
+                <span>
+                  AI 审查未产出结果。
+                  <template v-if="!task?.aiEngineUsed">任务未配置或未使用 AI 引擎。</template>
+                  <template v-else-if="task.aiEngineUsed === 'none'">AI 引擎已禁用。</template>
+                  <template v-else>引擎 {{ task.aiEngineUsed }} 已执行但未发现问题，请结合规则覆盖范围人工复核。</template>
+                </span>
+              </div>
+
             </div>
 
             <!-- ===== 审查通过（无问题）===== -->
@@ -613,6 +625,15 @@ const handleExportReport = () => handleExportWord()
 
 // ===== 标准引用自检（SELF_CHECK）=====
 const isSelfCheck = computed(() => (task.value as any)?.reviewMode === 'SELF_CHECK')
+
+// AI 审查空结果警告：审查模式需要 AI 但 AI 未产出结果
+const showAiWarning = computed(() => {
+  const mode = (task.value as any)?.reviewMode
+  // RULE_ONLY 和 SELF_CHECK 不使用 AI，不需要警告
+  if (!mode || mode === 'RULE_ONLY' || mode === 'SELF_CHECK') return false
+  // AI 审查数为 0 才显示警告
+  return (reviewSummary.value?.aiIssues ?? 0) === 0
+})
 
 // 默认左侧面板宽度：自检模式 40%（右侧表格需要更多空间），普通审查 55%
 const SELF_CHECK_LEFT_WIDTH = 40
@@ -2638,6 +2659,20 @@ onUnmounted(() => {
   font-size: 14px;
   color: #67c23a;
   font-weight: 500;
+}
+
+.ai-warning-banner {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  margin-top: 8px;
+  background: rgba(230, 162, 60, 0.08);
+  border: 1px solid rgba(230, 162, 60, 0.25);
+  border-radius: 6px;
+  font-size: 13px;
+  color: #90640b;
+  line-height: 1.5;
 }
 
 /* 响应式 */

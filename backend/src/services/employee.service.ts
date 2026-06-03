@@ -299,14 +299,48 @@ export class EmployeeService {
   }
 
   /**
-   * 批量删除员工
+   * 批量删除员工（先清理关联记录，若有重要依赖则阻止）
    */
   async batchDeleteEmployees(ids: string[]) {
-    await prisma.user.deleteMany({
+    const users = await prisma.user.findMany({
       where: { id: { in: ids } },
+      select: { id: true, username: true, name: true },
+    });
+    if (users.length === 0) return { count: 0 };
+
+    const userIds = users.map(u => u.id);
+
+    // 检查是否有重要依赖数据
+    const [taskUsers, feedbackUsers, announcementUsers, qaUsers] = await Promise.all([
+      prisma.task.groupBy({ by: ['creatorId'], where: { creatorId: { in: userIds } }, _count: true }),
+      prisma.feedback.groupBy({ by: ['userId'], where: { userId: { in: userIds } }, _count: true }),
+      prisma.systemAnnouncement.groupBy({ by: ['createdBy'], where: { createdBy: { in: userIds } }, _count: true }),
+      prisma.qASession.groupBy({ by: ['userId'], where: { userId: { in: userIds } }, _count: true }),
+    ]);
+
+    const blocked = new Set<string>();
+    taskUsers.forEach(u => blocked.add(u.creatorId));
+    feedbackUsers.forEach(u => blocked.add(u.userId));
+    announcementUsers.forEach(u => blocked.add(u.createdBy));
+    qaUsers.forEach(u => blocked.add(u.userId));
+
+    if (blocked.size > 0) {
+      const blockedNames = users.filter(u => blocked.has(u.id)).map(u => u.name || u.username);
+      throw new AppError(409, `以下用户有关联数据无法删除：${blockedNames.join('，')}，请先处理后再删除`);
+    }
+
+    // 清理可置空的关联
+    await Promise.all([
+      prisma.auditLog.updateMany({ where: { userId: { in: userIds } }, data: { userId: null } }),
+      prisma.feedback.updateMany({ where: { resolverId: { in: userIds } }, data: { resolverId: null } }),
+      prisma.userAnnouncementRead.deleteMany({ where: { userId: { in: userIds } } }),
+    ]);
+
+    await prisma.user.deleteMany({
+      where: { id: { in: userIds } },
     });
 
-    return { count: ids.length };
+    return { count: users.length };
   }
 
   /**
@@ -405,17 +439,19 @@ export class EmployeeService {
       });
 
       // 4. 检查是否有重要依赖数据
-      const [taskCount, feedbackCount, announcementCount] = await Promise.all([
+      const [taskCount, feedbackCount, announcementCount, qaCount] = await Promise.all([
         tx.task.count({ where: { creatorId: id } }),
         tx.feedback.count({ where: { userId: id } }),
         tx.systemAnnouncement.count({ where: { createdBy: id } }),
+        tx.qASession.count({ where: { userId: id } }),
       ]);
 
-      if (taskCount > 0 || feedbackCount > 0 || announcementCount > 0) {
+      if (taskCount > 0 || feedbackCount > 0 || announcementCount > 0 || qaCount > 0) {
         const reasons: string[] = [];
         if (taskCount > 0) reasons.push(`创建了 ${taskCount} 个审查任务`);
         if (feedbackCount > 0) reasons.push(`提交了 ${feedbackCount} 条反馈`);
         if (announcementCount > 0) reasons.push(`创建了 ${announcementCount} 条公告`);
+        if (qaCount > 0) reasons.push(`有 ${qaCount} 个对话会话`);
         throw new AppError(409, `该用户有关联数据无法删除：${reasons.join('，')}，请先转移或处理这些数据后再删除`);
       }
 

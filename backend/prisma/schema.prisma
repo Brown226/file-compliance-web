@@ -114,6 +114,7 @@ model Task {
   reviewSpecification   ReviewSpecification?   @relation(fields: [reviewSpecificationId], references: [id])
   ruleLibraryId       String?        @map("rule_library_id")  // 关联的规则库 ID
   ruleLibrary         RuleLibrary?   @relation(fields: [ruleLibraryId], references: [id], onDelete: SetNull)
+  aiEngineUsed        String?        @map("ai_engine_used")   // 实际使用的 AI 引擎（如 llm-direct, llm-with-knowledge, rag-llm 等）
   files              TaskFile[]
   details            TaskDetail[]
   taskStandards      TaskStandard[]
@@ -551,8 +552,10 @@ model Document {
   totalChars            Int                 @default(0)  @map("total_chars")
   
   isVectorized          Boolean             @default(false) @map("is_vectorized")
-  vectorStatus          String?             @map("vector_status") // PENDING/STARTED/SUCCESS/FAILURE
-  
+  vectorStatus          String?             @map("vector_status") // PENDING/PARSING/EMBEDDING/SUCCESS/FAILURE
+  progress              Int                 @default(0) @map("progress") // 0-100 处理进度
+  errorMessage          String?             @map("error_message") // 失败原因
+
   parseScore            Int?                @map("parse_score")
   parseReport           Json?               @map("parse_report")
   
@@ -624,7 +627,7 @@ model VectorDocument {
   chunkIndex      Int                 @default(0) @map("chunk_index")
   metadata        Json?                                       // 附加元数据
   
-  embedding       Unsupported("vector(4096)")?               // pgvector 向量
+  embedding       Unsupported("vector")?                     // pgvector 向量（支持任意维度）
   vectorStatus    String              @default("PENDING") @map("vector_status") // PENDING/STARTED/SUCCESS/FAILURE
   searchVector    Unsupported("tsvector")?                  @map("search_vector") // 全文检索向量
   

@@ -13,17 +13,18 @@
 
           <el-form-item label="模型名称">
             <el-select v-model="config.modelName" filterable allow-create default-first-option style="width: 100%">
-              <el-option label="BAAI/bge-m3" value="BAAI/bge-m3" />
-              <el-option label="BAAI/bge-large-zh-v1.5" value="BAAI/bge-large-zh-v1.5" />
-              <el-option label="text-embedding-3-small" value="text-embedding-3-small" />
-              <el-option label="text-embedding-3-large" value="text-embedding-3-large" />
+              <el-option label="Qwen/Qwen3-Embedding-8B (4096维)" value="Qwen/Qwen3-Embedding-8B" />
+              <el-option label="BAAI/bge-m3 (1024维)" value="BAAI/bge-m3" />
+              <el-option label="BAAI/bge-large-zh-v1.5 (1024维)" value="BAAI/bge-large-zh-v1.5" />
+              <el-option label="text-embedding-3-small (1536维)" value="text-embedding-3-small" />
+              <el-option label="text-embedding-3-large (3072维)" value="text-embedding-3-large" />
             </el-select>
-            <div class="form-tip">推荐使用 BAAI/bge-m3，兼顾中文表现与成本。</div>
+            <div class="form-tip">推荐 Qwen3-Embedding-8B（4096维，中文表现最佳）或 BAAI/bge-m3（1024维，性价比高）。</div>
           </el-form-item>
 
           <el-form-item label="向量维度">
-            <el-input-number v-model="config.dimensions" :min="128" :max="4096" controls-position="right" />
-            <div class="form-tip">BGE-M3 默认 1024 维。</div>
+            <el-input-number v-model="config.dimensions" :min="0" :max="8192" controls-position="right" />
+            <div class="form-tip">设置为 0 表示自动检测（使用模型默认维度）。常用值：bge-m3=1024，Qwen3=4096。</div>
           </el-form-item>
         </el-form>
       </div>

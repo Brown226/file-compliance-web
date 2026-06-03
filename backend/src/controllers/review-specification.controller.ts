@@ -7,9 +7,9 @@ import path from 'path';
 import fs from 'fs';
 import { v4 as uuidv4 } from 'uuid';
 import { FileTypeService } from '../services/file-type.service';
+import { getUploadPath } from '../config/upload';
 
-const UPLOAD_DIR = path.join(__dirname, '../../uploads/review-specifications');
-if (!fs.existsSync(UPLOAD_DIR)) fs.mkdirSync(UPLOAD_DIR, { recursive: true });
+function UPLOAD_DIR() { return getUploadPath('review-specifications'); }
 
 export const listSpecifications = async (_req: AuthRequest, res: Response): Promise<void> => {
   try {
@@ -81,7 +81,7 @@ export const parseRulesFromFile = async (req: AuthRequest, res: Response): Promi
 
     const ext = path.extname(file.originalname).toLowerCase();
     const savedName = `${uuidv4()}${ext}`;
-    const savedPath = path.join(UPLOAD_DIR, savedName);
+    const savedPath = path.join(UPLOAD_DIR(), savedName);
     fs.renameSync(file.path, savedPath);
 
     const fileType = FileTypeService.getStandardizedType(ext);
@@ -105,7 +105,7 @@ export const parseRulesPreview = async (req: AuthRequest, res: Response): Promis
 
     const ext = path.extname(file.originalname).toLowerCase();
     const savedName = `${uuidv4()}${ext}`;
-    const savedPath = path.join(UPLOAD_DIR, savedName);
+    const savedPath = path.join(UPLOAD_DIR(), savedName);
     fs.renameSync(file.path, savedPath);
 
     const fileType = FileTypeService.getStandardizedType(ext);

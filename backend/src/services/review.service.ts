@@ -8,6 +8,7 @@ import { RuleEngineService } from './rule-engine.service';
 import { CrossFileConsistencyService } from './cross-file-consistency.service';
 import { IntraFileConsistencyService } from './intra-file-consistency.service';
 import { WebSocketService } from './websocket.service';
+import { resolveFilePath } from '../config/upload';
 import { ConcurrencyService } from './concurrency.service';
 import { ReviewSpecificationService } from './review-specification.service';
 import { RuleLibraryService } from './rule-library.service';
@@ -470,14 +471,13 @@ export class ReviewService {
           include: { refFiles: true },
         });
         if (groups.length > 0) {
-          const uploadsDir = path.join(__dirname, '../../uploads');
           refFileGroupCtx = {
             groupId: groups[0].id,
             groupName: groups[0].groupName,
             refFiles: groups[0].refFiles.map((rf: any) => ({
               id: rf.id,
               fileName: rf.fileName,
-              filePath: path.join(uploadsDir, path.basename(rf.filePath)),
+              filePath: resolveFilePath(rf.filePath),
               fileType: rf.fileType,
               extractedText: rf.extractedText || undefined,
             })),
@@ -487,8 +487,7 @@ export class ReviewService {
 
       // ===== 为每个文件构建 PipelineContext（不含阶段结果） =====
       const fileContexts = task.files.map(file => {
-        const uploadsDir = path.join(__dirname, '../../uploads');
-        const absolutePath = path.join(uploadsDir, path.basename(file.filePath));
+        const absolutePath = resolveFilePath(file.filePath);
 
         const ctx: PipelineContext = {
           taskId,
@@ -646,13 +645,36 @@ export class ReviewService {
           }).catch((e) => { console.warn(`[Review] 更新阶段1失败文件状态 (${fileId}):`, e); });
         }
 
+        // ★ LLM 配置预检：阶段2开始前检查 LLM 是否可用，推送明确状态
+        let llmConfigAvailable = true;
+        try {
+          const llmConfig = await LlmService.getLlmConfig();
+          if (!llmConfig) {
+            llmConfigAvailable = false;
+            console.warn('[Review] ⚠️ LLM 未配置，AI 审查将无法正常执行');
+            WebSocketService.emitTaskProgress(taskId, {
+              type: 'llm_warning',
+              step: 'AI 审查警告',
+              progress: 45,
+              message: '⚠️ LLM 未配置，AI 审查将无法执行。请在系统配置中设置 LLM API。',
+              timestamp: Date.now(),
+            });
+          } else {
+            console.log(`[Review] LLM 配置检查通过: ${llmConfig.modelName} @ ${llmConfig.apiBaseUrl}`);
+          }
+        } catch (e) {
+          console.warn('[Review] LLM 配置检查异常:', e);
+        }
+
         console.log(`[Review] 阶段2开始: ${eligibleForAI.length} 个文件 AI 审查 (跳过 ${skippedCount} 个阶段1失败文件, 用户 ${task.creatorId} 并发上限 ${maxConcurrent})`);
         console.log(`[Review] 用户 ${task.creatorId} 当前并发数: ${this.getUserProcessingCount(task.creatorId)}`);
         WebSocketService.emitTaskProgress(taskId, {
           type: 'phase2_start',
           step: 'AI 深度审查',
           progress: 45,
-          message: `开始 AI 审查（${eligibleForAI.length} 个文件，用户并发上限 ${maxConcurrent}）`,
+          message: llmConfigAvailable
+            ? `开始 AI 审查（${eligibleForAI.length} 个文件，用户并发上限 ${maxConcurrent}）`
+            : `开始 AI 审查（${eligibleForAI.length} 个文件）— ⚠️ LLM 未配置，审查可能失败`,
           timestamp: Date.now(),
         });
 
@@ -671,6 +693,7 @@ export class ReviewService {
       // ===== 批量入库: 阶段2结果 =====
       let slowSuccessCount = 0;
       let slowFailedCount = 0;
+      const enginesUsed = new Set<string>(); // 收集所有文件实际使用的 AI 引擎
       for (const result of slowPhaseResults) {
         const isError = 'error' in result;
         if (isError) {
@@ -679,6 +702,7 @@ export class ReviewService {
           await this.createErrorDetail(taskId, result.fileId, result.fileName, result.error);
         } else {
           slowSuccessCount++;
+          if (result.usedEngine) enginesUsed.add(result.usedEngine);
           // 推送阶段2完成事件
           WebSocketService.emitTaskProgress(taskId, {
             type: 'slow_phase_complete',
@@ -756,9 +780,14 @@ export class ReviewService {
       const failedCount = needsAI ? (phase1FailedCount + slowFailedCount) : fastFailedCount;
       const newStatus = (failedCount >= totalFiles) ? 'FAILED' : 'COMPLETED';
 
+      // 持久化实际使用的 AI 引擎信息到任务记录
+      const primaryEngine = enginesUsed.size > 0 ? Array.from(enginesUsed).join('+') : (needsAI ? 'none' : undefined);
       await prisma.task.update({
         where: { id: taskId },
-        data: { status: newStatus },
+        data: {
+          status: newStatus,
+          ...(primaryEngine ? { aiEngineUsed: primaryEngine } : {}),
+        },
       });
 
       // ===== 最终推送 =====
@@ -826,8 +855,7 @@ export class ReviewService {
     fileIndex: number,
     totalFiles: number,
   ): Promise<{ ruleIssues: any[]; stdRefIssues: any[] }> {
-    const uploadsDir = path.join(__dirname, '../../uploads');
-    const absolutePath = path.join(uploadsDir, path.basename(file.filePath));
+    const absolutePath = resolveFilePath(file.filePath);
 
     // 推送文件阶段1开始
     const fileProgress = Math.round((fileIndex / totalFiles) * 100);
@@ -1483,8 +1511,7 @@ export class ReviewService {
     knowledgeCategoryIds?: string[],
     onProgress?: (chunkProgress: number) => void,
   ): Promise<void> {
-    const uploadsDir = path.join(__dirname, '../../uploads');
-    const absolutePath = path.join(uploadsDir, path.basename(file.filePath));
+    const absolutePath = resolveFilePath(file.filePath);
 
     const ctx: PipelineContext = {
       taskId,
@@ -1524,7 +1551,7 @@ export class ReviewService {
           refFiles: groups[0].refFiles.map((rf: any) => ({
             id: rf.id,
             fileName: rf.fileName,
-            filePath: path.join(uploadsDir, path.basename(rf.filePath)),
+            filePath: resolveFilePath(rf.filePath),
             fileType: rf.fileType,
             extractedText: rf.extractedText || undefined,
           })),

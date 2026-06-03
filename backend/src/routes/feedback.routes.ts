@@ -4,6 +4,7 @@ import path from 'path';
 import fs from 'fs';
 import { authenticate } from '../middlewares/auth.middleware';
 import { requireRole } from '../middlewares/rbac.middleware';
+import { getUploadPath } from '../config/upload';
 import {
   createFeedback,
   getMyFeedbacks,
@@ -21,13 +22,7 @@ const router = Router();
 
 // 配置反馈文件上传
 const storage = multer.diskStorage({
-  destination: (req, file, cb) => {
-    const uploadDir = path.join(__dirname, '../../uploads/feedback');
-    if (!fs.existsSync(uploadDir)) {
-      fs.mkdirSync(uploadDir, { recursive: true });
-    }
-    cb(null, uploadDir);
-  },
+  destination: (req, file, cb) => cb(null, getUploadPath('feedback')),
   filename: (req, file, cb) => {
     const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
     // 处理中文文件名编码

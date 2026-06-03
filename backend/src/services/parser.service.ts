@@ -12,7 +12,7 @@ export class ParserService {
   private static _lastParseResult: ParseResult | null = null;
 
   /** 清除字符串中的 null 字节和非法 UTF-8 控制字符，防止 PostgreSQL 报错 */
-  private static sanitizeUtf8(str: string): string {
+  static sanitizeUtf8(str: string): string {
     if (!str) return str;
     return str.replace(/\x00/g, '').replace(/[\x01-\x08\x0b\x0c\x0e-\x1f]/g, '');
   }

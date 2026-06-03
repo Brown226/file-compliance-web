@@ -277,11 +277,13 @@ export class StandardService {
   }
 
   static async deleteStandard(id: string): Promise<Standard> {
+    await prisma.task.updateMany({ where: { standardId: id }, data: { standardId: null } });
     return prisma.standard.delete({ where: { id } });
   }
 
   /** 清空所有标准库数据（物理删除） */
   static async clearAllStandards(): Promise<number> {
+    await prisma.task.updateMany({ where: { standardId: { not: null } }, data: { standardId: null } });
     const result = await prisma.standard.deleteMany();
     return result.count;
   }

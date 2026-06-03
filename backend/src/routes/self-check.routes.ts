@@ -1,19 +1,15 @@
 import { Router } from 'express';
 import multer from 'multer';
 import path from 'path';
-import fs from 'fs';
 import { authenticate } from '../middlewares/auth.middleware';
 import { runSelfCheck, exportSelfCheckReport, getLibraryInfo } from '../controllers/self-check.controller';
+import { getUploadPath } from '../config/upload';
 
 const router = Router();
 
-// Multer 配置 - 临时文件上传
+// Multer 配置 - 自检文件上传
 const storage = multer.diskStorage({
-  destination: (_req, _file, cb) => {
-    const uploadDir = path.join(__dirname, '../../uploads/temp');
-    if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true });
-    cb(null, uploadDir);
-  },
+  destination: (_req, _file, cb) => cb(null, getUploadPath('selfcheck')),
   filename: (_req, file, cb) => {
     cb(null, 'selfcheck-' + Date.now() + '-' + Math.round(Math.random() * 1E9) + path.extname(file.originalname));
   },

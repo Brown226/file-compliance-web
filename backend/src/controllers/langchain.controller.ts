@@ -76,8 +76,8 @@ export const langchainAskQuestion = async (req: AuthRequest, res: Response): Pro
     const result = await LangChainRAGService.askQuestion(question, categoryIds, history, {
       topK: topK ?? 8,
       enableMultiQuery: enableMultiQuery ?? true,
-      enableHyDE: enableHyDE ?? true,
-      enableCompression: enableCompression ?? true,
+      enableHyDE: enableHyDE ?? false,
+      enableCompression: enableCompression ?? false,
     });
 
     success(res, result);
@@ -151,8 +151,8 @@ export const langchainAskStream = async (req: AuthRequest, res: Response): Promi
     const searchResult = await LangChainRAGService.askQuestion(question, categoryIds, history, {
       topK: topK ?? 8,
       enableMultiQuery: enableMultiQuery ?? true,
-      enableHyDE: enableHyDE ?? true,
-      enableCompression: enableCompression ?? true,
+      enableHyDE: enableHyDE ?? false,
+      enableCompression: enableCompression ?? false,
     })
 
     send('sources', { sources: searchResult.sources, debug: searchResult.debug });
@@ -323,8 +323,8 @@ const processQuestionInBackground = async (
     const searchResult = await LangChainRAGService.askQuestion(question, categoryIds, history, {
       topK: options.topK ?? 8,
       enableMultiQuery: options.enableMultiQuery ?? true,
-      enableHyDE: options.enableHyDE ?? true,
-      enableCompression: options.enableCompression ?? true,
+      enableHyDE: options.enableHyDE ?? false,
+      enableCompression: options.enableCompression ?? false,
     });
 
     // 更新消息内容和来源

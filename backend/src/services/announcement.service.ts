@@ -301,9 +301,19 @@ export class AnnouncementService {
    */
   static async markAllAsRead(
     userId: string,
-    announcementIds: string[]
+    announcementIds?: string[]
   ): Promise<void> {
-    if (announcementIds.length === 0) return;
+    if (!announcementIds || announcementIds.length === 0) {
+      // 标记已发布的所有公告为已读
+      const published = await prisma.systemAnnouncement.findMany({
+        where: { status: 'PUBLISHED' },
+        select: { id: true },
+      });
+      if (published.length === 0) return;
+      const data = published.map(a => ({ userId, announcementId: a.id }));
+      await prisma.userAnnouncementRead.createMany({ data, skipDuplicates: true });
+      return;
+    }
 
     const data = announcementIds.map(id => ({
       userId,

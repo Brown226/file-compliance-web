@@ -43,7 +43,7 @@ export class FeedbackService {
         content: input.content,
         category: input.category,
         userId: input.userId,
-        attachmentPaths: input.attachmentPaths ? Prisma.JsonNullValueInput.JsonNull : null,
+        attachmentPaths: input.attachmentPaths ? input.attachmentPaths : Prisma.JsonNullValueInput.JsonNull,
       },
       include: {
         user: {

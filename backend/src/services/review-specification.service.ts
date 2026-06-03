@@ -293,6 +293,7 @@ export class ReviewSpecificationService {
   }
 
   static async delete(id: string) {
+    await prisma.task.updateMany({ where: { reviewSpecificationId: id }, data: { reviewSpecificationId: null } });
     return prisma.reviewSpecification.delete({ where: { id } });
   }
 

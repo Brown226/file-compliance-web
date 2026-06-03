@@ -50,9 +50,9 @@ export class LangChainRAGService {
     const llmMaxTokens = options?.llmMaxTokens || 4096;
     const llmTimeout = options?.llmTimeout || 180;
     const enableMultiQuery = options?.enableMultiQuery ?? true;
-    const enableHyDE = options?.enableHyDE ?? true;
-    const enableCompression = options?.enableCompression ?? true;
-    const multiQueryCount = options?.multiQueryCount ?? 3;
+    const enableHyDE = options?.enableHyDE ?? false;
+    const enableCompression = options?.enableCompression ?? false;
+    const multiQueryCount = options?.multiQueryCount ?? 1;
 
     const chunks = LlmService.splitText(text, chunkSize, true);
     const totalChunks = chunks.length;

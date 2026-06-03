@@ -3,6 +3,7 @@ import { authenticate } from '../middlewares/auth.middleware';
 import { requireRole } from '../middlewares/rbac.middleware';
 import multer from 'multer';
 import path from 'path';
+import { getUploadPath } from '../config/upload';
 import {
   listCategories,
   listAllCategories,
@@ -11,6 +12,7 @@ import {
   deleteCategory,
   uploadDocument,
   uploadDocumentAsync,
+  uploadAndProcess,
   getTaskStatus,
   getActiveTasks,
   previewDocument,
@@ -38,7 +40,7 @@ import {
 
 const router = Router();
 const upload = multer({
-  dest: path.join(__dirname, '../../uploads/tmp/'),
+  dest: getUploadPath('tmp'),
   limits: { fileSize: 50 * 1024 * 1024 }, // 50MB
   fileFilter: (_req, file, cb) => {
     const ext = path.extname(file.originalname).toLowerCase();
@@ -74,6 +76,9 @@ router.post('/:id/documents', requireRole('ADMIN', 'MANAGER'), upload.single('fi
 
 // 异步上传（多文件，后台处理）
 router.post('/:id/upload-async', requireRole('ADMIN', 'MANAGER'), upload.array('files', 10), uploadDocumentAsync);
+
+// 上传并异步处理（新流程：立即返回，后台解析+向量化）
+router.post('/:id/upload-and-process', requireRole('ADMIN', 'MANAGER'), upload.array('files', 10), uploadAndProcess);
 
 // 分段预览确认
 router.post('/:id/preview', requireRole('ADMIN', 'MANAGER'), upload.array('file', 10), previewDocument);

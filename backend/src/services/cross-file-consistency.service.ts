@@ -7,6 +7,9 @@
 
 import prisma from '../config/db';
 import { TextExtractionService } from './review-pipeline/text-extraction.service';
+import { LlmService } from './llm.service';
+import { WebSocketService } from './websocket.service';
+import { resolveFilePath } from '../config/upload';
 import path from 'path';
 
 /** 参数抽取结果 */
@@ -115,8 +118,7 @@ export class CrossFileConsistencyService {
    * 提取文件文本（统一管道：含 OCR 降级）
    */
   private static async extractText(file: { fileName: string; filePath: string; fileType: string }): Promise<string> {
-    const uploadsDir = path.join(__dirname, '../../uploads');
-    const absolutePath = path.join(uploadsDir, path.basename(file.filePath));
+    const absolutePath = resolveFilePath(file.filePath);
     return TextExtractionService.extractFileText(absolutePath, file.fileType, file.fileName);
   }
 

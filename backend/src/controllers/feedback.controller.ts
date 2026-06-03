@@ -6,13 +6,9 @@ import { success, error, paginated } from '../utils/response';
 import path from 'path';
 import fs from 'fs';
 import { v4 as uuidv4 } from 'uuid';
+import { getUploadPath } from '../config/upload';
 
-const UPLOAD_DIR = path.join(__dirname, '../../uploads/feedback');
-
-// 确保上传目录存在
-if (!fs.existsSync(UPLOAD_DIR)) {
-  fs.mkdirSync(UPLOAD_DIR, { recursive: true });
-}
+function UPLOAD_DIR() { return getUploadPath('feedback'); }
 
 // 允许的文件类型
 const ALLOWED_MIME_TYPES = [
@@ -99,7 +95,7 @@ export const createFeedback = async (req: AuthRequest, res: Response): Promise<v
         // 生成唯一文件名
         const fileExt = path.extname(file.originalname);
         const fileName = `${uuidv4()}${fileExt}`;
-        const filePath = path.join(UPLOAD_DIR, fileName);
+        const filePath = path.join(UPLOAD_DIR(), fileName);
 
         // 移动文件
         fs.renameSync(file.path, filePath);

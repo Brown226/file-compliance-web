@@ -171,17 +171,35 @@
                 <div class="qa-sources__header">
                   <el-icon><Document /></el-icon>
                   <span>引用来源</span>
+                  <el-tag size="small" type="info" effect="plain" round>{{ msg.sources.length }}</el-tag>
                 </div>
                 <div class="qa-sources__list">
-                  <el-tag
-                    v-for="(src, si) in msg.sources"
+                  <div
+                    v-for="(src, si) in sortedSources(msg.sources)"
                     :key="si"
-                    size="small"
-                    type="info"
-                    effect="plain"
+                    class="qa-source-item"
+                    :class="{ 'qa-source-item--hidden': si >= 3 && !sourceShowAllMap[msgKey(msg)] }"
                   >
-                    {{ src.document_name }}
-                  </el-tag>
+                    <div class="qa-source-item__header" @click="toggleSource(msg, si)">
+                      <div class="qa-source-item__info">
+                        <span class="qa-source-item__name" :title="src.document_name">{{ src.document_name }}</span>
+                        <el-tag size="small" :type="sourceTagType(src.similarity)" effect="dark" round>
+                          {{ (Math.min(src.similarity, 1) * 100).toFixed(0) }}%
+                        </el-tag>
+                      </div>
+                      <el-icon class="qa-source-item__arrow" :class="{ expanded: isSourceExpanded(msg, si) }">
+                        <ArrowDown />
+                      </el-icon>
+                    </div>
+                    <div v-show="isSourceExpanded(msg, si)" class="qa-source-item__body">
+                      <div class="qa-source-item__text">{{ src.content || '无内容预览' }}</div>
+                    </div>
+                  </div>
+                  <div v-if="msg.sources.length > 3" class="qa-sources__expand-btn">
+                    <el-button link size="small" @click="toggleShowAll(msg)">
+                      {{ sourceShowAllMap[msgKey(msg)] ? '收起' : `展开全部 ${msg.sources.length} 个来源` }}
+                    </el-button>
+                  </div>
                 </div>
               </div>
             </div>
@@ -221,7 +239,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import { Plus, Delete, ChatDotRound, ChatLineSquare, Setting, Document, Promotion, WarningFilled, FolderOpened, Collection, ArrowDown } from '@element-plus/icons-vue'
 import KnowledgeBaseSelector from '@/views/components/KnowledgeBaseSelector.vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
@@ -264,8 +282,8 @@ const DEFAULT_SEARCH_PARAMS: SearchParams = {
   minSimilarity: 0.3,
   searchMode: 'hybrid',
   enableMultiQuery: true,
-  enableHyDE: true,
-  enableCompression: true,
+  enableHyDE: false,
+  enableCompression: false,
 }
 
 const userStore = useUserStore()
@@ -287,6 +305,42 @@ const categoryTree = ref<KnowledgeTreeNode[]>([])
 const conversations = ref<Conversation[]>([])
 const currentConversationId = ref<string | null>(null)
 const abortController = ref<AbortController | null>(null)
+
+// 引用来源展开状态
+const sourceExpandMap = reactive<Record<string, boolean>>({})
+const sourceShowAllMap = reactive<Record<string, boolean>>({})
+
+const sourceKey = (msg: ChatMessage, si: number): string => `${msg.id || msg.content.slice(0, 20)}-${si}`
+const msgKey = (msg: ChatMessage): string => msg.id || msg.content.slice(0, 20)
+
+const sortedSources = (sources: Array<{ content: string; document_name: string; similarity: number }>) =>
+  [...sources].sort((a, b) => (b.similarity ?? 0) - (a.similarity ?? 0))
+
+const sourceTagType = (similarity?: number): 'success' | 'warning' | 'info' => {
+  const score = Math.min(similarity ?? 0, 1)
+  if (score >= 0.85) return 'success'
+  if (score >= 0.6) return 'warning'
+  return 'info'
+}
+
+const isSourceExpanded = (msg: ChatMessage, si: number): boolean =>
+  sourceExpandMap[sourceKey(msg, si)] ?? (si < 3)
+
+const toggleSource = (msg: ChatMessage, si: number): void => {
+  const key = sourceKey(msg, si)
+  sourceExpandMap[key] = !sourceExpandMap[key]
+}
+
+const toggleShowAll = (msg: ChatMessage): void => {
+  const key = msgKey(msg)
+  sourceShowAllMap[key] = !sourceShowAllMap[key]
+  if (!sourceShowAllMap[key]) {
+    // 收起时展开前 3 个
+    for (let i = 0; i < (msg.sources?.length ?? 0); i++) {
+      sourceExpandMap[sourceKey(msg, i)] = i < 3
+    }
+  }
+}
 
 // ========== 持久化存储 ==========
 const saveSelectedKbIds = (ids: string[]) => {
@@ -1086,15 +1140,82 @@ onUnmounted(() => {
 
 .qa-sources__list {
   display: flex;
-  flex-wrap: wrap;
+  flex-direction: column;
   gap: 6px;
 }
 
-.qa-sources__list .el-tag {
-  background: linear-gradient(135deg, #f0f7ff 0%, #e8f2fe 100%);
-  border-color: rgba(64, 158, 255, 0.2);
-  color: #409eff;
+.qa-source-item {
+  border: 1px solid #e8ecf1;
+  border-radius: 6px;
+  overflow: hidden;
+  transition: all 0.2s ease;
+}
+
+.qa-source-item--hidden {
+  display: none;
+}
+
+.qa-source-item:hover {
+  border-color: #c8d0dd;
+}
+
+.qa-source-item__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 10px;
+  cursor: pointer;
+  background: #f9fafb;
+  user-select: none;
+}
+
+.qa-source-item__header:hover {
+  background: #f0f2f5;
+}
+
+.qa-source-item__info {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  flex: 1;
+}
+
+.qa-source-item__name {
   font-size: 12px;
+  color: #303133;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 240px;
+}
+
+.qa-source-item__arrow {
+  font-size: 14px;
+  color: #909399;
+  transition: transform 0.2s;
+  flex-shrink: 0;
+}
+
+.qa-source-item__arrow.expanded {
+  transform: rotate(180deg);
+}
+
+.qa-source-item__body {
+  padding: 8px 10px 10px;
+  border-top: 1px solid #e8ecf1;
+}
+
+.qa-source-item__text {
+  font-size: 12px;
+  color: #606266;
+  line-height: 1.6;
+  word-break: break-word;
+}
+
+.qa-sources__expand-btn {
+  text-align: center;
+  margin-top: 4px;
 }
 
 /* 输入区域 */

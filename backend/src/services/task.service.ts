@@ -1,6 +1,7 @@
 import prisma from '../config/db';
 import { Task, TaskDetail, TaskFile, TaskStatus } from '@prisma/client';
 import path from 'path';
+import fs from 'fs';
 import ExcelJS from 'exceljs';
 import { ReviewService } from './review.service';
 import { addReviewJob } from './queue.service';
@@ -8,6 +9,7 @@ import FalsePositiveLibraryService from './falsePositiveLibrary.service';
 import { TextExtractionService } from './review-pipeline/text-extraction.service';
 import { ReviewPlan, ReviewEvidenceSource, normalizeEvidenceSources, isReviewObjective } from '../types/review-plan';
 import { ReviewModeType } from './review-pipeline/types';
+import { resolveFilePath } from '../config/upload';
 
 export class TaskService {
   /** 将前端 entryModule 映射为 ReviewMode 枚举值 */
@@ -105,6 +107,7 @@ export class TaskService {
     title: string;
     description?: string;
     creatorId: string;
+    creatorUsername?: string;
     standardId?: string;
     standardIds?: string[];  // 多标准关联
     knowledgeCategoryId?: string;  // 用户选择的知识库ID
@@ -120,7 +123,7 @@ export class TaskService {
     files?: Express.Multer.File[];
     dwgParsedData?: Record<string, any>;  // 前端 WASM 解析的 DWG 数据（按文件名映射）
   }): Promise<Task> {
-    const { title, description, creatorId, standardId, standardIds = [], knowledgeCategoryId, knowledgeCategoryIds,
+    const { title, description, creatorId, creatorUsername, standardId, standardIds = [], knowledgeCategoryId, knowledgeCategoryIds,
       reviewSpecificationId, ruleLibraryId, perspective, reviewPlan,
       selectedTemplateId, intraFileConsistency, entryModule, reviewMode,
       files = [], dwgParsedData } = data;
@@ -238,7 +241,7 @@ export class TaskService {
           return {
             taskId: task.id,
             fileName: decodedName,
-            filePath: `/uploads/${file.filename}`,
+            filePath: `/uploads/${creatorUsername || creatorId}/${file.filename}`,
             fileSize: file.size,
             fileType,
             // DWG WASM 数据：提取文本 + 元数据存储到 dwgMetadata
@@ -437,8 +440,9 @@ export class TaskService {
     groupName?: string;
     description?: string;
     files: Express.Multer.File[];
+    creatorId?: string;
   }): Promise<any> {
-    const { taskId, groupName = '默认参照组', description, files } = data;
+    const { taskId, groupName = '默认参照组', description, files, creatorId = 'anonymous' } = data;
 
     const group = await prisma.refFileGroup.create({
       data: { taskId, groupName, description },
@@ -449,7 +453,7 @@ export class TaskService {
         data: files.map((file) => ({
           groupId: group.id,
           fileName: TaskService.decodeFileName(file.originalname),
-          filePath: `/uploads/${file.filename}`,
+          filePath: `/uploads/${creatorId}/${file.filename}`,
           fileSize: file.size,
           fileType: path.extname(file.originalname).toLowerCase().replace('.', ''),
         })),
@@ -613,9 +617,10 @@ export class TaskService {
   }
 
   /**
-   * 删除单个任务（级联删除关联的文件和审查结果）
+   * 删除单个任务（清理物理文件后级联删除关联记录）
    */
   static async deleteTask(id: string): Promise<void> {
+    await this.deleteTaskFiles([id]);
     await prisma.task.delete({
       where: { id }
     });
@@ -625,10 +630,41 @@ export class TaskService {
    * 批量删除任务
    */
   static async deleteTasks(ids: string[]): Promise<{ count: number }> {
+    await this.deleteTaskFiles(ids);
     const result = await prisma.task.deleteMany({
       where: { id: { in: ids } }
     });
     return { count: result.count };
+  }
+
+  /**
+   * 删除指定任务的物理文件和关联数据
+   */
+  private static async deleteTaskFiles(taskIds: string[]): Promise<void> {
+    // 清理物理文件
+    const [taskFiles, refFiles] = await Promise.all([
+      prisma.taskFile.findMany({
+        where: { taskId: { in: taskIds } },
+        select: { filePath: true },
+      }),
+      prisma.refFile.findMany({
+        where: { group: { taskId: { in: taskIds } } },
+        select: { filePath: true },
+      }),
+    ]);
+    const allPaths = [...new Set([...taskFiles, ...refFiles].map(f => f.filePath))];
+    for (const storedPath of allPaths) {
+      try {
+        const physicalPath = resolveFilePath(storedPath);
+        if (fs.existsSync(physicalPath)) {
+          fs.unlinkSync(physicalPath);
+        }
+      } catch { /* skip individual file errors */ }
+    }
+    // 清理关联的误报库记录（taskId 是普通字符串字段，不会级联）
+    await prisma.falsePositiveLibrary.deleteMany({
+      where: { taskId: { in: taskIds } },
+    });
   }
 
   /**

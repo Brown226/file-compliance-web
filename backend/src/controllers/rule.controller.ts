@@ -394,6 +394,11 @@ export async function deleteRule(req: Request, res: Response): Promise<void> {
       return;
     }
 
+    await prisma.taskDetail.updateMany({
+      where: { ruleCode: existing.ruleCode },
+      data: { ruleCode: `(已删除)${existing.ruleCode}` },
+    });
+
     await prisma.reviewRule.delete({
       where: { id: existing.id },
     });

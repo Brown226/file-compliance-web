@@ -4,9 +4,8 @@
  * 使用 OpenAI 兼容 API 进行文本向量化和重排序。
  * Embedding 失败时必须硬失败，禁止写入伪向量。
  *
- * 缓存优化：
- * - 使用 CacheService 缓存重复的 Embedding 查询
- * - 避免重复调用 API，节省成本和延迟
+ * 支持动态维度：不同模型可返回不同维度的向量（如 bge-m3=1024, qwen3=4096）
+ * 数据库使用 vector 类型（不指定维度），自动适配。
  */
 
 import prisma from '../config/db';
@@ -19,7 +18,12 @@ interface EmbeddingConfig {
   baseUrl: string;
   apiKey: string;
   model: string;
-  dimensions: number;
+  dimensions: number; // 0 = 自动检测，不限制
+}
+
+interface EmbeddingResult {
+  embeddings: number[][];
+  actualDimensions: number; // API 实际返回的维度
 }
 
 interface RerankConfig {
@@ -42,7 +46,7 @@ export class EmbeddingService {
             baseUrl: v.apiBaseUrl || 'https://api.siliconflow.cn/v1',
             apiKey: v.apiKey,
             model: v.modelName || 'BAAI/bge-m3',
-            dimensions: typeof v.dimensions === 'number' ? v.dimensions : 4096,
+            dimensions: typeof v.dimensions === 'number' ? v.dimensions : 0,
           };
         }
       }
@@ -79,22 +83,25 @@ export class EmbeddingService {
 
   /**
    * 批量文本向量化（带缓存）
+   * 返回 EmbeddingResult 包含实际维度信息
    */
-  static async embedTexts(texts: string[]): Promise<number[][]> {
-    if (texts.length === 0) return [];
+  static async embedTextsWithDimensions(texts: string[]): Promise<EmbeddingResult> {
+    if (texts.length === 0) return { embeddings: [], actualDimensions: 0 };
 
     // 递归分批
     if (texts.length > EMBEDDING_BATCH_SIZE) {
-      const results: number[][] = [];
+      const allEmbeddings: number[][] = [];
+      let actualDimensions = 0;
       for (let i = 0; i < texts.length; i += EMBEDDING_BATCH_SIZE) {
-        const batch = await this.embedTexts(texts.slice(i, i + EMBEDDING_BATCH_SIZE));
-        results.push(...batch);
+        const batch = await this.embedTextsWithDimensions(texts.slice(i, i + EMBEDDING_BATCH_SIZE));
+        allEmbeddings.push(...batch.embeddings);
+        actualDimensions = batch.actualDimensions;
       }
-      return results;
+      return { embeddings: allEmbeddings, actualDimensions };
     }
 
     const cacheKey = this.computeCacheKey(texts);
-    const cached = CacheService.get<number[][]>(cacheKey);
+    const cached = CacheService.get<EmbeddingResult>(cacheKey);
     if (cached !== null) {
       console.log(`[Embedding] Cache hit for ${texts.length} texts`);
       return cached;
@@ -106,18 +113,24 @@ export class EmbeddingService {
     }
 
     const startTime = Date.now();
+
+    // 构建请求体：dimensions=0 时不发送该字段（让 API 返回模型默认维度）
+    const requestBody: any = {
+      model: config.model,
+      input: texts,
+      encoding_format: 'float',
+    };
+    if (config.dimensions > 0) {
+      requestBody.dimensions = config.dimensions;
+    }
+
     const response = await fetch(`${config.baseUrl.replace(/\/$/, '')}/embeddings`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${config.apiKey}`,
       },
-      body: JSON.stringify({
-        model: config.model,
-        input: texts,
-        encoding_format: 'float',
-        dimensions: config.dimensions,
-      }),
+      body: JSON.stringify(requestBody),
       signal: AbortSignal.timeout(60000),
     });
 
@@ -131,17 +144,39 @@ export class EmbeddingService {
     if (!Array.isArray(embeddings) || embeddings.length !== texts.length) {
       throw new Error(`Embedding 返回数量异常: expected=${texts.length}, actual=${embeddings.length}`);
     }
+
+    // 检测实际维度
+    let actualDimensions = 0;
     for (const embedding of embeddings) {
-      if (!Array.isArray(embedding) || embedding.length !== config.dimensions) {
-        throw new Error(`Embedding 维度异常: expected=${config.dimensions}, actual=${Array.isArray(embedding) ? embedding.length : 'invalid'}`);
+      if (!Array.isArray(embedding) || embedding.length === 0) {
+        throw new Error(`Embedding 维度异常: 返回了无效的向量数据`);
+      }
+      if (actualDimensions === 0) {
+        actualDimensions = embedding.length;
+      } else if (embedding.length !== actualDimensions) {
+        throw new Error(`Embedding 维度不一致: 期望=${actualDimensions}, 实际=${embedding.length}`);
       }
     }
 
-    const latency = Date.now() - startTime;
-    console.log(`[Embedding] API call completed in ${latency}ms for ${texts.length} texts`);
+    // 如果配置了 dimensions，验证是否匹配
+    if (config.dimensions > 0 && actualDimensions !== config.dimensions) {
+      console.warn(`[Embedding] 维度不匹配: 配置=${config.dimensions}, 实际=${actualDimensions}。将使用实际维度。`);
+    }
 
-    CacheService.set(cacheKey, embeddings, EMBEDDING_CACHE_TTL);
-    return embeddings;
+    const latency = Date.now() - startTime;
+    console.log(`[Embedding] API call completed in ${latency}ms for ${texts.length} texts, dimensions=${actualDimensions}`);
+
+    const result: EmbeddingResult = { embeddings, actualDimensions };
+    CacheService.set(cacheKey, result, EMBEDDING_CACHE_TTL);
+    return result;
+  }
+
+  /**
+   * 批量文本向量化（兼容旧接口，返回 embeddings 数组）
+   */
+  static async embedTexts(texts: string[]): Promise<number[][]> {
+    const result = await this.embedTextsWithDimensions(texts);
+    return result.embeddings;
   }
 
   /**
@@ -153,14 +188,23 @@ export class EmbeddingService {
   }
 
   /**
+   * 获取当前配置的实际维度（不调用 API）
+   * 返回 0 表示自动检测
+   */
+  static async getConfiguredDimensions(): Promise<number> {
+    const config = await this.getEmbeddingConfig();
+    return config?.dimensions ?? 0;
+  }
+
+  /**
    * 检查 Embedding 服务是否可用
    */
   static async isReady(): Promise<boolean> {
     const config = await this.getEmbeddingConfig();
     if (!config) return false;
     try {
-      const [embedding] = await this.embedTexts(['测试文本']);
-      return Array.isArray(embedding) && embedding.length === config.dimensions;
+      const result = await this.embedTextsWithDimensions(['测试文本']);
+      return result.embeddings.length > 0 && result.actualDimensions > 0;
     } catch {
       return false;
     }

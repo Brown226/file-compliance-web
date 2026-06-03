@@ -5,6 +5,7 @@
 import * as path from 'path';
 import prisma from '../config/db';
 import FileCleanupService from './file-cleanup.service';
+import { getUploadPath } from '../config/upload';
 
 const DEFAULT_CLEANUP_DAYS = 7;
 
@@ -43,7 +44,7 @@ function scheduleCleanup() {
 async function runCleanup() {
   console.log('[Scheduler] 开始执行孤立文件清理...');
   try {
-    const uploadsDir = path.join(__dirname, '../../uploads');
+    const uploadsDir = getUploadPath();
     const days = await getCleanupDays();
     if (days === 0) {
       console.log('[Scheduler] 自动清理已禁用（配置为 0 天），跳过清理');

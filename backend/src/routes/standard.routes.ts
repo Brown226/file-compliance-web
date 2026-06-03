@@ -4,6 +4,7 @@ import path from 'path';
 import fs from 'fs';
 import { authenticate } from '../middlewares/auth.middleware';
 import { requireRole } from '../middlewares/rbac.middleware';
+import { getUploadPath } from '../config/upload';
 import {
   createStandard,
   createStandardFromFile,
@@ -34,23 +35,17 @@ const router = Router();
 
 // ===== Multer 配置 =====
 
+const tempDir = () => getUploadPath('temp');
+
 const excelStorage = multer.diskStorage({
-  destination: (_req, _file, cb) => {
-    const uploadDir = path.join(__dirname, '../../uploads/temp');
-    if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true });
-    cb(null, uploadDir);
-  },
+  destination: (_req, _file, cb) => cb(null, tempDir()),
   filename: (_req, file, cb) => {
     cb(null, 'import-' + Date.now() + '-' + Math.round(Math.random() * 1E9) + path.extname(file.originalname));
   }
 });
 
 const standardFileStorage = multer.diskStorage({
-  destination: (_req, _file, cb) => {
-    const uploadDir = path.join(__dirname, '../../uploads/temp');
-    if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true });
-    cb(null, uploadDir);
-  },
+  destination: (_req, _file, cb) => cb(null, tempDir),
   filename: (_req, file, cb) => {
     cb(null, 'standard-' + Date.now() + '-' + Math.round(Math.random() * 1E9) + path.extname(file.originalname));
   }

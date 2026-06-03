@@ -206,9 +206,15 @@
         <div class="source-refs-section">
           <span class="row-label">相似文档</span>
           <div class="source-list">
-            <div v-if="detail.sourceReferences.length > 3" class="source-top-hint">
-              仅展示 Top {{ topSourceRefs(detail.sourceReferences).length }} 相似结果
-            </div>
+            <el-alert
+              v-if="detail.sourceReferences.length > 3"
+              :title="`仅展示 Top ${topSourceRefs(detail.sourceReferences).length} 相似结果`"
+              type="info"
+              :closable="false"
+              size="small"
+              show-icon
+              class="source-top-hint"
+            />
             <el-collapse>
               <el-collapse-item
                 v-for="(ref, idx) in topSourceRefs(detail.sourceReferences)"
@@ -223,7 +229,18 @@
                     </el-tag>
                   </span>
                 </template>
-                <div class="source-content">{{ ref.content }}</div>
+                <div
+                  class="source-content"
+                  :class="{ 'source-content--clamped': !expandedSources[idx] }"
+                  @click="expandedSources[idx] = !expandedSources[idx]"
+                >
+                  {{ ref.content }}
+                </div>
+                <div v-if="shouldShowExpand(ref.content)" class="source-expand-btn">
+                  <el-button link size="small" @click="expandedSources[idx] = !expandedSources[idx]">
+                    {{ expandedSources[idx] ? '收起' : '展开全文' }}
+                  </el-button>
+                </div>
               </el-collapse-item>
             </el-collapse>
           </div>
@@ -243,7 +260,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, watch } from 'vue'
+import { ref, reactive, watch } from 'vue'
 import type { IssueDetail } from './types/issue'
 import {
   CopyDocument,
@@ -275,6 +292,12 @@ const emit = defineEmits<{
 
 // 卡片展开状态（默认折叠）
 const cardExpanded = ref(false)
+
+// 来源内容展开状态
+const expandedSources = reactive<Record<number, boolean>>({})
+
+const shouldShowExpand = (content: string | undefined | null): boolean =>
+  (content?.length ?? 0) > 400
 
 /** 截断文本（折叠态预览用） */
 const truncateIssueText = (text: string, maxLen: number): string => {
@@ -594,9 +617,7 @@ const {
   margin-top: 4px;
 }
 .source-top-hint {
-  font-size: 11px;
-  color: #9CA3AF;
-  margin-bottom: 4px;
+  margin-bottom: 6px;
 }
 .source-title {
   font-size: 12px;
@@ -608,6 +629,27 @@ const {
   font-size: 12px;
   color: #6B7280;
   line-height: 1.5;
+  transition: max-height 0.25s ease;
+  cursor: pointer;
+}
+.source-content--clamped {
+  max-height: 6em;
+  overflow: hidden;
+  position: relative;
+}
+.source-content--clamped::after {
+  content: '';
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 2em;
+  background: linear-gradient(transparent, #fff);
+  pointer-events: none;
+}
+.source-expand-btn {
+  text-align: center;
+  margin-top: 4px;
 }
 :deep(.el-collapse) { border: none; }
 :deep(.el-collapse-item__header) {

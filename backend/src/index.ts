@@ -4,9 +4,21 @@ import { TerminologyService } from './services/terminology.service';
 import { PromptTemplateService } from './services/prompt-template.service';
 import { WebSocketService } from './services/websocket.service';
 import { closeQueue } from './services/queue.service';
+import prisma from './config/db';
+import { setUploadDir, initUploadSubdirs, getUploadDir } from './config/upload';
 
 const startServer = async () => {
   try {
+    // 从数据库加载存储路径配置
+    const uploadPathCfg = await prisma.systemConfig.findUnique({ where: { key: 'upload_path' } });
+    if (uploadPathCfg?.value && typeof uploadPathCfg.value === 'string') {
+      setUploadDir(uploadPathCfg.value);
+      initUploadSubdirs(uploadPathCfg.value);
+      console.log(`[Upload] DB 配置存储路径: ${uploadPathCfg.value}`);
+    } else {
+      initUploadSubdirs(getUploadDir());
+    }
+
     // 初始化术语白名单（从数据库加载到内存缓存）
     await TerminologyService.initialize();
 

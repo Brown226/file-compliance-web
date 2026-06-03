@@ -239,7 +239,6 @@ export const markAnnouncementRead = async (req: AuthRequest, res: Response): Pro
  */
 export const markAllAnnouncementsRead = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
-    const { announcementIds } = req.body;
     const userId = req.user?.id;
 
     if (!userId) {
@@ -247,7 +246,8 @@ export const markAllAnnouncementsRead = async (req: AuthRequest, res: Response):
       return;
     }
 
-    if (!Array.isArray(announcementIds)) {
+    const announcementIds = req.body?.announcementIds;
+    if (announcementIds !== undefined && !Array.isArray(announcementIds)) {
       error(res, '公告 ID 列表格式不正确', 400);
       return;
     }

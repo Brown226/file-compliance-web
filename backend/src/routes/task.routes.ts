@@ -6,6 +6,7 @@ import { authenticate } from '../middlewares/auth.middleware';
 import { requireRole } from '../middlewares/rbac.middleware';
 import { success, error } from '../utils/response';
 import { getMaxUploadSizeMB } from '../utils/system-config';
+import { getUserUploadDir, getUploadPath } from '../config/upload';
 import {
   createTask,
   getTasks,
@@ -30,13 +31,12 @@ import {
 
 const router = Router();
 
-function createUploadStorage(destRel: string) {
+function createStorage() {
   return multer.diskStorage({
     destination: (req, file, cb) => {
-      const uploadDir = path.join(__dirname, destRel);
-      if (!fs.existsSync(uploadDir)) {
-        fs.mkdirSync(uploadDir, { recursive: true });
-      }
+      const user = (req as any).user || {};
+      const dirName = user.username || user.id || 'anonymous';
+      const uploadDir = getUserUploadDir(dirName);
       cb(null, uploadDir);
     },
     filename: (req, file, cb) => {
@@ -60,7 +60,7 @@ function createUploadStorage(destRel: string) {
   });
 }
 
-const storage = createUploadStorage('../../uploads');
+const storage = createStorage();
 
 async function createDynamicUpload(maxFiles: number): Promise<multer.Multer> {
   const maxMB = await getMaxUploadSizeMB();
@@ -91,9 +91,11 @@ router.post('/upload-only', async (req, res, next) => {
       return res.status(400).json({ code: 400, message: '没有上传文件' });
     }
 
+    const user = (req as any).user || {};
+    const dirName = user.username || user.id || 'anonymous';
     const fileInfos = files.map(f => ({
       fileName: f.originalname,
-      filePath: `/uploads/${f.filename}`,
+      filePath: `/uploads/${dirName}/${f.filename}`,
       fileSize: f.size,
       fileType: path.extname(f.originalname).toLowerCase().replace('.', ''),
     }));
@@ -105,11 +107,14 @@ router.post('/upload-only', async (req, res, next) => {
   }
 });
 
-// 创建任务 - 支持批量文件上传 — 动态读取上传大小限制
+// 创建任务 - 支持批量文件上传 + 参照文件 — 动态读取上传大小限制
 router.post('/', async (req, res, next) => {
   try {
     const dynUpload = await createDynamicUpload(50);
-    dynUpload.array('files', 50)(req, res, next);
+    dynUpload.fields([
+      { name: 'files', maxCount: 50 },
+      { name: 'refFiles', maxCount: 20 },
+    ])(req, res, next);
   } catch (e) { next(e); }
 }, createTask);
 

@@ -160,6 +160,27 @@ export function cleanupFilesApi(days: number = 7) {
   return request.post<CleanupResult>(`/system/cleanup-files?days=${days}`)
 }
 
+// ==================== 存储路径配置 ====================
+
+export interface UploadPathConfig {
+  effective: string
+}
+
+export interface UploadPathChangeResult {
+  oldPath: string
+  newPath: string
+  filesAtOldPath: number
+  warning: string
+}
+
+export function getUploadPathConfigApi() {
+  return request.get<UploadPathConfig>('/system/config-path')
+}
+
+export function setUploadPathConfigApi(path: string) {
+  return request.put<UploadPathChangeResult>('/system/config-path', { path })
+}
+
 // ==================== 规则注册表 ====================
 
 export interface RuleMetaItem {

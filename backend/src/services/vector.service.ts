@@ -659,7 +659,8 @@ export class VectorService {
       })
     );
 
-    const embeddings = await EmbeddingService.embedTexts(textsForEmbedding);
+    const embeddingsResult = await EmbeddingService.embedTextsWithDimensions(textsForEmbedding);
+    const embeddings = embeddingsResult.embeddings;
 
     // 预计算所有 hash，批量查重（替代逐条 findFirst）
     const hashData = paragraphs.map((para, i) => {
@@ -785,7 +786,8 @@ export class VectorService {
       })
     );
 
-    const embeddings = await EmbeddingService.embedTexts(textsForEmbedding);
+    const embeddingsResult2 = await EmbeddingService.embedTextsWithDimensions(textsForEmbedding);
+    const embeddings = embeddingsResult2.embeddings;
 
     // 批量查重
     const hashData = segments.map((para, i) => {
@@ -905,7 +907,8 @@ export class VectorService {
         content: p.content,
       })
     );
-    const embeddings = await EmbeddingService.embedTexts(textsForEmbedding);
+    const embeddingsResult3 = await EmbeddingService.embedTextsWithDimensions(textsForEmbedding);
+    const embeddings = embeddingsResult3.embeddings;
 
     await prisma.$transaction(async (tx) => {
       await tx.$executeRawUnsafe(

@@ -47,7 +47,9 @@ export interface GroupedDocument {
   chunk_range: { min: number; max: number }
   embedded_count: number
   is_fully_embedded: boolean
-  vector_status: 'PENDING' | 'STARTED' | 'SUCCESS' | 'FAILURE'
+  vector_status: 'PENDING' | 'PARSING' | 'EMBEDDING' | 'STARTED' | 'SUCCESS' | 'FAILURE'
+  progress: number
+  error_message: string | null
   create_time: string
   update_time: string
   tags: DocumentTagSummary[]
@@ -205,6 +207,19 @@ export const getTaskStatusApi = (taskIds: string[]) =>
 
 export const getActiveTasksApi = () =>
   request.get<UploadTaskStatus[]>('/knowledge-categories/active-tasks')
+
+// ===== 上传并异步处理（新流程） =====
+
+export interface UploadedDocument {
+  id: string
+  title: string
+  status: string
+}
+
+export const uploadAndProcessApi = (categoryId: string, formData: FormData) =>
+  request.post<{ documents: UploadedDocument[] }>(`/knowledge-categories/${categoryId}/upload-and-process`, formData, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+  })
 
 // ===== 分段预览确认 =====
 

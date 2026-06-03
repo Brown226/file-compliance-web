@@ -6,6 +6,7 @@ import { SelfCheckService, SelfCheckReport } from '../services/self-check.servic
 import { SelfCheckExportService } from '../services/self-check-export.service';
 import { WebSocketService } from '../services/websocket.service';
 import { success, error } from '../utils/response';
+import { toWebPath } from '../config/upload';
 
 // 内存中暂存最近一次报告结果，用于导出
 const reportCache = new Map<string, SelfCheckReport>();
@@ -72,7 +73,7 @@ export const runSelfCheck = async (req: Request, res: Response): Promise<void> =
         files: {
           create: filePaths.map(f => ({
             fileName: f.originalName,
-            filePath: f.path,
+            filePath: toWebPath('selfcheck/' + path.basename(f.path)),
             fileSize: (() => { try { return fs.statSync(f.path)?.size || 0 } catch { return 0 } })(),
             fileType: f.fileType,
             status: 'COMPLETED',

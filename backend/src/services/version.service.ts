@@ -2,8 +2,9 @@ import prisma from '../config/db';
 import path from 'path';
 import fs from 'fs';
 import { v4 as uuidv4 } from 'uuid';
+import { getUploadPath, resolveFilePath } from '../config/upload';
 
-const VERSIONS_DIR = path.join(__dirname, '../../uploads/versions');
+function VERSIONS_DIR() { return getUploadPath('versions'); }
 
 /**
  * 文件版本管理服务
@@ -22,8 +23,8 @@ export class VersionService {
     if (!file) throw new Error('File not found');
 
     // 确保版本目录存在
-    if (!fs.existsSync(VERSIONS_DIR)) {
-      fs.mkdirSync(VERSIONS_DIR, { recursive: true });
+    if (!fs.existsSync(VERSIONS_DIR())) {
+      fs.mkdirSync(VERSIONS_DIR(), { recursive: true });
     }
 
     // 获取当前最大版本号
@@ -37,12 +38,10 @@ export class VersionService {
 
     // 复制当前文件为快照（兼容绝对路径和相对路径）
     const rawPath = file.filePath
-    const absolutePath = (path.isAbsolute(rawPath) && !rawPath.startsWith('/') && !rawPath.startsWith('\\'))
-      ? rawPath
-      : path.join(__dirname, '../..', rawPath.replace(/^[/\\]+/, ''));
+    const absolutePath = resolveFilePath(rawPath);
 
     const snapshotName = `${fileId}-v${newVersionNo}-${uuidv4()}.docx`;
-    const snapshotPath = path.join(VERSIONS_DIR, snapshotName);
+    const snapshotPath = path.join(VERSIONS_DIR(), snapshotName);
 
     if (fs.existsSync(absolutePath)) {
       fs.copyFileSync(absolutePath, snapshotPath);

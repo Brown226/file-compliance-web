@@ -5,10 +5,12 @@
 import prisma from '../config/db';
 import { VectorService } from './vector.service';
 import path from 'path';
+import fs from 'fs';
 import { TextExtractionService } from './review-pipeline/text-extraction.service';
 import { LlmService } from './llm.service';
 import { AppError } from '../middlewares/error.middleware';
 import { FileTypeService } from './file-type.service';
+import { ParserService } from './parser.service';
 
 interface KnowledgeTreeNode {
   id: string;
@@ -36,11 +38,17 @@ interface ParseQualityReport {
 
 export class KnowledgeCategoryService {
 
-  private static buildParseQualityReport(content: string): ParseQualityReport {
+  private static buildParseQualityReport(content: string, fileType?: string): ParseQualityReport {
     const raw = String(content || '');
     const lines = raw.split(/\r?\n/);
     const nonEmptyLines = lines.map(l => l.trim()).filter(Boolean);
     const textLength = raw.trim().length;
+
+    // 表格类文件的 Markdown 表格内容（|、--- 等）会误触全部质量检查，直接跳过
+    const isSpreadsheet = fileType === 'xlsx' || fileType === 'xls' || fileType === 'csv';
+    if (isSpreadsheet) {
+      return { passed: true, score: 100, reasons: [], metrics: { textLength, visibleCharRatio: 1, duplicateLineRatio: 0, headingDensity: 0, tableSeparatorRatio: 0, mojibakeRatio: 0 } };
+    }
 
     const visibleChars = (raw.match(/[\u4e00-\u9fa5A-Za-z0-9]/g) || []).length;
     const visibleCharRatio = textLength > 0 ? visibleChars / textLength : 0;
@@ -252,6 +260,13 @@ export class KnowledgeCategoryService {
       throw new AppError(409, '该节点下还有文档，无法删除');
     }
 
+    // 清理没有关联 Document 的孤儿 VectorDocument（防止 SetNull 后永久孤立）
+    if (existing._count.vectorDocuments > 0) {
+      await prisma.vectorDocument.deleteMany({
+        where: { categoryId: id, documentId: null },
+      });
+    }
+
     await prisma.knowledgeCategory.delete({ where: { id } });
 
     // 如果父节点不再有子节点，恢复为叶子节点
@@ -295,14 +310,23 @@ export class KnowledgeCategoryService {
     const ext = path.extname(fileName).toLowerCase().replace('.', '');
     const fileType = FileTypeService.getStandardizedType(ext);
 
-    const text = await TextExtractionService.extractFileText(filePath, fileType, fileName);
-    const content = text;
+    const isSpreadsheet = fileType === 'xlsx' || fileType === 'xls';
+    let content: string;
+    let hasTables = false;
+
+    if (isSpreadsheet) {
+      const { result } = await ParserService.parseFileWithResult(filePath, fileType);
+      content = ParserService.sanitizeUtf8(result?.markdown || result?.text || '');
+      hasTables = true;
+    } else {
+      content = await TextExtractionService.extractFileText(filePath, fileType, fileName);
+    }
 
     if (!content || content.trim().length < 10) {
       throw new Error('文件内容过少或解析失败');
     }
 
-    const parseQuality = this.buildParseQualityReport(content);
+    const parseQuality = this.buildParseQualityReport(content, fileType);
     const title = fileName.replace(/\.\w+$/, '');
 
     // 使用前端传入的配置覆盖DB默认值
@@ -335,7 +359,7 @@ export class KnowledgeCategoryService {
       canImport: parseQuality.passed,
       metadata: {
         original_file: fileName,
-        has_tables: false,
+        has_tables: hasTables,
         has_images: false,
         page_count: null,
         chunkConfigUsed: {
@@ -361,8 +385,17 @@ export class KnowledgeCategoryService {
 
     console.info('[KB][uploadDocument] start', { categoryId, fileName, fileType, filePath });
 
-    // 解析文件内容（统一管道：含 OCR 降级）
-    const content = await TextExtractionService.extractFileText(filePath, fileType, fileName);
+    const isSpreadsheet = fileType === 'xlsx' || fileType === 'xls';
+    let content: string;
+    let hasTables = false;
+
+    if (isSpreadsheet) {
+      const { result } = await ParserService.parseFileWithResult(filePath, fileType);
+      content = ParserService.sanitizeUtf8(result?.markdown || result?.text || '');
+      hasTables = true;
+    } else {
+      content = await TextExtractionService.extractFileText(filePath, fileType, fileName);
+    }
 
     console.info('[KB][uploadDocument] parsed', {
       categoryId,
@@ -374,7 +407,7 @@ export class KnowledgeCategoryService {
       throw new Error('文件内容过少或解析失败');
     }
 
-    const parseQuality = this.buildParseQualityReport(content);
+    const parseQuality = this.buildParseQualityReport(content, fileType);
     console.info('[KB][uploadDocument] quality', { categoryId, fileName, score: parseQuality.score, passed: parseQuality.passed, reasons: parseQuality.reasons });
     if (!parseQuality.passed) {
       throw new AppError(400, `解析质量未通过：${parseQuality.reasons.join('；')}`);
@@ -396,7 +429,7 @@ export class KnowledgeCategoryService {
       embeddingUseClauseId: category.embeddingUseClauseId,
       metadata: {
         original_file: fileName,
-        has_tables: false,
+        has_tables: hasTables,
         has_images: false,
         page_count: null,
       },
@@ -404,7 +437,6 @@ export class KnowledgeCategoryService {
 
     console.info('[KB][uploadDocument] imported', { categoryId, fileName, chunks: result.chunks });
 
-    // 同步创建 Document 记录（确保 Document ↔ VectorDocument 数据一致）
     const docTitle = fileName.replace(/\.\w+$/, '');
     await prisma.document.upsert({
       where: { categoryId_title: { categoryId, title: docTitle } },
@@ -427,6 +459,167 @@ export class KnowledgeCategoryService {
     });
 
     return { chunks: result.chunks };
+  }
+  /**
+   * 异步上传并处理文档：创建 Document 记录后立即返回，后台完成解析+向量化
+   * 返回创建的文档记录列表，前端可立即展示并轮询进度
+   */
+  static async uploadAndProcess(
+    categoryId: string,
+    files: Array<{ savedPath: string; originalName: string }>,
+    userConfig?: {
+      chunkMode?: string;
+      maxChars?: number;
+      overlap?: number;
+      embeddingUseDocumentTitle?: boolean;
+      contextualRetrieval?: boolean;
+    },
+  ): Promise<Array<{ id: string; title: string; status: string }>> {
+    const category = await this.ensureLeafCategory(categoryId);
+
+    const effectiveMode = (userConfig?.chunkMode as 'auto' | 'fixed' | 'paragraph') || (category.chunkMode as any) || 'auto';
+    const effectiveMaxChars = userConfig?.maxChars ?? category.maxChars ?? 900;
+    const effectiveOverlap = userConfig?.overlap ?? category.overlap ?? 120;
+
+    const chunkConfig = {
+      mode: effectiveMode,
+      maxChars: effectiveMaxChars,
+      overlap: effectiveOverlap,
+      contextualRetrieval: userConfig?.contextualRetrieval ?? category.contextualRetrieval ?? false,
+    };
+
+    const createdDocs: Array<{ id: string; title: string; status: string }> = [];
+
+    for (const file of files) {
+      const docTitle = file.originalName.replace(/\.\w+$/, '');
+      const doc = await prisma.document.upsert({
+        where: { categoryId_title: { categoryId, title: docTitle } },
+        update: {
+          vectorStatus: 'PARSING',
+          progress: 0,
+          errorMessage: null,
+          sourceFile: file.originalName,
+        },
+        create: {
+          categoryId,
+          title: docTitle,
+          sourceFile: file.originalName,
+          sourceType: 'standard',
+          status: 'ACTIVE',
+          vectorStatus: 'PARSING',
+          progress: 0,
+        },
+      });
+      createdDocs.push({ id: doc.id, title: docTitle, status: 'PARSING' });
+    }
+
+    // 后台异步处理，不阻塞响应
+    setImmediate(() => {
+      this._processFilesInBackground(categoryId, files, chunkConfig, category).catch((err) => {
+        console.error('[KB][uploadAndProcess] 后台处理异常', err);
+      });
+    });
+
+    return createdDocs;
+  }
+
+  /**
+   * 后台逐文件处理：解析 → 分段 → 向量化
+   */
+  private static async _processFilesInBackground(
+    categoryId: string,
+    files: Array<{ savedPath: string; originalName: string }>,
+    chunkConfig: any,
+    category: any,
+  ) {
+    for (const file of files) {
+      const docTitle = file.originalName.replace(/\.\w+$/, '');
+      try {
+        // 阶段1: 解析
+        await prisma.document.updateMany({
+          where: { categoryId, title: docTitle },
+          data: { vectorStatus: 'PARSING', progress: 10 },
+        });
+
+        const ext = path.extname(file.originalName).toLowerCase().replace('.', '');
+        const fileType = ext === 'doc' ? 'docx' : ext;
+        const isSpreadsheet = fileType === 'xlsx' || fileType === 'xls';
+        let content: string;
+        let hasTables = false;
+
+        if (isSpreadsheet) {
+          const { result } = await ParserService.parseFileWithResult(file.savedPath, fileType);
+          content = ParserService.sanitizeUtf8(result?.markdown || result?.text || '');
+          hasTables = true;
+        } else {
+          content = await TextExtractionService.extractFileText(file.savedPath, fileType, file.originalName);
+        }
+
+        if (!content || content.trim().length < 10) {
+          throw new Error('文件内容过少或解析失败');
+        }
+
+        const parseQuality = this.buildParseQualityReport(content, fileType);
+        if (!parseQuality.passed) {
+          throw new Error(`解析质量未通过：${parseQuality.reasons.join('；')}`);
+        }
+
+        // 阶段2: 分段+向量化
+        await prisma.document.updateMany({
+          where: { categoryId, title: docTitle },
+          data: { vectorStatus: 'EMBEDDING', progress: 40 },
+        });
+
+        const result = await VectorService.importDocument({
+          sourceType: 'standard',
+          title: docTitle,
+          content,
+          categoryId,
+          chunkConfig,
+          embeddingUseDocumentTitle: category.embeddingUseDocumentTitle,
+          embeddingUseClauseId: category.embeddingUseClauseId,
+          metadata: {
+            original_file: file.originalName,
+            has_tables: hasTables,
+            has_images: false,
+            page_count: null,
+          },
+        });
+
+        // 阶段3: 完成
+        await prisma.document.updateMany({
+          where: { categoryId, title: docTitle },
+          data: {
+            vectorStatus: 'SUCCESS',
+            progress: 100,
+            isVectorized: true,
+            totalChunks: result.chunks,
+            totalChars: content.length,
+            errorMessage: null,
+          },
+        });
+
+        console.log(`[KB][uploadAndProcess] 完成: ${file.originalName} (${result.chunks} chunks)`);
+      } catch (err: any) {
+        console.error(`[KB][uploadAndProcess] 失败: ${file.originalName}`, err.message);
+        await prisma.document.updateMany({
+          where: { categoryId, title: docTitle },
+          data: {
+            vectorStatus: 'FAILURE',
+            progress: 0,
+            errorMessage: err.message || '处理失败',
+          },
+        });
+        // 清理已移动的文件
+        try {
+          if (file.savedPath && fs.existsSync(file.savedPath)) {
+            fs.unlinkSync(file.savedPath);
+          }
+        } catch (cleanupErr) {
+          console.warn(`[KB] 清理文件失败: ${file.savedPath}`, cleanupErr);
+        }
+      }
+    }
   }
 
   /**

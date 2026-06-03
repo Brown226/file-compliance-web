@@ -4,6 +4,7 @@ import morgan from 'morgan';
 import path from 'path';
 import { errorHandler } from './middlewares/error.middleware';
 import { auditLog } from './middlewares/audit.middleware';
+import { getUploadDir, onPathChange } from './config/upload';
 import authRoutes from './routes/auth.routes';
 import departmentRoutes from './routes/department.routes';
 import employeeRoutes from './routes/employee.routes';
@@ -49,8 +50,10 @@ app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 app.use(cors());
 app.use(morgan('dev'));
 
-// 静态文件服务：提供上传文件的访问
-app.use('/uploads', express.static(path.join(__dirname, '../uploads')));
+// 静态文件服务：提供上传文件的访问（支持运行时切换路径）
+let _staticMw = express.static(getUploadDir());
+onPathChange(() => { _staticMw = express.static(getUploadDir()); });
+app.use('/uploads', (req, res, next) => _staticMw(req, res, next));
 
 // Global Audit Logging (will log POST/PUT/DELETE requests)
 app.use(auditLog);

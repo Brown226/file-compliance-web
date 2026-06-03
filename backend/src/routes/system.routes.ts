@@ -6,7 +6,9 @@ import { PythonParserService } from '../services/python-parser.service';
 import { redisClient } from '../utils/redis';
 import prisma from '../config/db';
 import path from 'path';
+import fs from 'fs';
 import { getRuleRegistryMetadata } from '../services/rules';
+import { getUploadPath, getUploadDir, getUploadInfo, setUploadDir, initUploadSubdirs } from '../config/upload';
 
 const router = Router();
 
@@ -100,8 +102,7 @@ router.get('/rule-registry', (_req: Request, res: Response) => {
 
 router.get('/storage-stats', authenticate, requireRole('ADMIN'), async (req: Request, res: Response) => {
   try {
-    const uploadsDir = path.join(__dirname, '../../uploads');
-    const stats = await FileCleanupService.getStorageStats(uploadsDir);
+    const stats = await FileCleanupService.getStorageStats(getUploadPath());
 
     res.json({
       code: 200,
@@ -122,9 +123,7 @@ router.get('/storage-stats', authenticate, requireRole('ADMIN'), async (req: Req
 router.post('/cleanup-files', authenticate, requireRole('ADMIN'), async (req: Request, res: Response) => {
   try {
     const daysOld = parseInt(req.query.days as string) || 7;
-    const uploadsDir = path.join(__dirname, '../../uploads');
-
-    const result = await FileCleanupService.cleanupOrphanedFiles(uploadsDir, daysOld);
+    const result = await FileCleanupService.cleanupOrphanedFiles(getUploadPath(), daysOld);
 
     res.json({
       code: 200,
@@ -134,6 +133,72 @@ router.post('/cleanup-files', authenticate, requireRole('ADMIN'), async (req: Re
   } catch (error: any) {
     console.error('清理文件失败:', error);
     res.status(500).json({ success: false, message: '清理文件失败', error: error.message });
+  }
+});
+
+// 获取当前存储路径配置
+router.get('/config-path', authenticate, requireRole('ADMIN'), async (_req: Request, res: Response) => {
+  res.json({ code: 200, data: getUploadInfo() });
+});
+
+// 设置存储路径
+router.put('/config-path', authenticate, requireRole('ADMIN'), async (req: Request, res: Response) => {
+  try {
+    const { path: newPath } = req.body;
+    if (!newPath || typeof newPath !== 'string' || (!newPath.startsWith('/') && !/^[a-zA-Z]:[\\/]/.test(newPath))) {
+      res.status(400).json({ code: 400, message: '路径必须为以 / 或 X:\\ 开头的绝对路径' });
+      return;
+    }
+
+    const resolved = path.resolve(newPath);
+
+    // 校验路径可写
+    try {
+      if (!fs.existsSync(resolved)) fs.mkdirSync(resolved, { recursive: true });
+      const testFile = path.join(resolved, '.write-test-' + Date.now());
+      fs.writeFileSync(testFile, '');
+      fs.unlinkSync(testFile);
+    } catch (e: any) {
+      res.status(400).json({ code: 400, message: '路径不可写: ' + e.message });
+      return;
+    }
+
+    const oldPath = getUploadDir();
+
+    // 统计旧路径文件数
+    let filesAtOldPath = 0;
+    try {
+      filesAtOldPath = FileCleanupService.getPhysicalFiles(oldPath).size;
+    } catch { /* 忽略 */ }
+
+    // 写入 DB
+    await prisma.systemConfig.upsert({
+      where: { key: 'upload_path' },
+      update: { value: resolved },
+      create: { key: 'upload_path', value: resolved },
+    });
+
+    // 热更新内存
+    setUploadDir(resolved);
+
+    // 初始化子目录
+    initUploadSubdirs(resolved);
+
+    res.json({
+      code: 200,
+      message: '存储路径已更新',
+      data: {
+        oldPath,
+        newPath: resolved,
+        filesAtOldPath,
+        warning: filesAtOldPath > 0
+          ? `旧路径下仍有 ${filesAtOldPath} 个文件未被迁移，更改后将无法通过 /uploads/ 访问。建议使用迁移脚本 scripts/migrate-uploads.js 处理。`
+          : '',
+      },
+    });
+  } catch (e: any) {
+    console.error('设置存储路径失败:', e);
+    res.status(500).json({ code: 500, message: '设置存储路径失败: ' + e.message });
   }
 });
 

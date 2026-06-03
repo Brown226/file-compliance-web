@@ -4,6 +4,7 @@ import fs from 'fs';
 import { TaskService } from '../services/task.service';
 import { AuthRequest } from '../middlewares/auth.middleware';
 import { getTaskFilterByRole } from '../middlewares/rbac.middleware';
+import { resolveFilePath } from '../config/upload';
 import { TaskStatus } from '@prisma/client';
 import { success, error, paginated } from '../utils/response';
 
@@ -13,7 +14,10 @@ export const createTask = async (req: AuthRequest, res: Response): Promise<void>
       perspective, selectedTemplateId, intraFileConsistency,
       reviewPlan, reviewSpecificationId, ruleLibraryId, entryModule, reviewMode } = req.body;
     const creatorId = req.user?.id;
-    const files = req.files as Express.Multer.File[];
+    const creatorUsername = req.user?.username || creatorId;
+    const filesMap = req.files as Record<string, Express.Multer.File[]> | undefined;
+    const files = filesMap?.files as Express.Multer.File[] | undefined;
+    const refFiles = filesMap?.refFiles as Express.Multer.File[] | undefined;
 
     if (!title) { error(res, '标题为必填项', 400); return; }
     if (!files || files.length === 0) { error(res, '请至少上传一个待审文件', 400); return; }
@@ -70,6 +74,7 @@ export const createTask = async (req: AuthRequest, res: Response): Promise<void>
       title,
       description,
       creatorId,
+      creatorUsername,
       standardId,
       standardIds: parsedStandardIds || (standardId ? [standardId] : []),
       knowledgeCategoryId: knowledgeCategoryId || parsedKnowledgeIds?.[0],
@@ -85,6 +90,25 @@ export const createTask = async (req: AuthRequest, res: Response): Promise<void>
       entryModule,
       reviewMode,
     });
+
+    // 处理前端随任务一起上传的参照文件（以文审文模式）
+    if (refFiles && refFiles.length > 0) {
+      try {
+        const group = await TaskService.createRefFileGroup({
+          taskId: task.id,
+          groupName: '默认参照组',
+          files: refFiles,
+          creatorId: creatorUsername,
+        });
+
+        // 参照比对模式：任务创建后有参照文件，立即触发审查
+        if (parsedReviewPlan?.objective === 'COMPARE' && (task as any).status === 'PENDING') {
+          await TaskService.startTaskReview(task.id);
+        }
+      } catch (refErr) {
+        console.error('[Create Task] 参照文件保存失败（不影响任务创建）:', refErr);
+      }
+    }
 
     success(res, task, '任务创建成功');
   } catch (err) {
@@ -317,15 +341,12 @@ export const getTaskFileRaw = async (req: Request, res: Response): Promise<void>
 
     let absPath: string
     const rawPath = file.filePath
-    // 处理 /uploads/ 开头的路径（数据库存储格式）
     if (rawPath.startsWith('/uploads/') || rawPath.startsWith('\\uploads\\')) {
-      const relativePath = rawPath.replace(/^[/\\]+/, '')
-      absPath = path.join(__dirname, '..', '..', relativePath)
+      absPath = resolveFilePath(rawPath)
     } else if (path.isAbsolute(rawPath)) {
       absPath = rawPath
     } else {
-      const relativePath = rawPath.replace(/^[/\\]+/, '')
-      absPath = path.join(__dirname, '..', '..', relativePath)
+      absPath = resolveFilePath('/uploads/' + rawPath.replace(/^[/\\]+/, ''))
     }
     if (!fs.existsSync(absPath)) {
       console.error('[getTaskFileRaw] 文件不存在:', { taskId, fileId, absPath, rawPath })
@@ -501,7 +522,8 @@ export const uploadRefFiles = async (req: AuthRequest, res: Response): Promise<v
       return;
     }
 
-    const group = await TaskService.createRefFileGroup({ taskId, groupName, description, files });
+    const dirName = req.user?.username || req.user?.id || 'anonymous';
+    const group = await TaskService.createRefFileGroup({ taskId, groupName, description, files, creatorId: dirName });
 
     // 参照比对模式在创建任务时会延迟触发审查，待参照文件上传后再启动
     if ((task as any).reviewPlan?.objective === 'COMPARE' && task.status === 'PENDING') {

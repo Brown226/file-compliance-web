@@ -15,10 +15,11 @@ import {
 import { authenticate } from '../middlewares/auth.middleware';
 import multer from 'multer';
 import path from 'path';
+import { getUploadPath } from '../config/upload';
 
 const router = express.Router();
 const storage = multer.diskStorage({
-  destination: (req, file, cb) => cb(null, path.join(__dirname, '../../uploads/temp')),
+  destination: (req, file, cb) => cb(null, getUploadPath('temp')),
   filename: (req, file, cb) => cb(null, `${Date.now()}-${file.originalname}`),
 });
 const upload = multer({ storage, limits: { fileSize: 50 * 1024 * 1024 } });

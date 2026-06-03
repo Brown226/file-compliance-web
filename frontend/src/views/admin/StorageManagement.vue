@@ -7,6 +7,27 @@
     </div>
 
     <div class="storage-panel">
+      <el-card shadow="never" class="path-card">
+        <template #header>
+          <div class="card-header">
+            <span><el-icon><FolderOpened /></el-icon> 存储路径配置</span>
+          </div>
+        </template>
+        <div class="path-config">
+          <div class="path-row">
+            <span class="path-label">当前路径：</span>
+            <el-tooltip :content="pathConfig.effective" placement="top">
+              <span class="path-value">{{ pathConfig.effective }}</span>
+            </el-tooltip>
+          </div>
+          <div class="path-actions">
+            <el-button type="primary" size="small" @click="showEditDialog = true" :loading="pathLoading">
+              <el-icon><Edit /></el-icon> 修改路径
+            </el-button>
+          </div>
+        </div>
+      </el-card>
+
       <el-card shadow="never">
         <template #header>
           <div class="card-header">
@@ -99,25 +120,59 @@
         </div>
       </el-card>
     </div>
+
+    <el-dialog v-model="showEditDialog" title="修改存储路径" width="520px" :close-on-click-modal="false">
+      <el-form ref="formRef" :model="form" :rules="formRules" label-width="100px">
+        <el-form-item label="存储路径" prop="path">
+          <el-input v-model="form.path" placeholder="请输入绝对路径，如 /data/uploads" />
+        </el-form-item>
+        <el-form-item label="初始化目录">
+          <el-checkbox v-model="form.initDirs" checked>
+            创建子目录结构（knowledge, feedback, selfcheck 等）
+          </el-checkbox>
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="showEditDialog = false">取消</el-button>
+        <el-button type="primary" @click="handleSavePath" :loading="savePathLoading">保存</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, reactive, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { RefreshRight, Files, Folder, Document, Delete, CircleCheckFilled } from '@element-plus/icons-vue'
-import { getStorageStatsApi, cleanupFilesApi, type StorageStats } from '@/api/system'
+import {
+  RefreshRight, Files, Folder, FolderOpened, Document, Delete,
+  CircleCheckFilled, Edit
+} from '@element-plus/icons-vue'
+import {
+  getStorageStatsApi, cleanupFilesApi, getUploadPathConfigApi, setUploadPathConfigApi,
+  type StorageStats, type UploadPathConfig
+} from '@/api/system'
 import { useUserStore } from '@/stores/user'
 
 const storageLoading = ref(false)
 const cleanupLoading = ref(false)
+const pathLoading = ref(false)
+const savePathLoading = ref(false)
 const cleanupDays = ref(7)
 const storageStats = ref<StorageStats & { referencedPercent?: string; orphanedPercent?: string }>({} as any)
+const pathConfig = ref<UploadPathConfig>({ effective: '' })
+const showEditDialog = ref(false)
+
+const form = reactive({ path: '', initDirs: true })
+const formRules = {
+  path: [
+    { required: true, message: '请输入存储路径', trigger: 'blur' },
+    { pattern: /^\//, message: '路径必须为以 / 开头的绝对路径', trigger: 'blur' },
+  ],
+}
 
 const fetchStorageStats = async () => {
   const userStore = useUserStore()
   if (!userStore.token) return
-
   storageLoading.value = true
   try {
     const { data } = await getStorageStatsApi()
@@ -140,12 +195,48 @@ const fetchStorageStats = async () => {
   }
 }
 
+const fetchPathConfig = async () => {
+  const userStore = useUserStore()
+  if (!userStore.token) return
+  pathLoading.value = true
+  try {
+    const { data } = await getUploadPathConfigApi()
+    pathConfig.value = data
+    form.path = data.effective
+  } catch {
+  } finally {
+    pathLoading.value = false
+  }
+}
+
+const handleSavePath = async () => {
+  savePathLoading.value = true
+  try {
+    const { data } = await setUploadPathConfigApi(form.path)
+
+    let msg = `存储路径已变更为 ${data.newPath}`
+    if (data.warning) msg += '。' + data.warning
+
+    await ElMessageBox.alert(msg, '路径变更成功', {
+      type: data.filesAtOldPath > 0 ? 'warning' : 'success',
+      confirmButtonText: '知道了',
+    })
+
+    showEditDialog.value = false
+    fetchPathConfig()
+    fetchStorageStats()
+  } catch (e: any) {
+    ElMessage.error(e.response?.data?.message || '保存失败')
+  } finally {
+    savePathLoading.value = false
+  }
+}
+
 const handleCleanup = async () => {
   if (storageStats.value.orphanedFiles <= 0) {
     ElMessage.warning('暂无孤立文件需要清理')
     return
   }
-
   try {
     await ElMessageBox.confirm(
       `确认清理 ${cleanupDays.value} 天前的孤立文件吗？这将释放约 ${storageStats.value.orphanedSizeMB} MB 空间。`,
@@ -153,7 +244,6 @@ const handleCleanup = async () => {
       { type: 'warning' }
     )
   } catch { return }
-
   cleanupLoading.value = true
   try {
     const { data } = await cleanupFilesApi(cleanupDays.value)
@@ -167,6 +257,7 @@ const handleCleanup = async () => {
 }
 
 onMounted(() => {
+  fetchPathConfig()
   fetchStorageStats()
 })
 </script>
@@ -179,7 +270,13 @@ onMounted(() => {
 }
 .page-header { margin-bottom: 20px; }
 .page-header h2 { font-size: 20px; font-weight: 600; color: var(--corp-text-primary); margin: 0; }
-.storage-panel { max-width: 900px; }
+.storage-panel { max-width: 900px; display: flex; flex-direction: column; gap: 16px; }
+.path-card { margin-bottom: 0; }
+.path-config { display: flex; flex-direction: column; gap: 8px; }
+.path-row { display: flex; align-items: center; gap: 8px; }
+.path-label { font-size: 14px; color: var(--el-text-color-secondary); white-space: nowrap; }
+.path-value { font-size: 14px; font-weight: 500; color: var(--corp-text-primary); max-width: 480px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; cursor: default; }
+.path-actions { display: flex; align-items: center; gap: 12px; }
 .storage-overview {
   display: flex; align-items: center; gap: 32px; padding: 24px; margin-bottom: 20px;
   background: linear-gradient(135deg, rgba(64,158,255,0.06), rgba(64,158,255,0.02));

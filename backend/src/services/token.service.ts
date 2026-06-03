@@ -6,9 +6,8 @@ export class TokenService {
   /**
    * 生成 JWT Token
    * @param payload 包含用户信息的数据
-   * @returns JWT Token 字符串
    */
-  static generateToken(payload: { id: string; role: string; departmentId: string | null }): string {
+  static generateToken(payload: { id: string; username: string; role: string; departmentId: string | null }): string {
     return jwt.sign(payload, env.jwtSecret, {
       expiresIn: env.jwtExpiresIn as any,
     });
