@@ -1,0 +1,11 @@
+/* ============================================================
+   Clean Enterprise — 全局样式
+   设计哲学: 克制、内容优先、功能清晰、视觉安静
+   ============================================================ */
+
+/* 样式入口文件 — 按顺序加载 */
+@import './styles/variables.css';
+@import './styles/reset.css';
+@import './styles/element-overrides.css';
+@import './styles/utilities.css';
+@import './styles/transitions.css';

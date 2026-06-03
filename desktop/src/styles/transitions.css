@@ -1,0 +1,33 @@
+/* ===== 动画（只保留 Vue transition 必要的） ===== */
+.fade-enter-active,
+.fade-leave-active {
+  transition: opacity 0.15s ease;
+}
+.fade-enter-from,
+.fade-leave-to {
+  opacity: 0;
+}
+
+.fade-transform-enter-active,
+.fade-transform-leave-active {
+  transition: all 0.15s ease;
+}
+.fade-transform-enter-from {
+  opacity: 0;
+  transform: translateY(-8px);
+}
+.fade-transform-leave-to {
+  opacity: 0;
+  transform: translateY(8px);
+}
+
+/* 列表过渡 */
+.list-enter-active,
+.list-leave-active {
+  transition: all 0.15s ease;
+}
+.list-enter-from,
+.list-leave-to {
+  opacity: 0;
+  transform: translateX(-8px);
+}

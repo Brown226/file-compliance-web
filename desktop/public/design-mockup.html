@@ -1,0 +1,889 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>审查结果页 · 设计改进草图</title>
+<style>
+:root {
+  --bg: #F5F7FA;
+  --surface: #FFFFFF;
+  --border: #E4E7ED;
+  --border-light: #F0F0F0;
+  --text-primary: #1F2937;
+  --text-secondary: #6B7280;
+  --text-hint: #9CA3AF;
+  --blue: #3B82F6;
+  --blue-light: #EFF6FF;
+  --red: #EF4444;
+  --red-light: #FEF2F2;
+  --amber: #F59E0B;
+  --amber-light: #FFFBEB;
+  --green: #10B981;
+  --green-light: #ECFDF5;
+  --purple: #7C3AED;
+  --radius: 8px;
+  --radius-sm: 6px;
+  --shadow-sm: 0 1px 3px rgba(0,0,0,0.06);
+  --shadow-md: 0 2px 8px rgba(0,0,0,0.06);
+}
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, "PingFang SC", "Microsoft YaHei", sans-serif; background: #E8ECF1; color: var(--text-primary); line-height: 1.5; }
+
+.container { max-width: 1280px; margin: 0 auto; padding: 20px; }
+
+/* 章节标题 */
+.section-header { margin: 32px 0 16px; }
+.section-header:first-child { margin-top: 0; }
+.section-tag { display: inline-block; padding: 2px 10px; border-radius: 4px; font-size: 11px; font-weight: 700; letter-spacing: 0.5px; margin-bottom: 6px; }
+.section-tag.before { background: #FEE2E2; color: #991B1B; }
+.section-tag.after { background: #D1FAE5; color: #065F46; }
+.section-header h2 { font-size: 18px; font-weight: 700; color: #111827; }
+.section-header p { font-size: 13px; color: var(--text-hint); margin-top: 2px; }
+
+/* ============ 整体布局 ============ */
+.app-frame {
+  display: flex;
+  flex-direction: column;
+  height: 700px;
+  background: var(--bg);
+  border-radius: 12px;
+  overflow: hidden;
+  box-shadow: var(--shadow-md);
+  border: 1px solid var(--border);
+}
+
+/* 顶栏 */
+.topbar {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 0 20px; height: 48px; background: var(--surface);
+  border-bottom: 1px solid var(--border-light);
+  flex-shrink: 0;
+}
+.topbar-left { display: flex; align-items: center; gap: 12px; }
+.breadcrumb { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--text-hint); }
+.breadcrumb span { color: var(--text-secondary); }
+.breadcrumb .current { color: var(--text-primary); font-weight: 600; }
+.topbar-right { display: flex; align-items: center; gap: 10px; }
+
+.btn-ghost { padding: 5px 12px; border-radius: var(--radius-sm); border: none; background: transparent; color: var(--text-secondary); font-size: 12px; cursor: pointer; transition: all .15s; }
+.btn-ghost:hover { background: #F3F4F6; color: var(--text-primary); }
+.btn-outline { padding: 5px 14px; border-radius: var(--radius-sm); border: 1px solid var(--border); background: var(--surface); color: var(--text-secondary); font-size: 12px; cursor: pointer; display: inline-flex; align-items: center; gap: 5px; }
+.btn-outline:hover { border-color: #CBD5E1; background: #F9FAFB; }
+.btn-primary { padding: 6px 14px; border-radius: var(--radius-sm); border: none; background: var(--blue); color: #FFF; font-size: 12px; font-weight: 600; cursor: pointer; display: inline-flex; align-items: center; gap: 5px; }
+.btn-primary:hover { background: #2563EB; }
+
+/* 主内容区 */
+.main-body {
+  display: flex; flex: 1; overflow: hidden; gap: 0;
+}
+
+/* 左侧文件预览 */
+.left-panel { flex: none; width: 52%; display: flex; flex-direction: column; background: var(--surface); border-right: 1px solid var(--border-light); }
+.panel-topbar { display: flex; align-items: center; padding: 8px 12px; border-bottom: 1px solid var(--border-light); background: #FAFBFC; gap: 6px; flex-shrink: 0; }
+.file-tab { display: flex; align-items: center; gap: 4px; padding: 4px 10px; border-radius: var(--radius-sm); font-size: 11px; background: #F3F4F6; border: 1px solid #E5E7EB; cursor: pointer; white-space: nowrap; }
+.file-tab.active { background: var(--blue); color: #FFF; border-color: var(--blue); }
+.file-tab .badge { background: rgba(0,0,0,0.1); padding: 0 5px; border-radius: 8px; font-size: 10px; }
+.file-tab.active .badge { background: rgba(255,255,255,0.25); }
+.preview-content { flex: 1; padding: 16px; overflow: auto; background: #FCFCFD; }
+.doc-mock { font-size: 13px; line-height: 1.8; color: #374151; }
+.doc-mock h4 { font-size: 15px; margin: 16px 0 8px; color: #111827; }
+.doc-mock p { margin: 6px 0; }
+.doc-mock .highlight-error { background: #FEF2F2; border-bottom: 2px solid var(--red); padding: 0 2px; border-radius: 2px; cursor: pointer; }
+.doc-mock .highlight-warn { background: #FFFBEB; border-bottom: 2px solid var(--amber); padding: 0 2px; border-radius: 2px; cursor: pointer; }
+
+/* 右侧审查报告 */
+.right-panel { flex: 1; min-width: 0; display: flex; flex-direction: column; background: var(--surface); }
+
+/* Tab 导航 */
+.tab-bar { display: flex; border-bottom: 1px solid var(--border-light); padding: 0 16px; flex-shrink: 0; background: var(--surface); align-items: center; }
+.tab-item { padding: 10px 14px; font-size: 12px; font-weight: 500; color: var(--text-hint); border: none; background: none; cursor: pointer; border-bottom: 2px solid transparent; display: inline-flex; align-items: center; gap: 6px; }
+.tab-item.active { color: var(--blue); border-bottom-color: var(--blue); }
+.tab-badge { padding: 0 6px; border-radius: 10px; font-size: 10px; font-weight: 700; height: 18px; line-height: 18px; display: inline-block; }
+.tab-badge.danger { background: #FEE2E2; color: #DC2626; }
+.tab-badge.success { background: #D1FAE5; color: #059669; }
+.tab-spacer { flex: 1; }
+.tab-actions { display: flex; align-items: center; gap: 8px; font-size: 11px; color: var(--text-hint); }
+.plain-toggle { display: flex; align-items: center; gap: 5px; cursor: pointer; font-size: 11px; }
+.toggle-track { width: 30px; height: 16px; border-radius: 10px; background: #D1D5DB; position: relative; transition: .2s; }
+.toggle-track.on { background: var(--blue); }
+.toggle-thumb { width: 12px; height: 12px; border-radius: 50%; background: #FFF; position: absolute; top: 2px; left: 2px; transition: .2s; }
+.toggle-track.on .toggle-thumb { left: 16px; }
+.btn-icon-sm { width: 26px; height: 26px; border-radius: var(--radius-sm); border: 1px solid var(--border); background: var(--surface); cursor: pointer; display: flex; align-items: center; justify-content: center; font-size: 12px; color: var(--text-hint); }
+.btn-icon-sm:hover { background: #F3F4F6; }
+.btn-icon-sm.active { background: var(--blue-light); border-color: var(--blue); color: var(--blue); }
+
+/* Tab 内容区 */
+.tab-content { flex: 1; overflow: auto; padding: 16px; display: flex; flex-direction: column; gap: 16px; }
+
+/* ====== 改进的 Overview ====== */
+
+/* 1. 统计看板 - 4列固定网格 */
+.stat-dashboard { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
+.stat-card { padding: 14px; border-radius: var(--radius); background: #F9FAFB; border: 1px solid #F0F0F0; }
+.stat-card .stat-icon { width: 32px; height: 32px; border-radius: 8px; display: flex; align-items: center; justify-content: center; font-size: 14px; margin-bottom: 8px; }
+.stat-card .stat-value { font-size: 24px; font-weight: 800; color: var(--text-primary); }
+.stat-card .stat-label { font-size: 11px; color: var(--text-hint); margin-top: 2px; }
+.stat-card.total .stat-icon { background: #EFF6FF; }
+.stat-card.error .stat-icon { background: #FEF2F2; }
+.stat-card.warn .stat-icon { background: #FFFBEB; }
+.stat-card.info .stat-icon { background: #F0FDF4; }
+
+/* 2. 审查信息卡片组 - 统一 2x3 grid */
+.info-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+.info-item { padding: 10px 14px; border-radius: var(--radius-sm); background: #F9FAFB; border: 1px solid #F0F0F0; }
+.info-item .info-label { font-size: 10px; color: var(--text-hint); text-transform: uppercase; letter-spacing: .3px; margin-bottom: 2px; }
+.info-item .info-value { font-size: 13px; font-weight: 600; color: var(--text-primary); }
+.info-item .info-sub { font-size: 11px; color: var(--text-hint); margin-top: 1px; }
+
+/* 3. 问题预览列表 - 与 Suggestions 统一卡片 */
+.issue-preview-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 0; }
+.issue-preview-header h4 { font-size: 14px; font-weight: 700; }
+
+/* 统一问题卡片（紧凑版：Overview 用） */
+.issue-card-compact { display: flex; align-items: flex-start; gap: 10px; padding: 10px 12px; background: var(--surface); border-radius: var(--radius-sm); border: 1px solid var(--border-light); border-left: 3px solid transparent; cursor: pointer; transition: all .15s; }
+.issue-card-compact:hover { box-shadow: 0 1px 4px rgba(0,0,0,0.08); background: #FAFBFC; }
+.issue-card-compact.error { border-left-color: var(--red); }
+.issue-card-compact.warning { border-left-color: var(--amber); }
+.issue-card-compact .sev-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; margin-top: 4px; }
+.issue-card-compact.error .sev-dot { background: var(--red); }
+.issue-card-compact.warning .sev-dot { background: var(--amber); }
+.issue-card-compact .ic-body { flex: 1; min-width: 0; }
+.issue-card-compact .ic-tags { display: flex; gap: 4px; margin-bottom: 3px; }
+.tag-xs { padding: 1px 6px; border-radius: 4px; font-size: 10px; font-weight: 600; }
+.tag-xs.red { background: #FEE2E2; color: #DC2626; }
+.tag-xs.amber { background: #FEF3C7; color: #B45309; }
+.tag-xs.blue { background: #DBEAFE; color: #1D4ED8; }
+.issue-card-compact .ic-desc { font-size: 12px; font-weight: 600; color: var(--text-primary); line-height: 1.4; }
+.issue-card-compact .ic-snippet { font-size: 11px; color: var(--text-hint); margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.issue-card-compact .ic-file { font-size: 10px; color: var(--text-hint); margin-top: 2px; }
+.issue-card-compact .ic-arrow { color: var(--text-hint); font-size: 14px; flex-shrink: 0; margin-top: 4px; opacity: 0; transition: .15s; }
+.issue-card-compact:hover .ic-arrow { opacity: 1; }
+
+/* 查看全部链接 */
+.view-all-link { display: block; text-align: center; padding: 10px; font-size: 12px; color: var(--blue); text-decoration: none; border-top: 1px solid var(--border-light); }
+.view-all-link:hover { background: var(--blue-light); border-radius: 0 0 var(--radius-sm) var(--radius-sm); }
+
+/* ====== 改进的 Suggestions ====== */
+
+/* 搜索栏 + 筛选（主导航式） */
+.search-bar { display: flex; align-items: center; gap: 8px; padding-bottom: 12px; border-bottom: 1px solid var(--border-light); }
+.search-input-wrapper { flex: 1; position: relative; }
+.search-input-wrapper input { width: 100%; padding: 7px 12px 7px 32px; border: 1px solid var(--border); border-radius: var(--radius-sm); font-size: 12px; outline: none; background: #F9FAFB; }
+.search-input-wrapper input:focus { border-color: var(--blue); background: var(--surface); }
+.search-input-wrapper .search-icon { position: absolute; left: 10px; top: 50%; transform: translateY(-50%); font-size: 14px; color: var(--text-hint); }
+.filter-chips { display: flex; gap: 4px; }
+.filter-chip { padding: 4px 10px; border-radius: 4px; font-size: 11px; cursor: pointer; border: 1px solid var(--border); background: var(--surface); color: var(--text-secondary); }
+.filter-chip.active { background: var(--blue-light); border-color: var(--blue); color: var(--blue); }
+.filter-chip .count { background: rgba(0,0,0,0.06); padding: 0 5px; border-radius: 6px; margin-left: 3px; font-size: 10px; }
+
+/* 顶部操作栏 */
+.issue-toolbar { display: flex; align-items: center; justify-content: space-between; }
+.issue-toolbar .toolbar-left { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--text-hint); }
+.issue-toolbar .toolbar-right { display: flex; align-items: center; gap: 6px; }
+
+/* 改进后的完整卡片（默认展开部分内容） */
+.issue-card-full { background: var(--surface); border-radius: var(--radius); border: 1px solid var(--border-light); border-left: 3px solid transparent; overflow: hidden; transition: all .15s; margin-bottom: 8px; }
+.issue-card-full:hover { box-shadow: var(--shadow-sm); }
+.issue-card-full.error { border-left-color: var(--red); }
+.issue-card-full.warning { border-left-color: var(--amber); }
+.issue-card-full.info { border-left-color: var(--text-hint); }
+.issue-card-full.selected { box-shadow: 0 0 0 2px rgba(59,130,246,0.2); border-left-color: var(--blue); }
+
+/* 卡片头 */
+.card-header { display: flex; align-items: flex-start; padding: 12px 14px; gap: 10px; cursor: pointer; }
+.card-header:hover { background: #FAFBFC; }
+.card-header .ch-checkbox { flex-shrink: 0; margin-top: 1px; }
+.ch-checkbox input { width: 15px; height: 15px; accent-color: var(--blue); }
+.card-header .ch-body { flex: 1; min-width: 0; }
+.ch-meta { display: flex; align-items: center; gap: 6px; margin-bottom: 4px; flex-wrap: wrap; }
+.ch-desc { font-size: 13px; font-weight: 600; color: var(--text-primary); line-height: 1.4; }
+.ch-plain { font-size: 11px; color: var(--text-hint); margin-top: 2px; line-height: 1.4; }
+
+/* 预览区（默认可见） */
+.card-preview { padding: 0 14px 12px; display: flex; flex-direction: column; gap: 6px; }
+.preview-row { display: flex; gap: 8px; align-items: flex-start; font-size: 12px; }
+.preview-label { font-size: 11px; color: var(--text-hint); min-width: 50px; flex-shrink: 0; padding-top: 1px; font-weight: 600; }
+.preview-text { font-size: 12px; color: var(--text-primary); flex: 1; line-height: 1.5; padding: 5px 8px; border-radius: 4px; max-height: 48px; overflow: hidden; position: relative; }
+.preview-text.original { background: #FEF2F2; border: 1px solid #FECACA; }
+.preview-text.suggested { background: #F0FDF4; border: 1px solid #BBF7D0; }
+.preview-text .fade-out { position: absolute; bottom: 0; left: 0; right: 0; height: 20px; background: linear-gradient(transparent, #FEF2F2); pointer-events: none; }
+.preview-text.suggested .fade-out { background: linear-gradient(transparent, #F0FDF4); }
+
+/* 卡片底部操作栏 */
+.card-footer { display: flex; align-items: center; justify-content: space-between; padding: 8px 14px; border-top: 1px solid var(--border-light); background: #FAFBFC; gap: 8px; }
+.card-footer .cf-left { display: flex; gap: 4px; }
+.card-footer .cf-right { display: flex; align-items: center; gap: 4px; font-size: 11px; color: var(--text-hint); cursor: pointer; }
+
+.btn-xs { padding: 4px 10px; border-radius: 4px; font-size: 11px; cursor: pointer; border: 1px solid transparent; font-weight: 500; }
+.btn-xs.ghost { background: transparent; border-color: var(--border); color: var(--text-secondary); }
+.btn-xs.ghost:hover { background: #F3F4F6; }
+.btn-xs.locate { background: var(--blue-light); color: var(--blue); border-color: #BFDBFE; }
+.btn-xs.locate:hover { background: #DBEAFE; }
+.btn-xs.fp { background: #FEF3C7; color: #92400E; border-color: #FDE68A; }
+.btn-xs.fp:hover { background: #FDE68A; }
+
+/* 批量操作浮动栏 */
+.batch-float-bar { display: flex; align-items: center; justify-content: space-between; padding: 10px 14px; background: #1F2937; color: #FFF; border-radius: var(--radius); font-size: 12px; }
+.batch-float-bar .bf-left { display: flex; align-items: center; gap: 8px; }
+.batch-float-bar .bf-right { display: flex; align-items: center; gap: 6px; }
+.batch-float-bar .btn-xs.white { background: rgba(255,255,255,0.15); color: #FFF; border-color: rgba(255,255,255,0.25); }
+.batch-float-bar .btn-xs.white:hover { background: rgba(255,255,255,0.25); }
+
+/* 展开更多 */
+.expand-indicator { text-align: center; padding: 4px; font-size: 11px; color: var(--text-hint); cursor: pointer; }
+.expand-indicator:hover { color: var(--blue); }
+
+/* 底部状态栏 */
+.status-bar { display: flex; align-items: center; justify-content: space-between; padding: 6px 14px; border-top: 1px solid var(--border-light); background: var(--surface); font-size: 11px; color: var(--text-hint); flex-shrink: 0; }
+
+/* 对比标注 label */
+.compare-label { display: inline-flex; align-items: center; gap: 6px; margin-left: 12px; padding: 2px 8px; border-radius: 4px; font-size: 10px; }
+.compare-label.bad { background: #FEE2E2; color: #DC2626; }
+.compare-label.good { background: #D1FAE5; color: #059669; }
+
+/* 小分页器 */
+.mini-pager { display: flex; align-items: center; gap: 4px; }
+.mini-pager span { cursor: pointer; padding: 2px 8px; border-radius: 4px; }
+.mini-pager span:hover { background: #F3F4F6; }
+.mini-pager span.active { background: var(--blue); color: #FFF; }
+
+/* 响应式容器 */
+@media (max-width: 960px) { 
+  .stat-dashboard { grid-template-columns: repeat(2, 1fr); }
+  .info-grid { grid-template-columns: repeat(2, 1fr); }
+}
+</style>
+</head>
+<body>
+
+<div class="container">
+
+<!-- ====== 第一部分：Overview Tab 改进前后对比 ====== -->
+<div class="section-header">
+  <span class="section-tag before">BEFORE · 当前</span>
+  <h2>Overview Tab · 审查摘要 — 现状</h2>
+  <p>问题：审查摘要与问题列表互斥（二选一）；卡片布局松散；问题卡片与 Suggestions 是两套视觉系统</p>
+</div>
+
+<div class="app-frame" style="height: 520px;">
+  <div class="topbar">
+    <div class="topbar-left"><span style="font-size:12px;color:var(--text-hint)">← 返回历史</span></div>
+    <div class="topbar-right">
+      <span style="font-size:12px;color:var(--text-hint)">当前：</span>
+      <span class="btn-primary" style="font-size:11px;padding:5px 12px">📄 导出Word</span>
+    </div>
+  </div>
+  <div class="main-body">
+    <div class="left-panel">
+      <div class="panel-topbar"><span style="font-size:11px;color:var(--text-hint)">📄 文件预览区</span></div>
+      <div class="preview-content"><div class="doc-mock" style="color:#CCC;font-size:24px;text-align:center;padding-top:60px;">📄</div></div>
+    </div>
+    <div class="right-panel">
+      <div class="tab-bar">
+        <span class="tab-item active">📊 审查摘要 <span class="tab-badge danger">12</span></span>
+        <span class="tab-item">⚠️ 问题清单 <span class="tab-badge danger">8/12</span></span>
+        <span class="tab-item">📖 标准引用 <span class="tab-badge success">3</span></span>
+        <span class="tab-spacer"></span>
+        <span style="font-size:11px;color:var(--text-hint)">大白话模式 ◎</span>
+      </div>
+      <div class="tab-content">
+        <!-- 现状：有错误时直接显示错误列表，审查摘要消失 -->
+        <div class="issue-preview-header">
+          <h4 style="color:var(--red);font-size:14px;">🔴 严重错误（8条）</h4>
+        </div>
+        <div style="padding:12px;background:#FEF2F2;border-radius:var(--radius-sm);border:1px solid #FECACA;border-left:3px solid var(--red);">
+          <div style="font-size:13px;font-weight:600;margin-bottom:4px;">"3.2.1 技术规范" → </div>
+          <div style="font-size:12px;color:var(--text-secondary);">标准编号引用格式不符合 GB/T 1.1-2020 规范要求</div>
+        </div>
+        <div style="padding:12px;background:#FEF2F2;border-radius:var(--radius-sm);border:1px solid #FECACA;border-left:3px solid var(--red);">
+          <div style="font-size:13px;font-weight:600;margin-bottom:4px;">"第五章 施工方案" → </div>
+          <div style="font-size:12px;color:var(--text-secondary);">章节标题层级与模板要求不符，缺少子章节编号</div>
+        </div>
+        <div style="padding:12px;background:#FFFBEB;border-radius:var(--radius-sm);border:1px solid #FDE68A;border-left:3px solid var(--amber);">
+          <div style="font-size:13px;font-weight:600;margin-bottom:4px;">"页边距设置" → </div>
+          <div style="font-size:12px;color:var(--text-secondary);">上下页边距为 2.8cm，标准要求为 2.54cm</div>
+        </div>
+        <div style="text-align:center;padding:10px;font-size:12px;color:var(--text-hint);background:#F9FAFB;border-radius:var(--radius-sm);">
+          还有 5 条严重错误 + 4 条警告未显示 → 查看全部
+        </div>
+        <div style="color:var(--text-hint);font-size:11px;text-align:center;padding:20px;">
+          ⚠️ 审查摘要？<br>不见了——因为 issueDetails.length > 0 时，<br>
+          整个 summary 区块被替换
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="section-header" style="margin-top:28px;">
+  <span class="section-tag after">AFTER · 改进</span>
+  <h2>Overview Tab · 审查摘要 — 改进方案</h2>
+  <p>改进点：① 统计看板始终存在 (4列网格) ② 审查信息卡 (3列网格) ③ 问题预览列表与 Suggestions 共用同一套卡片组件 ④ 面包屑导航 ⑤ 大白话开关移至 Tab 栏</p>
+</div>
+
+<div class="app-frame" style="height: 640px;">
+  <div class="topbar">
+    <div class="topbar-left">
+      <div class="breadcrumb">
+        <span>任务列表</span> <span style="color:#CCC;">/</span>
+        <span>审查报告</span> <span style="color:#CCC;">/</span>
+        <span class="current">华东区排水工程招标文件审查</span>
+      </div>
+    </div>
+    <div class="topbar-right">
+      <span class="btn-outline">📄 导出Word</span>
+      <span class="btn-ghost">更多导出 ▾</span>
+      <span style="width:1px;height:20px;background:var(--border);margin:0 4px;"></span>
+      <span class="btn-ghost">返回历史</span>
+    </div>
+  </div>
+  <div class="main-body">
+    <div class="left-panel">
+      <div class="panel-topbar">
+        <span class="file-tab active">📄 招标文件-排水... <span class="badge">12</span></span>
+        <span class="file-tab">📊 工程量清单 <span class="badge">3</span></span>
+      </div>
+      <div class="preview-content">
+        <div class="doc-mock">
+          <h4>第三章 技术规范</h4>
+          <p>3.1 本工程采用 <span class="highlight-error">"GB50268-2008"</span> 给水排水管道工程施工及验收规范。</p>
+          <p>3.2 管道安装应满足以下技术条件：管道直径 DN300~DN1200，埋深不小于 <span class="highlight-warn">1.2m</span>。</p>
+          <p>3.2.1 管材选用应符合 <span class="highlight-error">《给水排水管道工程施工及验收规范》</span>的要求。</p>
+          <p>3.3 阀门井设置间距不大于 <span class="highlight-warn">200m</span>，特殊地段可适当加密。</p>
+        </div>
+      </div>
+    </div>
+    <div class="right-panel">
+      <div class="tab-bar">
+        <span class="tab-item active">📊 审查摘要 <span class="tab-badge danger">12</span></span>
+        <span class="tab-item">⚠️ 问题清单 <span class="tab-badge danger">8/12</span></span>
+        <span class="tab-item">📖 标准引用 <span class="tab-badge success">3</span></span>
+        <span class="tab-spacer"></span>
+        <div class="tab-actions">
+          <div class="plain-toggle">
+            <span>大白话</span>
+            <div class="toggle-track"><div class="toggle-thumb"></div></div>
+          </div>
+        </div>
+      </div>
+      <div class="tab-content" style="gap:12px;">
+
+        <!-- ✅ 改进1: 统计看板 - 4列固定网格 -->
+        <div class="stat-dashboard">
+          <div class="stat-card total">
+            <div class="stat-icon">📋</div>
+            <div class="stat-value">12</div>
+            <div class="stat-label">发现问题</div>
+          </div>
+          <div class="stat-card error">
+            <div class="stat-icon">🔴</div>
+            <div class="stat-value">8</div>
+            <div class="stat-label">严重错误</div>
+          </div>
+          <div class="stat-card warn">
+            <div class="stat-icon">🟡</div>
+            <div class="stat-value">4</div>
+            <div class="stat-label">警告</div>
+          </div>
+          <div class="stat-card info">
+            <div class="stat-icon">✅</div>
+            <div class="stat-value">2</div>
+            <div class="stat-label">审查文件</div>
+          </div>
+        </div>
+
+        <!-- ✅ 改进2: 审查信息卡 - 3列固定网格 -->
+        <div class="info-grid">
+          <div class="info-item">
+            <div class="info-label">审查模式</div>
+            <div class="info-value">以库审文</div>
+          </div>
+          <div class="info-item">
+            <div class="info-label">审查依据</div>
+            <div class="info-value">知识库 + 语义规范库</div>
+          </div>
+          <div class="info-item">
+            <div class="info-label">审查来源</div>
+            <div class="info-value">
+              规则 5 <span style="font-weight:400;color:var(--text-hint);">·</span> AI 4 <span style="font-weight:400;color:var(--text-hint);">·</span> 标准引用 3
+            </div>
+          </div>
+        </div>
+
+        <!-- ✅ 改进3: 问题预览（统一卡片，紧凑版） -->
+        <div class="issue-preview-header">
+          <h4>🔴 严重错误 Top 5</h4>
+          <span style="font-size:11px;color:var(--text-hint);">点击跳转至问题清单</span>
+        </div>
+
+        <div class="issue-card-compact error">
+          <div class="sev-dot"></div>
+          <div class="ic-body">
+            <div class="ic-tags">
+              <span class="tag-xs red">严重</span>
+              <span class="tag-xs blue">标准引用</span>
+            </div>
+            <div class="ic-desc">引用标准编号 "GB50268-2008" 已废止</div>
+            <div class="ic-snippet">原文："GB50268-2008" → 建议："GB 50268-2018"</div>
+            <div class="ic-file">📄 招标文件-排水工程.docx</div>
+          </div>
+          <div class="ic-arrow">→</div>
+        </div>
+
+        <div class="issue-card-compact error">
+          <div class="sev-dot"></div>
+          <div class="ic-body">
+            <div class="ic-tags">
+              <span class="tag-xs red">严重</span>
+              <span class="tag-xs blue">格式规范</span>
+            </div>
+            <div class="ic-desc">标准引用名称不完整，缺少版本号</div>
+            <div class="ic-snippet">原文："给水排水管道工程施工及验收规范"</div>
+            <div class="ic-file">📄 招标文件-排水工程.docx</div>
+          </div>
+          <div class="ic-arrow">→</div>
+        </div>
+
+        <a class="view-all-link" href="#suggestions">
+          查看全部 12 条问题 →
+          <span style="color:var(--text-hint);font-size:11px;margin-left:4px;">（8 严重 · 4 警告）</span>
+        </a>
+
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ====== 第二部分：Suggestions Tab 改进前后对比 ====== -->
+<div class="section-header" style="margin-top:32px;">
+  <span class="section-tag before">BEFORE · 当前</span>
+  <h2>Suggestions Tab · 问题清单 — 现状</h2>
+  <p>问题：卡片默认折叠，操作按钮抢占注意力，筛选栏拥挤，批量操作需进入模式</p>
+</div>
+
+<div class="app-frame" style="height: 480px;">
+  <div class="topbar">
+    <div class="topbar-left"><span style="font-size:12px;color:var(--text-hint)">← 返回历史</span></div>
+    <div class="topbar-right">
+      <span class="btn-primary" style="font-size:11px;">📄 导出Word</span>
+    </div>
+  </div>
+  <div class="main-body">
+    <div class="left-panel">
+      <div class="panel-topbar"><span style="font-size:11px;color:var(--text-hint)">📄 文件预览区</span></div>
+      <div class="preview-content" style="color:#CCC;font-size:24px;text-align:center;padding-top:60px;">📄</div>
+    </div>
+    <div class="right-panel">
+      <div class="tab-bar">
+        <span class="tab-item">📊 审查摘要 <span class="tab-badge danger">12</span></span>
+        <span class="tab-item active">⚠️ 问题清单 <span class="tab-badge danger">8/12</span></span>
+        <span class="tab-item">📖 标准引用 <span class="tab-badge success">3</span></span>
+        <span class="tab-spacer"></span>
+      </div>
+      <!-- 当前筛选栏：拥挤 -->
+      <div style="display:flex;gap:6px;padding:8px 12px;border-bottom:1px solid var(--border-light);flex-wrap:wrap;">
+        <select style="width:90px;font-size:11px;padding:3px;border:1px solid var(--border);border-radius:4px;"><option>严重度</option></select>
+        <select style="width:110px;font-size:11px;padding:3px;border:1px solid var(--border);border-radius:4px;"><option>问题分类</option></select>
+        <input style="width:160px;font-size:11px;padding:3px 8px;border:1px solid var(--border);border-radius:4px;" placeholder="搜索...">
+        <span style="font-size:11px;padding:3px 8px;color:var(--text-hint);cursor:pointer;">分组</span>
+      </div>
+      <div style="padding:8px 12px;border-bottom:1px solid var(--border-light);">
+        <span style="font-size:11px;color:var(--blue);cursor:pointer;">📋 批量操作</span>
+      </div>
+      <!-- 当前卡片：全部折叠，操作按钮在折叠态暴露 -->
+      <div class="tab-content" style="gap:6px;">
+        <div style="border:1px solid var(--border-light);border-left:3px solid var(--red);border-radius:var(--radius-sm);padding:10px 12px;">
+          <div style="display:flex;justify-content:space-between;align-items:flex-start;">
+            <div>
+              <div style="display:flex;gap:4px;margin-bottom:3px;">
+                <span style="font-size:10px;padding:1px 6px;border-radius:4px;background:#FEE2E2;color:#DC2626;">标准引用</span>
+                <span style="font-size:10px;padding:1px 6px;border-radius:4px;background:#DC2626;color:#FFF;">严重</span>
+              </div>
+              <div style="font-size:12px;font-weight:600;">引用标准编号 "GB50268-2008" 已废止</div>
+            </div>
+            <div style="display:flex;gap:4px;flex-shrink:0;">
+              <span style="font-size:10px;padding:3px 8px;border:1px solid var(--border);border-radius:4px;color:var(--text-hint);">📍 定位</span>
+              <span style="font-size:10px;padding:3px 8px;border:1px solid #FDE68A;border-radius:4px;background:#FEF3C7;color:#92400E;">标记误报</span>
+              <span style="color:var(--text-hint);">▾</span>
+            </div>
+          </div>
+        </div>
+        <div style="border:1px solid var(--border-light);border-left:3px solid var(--red);border-radius:var(--radius-sm);padding:10px 12px;">
+          <div style="display:flex;justify-content:space-between;align-items:flex-start;">
+            <div>
+              <div style="display:flex;gap:4px;margin-bottom:3px;">
+                <span style="font-size:10px;padding:1px 6px;border-radius:4px;background:#FEE2E2;color:#DC2626;">格式规范</span>
+                <span style="font-size:10px;padding:1px 6px;border-radius:4px;background:#DC2626;color:#FFF;">严重</span>
+              </div>
+              <div style="font-size:12px;font-weight:600;">标准引用名称不完整</div>
+            </div>
+            <div style="display:flex;gap:4px;flex-shrink:0;">
+              <span style="font-size:10px;padding:3px 8px;border:1px solid var(--border);border-radius:4px;color:var(--text-hint);">📍 定位</span>
+              <span style="font-size:10px;padding:3px 8px;border:1px solid #FDE68A;border-radius:4px;background:#FEF3C7;color:#92400E;">标记误报</span>
+              <span style="color:var(--text-hint);">▾</span>
+            </div>
+          </div>
+        </div>
+        <div style="color:var(--text-hint);font-size:11px;text-align:center;padding:20px;">
+          ⚠️ 所有卡片折叠，<br>操作按钮（定位/标记误报）在<br>未展开时已暴露
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="section-header" style="margin-top:28px;">
+  <span class="section-tag after">AFTER · 改进</span>
+  <h2>Suggestions Tab · 问题清单 — 改进方案</h2>
+  <p>改进点：① 搜索主导航 + 筛选芯片 ② 卡片默认展示原文/建议预览（前2行+渐变淡出）③ 操作按钮移至展开后底部 ④ Checkbox 始终可见，选1项即浮现批量操作栏 ⑤ 分组按钮在工具栏右侧</p>
+</div>
+
+<div class="app-frame" style="height: 620px;">
+  <div class="topbar">
+    <div class="topbar-left">
+      <div class="breadcrumb">
+        <span>任务列表</span> <span style="color:#CCC;">/</span>
+        <span>审查报告</span> <span style="color:#CCC;">/</span>
+        <span class="current">华东区排水工程招标文件审查</span>
+      </div>
+    </div>
+    <div class="topbar-right">
+      <span class="btn-outline">📄 导出Word</span>
+      <span class="btn-ghost">更多导出 ▾</span>
+      <span style="width:1px;height:20px;background:var(--border);margin:0 4px;"></span>
+      <span class="btn-ghost">返回历史</span>
+    </div>
+  </div>
+  <div class="main-body">
+    <div class="left-panel">
+      <div class="panel-topbar">
+        <span class="file-tab active">📄 招标文件-排水... <span class="badge">12</span></span>
+        <span class="file-tab">📊 工程量清单 <span class="badge">3</span></span>
+      </div>
+      <div class="preview-content">
+        <div class="doc-mock">
+          <h4>第三章 技术规范</h4>
+          <p>3.1 本工程采用 <span class="highlight-error">"GB50268-2008"</span> 给水排水管道工程施工及验收规范。</p>
+          <p>3.2 管道安装应满足以下技术条件...</p>
+        </div>
+      </div>
+    </div>
+    <div class="right-panel">
+      <div class="tab-bar">
+        <span class="tab-item">📊 审查摘要 <span class="tab-badge danger">12</span></span>
+        <span class="tab-item active">⚠️ 问题清单 <span class="tab-badge danger">8/12</span></span>
+        <span class="tab-item">📖 标准引用 <span class="tab-badge success">3</span></span>
+      </div>
+      <div class="tab-content" style="gap:10px;">
+
+        <!-- ✅ 改进1: 搜索主导航 + 筛选芯片 -->
+        <div class="search-bar">
+          <div class="search-input-wrapper">
+            <span class="search-icon">🔍</span>
+            <input type="text" placeholder="搜索原文、描述或标准编号...">
+          </div>
+          <div class="filter-chips">
+            <span class="filter-chip active">全部 <span class="count">12</span></span>
+            <span class="filter-chip">严重 <span class="count">8</span></span>
+            <span class="filter-chip">警告 <span class="count">4</span></span>
+          </div>
+        </div>
+
+        <!-- ✅ 改进2: 工具栏（分组 + 展开/折叠 + 排序） -->
+        <div class="issue-toolbar">
+          <div class="toolbar-left">
+            <span>共 12 条问题</span>
+          </div>
+          <div class="toolbar-right">
+            <span class="btn-icon-sm" title="全部展开">⊞</span>
+            <span class="btn-icon-sm" title="全部折叠">⊟</span>
+            <span class="btn-icon-sm active" title="按检查项分组">📋</span>
+            <span class="btn-icon-sm" title="排序">↓</span>
+          </div>
+        </div>
+
+        <!-- ✅ 改进3: 批量操作浮动栏（选1项即出现） -->
+        <div class="batch-float-bar">
+          <div class="bf-left">
+            <span>已选 <strong>2</strong> / 12 项</span>
+          </div>
+          <div class="bf-right">
+            <span class="btn-xs white">✅ 批量采纳 (2)</span>
+            <span class="btn-xs white">🚩 标记误报 (2)</span>
+            <span class="btn-xs white">✕ 取消选择</span>
+          </div>
+        </div>
+
+        <!-- ✅ 改进4: 完整卡片 - Checkbox可见 + 预览默认显示 + 操作在底部 -->
+        <div class="issue-card-full error selected">
+          <div class="card-header">
+            <label class="ch-checkbox"><input type="checkbox" checked></label>
+            <div class="ch-body">
+              <div class="ch-meta">
+                <span class="tag-xs red">严重</span>
+                <span class="tag-xs blue">标准引用</span>
+                <span style="font-size:10px;color:var(--text-hint);">📄 招标文件-排水工程.docx</span>
+              </div>
+              <div class="ch-desc">引用标准编号 "GB50268-2008" 已废止，建议更新</div>
+              <div class="ch-plain">🗣️ 大白话：这个标准号已经是旧版本了，2018年出了新版，建议改成 GB 50268-2018</div>
+            </div>
+            <div style="font-size:16px;color:var(--text-hint);flex-shrink:0;">▾</div>
+          </div>
+          <!-- 预览区：默认可见，渐变淡出 -->
+          <div class="card-preview">
+            <div class="preview-row">
+              <span class="preview-label">原文</span>
+              <div class="preview-text original">
+                "GB50268-2008" 给水排水管道工程施工及验收规范...
+                <div class="fade-out"></div>
+              </div>
+            </div>
+            <div class="preview-row">
+              <span class="preview-label">建议</span>
+              <div class="preview-text suggested">
+                "GB 50268-2018" 给水排水管道工程施工及验收规范...
+                <div class="fade-out"></div>
+              </div>
+            </div>
+          </div>
+          <div class="expand-indicator">点击展开完整详情 ▾</div>
+          <!-- 操作按钮在底部 -->
+          <div class="card-footer">
+            <div class="cf-left">
+              <span class="btn-xs locate">📍 定位原文</span>
+              <span class="btn-xs fp">🚩 标记误报</span>
+            </div>
+            <div class="cf-right">
+              标准引用依据 →
+            </div>
+          </div>
+        </div>
+
+        <!-- 第二张卡片（未选中，警告级别） -->
+        <div class="issue-card-full warning">
+          <div class="card-header">
+            <label class="ch-checkbox"><input type="checkbox"></label>
+            <div class="ch-body">
+              <div class="ch-meta">
+                <span class="tag-xs amber">警告</span>
+                <span class="tag-xs blue">格式规范</span>
+                <span style="font-size:10px;color:var(--text-hint);">📄 招标文件-排水工程.docx</span>
+              </div>
+              <div class="ch-desc">标准引用名称不完整，缺少版本号信息</div>
+              <div class="ch-plain">🗣️ 大白话：只写了标准名，没写是哪一年版本，实际使用时会产生歧义</div>
+            </div>
+            <div style="font-size:16px;color:var(--text-hint);flex-shrink:0;">▾</div>
+          </div>
+          <div class="card-preview">
+            <div class="preview-row">
+              <span class="preview-label">原文</span>
+              <div class="preview-text original">
+                《给水排水管道工程施工及验收规范》
+                <div class="fade-out"></div>
+              </div>
+            </div>
+            <div class="preview-row">
+              <span class="preview-label">建议</span>
+              <div class="preview-text suggested">
+                《给水排水管道工程施工及验收规范》GB 50268-2018
+                <div class="fade-out"></div>
+              </div>
+            </div>
+          </div>
+          <div class="expand-indicator">点击展开完整详情 ▾</div>
+          <div class="card-footer">
+            <div class="cf-left">
+              <span class="btn-xs locate">📍 定位原文</span>
+              <span class="btn-xs fp">🚩 标记误报</span>
+            </div>
+            <div class="cf-right">
+              标准引用依据 →
+            </div>
+          </div>
+        </div>
+
+        <!-- 底部状态栏 -->
+        <div class="status-bar">
+          <span>显示 1-2 / 共 12 条</span>
+          <div class="mini-pager">
+            <span class="active">1</span>
+            <span>2</span>
+            <span>3</span>
+            <span>→</span>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ====== 第三部分：关键交互细节对比 ====== -->
+<div class="section-header" style="margin-top:32px;">
+  <span class="section-tag after">改进</span>
+  <h2>问题卡片组件 · 统一设计语言</h2>
+  <p>同一套卡片组件在 Overview 和 Suggestions 中复用，仅通过 prop 控制展开/紧凑模式</p>
+</div>
+
+<div class="app-frame" style="height: auto; min-height: 360px; background: var(--surface);">
+  <div style="padding:20px;display:flex;gap:24px;align-items:flex-start;flex-wrap:wrap;">
+
+    <!-- 紧凑版（Overview 用） -->
+    <div style="flex:1;min-width:280px;">
+      <div style="display:flex;align-items:center;gap:6px;margin-bottom:10px;">
+        <span class="compare-label bad">Before</span>
+        <span style="font-size:11px;color:var(--text-hint);">Overview 中的内联卡片（红色背景块）</span>
+      </div>
+      <div style="padding:12px;background:#FEF2F2;border-radius:6px;border:1px solid #FECACA;border-left:3px solid #EF4444;font-size:12px;">
+        <div style="font-weight:600;">"GB50268-2008" →</div>
+        <div style="color:#6B7280;margin-top:4px;">标准编号引用格式不符合...</div>
+      </div>
+      <div style="margin-top:12px;">
+        <span class="compare-label good">After</span>
+        <span style="font-size:11px;color:var(--text-hint);">统一的紧凑卡片（白色底+左边框+元数据）</span>
+      </div>
+      <div class="issue-card-compact error" style="margin-top:8px;">
+        <div class="sev-dot"></div>
+        <div class="ic-body">
+          <div class="ic-tags">
+            <span class="tag-xs red">严重</span>
+            <span class="tag-xs blue">标准引用</span>
+          </div>
+          <div class="ic-desc">引用标准编号 "GB50268-2008" 已废止</div>
+          <div class="ic-snippet">原文："GB50268-2008" → 建议："GB 50268-2018"</div>
+          <div class="ic-file">📄 招标文件-排水工程.docx · 第3章 技术规范</div>
+        </div>
+        <div class="ic-arrow">→</div>
+      </div>
+    </div>
+
+    <!-- 完整版（Suggestions 用） -->
+    <div style="flex:1.2;min-width:320px;">
+      <div style="display:flex;align-items:center;gap:6px;margin-bottom:10px;">
+        <span class="compare-label bad">Before</span>
+        <span style="font-size:11px;color:var(--text-hint);">Suggestions 中的完整卡片（默认折叠+操作按钮过早暴露）</span>
+      </div>
+      <div style="border:1px solid var(--border-light);border-left:3px solid #EF4444;border-radius:var(--radius-sm);padding:10px 12px;font-size:12px;">
+        <div style="display:flex;justify-content:space-between;">
+          <div>
+            <div style="display:flex;gap:4px;margin-bottom:3px;"><span style="font-size:10px;background:#FEE2E2;color:#DC2626;padding:1px 6px;border-radius:4px;">标准引用</span><span style="font-size:10px;background:#DC2626;color:#FFF;padding:1px 6px;border-radius:4px;">严重</span></div>
+            <div style="font-weight:600;">引用标准编号 "GB50268-2008" 已废止</div>
+          </div>
+          <div style="display:flex;gap:4px;"><span style="font-size:10px;padding:3px 6px;border:1px solid var(--border);border-radius:4px;">📍</span><span style="font-size:10px;padding:3px 6px;background:#FEF3C7;border:1px solid #FDE68A;border-radius:4px;">🚩</span></div>
+        </div>
+        <div style="color:var(--text-hint);font-size:10px;margin-top:4px;">▾ 点击展开 → 原文和建议修改才可见</div>
+      </div>
+      <div style="margin-top:12px;">
+        <span class="compare-label good">After</span>
+        <span style="font-size:11px;color:var(--text-hint);">统一的完整卡片（预览默认可见+底部操作栏+checkbox）</span>
+      </div>
+      <div class="issue-card-full error" style="margin-top:8px;">
+        <div class="card-header">
+          <label class="ch-checkbox"><input type="checkbox"></label>
+          <div class="ch-body">
+            <div class="ch-meta">
+              <span class="tag-xs red">严重</span>
+              <span class="tag-xs blue">标准引用</span>
+              <span style="font-size:10px;color:var(--text-hint);">📄 招标文件-排水工程.docx</span>
+            </div>
+            <div class="ch-desc">引用标准编号 "GB50268-2008" 已废止，建议更新为 GB 50268-2018</div>
+            <div class="ch-plain">🗣️ 大白话：这个标准号是旧版本，2018年有新版本</div>
+          </div>
+        </div>
+        <div class="card-preview">
+          <div class="preview-row">
+            <span class="preview-label">原文</span>
+            <div class="preview-text original">"GB50268-2008" 给水排水管道工程施工及验收规范<div class="fade-out"></div></div>
+          </div>
+        </div>
+        <div class="card-footer">
+          <div class="cf-left">
+            <span class="btn-xs locate">📍 定位原文</span>
+            <span class="btn-xs fp">🚩 标记误报</span>
+          </div>
+          <div class="cf-right">展开完整详情 ▾</div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<!-- ====== 改进清单总结 ====== -->
+<div class="section-header" style="margin-top:32px;">
+  <h2>📋 改进清单对照</h2>
+</div>
+
+<table style="width:100%;border-collapse:collapse;font-size:13px;background:var(--surface);border-radius:var(--radius);overflow:hidden;box-shadow:var(--shadow-sm);">
+<thead>
+<tr style="background:#F9FAFB;border-bottom:2px solid var(--border);">
+  <th style="text-align:left;padding:12px 16px;width:10%;">优先级</th>
+  <th style="text-align:left;padding:12px 16px;width:20%;">问题</th>
+  <th style="text-align:left;padding:12px 16px;width:35%;">Before</th>
+  <th style="text-align:left;padding:12px 16px;width:35%;">After</th>
+</tr>
+</thead>
+<tbody>
+<tr style="border-bottom:1px solid var(--border-light);">
+  <td style="padding:10px 16px;"><span style="background:#FEE2E2;color:#DC2626;padding:2px 8px;border-radius:4px;font-size:11px;font-weight:700;">P0</span></td>
+  <td style="padding:10px 16px;font-weight:600;">摘要与问题互斥</td>
+  <td style="padding:10px 16px;font-size:12px;color:var(--text-secondary);">有错误时审查摘要完全消失</td>
+  <td style="padding:10px 16px;font-size:12px;">统计看板 4列 Grid 始终存在 + 问题预览并排</td>
+</tr>
+<tr style="border-bottom:1px solid var(--border-light);">
+  <td style="padding:10px 16px;"><span style="background:#FEE2E2;color:#DC2626;padding:2px 8px;border-radius:4px;font-size:11px;font-weight:700;">P0</span></td>
+  <td style="padding:10px 16px;font-weight:600;">卡片默认全部折叠</td>
+  <td style="padding:10px 16px;font-size:12px;color:var(--text-secondary);">原文/建议修改需逐个点击展开</td>
+  <td style="padding:10px 16px;font-size:12px;">预览区默认显示（2行+渐变淡出），点击展开完整内容</td>
+</tr>
+<tr style="border-bottom:1px solid var(--border-light);">
+  <td style="padding:10px 16px;"><span style="background:#FEF3C7;color:#B45309;padding:2px 8px;border-radius:4px;font-size:11px;font-weight:700;">P1</span></td>
+  <td style="padding:10px 16px;font-weight:600;">两套问题卡片视觉</td>
+  <td style="padding:10px 16px;font-size:12px;color:var(--text-secondary);">Overview 红色背景块 vs Suggestions IssueCard 白色卡片</td>
+  <td style="padding:10px 16px;font-size:12px;">统一卡片组件，紧凑/完整两种模式，相同设计语言</td>
+</tr>
+<tr style="border-bottom:1px solid var(--border-light);">
+  <td style="padding:10px 16px;"><span style="background:#FEF3C7;color:#B45309;padding:2px 8px;border-radius:4px;font-size:11px;font-weight:700;">P1</span></td>
+  <td style="padding:10px 16px;font-weight:600;">操作按钮过早暴露</td>
+  <td style="padding:10px 16px;font-size:12px;color:var(--text-secondary);">折叠态即显示「定位」「标记误报」</td>
+  <td style="padding:10px 16px;font-size:12px;">操作按钮移至卡片底部，预览默认可见时显示</td>
+</tr>
+<tr style="border-bottom:1px solid var(--border-light);">
+  <td style="padding:10px 16px;"><span style="background:#FEF3C7;color:#B45309;padding:2px 8px;border-radius:4px;font-size:11px;font-weight:700;">P1</span></td>
+  <td style="padding:10px 16px;font-weight:600;">Overview 卡片布局松散</td>
+  <td style="padding:10px 16px;font-size:12px;color:var(--text-secondary);">flex-wrap 流式布局，列数不固定</td>
+  <td style="padding:10px 16px;font-size:12px;">统计看板 4列 Grid + 审查信息 3列 Grid，固定结构</td>
+</tr>
+<tr style="border-bottom:1px solid var(--border-light);">
+  <td style="padding:10px 16px;"><span style="background:#DBEAFE;color:#1D4ED8;padding:2px 8px;border-radius:4px;font-size:11px;font-weight:700;">P2</span></td>
+  <td style="padding:10px 16px;font-weight:600;">筛选工具栏拥挤</td>
+  <td style="padding:10px 16px;font-size:12px;color:var(--text-secondary);">severity + category + search 三个下拉/输入框挤一行</td>
+  <td style="padding:10px 16px;font-size:12px;">搜索主导航（宽敞输入框）+ 筛选芯片（严重/警告/全部）</td>
+</tr>
+<tr style="border-bottom:1px solid var(--border-light);">
+  <td style="padding:10px 16px;"><span style="background:#DBEAFE;color:#1D4ED8;padding:2px 8px;border-radius:4px;font-size:11px;font-weight:700;">P2</span></td>
+  <td style="padding:10px 16px;font-weight:600;">批量操作需进入模式</td>
+  <td style="padding:10px 16px;font-size:12px;color:var(--text-secondary);">点击→进入批量模式→勾选→操作→退出模式</td>
+  <td style="padding:10px 16px;font-size:12px;">Checkbox 始终可见，选1项自动浮现批量操作浮动栏</td>
+</tr>
+<tr style="border-bottom:1px solid var(--border-light);">
+  <td style="padding:10px 16px;"><span style="background:#DBEAFE;color:#1D4ED8;padding:2px 8px;border-radius:4px;font-size:11px;font-weight:700;">P2</span></td>
+  <td style="padding:10px 16px;font-weight:600;">导出按钮视觉过重</td>
+  <td style="padding:10px 16px;font-size:12px;color:var(--text-secondary);">蓝色渐变+阴影，页面最重元素</td>
+  <td style="padding:10px 16px;font-size:12px;">降级为次级 outline 按钮，与「更多导出」平级</td>
+</tr>
+<tr>
+  <td style="padding:10px 16px;"><span style="background:#DBEAFE;color:#1D4ED8;padding:2px 8px;border-radius:4px;font-size:11px;font-weight:700;">P2</span></td>
+  <td style="padding:10px 16px;font-weight:600;">缺少面包屑</td>
+  <td style="padding:10px 16px;font-size:12px;color:var(--text-secondary);">只有"返回历史"按钮</td>
+  <td style="padding:10px 16px;font-size:12px;">顶栏面包屑：任务列表 / 审查报告 / [任务名称]</td>
+</tr>
+</tbody>
+</table>
+
+</div>
+
+</body>
+</html>
