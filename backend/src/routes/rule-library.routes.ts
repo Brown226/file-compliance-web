@@ -13,6 +13,7 @@ import {
   parseRulesFromFile,
   parseRulesPreview,
   parseRulesPreviewAsync,
+  getParseJobStatus,
   importPreviewItems,
   addItem,
   updateItem,
@@ -28,6 +29,9 @@ const upload = multer({
 });
 
 router.use(authenticate);
+
+// 解析任务状态查询（必须在 /:id 之前，避免被 /:id 吞掉）
+router.get('/parse-jobs/:jobId', getParseJobStatus);
 
 // 规则库 CRUD
 router.get('/', listLibraries);
