@@ -12,9 +12,6 @@ export interface SpecificationFolderTreeNode {
 export class SpecificationFolderService {
   static async getTree(): Promise<SpecificationFolderTreeNode[]> {
     const folders = await prisma.specificationFolder.findMany({
-      include: {
-        _count: { select: { specifications: true } },
-      },
       orderBy: { sortOrder: 'asc' },
     });
 
@@ -25,7 +22,7 @@ export class SpecificationFolderService {
       const node: SpecificationFolderTreeNode = {
         id: f.id,
         label: f.name,
-        count: f._count.specifications,
+        count: 0, // ReviewSpecification 已删除，不再统计
         sortOrder: f.sortOrder,
         parentId: f.parentId,
         children: [],
@@ -76,11 +73,6 @@ export class SpecificationFolderService {
     if (!folder) throw new Error('目录不存在');
 
     await prisma.$transaction(async (tx) => {
-      await tx.reviewSpecification.updateMany({
-        where: { folderId: id },
-        data: { folderId: folder.parentId ?? null },
-      });
-
       for (const child of folder.children) {
         await tx.specificationFolder.update({
           where: { id: child.id },
@@ -115,11 +107,6 @@ export class SpecificationFolderService {
           include: { children: true },
         });
         if (!folder) continue;
-
-        await tx.reviewSpecification.updateMany({
-          where: { folderId },
-          data: { folderId: newFolder.id },
-        });
 
         await tx.specificationFolder.updateMany({
           where: { parentId: folderId },

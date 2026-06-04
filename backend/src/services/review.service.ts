@@ -10,7 +10,6 @@ import { IntraFileConsistencyService } from './intra-file-consistency.service';
 import { WebSocketService } from './websocket.service';
 import { resolveFilePath } from '../config/upload';
 import { ConcurrencyService } from './concurrency.service';
-import { ReviewSpecificationService } from './review-specification.service';
 import { RuleLibraryService } from './rule-library.service';
 import { TableExtractionService } from './table-extraction.service';
 import { FormulaOcrService } from './formula-ocr.service';
@@ -36,8 +35,8 @@ export class ReviewService {
   private static adaptReviewPlanForExecution(task: any): {
     plan: ReviewPlan;
     reviewMode: string;
-    ruleSource: ('STANDARD' | 'REVIEW_SPECIFICATION')[];
-    reviewSpecificationId?: string;
+    ruleSource: ('STANDARD' | 'RULE_LIBRARY')[];
+    ruleLibraryId?: string;
     enabledPrefixes?: string[];
     knowledgeCategoryIds: string[];
     refFileGroupRequired: boolean;
@@ -54,14 +53,14 @@ export class ReviewService {
   } {
     const plan = TaskService.normalizeReviewPlan(task?.reviewPlan);
     const reviewMode = TaskService.resolvePipelineSelector(plan);
-    // 支持同时选择知识库(STANDARD)和语义规范库(REVIEW_SPECIFICATION)
-    const ruleSource: ('STANDARD' | 'REVIEW_SPECIFICATION')[] = [];
+    // 支持同时选择知识库(STANDARD)和语义规则库(RULE_LIBRARY)
+    const ruleSource: ('STANDARD' | 'RULE_LIBRARY')[] = [];
     if (plan.evidence.sources.includes('STANDARD')) ruleSource.push('STANDARD');
-    if (plan.evidence.sources.includes('REVIEW_SPECIFICATION') || plan.evidence.sources.includes('RULE_LIBRARY')) {
-      ruleSource.push('REVIEW_SPECIFICATION');
+    if (plan.evidence.sources.includes('RULE_LIBRARY')) {
+      ruleSource.push('RULE_LIBRARY');
     }
     const hasStandard = ruleSource.includes('STANDARD');
-    const hasReviewSpec = ruleSource.includes('REVIEW_SPECIFICATION');
+    const hasReviewSpec = ruleSource.includes('RULE_LIBRARY');
     const effectiveProfile = plan.execution.profile;
     const stages =
       effectiveProfile === 'RULE_ONLY'
@@ -77,8 +76,8 @@ export class ReviewService {
       plan,
       reviewMode,
       ruleSource,
-      // 语义规范库：有 REVIEW_SPECIFICATION 源且无直接规则前缀时传递
-      reviewSpecificationId: hasReviewSpec && !hasDirectPrefixes ? plan.evidence.reviewSpecificationId || plan.evidence.ruleLibraryId || undefined : undefined,
+      // 语义规则库：有 RULE_LIBRARY 源且无直接规则前缀时传递
+      ruleLibraryId: hasReviewSpec && !hasDirectPrefixes ? plan.evidence.ruleLibraryId || undefined : undefined,
       enabledPrefixes: hasDirectPrefixes ? plan.evidence.enabledPrefixes : undefined,
       // 知识库：有 STANDARD 源时传递 knowledgeCategoryIds
       knowledgeCategoryIds: hasStandard ? (Array.isArray(plan.evidence.knowledgeCategoryIds) ? plan.evidence.knowledgeCategoryIds : []) : [],
@@ -395,7 +394,7 @@ export class ReviewService {
       const executionPlan = this.adaptReviewPlanForExecution(task);
       const reviewMode = executionPlan.reviewMode;
       const knowledgeCategoryId = (task as any).knowledgeCategoryId || undefined;
-      const reviewSpecificationId = executionPlan.reviewSpecificationId;
+      const ruleLibraryId = executionPlan.ruleLibraryId;
       const directPrefixes = executionPlan.enabledPrefixes;
 
       // ===== 模式行为配置（固定模式直接查表，无需创建 Pipeline） =====
@@ -405,11 +404,10 @@ export class ReviewService {
       let ruleExecutionPlan = directPrefixes && directPrefixes.length > 0
         ? { enabledPrefixes: directPrefixes, executableItems: [] }
         : null;
-      if (!ruleExecutionPlan && reviewSpecificationId) {
-        ruleExecutionPlan = await ReviewSpecificationService.getExecutionPlan(reviewSpecificationId).catch(() => null)
-          || await RuleLibraryService.getExecutionPlan(reviewSpecificationId).catch(() => null) as any;
+      if (!ruleExecutionPlan && ruleLibraryId) {
+        ruleExecutionPlan = await RuleLibraryService.getExecutionPlan(ruleLibraryId).catch(() => null);
         if (!ruleExecutionPlan) {
-          console.warn('[Review] 审查规范集/规则库执行计划加载失败, ID:', reviewSpecificationId);
+          console.warn('[Review] 规则库执行计划加载失败, ID:', ruleLibraryId);
         }
       }
 
@@ -425,28 +423,21 @@ export class ReviewService {
         knowledgeCategoryIds = [knowledgeCategoryId];
       }
 
-      // ===== 加载语义规范库/规则库条目（用于 AI 语义审查） =====
+      // ===== 加载规则库条目（用于 AI 语义审查） =====
       let semanticItems: PipelineContext['semanticItems'] = undefined;
-      const effectiveSpecId = executionPlan.reviewSpecificationId || (task as any).reviewSpecificationId || (task as any).ruleLibraryId;
+      const effectiveSpecId = executionPlan.ruleLibraryId || (task as any).ruleLibraryId;
       if (effectiveSpecId) {
         try {
-          // 先尝试 review_specification_items，再尝试 rule_library_items
-          let specItems = await prisma.reviewSpecificationItem.findMany({
-            where: { specificationId: effectiveSpecId, enabled: true },
+          const specItems = await prisma.ruleLibraryItem.findMany({
+            where: { libraryId: effectiveSpecId, enabled: true },
             select: { ruleCode: true, ruleName: true, category: true, description: true, severity: true },
           });
-          if (specItems.length === 0) {
-            specItems = await prisma.ruleLibraryItem.findMany({
-              where: { libraryId: effectiveSpecId, enabled: true },
-              select: { ruleCode: true, ruleName: true, category: true, description: true, severity: true },
-            });
-          }
           if (specItems.length > 0) {
             semanticItems = specItems;
-            console.log(`[Review] 加载语义规范库条目: ${specItems.length} 条`);
+            console.log(`[Review] 加载规则库条目: ${specItems.length} 条`);
           }
         } catch (e) {
-          console.warn('[Review] 加载语义规范库条目失败:', e);
+          console.warn('[Review] 加载规则库条目失败:', e);
         }
       }
 
@@ -498,7 +489,7 @@ export class ReviewService {
           extractedText: '',
           reviewMode: reviewMode as any,
           ruleSource: executionPlan.ruleSource,
-          reviewSpecificationId: executionPlan.reviewSpecificationId,
+          ruleLibraryId: executionPlan.ruleLibraryId,
           rulePlan: ruleExecutionPlan ? {
             enabledPrefixes: ruleExecutionPlan.enabledPrefixes,
             itemIds: ruleExecutionPlan.executableItems.map((item) => item.id),
@@ -1040,7 +1031,7 @@ export class ReviewService {
           taskId, fileId: file.id,
           issueType: issue.issueType, ruleCode: issue.ruleCode,
           severity: issue.severity,
-          reviewSource: ctx.ruleSource?.includes('REVIEW_SPECIFICATION') ? 'RULE_LIBRARY' : 'RULE_ENGINE',
+          reviewSource: ctx.ruleSource?.includes('RULE_LIBRARY') ? 'RULE_LIBRARY' : 'RULE_ENGINE',
           originalText: issue.originalText,
           suggestedText: issue.suggestedText || null,
           description: issue.description,

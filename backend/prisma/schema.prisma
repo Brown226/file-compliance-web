@@ -110,8 +110,6 @@ model Task {
   reviewPlan         Json?          @map("review_plan")         // 审查方案
   selfCheckReport    Json?          @map("self_check_report")   // 标准引用自检报告
   knowledgeCategoryId String?       // 关联的知识子库 ID
-  reviewSpecificationId String?      // 关联的审查规范集 ID
-  reviewSpecification   ReviewSpecification?   @relation(fields: [reviewSpecificationId], references: [id])
   ruleLibraryId       String?        @map("rule_library_id")  // 关联的规则库 ID
   ruleLibrary         RuleLibrary?   @relation(fields: [ruleLibraryId], references: [id], onDelete: SetNull)
   aiEngineUsed        String?        @map("ai_engine_used")   // 实际使用的 AI 引擎（如 llm-direct, llm-with-knowledge, rag-llm 等）
@@ -683,60 +681,11 @@ model SpecificationFolder {
   parentId  String?
   parent    SpecificationFolder?    @relation("SpecificationFolderTree", fields: [parentId], references: [id])
   children  SpecificationFolder[]   @relation("SpecificationFolderTree")
-  specifications ReviewSpecification[]
   sortOrder Int                    @default(0)
   createdAt DateTime               @default(now())
   updatedAt DateTime               @updatedAt
 
   @@map("specification_folders")
-}
-
-model ReviewSpecification {
-  id              String                  @id @default(uuid())
-  name            String                                // 规范集名称
-  description     String?                 @db.Text       // 描述
-  sourceFileName  String?                 @map("source_file_name") // 上传的源文件名
-  status          SpecificationStatus      @default(DRAFT)    // 草稿/已发布/归档
-  createdBy       String                                // 创建人
-  folderId        String?
-  folder          SpecificationFolder?     @relation(fields: [folderId], references: [id], onDelete: SetNull)
-  tasks           Task[]
-  items           ReviewSpecificationItem[]
-  createdAt       DateTime                @default(now())
-  updatedAt       DateTime                @updatedAt
-
-  @@map("review_specifications")
-}
-
-enum SpecificationStatus {
-  DRAFT
-  PUBLISHED
-  ARCHIVED
-}
-
-model ReviewSpecificationItem {
-  id              String                  @id @default(uuid())
-  specificationId String
-  specification   ReviewSpecification     @relation(fields: [specificationId], references: [id], onDelete: Cascade)
-  ruleCode        String?                 @map("rule_code")      // 规则代码
-  ruleName        String?                 @map("rule_name")      // 规则名称
-  category        String?                                      // 规则分类
-  description     String?                 @db.Text               // 规则描述
-  checkMethod     String?                 @map("check_method") @db.Text // 检查方法
-  severity        String?                 @default("warning")     // 严重度
-  executionType   String?                 @default("BUILTIN_PREFIX") @map("execution_type") // BUILTIN_PREFIX/REGEX/KEYWORD_REQUIRED/KEYWORD_FORBIDDEN/MANUAL
-  builtinPrefix   String?                 @map("builtin_prefix")
-  targetScope     String?                 @default("TEXT") @map("target_scope") // FILE_NAME/TEXT/HEADER/TABLE/DWG
-  params          Json?
-  messageTemplate String?                 @map("message_template") @db.Text
-  sourceQuote     String?                 @map("source_quote") @db.Text
-  sourceLocation  String?                 @map("source_location")
-  enabled         Boolean                 @default(true)
-  createdAt       DateTime                @default(now())
-  updatedAt       DateTime                @updatedAt
-
-  @@index([specificationId])
-  @@map("review_specification_items")
 }
 
 // ===== 规则库 =====

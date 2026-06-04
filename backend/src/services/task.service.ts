@@ -33,7 +33,7 @@ export class TaskService {
     if (plan.execution.profile === 'RULE_ONLY') {
       // RULE_ONLY 模式：有审查规范集/规则库来源，或有直接启用的规则前缀
       const hasDirectPrefixes = Array.isArray(plan.evidence.enabledPrefixes) && plan.evidence.enabledPrefixes.length > 0;
-      if (plan.evidence.sources.includes('REVIEW_SPECIFICATION') || hasDirectPrefixes) {
+      if (plan.evidence.sources.includes('RULE_LIBRARY') || hasDirectPrefixes) {
         return 'RULE_ONLY';
       }
     }
@@ -56,10 +56,9 @@ export class TaskService {
             ? (normalizedSources.includes('REFERENCE') ? normalizedSources : ['REFERENCE'] as ReviewEvidenceSource[])
             : normalizedSources,
           knowledgeCategoryIds: Array.isArray(input?.evidence?.knowledgeCategoryIds) ? input.evidence.knowledgeCategoryIds : [],
-          // ★ 以下两个 ID 由 createTask 方法根据控制器传参显式赋值（而非从输入 JSON 抄），
-          // ★ 防止前端同时通过 reviewPlan.evidence.reviewSpecificationId 和独立字段 ruleLibraryId
+          // ★ 以下 ID 由 createTask 方法根据控制器传参显式赋值（而非从输入 JSON 抄），
+          // ★ 防止前端同时通过 reviewPlan.evidence.ruleLibraryId 和独立字段 ruleLibraryId
           // ★ 传入同一个值，导致两个 FK 都去写同一个不存在的 ID 引发外键约束错误。
-          reviewSpecificationId: null,
           ruleLibraryId: null,
           refFileGroupId: typeof input?.evidence?.refFileGroupId === 'string' && input.evidence.refFileGroupId.trim()
             ? input.evidence.refFileGroupId.trim()
@@ -171,10 +170,10 @@ export class TaskService {
     if (ruleLibraryId) normalizedReviewPlan.evidence.ruleLibraryId = ruleLibraryId;
     if (intraFileConsistency !== undefined) normalizedReviewPlan.enhancements.intraFileConsistency = !!intraFileConsistency;
 
-    // 仅当选择了语义规范库/规则库且未选择知识库时，清空标准库关联
-    const hasOnlyReviewSpec = (normalizedReviewPlan.evidence.sources.includes('REVIEW_SPECIFICATION') || normalizedReviewPlan.evidence.sources.includes('RULE_LIBRARY'))
+    // 仅当选择了语义规则库且未选择知识库时，清空标准库关联
+    const hasOnlyReviewSpec = normalizedReviewPlan.evidence.sources.includes('RULE_LIBRARY')
       && !normalizedReviewPlan.evidence.sources.includes('STANDARD')
-      && (!!(normalizedReviewPlan.evidence.reviewSpecificationId || normalizedReviewPlan.evidence.ruleLibraryId));
+      && !!normalizedReviewPlan.evidence.ruleLibraryId;
     const effectiveStandardIds = hasOnlyReviewSpec ? [] : allStandardIds;
 
     // 创建任务
@@ -186,7 +185,6 @@ export class TaskService {
         standardId: hasOnlyReviewSpec ? null : (standardId || effectiveStandardIds[0] || null),
         reviewMode: resolvedReviewMode as any,
         knowledgeCategoryId: knowledgeIdForDb,
-        reviewSpecificationId: normalizedReviewPlan.evidence.reviewSpecificationId || null,
         ruleLibraryId: normalizedReviewPlan.evidence.ruleLibraryId || null,
         perspective: perspective || null,
         preAnalysisData: undefined,

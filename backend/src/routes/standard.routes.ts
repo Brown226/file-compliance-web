@@ -45,7 +45,7 @@ const excelStorage = multer.diskStorage({
 });
 
 const standardFileStorage = multer.diskStorage({
-  destination: (_req, _file, cb) => cb(null, tempDir),
+  destination: (_req, _file, cb) => cb(null, tempDir()),
   filename: (_req, file, cb) => {
     cb(null, 'standard-' + Date.now() + '-' + Math.round(Math.random() * 1E9) + path.extname(file.originalname));
   }

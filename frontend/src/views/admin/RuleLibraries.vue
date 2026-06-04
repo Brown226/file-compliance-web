@@ -1,4 +1,4 @@
-<template>
+﻿﻿<template>
   <div class="rl-page">
       <!-- 顶部工具栏 -->
       <section class="toolbar">
@@ -62,8 +62,30 @@
             <div class="card-footer">
               <el-tag :type="getStatusTagType(library.status)" size="small" effect="light">{{ getStatusLabel(library.status) }}</el-tag>
               <div class="card-actions">
-                <el-button type="primary" size="small" @click.stop="showDetail(library)">查看详情</el-button>
-                <el-button type="success" size="small" @click.stop="showUploadRules(library)">AI 解析</el-button>
+                <!-- 正在解析中：显示进度 -->
+                <template v-if="getActiveTask(library.id) && getActiveTask(library.id)?.status === 'PROCESSING'">
+                  <div class="card-parse-progress">
+                    <el-progress :percentage="getActiveTask(library.id)?.progress || 0" :stroke-width="6" style="width: 100px;" />
+                    <span class="parse-status-text">{{ getActiveTask(library.id)?.step || '解析中...' }}</span>
+                  </div>
+                </template>
+                <!-- 解析完成：显示查看结果按钮 -->
+                <template v-else-if="getActiveTask(library.id) && getActiveTask(library.id)?.status === 'COMPLETED'">
+                  <el-button type="warning" size="small" @click.stop="showPreviewFromTask(library.id)">
+                    <el-icon><View /></el-icon> 查看解析结果 ({{ getActiveTask(library.id)?.items?.length || 0 }}条)
+                  </el-button>
+                  <el-button size="small" @click.stop="dismissTask(library.id)">忽略</el-button>
+                </template>
+                <!-- 解析失败：显示重试 -->
+                <template v-else-if="getActiveTask(library.id) && getActiveTask(library.id)?.status === 'FAILED'">
+                  <el-tag type="danger" size="small">解析失败</el-tag>
+                  <el-button size="small" @click.stop="dismissTask(library.id)">忽略</el-button>
+                </template>
+                <!-- 正常状态：显示操作按钮 -->
+                <template v-else>
+                  <el-button type="primary" size="small" @click.stop="showDetail(library)">查看详情</el-button>
+                  <el-button type="success" size="small" @click.stop="showUploadRules(library)">AI 解析</el-button>
+                </template>
                 <el-dropdown trigger="click" @command="(cmd: string) => handleRowCommand(cmd, library)">
                   <el-button type="text" size="small">更多</el-button>
                   <template #dropdown>
@@ -326,7 +348,7 @@ import {
   updateRuleLibraryApi,
   deleteRuleLibraryApi,
   parseRulesPreviewAsyncApi,
-  getRuleParseTaskApi,
+  getRuleParseJobApi,
   importRulePreviewItemsApi,
   addRuleItemApi,
   updateRuleItemApi,
@@ -371,6 +393,21 @@ const parseProgress = ref(0)
 const parseMessage = ref('')
 const parseStep = ref('')
 const parsePollTimer = ref<number | null>(null)
+
+// 按规则库 ID 追踪活跃的解析任务
+interface ActiveParseTask {
+  jobId: string
+  libraryId: string
+  libraryName: string
+  progress: number
+  step: string
+  message: string
+  status: 'PROCESSING' | 'COMPLETED' | 'FAILED'
+  items?: RuleLibraryPreviewItem[]
+  sourceFileName?: string
+}
+const activeParseTasks = ref<Map<string, ActiveParseTask>>(new Map())
+const parsePollTimers = ref<Map<string, number>>(new Map())
 
 const itemDialogVisible = ref(false)
 const itemDialogMode = ref<'create' | 'edit'>('create')
@@ -580,6 +617,68 @@ const handleRowCommand = (cmd: string, row: RuleLibrary) => {
   }
 }
 
+// ===== 活跃解析任务管理 =====
+const getActiveTask = (libraryId: string) => activeParseTasks.value.get(libraryId)
+
+const dismissTask = (libraryId: string) => {
+  const timer = parsePollTimers.value.get(libraryId)
+  if (timer) { window.clearInterval(timer); parsePollTimers.value.delete(libraryId) }
+  activeParseTasks.value.delete(libraryId)
+}
+
+const showPreviewFromTask = (libraryId: string) => {
+  const task = activeParseTasks.value.get(libraryId)
+  if (!task?.items?.length) { ElMessage.warning('无解析结果'); return }
+  parseTarget.value = libraries.value.find(l => l.id === libraryId) || null
+  previewItems.value = task.items
+  previewSourceFileName.value = task.sourceFileName || ''
+  previewDialogVisible.value = true
+}
+
+const startBackgroundPolling = (jobId: string, libraryId: string, libraryName: string) => {
+  const task: ActiveParseTask = { jobId, libraryId, libraryName, progress: 5, step: '上传完成', message: '等待解析...', status: 'PROCESSING' }
+  activeParseTasks.value.set(libraryId, task)
+
+  let attempts = 0
+  const maxAttempts = 600
+  const timer = window.setInterval(async () => {
+    attempts++
+    try {
+      const { data } = await getRuleParseJobApi(jobId)
+      const current = activeParseTasks.value.get(libraryId)
+      if (!current) { window.clearInterval(timer); return }
+
+      if (data?.status === 'COMPLETED') {
+        window.clearInterval(timer); parsePollTimers.value.delete(libraryId)
+        const items = data.items || []
+        current.status = 'COMPLETED'; current.progress = 100; current.step = '解析完成'
+        current.items = items; current.sourceFileName = data.sourceFileName || ''
+        ElMessage.success('[' + libraryName + '] 解析完成，' + items.length + ' 条候选规则')
+        return
+      }
+      if (data?.status === 'FAILED') {
+        window.clearInterval(timer); parsePollTimers.value.delete(libraryId)
+        current.status = 'FAILED'; current.progress = 0; current.step = '解析失败'
+        ElMessage.error('[' + libraryName + '] 规则解析失败')
+        return
+      }
+      if (attempts >= maxAttempts) {
+        window.clearInterval(timer); parsePollTimers.value.delete(libraryId)
+        current.status = 'FAILED'; current.step = '超时'
+        ElMessage.warning('[' + libraryName + '] 解析超时，请在任务列表中查看')
+        return
+      }
+      // 更新进度
+      current.progress = Math.min(95, current.progress + 1)
+      current.step = 'AI 解析中...'
+    } catch { /* 轮询失败忽略 */ }
+  }, 1000)
+  parsePollTimers.value.set(libraryId, timer)
+}
+
+// 组件卸载时清理所有轮询
+onBeforeUnmount(() => { parsePollTimers.value.forEach(timer => window.clearInterval(timer)) })
+
 const showDetail = async (row: RuleLibrary) => {
   try {
     const { data } = await getRuleLibraryApi(row.id)
@@ -595,11 +694,6 @@ const showUploadRules = (row: RuleLibrary) => {
   parseFiles.value = []
   previewItems.value = []
   previewSourceFileName.value = ''
-  parseTaskId.value = null
-  parseProgress.value = 0
-  parseMessage.value = ''
-  parseStep.value = ''
-  stopParsePolling()
   parseDialogVisible.value = true
 }
 
@@ -626,7 +720,7 @@ const startParsePolling = (taskId: string) => {
   parsePollTimer.value = window.setInterval(async () => {
     attempts++
     try {
-      const { data } = await getRuleParseTaskApi(taskId)
+      const { data } = await getRuleParseJobApi(jobId)
       if (data?.status === 'COMPLETED') {
         stopParsePolling()
         parseProgress.value = 100
@@ -704,23 +798,22 @@ const handleParsePreview = async () => {
     return
   }
 
+  const libraryId = parseTarget.value.id
+  const libraryName = parseTarget.value.name
+
   parsing.value = true
-  isParsing.value = true
-  parseProgress.value = 5
-  parseStep.value = '上传文件'
-  parseMessage.value = `正在上传 ${parseFiles.value.length} 个文件...`
 
   try {
     const fd = new FormData()
     parseFiles.value.forEach(f => fd.append('files', f))
-    const { data } = await parseRulesPreviewAsyncApi(parseTarget.value.id, fd)
+    const { data } = await parseRulesPreviewAsyncApi(libraryId, fd)
 
-    parseProgress.value = 10
-    parseStep.value = '排队解析'
-    parseMessage.value = `文件已上传，正在后台排队解析（共 ${parseFiles.value.length} 个文件）...`
-
-    if (data?.taskId) {
-      startParsePolling(data.taskId)
+    if (data?.jobId) {
+      parseDialogVisible.value = false
+      parsing.value = false
+      isParsing.value = false
+      startBackgroundPolling(data.jobId, libraryId, libraryName)
+      ElMessage.success('文件已上传，正在后台解析，完成后会在卡片上显示结果')
     } else {
       ElMessage.warning('任务创建异常，请重试')
       parsing.value = false
@@ -728,10 +821,6 @@ const handleParsePreview = async () => {
     }
   } catch (e: any) {
     parsing.value = false
-    isParsing.value = false
-    parseProgress.value = 0
-    parseMessage.value = ''
-    parseStep.value = ''
     if (e?.code === 'ECONNABORTED' || e?.message?.includes('timeout')) {
       ElMessage.error('文件上传超时，可能是网络波动或服务器繁忙，请稍后重试')
     } else if (e?.message === 'canceled') {

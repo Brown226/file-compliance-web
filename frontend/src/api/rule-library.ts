@@ -87,30 +87,26 @@ export const parseRulesPreviewApi = (libraryId: string, formData: FormData) =>
 
 /**
  * 异步解析规则预览（适合大文件/长文档）
- * 立即返回 taskId，后台异步执行，通过轮询任务状态获取结果
+ * 立即返回 jobId，后台异步执行，通过轮询任务状态获取结果
  */
 export const parseRulesPreviewAsyncApi = (libraryId: string, formData: FormData) =>
-  request.post<{ taskId: string; status: string }>(`/rule-libraries/${libraryId}/parse-preview-async`, formData, {
+  request.post<{ jobId: string; status: string }>(`/rule-libraries/${libraryId}/parse-preview-async`, formData, {
     headers: { 'Content-Type': 'multipart/form-data' },
     timeout: 5 * 60 * 1000, // 5 分钟超时（仅针对文件上传阶段，解析在后台执行）
   })
 
-export interface RuleParseTaskResult {
+export interface RuleParseJobResult {
   id: string
-  status: 'PENDING' | 'PROCESSING' | 'COMPLETED' | 'FAILED'
-  title: string
-  selfCheckReport?: {
-    libraryId: string
-    fileName: string
-    items?: RuleLibraryPreviewItem[]
-    sourceFileName?: string
-    count?: number
-  } | null
+  status: 'PROCESSING' | 'COMPLETED' | 'FAILED'
+  progress: number
+  step: string
+  message: string
+  items?: RuleLibraryPreviewItem[]
+  sourceFileName?: string
 }
 
-/** 查询规则解析任务状态与结果 */
-export const getRuleParseTaskApi = (taskId: string) =>
-  request.get<RuleParseTaskResult>(`/tasks/${taskId}`)
+export const getRuleParseJobApi = (jobId: string) =>
+  request.get<RuleParseJobResult>(`/rule-libraries/parse-jobs/${jobId}`)
 
 export const importRulePreviewItemsApi = (
   libraryId: string,

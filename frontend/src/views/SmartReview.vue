@@ -75,9 +75,9 @@
                   <div class="selected-items-header"><span>已选 {{ (reviewPlanDraft?.evidence?.knowledgeCategoryIds??[]).length }} 个知识库</span><el-button size="small" @click="openKnowledgeDialog"><el-icon><Plus /></el-icon>添加</el-button></div>
                   <div v-if="(reviewPlanDraft?.evidence?.knowledgeCategoryIds??[]).length>0" class="selected-items-tags"><el-tag v-for="id in (reviewPlanDraft?.evidence?.knowledgeCategoryIds??[])" :key="id" closable type="info" size="small" @close="removeKnowledgeCategory(id)">{{ getKnowledgeCategoryName(id) }}</el-tag></div>
                 </div>
-                <div v-if="(reviewPlanDraft?.evidence?.sources??[]).includes('REVIEW_SPECIFICATION')" class="selected-items-display">
-                  <div class="selected-items-header"><span>{{ reviewPlanDraft?.evidence?.reviewSpecificationId?'已选择':'未选择' }}语义规范库</span><el-button size="small" @click="openReviewSpecificationDialog"><el-icon><Plus /></el-icon>添加</el-button></div>
-                  <div v-if="reviewPlanDraft?.evidence?.reviewSpecificationId" class="selected-item-single"><el-tag closable type="info" size="small" @close="reviewPlanDraft.evidence.reviewSpecificationId=null">{{ getReviewSpecificationName(reviewPlanDraft?.evidence?.reviewSpecificationId??'') }}</el-tag></div>
+                <div v-if="(reviewPlanDraft?.evidence?.sources??[]).includes('RULE_LIBRARY')" class="selected-items-display">
+                  <div class="selected-items-header"><span>{{ reviewPlanDraft?.evidence?.ruleLibraryId?'已选择':'未选择' }}语义规则库</span><el-button size="small" @click="openRuleLibraryDialog"><el-icon><Plus /></el-icon>添加</el-button></div>
+                  <div v-if="reviewPlanDraft?.evidence?.ruleLibraryId" class="selected-item-single"><el-tag closable type="info" size="small" @close="reviewPlanDraft.evidence.ruleLibraryId=null">{{ getRuleLibraryName(reviewPlanDraft?.evidence?.ruleLibraryId??'') }}</el-tag></div>
                 </div>
               </div>
             </template>
@@ -115,8 +115,8 @@
 
   <!-- 知识库选择对话框 -->
   <SmartReviewKnowledgeDialog v-model:visible="knowledgeDialogVisible" :knowledge-tree-data="knowledgeTreeData" :current-checked-knowledge-ids="reviewPlanDraft?.evidence?.knowledgeCategoryIds??[]" @confirm="handleKnowledgeConfirm" />
-  <!-- 语义规范库选择对话框 -->
-  <SmartReviewReviewSpecificationDialog v-model:visible="reviewSpecificationDialogVisible" :specifications="reviewSpecifications" @confirm="handleReviewSpecificationConfirm" />
+  <!-- 语义规则库选择对话框 -->
+  <SmartReviewRuleLibraryDialog v-model:visible="ruleLibraryDialogVisible" :libraries="ruleLibraries" @confirm="handleRuleLibraryConfirm" />
 </template>
 
 <script setup lang="ts">
@@ -128,7 +128,7 @@ import { getRuleLibrariesApi } from '@/api/rule-library'
 import { getRuleRegistryApi, type RuleGroupMeta } from '@/api/system'
 import SmartReviewUploadStep from './components/SmartReviewUploadStep.vue'
 import SmartReviewKnowledgeDialog from './components/SmartReviewKnowledgeDialog.vue'
-import SmartReviewReviewSpecificationDialog from './components/SmartReviewReviewSpecificationDialog.vue'
+import SmartReviewRuleLibraryDialog from './components/SmartReviewRuleLibraryDialog.vue'
 import { useSmartReviewState } from './SmartReview/composables/useSmartReviewState'
 import { useReviewPlan } from './SmartReview/composables/useReviewPlan'
 import { useTaskSubmission } from './SmartReview/composables/useTaskSubmission'
@@ -148,15 +148,15 @@ const objectiveIconComponentMap: Record<string, any> = {
 }
 const evidenceIconComponentMap: Record<string, any> = {
   STANDARD: FolderOpened,
-  REVIEW_SPECIFICATION: Files,
+  RULE_LIBRARY: Files,
   REFERENCE: Link,
 }
 
 const knowledgeDialogVisible = ref(false)
-const reviewSpecificationDialogVisible = ref(false)
+const ruleLibraryDialogVisible = ref(false)
 const knowledgeCategories = ref<Array<{ id: string; name: string }>>([])
 const knowledgeTreeData = ref<any[]>([])
-const reviewSpecifications = ref<Array<{ id: string; name: string; status: string; itemCount: number; executableCount: number }>>([])
+const ruleLibraries = ref<Array<{ id: string; name: string; status: string; itemCount: number; executableCount: number }>>([])
 
 const progressStepLabel = (step: string) => PROGRESS_STEP_LABELS[step] || step || '处理中'
 const progressStatusLabel = (status: string) => PROGRESS_STATUS_LABELS[status] || status || '处理中'
@@ -168,7 +168,7 @@ const startAnalysis = async () => {
     const reasons: string[] = []
     if (!state.form.title.trim()) reasons.push('请输入任务标题')
     if ((state.reviewPlanDraft?.objective??'')==='COMPARE'&&state.refFileList.value.length===0) reasons.push('以文审文/参照比对模式需要上传参照文件')
-    if ((state.reviewPlanDraft?.evidence?.sources??[]).includes('REVIEW_SPECIFICATION')&&!state.reviewPlanDraft?.evidence?.reviewSpecificationId) reasons.push('语义规范库模式需要选择具体的语义规范库')
+    if ((state.reviewPlanDraft?.evidence?.sources??[]).includes('RULE_LIBRARY')&&!state.reviewPlanDraft?.evidence?.ruleLibraryId) reasons.push('语义规则库模式需要选择具体的规则库')
     ElMessage.warning(reasons.length>0?reasons[0]:'请完善审查配置后再开始分析')
     return
   }
@@ -176,15 +176,15 @@ const startAnalysis = async () => {
 }
 
 const openKnowledgeDialog = () => { knowledgeDialogVisible.value = true }
-const openReviewSpecificationDialog = async () => {
-  reviewSpecificationDialogVisible.value = true
-  try { const specRes = await getRuleLibrariesApi(); reviewSpecifications.value = (specRes.data||[]).map((l:any)=>({ id:l.id, name:l.name, status:l.status||'DRAFT', description:l.description||'', itemCount:l._count?.items||l.items?.length||0, executableCount:l.enabledExecutableItemCount||l.executableItemCount||0 })) } catch(e) { console.warn('[SmartReview] 刷新语义规范库列表失败:',e) }
+const openRuleLibraryDialog = async () => {
+  ruleLibraryDialogVisible.value = true
+  try { const libRes = await getRuleLibrariesApi(); ruleLibraries.value = (libRes.data||[]).map((l:any)=>({ id:l.id, name:l.name, status:l.status||'DRAFT', description:l.description||'', itemCount:l._count?.items||l.items?.length||0, executableCount:l.enabledExecutableItemCount||l.executableItemCount||0 })) } catch(e) { console.warn('[SmartReview] 刷新规则库列表失败:',e) }
 }
 const handleKnowledgeConfirm = (selectedIds: string[]) => { if (state.reviewPlanDraft?.evidence) state.reviewPlanDraft.evidence.knowledgeCategoryIds = selectedIds }
-const handleReviewSpecificationConfirm = (specificationId: string|null) => { if (state.reviewPlanDraft?.evidence) state.reviewPlanDraft.evidence.reviewSpecificationId = specificationId }
+const handleRuleLibraryConfirm = (libraryId: string|null) => { if (state.reviewPlanDraft?.evidence) state.reviewPlanDraft.evidence.ruleLibraryId = libraryId }
 const removeKnowledgeCategory = (id: string) => { if (state.reviewPlanDraft?.evidence?.knowledgeCategoryIds) { const i=state.reviewPlanDraft.evidence.knowledgeCategoryIds.indexOf(id); if(i>-1) state.reviewPlanDraft.evidence.knowledgeCategoryIds.splice(i,1) } }
 const getKnowledgeCategoryName = (id: string) => { const c=knowledgeCategories.value.find(x=>x.id===id); return c?.name||id }
-const getReviewSpecificationName = (id: string) => { const s=reviewSpecifications.value.find(x=>x.id===id); return s?.name||id }
+const getRuleLibraryName = (id: string) => { const l=ruleLibraries.value.find(x=>x.id===id); return l?.name||id }
 
 onMounted(async () => {
   const restored = state.restoreState()
@@ -192,10 +192,10 @@ onMounted(async () => {
   const entry = sessionStorage.getItem('smartReview.entryModule') as EntryModule|null
   if (entry && ['LIBRARY','CONSISTENCY','PROOFREAD','RULE_ONLY','MULTIMODAL','DOC_REVIEW'].includes(entry)) { state.entryModule.value=entry; plan.applyEntryModulePreset(entry) }
   try {
-    const [catRes, treeRes, specRes, ruleRegRes] = await Promise.all([getAllKnowledgeCategoriesApi(), getKnowledgeTreeApi(), getRuleLibrariesApi(), getRuleRegistryApi()])
+    const [catRes, treeRes, libRes, ruleRegRes] = await Promise.all([getAllKnowledgeCategoriesApi(), getKnowledgeTreeApi(), getRuleLibrariesApi(), getRuleRegistryApi()])
     knowledgeCategories.value = (catRes.data||[]).map((c:any)=>({ id:c.id, name:c.name }))
     knowledgeTreeData.value = treeRes.data||[]
-    reviewSpecifications.value = (specRes.data||[]).map((l:any)=>({ id:l.id, name:l.name, status:l.status||'DRAFT', description:l.description||'', itemCount:l._count?.items||l.items?.length||0, executableCount:l.enabledExecutableItemCount||l.executableItemCount||0 }))
+    ruleLibraries.value = (libRes.data||[]).map((l:any)=>({ id:l.id, name:l.name, status:l.status||'DRAFT', description:l.description||'', itemCount:l._count?.items||l.items?.length||0, executableCount:l.enabledExecutableItemCount||l.executableItemCount||0 }))
     if (ruleRegRes.data) { state.rulePrefixGroups.value=ruleRegRes.data.groups||[]; if(!state.enabledRulePrefixes.value.length&&ruleRegRes.data.allPrefixes?.length) state.enabledRulePrefixes.value=[...ruleRegRes.data.allPrefixes]; state.ruleRegistryLoaded.value=true }
   } catch(e) { console.warn('[SmartReview] 加载数据失败:',e) }
 })

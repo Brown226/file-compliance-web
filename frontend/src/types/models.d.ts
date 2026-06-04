@@ -159,7 +159,7 @@ export interface LocateMeta {
 }
 
 export type ReviewObjective = 'COMPLIANCE' | 'COMPARE' | 'PROOFREAD' | 'STRUCTURED'
-export type ReviewEvidenceSource = 'STANDARD' | 'REVIEW_SPECIFICATION' | 'REFERENCE'
+export type ReviewEvidenceSource = 'STANDARD' | 'RULE_LIBRARY' | 'REFERENCE'
 export type ReviewExecutionProfile = 'AI_ONLY' | 'RULE_ONLY'
 
 export interface ReviewPlan {
@@ -167,7 +167,7 @@ export interface ReviewPlan {
   evidence: {
     sources: ReviewEvidenceSource[]
     knowledgeCategoryIds?: string[]
-    reviewSpecificationId?: string | null
+    ruleLibraryId?: string | null
     refFileGroupId?: string | null
     enabledPrefixes?: string[]
   }

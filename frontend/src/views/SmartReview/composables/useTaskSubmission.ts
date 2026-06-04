@@ -26,9 +26,9 @@ export function useTaskSubmission(
       fd.append('knowledgeCategoryIds', JSON.stringify(submitPlan.evidence.knowledgeCategoryIds))
     }
 
-    // 语义规范库
-    if (submitPlan.evidence.sources.includes('REVIEW_SPECIFICATION') && submitPlan.evidence.reviewSpecificationId) {
-      fd.append('ruleLibraryId', submitPlan.evidence.reviewSpecificationId)
+    // 语义规则库
+    if (submitPlan.evidence.sources.includes('RULE_LIBRARY') && submitPlan.evidence.ruleLibraryId) {
+      fd.append('ruleLibraryId', submitPlan.evidence.ruleLibraryId)
     }
 
     fd.append('reviewPlan', JSON.stringify(submitPlan))
@@ -85,8 +85,8 @@ export function useTaskSubmission(
       if (state.reviewPlanDraft.objective === 'COMPARE' && state.refFileList.value.length === 0)
         reasons.push('以文审文/参照比对模式需要上传参照文件')
       
-      if (state.reviewPlanDraft.evidence.sources.includes('REVIEW_SPECIFICATION') && !state.reviewPlanDraft.evidence.reviewSpecificationId)
-        reasons.push('语义规范库模式需要选择具体的语义规范库')
+      if (state.reviewPlanDraft.evidence.sources.includes('RULE_LIBRARY') && !state.reviewPlanDraft.evidence.ruleLibraryId)
+        reasons.push('语义规则库模式需要选择具体的规则库')
 
       ElMessage.warning(reasons.length > 0 ? reasons[0] : '请完善审查配置后再开始分析')
       return

@@ -72,7 +72,7 @@ export class KnowledgeCategoryService {
     const reasons: string[] = [];
     if (textLength < 80) reasons.push('文本长度过短，疑似解析失败');
     if (visibleCharRatio < 0.25) reasons.push('可见字符比例过低，疑似错列或噪声文本');
-    if (duplicateLineRatio > 0.45) reasons.push('重复行比例过高，疑似分页/抽取异常');
+    if (duplicateLineRatio > 0.6) reasons.push('重复行比例过高，疑似分页/抽取异常');
     if (headingDensity > 0.5) reasons.push('标题密度异常，疑似标题树解析异常');
     if (tableSeparatorRatio > 0.35) reasons.push('表格分隔行比例异常，疑似表格抽取异常');
     if (mojibakeRatio > 0.02) reasons.push('疑似乱码字符占比过高');
@@ -80,7 +80,7 @@ export class KnowledgeCategoryService {
     const penalties = [
       textLength < 80 ? 30 : 0,
       visibleCharRatio < 0.25 ? 20 : 0,
-      duplicateLineRatio > 0.45 ? 15 : 0,
+      duplicateLineRatio > 0.6 ? 15 : 0,
       headingDensity > 0.5 ? 15 : 0,
       tableSeparatorRatio > 0.35 ? 10 : 0,
       mojibakeRatio > 0.02 ? 20 : 0,

@@ -25,14 +25,14 @@ export const OBJECTIVE_ICON_MAP: Record<string, string> = {
 
 export const EVIDENCE_ICON_MAP: Record<string, string> = {
   STANDARD: 'FolderOpened',
-  REVIEW_SPECIFICATION: 'Files',
+  RULE_LIBRARY: 'Files',
   REFERENCE: 'Link',
 }
 
 export const EVIDENCE_SOURCE_OPTIONS: Record<ReviewObjective, Array<{ value: ReviewEvidenceSource; label: string }>> = {
   COMPLIANCE: [
     { value: 'STANDARD', label: '知识库' },
-    { value: 'REVIEW_SPECIFICATION', label: '语义规范库' },
+    { value: 'RULE_LIBRARY', label: '语义规则库' },
   ],
   COMPARE: [
     { value: 'REFERENCE', label: '参考文件' },
@@ -40,7 +40,7 @@ export const EVIDENCE_SOURCE_OPTIONS: Record<ReviewObjective, Array<{ value: Rev
   PROOFREAD: [],
   STRUCTURED: [
     { value: 'STANDARD', label: '知识库' },
-    { value: 'REVIEW_SPECIFICATION', label: '语义规范库' },
+    { value: 'RULE_LIBRARY', label: '语义规则库' },
   ],
 }
 

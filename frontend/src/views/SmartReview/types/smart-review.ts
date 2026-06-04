@@ -2,14 +2,14 @@ export type EntryModule = 'LIBRARY' | 'CONSISTENCY' | 'PROOFREAD' | 'RULE_ONLY' 
 
 export type ReviewObjective = 'COMPLIANCE' | 'COMPARE' | 'PROOFREAD' | 'STRUCTURED'
 
-export type ReviewEvidenceSource = 'STANDARD' | 'REVIEW_SPECIFICATION' | 'REFERENCE'
+export type ReviewEvidenceSource = 'STANDARD' | 'RULE_LIBRARY' | 'REFERENCE'
 
 export type ReviewPlan = {
   objective: ReviewObjective
   evidence: {
     sources: ReviewEvidenceSource[]
     knowledgeCategoryIds: string[]
-    reviewSpecificationId: string | null
+    ruleLibraryId: string | null
     refFileGroupId: string | null
     enabledPrefixes: string[]
   }
