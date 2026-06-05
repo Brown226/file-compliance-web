@@ -23,6 +23,7 @@ export function useKeyboardShortcuts() {
   }
 
   function handleKeydown(e: KeyboardEvent) {
+    if (!e.key) return  // 某些特殊按键事件没有 key 属性（媒体键、输入法等）
     for (const shortcut of shortcuts.value) {
       const mods = shortcut.modifiers || {}
       const match =

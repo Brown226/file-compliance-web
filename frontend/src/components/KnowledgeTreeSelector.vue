@@ -12,7 +12,10 @@
             <el-tree ref="treeRef" :data="filteredTreeData" show-checkbox node-key="id" :props="treeProps" lazy :load="loadTreeNode" :filter-node-method="filterNode" :check-strictly="false" @check="handleTreeCheck">
               <template #default="{ data }">
                 <span class="tree-node-content">
-                  <span class="node-icon"><el-icon v-if="data.type === 'folder'"><Folder /></el-icon><el-icon v-else><Document /></el-icon></span>
+                  <span class="node-icon" :class="data.type === 'folder' ? 'icon-folder' : 'icon-knowledge'">
+                    <el-icon v-if="data.type === 'folder'"><FolderOpened /></el-icon>
+                    <el-icon v-else><Document /></el-icon>
+                  </span>
                   <span class="node-label">{{ data.name }}</span>
                   <span v-if="data.type === 'knowledge'" class="node-count">({{ data.documentCount || 0 }}篇)</span>
                 </span>
@@ -58,7 +61,10 @@
               <el-tree ref="treeRef" :data="filteredTreeData" show-checkbox node-key="id" :props="treeProps" lazy :load="loadTreeNode" :filter-node-method="filterNode" :check-strictly="false" @check="handleTreeCheck">
                 <template #default="{ data }">
                   <span class="tree-node-content">
-                    <span class="node-icon"><el-icon v-if="data.type === 'folder'"><Folder /></el-icon><el-icon v-else><Document /></el-icon></span>
+                    <span class="node-icon" :class="data.type === 'folder' ? 'icon-folder' : 'icon-knowledge'">
+                      <el-icon v-if="data.type === 'folder'"><FolderOpened /></el-icon>
+                      <el-icon v-else><Document /></el-icon>
+                    </span>
                     <span class="node-label">{{ data.name }}</span>
                     <span v-if="data.type === 'knowledge'" class="node-count">({{ data.documentCount || 0 }}篇)</span>
                   </span>
@@ -513,6 +519,14 @@ function collectChildKbs(children: KbTreeNode[]): KbTreeNode[] {
   flex-shrink: 0;
   display: inline-flex !important;
   align-items: center;
+}
+
+.icon-folder {
+  color: #e6a23c;
+}
+
+.icon-knowledge {
+  color: #409eff;
 }
 
 .node-label {

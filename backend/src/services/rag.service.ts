@@ -283,6 +283,15 @@ export class RAGService {
     const folderNameMap = new Map<string, string>();
     for (const f of folders) { folderNameMap.set(f.id, f.name); }
 
+    console.log(`[RAG] 工作空间: ${workspaceName} (${workspaceId})`);
+    console.log(`[RAG] 知识库列表: ${knowledgeList.length} 个, 文件夹: ${folders.length} 个`);
+    for (const kb of knowledgeList) {
+      console.log(`[RAG]   知识库: "${kb.name}" folder_id=${(kb as any).folder_id || 'none'} docs=${(kb as any).document_count || 0}`);
+    }
+    for (const f of folders) {
+      console.log(`[RAG]   文件夹: "${f.name}" id=${f.id}`);
+    }
+
     const enrichedKbs = knowledgeList.map((kb: any) => ({
       id: kb.id,
       name: kb.name,
@@ -295,10 +304,11 @@ export class RAGService {
 
     const folderMap = new Map<string, KnowledgeTreeNode>();
 
-    // 根节点使用工作空间真实名称
+    // 根节点使用工作空间真实名称，"default" 显示为 "根目录"
+    const displayName = workspaceName === 'default' ? '根目录' : workspaceName;
     const root: KnowledgeTreeNode = {
       id: workspaceId,
-      name: workspaceName,
+      name: displayName,
       type: 'folder',
       children: [],
     };

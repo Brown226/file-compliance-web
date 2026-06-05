@@ -99,13 +99,13 @@
                 <span class="link-desc">查看标准清单、白名单库和误报标记库</span>
               </div>
             </div>
-            <div class="sidebar-link-item" @click="$router.push('/admin/knowledge-categories')">
+            <div class="sidebar-link-item" @click="$router.push('/admin/knowledge')">
               <div class="link-icon knowledge-icon">
                 <el-icon :size="18"><FolderOpened /></el-icon>
               </div>
               <div class="link-info">
                 <span class="link-label">知识库</span>
-                <span class="link-desc">查看知识库分类和文档</span>
+                <span class="link-desc">MaxKB 知识库管理与标准规范</span>
               </div>
             </div>
             <div class="sidebar-link-item" @click="$router.push('/admin/rule-libraries')">

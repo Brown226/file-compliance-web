@@ -134,7 +134,7 @@ const componentsMap: Record<string, any> = {
   standards: markRaw(defineAsyncComponent(() => import('./StandardLibrary/index.vue'))),
   terminology: markRaw(defineAsyncComponent(() => import('./StandardLibrary/TerminologyTab.vue'))),
   falsePositive: markRaw(defineAsyncComponent(() => import('./StandardLibrary/FalsePositiveLibraryTab.vue'))),
-  knowledge: markRaw(defineAsyncComponent(() => import('./admin/KnowledgeCategories.vue'))),
+  knowledge: markRaw(defineAsyncComponent(() => import('./StandardLibrary/MaxKBTab.vue'))),
   rules: markRaw(defineAsyncComponent(() => import('./admin/RuleLibraries.vue'))),
 
   // 审查配置

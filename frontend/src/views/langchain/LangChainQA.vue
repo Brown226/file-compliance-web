@@ -229,19 +229,19 @@
       </footer>
     </main>
 
-    <KnowledgeBaseSelector
-      v-model:visible="showKbSelector"
-      :tree-data="categoryTree"
-      :selected-ids="selectedCategoryIds"
-      @confirm="handleKbConfirm"
-    />
+    <el-dialog v-model="showKbSelector" title="选择 MaxKB 知识库" width="720px" :close-on-click-modal="false" append-to-body destroy-on-close>
+      <KnowledgeTreeSelector v-model="selectedCategoryIds" :multiple="true" inline />
+      <template #footer>
+        <el-button @click="showKbSelector = false">关闭</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
 <script setup lang="ts">
 import { computed, nextTick, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import { Plus, Delete, ChatDotRound, ChatLineSquare, Setting, Document, Promotion, WarningFilled, FolderOpened, Collection, ArrowDown } from '@element-plus/icons-vue'
-import KnowledgeBaseSelector from '@/views/components/KnowledgeBaseSelector.vue'
+import KnowledgeTreeSelector from '@/components/KnowledgeTreeSelector.vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useUserStore } from '@/stores/user'
 import { useMarkdown } from '@/composables/useMarkdown'
@@ -257,7 +257,7 @@ import {
   type ConversationDetail,
   type MessageStatus,
 } from '@/api/langchain'
-import { getKnowledgeTreeApi, type KnowledgeTreeNode } from '@/api/knowledge-category'
+import { getKnowledgeTreeApi } from '@/api/maxkb'
 
 interface ChatMessage {
   id?: string
@@ -301,7 +301,6 @@ const selectedCategoryIds = ref<string[]>([])
 const showKbSelector = ref(false)
 const searchParams = ref<SearchParams>({ ...DEFAULT_SEARCH_PARAMS })
 const chatContainer = ref<HTMLElement | null>(null)
-const categoryTree = ref<KnowledgeTreeNode[]>([])
 const conversations = ref<Conversation[]>([])
 const currentConversationId = ref<string | null>(null)
 const abortController = ref<AbortController | null>(null)
@@ -384,28 +383,30 @@ watch(searchParams, (params) => {
   saveSearchParams(params)
 }, { deep: true })
 
-const findKbNode = (id: string, nodes: any[]): any => {
-  for (const node of nodes) {
-    if (node.id === id) return node
-    if (node.children) {
-      const found = findKbNode(id, node.children)
-      if (found) return found
-    }
-  }
-  return null
-}
+const knowledgeNameMap = ref<Map<string, string>>(new Map())
 
 const getKbName = (id: string) => {
-  const node = findKbNode(id, categoryTree.value)
-  return node?.name || id
+  return knowledgeNameMap.value.get(id) || id.slice(0, 8) + '...'
+}
+
+/** 从 MaxKB 知识库树构建 id→name 映射 */
+const buildKnowledgeNameMap = async () => {
+  try {
+    const { data } = await getKnowledgeTreeApi()
+    const map = new Map<string, string>()
+    const walk = (nodes: any[]) => {
+      for (const n of nodes) {
+        if (n.type === 'knowledge' || n.type === 'dataset') map.set(n.id, n.name)
+        if (n.children?.length) walk(n.children)
+      }
+    }
+    walk(Array.isArray(data) ? data : [])
+    knowledgeNameMap.value = map
+  } catch { /* 静默 */ }
 }
 
 const removeKb = (id: string) => {
   selectedCategoryIds.value = selectedCategoryIds.value.filter(i => i !== id)
-}
-
-const handleKbConfirm = (ids: string[]) => {
-  selectedCategoryIds.value = ids
 }
 
 const examplePrompts = [
@@ -681,29 +682,12 @@ const askQuestion = async () => {
 }
 
 onMounted(async () => {
-  try {
-    const { data } = await getKnowledgeTreeApi()
-    categoryTree.value = data || []
-  } catch {
-    categoryTree.value = []
-  }
+  await buildKnowledgeNameMap()
 
-  // 恢复持久化的知识库选择
+  // 恢复持久化的知识库选择（KnowledgeTreeSelector 内部处理树数据）
   const savedIds = loadSelectedKbIds()
-  if (savedIds.length > 0 && categoryTree.value.length > 0) {
-    const allLeafIds: string[] = []
-    function collectLeaves(nodes: any[]) {
-      for (const node of nodes) {
-        if (!node.children || node.children.length === 0) {
-          allLeafIds.push(node.id)
-        } else {
-          collectLeaves(node.children)
-        }
-      }
-    }
-    collectLeaves(categoryTree.value)
-    // 只保留仍然存在于当前树中的 ID
-    selectedCategoryIds.value = savedIds.filter(id => allLeafIds.includes(id))
+  if (savedIds.length > 0) {
+    selectedCategoryIds.value = savedIds
   }
 
   // 恢复持久化的搜索参数

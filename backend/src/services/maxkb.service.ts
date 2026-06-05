@@ -213,19 +213,34 @@ export class MaxKBService {
    * 尝试获取知识库文件夹列表（用于构建树形结构）
    * MaxKB 2.8.0 可能没有独立的文件夹列表接口，返回空数组表示不可用
    */
-  static async listKnowledgeFolders(workspaceId: string): Promise<Array<{ id: string; name: string }>> {
-    try {
-      // 尝试调用知识库目录接口（不同版本路径可能不同）
-      const result = await this.adminRequest(
-        'GET',
-        `/workspace/${workspaceId}/knowledge/folder`,
-      );
-      if (Array.isArray(result)) return result;
-      return [];
-    } catch {
-      // 接口不存在时静默降级
-      return [];
+  static async listKnowledgeFolders(workspaceId: string): Promise<Array<{ id: string; name: string; children?: any[] }>> {
+    // MaxKB v2.10.0: 路径用大写 KNOWLEDGE 作为 source 参数
+    const paths = [
+      `/workspace/${workspaceId}/KNOWLEDGE/folder`,
+      `/workspace/${workspaceId}/knowledge/folder`,
+      `/workspace/${workspaceId}/folder`,
+    ];
+    for (const path of paths) {
+      try {
+        const result = await this.adminRequest('GET', path);
+        const items = Array.isArray(result) ? result : (result?.data && Array.isArray(result.data) ? result.data : []);
+        if (items.length > 0) {
+          // 递归展开子文件夹
+          const flat: Array<{ id: string; name: string }> = [];
+          const walk = (nodes: any[]) => {
+            for (const n of nodes) {
+              flat.push({ id: n.id, name: n.name });
+              if (n.children?.length) walk(n.children);
+            }
+          };
+          walk(items);
+          return flat;
+        }
+      } catch {
+        // 继续尝试下一个路径
+      }
     }
+    return [];
   }
 
   // ==================== 知识库管理 ====================

@@ -103,16 +103,18 @@ const routes: Array<RouteRecordRaw> = [
         meta: { title: '标准库清单管理', allowViewer: true }
       },
       {
+        path: 'admin/knowledge',
+        name: 'AdminKnowledge',
+        component: () => import('../views/StandardLibrary/MaxKBTab.vue'),
+        meta: { title: 'MaxKB 知识库', allowViewer: true }
+      },
+      {
         path: 'admin/knowledge-categories',
-        name: 'KnowledgeCategories',
-        component: () => import('../views/admin/KnowledgeCategories.vue'),
-        meta: { title: '知识库管理', allowViewer: true }
+        redirect: '/admin/knowledge'
       },
       {
         path: 'admin/knowledge-categories/:id/documents',
-        name: 'KnowledgeDocuments',
-        component: () => import('../views/admin/KnowledgeDocuments.vue'),
-        meta: { title: '知识库文档管理', allowViewer: true, hidden: true }
+        redirect: '/admin/knowledge'
       },
       {
         path: 'admin/rule-libraries',

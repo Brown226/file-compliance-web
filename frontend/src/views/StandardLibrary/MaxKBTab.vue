@@ -17,13 +17,6 @@
     </div>
     <!-- iframe 嵌入 -->
     <div v-else class="maxkb-iframe-wrapper">
-      <div class="maxkb-iframe-toolbar">
-        <span class="maxkb-iframe-title">MaxKB 知识库管理</span>
-        <div class="maxkb-iframe-actions">
-          <el-button size="small" @click="refreshMaxKBIframe" :icon="Refresh">刷新</el-button>
-          <el-button size="small" type="primary" @click="openMaxKBNewWindow" :icon="Link">新窗口打开</el-button>
-        </div>
-      </div>
       <iframe
         v-if="maxkbIframeUrl"
         ref="maxkbIframeRef"
@@ -42,19 +35,12 @@
 </template>
 
 <script setup lang="ts">
-import { ref, watch } from 'vue'
-import { WarningFilled, Refresh, Link, Loading } from '@element-plus/icons-vue'
+import { ref, watch, onMounted } from 'vue'
+import { WarningFilled, Loading } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import { getMaxKBStatusApi, getMaxKBKnowledgeUrlApi } from '@/api/maxkb'
 
-const props = defineProps<{
-  status: any
-}>()
-
-const emit = defineEmits<{
-  'update:status': [value: any]
-}>()
-
+const status = ref<any>(null)
 const maxkbIframeUrl = ref('')
 const maxkbIframeLoading = ref(false)
 const maxkbIframeRef = ref<HTMLIFrameElement>()
@@ -62,9 +48,13 @@ const maxkbIframeRef = ref<HTMLIFrameElement>()
 const fetchMaxKBStatus = async () => {
   try {
     const { data } = await getMaxKBStatusApi()
-    emit('update:status', data)
+    status.value = data
+    // 初始化成功后自动加载 iframe
+    if (data?.initialized && data?.maxkbReachable !== false && !maxkbIframeUrl.value) {
+      loadMaxKBIframe()
+    }
   } catch (e) {
-    emit('update:status', null)
+    status.value = null
   }
 }
 
@@ -83,37 +73,20 @@ const loadMaxKBIframe = async () => {
   }
 }
 
-const refreshMaxKBIframe = () => {
-  if (maxkbIframeRef.value) {
-    maxkbIframeLoading.value = true
-    maxkbIframeRef.value.src = maxkbIframeRef.value.src
-  }
-}
-
-const openMaxKBNewWindow = async () => {
-  try {
-    const { data } = await getMaxKBKnowledgeUrlApi()
-    // knowledgePageUrl 已包含正确的外部地址（MAXKB_PUBLIC_URL），直接使用
-    if (data.knowledgePageUrl) {
-      window.open(data.knowledgePageUrl, '_blank')
-    } else {
-      ElMessage.error('无法获取 MaxKB 地址')
-    }
-  } catch (e: any) {
-    ElMessage.error('无法获取 MaxKB 地址')
-  }
-}
-
 const onMaxKBIframeLoad = () => {
   maxkbIframeLoading.value = false
 }
 
 // 当 tab 变为可见时加载 iframe
-watch(() => props.status, (newStatus) => {
+watch(() => status.value, (newStatus) => {
   if (newStatus?.initialized && newStatus?.maxkbReachable !== false && !maxkbIframeUrl.value) {
     loadMaxKBIframe()
   }
 }, { immediate: true })
+
+onMounted(() => {
+  fetchMaxKBStatus()
+})
 </script>
 
 <style scoped>
@@ -121,8 +94,9 @@ watch(() => props.status, (newStatus) => {
   position: relative;
   display: flex;
   flex-direction: column;
-  height: calc(100vh - 160px);
+  height: 100%;
   min-height: 0;
+  padding: 0;
 }
 
 .maxkb-not-ready {
@@ -153,36 +127,13 @@ watch(() => props.status, (newStatus) => {
   flex: 1;
   display: flex;
   flex-direction: column;
-  border: 1px solid var(--el-border-color);
-  border-radius: 8px;
   overflow: hidden;
-  background: #fff;
   min-height: 0;
-}
-
-.maxkb-iframe-toolbar {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 6px 16px;
-  background: var(--el-fill-color-light);
-  border-bottom: 1px solid var(--el-border-color-light);
-}
-
-.maxkb-iframe-title {
-  font-size: 14px;
-  font-weight: 500;
-  color: var(--el-text-color-primary);
-}
-
-.maxkb-iframe-actions {
-  display: flex;
-  gap: 8px;
 }
 
 .maxkb-iframe {
   width: 100%;
-  flex: 1;
+  height: 100%;
   border: none;
   display: block;
 }

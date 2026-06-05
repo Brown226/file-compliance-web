@@ -304,17 +304,26 @@ export class DashboardService {
     }
 
     // System overview counts
-    const [departmentCount, userCount, standardCount, ruleCount, feedbackCount, announcementCount, knowledgeDocCount, auditLogCount, ruleLibraryCount] = await Promise.all([
+    const [departmentCount, userCount, standardCount, ruleCount, feedbackCount, announcementCount, auditLogCount, ruleLibraryCount] = await Promise.all([
       prisma.department.count(),
       prisma.user.count(),
       prisma.standard.count(),
       prisma.reviewRule.count(),
       prisma.feedback.count(),
       prisma.systemAnnouncement.count(),
-      prisma.document.count(),
       prisma.auditLog.count(),
       prisma.ruleLibrary.count(),
     ]);
+
+    // MaxKB 知识库文档数（从 MaxKB 服务获取，替代旧的本地 Document 表）
+    let knowledgeDocCount = 0;
+    try {
+      const { MaxKBService } = await import('./maxkb.service');
+      const maxkbStatus = await MaxKBService.getIntegrationStatus();
+      knowledgeDocCount = maxkbStatus.knowledgeDocCount || 0;
+    } catch (e) {
+      console.warn('[Dashboard] 获取 MaxKB 文档数失败:', e);
+    }
 
     return {
       taskStats,
