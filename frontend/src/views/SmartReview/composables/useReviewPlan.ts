@@ -1,4 +1,4 @@
-import { computed, watch } from 'vue'
+﻿import { computed, watch } from 'vue'
 import type { ReviewPlan, ReviewObjective, ReviewEvidenceSource } from '../types/smart-review'
 import type { EntryModule } from '../types/smart-review'
 import {
@@ -10,7 +10,7 @@ export function useReviewPlan(state: ReturnType<typeof useSmartReviewState>) {
   // ===== 审查目标选项 =====
   const objectiveOptions = OBJECTIVE_OPTIONS
 
-  // ===== 证据源配�?=====
+  // ===== 证据源配�?=====
   const evidenceSourceOptions = EVIDENCE_SOURCE_OPTIONS
 
   const availableEvidenceSources = computed(() =>
@@ -22,7 +22,7 @@ export function useReviewPlan(state: ReturnType<typeof useSmartReviewState>) {
     ...state.reviewPlanDraft,
     evidence: {
       ...state.reviewPlanDraft.evidence,
-      knowledgeCategoryIds: [...(state.reviewPlanDraft.evidence.knowledgeCategoryIds || [])],
+      maxkbKnowledgeIds: [...(state.reviewPlanDraft.evidence.maxkbKnowledgeIds || [])],
       sources: [...(state.reviewPlanDraft.evidence.sources || [])],
       ruleLibraryId: state.reviewPlanDraft.evidence.ruleLibraryId || null,
       refFileGroupId: state.reviewPlanDraft.evidence.refFileGroupId || null,
@@ -33,7 +33,7 @@ export function useReviewPlan(state: ReturnType<typeof useSmartReviewState>) {
     templateId: state.reviewPlanDraft.templateId,
   }))
 
-  // ===== 证据源操�?=====
+  // ===== 证据源操�?=====
   const isEvidenceLocked = (source: ReviewEvidenceSource): boolean => {
     if (!state.entryModule.value) return state.reviewPlanDraft.objective === 'COMPARE'
     if (state.entryModule.value === 'RULE_ONLY') return source !== 'RULE_LIBRARY'
@@ -63,9 +63,9 @@ export function useReviewPlan(state: ReturnType<typeof useSmartReviewState>) {
       const current = new Set(state.reviewPlanDraft.evidence.sources)
       if (current.has(source)) {
         current.delete(source)
-        // 取消选中时清空关联数�?
+        // 取消选中时清空关联数�?
         if (source === 'RULE_LIBRARY') state.reviewPlanDraft.evidence.ruleLibraryId = null
-        if (source === 'STANDARD') state.reviewPlanDraft.evidence.knowledgeCategoryIds = []
+        if (source === 'STANDARD') state.reviewPlanDraft.evidence.maxkbKnowledgeIds = []
       } else {
         current.add(source)
       }
@@ -112,7 +112,7 @@ export function useReviewPlan(state: ReturnType<typeof useSmartReviewState>) {
         draft.objective = 'COMPLIANCE'
         draft.evidence.sources = []
         draft.evidence.ruleLibraryId = null
-        draft.evidence.knowledgeCategoryIds = []
+        draft.evidence.maxkbKnowledgeIds = []
         draft.enhancements.intraFileConsistency = true
         draft.enhancements.crossFileConsistency = true
         draft.execution.profile = 'AI_ONLY'
@@ -122,7 +122,7 @@ export function useReviewPlan(state: ReturnType<typeof useSmartReviewState>) {
         draft.objective = 'PROOFREAD'
         draft.evidence.sources = []
         draft.evidence.ruleLibraryId = null
-        draft.evidence.knowledgeCategoryIds = []
+        draft.evidence.maxkbKnowledgeIds = []
         draft.enhancements.intraFileConsistency = true
         draft.enhancements.crossFileConsistency = false
         draft.execution.profile = 'AI_ONLY'
@@ -132,7 +132,7 @@ export function useReviewPlan(state: ReturnType<typeof useSmartReviewState>) {
         draft.objective = 'STRUCTURED'
         draft.evidence.sources = []
         draft.evidence.ruleLibraryId = null
-        draft.evidence.knowledgeCategoryIds = []
+        draft.evidence.maxkbKnowledgeIds = []
         draft.enhancements.intraFileConsistency = true
         draft.enhancements.crossFileConsistency = true
         draft.execution.profile = 'AI_ONLY'
@@ -142,7 +142,7 @@ export function useReviewPlan(state: ReturnType<typeof useSmartReviewState>) {
         draft.objective = 'COMPARE'
         draft.evidence.sources = ['REFERENCE']
         draft.evidence.ruleLibraryId = null
-        draft.evidence.knowledgeCategoryIds = []
+        draft.evidence.maxkbKnowledgeIds = []
         draft.enhancements.intraFileConsistency = true
         draft.enhancements.crossFileConsistency = true
         draft.execution.profile = 'AI_ONLY'
@@ -152,7 +152,7 @@ export function useReviewPlan(state: ReturnType<typeof useSmartReviewState>) {
         draft.objective = 'COMPLIANCE'
         draft.evidence.sources = []
         draft.evidence.ruleLibraryId = null
-        draft.evidence.knowledgeCategoryIds = []
+        draft.evidence.maxkbKnowledgeIds = []
         draft.enhancements.intraFileConsistency = false
         draft.enhancements.crossFileConsistency = false
         draft.execution.profile = 'RULE_ONLY'
@@ -170,7 +170,7 @@ export function useReviewPlan(state: ReturnType<typeof useSmartReviewState>) {
     } else if (objective === 'PROOFREAD') {
       state.reviewPlanDraft.evidence.sources = []
       state.reviewPlanDraft.evidence.ruleLibraryId = null
-      state.reviewPlanDraft.evidence.knowledgeCategoryIds = []
+      state.reviewPlanDraft.evidence.maxkbKnowledgeIds = []
       state.reviewPlanDraft.execution.profile = 'AI_ONLY'
     } else {
       const next = state.reviewPlanDraft.evidence.sources.filter(source => allowed.has(source))
@@ -181,7 +181,7 @@ export function useReviewPlan(state: ReturnType<typeof useSmartReviewState>) {
       state.reviewPlanDraft.evidence.ruleLibraryId = null
     }
     if (!state.reviewPlanDraft.evidence.sources.includes('STANDARD')) {
-      state.reviewPlanDraft.evidence.knowledgeCategoryIds = []
+      state.reviewPlanDraft.evidence.maxkbKnowledgeIds = []
     }
     if (!state.reviewPlanDraft.evidence.sources.includes('REFERENCE')) {
       state.reviewPlanDraft.evidence.refFileGroupId = null
@@ -195,7 +195,7 @@ export function useReviewPlan(state: ReturnType<typeof useSmartReviewState>) {
     if (state.reviewPlanDraft.objective === 'COMPARE' && state.refFileList.value.length === 0) return false
     // 勾选了证据源但未做具体选择时，阻断提交
     if (state.reviewPlanDraft.evidence.sources.includes('RULE_LIBRARY') && !state.reviewPlanDraft.evidence.ruleLibraryId) return false
-    if (state.reviewPlanDraft.evidence.sources.includes('STANDARD') && (!state.reviewPlanDraft.evidence.knowledgeCategoryIds || state.reviewPlanDraft.evidence.knowledgeCategoryIds.length === 0)) return false
+    if (state.reviewPlanDraft.evidence.sources.includes('STANDARD') && (!state.reviewPlanDraft.evidence.maxkbKnowledgeIds || state.reviewPlanDraft.evidence.maxkbKnowledgeIds.length === 0)) return false
     
     return true
   })

@@ -1,4 +1,4 @@
-import prisma from '../config/db';
+﻿import prisma from '../config/db';
 import { ParserService } from './parser.service';
 import { LlmService, ReviewIssue } from './llm.service';
 import { PipelineContext, ReviewModeType } from './review-pipeline';
@@ -38,7 +38,7 @@ export class ReviewService {
     ruleSource: ('STANDARD' | 'RULE_LIBRARY')[];
     ruleLibraryId?: string;
     enabledPrefixes?: string[];
-    knowledgeCategoryIds: string[];
+    maxkbKnowledgeIds: string[];
     refFileGroupRequired: boolean;
     intraFileConsistency: boolean;
     crossFileConsistency: boolean;
@@ -79,8 +79,8 @@ export class ReviewService {
       // 语义规则库：有 RULE_LIBRARY 源且无直接规则前缀时传递
       ruleLibraryId: hasReviewSpec && !hasDirectPrefixes ? plan.evidence.ruleLibraryId || undefined : undefined,
       enabledPrefixes: hasDirectPrefixes ? plan.evidence.enabledPrefixes : undefined,
-      // 知识库：有 STANDARD 源时传递 knowledgeCategoryIds
-      knowledgeCategoryIds: hasStandard ? (Array.isArray(plan.evidence.knowledgeCategoryIds) ? plan.evidence.knowledgeCategoryIds : []) : [],
+      // 知识库：有 STANDARD 源时传递 maxkbKnowledgeIds
+      maxkbKnowledgeIds: hasStandard ? (Array.isArray(plan.evidence.maxkbKnowledgeIds) ? plan.evidence.maxkbKnowledgeIds : []) : [],
       refFileGroupRequired: plan.objective === 'COMPARE' || plan.evidence.sources.includes('REFERENCE'),
       intraFileConsistency: !!plan.enhancements.intraFileConsistency,
       crossFileConsistency,
@@ -394,7 +394,7 @@ export class ReviewService {
 
       const executionPlan = this.adaptReviewPlanForExecution(task);
       const reviewMode = executionPlan.reviewMode;
-      const knowledgeCategoryId = (task as any).knowledgeCategoryId || undefined;
+      const maxkbKnowledgeId = (task as any).maxkbKnowledgeId || undefined;
       const ruleLibraryId = executionPlan.ruleLibraryId;
       const directPrefixes = executionPlan.enabledPrefixes;
 
@@ -417,11 +417,11 @@ export class ReviewService {
       const corePurposes: string[] = [];
 
       // 解析多知识子库 ID
-      let knowledgeCategoryIds: string[] | undefined;
-      if (executionPlan.knowledgeCategoryIds.length > 0) {
-        knowledgeCategoryIds = executionPlan.knowledgeCategoryIds;
-      } else if (knowledgeCategoryId) {
-        knowledgeCategoryIds = [knowledgeCategoryId];
+      let maxkbKnowledgeIds: string[] | undefined;
+      if (executionPlan.maxkbKnowledgeIds.length > 0) {
+        maxkbKnowledgeIds = executionPlan.maxkbKnowledgeIds;
+      } else if (maxkbKnowledgeId) {
+        maxkbKnowledgeIds = [maxkbKnowledgeId];
       }
 
       // ===== 加载规则库条目（用于 AI 语义审查） =====
@@ -498,8 +498,8 @@ export class ReviewService {
           standardIds: executionPlan.ruleSource.includes('STANDARD')
             ? task.taskStandards.map((item: any) => item.standardId)
             : [],
-          knowledgeCategoryId: executionPlan.ruleSource.includes('STANDARD') ? (knowledgeCategoryId || undefined) : undefined,
-          knowledgeCategoryIds: executionPlan.ruleSource.includes('STANDARD') ? (knowledgeCategoryIds || undefined) : undefined,
+          maxkbKnowledgeId: executionPlan.ruleSource.includes('STANDARD') ? (maxkbKnowledgeId || undefined) : undefined,
+          maxkbKnowledgeIds: executionPlan.ruleSource.includes('STANDARD') ? (maxkbKnowledgeIds || undefined) : undefined,
           pipelineConfig,
           executionOverrides: executionPlan.executionOverrides,
           refFileGroup: refFileGroupCtx,
@@ -1500,8 +1500,8 @@ export class ReviewService {
     taskId: string,
     file: { id: string; fileName: string; filePath: string; fileType: string },
     reviewMode: string = 'LIBRARY_REVIEW',
-    knowledgeCategoryId?: string,
-    knowledgeCategoryIds?: string[],
+    maxkbKnowledgeId?: string,
+    maxkbKnowledgeIds?: string[],
     onProgress?: (chunkProgress: number) => void,
   ): Promise<void> {
     const absolutePath = resolveFilePath(file.filePath);
@@ -1514,8 +1514,8 @@ export class ReviewService {
       fileType: file.fileType,
       extractedText: '',
       reviewMode: reviewMode as any,
-      knowledgeCategoryId: knowledgeCategoryId || undefined,
-      knowledgeCategoryIds: knowledgeCategoryIds || undefined,
+      maxkbKnowledgeId: maxkbKnowledgeId || undefined,
+      maxkbKnowledgeIds: maxkbKnowledgeIds || undefined,
       onChunkProgress: onProgress,
     };
 

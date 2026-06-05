@@ -1,4 +1,4 @@
-import { Request, Response } from 'express';
+﻿import { Request, Response } from 'express';
 import path from 'path';
 import fs from 'fs';
 import { TaskService } from '../services/task.service';
@@ -10,7 +10,7 @@ import { success, error, paginated } from '../utils/response';
 
 export const createTask = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
-    const { title, description, standardId, standardIds, knowledgeCategoryId, knowledgeCategoryIds,
+    const { title, description, standardId, standardIds, maxkbKnowledgeId, maxkbKnowledgeIds,
       perspective, selectedTemplateId, intraFileConsistency,
       reviewPlan, reviewSpecificationId, ruleLibraryId, entryModule, reviewMode } = req.body;
     const creatorId = req.user?.id;
@@ -40,12 +40,12 @@ export const createTask = async (req: AuthRequest, res: Response): Promise<void>
       catch { /* 忽略解析错误 */ }
     }
 
-    // 解析 knowledgeCategoryIds（前端通过 FormData 传 JSON 字符串）
+    // 解析 maxkbKnowledgeIds（前端通过 FormData 传 JSON 字符串）
     let parsedKnowledgeIds: string[] | undefined;
-    if (Array.isArray(knowledgeCategoryIds)) {
-      parsedKnowledgeIds = knowledgeCategoryIds;
-    } else if (typeof knowledgeCategoryIds === 'string') {
-      try { parsedKnowledgeIds = JSON.parse(knowledgeCategoryIds); }
+    if (Array.isArray(maxkbKnowledgeIds)) {
+      parsedKnowledgeIds = maxkbKnowledgeIds;
+    } else if (typeof maxkbKnowledgeIds === 'string') {
+      try { parsedKnowledgeIds = JSON.parse(maxkbKnowledgeIds); }
       catch { /* 忽略解析错误 */ }
     }
 
@@ -77,8 +77,8 @@ export const createTask = async (req: AuthRequest, res: Response): Promise<void>
       creatorUsername,
       standardId,
       standardIds: parsedStandardIds || (standardId ? [standardId] : []),
-      knowledgeCategoryId: knowledgeCategoryId || parsedKnowledgeIds?.[0],
-      knowledgeCategoryIds: parsedKnowledgeIds,
+      maxkbKnowledgeId: maxkbKnowledgeId || parsedKnowledgeIds?.[0],
+      maxkbKnowledgeIds: parsedKnowledgeIds,
       files: files || [],
       dwgParsedData: parsedDwgData,
       perspective,

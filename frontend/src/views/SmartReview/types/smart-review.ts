@@ -1,4 +1,4 @@
-export type EntryModule = 'LIBRARY' | 'CONSISTENCY' | 'PROOFREAD' | 'RULE_ONLY' | 'MULTIMODAL' | 'DOC_REVIEW'
+﻿export type EntryModule = 'LIBRARY' | 'CONSISTENCY' | 'PROOFREAD' | 'RULE_ONLY' | 'MULTIMODAL' | 'DOC_REVIEW'
 
 export type ReviewObjective = 'COMPLIANCE' | 'COMPARE' | 'PROOFREAD' | 'STRUCTURED'
 
@@ -8,7 +8,7 @@ export type ReviewPlan = {
   objective: ReviewObjective
   evidence: {
     sources: ReviewEvidenceSource[]
-    knowledgeCategoryIds: string[]
+    maxkbKnowledgeIds: string[]
     ruleLibraryId: string | null
     refFileGroupId: string | null
     enabledPrefixes: string[]

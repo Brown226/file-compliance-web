@@ -1,4 +1,4 @@
-/**
+﻿/**
  * 审查模式处理器 — 替代原先的 Pipeline 子类体系
  *
  * 每个审查模式对应一个独立的处理函数，自包含其专属 AI 审查逻辑。
@@ -83,7 +83,7 @@ const handleLibraryReview: ReviewHandler = async (ctx) => {
   const scene = ctx.scene || MODE_SCENE.LIBRARY_REVIEW;
   const config = getEffectiveConfig(ctx);
   const hasKnowledge = ctx.ruleSource?.includes('STANDARD')
-    && (ctx.knowledgeCategoryIds?.length || ctx.knowledgeCategoryId);
+    && (ctx.maxkbKnowledgeIds?.length || ctx.maxkbKnowledgeId);
   const hasSemanticSpec = ctx.semanticItems && ctx.semanticItems.length > 0;
 
   if (hasKnowledge && hasSemanticSpec) {

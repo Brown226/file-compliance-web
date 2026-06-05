@@ -104,7 +104,8 @@ model Task {
   creator            User           @relation(fields: [creatorId], references: [id])
   standardId         String?
   standard           Standard?      @relation(fields: [standardId], references: [id])
-  // maxkbKnowledgeId — 已删除（v2.0 本地 pgvector 替代 MaxKB，无代码引用此字段）
+  // maxkbKnowledgeId — 恢复用于 MaxKB 知识库集成
+  maxkbKnowledgeId   String?        // 用户选择的知识库 ID（审查时使用特定知识库）
   perspective        String?        // 审查立场
   preAnalysisData    Json?          @map("pre_analysis_data")   // 预分析结果
   reviewPlan         Json?          @map("review_plan")         // 审查方案

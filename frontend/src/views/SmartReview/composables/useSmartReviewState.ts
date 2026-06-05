@@ -1,4 +1,4 @@
-import { ref, reactive, computed, watch } from 'vue'
+﻿import { ref, reactive, computed, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import type { UploadFile } from 'element-plus'
 import type { ReviewPlan } from '../types/smart-review'
@@ -29,7 +29,7 @@ export function useSmartReviewState() {
     objective: 'COMPLIANCE',
     evidence: {
       sources: ['STANDARD'],
-      knowledgeCategoryIds: [],
+      maxkbKnowledgeIds: [],
       reviewSpecificationId: null,
       refFileGroupId: null,
       enabledPrefixes: [],

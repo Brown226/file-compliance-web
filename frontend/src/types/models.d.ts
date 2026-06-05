@@ -1,4 +1,4 @@
-/**
+﻿/**
  * 业务模型类型定义
  */
 
@@ -166,7 +166,7 @@ export interface ReviewPlan {
   objective: ReviewObjective
   evidence: {
     sources: ReviewEvidenceSource[]
-    knowledgeCategoryIds?: string[]
+    maxkbKnowledgeIds?: string[]
     ruleLibraryId?: string | null
     refFileGroupId?: string | null
     enabledPrefixes?: string[]
@@ -252,6 +252,46 @@ export interface KnowledgeBase {
   enabled: boolean
   createdAt: string
   updatedAt: string
+}
+
+/** MaxKB 集成状态 */
+export interface MaxKBStatus {
+  maxkbReachable: boolean
+  initialized: boolean
+  knowledgeCount: number
+  documentCount: number
+  applicationCount: number
+  lastSyncTime?: string
+}
+
+/** MaxKB 命中测试结果 */
+export interface MaxKBHitTestResult {
+  results: Array<{
+    content: string
+    documentName: string
+    similarity: number
+    comprehensiveScore: number
+  }>
+  query: string
+  topNumber: number
+}
+
+/** MaxKB 知识库项 */
+export interface KnowledgeBaseItem {
+  id: string
+  name: string
+  description?: string
+  documentCount: number
+  type?: string
+}
+
+/** MaxKB 知识库树节点 */
+export interface KnowledgeTreeNode {
+  id: string
+  name: string
+  type: 'folder' | 'knowledge'
+  documentCount?: number
+  children?: KnowledgeTreeNode[]
 }
 
 /** 系统配置项 */

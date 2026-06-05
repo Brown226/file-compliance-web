@@ -1,4 +1,4 @@
-/**
+﻿/**
  * AI 审查服务 — 从 BasePipeline 提取的静态方法集合
  *
  * 包含 RAG 审查、LLM 直接调用、降级策略等 AI 审查核心逻辑。
@@ -7,8 +7,9 @@
 
 import { PipelineContext, PipelineReviewConfig } from './types';
 import { ReviewIssue, SourceReference, LlmService } from '../llm.service';
-import { LangChainRAGService } from '../langchain/langchain-rag.service';
-import { VectorService } from '../vector.service';
+import { RAGService } from '../rag.service';
+import { MaxKBService } from '../maxkb.service';
+
 import { PromptTemplateService } from '../prompt-template.service';
 import { PromptLoader } from '../prompts';
 import { StandardTraceabilityService } from '../standard-traceability.service';
@@ -29,10 +30,10 @@ export class AiReviewService {
     config: PipelineReviewConfig,
   ): Promise<{ issues: ReviewIssue[]; engine: string; sources?: SourceReference[] }> {
     // 获取知识子库 ID
-    const knowledgeIds = ctx.knowledgeCategoryIds && ctx.knowledgeCategoryIds.length > 0
-      ? ctx.knowledgeCategoryIds
-      : ctx.knowledgeCategoryId
-        ? [ctx.knowledgeCategoryId]
+    const knowledgeIds = ctx.maxkbKnowledgeIds && ctx.maxkbKnowledgeIds.length > 0
+      ? ctx.maxkbKnowledgeIds
+      : ctx.maxkbKnowledgeId
+        ? [ctx.maxkbKnowledgeId]
         : [];
 
     if (knowledgeIds.length === 0) {
@@ -43,7 +44,7 @@ export class AiReviewService {
     console.log(`[Pipeline] 启动自建 RAG 审查: kbs=[${knowledgeIds.join(',')}], text_len=${text.length}`);
 
     try {
-      const result = await LangChainRAGService.reviewWithKnowledge(text, knowledgeIds, {
+      const result = await RAGService.reviewWithKnowledge(text, knowledgeIds, {
         chunkSize: config.chunkSize || 4000,
         topK: 5,
         llmMaxTokens: config.llmMaxTokens || 4096,
@@ -76,30 +77,29 @@ export class AiReviewService {
 
     let knowledgeContext = '';
 
-    // 从本地向量库检索相关段落作为上下文
-    const categoryIds = ctx.knowledgeCategoryIds && ctx.knowledgeCategoryIds.length > 0
-      ? ctx.knowledgeCategoryIds
-      : ctx.knowledgeCategoryId
-        ? [ctx.knowledgeCategoryId]
+    // 从 MaxKB 知识库检索相关段落作为上下文
+    const knowledgeIds = ctx.maxkbKnowledgeIds && ctx.maxkbKnowledgeIds.length > 0
+      ? ctx.maxkbKnowledgeIds
+      : ctx.maxkbKnowledgeId
+        ? [ctx.maxkbKnowledgeId]
         : [];
 
-    for (const catId of categoryIds) {
+    for (const kbId of knowledgeIds) {
       try {
-        const results = await VectorService.hybridSearch(text.slice(0, 2000), {
-          limit: 10,
-          categoryId: catId,
+        const kbContext = await MaxKBService.getKnowledgeParagraphs(kbId, {
+          maxParagraphs: 10,
+          maxChars: 5000,
         });
-        if (results.length > 0) {
-          const context = results.map(r => r.content).join('\n\n');
-          knowledgeContext += context + '\n\n';
+        if (kbContext) {
+          knowledgeContext += kbContext + '\n\n';
         }
       } catch (e) {
-        console.warn(`[Pipeline] 获取知识子库 ${catId} 段落失败:`, e);
+        console.warn(`[Pipeline] 获取知识库 ${kbId} 段落失败:`, e);
       }
     }
 
     if (knowledgeContext) {
-      console.log(`[Pipeline] 获取到知识库段落作为上下文: ${knowledgeContext.length} 字符 (${categoryIds.length} 个知识子库)`);
+      console.log(`[Pipeline] 获取到知识库段落作为上下文: ${knowledgeContext.length} 字符 (${knowledgeIds.length} 个知识库)`);
     }
 
     // 使用自有 LLM 进行审查（带位置信息）
@@ -176,7 +176,7 @@ export class AiReviewService {
   ): Promise<{ issues: ReviewIssue[]; engine: string; sources?: SourceReference[] }> {
     const aiEngine = config.aiEngine || 'auto';
 
-    const hasKnowledgeIds = (ctx.knowledgeCategoryIds && ctx.knowledgeCategoryIds.length > 0) || ctx.knowledgeCategoryId;
+    const hasKnowledgeIds = (ctx.maxkbKnowledgeIds && ctx.maxkbKnowledgeIds.length > 0) || ctx.maxkbKnowledgeId;
 
     // AI 引擎禁用
     if (aiEngine === 'disabled') {
@@ -661,7 +661,7 @@ export class AiReviewService {
    * 同时使用 RAG 检索知识库中与该条文相关的段落作为参考上下文。
    *
    * @param text 待审文本
-   * @param ctx PipelineContext（含 semanticItems + knowledgeCategoryIds）
+   * @param ctx PipelineContext（含 semanticItems + maxkbKnowledgeIds）
    * @param config 审查配置
    * @returns 审查问题列表
    */
@@ -681,10 +681,10 @@ export class AiReviewService {
     const batchSize = 4; // 每批最多 4 条规则
 
     // 获取知识库分类 ID（用于 RAG 检索辅助上下文）
-    const categoryIds: string[] = ctx.knowledgeCategoryIds && ctx.knowledgeCategoryIds.length > 0
-      ? ctx.knowledgeCategoryIds
-      : ctx.knowledgeCategoryId
-        ? [ctx.knowledgeCategoryId]
+    const categoryIds: string[] = ctx.maxkbKnowledgeIds && ctx.maxkbKnowledgeIds.length > 0
+      ? ctx.maxkbKnowledgeIds
+      : ctx.maxkbKnowledgeId
+        ? [ctx.maxkbKnowledgeId]
         : [];
 
     const allIssues: ReviewIssue[] = [];
@@ -716,13 +716,12 @@ export class AiReviewService {
       let ragContext = '';
       if (categoryIds.length > 0) {
         try {
-          const query = batch.map(b => `${b.ruleName || ''} ${b.description || ''}`).join(' ').slice(0, 500);
-          const results = await VectorService.hybridSearch(query, {
-            limit: 6,
-            categoryId: categoryIds[0],
+          const kbContext = await MaxKBService.getKnowledgeParagraphs(categoryIds[0], {
+            maxParagraphs: 6,
+            maxChars: 3000,
           });
-          if (results.length > 0) {
-            ragContext = results.map(r => r.content).join('\n\n');
+          if (kbContext) {
+            ragContext = kbContext;
           }
         } catch (e) {
           console.warn('[SemanticSpec] RAG 检索失败，跳过辅助上下文:', e);

@@ -1,4 +1,4 @@
-<template>
+﻿<template>
   <div class="smart-review">
     <div v-if="currentStep === 0" class="review-flow">
       <!-- 顶部：任务标题 -->
@@ -72,8 +72,8 @@
                   </div>
                 </div>
                 <div v-if="(reviewPlanDraft?.evidence?.sources??[]).includes('STANDARD')" class="selected-items-display">
-                  <div class="selected-items-header"><span>已选 {{ (reviewPlanDraft?.evidence?.knowledgeCategoryIds??[]).length }} 个知识库</span><el-button size="small" @click="openKnowledgeDialog"><el-icon><Plus /></el-icon>添加</el-button></div>
-                  <div v-if="(reviewPlanDraft?.evidence?.knowledgeCategoryIds??[]).length>0" class="selected-items-tags"><el-tag v-for="id in (reviewPlanDraft?.evidence?.knowledgeCategoryIds??[])" :key="id" closable type="info" size="small" @close="removeKnowledgeCategory(id)">{{ getKnowledgeCategoryName(id) }}</el-tag></div>
+                  <div class="selected-items-header"><span>已选 {{ (reviewPlanDraft?.evidence?.maxkbKnowledgeIds??[]).length }} 个知识库</span><el-button size="small" @click="openMaxKBDialog"><el-icon><Plus /></el-icon>添加</el-button></div>
+                  <div v-if="(reviewPlanDraft?.evidence?.maxkbKnowledgeIds??[]).length>0" class="selected-items-tags"><el-tag v-for="id in (reviewPlanDraft?.evidence?.maxkbKnowledgeIds??[])" :key="id" closable type="info" size="small" @close="removeMaxKBKnowledge(id)">{{ getMaxKBKnowledgeName(id) }}</el-tag></div>
                 </div>
                 <div v-if="(reviewPlanDraft?.evidence?.sources??[]).includes('RULE_LIBRARY')" class="selected-items-display">
                   <div class="selected-items-header"><span>{{ reviewPlanDraft?.evidence?.ruleLibraryId?'已选择':'未选择' }}语义规则库</span><el-button size="small" @click="openRuleLibraryDialog"><el-icon><Plus /></el-icon>添加</el-button></div>
@@ -113,21 +113,21 @@
     </div>
   </div>
 
-  <!-- 知识库选择对话框 -->
-  <SmartReviewKnowledgeDialog v-model:visible="knowledgeDialogVisible" :knowledge-tree-data="knowledgeTreeData" :current-checked-knowledge-ids="reviewPlanDraft?.evidence?.knowledgeCategoryIds??[]" @confirm="handleKnowledgeConfirm" />
+  <!-- 知识库选择对话框 (MaxKB) -->
+  <KnowledgeTreeSelector v-model="maxkbKnowledgeIds" :multiple="true" />
   <!-- 语义规则库选择对话框 -->
   <SmartReviewRuleLibraryDialog v-model:visible="ruleLibraryDialogVisible" :libraries="ruleLibraries" @confirm="handleRuleLibraryConfirm" />
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, nextTick } from 'vue'
+import { ref, computed, onMounted, nextTick } from 'vue'
 import { ElMessage } from 'element-plus'
 import { Check, MagicStick, WarningFilled, Loading, FolderOpened, Files, Link, Document, EditPen, DataAnalysis, Plus } from '@element-plus/icons-vue'
-import { getAllKnowledgeCategoriesApi, getKnowledgeTreeApi } from '@/api/knowledge-category'
+import { getMaxKBKnowledgeTreeApi } from '@/api/maxkb'
 import { getRuleLibrariesApi } from '@/api/rule-library'
 import { getRuleRegistryApi, type RuleGroupMeta } from '@/api/system'
 import SmartReviewUploadStep from './components/SmartReviewUploadStep.vue'
-import SmartReviewKnowledgeDialog from './components/SmartReviewKnowledgeDialog.vue'
+import KnowledgeTreeSelector from '@/components/KnowledgeTreeSelector.vue'
 import SmartReviewRuleLibraryDialog from './components/SmartReviewRuleLibraryDialog.vue'
 import { useSmartReviewState } from './SmartReview/composables/useSmartReviewState'
 import { useReviewPlan } from './SmartReview/composables/useReviewPlan'
@@ -152,10 +152,12 @@ const evidenceIconComponentMap: Record<string, any> = {
   REFERENCE: Link,
 }
 
-const knowledgeDialogVisible = ref(false)
+const maxkbDialogVisible = ref(false)
 const ruleLibraryDialogVisible = ref(false)
-const knowledgeCategories = ref<Array<{ id: string; name: string }>>([])
-const knowledgeTreeData = ref<any[]>([])
+const maxkbKnowledgeIds = computed({
+  get: () => state.reviewPlanDraft?.evidence?.maxkbKnowledgeIds ?? [],
+  set: (val) => { if (state.reviewPlanDraft?.evidence) state.reviewPlanDraft.evidence.maxkbKnowledgeIds = val }
+})
 const ruleLibraries = ref<Array<{ id: string; name: string; status: string; itemCount: number; executableCount: number }>>([])
 
 const progressStepLabel = (step: string) => PROGRESS_STEP_LABELS[step] || step || '处理中'
@@ -175,15 +177,15 @@ const startAnalysis = async () => {
   await submission.submitTask()
 }
 
-const openKnowledgeDialog = () => { knowledgeDialogVisible.value = true }
+const openMaxKBDialog = () => { maxkbDialogVisible.value = true }
 const openRuleLibraryDialog = async () => {
   ruleLibraryDialogVisible.value = true
   try { const libRes = await getRuleLibrariesApi(); ruleLibraries.value = (libRes.data||[]).map((l:any)=>({ id:l.id, name:l.name, status:l.status||'DRAFT', description:l.description||'', itemCount:l._count?.items||l.items?.length||0, executableCount:l.enabledExecutableItemCount||l.executableItemCount||0 })) } catch(e) { console.warn('[SmartReview] 刷新规则库列表失败:',e) }
 }
-const handleKnowledgeConfirm = (selectedIds: string[]) => { if (state.reviewPlanDraft?.evidence) state.reviewPlanDraft.evidence.knowledgeCategoryIds = selectedIds }
+const handleMaxKBConfirm = (selectedIds: string[]) => { if (state.reviewPlanDraft?.evidence) state.reviewPlanDraft.evidence.maxkbKnowledgeIds = selectedIds }
 const handleRuleLibraryConfirm = (libraryId: string|null) => { if (state.reviewPlanDraft?.evidence) state.reviewPlanDraft.evidence.ruleLibraryId = libraryId }
-const removeKnowledgeCategory = (id: string) => { if (state.reviewPlanDraft?.evidence?.knowledgeCategoryIds) { const i=state.reviewPlanDraft.evidence.knowledgeCategoryIds.indexOf(id); if(i>-1) state.reviewPlanDraft.evidence.knowledgeCategoryIds.splice(i,1) } }
-const getKnowledgeCategoryName = (id: string) => { const c=knowledgeCategories.value.find(x=>x.id===id); return c?.name||id }
+const removeMaxKBKnowledge = (id: string) => { if (state.reviewPlanDraft?.evidence?.maxkbKnowledgeIds) { const i=state.reviewPlanDraft.evidence.maxkbKnowledgeIds.indexOf(id); if(i>-1) state.reviewPlanDraft.evidence.maxkbKnowledgeIds.splice(i,1) } }
+const getMaxKBKnowledgeName = (id: string) => { return id }  // MaxKB 知识库名称由 KnowledgeTreeSelector 内部管理
 const getRuleLibraryName = (id: string) => { const l=ruleLibraries.value.find(x=>x.id===id); return l?.name||id }
 
 onMounted(async () => {
@@ -192,9 +194,7 @@ onMounted(async () => {
   const entry = sessionStorage.getItem('smartReview.entryModule') as EntryModule|null
   if (entry && ['LIBRARY','CONSISTENCY','PROOFREAD','RULE_ONLY','MULTIMODAL','DOC_REVIEW'].includes(entry)) { state.entryModule.value=entry; plan.applyEntryModulePreset(entry) }
   try {
-    const [catRes, treeRes, libRes, ruleRegRes] = await Promise.all([getAllKnowledgeCategoriesApi(), getKnowledgeTreeApi(), getRuleLibrariesApi(), getRuleRegistryApi()])
-    knowledgeCategories.value = (catRes.data||[]).map((c:any)=>({ id:c.id, name:c.name }))
-    knowledgeTreeData.value = treeRes.data||[]
+    const [libRes, ruleRegRes] = await Promise.all([getRuleLibrariesApi(), getRuleRegistryApi()])
     ruleLibraries.value = (libRes.data||[]).map((l:any)=>({ id:l.id, name:l.name, status:l.status||'DRAFT', description:l.description||'', itemCount:l._count?.items||l.items?.length||0, executableCount:l.enabledExecutableItemCount||l.executableItemCount||0 }))
     if (ruleRegRes.data) { state.rulePrefixGroups.value=ruleRegRes.data.groups||[]; if(!state.enabledRulePrefixes.value.length&&ruleRegRes.data.allPrefixes?.length) state.enabledRulePrefixes.value=[...ruleRegRes.data.allPrefixes]; state.ruleRegistryLoaded.value=true }
   } catch(e) { console.warn('[SmartReview] 加载数据失败:',e) }

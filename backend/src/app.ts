@@ -32,6 +32,7 @@ import ruleLibraryRoutes from './routes/rule-library.routes';
 import healthRoutes from './routes/health.routes';
 import selfCheckRoutes from './routes/self-check.routes';
 import llmProxyRoutes from './routes/llm-proxy.routes';
+import maxkbRoutes from './routes/maxkb.routes';
 
 // 定时清理孤立文件（每天凌晨2点执行）
 import './services/scheduler.service';
@@ -84,6 +85,7 @@ app.use('/api/langchain', langchainRoutes);
 app.use('/api/documents', documentRoutes);
 app.use('/api/self-check', selfCheckRoutes);
 app.use('/api/llm-proxy', llmProxyRoutes);
+app.use('/api/maxkb', maxkbRoutes);
 app.use('/api', healthRoutes);
 app.get('/health', (req: Request, res: Response) => {
   res.status(200).json({ status: 'OK', message: 'Server is running' });

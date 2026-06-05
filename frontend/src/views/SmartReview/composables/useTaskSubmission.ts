@@ -1,4 +1,4 @@
-import { ref } from 'vue'
+﻿import { ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { createTaskApi } from '@/api/task'
@@ -22,8 +22,8 @@ export function useTaskSubmission(
     fd.append('title', state.form.title)
 
     // 知识库
-    if (submitPlan.evidence.sources.includes('STANDARD') && submitPlan.evidence.knowledgeCategoryIds?.length) {
-      fd.append('knowledgeCategoryIds', JSON.stringify(submitPlan.evidence.knowledgeCategoryIds))
+    if (submitPlan.evidence.sources.includes('STANDARD') && submitPlan.evidence.maxkbKnowledgeIds?.length) {
+      fd.append('maxkbKnowledgeIds', JSON.stringify(submitPlan.evidence.maxkbKnowledgeIds))
     }
 
     // 语义规则库

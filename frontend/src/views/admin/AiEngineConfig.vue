@@ -44,6 +44,7 @@
             <RerankerModelTab v-else-if="activeTab === 'reranker'" />
             <OcrStatusTab v-else-if="activeTab === 'ocr'" />
             <VisionModelTab v-else-if="activeTab === 'vision'" />
+            <MaxKBConfigTab v-else-if="activeTab === 'maxkb'" />
           </div>
         </section>
       </main>
@@ -59,6 +60,7 @@ import EmbeddingModelTab from '@/views/LLMConfig/EmbeddingModelTab.vue'
 import RerankerModelTab from '@/views/LLMConfig/RerankerModelTab.vue'
 import OcrStatusTab from '@/views/LLMConfig/OcrStatusTab.vue'
 import VisionModelTab from '@/views/LLMConfig/VisionModelTab.vue'
+import MaxKBConfigTab from '@/views/LLMConfig/MaxKBConfigTab.vue'
 
 const router = useRouter()
 
@@ -68,6 +70,7 @@ const tabs = [
   { key: 'reranker', label: 'Reranker 模型', short: 'RERANKER', desc: '管理重排序模型，优化候选结果排序质量。' },
   { key: 'ocr', label: 'OCR 服务', short: 'PADDLE OCR', desc: '查看内嵌 PaddleOCR 引擎运行状态，无需额外配置。' },
   { key: 'vision', label: '多模态视觉', short: 'VISION MODEL', desc: '配置视觉大模型作为 OCR 兜底，提升识别准确率。' },
+  { key: 'maxkb', label: 'MaxKB 知识库', short: 'MAXKB', desc: '管理 MaxKB 知识库集成，同步标准规范到向量检索引擎。' },
 ]
 
 const activeTab = ref('chat')

@@ -1,4 +1,4 @@
-import prisma from '../config/db';
+﻿import prisma from '../config/db';
 import { Task, TaskDetail, TaskFile, TaskStatus } from '@prisma/client';
 import path from 'path';
 import fs from 'fs';
@@ -55,7 +55,7 @@ export class TaskService {
           sources: objective === 'COMPARE'
             ? (normalizedSources.includes('REFERENCE') ? normalizedSources : ['REFERENCE'] as ReviewEvidenceSource[])
             : normalizedSources,
-          knowledgeCategoryIds: Array.isArray(input?.evidence?.knowledgeCategoryIds) ? input.evidence.knowledgeCategoryIds : [],
+          maxkbKnowledgeIds: Array.isArray(input?.evidence?.maxkbKnowledgeIds) ? input.evidence.maxkbKnowledgeIds : [],
           // ★ 以下 ID 由 createTask 方法根据控制器传参显式赋值（而非从输入 JSON 抄），
           // ★ 防止前端同时通过 reviewPlan.evidence.ruleLibraryId 和独立字段 ruleLibraryId
           // ★ 传入同一个值，导致两个 FK 都去写同一个不存在的 ID 引发外键约束错误。
@@ -78,7 +78,7 @@ export class TaskService {
     // 兜底：无有效 plan 时默认合规审查 + 标准依据
     return {
       objective: 'COMPLIANCE',
-      evidence: { sources: ['STANDARD'], knowledgeCategoryIds: [], reviewSpecificationId: null, refFileGroupId: null },
+      evidence: { sources: ['STANDARD'], maxkbKnowledgeIds: [], reviewSpecificationId: null, refFileGroupId: null },
       enhancements: { intraFileConsistency: false, crossFileConsistency: false },
       execution: { profile: 'AI_ONLY' },
     };
@@ -109,8 +109,8 @@ export class TaskService {
     creatorUsername?: string;
     standardId?: string;
     standardIds?: string[];  // 多标准关联
-    knowledgeCategoryId?: string;  // 用户选择的知识库ID
-    knowledgeCategoryIds?: string[];  // 用户选择的多个知识库ID
+    maxkbKnowledgeId?: string;  // 用户选择的知识库ID
+    maxkbKnowledgeIds?: string[];  // 用户选择的多个知识库ID
     reviewSpecificationId?: string;
     ruleLibraryId?: string;  // 关联的规则库 ID
     perspective?: string;  // 审查立场
@@ -122,7 +122,7 @@ export class TaskService {
     files?: Express.Multer.File[];
     dwgParsedData?: Record<string, any>;  // 前端 WASM 解析的 DWG 数据（按文件名映射）
   }): Promise<Task> {
-    const { title, description, creatorId, creatorUsername, standardId, standardIds = [], knowledgeCategoryId, knowledgeCategoryIds,
+    const { title, description, creatorId, creatorUsername, standardId, standardIds = [], maxkbKnowledgeId, maxkbKnowledgeIds,
       reviewSpecificationId, ruleLibraryId, perspective, reviewPlan,
       selectedTemplateId, intraFileConsistency, entryModule, reviewMode,
       files = [], dwgParsedData } = data;
@@ -157,15 +157,15 @@ export class TaskService {
     const shouldDelayReview = normalizedReviewPlan.objective === 'COMPARE';
 
     // 知识库 ID：多选优先，回退到单选
-    // 存储策略：将多个知识库 ID 存为 JSON 字符串到 knowledgeCategoryId 字段
+    // 存储策略：将多个知识库 ID 存为 JSON 字符串到 maxkbKnowledgeId 字段
     let knowledgeIdForDb: string | null = null;
-    if (knowledgeCategoryIds && knowledgeCategoryIds.length > 0) {
-      knowledgeIdForDb = JSON.stringify(knowledgeCategoryIds);
-    } else if (knowledgeCategoryId) {
-      knowledgeIdForDb = knowledgeCategoryId;
+    if (maxkbKnowledgeIds && maxkbKnowledgeIds.length > 0) {
+      knowledgeIdForDb = JSON.stringify(maxkbKnowledgeIds);
+    } else if (maxkbKnowledgeId) {
+      knowledgeIdForDb = maxkbKnowledgeId;
     }
 
-    normalizedReviewPlan.evidence.knowledgeCategoryIds = knowledgeCategoryIds || normalizedReviewPlan.evidence.knowledgeCategoryIds || [];
+    normalizedReviewPlan.evidence.maxkbKnowledgeIds = maxkbKnowledgeIds || normalizedReviewPlan.evidence.maxkbKnowledgeIds || [];
     if (reviewSpecificationId) normalizedReviewPlan.evidence.reviewSpecificationId = reviewSpecificationId;
     if (ruleLibraryId) normalizedReviewPlan.evidence.ruleLibraryId = ruleLibraryId;
     if (intraFileConsistency !== undefined) normalizedReviewPlan.enhancements.intraFileConsistency = !!intraFileConsistency;
@@ -184,7 +184,7 @@ export class TaskService {
         creatorId,
         standardId: hasOnlyReviewSpec ? null : (standardId || effectiveStandardIds[0] || null),
         reviewMode: resolvedReviewMode as any,
-        knowledgeCategoryId: knowledgeIdForDb,
+        maxkbKnowledgeId: knowledgeIdForDb,
         ruleLibraryId: normalizedReviewPlan.evidence.ruleLibraryId || null,
         perspective: perspective || null,
         preAnalysisData: undefined,

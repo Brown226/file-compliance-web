@@ -82,8 +82,8 @@ export interface PipelineContext {
     itemIds: string[];
   };
   standardIds?: string[];           // 关联标准ID
-  knowledgeCategoryId?: string;     // 关联的知识子库 ID
-  knowledgeCategoryIds?: string[];  // 关联的多个知识子库 ID
+  maxkbKnowledgeId?: string;        // MaxKB 知识库 ID
+  maxkbKnowledgeIds?: string[];     // MaxKB 多个知识库 ID
   refFileGroup?: {                  // 参照文件组（以文审文模式）
     groupId: string;
     groupName: string;
