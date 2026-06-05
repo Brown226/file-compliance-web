@@ -77,8 +77,8 @@ export class EmbeddingService {
 
   // ============ 核心方法 ============
 
-  private static computeCacheKey(texts: string[]): string {
-    return CacheService.generateKey('embedding', ...texts);
+  private static computeCacheKey(texts: string[], model?: string, dimensions?: number): string {
+    return CacheService.generateKey('embedding', model || 'unknown', String(dimensions || 0), ...texts);
   }
 
   /**
@@ -100,16 +100,17 @@ export class EmbeddingService {
       return { embeddings: allEmbeddings, actualDimensions };
     }
 
-    const cacheKey = this.computeCacheKey(texts);
+    const config = await this.getEmbeddingConfig();
+    if (!config) {
+      throw new Error('Embedding 模型未配置，禁止降级为本地伪向量');
+    }
+
+    // 缓存键现在包含 model + dimensions，修改配置后自动失效
+    const cacheKey = this.computeCacheKey(texts, config.model, config.dimensions);
     const cached = CacheService.get<EmbeddingResult>(cacheKey);
     if (cached !== null) {
       console.log(`[Embedding] Cache hit for ${texts.length} texts`);
       return cached;
-    }
-
-    const config = await this.getEmbeddingConfig();
-    if (!config) {
-      throw new Error('Embedding 模型未配置，禁止降级为本地伪向量');
     }
 
     const startTime = Date.now();

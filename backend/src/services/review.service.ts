@@ -123,6 +123,7 @@ export class ReviewService {
         issueType: 'VIOLATION',
         ruleCode: 'NO_RESULT',
         severity: 'info',
+        reviewSource: 'SYSTEM',
         originalText: fileName,
         description: reason,
         confidence: 'NO_RESULT',
@@ -1134,6 +1135,7 @@ export class ReviewService {
         data: {
           taskId, fileId: file.id,
           issueType: 'VIOLATION', ruleCode: null, severity: 'warning',
+          reviewSource: 'SYSTEM',
           originalText: file.fileName,
           description: isDwg
             ? 'DWG 文件未能提取文本内容（前端 WASM 解析可能未成功）。图纸审查可能不完整，建议人工检查。'

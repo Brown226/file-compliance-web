@@ -40,6 +40,11 @@ request.interceptors.request.use(
 // 响应拦截器：统一处理 { code, message, data } 格式
 request.interceptors.response.use(
   (response) => {
+    // 请求完成后移除对应的 controller，避免路由切换时误取消已完成的请求
+    const ctrl = response.config.signal as AbortSignal | undefined
+    if (ctrl) {
+      currentControllers = currentControllers.filter(c => c.signal !== ctrl)
+    }
     const data = response.data
     // 统一格式: { code: 200, message: 'success', data: {...} }
     if (data && typeof data === 'object' && 'code' in data) {
@@ -55,6 +60,12 @@ request.interceptors.response.use(
     return response
   },
   (error) => {
+    // 请求完成（无论成功失败）都移除 controller
+    const ctrl = error.config?.signal as AbortSignal | undefined
+    if (ctrl) {
+      currentControllers = currentControllers.filter(c => c.signal !== ctrl)
+    }
+
     // 取消的请求不报错
     if (axios.isCancel(error)) {
       return Promise.reject(error)
