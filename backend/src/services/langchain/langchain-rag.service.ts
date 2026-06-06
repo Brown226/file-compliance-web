@@ -2,8 +2,7 @@ import { Document } from '@langchain/core/documents';
 import { HumanMessage, SystemMessage, AIMessage } from '@langchain/core/messages';
 import { SystemConfigChatModel } from './langchain-llm.adapter';
 import { SystemConfigEmbeddings } from './langchain-embedding.adapter';
-import { PgVectorRetriever } from './langchain-retriever';
-import { VectorService } from '../../services/vector.service';
+import { MaxKBService } from '../../services/maxkb.service';
 import { LlmService, ReviewIssue, SourceReference } from '../../services/llm.service';
 import { PromptLoader } from '../../services/prompts';
 import { EmbeddingService } from '../../services/embedding.service';
@@ -188,23 +187,33 @@ export class LangChainRAGService {
     const allDocs: Document[] = [];
     const seenIds = new Set<string>();
 
+    // 获取工作空间 ID
+    const workspaceId = await MaxKBService.getDefaultWorkspaceId();
+
     for (const q of queries) {
       for (const catId of categoryIds) {
         try {
-          const retriever = new PgVectorRetriever({
-            limit: topK * 2,
-            categoryId: catId,
-            minSimilarity: 0.3,
-            enableRerank: true,
-          });
-          const docs = await retriever.invoke(q);
-          for (const doc of docs) {
-            const docId = doc.metadata.id;
+          // 使用 MaxKB hit_test API 检索
+          const results = await MaxKBService.hitTest(workspaceId, catId, q, topK * 2);
+          const hits = Array.isArray(results) ? results : (results as any)?.data || [];
+          for (const hit of hits) {
+            if (!hit.content) continue;
+            const docId = hit.id || `${hit.document_id}-${hit.position}`;
             if (!seenIds.has(docId)) {
               seenIds.add(docId);
-              allDocs.push(doc);
+              allDocs.push(new Document({
+                pageContent: hit.content,
+                metadata: {
+                  id: docId,
+                  title: hit.document_name || '未知文档',
+                  score: hit.similarity || hit.comprehensive_score || 0,
+                  document_id: hit.document_id,
+                  knowledge_id: hit.knowledge_id,
+                },
+              }));
             }
           }
+          console.log(`[LangChain-RAG] MaxKB 检索知识库 ${catId}: ${hits.length} 条结果`);
         } catch (e: any) {
           console.warn(`[LangChain-RAG] 知识库 ${catId} 检索失败:`, e.message);
         }
