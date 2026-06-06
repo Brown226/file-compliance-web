@@ -226,21 +226,10 @@ const pagination = reactive({
 })
 
 const issueTypes = [
-  { value: 'TYPO', label: '错别字' },
-  { value: 'FLUENCY', label: '语句通顺性' },
   { value: 'VIOLATION', label: '合规违规' },
-  { value: 'NAMING', label: '命名规范' },
-  { value: 'ENCODING', label: '编码一致性' },
-  { value: 'ATTRIBUTE', label: '封面属性' },
-  { value: 'HEADER', label: '页眉检查' },
-  { value: 'PAGE', label: '页码检查' },
-  { value: 'SCAN', label: '图纸扫描' },
-  { value: 'TEMPLATE', label: '模板统一' },
-  { value: 'FORMAT', label: '格式规范' },
-  { value: 'COMPLETENESS', label: '数据完整性' },
   { value: 'CONSISTENCY', label: '一致性' },
-  { value: 'LAYOUT', label: '排版布局' },
-  { value: 'STD_REF', label: '标准引用' },
+  { value: 'COMPLETENESS', label: '完整性' },
+  { value: 'TYPO', label: '文本错误' },
 ]
 
 const getIssueTypeLabel = (type?: string): string => {

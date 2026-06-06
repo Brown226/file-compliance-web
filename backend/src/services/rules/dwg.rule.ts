@@ -82,7 +82,7 @@ function checkTitleBlock(ctx: FileContext, config?: any): RuleIssue[] {
     const hasTitleKeywords = ['图名', '图号', '比例', '设计', '审核'].some(kw => text.includes(kw));
     if (!hasTitleKeywords) {
       issues.push({
-        issueType: 'DWG',
+        issueType: 'VIOLATION',
         ruleCode: 'DWG_TITLE_001',
         severity: 'warning',
         originalText: '(标题栏)',
@@ -94,7 +94,7 @@ function checkTitleBlock(ctx: FileContext, config?: any): RuleIssue[] {
 
   if (!titleBlock.found) {
     issues.push({
-      issueType: 'DWG',
+      issueType: 'VIOLATION',
       ruleCode: 'DWG_TITLE_001',
       severity: 'warning',
       originalText: '(标题栏)',
@@ -118,7 +118,7 @@ function checkTitleBlock(ctx: FileContext, config?: any): RuleIssue[] {
     const value = titleBlock[field as keyof typeof titleBlock];
     if (!value) {
       issues.push({
-        issueType: 'DWG',
+        issueType: 'VIOLATION',
         ruleCode: 'DWG_TITLE_001',
         severity: 'error',
         originalText: `(标题栏-${fieldLabels[field] || field})`,
@@ -146,7 +146,7 @@ function checkLayerNaming(ctx: FileContext, config?: any): RuleIssue[] {
   for (const forbidden of forbiddenLayers) {
     if (layers.includes(forbidden)) {
       issues.push({
-        issueType: 'DWG',
+        issueType: 'VIOLATION',
         ruleCode: 'DWG_LAYER_001',
         severity: 'warning',
         originalText: `图层: ${forbidden}`,
@@ -161,7 +161,7 @@ function checkLayerNaming(ctx: FileContext, config?: any): RuleIssue[] {
   const hasEnglishLayers = layers.some(l => /^[A-Za-z_]/.test(l) && !/[\u4e00-\u9fff]/.test(l));
   if (hasChineseLayers && hasEnglishLayers && layers.length > 3) {
     issues.push({
-      issueType: 'DWG',
+      issueType: 'VIOLATION',
       ruleCode: 'DWG_LAYER_001',
       severity: 'info',
       originalText: `(共 ${layers.length} 个图层)`,
@@ -194,7 +194,7 @@ function checkDimensions(ctx: FileContext, config?: any): RuleIssue[] {
     // 有文本且有其他图元，但无标注
     if (stats.text > 2 && stats.other > 10 && stats.dimension === 0) {
       issues.push({
-        issueType: 'DWG',
+        issueType: 'VIOLATION',
         ruleCode: 'DWG_DIM_001',
         severity: 'warning',
         originalText: `图层: ${layerName}`,
@@ -208,7 +208,7 @@ function checkDimensions(ctx: FileContext, config?: any): RuleIssue[] {
   const emptyDimCount = dimensions.filter(d => !d.text || d.text.trim() === '').length;
   if (emptyDimCount > 0) {
     issues.push({
-      issueType: 'DWG',
+      issueType: 'VIOLATION',
       ruleCode: 'DWG_DIM_001',
       severity: 'info',
       originalText: `(${emptyDimCount} 个空标注)`,
@@ -235,7 +235,7 @@ function checkStandardRefs(ctx: FileContext, config?: any): RuleIssue[] {
   const textCount = dwg.metadata?.dwg_text_count ?? 0;
   if (textCount > 5 && refCount === 0) {
     issues.push({
-      issueType: 'DWG',
+      issueType: 'VIOLATION',
       ruleCode: 'DWG_STDREF_001',
       severity: 'warning',
       originalText: '(标准引用)',
@@ -279,7 +279,7 @@ function checkScale(ctx: FileContext, config?: any): RuleIssue[] {
     const scaleMatch = text.match(scalePattern);
     if (!scaleMatch) {
       issues.push({
-        issueType: 'DWG',
+        issueType: 'VIOLATION',
         ruleCode: 'DWG_SCALE_001',
         severity: 'warning',
         originalText: '(比例)',
@@ -293,7 +293,7 @@ function checkScale(ctx: FileContext, config?: any): RuleIssue[] {
   const scaleValue = titleBlock.scale;
   if (!scalePattern.test(scaleValue)) {
     issues.push({
-      issueType: 'DWG',
+      issueType: 'VIOLATION',
       ruleCode: 'DWG_SCALE_001',
       severity: 'info',
       originalText: scaleValue,
@@ -320,7 +320,7 @@ function checkOverlap(ctx: FileContext, config?: any): RuleIssue[] {
     const totalEntities = stats.text + stats.dimension + stats.other;
     if (totalEntities > maxEntitiesPerLayer) {
       issues.push({
-        issueType: 'DWG',
+        issueType: 'VIOLATION',
         ruleCode: 'DWG_OVERLAP_001',
         severity: 'warning',
         originalText: `图层: ${layerName} (${totalEntities} 个图元)`,

@@ -1,22 +1,10 @@
 export type Severity = 'error' | 'warning' | 'info'
 
 export type IssueType =
-  | 'TYPO'
   | 'VIOLATION'
-  | 'NAMING'
-  | 'ENCODING'
-  | 'ATTRIBUTE'
-  | 'HEADER'
-  | 'PAGE'
-  | 'SCAN'
-  | 'TEMPLATE'
-  | 'FORMAT'
-  | 'COMPLETENESS'
   | 'CONSISTENCY'
-  | 'LAYOUT'
-  | 'STD_REF'
-  | 'DWG'
-  | 'FLUENCY'
+  | 'COMPLETENESS'
+  | 'TYPO'
 
 export interface DiffRange {
   start: number

@@ -85,11 +85,11 @@ export const BUILTIN_TEMPLATES: PromptTemplateData[] = [
 
 ## 输出要求
 严格按照 JSON 数组格式输出，每个问题包含:
-- issueType: TYPO/FORMAT/COMPLETENESS/CONSISTENCY/VIOLATION/FLUENCY/CROSS_REFERENCE
+- issueType: VIOLATION（合规违规）/ CONSISTENCY（一致性）/ COMPLETENESS（完整性）/ TYPO（文本错误）
 - originalText: 原始问题文本
 - suggestedText: 建议修改内容
 - description: 问题描述，必须说明违反了哪条标准规范的什么要求
-- ruleCode: 问题类型编码（如 FORMAT_001、COMPLETENESS_001、CONSISTENCY_001、VIOLATION_001）
+- ruleCode: 问题类型编码（如 VIOLATION_001、COMPLETENESS_001、CONSISTENCY_001、TYPO_001）
 - standardRef: 违反的具体标准条文引用（如"GB/T 50265-2010 第5.2.1条"），必须从检索到的标准中提取，无法确定则填null
 - plain_language: 用通俗易懂的语言解释这个问题（让非专业人员也能理解）
 
@@ -147,7 +147,7 @@ export const BUILTIN_TEMPLATES: PromptTemplateData[] = [
 
 ## 输出要求
 严格按照 JSON 数组格式输出，每个问题包含:
-- issueType: TYPO/FORMAT/COMPLETENESS/CONSISTENCY/VIOLATION/FLUENCY/CROSS_REFERENCE
+- issueType: VIOLATION（合规违规）/ CONSISTENCY（一致性）/ COMPLETENESS（完整性）/ TYPO（文本错误）
 - originalText: 原始问题文本
 - suggestedText: 建议修改内容
 - description: 问题描述
@@ -412,7 +412,7 @@ export const BUILTIN_TEMPLATES: PromptTemplateData[] = [
 
 ## 输出要求
 严格按照 JSON 数组格式输出，每个问题包含:
-- issueType: TYPO（错别字/语法错误）或 FLUENCY（语句不通顺/语病）
+- issueType: TYPO（文本错误：错别字/语法错误/语句不通顺）
 - originalText: 原始问题文本
 - suggestedText: 建议修改内容
 - description: 问题描述（如"错别字：'XX'应为'YY'"或"语句不通顺：句式杂糅，建议拆分为两句"）
@@ -449,7 +449,7 @@ export const BUILTIN_TEMPLATES: PromptTemplateData[] = [
     variant: 'default',
     name: '以文审文-比对系统提示词',
     description: '以文审文模式下 LLM 审查的方法论引导（不含参照内容数据）',
-    content: '你是核电工程文件合规审查专家。你的任务是：检查【待审文件】是否忠实地遵循了【参照文件】中的规定。\n\n## 核心原则\n参照文件是权威基准（Ground Truth），待审文件是被审查对象。参照文件中的规定不可置疑，你必须以参照文件为标准来判定待审文件是否正确。\n\n## 审查策略（按优先级逐层检查）\n\n### 第一层：精确匹配核对\n- 数值参数：设计值、容许偏差、安全阈值、工程量等是否完全一致\n- 编码标识：设备编号、管道号、物资编码、文档号是否逐字符一致（注意连字符、大小写）\n- 名称术语：设备名称、材料名称、系统名称、厂房名称是否完全一致（注意"的"/"和"/空格等细节）\n- 型号规格：设备型号、阀门规格、仪表量程、管径壁厚是否一致\n- 标准引用：标准编号、版本号、条文号是否正确\n- 单位量纲：MPa vs kPa、mm vs cm 是否一致，防止数量级错误\n- 日期时间：合同节点、交付日期等是否一致\n\n### 第二层：结构化完整性核对\n- 表格行/列是否完整，有无漏项（参照有 N 行，待审是否也是 N 行）\n- 条文章节是否覆盖了参照要求的所有内容（有无缺失整节）\n- 参数列表是否全部出现在待审文件中\n- 签章/审批链是否齐全\n\n### 第三层：语义逻辑核对\n- 公式引用的中间结果是否正确带入\n- 条件依赖是否正确应用（如 "当温度>200°C时用A材料"）\n- 分级分类是否与参照统一\n- 范围边界是否一致\n- 工序逻辑链是否与参照一致\n\n### 第四层：元信息核对\n- 待审文件声明的"依据文件版本"是否与参照的实际版本一致\n- 全文术语是否与参照统一（同一概念是否存在多种称呼）\n- 图例/符号定义是否与参照一致\n\n## originalText 字段要求（极其重要 — 前端定位高亮的唯一依据）\n- originalText 必须从待审文件中**逐字原样复制**，不得改写、合并、截断、或调整标点符号\n- 原文即使是错的也按原样复制，在 suggestedText 中给出正确值\n\n## 输出要求\n严格按照 JSON 数组格式输出，每个问题包含:\n- issueType: VIOLATION（违规）/ FORMAT（格式）/ COMPLETENESS（不完整）/ CONSISTENCY（不一致）/ PARAM（参数错误）\n- originalText: 待审文件中的问题文本（**逐字复制，不得修改**）\n- suggestedText: 参照文件中对应的权威内容（即正确的内容是什么）\n- description: 问题描述和差异说明\n- checkDimension: 该问题属于哪个审查维度（value/encoding/name/spec/stdRef/unit/date/table/section/paramList/calc/condition/classify/scope/process/version/terminology/legend）\n- ruleCode: 问题类型编码（如 VALUE_001 / NAME_001 / COMPL_001 / STD_001）\n- standardRef: 违反的具体标准规范引用，如果无法确定则写 null\n- plain_language: 用通俗易懂的语言解释这个问题\n- confidence: 你必须自评本条审查结论的可靠度，取值为 HIGH（明确差异）/ MEDIUM（推断可能有问题）/ LOW（不确定）\n- refSource: 指出差异对应的参照文件名称或其内容片段，帮助用户溯源\n\n## 示例（Few-shot）\n\n输入待审文本："设备编码 EQ-202A，设计压力 2.3MPa，材料 Q345R"\n参照文本："设备编码 EQ-202-A01，设计压力 2.5MPa，材料 Q345B"\n\n应输出：\n[\n  {\n    "issueType": "VIOLATION",\n    "originalText": "EQ-202A",\n    "suggestedText": "EQ-202-A01",\n    "description": "设备编码存在差异：待审文件为 EQ-202A，参照文件为 EQ-202-A01，缺少子级编号",\n    "checkDimension": "encoding",\n    "ruleCode": "ENCODE_001",\n    "standardRef": null,\n    "plain_language": "设备编号写错了，少了一截。参考文件里写的是 EQ-202-A01，你写成了 EQ-202A，少了 -A01 这部分",\n    "confidence": "HIGH",\n    "refSource": "参照文件-设备数据手册"\n  },\n  {\n    "issueType": "PARAM",\n    "originalText": "2.3MPa",\n    "suggestedText": "2.5MPa",\n    "description": "设计压力不一致：待审文件为 2.3MPa，参照文件明确规定为 2.5MPa",\n    "checkDimension": "value",\n    "ruleCode": "VALUE_001",\n    "standardRef": null,\n    "plain_language": "设计压力这个数写错了。参考文件要求是 2.5 MPa，你写了 2.3，差 0.2 兆帕",\n    "confidence": "HIGH",\n    "refSource": "参照文件-总体设计规范 第3.2节"\n  },\n  {\n    "issueType": "VIOLATION",\n    "originalText": "Q345R",\n    "suggestedText": "Q345B",\n    "description": "材料牌号不一致：待审文件为 Q345R，参照文件为 Q345B（R=容器钢，B=结构钢，性能差异大）",\n    "checkDimension": "spec",\n    "ruleCode": "SPEC_001",\n    "standardRef": null,\n    "plain_language": "材料型号选错了。参考文件要求用的是 Q345B（结构钢），你写了 Q345R（容器钢），这两个不是同一种材料，用途不一样",\n    "confidence": "HIGH",\n    "refSource": "参照文件-材料规格书 第5页"\n  }\n]\n\n如果没有发现差异问题，输出空数组 []\n只输出 JSON 数组，不要输出任何其他文字说明',
+    content: '你是核电工程文件合规审查专家。你的任务是：检查【待审文件】是否忠实地遵循了【参照文件】中的规定。\n\n## 核心原则\n参照文件是权威基准（Ground Truth），待审文件是被审查对象。参照文件中的规定不可置疑，你必须以参照文件为标准来判定待审文件是否正确。\n\n## 审查策略（按优先级逐层检查）\n\n### 第一层：精确匹配核对\n- 数值参数：设计值、容许偏差、安全阈值、工程量等是否完全一致\n- 编码标识：设备编号、管道号、物资编码、文档号是否逐字符一致（注意连字符、大小写）\n- 名称术语：设备名称、材料名称、系统名称、厂房名称是否完全一致（注意"的"/"和"/空格等细节）\n- 型号规格：设备型号、阀门规格、仪表量程、管径壁厚是否一致\n- 标准引用：标准编号、版本号、条文号是否正确\n- 单位量纲：MPa vs kPa、mm vs cm 是否一致，防止数量级错误\n- 日期时间：合同节点、交付日期等是否一致\n\n### 第二层：结构化完整性核对\n- 表格行/列是否完整，有无漏项（参照有 N 行，待审是否也是 N 行）\n- 条文章节是否覆盖了参照要求的所有内容（有无缺失整节）\n- 参数列表是否全部出现在待审文件中\n- 签章/审批链是否齐全\n\n### 第三层：语义逻辑核对\n- 公式引用的中间结果是否正确带入\n- 条件依赖是否正确应用（如 "当温度>200°C时用A材料"）\n- 分级分类是否与参照统一\n- 范围边界是否一致\n- 工序逻辑链是否与参照一致\n\n### 第四层：元信息核对\n- 待审文件声明的"依据文件版本"是否与参照的实际版本一致\n- 全文术语是否与参照统一（同一概念是否存在多种称呼）\n- 图例/符号定义是否与参照一致\n\n## originalText 字段要求（极其重要 — 前端定位高亮的唯一依据）\n- originalText 必须从待审文件中**逐字原样复制**，不得改写、合并、截断、或调整标点符号\n- 原文即使是错的也按原样复制，在 suggestedText 中给出正确值\n\n## 输出要求\n严格按照 JSON 数组格式输出，每个问题包含:\n- issueType: VIOLATION（合规违规）/ CONSISTENCY（一致性）/ COMPLETENESS（完整性）/ TYPO（文本错误）\n- originalText: 待审文件中的问题文本（**逐字复制，不得修改**）\n- suggestedText: 参照文件中对应的权威内容（即正确的内容是什么）\n- description: 问题描述和差异说明\n- checkDimension: 该问题属于哪个审查维度（value/encoding/name/spec/stdRef/unit/date/table/section/paramList/calc/condition/classify/scope/process/version/terminology/legend）\n- ruleCode: 问题类型编码（如 VALUE_001 / NAME_001 / COMPL_001 / STD_001）\n- standardRef: 违反的具体标准规范引用，如果无法确定则写 null\n- plain_language: 用通俗易懂的语言解释这个问题\n- confidence: 你必须自评本条审查结论的可靠度，取值为 HIGH（明确差异）/ MEDIUM（推断可能有问题）/ LOW（不确定）\n- refSource: 指出差异对应的参照文件名称或其内容片段，帮助用户溯源\n\n## 示例（Few-shot）\n\n输入待审文本："设备编码 EQ-202A，设计压力 2.3MPa，材料 Q345R"\n参照文本："设备编码 EQ-202-A01，设计压力 2.5MPa，材料 Q345B"\n\n应输出：\n[\n  {\n    "issueType": "VIOLATION",\n    "originalText": "EQ-202A",\n    "suggestedText": "EQ-202-A01",\n    "description": "设备编码存在差异：待审文件为 EQ-202A，参照文件为 EQ-202-A01，缺少子级编号",\n    "checkDimension": "encoding",\n    "ruleCode": "ENCODE_001",\n    "standardRef": null,\n    "plain_language": "设备编号写错了，少了一截。参考文件里写的是 EQ-202-A01，你写成了 EQ-202A，少了 -A01 这部分",\n    "confidence": "HIGH",\n    "refSource": "参照文件-设备数据手册"\n  },\n  {\n    "issueType": "PARAM",\n    "originalText": "2.3MPa",\n    "suggestedText": "2.5MPa",\n    "description": "设计压力不一致：待审文件为 2.3MPa，参照文件明确规定为 2.5MPa",\n    "checkDimension": "value",\n    "ruleCode": "VALUE_001",\n    "standardRef": null,\n    "plain_language": "设计压力这个数写错了。参考文件要求是 2.5 MPa，你写了 2.3，差 0.2 兆帕",\n    "confidence": "HIGH",\n    "refSource": "参照文件-总体设计规范 第3.2节"\n  },\n  {\n    "issueType": "VIOLATION",\n    "originalText": "Q345R",\n    "suggestedText": "Q345B",\n    "description": "材料牌号不一致：待审文件为 Q345R，参照文件为 Q345B（R=容器钢，B=结构钢，性能差异大）",\n    "checkDimension": "spec",\n    "ruleCode": "SPEC_001",\n    "standardRef": null,\n    "plain_language": "材料型号选错了。参考文件要求用的是 Q345B（结构钢），你写了 Q345R（容器钢），这两个不是同一种材料，用途不一样",\n    "confidence": "HIGH",\n    "refSource": "参照文件-材料规格书 第5页"\n  }\n]\n\n如果没有发现差异问题，输出空数组 []\n只输出 JSON 数组，不要输出任何其他文字说明',
     placeholders: JSON.stringify([]),
     isBuiltin: true,
     enabled: true,
@@ -498,7 +498,7 @@ export const BUILTIN_TEMPLATES: PromptTemplateData[] = [
 
 ## 输出要求
 严格按照 JSON 数组格式输出，每个问题包含:
-- issueType: FORMAT/COMPLETENESS/CONSISTENCY/VIOLATION
+- issueType: VIOLATION（合规违规）/ CONSISTENCY（一致性）/ COMPLETENESS（完整性）/ TYPO（文本错误）
 - originalText: 原始问题文本（**逐字复制，不得修改**）
 - suggestedText: 建议修改内容
 - description: 问题描述

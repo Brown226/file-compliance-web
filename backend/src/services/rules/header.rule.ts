@@ -50,7 +50,7 @@ export function checkHeader(ctx: FileContext, config?: any): RuleIssue[] {
       continue;
     } else if (headerText.trim().length === 0) {
       issues.push({
-        issueType: 'HEADER', ruleCode: 'HEADER_002', severity: 'warning',
+        issueType: 'VIOLATION', ruleCode: 'HEADER_002', severity: 'warning',
         originalText: `(第${i + 1}页页眉)`,
         suggestedText: coverName,
         description: `第${i + 1}页页眉内容为空，应包含图册名称"${coverName}"。`,
@@ -60,7 +60,7 @@ export function checkHeader(ctx: FileContext, config?: any): RuleIssue[] {
       // 不匹配（可通过 config.headerMustMatchCover=false 跳过此检查）
       if (config?.headerMustMatchCover !== false) {
         issues.push({
-          issueType: 'HEADER', ruleCode: 'HEADER_001', severity: 'error',
+          issueType: 'VIOLATION', ruleCode: 'HEADER_001', severity: 'error',
           originalText: `(第${i + 1}页页眉)`,
           suggestedText: coverName,
           description: `页眉名称与封面图册名称不一致。封面名称: "${coverName}"`,

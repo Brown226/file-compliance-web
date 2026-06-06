@@ -18,7 +18,7 @@ export function checkEncodingConsistency(ctx: FileContext, config?: any): RuleIs
     // CODE_004: 文件名中无法提取外部编码（仅当文件名看起来像编码但格式不完全匹配时报告）
     if (/^[A-Z]{2}\d{2}[A-Z]/.test(nameWithoutExt)) {
       issues.push({
-        issueType: 'ENCODING', ruleCode: 'CODE_004', severity: 'warning',
+        issueType: 'VIOLATION', ruleCode: 'CODE_004', severity: 'warning',
         originalText: nameWithoutExt,
         description: '无法从文件名中提取有效的外部编码，请检查文件名是否符合命名规范。',
       });
@@ -30,7 +30,7 @@ export function checkEncodingConsistency(ctx: FileContext, config?: any): RuleIs
   // CODE_005: PDF无法读取页眉内容
   if (!ctx.pdfPages || ctx.pdfPages.length === 0) {
     issues.push({
-      issueType: 'ENCODING', ruleCode: 'CODE_005', severity: 'warning',
+      issueType: 'VIOLATION', ruleCode: 'CODE_005', severity: 'warning',
       originalText: '(PDF页眉不可读)',
       description: '无法读取PDF页眉内容，跳过编码一致性检查。',
     });
@@ -49,7 +49,7 @@ export function checkEncodingConsistency(ctx: FileContext, config?: any): RuleIs
     // 排除与外部编码前缀重合的情况
     if (!headerText.includes(externalCode)) {
       issues.push({
-        issueType: 'ENCODING', ruleCode: 'CODE_002', severity: 'error',
+        issueType: 'VIOLATION', ruleCode: 'CODE_002', severity: 'error',
         originalText: internalCode,
         suggestedText: externalCode,
         description: `页眉使用了内部编码"${internalCode}"，应使用外部编码"${externalCode}"。`,
@@ -63,14 +63,14 @@ export function checkEncodingConsistency(ctx: FileContext, config?: any): RuleIs
     if (!headerText.includes(externalCode)) {
       if (headerText.trim().length === 0) {
         issues.push({
-          issueType: 'ENCODING', ruleCode: 'CODE_003', severity: 'warning',
+          issueType: 'VIOLATION', ruleCode: 'CODE_003', severity: 'warning',
           originalText: '(页眉为空)',
           suggestedText: externalCode,
           description: '页眉为空或无法识别编码，应添加外部编码。',
         });
       } else {
         issues.push({
-          issueType: 'ENCODING', ruleCode: 'CODE_001', severity: 'error',
+          issueType: 'VIOLATION', ruleCode: 'CODE_001', severity: 'error',
           originalText: externalCode,
           description: `页眉编码与文件名外部编码"${externalCode}"不一致。`,
         });
@@ -93,7 +93,7 @@ export function checkEncodingConsistency(ctx: FileContext, config?: any): RuleIs
   const hasAlbumCode = /(?:图册|文件)\s*(?:编号|号)[：:\s]*[A-Z0-9\-]+/i.test(coverText);
   if (!hasAlbumCode) {
     issues.push({
-      issueType: 'ENCODING', ruleCode: 'UNIT_004', severity: 'warning',
+      issueType: 'VIOLATION', ruleCode: 'UNIT_004', severity: 'warning',
       originalText: '(未检测到)',
       description: '封面未检测到图册(文件)编号，无法进行机组号一致性检查。',
     });
@@ -103,7 +103,7 @@ export function checkEncodingConsistency(ctx: FileContext, config?: any): RuleIs
   const hasDocNo = /DOC\.?\s*NO[.:：\s]*[A-Z0-9]+/i.test(coverText);
   if (!hasDocNo) {
     issues.push({
-      issueType: 'ENCODING', ruleCode: 'UNIT_005', severity: 'warning',
+      issueType: 'VIOLATION', ruleCode: 'UNIT_005', severity: 'warning',
       originalText: '(未检测到)',
       description: '封面未检测到DOC.NO，无法进行机组号一致性检查。',
     });
@@ -112,7 +112,7 @@ export function checkEncodingConsistency(ctx: FileContext, config?: any): RuleIs
   // UNIT_002: 无法从图册编号提取机组号
   if (hasAlbumCode && !albumCodeMatch) {
     issues.push({
-      issueType: 'ENCODING', ruleCode: 'UNIT_002', severity: 'warning',
+      issueType: 'VIOLATION', ruleCode: 'UNIT_002', severity: 'warning',
       originalText: '(格式不匹配)',
       description: '无法从图册编号中提取机组号，请检查编号格式是否符合规范（如 QS25160ED-JPK01）。',
     });
@@ -121,7 +121,7 @@ export function checkEncodingConsistency(ctx: FileContext, config?: any): RuleIs
   // UNIT_003: 无法从DOC.NO提取机组号
   if (hasDocNo && !docNoMatch) {
     issues.push({
-      issueType: 'ENCODING', ruleCode: 'UNIT_003', severity: 'warning',
+      issueType: 'VIOLATION', ruleCode: 'UNIT_003', severity: 'warning',
       originalText: '(格式不匹配)',
       description: '无法从DOC.NO中提取机组号，请检查DOC.NO格式是否符合规范（如 QS251600001B25A44GN）。',
     });
@@ -134,7 +134,7 @@ export function checkEncodingConsistency(ctx: FileContext, config?: any): RuleIs
 
     if (albumUnitNo !== docNoUnitNo) {
       issues.push({
-        issueType: 'ENCODING', ruleCode: 'UNIT_001', severity: 'error',
+        issueType: 'VIOLATION', ruleCode: 'UNIT_001', severity: 'error',
         originalText: `图册编号机组号=${albumUnitNo}, DOC.NO机组号=${docNoUnitNo}`,
         suggestedText: '两个位置的机组号应保持一致',
         description: `封面机组号不一致: 图册编号"${albumCodeMatch[0]}"中机组号="${albumUnitNo}" vs DOC.NO中机组号="${docNoUnitNo}"，应保持一致。`,

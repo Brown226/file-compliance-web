@@ -1147,40 +1147,48 @@ const getStandardRefTitle = (item: TaskDetail): string => {
 
 const getIssueTypeLabel = (type: string): string => {
   const m: Record<string, string> = {
-    TYPO: '错别字',
+    TYPO: '文本错误',
     VIOLATION: '合规违规',
-    NAMING: '命名规范',
-    ENCODING: '编码一致性',
-    ATTRIBUTE: '封面属性',
-    HEADER: '页眉检查',
-    PAGE: '页码检查',
-    SCAN: '图纸扫描',
-    TEMPLATE: '模板统一',
-    FORMAT: '格式规范',
-    COMPLETENESS: '数据完整性',
     CONSISTENCY: '一致性',
-    LAYOUT: '排版布局',
-    STD_REF: '标准引用',
+    COMPLETENESS: '完整性',
+    // 兼容旧类型
+    NAMING: '一致性',
+    ENCODING: '合规违规',
+    ATTRIBUTE: '完整性',
+    HEADER: '合规违规',
+    PAGE: '合规违规',
+    FORMAT: '合规违规',
+    LAYOUT: '合规违规',
+    STD_REF: '合规违规',
+    DWG: '合规违规',
+    FLUENCY: '文本错误',
+    SCAN: '文本错误',
+    TEMPLATE: '合规违规',
+    CROSS_REFERENCE: '一致性',
   }
   return m[type] || type
 }
 
 const getCategoryTagType = (type: string): any => {
   const m: Record<string, any> = {
-    TYPO: 'warning',
     VIOLATION: 'danger',
-    NAMING: '',
+    CONSISTENCY: 'info',
+    COMPLETENESS: 'warning',
+    TYPO: 'warning',
+    // 兼容旧类型
+    NAMING: 'info',
     ENCODING: 'danger',
     ATTRIBUTE: 'warning',
     HEADER: 'success',
     PAGE: 'info',
-    SCAN: 'info',
-    TEMPLATE: 'warning',
     FORMAT: 'warning',
-    COMPLETENESS: 'danger',
-    CONSISTENCY: 'info',
     LAYOUT: 'info',
     STD_REF: 'warning',
+    DWG: 'info',
+    FLUENCY: 'warning',
+    SCAN: 'info',
+    TEMPLATE: 'warning',
+    CROSS_REFERENCE: 'info',
   }
   return m[type] || 'info'
 }

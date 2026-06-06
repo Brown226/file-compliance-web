@@ -1,4 +1,4 @@
-ï»¿import prisma from '../config/db';
+import prisma from '../config/db';
 import { ParserService } from './parser.service';
 import { LlmService, ReviewIssue } from './llm.service';
 import { PipelineContext, ReviewModeType } from './review-pipeline';
@@ -21,15 +21,15 @@ import { StandardRefCheckService } from './review-pipeline/standard-ref-check.se
 import { getModeCapabilitiesConfig } from './review-pipeline/mode-config.service';
 
 /**
- * å®¡æŸ¥ç¼–æ’æœåŠ¡ - ä¸¤é˜¶æ®µåˆ†æ‰¹å¹¶å‘ç¼–æ’
- * é˜¶æ®µ1ï¼ˆè§„åˆ™å®¡æŸ¥ï¼‰ï¼šåˆ†æ‰¹å¹¶è¡Œè§„åˆ™å®¡æŸ¥ â†’ ç«‹å³å…¥åº“æ¨é€
- * é˜¶æ®µ2ï¼ˆAIå®¡æŸ¥ï¼‰ï¼šè§„åˆ™å…¨éƒ¨å®Œæˆåï¼Œåˆ†æ‰¹å¹¶è¡Œ AI å®¡æŸ¥ â†’ æ‰¹é‡å…¥åº“æ¨é€
- * å¹¶å‘æ•°ç”± pipelineConfig.maxConcurrentReviews æ§åˆ¶ï¼ˆç”¨æˆ·çº§åˆ«é™åˆ¶ï¼‰
+ * Éó²é±àÅÅ·şÎñ - Á½½×¶Î·ÖÅú²¢·¢±àÅÅ
+ * ½×¶Î1£¨¹æÔòÉó²é£©£º·ÖÅú²¢ĞĞ¹æÔòÉó²é ¡ú Á¢¼´Èë¿âÍÆËÍ
+ * ½×¶Î2£¨AIÉó²é£©£º¹æÔòÈ«²¿Íê³Éºó£¬·ÖÅú²¢ĞĞ AI Éó²é ¡ú ÅúÁ¿Èë¿âÍÆËÍ
+ * ²¢·¢ÊıÓÉ pipelineConfig.maxConcurrentReviews ¿ØÖÆ£¨ÓÃ»§¼¶±ğÏŞÖÆ£©
  *
- * ã€ç”¨æˆ·çº§åˆ«å¹¶å‘æ§åˆ¶æœºåˆ¶ã€‘
- * - æ¯ä¸ªç”¨æˆ·åŒæ—¶æœ€å¤šå¤„ç† maxConcurrentReviews ä¸ªæ–‡ä»¶çš„ AI å®¡æŸ¥
- * - ä¸åŒç”¨æˆ·ä¹‹é—´äº’ä¸å½±å“ï¼Œå®ç°å¤šç”¨æˆ·å…¬å¹³çš„èµ„æºåˆ†é…
- * - ä½¿ç”¨å†…å­˜ Map è¿½è¸ªï¼šMap<userId, { processingCount, pendingQueue }>
+ * ¡¾ÓÃ»§¼¶±ğ²¢·¢¿ØÖÆ»úÖÆ¡¿
+ * - Ã¿¸öÓÃ»§Í¬Ê±×î¶à´¦Àí maxConcurrentReviews ¸öÎÄ¼şµÄ AI Éó²é
+ * - ²»Í¬ÓÃ»§Ö®¼ä»¥²»Ó°Ïì£¬ÊµÏÖ¶àÓÃ»§¹«Æ½µÄ×ÊÔ´·ÖÅä
+ * - Ê¹ÓÃÄÚ´æ Map ×·×Ù£ºMap<userId, { processingCount, pendingQueue }>
  */
 export class ReviewService {
   private static adaptReviewPlanForExecution(task: any): {
@@ -53,7 +53,7 @@ export class ReviewService {
   } {
     const plan = TaskService.normalizeReviewPlan(task?.reviewPlan);
     const reviewMode = TaskService.resolvePipelineSelector(plan);
-    // æ”¯æŒåŒæ—¶é€‰æ‹©çŸ¥è¯†åº“(STANDARD)å’Œè¯­ä¹‰è§„åˆ™åº“(RULE_LIBRARY)
+    // Ö§³ÖÍ¬Ê±Ñ¡ÔñÖªÊ¶¿â(STANDARD)ºÍÓïÒå¹æÔò¿â(RULE_LIBRARY)
     const ruleSource: ('STANDARD' | 'RULE_LIBRARY')[] = [];
     if (plan.evidence.sources.includes('STANDARD')) ruleSource.push('STANDARD');
     if (plan.evidence.sources.includes('RULE_LIBRARY')) {
@@ -76,10 +76,10 @@ export class ReviewService {
       plan,
       reviewMode,
       ruleSource,
-      // è¯­ä¹‰è§„åˆ™åº“ï¼šæœ‰ RULE_LIBRARY æºä¸”æ— ç›´æ¥è§„åˆ™å‰ç¼€æ—¶ä¼ é€’
+      // ÓïÒå¹æÔò¿â£ºÓĞ RULE_LIBRARY Ô´ÇÒÎŞÖ±½Ó¹æÔòÇ°×ºÊ±´«µİ
       ruleLibraryId: hasReviewSpec && !hasDirectPrefixes ? plan.evidence.ruleLibraryId || undefined : undefined,
       enabledPrefixes: hasDirectPrefixes ? plan.evidence.enabledPrefixes : undefined,
-      // çŸ¥è¯†åº“ï¼šæœ‰ STANDARD æºæ—¶ä¼ é€’ maxkbKnowledgeIds
+      // ÖªÊ¶¿â£ºÓĞ STANDARD Ô´Ê±´«µİ maxkbKnowledgeIds
       maxkbKnowledgeIds: hasStandard ? (Array.isArray(plan.evidence.maxkbKnowledgeIds) ? plan.evidence.maxkbKnowledgeIds : []) : [],
       refFileGroupRequired: plan.objective === 'COMPARE' || plan.evidence.sources.includes('REFERENCE'),
       intraFileConsistency: !!plan.enhancements.intraFileConsistency,
@@ -132,7 +132,7 @@ export class ReviewService {
     }).catch(() => { /* ignore */ });
   }
 
-  // ç”¨æˆ·çº§åˆ«å¹¶å‘æ§åˆ¶ï¼šè¿½è¸ªæ¯ä¸ªç”¨æˆ·æ­£åœ¨è¿›è¡Œçš„ AI å®¡æŸ¥æ–‡ä»¶æ•°é‡
+  // ÓÃ»§¼¶±ğ²¢·¢¿ØÖÆ£º×·×ÙÃ¿¸öÓÃ»§ÕıÔÚ½øĞĞµÄ AI Éó²éÎÄ¼şÊıÁ¿
   private static userConcurrencyMap = new Map<string, number>();
 
   private static buildLocateMeta(
@@ -185,16 +185,16 @@ export class ReviewService {
   }
 
   /**
-   * ä» locateMeta çš„å­—ç¬¦ä½ç½®æ¨å¯¼æ‰€åœ¨é¡µç 
+   * ´Ó locateMeta µÄ×Ö·ûÎ»ÖÃÍÆµ¼ËùÔÚÒ³Âë
    *
-   * PDF: åˆ©ç”¨é€é¡µæ–‡æœ¬æ•°ç»„è®¡ç®—å­—ç¬¦åç§» â†’ é¡µç 
-   * DOCX/PPTX: åˆ©ç”¨ parseResult.structure.paragraphs çš„ page ä¿¡æ¯
-   * å…¶ä»–: è¿”å› undefined
+   * PDF: ÀûÓÃÖğÒ³ÎÄ±¾Êı×é¼ÆËã×Ö·ûÆ«ÒÆ ¡ú Ò³Âë
+   * DOCX/PPTX: ÀûÓÃ parseResult.structure.paragraphs µÄ page ĞÅÏ¢
+   * ÆäËû: ·µ»Ø undefined
    */
   /**
-   * DWG æ–‡ä»¶åœ¨é DWG å®¡æŸ¥æ¨¡å¼ä¸‹ï¼ŒAI è¾“å‡º text è€Œé cadHandleIdã€‚
-   * ä» ctx.dwgStructure.textEntities ä¸­æŒ‰æ–‡æœ¬åŒ¹é…ï¼Œå›å¡« cadHandleIdï¼Œ
-   * ä½¿å‰ç«¯èƒ½ç²¾ç¡®è·³è½¬åˆ° CAD å®ä½“ã€‚
+   * DWG ÎÄ¼şÔÚ·Ç DWG Éó²éÄ£Ê½ÏÂ£¬AI Êä³ö text ¶ø·Ç cadHandleId¡£
+   * ´Ó ctx.dwgStructure.textEntities ÖĞ°´ÎÄ±¾Æ¥Åä£¬»ØÌî cadHandleId£¬
+   * Ê¹Ç°¶ËÄÜ¾«È·Ìø×ªµ½ CAD ÊµÌå¡£
    */
   private static enrichDwgHandle(
     issue: { originalText?: string; cadHandleId?: string | null },
@@ -228,7 +228,7 @@ export class ReviewService {
     const absStart = locateMeta?.absolute?.start;
     if (absStart == null || absStart < 0) return undefined;
 
-    // PDF: é€é¡µç´¯ç§¯å­—ç¬¦åç§»
+    // PDF: ÖğÒ³ÀÛ»ı×Ö·ûÆ«ÒÆ
     if (pdfPages && pdfPages.length > 0) {
       let offset = 0;
       for (let i = 0; i < pdfPages.length; i++) {
@@ -237,7 +237,7 @@ export class ReviewService {
       }
     }
 
-    // DOCX/PPTX: æŒ‰æ®µè½ page å­—æ®µä¼°ç®—
+    // DOCX/PPTX: °´¶ÎÂä page ×Ö¶Î¹ÀËã
     const paragraphs = parseResult?.structure?.paragraphs;
     if (paragraphs && paragraphs.length > 0) {
       let accumulated = 0;
@@ -253,17 +253,17 @@ export class ReviewService {
   }
 
   /**
-   * è·å–ç”¨æˆ·å½“å‰æ­£åœ¨è¿›è¡Œçš„ AI å®¡æŸ¥æ–‡ä»¶æ•°é‡
+   * »ñÈ¡ÓÃ»§µ±Ç°ÕıÔÚ½øĞĞµÄ AI Éó²éÎÄ¼şÊıÁ¿
    */
   static getUserProcessingCount(userId: string): number {
     return this.userConcurrencyMap.get(userId) || 0;
   }
 
   /**
-   * ç­‰å¾…ç”¨æˆ·å¯ç”¨é…é¢
-   * @param userId ç”¨æˆ·ID
-   * @param maxConcurrent æœ€å¤§å¹¶å‘æ•°
-   * @param checkIntervalMs æ£€æŸ¥é—´éš”ï¼ˆæ¯«ç§’ï¼‰
+   * µÈ´ıÓÃ»§¿ÉÓÃÅä¶î
+   * @param userId ÓÃ»§ID
+   * @param maxConcurrent ×î´ó²¢·¢Êı
+   * @param checkIntervalMs ¼ì²é¼ä¸ô£¨ºÁÃë£©
    */
   private static async waitForUserQuota(
     userId: string,
@@ -271,40 +271,40 @@ export class ReviewService {
     checkIntervalMs: number = 1000
   ): Promise<void> {
     while (this.getUserProcessingCount(userId) >= maxConcurrent) {
-      console.log(`[Review] ç”¨æˆ· ${userId} å¹¶å‘é…é¢å·²æ»¡ (${this.getUserProcessingCount(userId)}/${maxConcurrent})ï¼Œç­‰å¾…ä¸­...`);
+      console.log(`[Review] ÓÃ»§ ${userId} ²¢·¢Åä¶îÒÑÂú (${this.getUserProcessingCount(userId)}/${maxConcurrent})£¬µÈ´ıÖĞ...`);
       await new Promise(resolve => setTimeout(resolve, checkIntervalMs));
     }
   }
 
   /**
-   * é€’å¢ç”¨æˆ·å¤„ç†è®¡æ•°
+   * µİÔöÓÃ»§´¦Àí¼ÆÊı
    */
   private static incrementUserCount(userId: string): void {
     const current = this.userConcurrencyMap.get(userId) || 0;
     this.userConcurrencyMap.set(userId, current + 1);
-    console.log(`[Review] ç”¨æˆ· ${userId} å¹¶å‘è®¡æ•°: ${current + 1}`);
+    console.log(`[Review] ÓÃ»§ ${userId} ²¢·¢¼ÆÊı: ${current + 1}`);
   }
 
   /**
-   * é€’å‡ç”¨æˆ·å¤„ç†è®¡æ•°
+   * µİ¼õÓÃ»§´¦Àí¼ÆÊı
    */
   private static decrementUserCount(userId: string): void {
     const current = this.userConcurrencyMap.get(userId) || 0;
     if (current > 0) {
       this.userConcurrencyMap.set(userId, current - 1);
-      console.log(`[Review] ç”¨æˆ· ${userId} å¹¶å‘è®¡æ•°: ${current - 1}`);
+      console.log(`[Review] ÓÃ»§ ${userId} ²¢·¢¼ÆÊı: ${current - 1}`);
     }
   }
 
   /**
-   * ç”¨æˆ·çº§åˆ«å¹¶å‘æ§åˆ¶æ‰§è¡Œ
-   * - æ¯ä¸ªç”¨æˆ·åŒæ—¶æœ€å¤šå¤„ç† limit ä¸ªæ–‡ä»¶
-   * - ä¸åŒç”¨æˆ·ä¹‹é—´äº’ä¸å½±å“
+   * ÓÃ»§¼¶±ğ²¢·¢¿ØÖÆÖ´ĞĞ
+   * - Ã¿¸öÓÃ»§Í¬Ê±×î¶à´¦Àí limit ¸öÎÄ¼ş
+   * - ²»Í¬ÓÃ»§Ö®¼ä»¥²»Ó°Ïì
    *
-   * @param userId ç”¨æˆ·ID
-   * @param items å¾…å¤„ç†é¡¹åˆ—è¡¨
-   * @param limit å•ç”¨æˆ·æœ€å¤§å¹¶å‘æ•°
-   * @param fn å¤„ç†å‡½æ•°
+   * @param userId ÓÃ»§ID
+   * @param items ´ı´¦ÀíÏîÁĞ±í
+   * @param limit µ¥ÓÃ»§×î´ó²¢·¢Êı
+   * @param fn ´¦Àíº¯Êı
    */
   private static async runUserLevelConcurrency<T, R>(
     userId: string,
@@ -314,21 +314,21 @@ export class ReviewService {
   ): Promise<R[]> {
     const results: R[] = [];
 
-    // æŒ‰ç”¨æˆ·åˆ†ç»„æ§åˆ¶å¹¶å‘
+    // °´ÓÃ»§·Ö×é¿ØÖÆ²¢·¢
     for (let i = 0; i < items.length; i++) {
-      // ç­‰å¾…è¯¥ç”¨æˆ·è·å¾—é…é¢
+      // µÈ´ı¸ÃÓÃ»§»ñµÃÅä¶î
       await this.waitForUserQuota(userId, limit);
 
-      // å¯åŠ¨ä»»åŠ¡ï¼ˆä¸ç­‰å¾…å®Œæˆï¼‰
+      // Æô¶¯ÈÎÎñ£¨²»µÈ´ıÍê³É£©
       const promise = fn(items[i], i).finally(() => {
-        // ä»»åŠ¡å®Œæˆåé€’å‡è®¡æ•°
+        // ÈÎÎñÍê³Éºóµİ¼õ¼ÆÊı
         this.decrementUserCount(userId);
       });
 
-      // é€’å¢è®¡æ•°
+      // µİÔö¼ÆÊı
       this.incrementUserCount(userId);
 
-      // ç­‰å¾…è¯¥ä»»åŠ¡å®Œæˆ
+      // µÈ´ı¸ÃÈÎÎñÍê³É
       const result = await promise;
       results.push(result);
     }
@@ -337,35 +337,35 @@ export class ReviewService {
   }
 
   /**
-   * ä¸»å…¥å£: ä¸¤é˜¶æ®µåˆ†æ‰¹å¹¶å‘å¤„ç†ä»»åŠ¡
+   * Ö÷Èë¿Ú: Á½½×¶Î·ÖÅú²¢·¢´¦ÀíÈÎÎñ
    *
-   * æµç¨‹:
-   *  1. åŠ è½½ä»»åŠ¡/æ–‡ä»¶/é…ç½®ï¼ˆä¸€æ¬¡æ€§ï¼‰
-   *  2. é˜¶æ®µ1: åˆ†æ‰¹å¹¶å‘è§„åˆ™å®¡æŸ¥ï¼ˆå— maxConcurrentReviews é™åˆ¶ï¼‰
-   *  3. æ‰¹é‡å…¥åº“: æ‰€æœ‰è§„åˆ™ç»“æœ + WebSocket æ¨é€
-   *  4. é˜¶æ®µ2: åˆ†æ‰¹å¹¶å‘ AI å®¡æŸ¥ï¼ˆå— maxConcurrentReviews é™åˆ¶ï¼‰
-   *  5. æ‰¹é‡å…¥åº“: æ‰€æœ‰ AI ç»“æœ + WebSocket æ¨é€
-   *  6. è·¨æ–‡ä»¶ä¸€è‡´æ€§æ£€æŸ¥ï¼ˆCONSISTENCYï¼‰
-   *  7. æ›´æ–°ä»»åŠ¡çŠ¶æ€ + æœ€ç»ˆæ¨é€
+   * Á÷³Ì:
+   *  1. ¼ÓÔØÈÎÎñ/ÎÄ¼ş/ÅäÖÃ£¨Ò»´ÎĞÔ£©
+   *  2. ½×¶Î1: ·ÖÅú²¢·¢¹æÔòÉó²é£¨ÊÜ maxConcurrentReviews ÏŞÖÆ£©
+   *  3. ÅúÁ¿Èë¿â: ËùÓĞ¹æÔò½á¹û + WebSocket ÍÆËÍ
+   *  4. ½×¶Î2: ·ÖÅú²¢·¢ AI Éó²é£¨ÊÜ maxConcurrentReviews ÏŞÖÆ£©
+   *  5. ÅúÁ¿Èë¿â: ËùÓĞ AI ½á¹û + WebSocket ÍÆËÍ
+   *  6. ¿çÎÄ¼şÒ»ÖÂĞÔ¼ì²é£¨CONSISTENCY£©
+   *  7. ¸üĞÂÈÎÎñ×´Ì¬ + ×îÖÕÍÆËÍ
    */
   static async processTask(taskId: string): Promise<void> {
-    console.log(`[Review] å¼€å§‹å¤„ç†ä»»åŠ¡: ${taskId}`);
+    console.log(`[Review] ¿ªÊ¼´¦ÀíÈÎÎñ: ${taskId}`);
 
-    // å…¨å±€å¹¶å‘æ§åˆ¶ï¼šç­‰å¾…è·å–æ§½ä½
+    // È«¾Ö²¢·¢¿ØÖÆ£ºµÈ´ı»ñÈ¡²ÛÎ»
     let slotAcquired = false;
     try {
-      // å…ˆè·å–ä»»åŠ¡ä¿¡æ¯ä»¥æ‹¿åˆ° userId
+      // ÏÈ»ñÈ¡ÈÎÎñĞÅÏ¢ÒÔÄÃµ½ userId
       const taskForQueue = await prisma.task.findUnique({ where: { id: taskId }, select: { creatorId: true } });
       if (taskForQueue) {
         await ConcurrencyService.waitForSlot(taskId, taskForQueue.creatorId);
         slotAcquired = true;
       }
     } catch (e) {
-      console.warn(`[Review] å…¨å±€å¹¶å‘æ§åˆ¶å¼‚å¸¸ï¼Œç»§ç»­æ‰§è¡Œ: ${e}`);
+      console.warn(`[Review] È«¾Ö²¢·¢¿ØÖÆÒì³££¬¼ÌĞøÖ´ĞĞ: ${e}`);
     }
 
     try {
-      // ===== ä¸€æ¬¡æ€§åŠ è½½æ‰€æœ‰æ•°æ® =====
+      // ===== Ò»´ÎĞÔ¼ÓÔØËùÓĞÊı¾İ =====
       const task = await prisma.task.findUnique({
         where: { id: taskId },
         include: {
@@ -377,18 +377,18 @@ export class ReviewService {
       });
 
       if (!task) {
-        console.error(`[Review] ä»»åŠ¡ä¸å­˜åœ¨: ${taskId}`);
+        console.error(`[Review] ÈÎÎñ²»´æÔÚ: ${taskId}`);
         return;
       }
 
       const totalFiles = task.files.length;
 
-      // æ¨é€ä»»åŠ¡å¼€å§‹
+      // ÍÆËÍÈÎÎñ¿ªÊ¼
       WebSocketService.emitTaskProgress(taskId, {
         type: 'started',
-        step: 'åˆå§‹åŒ–',
+        step: '³õÊ¼»¯',
         progress: 0,
-        message: 'ä»»åŠ¡å¼€å§‹å¤„ç†',
+        message: 'ÈÎÎñ¿ªÊ¼´¦Àí',
         timestamp: Date.now(),
       });
 
@@ -398,17 +398,17 @@ export class ReviewService {
       const ruleLibraryId = executionPlan.ruleLibraryId;
       const directPrefixes = executionPlan.enabledPrefixes;
 
-      // ===== æ¨¡å¼è¡Œä¸ºé…ç½®ï¼ˆå›ºå®šæ¨¡å¼ç›´æ¥æŸ¥è¡¨ï¼Œæ— éœ€åˆ›å»º Pipelineï¼‰ =====
+      // ===== Ä£Ê½ĞĞÎªÅäÖÃ£¨¹Ì¶¨Ä£Ê½Ö±½Ó²é±í£¬ÎŞĞè´´½¨ Pipeline£© =====
       const needsAI = reviewMode !== 'RULE_ONLY';
       const modeDisplayName = getModeDisplayName(reviewMode as ReviewModeType);
-      // ä¼˜å…ˆä½¿ç”¨å‰ç«¯ä¼ å…¥çš„å¯ç”¨å‰ç¼€ï¼Œå¦åˆ™ä»å®¡æŸ¥è§„èŒƒé›†/è§„åˆ™åº“åŠ è½½
+      // ÓÅÏÈÊ¹ÓÃÇ°¶Ë´«ÈëµÄÆôÓÃÇ°×º£¬·ñÔò´ÓÉó²é¹æ·¶¼¯/¹æÔò¿â¼ÓÔØ
       let ruleExecutionPlan = directPrefixes && directPrefixes.length > 0
         ? { enabledPrefixes: directPrefixes, executableItems: [] }
         : null;
       if (!ruleExecutionPlan && ruleLibraryId) {
         ruleExecutionPlan = await RuleLibraryService.getExecutionPlan(ruleLibraryId).catch(() => null);
         if (!ruleExecutionPlan) {
-          console.warn('[Review] è§„åˆ™åº“æ‰§è¡Œè®¡åˆ’åŠ è½½å¤±è´¥, ID:', ruleLibraryId);
+          console.warn('[Review] ¹æÔò¿âÖ´ĞĞ¼Æ»®¼ÓÔØÊ§°Ü, ID:', ruleLibraryId);
         }
       }
 
@@ -416,7 +416,7 @@ export class ReviewService {
       const reviewPoints: string[] = [];
       const corePurposes: string[] = [];
 
-      // è§£æå¤šçŸ¥è¯†å­åº“ ID
+      // ½âÎö¶àÖªÊ¶×Ó¿â ID
       let maxkbKnowledgeIds: string[] | undefined;
       if (executionPlan.maxkbKnowledgeIds.length > 0) {
         maxkbKnowledgeIds = executionPlan.maxkbKnowledgeIds;
@@ -424,7 +424,7 @@ export class ReviewService {
         maxkbKnowledgeIds = [maxkbKnowledgeId];
       }
 
-      // ===== åŠ è½½è§„åˆ™åº“æ¡ç›®ï¼ˆç”¨äº AI è¯­ä¹‰å®¡æŸ¥ï¼‰ =====
+      // ===== ¼ÓÔØ¹æÔò¿âÌõÄ¿£¨ÓÃÓÚ AI ÓïÒåÉó²é£© =====
       let semanticItems: PipelineContext['semanticItems'] = undefined;
       const effectiveSpecId = executionPlan.ruleLibraryId || (task as any).ruleLibraryId;
       if (effectiveSpecId) {
@@ -435,27 +435,27 @@ export class ReviewService {
           });
           if (specItems.length > 0) {
             semanticItems = specItems;
-            console.log(`[Review] åŠ è½½è§„åˆ™åº“æ¡ç›®: ${specItems.length} æ¡`);
+            console.log(`[Review] ¼ÓÔØ¹æÔò¿âÌõÄ¿: ${specItems.length} Ìõ`);
           }
         } catch (e) {
-          console.warn('[Review] åŠ è½½è§„åˆ™åº“æ¡ç›®å¤±è´¥:', e);
+          console.warn('[Review] ¼ÓÔØ¹æÔò¿âÌõÄ¿Ê§°Ü:', e);
         }
       }
 
-      // æ ‡è®°æ‰€æœ‰æ–‡ä»¶ä¸º PENDING
+      // ±ê¼ÇËùÓĞÎÄ¼şÎª PENDING
       await prisma.taskFile.updateMany({
         where: { taskId },
         data: { status: 'PENDING' },
       });
 
-      // ===== ä¸€æ¬¡æ€§åŠ è½½ pipeline é…ç½® =====
+      // ===== Ò»´ÎĞÔ¼ÓÔØ pipeline ÅäÖÃ =====
       let pipelineConfig: any = {};
       try {
         const cfg = await prisma.systemConfig.findUnique({ where: { key: 'pipeline_review_config' } });
         if (cfg?.value) pipelineConfig = cfg.value;
-      } catch (e) { /* ä½¿ç”¨é»˜è®¤å€¼ */ }
+      } catch (e) { /* Ê¹ÓÃÄ¬ÈÏÖµ */ }
 
-      // ===== ä¸€æ¬¡æ€§åŠ è½½å‚ç…§æ–‡ä»¶ï¼ˆä»¥æ–‡å®¡æ–‡æ¨¡å¼ï¼‰ =====
+      // ===== Ò»´ÎĞÔ¼ÓÔØ²ÎÕÕÎÄ¼ş£¨ÒÔÎÄÉóÎÄÄ£Ê½£© =====
       let refFileGroupCtx: PipelineContext['refFileGroup'] | undefined;
       if (executionPlan.refFileGroupRequired) {
         const groups = await prisma.refFileGroup.findMany({
@@ -477,7 +477,7 @@ export class ReviewService {
         }
       }
 
-      // ===== ä¸ºæ¯ä¸ªæ–‡ä»¶æ„å»º PipelineContextï¼ˆä¸å«é˜¶æ®µç»“æœï¼‰ =====
+      // ===== ÎªÃ¿¸öÎÄ¼ş¹¹½¨ PipelineContext£¨²»º¬½×¶Î½á¹û£© =====
       const fileContexts = task.files.map(file => {
         const absolutePath = resolveFilePath(file.filePath);
 
@@ -509,7 +509,7 @@ export class ReviewService {
           corePurposes,
         };
 
-        // â˜… DWG å‰ç«¯ WASM æ•°æ®ï¼šä½¿ç”¨ DwgHandlerService ç»Ÿä¸€å¤„ç†
+        // ¡ï DWG Ç°¶Ë WASM Êı¾İ£ºÊ¹ÓÃ DwgHandlerService Í³Ò»´¦Àí
         const dwgMeta = (file as any).dwgMetadata as any;
         const wasmText = ((file as any).extractedText || '').trim();
         DwgHandlerService.populateContextFromWasm(ctx, dwgMeta, wasmText);
@@ -517,17 +517,17 @@ export class ReviewService {
         return { file, ctx };
       });
 
-      // ===== é˜¶æ®µ1: æ‰€æœ‰æ–‡ä»¶å¹¶è¡Œè§„åˆ™å®¡æŸ¥ï¼ˆå¿«é€Ÿï¼Œæ¯«ç§’~ç§’çº§ï¼Œæ— éœ€é™æµï¼‰ =====
-      console.log(`[Review] é˜¶æ®µ1å¼€å§‹: ${totalFiles} ä¸ªæ–‡ä»¶å¹¶è¡Œè§„åˆ™å®¡æŸ¥`);
+      // ===== ½×¶Î1: ËùÓĞÎÄ¼ş²¢ĞĞ¹æÔòÉó²é£¨¿ìËÙ£¬ºÁÃë~Ãë¼¶£¬ÎŞĞèÏŞÁ÷£© =====
+      console.log(`[Review] ½×¶Î1¿ªÊ¼: ${totalFiles} ¸öÎÄ¼ş²¢ĞĞ¹æÔòÉó²é`);
       WebSocketService.emitTaskProgress(taskId, {
         type: 'phase1_start',
-        step: 'è§„åˆ™å®¡æŸ¥',
+        step: '¹æÔòÉó²é',
         progress: 5,
-        message: `å¼€å§‹å¹¶è¡Œè§„åˆ™å®¡æŸ¥ï¼ˆ${totalFiles} ä¸ªæ–‡ä»¶ï¼‰`,
+        message: `¿ªÊ¼²¢ĞĞ¹æÔòÉó²é£¨${totalFiles} ¸öÎÄ¼ş£©`,
         timestamp: Date.now(),
       });
 
-      // é˜¶æ®µ1ï¼šè§„åˆ™å®¡æŸ¥å…¨éƒ¨å¹¶è¡Œï¼ˆèµ„æºæ¶ˆè€—ä½ï¼Œå¿«é€Ÿå“åº”ï¼‰
+      // ½×¶Î1£º¹æÔòÉó²éÈ«²¿²¢ĞĞ£¨×ÊÔ´ÏûºÄµÍ£¬¿ìËÙÏìÓ¦£©
       const fastPhasePromises = fileContexts.map(({ file, ctx }, index) =>
         this.runFileFastPhase(taskId, file, ctx, index, totalFiles)
           .then(res => ({ ...res, fileId: file.id, fileName: file.fileName }))
@@ -535,25 +535,25 @@ export class ReviewService {
       );
       const fastPhaseResults = await Promise.all(fastPhasePromises);
 
-      // è·å–é˜¶æ®µ2çš„å¹¶å‘é™åˆ¶ï¼ˆé»˜è®¤ 3ï¼ŒAIå®¡æŸ¥è€—èµ„æºï¼Œéœ€è¦é™æµï¼‰
+      // »ñÈ¡½×¶Î2µÄ²¢·¢ÏŞÖÆ£¨Ä¬ÈÏ 3£¬AIÉó²éºÄ×ÊÔ´£¬ĞèÒªÏŞÁ÷£©
       const maxConcurrent = pipelineConfig.maxConcurrentReviews || 3;
 
-      // ===== æ‰¹é‡å…¥åº“: é˜¶æ®µ1ç»“æœ =====
+      // ===== ÅúÁ¿Èë¿â: ½×¶Î1½á¹û =====
       let fastSuccessCount = 0;
       let fastFailedCount = 0;
       for (const result of fastPhaseResults) {
         if ('error' in result) {
           fastFailedCount++;
-          console.error(`[Review] æ–‡ä»¶ ${result.fileName} é˜¶æ®µ1å¤±è´¥:`, result.error);
+          console.error(`[Review] ÎÄ¼ş ${result.fileName} ½×¶Î1Ê§°Ü:`, result.error);
           await this.createErrorDetail(taskId, result.fileId, result.fileName, result.error);
         } else {
           fastSuccessCount++;
-          // é˜¶æ®µ1ç»“æœå·²åœ¨ runFileFastPhase ä¸­å…¥åº“ï¼Œæ­¤å¤„ä»…æ¨é€ WebSocket
+          // ½×¶Î1½á¹ûÒÑÔÚ runFileFastPhase ÖĞÈë¿â£¬´Ë´¦½öÍÆËÍ WebSocket
           WebSocketService.emitTaskProgress(taskId, {
             type: 'fast_phase_complete',
-            step: 'è§„åˆ™å®¡æŸ¥å®Œæˆ',
+            step: '¹æÔòÉó²éÍê³É',
             progress: 40,
-            message: `è§„åˆ™å®¡æŸ¥å®Œæˆ: ${result.ruleIssues.length} ä¸ªè§„åˆ™é—®é¢˜, ${result.stdRefIssues.length} ä¸ªæ ‡å‡†å¼•ç”¨é—®é¢˜`,
+            message: `¹æÔòÉó²éÍê³É: ${result.ruleIssues.length} ¸ö¹æÔòÎÊÌâ, ${result.stdRefIssues.length} ¸ö±ê×¼ÒıÓÃÎÊÌâ`,
             fileName: result.fileName,
             phase: 'phase1',
             ruleCount: result.ruleIssues.length,
@@ -563,23 +563,23 @@ export class ReviewService {
         }
       }
 
-      console.log(`[Review] é˜¶æ®µ1å®Œæˆ: æˆåŠŸ ${fastSuccessCount}, å¤±è´¥ ${fastFailedCount}`);
+      console.log(`[Review] ½×¶Î1Íê³É: ³É¹¦ ${fastSuccessCount}, Ê§°Ü ${fastFailedCount}`);
 
-      // ===== æ–‡ä»¶å†…ä¸€è‡´æ€§æ£€æŸ¥ï¼ˆå¯åŠ¨åä¸é˜¶æ®µ2å¹¶è¡Œï¼Œæœ€å await æ±‡æ€»ï¼‰ =====
+      // ===== ÎÄ¼şÄÚÒ»ÖÂĞÔ¼ì²é£¨Æô¶¯ºóÓë½×¶Î2²¢ĞĞ£¬×îºó await »ã×Ü£© =====
       let intraConsistencyPromise: Promise<Array<{ fileId: string; issueCount: number }>> | null = null;
       if (intraFileConsistency) {
         WebSocketService.emitTaskProgress(taskId, {
           type: 'intra_consistency_check',
-          step: 'æ–‡ä»¶å†…ä¸€è‡´æ€§æ£€æŸ¥',
+          step: 'ÎÄ¼şÄÚÒ»ÖÂĞÔ¼ì²é',
           progress: 42,
-          message: 'æ­£åœ¨è¿›è¡Œæ–‡ä»¶å†…ä¸€è‡´æ€§æ£€æŸ¥...',
+          message: 'ÕıÔÚ½øĞĞÎÄ¼şÄÚÒ»ÖÂĞÔ¼ì²é...',
           timestamp: Date.now(),
         });
 
-        // æ”¶é›†å·²æˆåŠŸæå–æ–‡æœ¬çš„æ–‡ä»¶ä¸Šä¸‹æ–‡
+        // ÊÕ¼¯ÒÑ³É¹¦ÌáÈ¡ÎÄ±¾µÄÎÄ¼şÉÏÏÂÎÄ
         const filesWithText = fileContexts.filter(({ ctx }) => ctx.extractedText && ctx.extractedText.trim().length > 0);
 
-        // å¯åŠ¨ä½†ä¸ç«‹å³ awaitï¼Œä¸é˜¶æ®µ2å¹¶è¡Œæ‰§è¡Œ
+        // Æô¶¯µ«²»Á¢¼´ await£¬Óë½×¶Î2²¢ĞĞÖ´ĞĞ
         intraConsistencyPromise = Promise.all(
           filesWithText.map(async ({ file, ctx }) => {
             try {
@@ -587,23 +587,23 @@ export class ReviewService {
                 taskId, file.id, file.fileName, ctx.extractedText,
               );
               if (issueCount > 0) {
-                console.log(`[Review] ${file.fileName} æ–‡ä»¶å†…ä¸€è‡´æ€§: å‘ç° ${issueCount} ä¸ªä¸ä¸€è‡´`);
+                console.log(`[Review] ${file.fileName} ÎÄ¼şÄÚÒ»ÖÂĞÔ: ·¢ÏÖ ${issueCount} ¸ö²»Ò»ÖÂ`);
               }
               return { fileId: file.id, issueCount };
             } catch (e) {
-              console.warn(`[Review] ${file.fileName} æ–‡ä»¶å†…ä¸€è‡´æ€§æ£€æŸ¥å¤±è´¥:`, e);
+              console.warn(`[Review] ${file.fileName} ÎÄ¼şÄÚÒ»ÖÂĞÔ¼ì²éÊ§°Ü:`, e);
               return { fileId: file.id, issueCount: 0 };
             }
           }),
         );
       }
 
-      // ===== é˜¶æ®µ2: ç”¨æˆ·çº§åˆ«å¹¶å‘ AI å®¡æŸ¥ =====
-      // ä½¿ç”¨ç»Ÿä¸€åˆ›å»ºçš„ pipeline åˆ¤æ–­æ˜¯å¦éœ€è¦ AI å®¡æŸ¥
+      // ===== ½×¶Î2: ÓÃ»§¼¶±ğ²¢·¢ AI Éó²é =====
+      // Ê¹ÓÃÍ³Ò»´´½¨µÄ pipeline ÅĞ¶ÏÊÇ·ñĞèÒª AI Éó²é
       let slowPhaseResults: any[] = [];
       if (!needsAI) {
-        // ä¸éœ€è¦ AI å®¡æŸ¥çš„æ¨¡å¼ï¼Œæ ¹æ®é˜¶æ®µ1ç»“æœæ ‡è®°æ–‡ä»¶çŠ¶æ€
-        console.log(`[Review] é˜¶æ®µ2è·³è¿‡: ${reviewMode} æ¨¡å¼ä¸éœ€è¦ AI å®¡æŸ¥`);
+        // ²»ĞèÒª AI Éó²éµÄÄ£Ê½£¬¸ù¾İ½×¶Î1½á¹û±ê¼ÇÎÄ¼ş×´Ì¬
+        console.log(`[Review] ½×¶Î2Ìø¹ı: ${reviewMode} Ä£Ê½²»ĞèÒª AI Éó²é`);
         const failedFileIds = new Set(
           fastPhaseResults.filter(r => 'error' in r).map(r => r.fileId)
         );
@@ -612,65 +612,65 @@ export class ReviewService {
           await prisma.taskFile.update({
             where: { id: file.id },
             data: { status },
-          }).catch((e) => { console.warn(`[Review] æ›´æ–°æ–‡ä»¶çŠ¶æ€å¤±è´¥ (${file.id}):`, e); });
+          }).catch((e) => { console.warn(`[Review] ¸üĞÂÎÄ¼ş×´Ì¬Ê§°Ü (${file.id}):`, e); });
         }
         WebSocketService.emitTaskProgress(taskId, {
           type: 'phase2_start',
-          step: 'AI æ·±åº¦å®¡æŸ¥',
+          step: 'AI Éî¶ÈÉó²é',
           progress: 45,
-          message: `${modeDisplayName}æ¨¡å¼æ— éœ€ AI å®¡æŸ¥ï¼Œç›´æ¥å®Œæˆ`,
+          message: `${modeDisplayName}Ä£Ê½ÎŞĞè AI Éó²é£¬Ö±½ÓÍê³É`,
           timestamp: Date.now(),
         });
       } else {
-        // è¿‡æ»¤æ‰é˜¶æ®µ1å¤±è´¥çš„æ–‡ä»¶ï¼Œé¿å…å¯¹å®ƒä»¬æ‰§è¡Œæ— æ„ä¹‰çš„ AI å®¡æŸ¥
+        // ¹ıÂËµô½×¶Î1Ê§°ÜµÄÎÄ¼ş£¬±ÜÃâ¶ÔËüÃÇÖ´ĞĞÎŞÒâÒåµÄ AI Éó²é
         const failedFileIds = new Set(
           fastPhaseResults.filter(r => 'error' in r).map(r => r.fileId)
         );
         const eligibleForAI = fileContexts.filter(({ file }) => !failedFileIds.has(file.id));
         const skippedCount = fileContexts.length - eligibleForAI.length;
 
-        // æ ‡è®°é˜¶æ®µ1å¤±è´¥çš„æ–‡ä»¶çŠ¶æ€
+        // ±ê¼Ç½×¶Î1Ê§°ÜµÄÎÄ¼ş×´Ì¬
         for (const fileId of failedFileIds) {
           await prisma.taskFile.update({
             where: { id: fileId },
             data: { status: 'FAILED' },
-          }).catch((e) => { console.warn(`[Review] æ›´æ–°é˜¶æ®µ1å¤±è´¥æ–‡ä»¶çŠ¶æ€ (${fileId}):`, e); });
+          }).catch((e) => { console.warn(`[Review] ¸üĞÂ½×¶Î1Ê§°ÜÎÄ¼ş×´Ì¬ (${fileId}):`, e); });
         }
 
-        // â˜… LLM é…ç½®é¢„æ£€ï¼šé˜¶æ®µ2å¼€å§‹å‰æ£€æŸ¥ LLM æ˜¯å¦å¯ç”¨ï¼Œæ¨é€æ˜ç¡®çŠ¶æ€
+        // ¡ï LLM ÅäÖÃÔ¤¼ì£º½×¶Î2¿ªÊ¼Ç°¼ì²é LLM ÊÇ·ñ¿ÉÓÃ£¬ÍÆËÍÃ÷È·×´Ì¬
         let llmConfigAvailable = true;
         try {
           const llmConfig = await LlmService.getLlmConfig();
           if (!llmConfig) {
             llmConfigAvailable = false;
-            console.warn('[Review] âš ï¸ LLM æœªé…ç½®ï¼ŒAI å®¡æŸ¥å°†æ— æ³•æ­£å¸¸æ‰§è¡Œ');
+            console.warn('[Review] ?? LLM Î´ÅäÖÃ£¬AI Éó²é½«ÎŞ·¨Õı³£Ö´ĞĞ');
             WebSocketService.emitTaskProgress(taskId, {
               type: 'llm_warning',
-              step: 'AI å®¡æŸ¥è­¦å‘Š',
+              step: 'AI Éó²é¾¯¸æ',
               progress: 45,
-              message: 'âš ï¸ LLM æœªé…ç½®ï¼ŒAI å®¡æŸ¥å°†æ— æ³•æ‰§è¡Œã€‚è¯·åœ¨ç³»ç»Ÿé…ç½®ä¸­è®¾ç½® LLM APIã€‚',
+              message: '?? LLM Î´ÅäÖÃ£¬AI Éó²é½«ÎŞ·¨Ö´ĞĞ¡£ÇëÔÚÏµÍ³ÅäÖÃÖĞÉèÖÃ LLM API¡£',
               timestamp: Date.now(),
             });
           } else {
-            console.log(`[Review] LLM é…ç½®æ£€æŸ¥é€šè¿‡: ${llmConfig.modelName} @ ${llmConfig.apiBaseUrl}`);
+            console.log(`[Review] LLM ÅäÖÃ¼ì²éÍ¨¹ı: ${llmConfig.modelName} @ ${llmConfig.apiBaseUrl}`);
           }
         } catch (e) {
-          console.warn('[Review] LLM é…ç½®æ£€æŸ¥å¼‚å¸¸:', e);
+          console.warn('[Review] LLM ÅäÖÃ¼ì²éÒì³£:', e);
         }
 
-        console.log(`[Review] é˜¶æ®µ2å¼€å§‹: ${eligibleForAI.length} ä¸ªæ–‡ä»¶ AI å®¡æŸ¥ (è·³è¿‡ ${skippedCount} ä¸ªé˜¶æ®µ1å¤±è´¥æ–‡ä»¶, ç”¨æˆ· ${task.creatorId} å¹¶å‘ä¸Šé™ ${maxConcurrent})`);
-        console.log(`[Review] ç”¨æˆ· ${task.creatorId} å½“å‰å¹¶å‘æ•°: ${this.getUserProcessingCount(task.creatorId)}`);
+        console.log(`[Review] ½×¶Î2¿ªÊ¼: ${eligibleForAI.length} ¸öÎÄ¼ş AI Éó²é (Ìø¹ı ${skippedCount} ¸ö½×¶Î1Ê§°ÜÎÄ¼ş, ÓÃ»§ ${task.creatorId} ²¢·¢ÉÏÏŞ ${maxConcurrent})`);
+        console.log(`[Review] ÓÃ»§ ${task.creatorId} µ±Ç°²¢·¢Êı: ${this.getUserProcessingCount(task.creatorId)}`);
         WebSocketService.emitTaskProgress(taskId, {
           type: 'phase2_start',
-          step: 'AI æ·±åº¦å®¡æŸ¥',
+          step: 'AI Éî¶ÈÉó²é',
           progress: 45,
           message: llmConfigAvailable
-            ? `å¼€å§‹ AI å®¡æŸ¥ï¼ˆ${eligibleForAI.length} ä¸ªæ–‡ä»¶ï¼Œç”¨æˆ·å¹¶å‘ä¸Šé™ ${maxConcurrent}ï¼‰`
-            : `å¼€å§‹ AI å®¡æŸ¥ï¼ˆ${eligibleForAI.length} ä¸ªæ–‡ä»¶ï¼‰â€” âš ï¸ LLM æœªé…ç½®ï¼Œå®¡æŸ¥å¯èƒ½å¤±è´¥`,
+            ? `¿ªÊ¼ AI Éó²é£¨${eligibleForAI.length} ¸öÎÄ¼ş£¬ÓÃ»§²¢·¢ÉÏÏŞ ${maxConcurrent}£©`
+            : `¿ªÊ¼ AI Éó²é£¨${eligibleForAI.length} ¸öÎÄ¼ş£©¡ª ?? LLM Î´ÅäÖÃ£¬Éó²é¿ÉÄÜÊ§°Ü`,
           timestamp: Date.now(),
         });
 
-        // ç”¨æˆ·çº§åˆ«å¹¶å‘æ‰§è¡Œé˜¶æ®µ2ï¼ˆæ¯ä¸ªç”¨æˆ·ç‹¬ç«‹é™æµï¼Œè·³è¿‡é˜¶æ®µ1å¤±è´¥çš„æ–‡ä»¶ï¼‰
+        // ÓÃ»§¼¶±ğ²¢·¢Ö´ĞĞ½×¶Î2£¨Ã¿¸öÓÃ»§¶ÀÁ¢ÏŞÁ÷£¬Ìø¹ı½×¶Î1Ê§°ÜµÄÎÄ¼ş£©
         slowPhaseResults = await this.runUserLevelConcurrency(
           task.creatorId,
           eligibleForAI,
@@ -682,25 +682,25 @@ export class ReviewService {
         );
       } // end of needsAI else
 
-      // ===== æ‰¹é‡å…¥åº“: é˜¶æ®µ2ç»“æœ =====
+      // ===== ÅúÁ¿Èë¿â: ½×¶Î2½á¹û =====
       let slowSuccessCount = 0;
       let slowFailedCount = 0;
-      const enginesUsed = new Set<string>(); // æ”¶é›†æ‰€æœ‰æ–‡ä»¶å®é™…ä½¿ç”¨çš„ AI å¼•æ“
+      const enginesUsed = new Set<string>(); // ÊÕ¼¯ËùÓĞÎÄ¼şÊµ¼ÊÊ¹ÓÃµÄ AI ÒıÇæ
       for (const result of slowPhaseResults) {
         const isError = 'error' in result;
         if (isError) {
           slowFailedCount++;
-          console.error(`[Review] æ–‡ä»¶ ${result.fileName} é˜¶æ®µ2å¤±è´¥:`, result.error);
+          console.error(`[Review] ÎÄ¼ş ${result.fileName} ½×¶Î2Ê§°Ü:`, result.error);
           await this.createErrorDetail(taskId, result.fileId, result.fileName, result.error);
         } else {
           slowSuccessCount++;
           if (result.usedEngine) enginesUsed.add(result.usedEngine);
-          // æ¨é€é˜¶æ®µ2å®Œæˆäº‹ä»¶
+          // ÍÆËÍ½×¶Î2Íê³ÉÊÂ¼ş
           WebSocketService.emitTaskProgress(taskId, {
             type: 'slow_phase_complete',
-            step: 'AIå®¡æŸ¥å®Œæˆ',
+            step: 'AIÉó²éÍê³É',
             progress: 80,
-            message: `AIå®¡æŸ¥å®Œæˆ: ${result.aiIssues.length} ä¸ªé—®é¢˜ (${result.usedEngine || 'unknown'})`,
+            message: `AIÉó²éÍê³É: ${result.aiIssues.length} ¸öÎÊÌâ (${result.usedEngine || 'unknown'})`,
             fileName: result.fileName,
             phase: 'phase2',
             aiCount: result.aiIssues.length,
@@ -708,71 +708,71 @@ export class ReviewService {
             timestamp: Date.now(),
           });
         }
-        // æ›´æ–°æ–‡ä»¶çŠ¶æ€
+        // ¸üĞÂÎÄ¼ş×´Ì¬
         const fileStatus = isError ? 'FAILED' : 'COMPLETED';
         await prisma.taskFile.update({
           where: { id: result.fileId },
           data: { status: fileStatus },
-        }).catch((e) => { console.warn(`[Review] æ›´æ–°æ–‡ä»¶çŠ¶æ€å¤±è´¥ (${result.fileId}):`, e); });
+        }).catch((e) => { console.warn(`[Review] ¸üĞÂÎÄ¼ş×´Ì¬Ê§°Ü (${result.fileId}):`, e); });
       }
 
-      console.log(`[Review] é˜¶æ®µ2å®Œæˆ: æˆåŠŸ ${slowSuccessCount}, å¤±è´¥ ${slowFailedCount}`);
+      console.log(`[Review] ½×¶Î2Íê³É: ³É¹¦ ${slowSuccessCount}, Ê§°Ü ${slowFailedCount}`);
 
-      // ===== è·¨æ–‡ä»¶ä¸€è‡´æ€§æ£€æŸ¥ =====
-      // ä½¿ç”¨ capabilities.crossFile åˆ¤æ–­ï¼ˆèƒ½åŠ›é©±åŠ¨ï¼Œæ›¿ä»£åŸå…ˆç¡¬ç¼–ç æ¨¡å¼åˆ—è¡¨ï¼‰
-      // ===== ç­‰å¾…æ–‡ä»¶å†…ä¸€è‡´æ€§æ£€æŸ¥å®Œæˆï¼ˆä¸é˜¶æ®µ2å¹¶è¡Œå¯åŠ¨ï¼Œæ­¤å¤„æ±‡æ€»ç»“æœï¼‰ =====
+      // ===== ¿çÎÄ¼şÒ»ÖÂĞÔ¼ì²é =====
+      // Ê¹ÓÃ capabilities.crossFile ÅĞ¶Ï£¨ÄÜÁ¦Çı¶¯£¬Ìæ´úÔ­ÏÈÓ²±àÂëÄ£Ê½ÁĞ±í£©
+      // ===== µÈ´ıÎÄ¼şÄÚÒ»ÖÂĞÔ¼ì²éÍê³É£¨Óë½×¶Î2²¢ĞĞÆô¶¯£¬´Ë´¦»ã×Ü½á¹û£© =====
       if (intraConsistencyPromise) {
         try {
           const intraResults = await intraConsistencyPromise;
           const totalIntraIssues = intraResults.reduce((sum, r) => sum + r.issueCount, 0);
-          console.log(`[Review] æ–‡ä»¶å†…ä¸€è‡´æ€§æ£€æŸ¥å®Œæˆ: å‘ç° ${totalIntraIssues} ä¸ªä¸ä¸€è‡´`);
+          console.log(`[Review] ÎÄ¼şÄÚÒ»ÖÂĞÔ¼ì²éÍê³É: ·¢ÏÖ ${totalIntraIssues} ¸ö²»Ò»ÖÂ`);
           WebSocketService.emitTaskProgress(taskId, {
             type: 'intra_consistency_done',
-            step: 'æ–‡ä»¶å†…ä¸€è‡´æ€§æ£€æŸ¥å®Œæˆ',
+            step: 'ÎÄ¼şÄÚÒ»ÖÂĞÔ¼ì²éÍê³É',
             progress: 92,
-            message: `æ–‡ä»¶å†…ä¸€è‡´æ€§æ£€æŸ¥å®Œæˆ: å‘ç° ${totalIntraIssues} ä¸ªä¸ä¸€è‡´é—®é¢˜`,
+            message: `ÎÄ¼şÄÚÒ»ÖÂĞÔ¼ì²éÍê³É: ·¢ÏÖ ${totalIntraIssues} ¸ö²»Ò»ÖÂÎÊÌâ`,
             timestamp: Date.now(),
           });
         } catch (e) {
-          console.warn(`[Review] æ–‡ä»¶å†…ä¸€è‡´æ€§æ£€æŸ¥å¼‚å¸¸:`, e);
+          console.warn(`[Review] ÎÄ¼şÄÚÒ»ÖÂĞÔ¼ì²éÒì³£:`, e);
         }
       }
 
-      // ===== è·¨æ–‡ä»¶ä¸€è‡´æ€§æ£€æŸ¥ =====
+      // ===== ¿çÎÄ¼şÒ»ÖÂĞÔ¼ì²é =====
       const crossFileNeeded = executionPlan.crossFileConsistency && totalFiles >= 2;
       if (crossFileNeeded) {
         WebSocketService.emitTaskProgress(taskId, {
           type: 'cross_file_check',
-          step: 'è·¨æ–‡ä»¶ä¸€è‡´æ€§æ£€æŸ¥',
+          step: '¿çÎÄ¼şÒ»ÖÂĞÔ¼ì²é',
           progress: 90,
-          message: 'æ­£åœ¨è¿›è¡Œè·¨æ–‡ä»¶ä¸€è‡´æ€§æ£€æŸ¥...',
+          message: 'ÕıÔÚ½øĞĞ¿çÎÄ¼şÒ»ÖÂĞÔ¼ì²é...',
           timestamp: Date.now(),
         });
 
         try {
           const crossIssueCount = await CrossFileConsistencyService.check(taskId, task.files);
-          console.log(`[Review] è·¨æ–‡ä»¶ä¸€è‡´æ€§æ£€æŸ¥å®Œæˆ: å‘ç° ${crossIssueCount} ä¸ªä¸ä¸€è‡´`);
+          console.log(`[Review] ¿çÎÄ¼şÒ»ÖÂĞÔ¼ì²éÍê³É: ·¢ÏÖ ${crossIssueCount} ¸ö²»Ò»ÖÂ`);
           WebSocketService.emitTaskProgress(taskId, {
             type: 'cross_file_done',
-            step: 'ä¸€è‡´æ€§æ£€æŸ¥å®Œæˆ',
+            step: 'Ò»ÖÂĞÔ¼ì²éÍê³É',
             progress: 95,
-            message: `å‘ç° ${crossIssueCount} ä¸ªä¸ä¸€è‡´é—®é¢˜`,
+            message: `·¢ÏÖ ${crossIssueCount} ¸ö²»Ò»ÖÂÎÊÌâ`,
             timestamp: Date.now(),
           });
         } catch (error) {
-          console.error(`[Review] è·¨æ–‡ä»¶ä¸€è‡´æ€§æ£€æŸ¥å¤±è´¥: ${taskId}`, error);
+          console.error(`[Review] ¿çÎÄ¼şÒ»ÖÂĞÔ¼ì²éÊ§°Ü: ${taskId}`, error);
         }
       }
 
-      // ===== æ›´æ–°ä»»åŠ¡çŠ¶æ€ =====
-      // AI æ¨¡å¼ï¼šé˜¶æ®µ1å¤±è´¥ + é˜¶æ®µ2å¤±è´¥ = æ€»å¤±è´¥æ•°
-      // é AI æ¨¡å¼ï¼šç›´æ¥ä½¿ç”¨é˜¶æ®µ1è®¡æ•°
+      // ===== ¸üĞÂÈÎÎñ×´Ì¬ =====
+      // AI Ä£Ê½£º½×¶Î1Ê§°Ü + ½×¶Î2Ê§°Ü = ×ÜÊ§°ÜÊı
+      // ·Ç AI Ä£Ê½£ºÖ±½ÓÊ¹ÓÃ½×¶Î1¼ÆÊı
       const phase1FailedCount = fastFailedCount;
       const successCount = needsAI ? slowSuccessCount : fastSuccessCount;
       const failedCount = needsAI ? (phase1FailedCount + slowFailedCount) : fastFailedCount;
       const newStatus = (failedCount >= totalFiles) ? 'FAILED' : 'COMPLETED';
 
-      // æŒä¹…åŒ–å®é™…ä½¿ç”¨çš„ AI å¼•æ“ä¿¡æ¯åˆ°ä»»åŠ¡è®°å½•
+      // ³Ö¾Ã»¯Êµ¼ÊÊ¹ÓÃµÄ AI ÒıÇæĞÅÏ¢µ½ÈÎÎñ¼ÇÂ¼
       const primaryEngine = enginesUsed.size > 0 ? Array.from(enginesUsed).join('+') : (needsAI ? 'none' : undefined);
       await prisma.task.update({
         where: { id: taskId },
@@ -782,63 +782,63 @@ export class ReviewService {
         },
       });
 
-      // ===== æœ€ç»ˆæ¨é€ =====
+      // ===== ×îÖÕÍÆËÍ =====
       WebSocketService.emitTaskProgress(taskId, {
         type: newStatus === 'COMPLETED' ? 'completed' : 'failed',
-        step: newStatus === 'COMPLETED' ? 'å…¨éƒ¨å®Œæˆ' : 'ä»»åŠ¡å¤±è´¥',
+        step: newStatus === 'COMPLETED' ? 'È«²¿Íê³É' : 'ÈÎÎñÊ§°Ü',
         progress: 100,
         message: newStatus === 'COMPLETED'
-          ? `å®¡æŸ¥å®Œæˆï¼ŒæˆåŠŸ ${successCount} ä¸ªæ–‡ä»¶ï¼Œå¤±è´¥ ${failedCount} ä¸ª`
-          : `æ‰€æœ‰ ${failedCount} ä¸ªæ–‡ä»¶å®¡æŸ¥å¤±è´¥`,
+          ? `Éó²éÍê³É£¬³É¹¦ ${successCount} ¸öÎÄ¼ş£¬Ê§°Ü ${failedCount} ¸ö`
+          : `ËùÓĞ ${failedCount} ¸öÎÄ¼şÉó²éÊ§°Ü`,
         result: { successCount, failedCount, fastSuccessCount, fastFailedCount },
         timestamp: Date.now(),
       });
 
       WebSocketService.emitToUser(task.creatorId, {
         type: 'task_complete',
-        title: newStatus === 'COMPLETED' ? 'å®¡æŸ¥ä»»åŠ¡å®Œæˆ' : 'å®¡æŸ¥ä»»åŠ¡å¤±è´¥',
+        title: newStatus === 'COMPLETED' ? 'Éó²éÈÎÎñÍê³É' : 'Éó²éÈÎÎñÊ§°Ü',
         message: newStatus === 'COMPLETED'
-          ? `ä»»åŠ¡ã€Œ${task.title}ã€å·²å®Œæˆï¼Œ${successCount} ä¸ªæ–‡ä»¶å®¡æŸ¥å®Œæˆ`
-          : `ä»»åŠ¡ã€Œ${task.title}ã€å®¡æŸ¥å¤±è´¥ï¼Œæ‰€æœ‰æ–‡ä»¶å¤„ç†å‡æœªæˆåŠŸ`,
+          ? `ÈÎÎñ¡¸${task.title}¡¹ÒÑÍê³É£¬${successCount} ¸öÎÄ¼şÉó²éÍê³É`
+          : `ÈÎÎñ¡¸${task.title}¡¹Éó²éÊ§°Ü£¬ËùÓĞÎÄ¼ş´¦Àí¾ùÎ´³É¹¦`,
         taskId,
         status: newStatus,
       });
 
-      console.log(`[Review] ä»»åŠ¡å¤„ç†å®Œæˆ: ${taskId}, é˜¶æ®µ1æˆåŠŸ=${fastSuccessCount}, é˜¶æ®µ2æˆåŠŸ=${successCount}, å¤±è´¥=${failedCount}`);
+      console.log(`[Review] ÈÎÎñ´¦ÀíÍê³É: ${taskId}, ½×¶Î1³É¹¦=${fastSuccessCount}, ½×¶Î2³É¹¦=${successCount}, Ê§°Ü=${failedCount}`);
     } catch (error) {
-      console.error(`[Review] ä»»åŠ¡å¤„ç†å¼‚å¸¸: ${taskId}`, error);
+      console.error(`[Review] ÈÎÎñ´¦ÀíÒì³£: ${taskId}`, error);
       try {
         await prisma.task.update({ where: { id: taskId }, data: { status: 'FAILED' } });
         WebSocketService.emitTaskProgress(taskId, {
           type: 'error',
-          step: 'ä»»åŠ¡å¼‚å¸¸',
+          step: 'ÈÎÎñÒì³£',
           progress: 0,
-          message: `ä»»åŠ¡å¤„ç†å¼‚å¸¸: ${error instanceof Error ? error.message : 'æœªçŸ¥é”™è¯¯'}`,
+          message: `ÈÎÎñ´¦ÀíÒì³£: ${error instanceof Error ? error.message : 'Î´Öª´íÎó'}`,
           timestamp: Date.now(),
         });
       } catch (e) { /* ignore */ }
     } finally {
-      // é‡Šæ”¾å…¨å±€å¹¶å‘æ§½ä½
+      // ÊÍ·ÅÈ«¾Ö²¢·¢²ÛÎ»
       if (slotAcquired) {
         try {
           await ConcurrencyService.releaseSlot(taskId);
         } catch (e) {
-          console.warn(`[Review] é‡Šæ”¾å…¨å±€æ§½ä½å¤±è´¥: ${e}`);
+          console.warn(`[Review] ÊÍ·ÅÈ«¾Ö²ÛÎ»Ê§°Ü: ${e}`);
         }
       }
     }
   }
 
-  // ==================== ä¸¤é˜¶æ®µæ–‡ä»¶å¤„ç†æ–¹æ³• ====================
+  // ==================== Á½½×¶ÎÎÄ¼ş´¦Àí·½·¨ ====================
 
   /**
-   * é˜¶æ®µ1: è§„åˆ™å®¡æŸ¥ + æ ‡å‡†å¼•ç”¨æ£€æŸ¥
-   * - æ–‡æœ¬æå–ï¼ˆParser + OCRï¼‰
-   * - PDF é€é¡µè§£æ / Word ç»“æ„åŒ–
-   * - è§„åˆ™å¼•æ“æ£€æŸ¥
-   * - æ ‡å‡†å¼•ç”¨è§„èŒƒæ€§æ£€æŸ¥
+   * ½×¶Î1: ¹æÔòÉó²é + ±ê×¼ÒıÓÃ¼ì²é
+   * - ÎÄ±¾ÌáÈ¡£¨Parser + OCR£©
+   * - PDF ÖğÒ³½âÎö / Word ½á¹¹»¯
+   * - ¹æÔòÒıÇæ¼ì²é
+   * - ±ê×¼ÒıÓÃ¹æ·¶ĞÔ¼ì²é
    *
-   * å®Œæˆåç«‹å³å…¥åº“å¹¶è¿”å›ç»“æœï¼ˆä¸å« AI ç»“æœï¼‰
+   * Íê³ÉºóÁ¢¼´Èë¿â²¢·µ»Ø½á¹û£¨²»º¬ AI ½á¹û£©
    */
   static async runFileFastPhase(
     taskId: string,
@@ -849,26 +849,26 @@ export class ReviewService {
   ): Promise<{ ruleIssues: any[]; stdRefIssues: any[] }> {
     const absolutePath = resolveFilePath(file.filePath);
 
-    // æ¨é€æ–‡ä»¶é˜¶æ®µ1å¼€å§‹
+    // ÍÆËÍÎÄ¼ş½×¶Î1¿ªÊ¼
     const fileProgress = Math.round((fileIndex / totalFiles) * 100);
     WebSocketService.emitTaskProgress(taskId, {
       type: 'file_fast_start',
-      step: `è§„åˆ™å®¡æŸ¥ ${fileIndex + 1}/${totalFiles}`,
+      step: `¹æÔòÉó²é ${fileIndex + 1}/${totalFiles}`,
       progress: fileProgress,
-      message: `å¼€å§‹è§„åˆ™å®¡æŸ¥: ${file.fileName}`,
+      message: `¿ªÊ¼¹æÔòÉó²é: ${file.fileName}`,
       fileName: file.fileName,
       phase: 'phase1',
       timestamp: Date.now(),
     });
 
-    // æ ‡è®°æ–‡ä»¶ä¸ºå¤„ç†ä¸­
+    // ±ê¼ÇÎÄ¼şÎª´¦ÀíÖĞ
     await prisma.taskFile.update({
       where: { id: file.id },
       data: { status: 'PROCESSING' },
-    }).catch((e) => { console.warn(`[Review] æ ‡è®°æ–‡ä»¶å¤„ç†ä¸­å¤±è´¥ (${file.fileName}):`, e); });
+    }).catch((e) => { console.warn(`[Review] ±ê¼ÇÎÄ¼ş´¦ÀíÖĞÊ§°Ü (${file.fileName}):`, e); });
 
-    // é¢„æå–æ–‡æœ¬ï¼ˆç”¨äºè¿›åº¦åˆ†æ¯è®¡ç®—ï¼‰
-    // â˜… å¦‚æœ ctx.extractedText å·²æœ‰å‰ç«¯ WASM æ•°æ®ï¼Œè·³è¿‡ Python è§£æ
+    // Ô¤ÌáÈ¡ÎÄ±¾£¨ÓÃÓÚ½ø¶È·ÖÄ¸¼ÆËã£©
+    // ¡ï Èç¹û ctx.extractedText ÒÑÓĞÇ°¶Ë WASM Êı¾İ£¬Ìø¹ı Python ½âÎö
     let parseResultFromPreExtract: import('./python-parser.service').ParseResult | null = null;
     if (!ctx.extractedText || ctx.extractedText.trim().length === 0) {
       try {
@@ -876,21 +876,21 @@ export class ReviewService {
         if (parsed.text && parsed.text.trim().length > 0) {
           ctx.extractedText = parsed.text;
           parseResultFromPreExtract = parsed.result;
-          console.log(`[Review] é¢„æå–æˆåŠŸ: ${file.fileName}, ${parsed.text.length} å­—ç¬¦`);
+          console.log(`[Review] Ô¤ÌáÈ¡³É¹¦: ${file.fileName}, ${parsed.text.length} ×Ö·û`);
         } else {
-          console.warn(`[Review] é¢„æå–è¿”å›ç©ºæ–‡æœ¬: ${file.fileName}, fileType=${file.fileType}`);
+          console.warn(`[Review] Ô¤ÌáÈ¡·µ»Ø¿ÕÎÄ±¾: ${file.fileName}, fileType=${file.fileType}`);
         }
       } catch (e) {
-        console.warn(`[Review] é¢„æå–å¼‚å¸¸: ${file.fileName}, fileType=${file.fileType}, error=${(e as Error).message || e}`);
+        console.warn(`[Review] Ô¤ÌáÈ¡Òì³£: ${file.fileName}, fileType=${file.fileType}, error=${(e as Error).message || e}`);
       }
     }
 
     const textLength = ctx.extractedText?.length || 0;
-    // WASM è·¯å¾„ä¸‹ extractedMarkdown ä½¿ç”¨ ctx.extractedTextï¼›å…¶ä»–è·¯å¾„ä½¿ç”¨é¢„æå–çš„ markdown
+    // WASM Â·¾¶ÏÂ extractedMarkdown Ê¹ÓÃ ctx.extractedText£»ÆäËûÂ·¾¶Ê¹ÓÃÔ¤ÌáÈ¡µÄ markdown
     const extractedMarkdown = (ctx.fileType.toLowerCase() === 'dwg' && ctx.extractedText)
       ? ctx.extractedText
       : (parseResultFromPreExtract?.markdown || parseResultFromPreExtract?.text || null);
-    // DWG å…ƒæ•°æ®ï¼šä¿å­˜å›¾å±‚ã€å›¾å…ƒç»Ÿè®¡ç­‰
+    // DWG ÔªÊı¾İ£º±£´æÍ¼²ã¡¢Í¼ÔªÍ³¼ÆµÈ
     const dwgMetadata = (ctx.parseResult?.metadata && ctx.fileType.toLowerCase() === 'dwg')
       ? {
           dwg_layers: ctx.parseResult.metadata.dwg_layers,
@@ -910,22 +910,22 @@ export class ReviewService {
         extractedMarkdown,
         ...(dwgMetadata ? { dwgMetadata } : {}),
       },
-    }).catch((e) => { console.warn(`[Review] ä¿å­˜æå–æ–‡æœ¬å¤±è´¥ (${file.fileName}):`, e); });
+    }).catch((e) => { console.warn(`[Review] ±£´æÌáÈ¡ÎÄ±¾Ê§°Ü (${file.fileName}):`, e); });
 
-    // ===== é˜¶æ®µ1ï¼šæ–‡æœ¬æå– + è§„åˆ™å¼•æ“ + æ ‡å‡†å¼•ç”¨æ£€æŸ¥ï¼ˆç›´æ¥è°ƒç”¨å­æœåŠ¡ï¼‰ =====
+    // ===== ½×¶Î1£ºÎÄ±¾ÌáÈ¡ + ¹æÔòÒıÇæ + ±ê×¼ÒıÓÃ¼ì²é£¨Ö±½Óµ÷ÓÃ×Ó·şÎñ£© =====
 
-    // æ–‡æœ¬æå–ï¼ˆDWG WASM å·²é¢„å¡«å……æ—¶è·³è¿‡ï¼‰
+    // ÎÄ±¾ÌáÈ¡£¨DWG WASM ÒÑÔ¤Ìî³äÊ±Ìø¹ı£©
     if (!ctx.extractedText || ctx.extractedText.trim().length === 0) {
       ctx.extractedText = await TextExtractionService.ensureText(ctx);
     }
 
-    // PDF é€é¡µè§£æ + Word/DWG ç»“æ„åŒ–
+    // PDF ÖğÒ³½âÎö + Word/DWG ½á¹¹»¯
     const pdfPages = await TextExtractionService.extractPdfPages(ctx);
     ctx.pdfPages = pdfPages;
     await TextExtractionService.ensureWordStructure(ctx);
     TextExtractionService.ensureDwgStructure(ctx);
 
-    // å¤šæ¨¡æ€æ¨¡å¼ï¼šè¡¨æ ¼æå– + å…¬å¼æ£€æµ‹
+    // ¶àÄ£Ì¬Ä£Ê½£º±í¸ñÌáÈ¡ + ¹«Ê½¼ì²â
     let extraRuleIssues: any[] = [];
     if (ctx.reviewMode === 'MULTIMODAL') {
       const tables = TableExtractionService.extractTablesFromText(ctx.extractedText);
@@ -941,13 +941,13 @@ export class ReviewService {
       const formulaRegions = FormulaOcrService.detectFormulaRegions(ctx.extractedText);
       for (const region of formulaRegions) {
         extraRuleIssues.push({
-          issueType: 'FORMAT', ruleCode: 'FORMULA_001', severity: 'info',
+          issueType: 'VIOLATION', ruleCode: 'FORMULA_001', severity: 'info',
           originalText: region.text,
-          description: 'æ£€æµ‹åˆ°å¯èƒ½çš„å…¬å¼å†…å®¹ï¼Œå»ºè®®äººå·¥ç¡®è®¤å…¬å¼æ­£ç¡®æ€§ã€‚',
+          description: '¼ì²âµ½¿ÉÄÜµÄ¹«Ê½ÄÚÈİ£¬½¨ÒéÈË¹¤È·ÈÏ¹«Ê½ÕıÈ·ĞÔ¡£',
         });
       }
     }
-    // â˜… MULTIMODAL æ¨¡å¼ï¼šç«‹å³ä¿å­˜è¡¨æ ¼/å…¬å¼æ£€æµ‹ç»“æœï¼ˆä¸ä¾èµ– behavior.rules é—¨æ§ï¼‰
+    // ¡ï MULTIMODAL Ä£Ê½£ºÁ¢¼´±£´æ±í¸ñ/¹«Ê½¼ì²â½á¹û£¨²»ÒÀÀµ behavior.rules ÃÅ¿Ø£©
     if (extraRuleIssues.length > 0 && ctx.reviewMode === 'MULTIMODAL') {
       const extraData = extraRuleIssues.map((issue) => {
         const meta = this.buildLocateMeta(ctx.extractedText, issue, { fileId: file.id });
@@ -973,18 +973,18 @@ export class ReviewService {
       const strippedExtra = extraData.map((item) => this.stripDbUnsupportedFields(item));
       try {
         await prisma.taskDetail.createMany({ data: strippedExtra, skipDuplicates: true });
-        console.log(`[Review] âœ… MULTIMODAL å‰ç½®æ£€æµ‹å†™å…¥æˆåŠŸ: ${extraData.length}æ¡ (${file.fileName})`);
+        console.log(`[Review] ? MULTIMODAL Ç°ÖÃ¼ì²âĞ´Èë³É¹¦: ${extraData.length}Ìõ (${file.fileName})`);
       } catch (e) {
-        console.error(`[Review] âŒ MULTIMODAL å‰ç½®æ£€æµ‹å†™å…¥å¤±è´¥: ${file.fileName}`, e);
+        console.error(`[Review] ? MULTIMODAL Ç°ÖÃ¼ì²âĞ´ÈëÊ§°Ü: ${file.fileName}`, e);
       }
     }
 
-    // è§„åˆ™å¼•æ“
+    // ¹æÔòÒıÇæ
     let ruleIssues: any[] = [];
     if (ctx.reviewMode === 'RULE_ONLY') {
       const rulesEnabled = ctx.executionOverrides?.stages?.rules !== false;
       if (rulesEnabled) {
-        // ä¼˜å…ˆä½¿ç”¨ rulePlan ä¸­çš„å‰ç¼€è¿‡æ»¤ï¼ˆRULE_ONLY æ¨¡å¼ç”¨æˆ·é€‰å®šçš„è§„åˆ™å‰ç¼€ï¼‰
+        // ÓÅÏÈÊ¹ÓÃ rulePlan ÖĞµÄÇ°×º¹ıÂË£¨RULE_ONLY Ä£Ê½ÓÃ»§Ñ¡¶¨µÄ¹æÔòÇ°×º£©
         const prefixes = ctx.rulePlan?.enabledPrefixes?.length
           ? ctx.rulePlan.enabledPrefixes
           : [];
@@ -1000,7 +1000,7 @@ export class ReviewService {
       }
     }
 
-    // æ ‡å‡†å¼•ç”¨æ£€æŸ¥ï¼šä»…å½“æ¨¡å¼é…ç½®ä¸­ standardRef=true æ‰è¿è¡Œ
+    // ±ê×¼ÒıÓÃ¼ì²é£º½öµ±Ä£Ê½ÅäÖÃÖĞ standardRef=true ²ÅÔËĞĞ
     let stdRefIssues: any[] = [];
     if (ctx.extractedText?.trim() && ctx.reviewMode) {
       try {
@@ -1010,13 +1010,13 @@ export class ReviewService {
           stdRefIssues = await StandardRefCheckService.runStandardRefCheck(ctx, ctx.extractedText);
         }
       } catch (e) {
-        console.warn(`[Review] æ ‡å‡†å¼•ç”¨æ£€æŸ¥å¤±è´¥: ${ctx.fileName}`, e);
+        console.warn(`[Review] ±ê×¼ÒıÓÃ¼ì²éÊ§°Ü: ${ctx.fileName}`, e);
       }
     }
 
     const fastResult = { ruleIssues, stdRefIssues, textLength: ctx.extractedText?.length || 0 };
 
-    // æ‰¹é‡å†™å…¥è§„åˆ™ç»“æœ
+    // ÅúÁ¿Ğ´Èë¹æÔò½á¹û
     const allFastIssues: any[] = [];
 
     if (fastResult.ruleIssues.length > 0) {
@@ -1042,7 +1042,7 @@ export class ReviewService {
         };
       });
 
-      // å¢å¼ºç‰ˆï¼šäº‹åŠ¡ä¿æŠ¤ + é‡è¯•æœºåˆ¶
+      // ÔöÇ¿°æ£ºÊÂÎñ±£»¤ + ÖØÊÔ»úÖÆ
       const strippedRuleData = ruleData.map((item) => this.stripDbUnsupportedFields(item));
       try {
         await prisma.$transaction(async (tx) => {
@@ -1050,23 +1050,23 @@ export class ReviewService {
             data: strippedRuleData,
             skipDuplicates: true,
           });
-          console.log(`[Review] âœ… è§„åˆ™ç»“æœäº‹åŠ¡å†™å…¥æˆåŠŸ: ${ruleData.length}æ¡ (${file.fileName})`);
+          console.log(`[Review] ? ¹æÔò½á¹ûÊÂÎñĞ´Èë³É¹¦: ${ruleData.length}Ìõ (${file.fileName})`);
         });
       } catch (txError) {
-        console.error(`[Review] âŒ è§„åˆ™ç»“æœäº‹åŠ¡å†™å…¥å¤±è´¥: ${file.fileName}`, txError);
+        console.error(`[Review] ? ¹æÔò½á¹ûÊÂÎñĞ´ÈëÊ§°Ü: ${file.fileName}`, txError);
 
-        // é‡è¯•ä¸€æ¬¡ï¼ˆç½‘ç»œç¬æ—¶æ•…éšœæˆ–é”å†²çªå¸¸è§ï¼‰
+        // ÖØÊÔÒ»´Î£¨ÍøÂçË²Ê±¹ÊÕÏ»òËø³åÍ»³£¼û£©
         try {
           await prisma.taskDetail.createMany({
             data: strippedRuleData,
             skipDuplicates: true,
           });
-          console.log(`[Review] âœ… è§„åˆ™ç»“æœé‡è¯•å†™å…¥æˆåŠŸ: ${ruleData.length}æ¡ (${file.fileName})`);
+          console.log(`[Review] ? ¹æÔò½á¹ûÖØÊÔĞ´Èë³É¹¦: ${ruleData.length}Ìõ (${file.fileName})`);
         } catch (retryError) {
-          console.error(`[Review] âŒ è§„åˆ™ç»“æœé‡è¯•ä¹Ÿå¤±è´¥ï¼Œæ•°æ®å°†ä¸¢å¤±: ${file.fileName}`, retryError);
+          console.error(`[Review] ? ¹æÔò½á¹ûÖØÊÔÒ²Ê§°Ü£¬Êı¾İ½«¶ªÊ§: ${file.fileName}`, retryError);
 
-          // åˆ›å»ºé”™è¯¯è®°å½•ä»¥ä¾¿è¿½è¸ª
-          await this.createErrorDetail(taskId, file.id, file.fileName, `è§„åˆ™ç»“æœä¿å­˜å¤±è´¥(é‡è¯•å): ${retryError instanceof Error ? retryError.message : String(retryError)}`);
+          // ´´½¨´íÎó¼ÇÂ¼ÒÔ±ã×·×Ù
+          await this.createErrorDetail(taskId, file.id, file.fileName, `¹æÔò½á¹û±£´æÊ§°Ü(ÖØÊÔºó): ${retryError instanceof Error ? retryError.message : String(retryError)}`);
         }
       }
 
@@ -1099,7 +1099,7 @@ export class ReviewService {
         };
       });
 
-      // å¢å¼ºç‰ˆï¼šäº‹åŠ¡ä¿æŠ¤ + é‡è¯•æœºåˆ¶
+      // ÔöÇ¿°æ£ºÊÂÎñ±£»¤ + ÖØÊÔ»úÖÆ
       const strippedStdRefData = stdRefData.map((item) => this.stripDbUnsupportedFields(item));
       try {
         await prisma.$transaction(async (tx) => {
@@ -1107,28 +1107,28 @@ export class ReviewService {
             data: strippedStdRefData,
             skipDuplicates: true,
           });
-          console.log(`[Review] âœ… æ ‡å‡†å¼•ç”¨ç»“æœäº‹åŠ¡å†™å…¥æˆåŠŸ: ${stdRefData.length}æ¡ (${file.fileName})`);
+          console.log(`[Review] ? ±ê×¼ÒıÓÃ½á¹ûÊÂÎñĞ´Èë³É¹¦: ${stdRefData.length}Ìõ (${file.fileName})`);
         });
       } catch (txError) {
-        console.error(`[Review] âŒ æ ‡å‡†å¼•ç”¨ç»“æœäº‹åŠ¡å†™å…¥å¤±è´¥: ${file.fileName}`, txError);
+        console.error(`[Review] ? ±ê×¼ÒıÓÃ½á¹ûÊÂÎñĞ´ÈëÊ§°Ü: ${file.fileName}`, txError);
 
-        // é‡è¯•ä¸€æ¬¡
+        // ÖØÊÔÒ»´Î
         try {
           await prisma.taskDetail.createMany({
             data: strippedStdRefData,
             skipDuplicates: true,
           });
-          console.log(`[Review] âœ… æ ‡å‡†å¼•ç”¨ç»“æœé‡è¯•å†™å…¥æˆåŠŸ: ${stdRefData.length}æ¡ (${file.fileName})`);
+          console.log(`[Review] ? ±ê×¼ÒıÓÃ½á¹ûÖØÊÔĞ´Èë³É¹¦: ${stdRefData.length}Ìõ (${file.fileName})`);
         } catch (retryError) {
-          console.error(`[Review] âŒ æ ‡å‡†å¼•ç”¨ç»“æœé‡è¯•ä¹Ÿå¤±è´¥ï¼Œæ•°æ®å°†ä¸¢å¤±: ${file.fileName}`, retryError);
-          await this.createErrorDetail(taskId, file.id, file.fileName, `æ ‡å‡†å¼•ç”¨ä¿å­˜å¤±è´¥(é‡è¯•å): ${retryError instanceof Error ? retryError.message : String(retryError)}`);
+          console.error(`[Review] ? ±ê×¼ÒıÓÃ½á¹ûÖØÊÔÒ²Ê§°Ü£¬Êı¾İ½«¶ªÊ§: ${file.fileName}`, retryError);
+          await this.createErrorDetail(taskId, file.id, file.fileName, `±ê×¼ÒıÓÃ±£´æÊ§°Ü(ÖØÊÔºó): ${retryError instanceof Error ? retryError.message : String(retryError)}`);
         }
       }
 
       allFastIssues.push(...stdRefData);
     }
 
-    // æ— æ–‡æœ¬æ—¶å†™å…¥è­¦å‘Š
+    // ÎŞÎÄ±¾Ê±Ğ´Èë¾¯¸æ
     if (!fastResult.textLength && allFastIssues.length === 0) {
       const isDwg = file.fileType.toLowerCase() === 'dwg';
       await prisma.taskDetail.create({
@@ -1138,27 +1138,27 @@ export class ReviewService {
           reviewSource: 'SYSTEM',
           originalText: file.fileName,
           description: isDwg
-            ? 'DWG æ–‡ä»¶æœªèƒ½æå–æ–‡æœ¬å†…å®¹ï¼ˆå‰ç«¯ WASM è§£æå¯èƒ½æœªæˆåŠŸï¼‰ã€‚å›¾çº¸å®¡æŸ¥å¯èƒ½ä¸å®Œæ•´ï¼Œå»ºè®®äººå·¥æ£€æŸ¥ã€‚'
-            : 'æ–‡ä»¶å†…å®¹æ— æ³•æå–ã€‚å¯èƒ½æ˜¯æ‰«æä»¶æˆ–å›¾ç‰‡å‹ PDFï¼Œä¸” OCR è¯†åˆ«æœªèƒ½æˆåŠŸè·å–æ–‡å­—ã€‚å»ºè®®äººå·¥å®¡æŸ¥ã€‚',
+            ? 'DWG ÎÄ¼şÎ´ÄÜÌáÈ¡ÎÄ±¾ÄÚÈİ£¨Ç°¶Ë WASM ½âÎö¿ÉÄÜÎ´³É¹¦£©¡£Í¼Ö½Éó²é¿ÉÄÜ²»ÍêÕû£¬½¨ÒéÈË¹¤¼ì²é¡£'
+            : 'ÎÄ¼şÄÚÈİÎŞ·¨ÌáÈ¡¡£¿ÉÄÜÊÇÉ¨Ãè¼ş»òÍ¼Æ¬ĞÍ PDF£¬ÇÒ OCR Ê¶±ğÎ´ÄÜ³É¹¦»ñÈ¡ÎÄ×Ö¡£½¨ÒéÈË¹¤Éó²é¡£',
         },
-      }).catch((e) => { console.warn(`[Review] æ— æ–‡æœ¬è­¦å‘Šå†™å…¥å¤±è´¥:`, e); });
+      }).catch((e) => { console.warn(`[Review] ÎŞÎÄ±¾¾¯¸æĞ´ÈëÊ§°Ü:`, e); });
     } else if (fastResult.textLength > 0 && allFastIssues.length === 0) {
       await this.createNoResultDetail(
         taskId,
         file.id,
         file.fileName,
-        'è§„åˆ™å®¡æŸ¥å’Œæ ‡å‡†å¼•ç”¨æ£€æŸ¥å‡æœªå‘½ä¸­é—®é¢˜ã€‚è¯¥ç»“æœä¸ä»£è¡¨å®Œå…¨åˆè§„ï¼Œä»…è¡¨ç¤ºå½“å‰è§„åˆ™åº“ä¸æ ‡å‡†åº“æœªå‘ç°æ˜ç¡®é—®é¢˜ã€‚',
+        '¹æÔòÉó²éºÍ±ê×¼ÒıÓÃ¼ì²é¾ùÎ´ÃüÖĞÎÊÌâ¡£¸Ã½á¹û²»´ú±íÍêÈ«ºÏ¹æ£¬½ö±íÊ¾µ±Ç°¹æÔò¿âÓë±ê×¼¿âÎ´·¢ÏÖÃ÷È·ÎÊÌâ¡£',
       );
     }
 
-    // DWG æ–‡ä»¶ç‰¹æ®Šå¤„ç†ï¼šä¿å­˜å°ºå¯¸æ ‡æ³¨å’Œæ ‡å‡†å¼•ç”¨ï¼ˆå« cadHandleIdï¼‰
+    // DWG ÎÄ¼şÌØÊâ´¦Àí£º±£´æ³ß´ç±ê×¢ºÍ±ê×¼ÒıÓÃ£¨º¬ cadHandleId£©
     if (file.fileType.toLowerCase() === 'dwg') {
-      // ä¼˜å…ˆä½¿ç”¨ ctx.parseResultï¼ˆWASM æˆ–é¢„æå–çš„ç»“æœï¼‰
+      // ÓÅÏÈÊ¹ÓÃ ctx.parseResult£¨WASM »òÔ¤ÌáÈ¡µÄ½á¹û£©
       const parseResult = ctx.parseResult;
       if (parseResult && ctx.extractedText && ctx.extractedText.trim().length > 0) {
         const dwgDetails: any[] = [];
 
-        // å°ºå¯¸æ ‡æ³¨
+        // ³ß´ç±ê×¢
         if (parseResult.structure.dimensions && parseResult.structure.dimensions.length > 0) {
           for (const dim of parseResult.structure.dimensions) {
             dwgDetails.push({
@@ -1167,13 +1167,13 @@ export class ReviewService {
               ruleCode: null, severity: 'info' as const,
               originalText: dim.text || dim.measurement || '',
               suggestedText: null,
-              description: `å›¾å±‚: ${dim.layer}, ç±»å‹: ${dim.entity_type}`,
+              description: `Í¼²ã: ${dim.layer}, ÀàĞÍ: ${dim.entity_type}`,
               cadHandleId: dim.handle || null,
             });
           }
         }
 
-        // æ ‡å‡†å¼•ç”¨ï¼ˆä» DWG è§£æå™¨æå–ï¼Œå« cadHandleIdï¼‰
+        // ±ê×¼ÒıÓÃ£¨´Ó DWG ½âÎöÆ÷ÌáÈ¡£¬º¬ cadHandleId£©
         if ((parseResult.structure as any).standardRefs && (parseResult.structure as any).standardRefs.length > 0) {
           for (const ref of (parseResult.structure as any).standardRefs) {
             dwgDetails.push({
@@ -1183,31 +1183,31 @@ export class ReviewService {
               severity: 'info' as const,
               originalText: ref.fullMatch || ref.standardNo,
               suggestedText: null,
-              description: `DWG æ ‡å‡†å¼•ç”¨: ${ref.standardNo}${ref.standardName ? ` (${ref.standardName})` : ''}`,
+              description: `DWG ±ê×¼ÒıÓÃ: ${ref.standardNo}${ref.standardName ? ` (${ref.standardName})` : ''}`,
               cadHandleId: ref.cadHandleId || null,
             });
           }
         }
 
         if (dwgDetails.length > 0) {
-          await prisma.taskDetail.createMany({ data: dwgDetails }).catch((e) => { console.warn(`[Review] DWGè¯¦æƒ…å†™å…¥å¤±è´¥ (${file.fileName}):`, e); });
+          await prisma.taskDetail.createMany({ data: dwgDetails }).catch((e) => { console.warn(`[Review] DWGÏêÇéĞ´ÈëÊ§°Ü (${file.fileName}):`, e); });
         }
       }
     }
 
-    // æ›´æ–°é”™è¯¯è®¡æ•°
-    await this.updateFileErrorCount(file.id).catch((e) => { console.warn(`[Review] æ›´æ–°é”™è¯¯è®¡æ•°å¤±è´¥ (${file.id}):`, e); });
+    // ¸üĞÂ´íÎó¼ÆÊı
+    await this.updateFileErrorCount(file.id).catch((e) => { console.warn(`[Review] ¸üĞÂ´íÎó¼ÆÊıÊ§°Ü (${file.id}):`, e); });
 
-    console.log(`[Review] æ–‡ä»¶ ${file.fileName} é˜¶æ®µ1å®Œæˆ: è§„åˆ™=${fastResult.ruleIssues.length}, æ ‡å‡†å¼•ç”¨=${fastResult.stdRefIssues.length}`);
+    console.log(`[Review] ÎÄ¼ş ${file.fileName} ½×¶Î1Íê³É: ¹æÔò=${fastResult.ruleIssues.length}, ±ê×¼ÒıÓÃ=${fastResult.stdRefIssues.length}`);
 
     return { ruleIssues: fastResult.ruleIssues, stdRefIssues: fastResult.stdRefIssues };
   }
 
   /**
-   * é˜¶æ®µ2: AI æ·±åº¦å®¡æŸ¥
-   * - ä½¿ç”¨é˜¶æ®µ1å·²æå–çš„ ctx.extractedText å’Œ ctx.pdfPages
-   * - æ‰§è¡Œ AI/LLM å®¡æŸ¥
-   * - å®Œæˆåå†™å…¥æ•°æ®åº“å¹¶è¿”å›ç»“æœ
+   * ½×¶Î2: AI Éî¶ÈÉó²é
+   * - Ê¹ÓÃ½×¶Î1ÒÑÌáÈ¡µÄ ctx.extractedText ºÍ ctx.pdfPages
+   * - Ö´ĞĞ AI/LLM Éó²é
+   * - Íê³ÉºóĞ´ÈëÊı¾İ¿â²¢·µ»Ø½á¹û
    */
   static async runFileSlowPhase(
     taskId: string,
@@ -1218,39 +1218,39 @@ export class ReviewService {
   ): Promise<{ aiIssues: any[]; usedEngine?: string; skippedNoText?: boolean }> {
     const fileProgress = Math.round((fileIndex / totalFiles) * 100);
 
-    // æ¨é€æ–‡ä»¶é˜¶æ®µ2å¼€å§‹
+    // ÍÆËÍÎÄ¼ş½×¶Î2¿ªÊ¼
     WebSocketService.emitTaskProgress(taskId, {
       type: 'file_slow_start',
-      step: `AI å®¡æŸ¥ ${fileIndex + 1}/${totalFiles}`,
+      step: `AI Éó²é ${fileIndex + 1}/${totalFiles}`,
       progress: fileProgress,
-      message: `å¼€å§‹ AI æ·±åº¦å®¡æŸ¥: ${file.fileName}`,
+      message: `¿ªÊ¼ AI Éî¶ÈÉó²é: ${file.fileName}`,
       fileName: file.fileName,
       phase: 'phase2',
       timestamp: Date.now(),
     });
 
-    // å†…å­˜æ ‡è®°ï¼šè¿½è¸ªæ˜¯å¦æœ‰åˆ†ç‰‡æˆåŠŸå†™å…¥ DBï¼ˆé¿å…å…œåº•å†™å…¥çš„ç«æ€æ¡ä»¶ï¼‰
+    // ÄÚ´æ±ê¼Ç£º×·×ÙÊÇ·ñÓĞ·ÖÆ¬³É¹¦Ğ´Èë DB£¨±ÜÃâ¶µµ×Ğ´ÈëµÄ¾ºÌ¬Ìõ¼ş£©
     let anyChunkWritten = false;
 
-    // è¿›åº¦å›è°ƒï¼ˆæ¯ä¸ª AI åˆ†ç‰‡å®¡æŸ¥å®Œæˆåç«‹å³å†™å…¥ DB å¹¶æ¨é€ WebSocketï¼‰
+    // ½ø¶È»Øµ÷£¨Ã¿¸ö AI ·ÖÆ¬Éó²éÍê³ÉºóÁ¢¼´Ğ´Èë DB ²¢ÍÆËÍ WebSocket£©
     ctx.onChunkProgress = async (chunkLength: number, issues: any[], chunkIndex: number, totalChunks: number, engine: string) => {
-      // 1. æ›´æ–°å·²å¤„ç†å­—ç¬¦æ•°
+      // 1. ¸üĞÂÒÑ´¦Àí×Ö·ûÊı
       try {
         await prisma.taskFile.update({
           where: { id: file.id },
           data: { processedLength: { increment: chunkLength } },
         });
-      } catch (e) { /* å¿½ç•¥è¿›åº¦æ›´æ–°å¤±è´¥ */ }
+      } catch (e) { /* ºöÂÔ½ø¶È¸üĞÂÊ§°Ü */ }
 
-      // 2. è¯¥åˆ†ç‰‡æœ‰é—®é¢˜æ—¶ç«‹å³å†™å…¥ DB
+      // 2. ¸Ã·ÖÆ¬ÓĞÎÊÌâÊ±Á¢¼´Ğ´Èë DB
       if (issues && issues.length > 0) {
         const aiData = issues.map((issue) => {
-          // ç»Ÿä¸€è®¡ç®— locateMetaï¼ˆåªç®—ä¸€æ¬¡ï¼Œé¿å… textPosition å’Œ locateMeta å­—æ®µå„ç®—ä¸€éï¼‰
+          // Í³Ò»¼ÆËã locateMeta£¨Ö»ËãÒ»´Î£¬±ÜÃâ textPosition ºÍ locateMeta ×Ö¶Î¸÷ËãÒ»±é£©
           const meta = issue.locateMeta
             || this.buildLocateMeta(ctx.extractedText, issue, { fileId: file.id });
-          // DWG æ–‡ä»¶è¡¥ cadHandleIdï¼ˆAI æ¨¡å¼ä¸‹ä¸¢å¤± Handleï¼Œä» dwgStructure åæŸ¥ï¼‰
+          // DWG ÎÄ¼ş²¹ cadHandleId£¨AI Ä£Ê½ÏÂ¶ªÊ§ Handle£¬´Ó dwgStructure ·´²é£©
           if (meta) this.enrichDwgHandle(issue, meta, ctx);
-          // ä»å­—ç¬¦ä½ç½®åæ¨é¡µç 
+          // ´Ó×Ö·ûÎ»ÖÃ·´ÍÆÒ³Âë
           if (meta && meta.absolute && !meta.hint?.pageHint) {
             const pageHint = this.resolvePageHint(meta, ctx.pdfPages, ctx.parseResult);
             if (pageHint != null) {
@@ -1263,7 +1263,7 @@ export class ReviewService {
             fileId: file.id,
             issueType: issue.issueType,
             ruleCode: issue.ruleCode || null,
-            severity: issue.severity || (['TYPO', 'FORMAT', 'NAMING', 'ENCODING', 'HEADER', 'PAGE'].includes(issue.issueType) ? 'warning' : 'error'),
+            severity: issue.severity || (['TYPO'].includes(issue.issueType) ? 'warning' : 'error'),
             reviewSource: 'AI',
             originalText: issue.originalText,
             suggestedText: issue.suggestedText || null,
@@ -1280,7 +1280,7 @@ export class ReviewService {
           };
         });
 
-        // å¢å¼ºç‰ˆï¼šäº‹åŠ¡ä¿æŠ¤ + é‡è¯•æœºåˆ¶ + å¤±è´¥æ—¶å»¶è¿Ÿæ¨é€
+        // ÔöÇ¿°æ£ºÊÂÎñ±£»¤ + ÖØÊÔ»úÖÆ + Ê§°ÜÊ±ÑÓ³ÙÍÆËÍ
         let dbWriteSuccess = false;
         const strippedData = aiData.map((item) => this.stripDbUnsupportedFields(item));
         try {
@@ -1292,11 +1292,11 @@ export class ReviewService {
           });
           dbWriteSuccess = true;
           anyChunkWritten = true;
-          console.log(`[Review] âœ… åˆ†ç‰‡ ${chunkIndex}/${totalChunks} äº‹åŠ¡å†™å…¥æˆåŠŸ: ${aiData.length}æ¡ (${file.fileName})`);
+          console.log(`[Review] ? ·ÖÆ¬ ${chunkIndex}/${totalChunks} ÊÂÎñĞ´Èë³É¹¦: ${aiData.length}Ìõ (${file.fileName})`);
         } catch (txError) {
-          console.error(`[Review] âŒ åˆ†ç‰‡ ${chunkIndex}/${totalChunks} äº‹åŠ¡å†™å…¥å¤±è´¥: ${file.fileName}`, txError);
+          console.error(`[Review] ? ·ÖÆ¬ ${chunkIndex}/${totalChunks} ÊÂÎñĞ´ÈëÊ§°Ü: ${file.fileName}`, txError);
 
-          // é‡è¯•ä¸€æ¬¡
+          // ÖØÊÔÒ»´Î
           try {
             await prisma.taskDetail.createMany({
               data: strippedData,
@@ -1304,16 +1304,16 @@ export class ReviewService {
             });
             dbWriteSuccess = true;
             anyChunkWritten = true;
-            console.log(`[Review] âœ… åˆ†ç‰‡ ${chunkIndex}/${totalChunks} é‡è¯•å†™å…¥æˆåŠŸ: ${aiData.length}æ¡ (${file.fileName})`);
+            console.log(`[Review] ? ·ÖÆ¬ ${chunkIndex}/${totalChunks} ÖØÊÔĞ´Èë³É¹¦: ${aiData.length}Ìõ (${file.fileName})`);
           } catch (retryError) {
-            console.error(`[Review] âŒ åˆ†ç‰‡ ${chunkIndex}/${totalChunks} é‡è¯•ä¹Ÿå¤±è´¥: ${file.fileName}`, retryError);
+            console.error(`[Review] ? ·ÖÆ¬ ${chunkIndex}/${totalChunks} ÖØÊÔÒ²Ê§°Ü: ${file.fileName}`, retryError);
 
-            // åˆ›å»ºé”™è¯¯è®°å½•ï¼ˆä¸é˜»å¡ä¸»æµç¨‹ï¼‰
-            this.createErrorDetail(taskId, file.id, file.fileName, `AIåˆ†ç‰‡${chunkIndex}ä¿å­˜å¤±è´¥(é‡è¯•å): ${retryError instanceof Error ? retryError.message : String(retryError)}`).catch(() => {});
+            // ´´½¨´íÎó¼ÇÂ¼£¨²»×èÈûÖ÷Á÷³Ì£©
+            this.createErrorDetail(taskId, file.id, file.fileName, `AI·ÖÆ¬${chunkIndex}±£´æÊ§°Ü(ÖØÊÔºó): ${retryError instanceof Error ? retryError.message : String(retryError)}`).catch(() => {});
           }
         }
 
-        // 3. ä»…åœ¨æ•°æ®åº“å†™å…¥æˆåŠŸåæ‰æ¨é€WebSocketï¼ˆé¿å…å‰ç«¯æ˜¾ç¤ºä½†DBæ²¡æœ‰ï¼‰
+        // 3. ½öÔÚÊı¾İ¿âĞ´Èë³É¹¦ºó²ÅÍÆËÍWebSocket£¨±ÜÃâÇ°¶ËÏÔÊ¾µ«DBÃ»ÓĞ£©
         if (dbWriteSuccess) {
           WebSocketService.emitChunkResult(taskId, {
           fileId: file.id,
@@ -1326,20 +1326,20 @@ export class ReviewService {
         });
         } // end if (dbWriteSuccess)
 
-        // 4. æ›´æ–°æ–‡ä»¶é”™è¯¯è®¡æ•°ï¼ˆä»…åœ¨å†™å…¥æˆåŠŸæ—¶ï¼‰
-        this.updateFileErrorCount(file.id).catch((e) => { console.warn(`[Review] æ›´æ–°é”™è¯¯è®¡æ•°å¤±è´¥:`, e); });
+        // 4. ¸üĞÂÎÄ¼ş´íÎó¼ÆÊı£¨½öÔÚĞ´Èë³É¹¦Ê±£©
+        this.updateFileErrorCount(file.id).catch((e) => { console.warn(`[Review] ¸üĞÂ´íÎó¼ÆÊıÊ§°Ü:`, e); });
       }
 
-      // 5. æ‰€æœ‰åˆ†ç‰‡å®Œæˆåæ›´æ–°é”™è¯¯è®¡æ•°ï¼ˆåŒ…å«0é—®é¢˜çš„æƒ…å†µï¼‰
+      // 5. ËùÓĞ·ÖÆ¬Íê³Éºó¸üĞÂ´íÎó¼ÆÊı£¨°üº¬0ÎÊÌâµÄÇé¿ö£©
       if (chunkIndex === totalChunks - 1) {
-        this.updateFileErrorCount(file.id).catch((e) => { console.warn(`[Review] æœ€ç»ˆé”™è¯¯è®¡æ•°æ›´æ–°å¤±è´¥:`, e); });
+        this.updateFileErrorCount(file.id).catch((e) => { console.warn(`[Review] ×îÖÕ´íÎó¼ÆÊı¸üĞÂÊ§°Ü:`, e); });
       }
     };
 
-    // ===== é˜¶æ®µ2ï¼šAI æ·±åº¦å®¡æŸ¥ â€” é€šè¿‡ handler åˆ†å‘ =====
+    // ===== ½×¶Î2£ºAI Éî¶ÈÉó²é ¡ª Í¨¹ı handler ·Ö·¢ =====
     const handler = REVIEW_HANDLERS[ctx.reviewMode];
     if (!handler) {
-      console.error(`[Review] æœªçŸ¥å®¡æŸ¥æ¨¡å¼: ${ctx.reviewMode}`);
+      console.error(`[Review] Î´ÖªÉó²éÄ£Ê½: ${ctx.reviewMode}`);
       return { aiIssues: [], usedEngine: 'none' };
     }
 
@@ -1349,21 +1349,21 @@ export class ReviewService {
     try {
       aiResult = await handler(ctx);
     } catch (e) {
-      console.error(`[Review] handler æ‰§è¡Œå¤±è´¥: ${ctx.fileName}`, e);
+      console.error(`[Review] handler Ö´ĞĞÊ§°Ü: ${ctx.fileName}`, e);
       throw e;
     }
 
     if (aiResult.usedEngine === 'none' && aiResult.aiIssues.length === 0) {
-      console.log(`[Review] ${ctx.fileName}: handler è¿”å›ç©ºç»“æœï¼ˆå¯èƒ½ä¸º RULE_ONLY æˆ–æ— æ–‡æœ¬æ¨¡å¼ï¼‰`);
+      console.log(`[Review] ${ctx.fileName}: handler ·µ»Ø¿Õ½á¹û£¨¿ÉÄÜÎª RULE_ONLY »òÎŞÎÄ±¾Ä£Ê½£©`);
     }
     const slowResult = { aiIssues: aiResult.aiIssues || [], usedEngine: aiResult.usedEngine || 'unknown' };
 
-    // AI ç»“æœå·²é€šè¿‡ ctx.onChunkProgress å¢é‡å†™å…¥ï¼ˆæ¯ä¸ªåˆ†ç‰‡å®¡æŸ¥å®Œæˆåç«‹å³å…¥åº“ + æ¨é€ WebSocketï¼‰
-    // æ­¤å¤„ä»…åšå…œåº•ï¼šä½¿ç”¨å†…å­˜æ ‡è®°æ£€æŸ¥ï¼Œè‹¥æ— åˆ†ç‰‡æˆåŠŸå†™å…¥åˆ™ä¸€æ¬¡æ€§å†™å…¥ï¼ˆæç«¯æƒ…å†µä¸‹ onChunkProgress å…¨éƒ¨å¤±è´¥æ—¶çš„ä¿åº•ï¼‰
-    console.log(`[Review] AI å®¡æŸ¥å®Œæˆï¼ŒslowResult.aiIssues.length=${slowResult.aiIssues.length}, anyChunkWritten=${anyChunkWritten}`);
+    // AI ½á¹ûÒÑÍ¨¹ı ctx.onChunkProgress ÔöÁ¿Ğ´Èë£¨Ã¿¸ö·ÖÆ¬Éó²éÍê³ÉºóÁ¢¼´Èë¿â + ÍÆËÍ WebSocket£©
+    // ´Ë´¦½ö×ö¶µµ×£ºÊ¹ÓÃÄÚ´æ±ê¼Ç¼ì²é£¬ÈôÎŞ·ÖÆ¬³É¹¦Ğ´ÈëÔòÒ»´ÎĞÔĞ´Èë£¨¼«¶ËÇé¿öÏÂ onChunkProgress È«²¿Ê§°ÜÊ±µÄ±£µ×£©
+    console.log(`[Review] AI Éó²éÍê³É£¬slowResult.aiIssues.length=${slowResult.aiIssues.length}, anyChunkWritten=${anyChunkWritten}`);
     if (slowResult.aiIssues.length > 0 && !anyChunkWritten) {
       try {
-        console.warn(`[Review] å…œåº•å†™å…¥: ${slowResult.aiIssues.length} æ¡ (${file.fileName})`);
+        console.warn(`[Review] ¶µµ×Ğ´Èë: ${slowResult.aiIssues.length} Ìõ (${file.fileName})`);
         const aiData = slowResult.aiIssues.map((issue) => {
           const meta = issue.locateMeta
             || this.buildLocateMeta(ctx.extractedText, issue, { fileId: file.id });
@@ -1378,7 +1378,7 @@ export class ReviewService {
             fileId: file.id,
             issueType: issue.issueType,
             ruleCode: issue.ruleCode || null,
-            severity: issue.severity || (['TYPO', 'FORMAT', 'NAMING', 'ENCODING', 'HEADER', 'PAGE'].includes(issue.issueType) ? 'warning' : 'error'),
+            severity: issue.severity || (['TYPO'].includes(issue.issueType) ? 'warning' : 'error'),
             reviewSource: 'AI',
             originalText: issue.originalText,
             suggestedText: issue.suggestedText || null,
@@ -1397,9 +1397,9 @@ export class ReviewService {
         await prisma.taskDetail.createMany({
           data: aiData.map((item) => this.stripDbUnsupportedFields(item)) as any,
         });
-        console.log(`[Review] å…œåº•å†™å…¥ ${aiData.length} æ¡`);
+        console.log(`[Review] ¶µµ×Ğ´Èë ${aiData.length} Ìõ`);
       } catch (e) {
-        console.error(`[Review] å…œåº•å†™å…¥å¤±è´¥:`, e);
+        console.error(`[Review] ¶µµ×Ğ´ÈëÊ§°Ü:`, e);
       }
     }
 
@@ -1418,28 +1418,28 @@ export class ReviewService {
           taskId,
           file.id,
           file.fileName,
-          'AI å®¡æŸ¥æœªå‘ç°æ˜ç¡®é—®é¢˜ï¼›å½“å‰æ–‡ä»¶æœªå‘½ä¸­è§„åˆ™ã€æ ‡å‡†å¼•ç”¨æˆ– AI é£é™©é¡¹ã€‚è¯·ç»“åˆè§„åˆ™è¦†ç›–èŒƒå›´å’Œæ ‡å‡†åº“è¦†ç›–æƒ…å†µäººå·¥å¤æ ¸ã€‚',
+          'AI Éó²éÎ´·¢ÏÖÃ÷È·ÎÊÌâ£»µ±Ç°ÎÄ¼şÎ´ÃüÖĞ¹æÔò¡¢±ê×¼ÒıÓÃ»ò AI ·çÏÕÏî¡£Çë½áºÏ¹æÔò¸²¸Ç·¶Î§ºÍ±ê×¼¿â¸²¸ÇÇé¿öÈË¹¤¸´ºË¡£',
         );
       }
     }
     if (skippedNoText) {
       WebSocketService.emitTaskProgress(taskId, {
         type: 'file_skipped_no_text',
-        step: 'AI å®¡æŸ¥è·³è¿‡',
+        step: 'AI Éó²éÌø¹ı',
         progress: fileProgress + Math.round(50 / totalFiles),
-        message: `æ–‡ä»¶æ— å¯ç”¨æ–‡æœ¬ï¼Œå·²è·³è¿‡ AI å®¡æŸ¥: ${file.fileName}`,
+        message: `ÎÄ¼şÎŞ¿ÉÓÃÎÄ±¾£¬ÒÑÌø¹ı AI Éó²é: ${file.fileName}`,
         fileName: file.fileName,
         phase: 'phase2',
         timestamp: Date.now(),
       });
     }
 
-    // æ¨é€æ–‡ä»¶é˜¶æ®µ2å®Œæˆ
+    // ÍÆËÍÎÄ¼ş½×¶Î2Íê³É
     WebSocketService.emitTaskProgress(taskId, {
       type: 'slow_phase_complete',
-      step: 'AI å®¡æŸ¥å®Œæˆ',
+      step: 'AI Éó²éÍê³É',
       progress: fileProgress + Math.round(50 / totalFiles),
-      message: `AI å®¡æŸ¥å®Œæˆ: ${slowResult.aiIssues.length} ä¸ªé—®é¢˜ (engine: ${slowResult.usedEngine || 'none'})`,
+      message: `AI Éó²éÍê³É: ${slowResult.aiIssues.length} ¸öÎÊÌâ (engine: ${slowResult.usedEngine || 'none'})`,
       fileName: file.fileName,
       phase: 'phase2',
       aiCount: slowResult.aiIssues.length,
@@ -1447,13 +1447,13 @@ export class ReviewService {
       timestamp: Date.now(),
     });
 
-    console.log(`[Review] æ–‡ä»¶ ${file.fileName} é˜¶æ®µ2å®Œæˆ: AI=${slowResult.aiIssues.length}, engine=${slowResult.usedEngine}`);
+    console.log(`[Review] ÎÄ¼ş ${file.fileName} ½×¶Î2Íê³É: AI=${slowResult.aiIssues.length}, engine=${slowResult.usedEngine}`);
 
     return { aiIssues: slowResult.aiIssues, usedEngine: slowResult.usedEngine, skippedNoText };
   }
 
   /**
-   * åˆ›å»ºé”™è¯¯è¯¦æƒ…è®°å½•
+   * ´´½¨´íÎóÏêÇé¼ÇÂ¼
    */
   private static async createErrorDetail(
     taskId: string,
@@ -1468,15 +1468,15 @@ export class ReviewService {
           taskId, fileId,
           issueType: 'VIOLATION', ruleCode: null, severity: 'error',
           originalText: fileName,
-          description: `å®¡æŸ¥è¿‡ç¨‹ä¸­å‘ç”Ÿé”™è¯¯: ${errorMessage}`,
+          description: `Éó²é¹ı³ÌÖĞ·¢Éú´íÎó: ${errorMessage}`,
         },
       });
       await this.updateFileErrorCount(fileId);
-    } catch (e) { /* å¿½ç•¥ */ }
+    } catch (e) { /* ºöÂÔ */ }
   }
 
   /**
-   * æ›´æ–°æ–‡ä»¶çš„é”™è¯¯è®¡æ•°
+   * ¸üĞÂÎÄ¼şµÄ´íÎó¼ÆÊı
    */
   private static async updateFileErrorCount(fileId: string): Promise<void> {
     const count = await prisma.taskDetail.count({
@@ -1491,10 +1491,10 @@ export class ReviewService {
     });
   }
 
-  // ==================== ä»¥ä¸‹ä¸ºé—ç•™æ–¹æ³•ï¼ˆä¿ç•™å…¼å®¹æ€§ï¼‰ ====================
+  // ==================== ÒÔÏÂÎªÒÅÁô·½·¨£¨±£Áô¼æÈİĞÔ£© ====================
 
   /**
-   * @deprecated ä½¿ç”¨ runFileFastPhase + runFileSlowPhase æ›¿ä»£
+   * @deprecated Ê¹ÓÃ runFileFastPhase + runFileSlowPhase Ìæ´ú
    */
   static async processFile(
     taskId: string,
@@ -1519,7 +1519,7 @@ export class ReviewService {
       onChunkProgress: onProgress,
     };
 
-    // é¢„æå–æ–‡æœ¬ï¼ˆå¦‚æœå·²æœ‰ WASM æ•°æ®åˆ™è·³è¿‡ï¼‰
+    // Ô¤ÌáÈ¡ÎÄ±¾£¨Èç¹ûÒÑÓĞ WASM Êı¾İÔòÌø¹ı£©
     if (!ctx.extractedText || ctx.extractedText.trim().length === 0) {
       try {
         const parsed = await ParserService.parseFileWithResult(absolutePath, file.fileType);
@@ -1528,13 +1528,13 @@ export class ReviewService {
       } catch (e) { /* ignore */ }
     }
 
-    // åŠ è½½é…ç½®
+    // ¼ÓÔØÅäÖÃ
     try {
       const cfg = await prisma.systemConfig.findUnique({ where: { key: 'pipeline_review_config' } });
       if (cfg?.value) ctx.pipelineConfig = cfg.value as any;
     } catch (e) { /* ignore */ }
 
-    // åŠ è½½å‚ç…§æ–‡ä»¶
+    // ¼ÓÔØ²ÎÕÕÎÄ¼ş
     if (reviewMode === 'DOC_REVIEW') {
       const groups = await prisma.refFileGroup.findMany({ where: { taskId }, include: { refFiles: true } });
       if (groups.length > 0) {
@@ -1552,21 +1552,21 @@ export class ReviewService {
       }
     }
 
-    // å†™å…¥æ–‡æœ¬é•¿åº¦
+    // Ğ´ÈëÎÄ±¾³¤¶È
     await prisma.taskFile.update({
       where: { id: file.id },
       data: { textLength: ctx.extractedText?.length || 0, processedLength: 0 },
     }).catch(() => { /* ignore */ });
 
-    // ä½¿ç”¨ handler æ‰§è¡Œ AI å®¡æŸ¥
+    // Ê¹ÓÃ handler Ö´ĞĞ AI Éó²é
     try {
       const handler = REVIEW_HANDLERS[reviewMode as any];
-      if (!handler) throw new Error(`æœªçŸ¥å®¡æŸ¥æ¨¡å¼: ${reviewMode}`);
+      if (!handler) throw new Error(`Î´ÖªÉó²éÄ£Ê½: ${reviewMode}`);
       ctx.scene = ctx.scene || getModeScene(reviewMode as any);
       const aiResult = await handler(ctx);
       const result = { ruleIssues: [], aiIssues: aiResult.aiIssues || [], stdRefIssues: undefined };
 
-      // å†™ AI ç»“æœ
+      // Ğ´ AI ½á¹û
       if (result.aiIssues.length > 0) {
         await prisma.taskDetail.createMany({
           data: result.aiIssues.map((issue) => ({
@@ -1588,19 +1588,19 @@ export class ReviewService {
         });
       }
 
-      // æ— æ–‡æœ¬è­¦å‘Š
+      // ÎŞÎÄ±¾¾¯¸æ
       if (!ctx.extractedText && result.ruleIssues.length === 0 && result.aiIssues.length === 0) {
         await prisma.taskDetail.create({
           data: {
             taskId, fileId: file.id,
             issueType: 'VIOLATION', ruleCode: null, severity: 'warning',
             originalText: file.fileName,
-            description: 'æ–‡ä»¶å†…å®¹æ— æ³•æå–ã€‚å¯èƒ½æ˜¯æ‰«æä»¶æˆ–å›¾ç‰‡å‹ PDFï¼Œå»ºè®®äººå·¥å®¡æŸ¥ã€‚',
+            description: 'ÎÄ¼şÄÚÈİÎŞ·¨ÌáÈ¡¡£¿ÉÄÜÊÇÉ¨Ãè¼ş»òÍ¼Æ¬ĞÍ PDF£¬½¨ÒéÈË¹¤Éó²é¡£',
           },
         });
       }
 
-      // DWG å¤„ç†ï¼šä¿å­˜å°ºå¯¸æ ‡æ³¨å’Œæ ‡å‡†å¼•ç”¨ï¼ˆå« cadHandleIdï¼‰
+      // DWG ´¦Àí£º±£´æ³ß´ç±ê×¢ºÍ±ê×¼ÒıÓÃ£¨º¬ cadHandleId£©
       if (file.fileType.toLowerCase() === 'dwg') {
         const parseResult = ctx.parseResult;
         if (parseResult && ctx.extractedText?.trim()) {
@@ -1614,7 +1614,7 @@ export class ReviewService {
                 ruleCode: null, severity: 'info' as const,
                 originalText: dim.text || dim.measurement || '',
                 suggestedText: null,
-                description: `å›¾å±‚: ${dim.layer}, ç±»å‹: ${dim.entity_type}`,
+                description: `Í¼²ã: ${dim.layer}, ÀàĞÍ: ${dim.entity_type}`,
                 cadHandleId: dim.handle || null,
               });
             }
@@ -1629,7 +1629,7 @@ export class ReviewService {
                 severity: 'info' as const,
                 originalText: ref.fullMatch || ref.standardNo,
                 suggestedText: null,
-                description: `DWG æ ‡å‡†å¼•ç”¨: ${ref.standardNo}${ref.standardName ? ` (${ref.standardName})` : ''}`,
+                description: `DWG ±ê×¼ÒıÓÃ: ${ref.standardNo}${ref.standardName ? ` (${ref.standardName})` : ''}`,
                 cadHandleId: ref.cadHandleId || null,
               });
             }
@@ -1643,7 +1643,7 @@ export class ReviewService {
 
       await this.updateFileErrorCount(file.id);
     } catch (error) {
-      console.error(`[Review] Handler æ‰§è¡Œå¤±è´¥: ${file.fileName}`, error);
+      console.error(`[Review] Handler Ö´ĞĞÊ§°Ü: ${file.fileName}`, error);
       await this.createErrorDetail(taskId, file.id, file.fileName, error);
     }
   }

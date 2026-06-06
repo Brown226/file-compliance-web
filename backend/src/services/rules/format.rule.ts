@@ -90,7 +90,7 @@ function checkFormatCoverFields(text: string, config?: any): RuleIssue[] {
 
   if (missingFields.length > 0) {
     issues.push({
-      issueType: 'FORMAT', ruleCode: 'FORMAT_001',
+      issueType: 'VIOLATION', ruleCode: 'FORMAT_001',
       severity: missingFields.includes('专业') || missingFields.includes('版次') ? 'error' : 'warning',
       originalText: `(缺失: ${missingFields.join(', ')})`,
       description: `封面缺少必要字段: ${missingFields.join('、')}。核电工程图册封面应包含完整的属性信息，确保各审批环节可追溯。`,
@@ -145,7 +145,7 @@ function checkFormatTableOfContents(text: string): RuleIssue[] {
 
   if (missingColumns.length > 0) {
     issues.push({
-      issueType: 'FORMAT', ruleCode: 'FORMAT_002',
+      issueType: 'VIOLATION', ruleCode: 'FORMAT_002',
       severity: missingColumns.includes('序号') || missingColumns.includes('名称') ? 'error' : 'warning',
       originalText: `(目录表头缺少: ${missingColumns.join(', ')})`,
       description: `目录表头不规范，缺少必需列: ${missingColumns.join('、')}。标准目录表头应包含: [序号, 文件编号, 名称, 版本, 状态, 页数]。`,
@@ -202,7 +202,7 @@ function checkFormatCnEnSpacing(text: string, config?: any): RuleIssue[] {
     }
 
     issues.push({
-      issueType: 'FORMAT', ruleCode: 'FORMAT_003',
+      issueType: 'VIOLATION', ruleCode: 'FORMAT_003',
       severity: 'warning',
       originalText: segment,
       suggestedText: fixedText,
@@ -238,7 +238,7 @@ function checkFormatReferenceList(text: string): RuleIssue[] {
     if (np.pattern.test(refArea)) {
       const example = np.pattern.exec(refArea)?.[0]?.slice(0, 40);
       issues.push({
-        issueType: 'FORMAT', ruleCode: 'FORMAT_004',
+        issueType: 'VIOLATION', ruleCode: 'FORMAT_004',
         severity: 'warning',
         originalText: example || '(非标准引用编号)',
         description: `引用文件列表格式不规范: ${np.desc}。应使用标准项目符号(●/■/◆/-)统一格式编排。`,
@@ -282,7 +282,7 @@ function checkFormatTableHeaderStructure(ctx: FileContext): RuleIssue[] {
     const isCableOrEquipmentList = /电缆|设备|路径|敷设|清单/.test(text);
     if (isCableOrEquipmentList) {
       issues.push({
-        issueType: 'FORMAT', ruleCode: 'FORMAT_005',
+        issueType: 'VIOLATION', ruleCode: 'FORMAT_005',
         severity: 'warning',
         originalText: headerLines[0]?.slice(0, 50) || '(表头)',
         description: '数据表格可能未使用公司规定的标准多级表头模板。电缆/设备清单表格应采用多级复合表头（包含系列、色标、起终点等独立列）。',

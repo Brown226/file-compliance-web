@@ -284,20 +284,17 @@ export class LlmService {
   }
 
   /**
-   * 从文本推断问题类型
+   * 从文本推断问题类型（精简为 4 种核心类型）
    */
   private static inferIssueType(text: string): string {
     const t = text.toLowerCase();
-    if (/错别字|错字|拼写|typo|笔误/.test(t)) return 'TYPO';
-    if (/格式|排版|编号|编号格式|模板|表头/.test(t)) return 'FORMAT';
+    // 文本错误：错别字、拼写、语句不通顺
+    if (/错别字|错字|拼写|typo|笔误|语句不通|语病|fluency/.test(t)) return 'TYPO';
+    // 一致性：不一致、不匹配、命名编码问题、交叉引用
+    if (/一致|不匹配|不一致|不统一|命名|编码|名称|标识|交叉引用|cross.?reference/.test(t)) return 'CONSISTENCY';
+    // 完整性：缺少、缺失、遗漏
     if (/完整|缺少|缺失|遗漏|未包含|空白|留空/.test(t)) return 'COMPLETENESS';
-    if (/一致|不匹配|不一致|不统一/.test(t)) return 'CONSISTENCY';
-    if (/命名|编码|名称|标识/.test(t)) return 'NAMING';
-    if (/封面|页眉|页脚|标题|抬头/.test(t)) return 'HEADER';
-    if (/页码|分页|页数/.test(t)) return 'PAGE';
-    if (/属性|字段|参数|配置/.test(t)) return 'ATTRIBUTE';
-    if (/布局|版面|间距|缩进|对齐/.test(t)) return 'LAYOUT';
-    if (/编码|字符|乱码|编码方式/.test(t)) return 'ENCODING';
+    // 其他所有问题归为合规违规（格式、规范、标准引用等）
     return 'VIOLATION';
   }
 

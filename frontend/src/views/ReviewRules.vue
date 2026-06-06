@@ -325,16 +325,21 @@ const selectedRows = ref<ReviewRule[]>([])
 
 // 分类标签映射
 const categoryLabels: Record<string, string> = {
-  NAMING: '文件命名',
-  ENCODING: '编码一致性',
-  ATTRIBUTE: '封面属性',
-  HEADER: '页眉检查',
-  PAGE: '连续页码',
-  FORMAT: '格式规范',
-  COMPLETENESS: '数据完整性',
-  CONSISTENCY: '一致性检查',
-  LAYOUT: '排版布局',
-  TYPO: '正文编码校验',
+  VIOLATION: '合规违规',
+  CONSISTENCY: '一致性',
+  COMPLETENESS: '完整性',
+  TYPO: '文本错误',
+  // 兼容旧类型
+  NAMING: '一致性',
+  ENCODING: '合规违规',
+  ATTRIBUTE: '完整性',
+  HEADER: '合规违规',
+  PAGE: '合规违规',
+  FORMAT: '合规违规',
+  LAYOUT: '合规违规',
+  STD_REF: '合规违规',
+  DWG: '合规违规',
+  FLUENCY: '文本错误',
 }
 
 const categoryLabel = (cat: string) => categoryLabels[cat] || cat

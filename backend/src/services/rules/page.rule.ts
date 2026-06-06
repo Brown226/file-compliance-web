@@ -51,7 +51,7 @@ export function checkPageNumbers(ctx: FileContext, config?: any): RuleIssue[] {
           continue; // 允许跳页但要求递增
         }
         issues.push({
-          issueType: 'PAGE', ruleCode: 'PAGE_001', severity: 'error',
+          issueType: 'VIOLATION', ruleCode: 'PAGE_001', severity: 'error',
           originalText: `第${i}页=${pageNumbers[i - 1]}, 第${i + 1}页=${pageNumbers[i]}`,
           description: `页码不连续: 从${pageNumbers[i - 1]}跳到${pageNumbers[i]}，缺失${pageNumbers[i - 1] + 1}`,
         });
@@ -66,7 +66,7 @@ export function checkPageNumbers(ctx: FileContext, config?: any): RuleIssue[] {
     const tolerance: number = config?.totalPagesTolerance ?? 0;
     if (Math.abs(maxTotal - ctx.pdfPages.length) > tolerance) {
       issues.push({
-        issueType: 'PAGE', ruleCode: 'PAGE_003', severity: 'warning',
+        issueType: 'VIOLATION', ruleCode: 'PAGE_003', severity: 'warning',
         originalText: `页眉显示总页数=${maxTotal}, 实际页数=${ctx.pdfPages.length}`,
         description: `总页数与实际页数不一致。页眉中标记共${maxTotal}页，但文件实际有${ctx.pdfPages.length}页。`,
       });
