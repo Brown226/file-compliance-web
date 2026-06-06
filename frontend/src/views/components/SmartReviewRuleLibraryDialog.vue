@@ -102,9 +102,10 @@ watch(() => props.visible, (val) => {
 })
 
 const filteredList = computed(() => {
-  if (!searchQuery.value.trim()) return props.ruleLibraries
+  const list = props.ruleLibraries || []
+  if (!searchQuery.value.trim()) return list
   const query = searchQuery.value.toLowerCase()
-  return props.ruleLibraries.filter(lib =>
+  return list.filter(lib =>
     lib.name.toLowerCase().includes(query) || lib.id.toLowerCase().includes(query)
   )
 })

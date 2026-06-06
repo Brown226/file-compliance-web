@@ -121,7 +121,7 @@
     </template>
   </el-dialog>
   <!-- 语义规则库选择对话框 -->
-  <SmartReviewRuleLibraryDialog v-model:visible="ruleLibraryDialogVisible" :libraries="ruleLibraries" @confirm="handleRuleLibraryConfirm" />
+  <SmartReviewRuleLibraryDialog v-model:visible="ruleLibraryDialogVisible" :ruleLibraries="ruleLibraries" @confirm="handleRuleLibraryConfirm" />
 </template>
 
 <script setup lang="ts">
@@ -164,7 +164,7 @@ const maxkbKnowledgeIds = computed({
   set: (val) => { if (state.reviewPlanDraft?.evidence) state.reviewPlanDraft.evidence.maxkbKnowledgeIds = val }
 })
 const knowledgeNameMap = ref<Map<string, string>>(new Map())
-const ruleLibraries = ref<Array<{ id: string; name: string; status: string; itemCount: number; executableCount: number }>>([])
+const ruleLibraries = ref<Array<{ id: string; name: string; status: string; ruleCount: number; executableCount: number }>>([])
 
 const progressStepLabel = (step: string) => PROGRESS_STEP_LABELS[step] || step || '处理中'
 const progressStatusLabel = (status: string) => PROGRESS_STATUS_LABELS[status] || status || '处理中'
@@ -186,7 +186,7 @@ const startAnalysis = async () => {
 const openMaxKBDialog = () => { maxkbDialogVisible.value = true }
 const openRuleLibraryDialog = async () => {
   ruleLibraryDialogVisible.value = true
-  try { const libRes = await getRuleLibrariesApi(); ruleLibraries.value = (libRes.data||[]).map((l:any)=>({ id:l.id, name:l.name, status:l.status||'DRAFT', description:l.description||'', itemCount:l._count?.items||l.items?.length||0, executableCount:l.enabledExecutableItemCount||l.executableItemCount||0 })) } catch(e) { console.warn('[SmartReview] 刷新规则库列表失败:',e) }
+  try { const libRes = await getRuleLibrariesApi(); ruleLibraries.value = (libRes.data||[]).map((l:any)=>({ id:l.id, name:l.name, status:l.status||'DRAFT', description:l.description||'', ruleCount:l._count?.items||l.items?.length||0, executableCount:l.enabledExecutableItemCount||l.executableItemCount||0 })) } catch(e) { console.warn('[SmartReview] 刷新规则库列表失败:',e) }
 }
 const handleMaxKBConfirm = (selectedIds: string[]) => { if (state.reviewPlanDraft?.evidence) state.reviewPlanDraft.evidence.maxkbKnowledgeIds = selectedIds }
 const handleRuleLibraryConfirm = (libraryId: string|null) => { if (state.reviewPlanDraft?.evidence) state.reviewPlanDraft.evidence.ruleLibraryId = libraryId }
@@ -218,7 +218,7 @@ onMounted(async () => {
   try {
     await buildKnowledgeNameMap()
     const [libRes, ruleRegRes] = await Promise.all([getRuleLibrariesApi(), getRuleRegistryApi()])
-    ruleLibraries.value = (libRes.data||[]).map((l:any)=>({ id:l.id, name:l.name, status:l.status||'DRAFT', description:l.description||'', itemCount:l._count?.items||l.items?.length||0, executableCount:l.enabledExecutableItemCount||l.executableItemCount||0 }))
+    ruleLibraries.value = (libRes.data||[]).map((l:any)=>({ id:l.id, name:l.name, status:l.status||'DRAFT', description:l.description||'', ruleCount:l._count?.items||l.items?.length||0, executableCount:l.enabledExecutableItemCount||l.executableItemCount||0 }))
     if (ruleRegRes.data) { state.rulePrefixGroups.value=ruleRegRes.data.groups||[]; if(!state.enabledRulePrefixes.value.length&&ruleRegRes.data.allPrefixes?.length) state.enabledRulePrefixes.value=[...ruleRegRes.data.allPrefixes]; state.ruleRegistryLoaded.value=true }
   } catch(e) { console.warn('[SmartReview] 加载数据失败:',e) }
 })

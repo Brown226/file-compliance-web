@@ -62,10 +62,12 @@ const loadMaxKBIframe = async () => {
   maxkbIframeLoading.value = true
   try {
     const { data } = await getMaxKBKnowledgeUrlApi()
-    if (data.token) {
-      maxkbIframeUrl.value = data.knowledgePageUrl
-    } else {
-      maxkbIframeUrl.value = data.knowledgePageUrl
+    if (data.knowledgePageUrl) {
+      // 将 MaxKB 原始 URL 替换为 nginx 代理路径（同源）
+      let url = data.knowledgePageUrl
+      // http://localhost:8080/admin/knowledge?token=xxx → /admin/knowledge?token=xxx
+      url = url.replace(/^https?:\/\/[^\/]+/, '')
+      maxkbIframeUrl.value = url
     }
   } catch (e: any) {
     ElMessage.error(e?.response?.data?.error || '获取 MaxKB 知识库 URL 失败')
@@ -75,6 +77,38 @@ const loadMaxKBIframe = async () => {
 
 const onMaxKBIframeLoad = () => {
   maxkbIframeLoading.value = false
+  // 注入 CSS 隐藏不需要的按钮
+  try {
+    const iframe = maxkbIframeRef.value
+    if (iframe?.contentDocument) {
+      const hideButtons = () => {
+        try {
+          const doc = iframe.contentDocument
+          if (!doc) return
+          // 隐藏包含"添加分类"或"添加模型"的按钮
+          const buttons = doc.querySelectorAll('button, .el-button')
+          buttons.forEach((btn: Element) => {
+            const text = btn.textContent || ''
+            if (text.includes('添加分类') || text.includes('添加模型')) {
+              ;(btn as HTMLElement).style.display = 'none'
+            }
+          })
+          // 隐藏包含这些文字的 div/span 容器
+          const allElements = doc.querySelectorAll('div, span, a')
+          allElements.forEach((el: Element) => {
+            const text = el.textContent?.trim() || ''
+            if ((text === '添加分类' || text === '添加模型') && el.children.length === 0) {
+              ;(el as HTMLElement).closest('.el-button, button, [role="button"]')?.setAttribute('style', 'display: none')
+            }
+          })
+        } catch {}
+      }
+      // 延迟执行，确保 iframe 内容已渲染
+      setTimeout(hideButtons, 1500)
+      setTimeout(hideButtons, 3000)
+      setTimeout(hideButtons, 5000)
+    }
+  } catch {}
 }
 
 // 当 tab 变为可见时加载 iframe

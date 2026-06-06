@@ -67,9 +67,6 @@ opencode2api/
 
 # MaxKB runtime & offline installer
 maxkb-runtime/
-MaxKB-2.8.0/
-maxkb-v2.8.0-x86_64-offline-installer/
-maxkb-temp.tar
 
 # Uploads
 backend/uploads/
@@ -180,6 +177,24 @@ frontend/src/views/*SUMMARY*.md
 # AI Agent workspace
 .trae/
 .reasonix/
+.deepmicode/
+
+# MaxKB source code (reference only, not part of this project)
+MaxKB-*/
+maxkb-runtime/
+maxkb-v2.8.0-x86_64-offline-installer/
+maxkb-temp.tar
+
+# Root .env (backend/.env is already ignored)
+.env
+
+# Tool configs
+reasonix.toml
+
+# Temp files
+*.orig
+*.sql
+tmp_*
 
 # Backup/temp files
 *.copy
