@@ -243,6 +243,66 @@ export class MaxKBService {
     return [];
   }
 
+  // ==================== 智能体管理 ====================
+
+  /**
+   * 获取 MaxKB 应用（智能体）列表
+   */
+  static async listApplications(workspaceId: string): Promise<Array<{
+    id: string; name: string; desc: string; is_publish: boolean;
+    type: string; create_time: string; update_time: string;
+  }>> {
+    try {
+      // 默认只返回已发布的 application（MaxKB admin API: publish_status=published），
+      // 避免草稿/未发布版本污染下游"选择智能体"下拉。
+      const result = await this.adminRequest(
+        'GET', `/workspace/${workspaceId}/application?publish_status=published`
+      );
+      if (Array.isArray(result)) return result;
+      if (result?.data && Array.isArray(result.data)) return result.data;
+      return [];
+    } catch {
+      return [];
+    }
+  }
+
+  /**
+   * 获取智能体的聊天页面 URL（使用 access_token 公开访问）
+   * 通过 nginx 代理走同源，避免跨域 iframe 问题
+   */
+  static async getApplicationChatUrl(applicationId: string): Promise<string> {
+    const config = await this.getConfig();
+    const workspaceId = await this.getDefaultWorkspaceId();
+    // 使用项目前端地址（nginx 会代理 /chat/ 到 MaxKB）
+    const publicBaseUrl = process.env.MAXKB_PUBLIC_URL || config.baseUrl;
+    let accessToken = '';
+    try {
+      const tokenData: any = await this.adminRequest(
+        'GET', `/workspace/${workspaceId}/application/${applicationId}/access_token`
+      );
+      accessToken = tokenData?.access_token || '';
+    } catch {}
+    // 通过前端同源代理访问（/chat/ 路径会被 nginx 转发到 MaxKB）
+    const frontendBase = process.env.FRONTEND_PUBLIC_URL || 'http://localhost';
+    return `${frontendBase}/chat/${applicationId}${accessToken ? '?access_token=' + accessToken : ''}`;
+  }
+
+  /**
+   * 获取 application 的 access_token（16 字符 hex）。
+   * 如果 MaxKB 侧尚未生成会在 GET 时自动创建（AccessTokenSerializer.get_or_create）。
+   */
+  static async getApplicationAccessToken(applicationId: string): Promise<string> {
+    const workspaceId = await this.getDefaultWorkspaceId();
+    const tokenData: any = await this.adminRequest(
+      'GET', `/workspace/${workspaceId}/application/${applicationId}/access_token`
+    );
+    const accessToken = tokenData?.access_token;
+    if (!accessToken) {
+      throw new Error('无法获取 application access_token');
+    }
+    return accessToken;
+  }
+
   // ==================== 知识库管理 ====================
 
   /**
@@ -527,7 +587,6 @@ export class MaxKBService {
     }
   }
 
-  // ==================== 知识库选择（审查时） ====================
 
   /**
    * 获取用户可选的知识库列表

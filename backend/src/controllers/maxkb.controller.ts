@@ -1,5 +1,6 @@
 import { Request, Response } from 'express';
 import { MaxKBService } from '../services/maxkb.service';
+import { MaxKBEmbedService } from '../services/maxkb-embed.service';
 import { RAGService } from '../services/rag.service';
 import { success, error } from '../utils/response';
 
@@ -133,6 +134,67 @@ export const getKnowledgeBases = async (req: Request, res: Response) => {
   try {
     const knowledgeBases = await MaxKBService.getAvailableKnowledgeBases();
     success(res, knowledgeBases);
+  } catch (err: any) {
+    error(res, err.message, 500);
+  }
+};
+
+/** 获取 MaxKB 应用（智能体）列表 */
+export const getApplications = async (req: Request, res: Response) => {
+  try {
+    const config = await MaxKBService.getConfig();
+    const workspaceId = await MaxKBService.getDefaultWorkspaceId();
+    const applications = await MaxKBService.listApplications(workspaceId);
+    const publicBaseUrl = process.env.MAXKB_PUBLIC_URL || config.baseUrl;
+    // 为每个应用获取 access_token（公开访问凭证）
+    const result = await Promise.all(applications.map(async (app: any) => {
+      let chatUrl = `${publicBaseUrl}/chat/${app.id}`;
+      try {
+        chatUrl = await MaxKBService.getApplicationChatUrl(app.id);
+      } catch {}
+      return { ...app, chatUrl };
+    }));
+    success(res, result);
+  } catch (err: any) {
+    error(res, err.message, 500);
+  }
+};
+
+/** 获取嵌入问答 URL —— 用于 iframe 嵌入 MaxKB 原生聊天界面 */
+export const getMaxKBEmbedUrl = async (req: Request, res: Response) => {
+  try {
+    const userId = (req as any).user?.id;
+    if (!userId) {
+      error(res, '未认证用户', 401);
+      return;
+    }
+    const applicationId = (req.query.applicationId as string) || '';
+    if (!applicationId) {
+      error(res, 'applicationId 不能为空', 400);
+      return;
+    }
+    const result = await MaxKBEmbedService.getEmbedUrl(userId, applicationId);
+    success(res, result);
+  } catch (err: any) {
+    error(res, err.message, 500);
+  }
+};
+
+/** 清理某 application 的嵌入会话（下次进入会重新签发 chatUserToken） */
+export const clearMaxKBEmbedSession = async (req: Request, res: Response) => {
+  try {
+    const userId = (req as any).user?.id;
+    if (!userId) {
+      error(res, '未认证用户', 401);
+      return;
+    }
+    const applicationId = (req.body?.applicationId as string) || '';
+    if (!applicationId) {
+      error(res, 'applicationId 不能为空', 400);
+      return;
+    }
+    await MaxKBEmbedService.clearSession(userId, applicationId);
+    success(res, null, '会话已清理');
   } catch (err: any) {
     error(res, err.message, 500);
   }

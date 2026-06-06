@@ -36,6 +36,7 @@ model User {
   mustChangePassword Boolean  @default(false) @map("must_change_password")  // 首次登录是否强制改密
   createdAnnouncements SystemAnnouncement[]
   qaSessions   QASession[]
+  chatSessions UserChatSession[]
   announcementReads    UserAnnouncementRead[]
   createdAt    DateTime    @default(now())
   updatedAt    DateTime    @updatedAt
@@ -767,4 +768,21 @@ model QAMessage {
 
   @@index([sessionId])
   @@map("qa_messages")
+}
+
+// MaxKB embedded chat user session — pairs (userId, applicationId) with a sticky MaxKB chatUserToken,
+// so iframe embed mode (chat/<accessToken>?mode=embed&token=<chatUserToken>) can isolate per-user history.
+model UserChatSession {
+  id            String   @id @default(uuid())
+  userId        String
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  applicationId String
+  accessToken   String
+  chatUserToken String
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  @@unique([userId, applicationId])
+  @@index([userId])
+  @@map("user_chat_sessions")
 }

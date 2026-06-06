@@ -28,9 +28,9 @@
           <el-icon><DocumentAdd /></el-icon>
           <template #title><span>智能审查</span></template>
         </el-menu-item>
-        <el-menu-item index="/langchain/qa">
+        <el-menu-item index="/ai-assistant">
           <el-icon><ChatDotRound /></el-icon>
-          <template #title><span>智能问答</span></template>
+          <template #title><span>AI 智能问答</span></template>
         </el-menu-item>
         <el-menu-item index="/tasks">
           <el-icon><List /></el-icon>

@@ -2,6 +2,7 @@ import { Request, Response } from 'express';
 import bcrypt from 'bcryptjs';
 import prisma from '../config/db';
 import { TokenService } from '../services/token.service';
+import { MaxKBEmbedService } from '../services/maxkb-embed.service';
 import { AuthRequest } from '../middlewares/auth.middleware';
 import { success, error } from '../utils/response';
 import { validatePasswordComplexity } from '../utils/password-validator';
@@ -81,9 +82,11 @@ export const logout = async (req: Request, res: Response): Promise<void> => {
     if (token) {
       // 简单起见，设定黑名单的过期时间与 Token 最大生命周期一致 (例如 1 天 = 86400 秒)
       // 在生产环境中可以解析 token 中的 exp 来计算剩余时间
-      const expiresIn = 86400; 
+      const expiresIn = 86400;
       await TokenService.blacklistToken(token, expiresIn);
     }
+    // 注意：不清除 MaxKB 嵌入会话（UserChatSession），
+    // 保留 chatUserToken 以便用户下次登录时复用，保证对话历史持久化。
     success(res, null, '登出成功');
   } catch (err) {
     console.error('Logout Error:', err);

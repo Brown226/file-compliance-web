@@ -8,11 +8,13 @@ import {
   saveMaxKBConfig,
   testMaxKBConnection,
   getMaxKBConfig,
-
   getMaxKBKnowledgeUrl,
   maxkbWebhook,
   getKnowledgeBases,
   getKnowledgeTree,
+  getApplications,
+  getMaxKBEmbedUrl,
+  clearMaxKBEmbedSession,
 } from '../controllers/maxkb.controller';
 
 const router = Router();
@@ -34,15 +36,21 @@ router.get('/config', getMaxKBConfig);
 router.put('/config', requireRole('ADMIN'), saveMaxKBConfig);
 router.post('/test-connection', requireRole('ADMIN'), testMaxKBConnection);
 
-
 // 一键初始化（仅管理员）
 router.post('/initialize', requireRole('ADMIN'), initializeMaxKB);
 
-// 获取可选的知识库列表（审查时选择）
+// 获取可选的知识库列表
 router.get('/knowledge-bases', getKnowledgeBases);
 
-// 获取知识库树形结构（含目录分组和文档数）
+// 获取知识库树形结构
 router.get('/knowledge-tree', getKnowledgeTree);
+
+// 获取 MaxKB 应用列表
+router.get('/applications', getApplications);
+
+// 嵌入问答（iframe 嵌入 MaxKB 原生界面，按 userId 隔离）
+router.get('/embed-url', getMaxKBEmbedUrl);
+router.post('/embed-session/clear', clearMaxKBEmbedSession);
 
 // 命中测试
 router.post('/hit-test', hitTest);

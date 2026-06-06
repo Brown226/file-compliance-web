@@ -32,7 +32,7 @@ export function saveMaxKBConfigApi(data: {
   return request.put<Record<string, any>>('/maxkb/config', data)
 }
 
-// 测试 MaxKB 连接（后端执行，避免浏览器无法解析容器域名）
+// 测试 MaxKB 连接
 export function testMaxKBConnectionApi(data: {
   baseUrl?: string
   username?: string
@@ -42,17 +42,38 @@ export function testMaxKBConnectionApi(data: {
 }
 
 // 获取 MaxKB 知识库管理页面 URL
-
 export function getMaxKBKnowledgeUrlApi() {
   return request.get<{ url: string }>('/maxkb/knowledge-url')
 }
 
-// 获取可选的知识库列表（审查时选择）
+// 获取可选的知识库列表
 export function getKnowledgeBasesApi() {
   return request.get<KnowledgeBaseItem[]>('/maxkb/knowledge-bases')
 }
 
-// 获取知识库树形结构（含目录分组和文档数，用于树形选择器）
+// 获取知识库树形结构
 export function getKnowledgeTreeApi() {
   return request.get<KnowledgeTreeNode[]>('/maxkb/knowledge-tree')
+}
+
+// 获取 MaxKB 应用列表
+export function getApplicationsApi() {
+  return request.get<Array<{
+    id: string; name: string; desc: string; is_publish: boolean;
+    type: string; chatUrl: string; create_time: string;
+  }>>('/maxkb/applications')
+}
+
+// ==================== iframe 嵌入 API ====================
+
+/** 获取嵌入 URL（后端按 userId + applicationId 持久化 token） */
+export function getEmbedUrlApi(applicationId: string) {
+  return request.get<{ embedUrl: string; applicationId: string }>('/maxkb/embed-url', {
+    params: { applicationId }
+  })
+}
+
+/** 清理嵌入会话（下次进入重新签发 token） */
+export function clearEmbedSessionApi(applicationId: string) {
+  return request.post<any>('/maxkb/embed-session/clear', { applicationId })
 }

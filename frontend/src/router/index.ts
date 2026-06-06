@@ -47,10 +47,10 @@ const routes: Array<RouteRecordRaw> = [
         redirect: to => ({ path: `/review/${to.params.id}` })
       },
       {
-        path: 'langchain/qa',
-        name: 'LangChainQA',
-        component: () => import('../views/langchain/LangChainQA.vue'),
-        meta: { title: '知识库智能问答' }
+        path: 'ai-assistant',
+        name: 'AiAssistant',
+        component: () => import('../views/ai-assistant/AiAssistant.vue'),
+        meta: { title: 'AI 智能问答' }
       },
       {
         path: 'tasks',
