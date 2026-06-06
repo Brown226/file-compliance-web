@@ -10,10 +10,10 @@
           </div>
           <div class="tree-body" v-loading="loading">
             <el-tree ref="treeRef" :data="filteredTreeData" show-checkbox node-key="id" :props="treeProps" lazy :load="loadTreeNode" :filter-node-method="filterNode" :check-strictly="false" @check="handleTreeCheck">
-              <template #default="{ data }">
+              <template #default="{ node, data }">
                 <span class="tree-node-content">
-                  <span class="node-icon" :class="data.type === 'folder' ? 'icon-folder' : 'icon-knowledge'">
-                    <el-icon v-if="data.type === 'folder'"><FolderOpened /></el-icon>
+                  <span class="node-icon" :class="!node.isLeaf || data.children?.length ? 'icon-folder' : 'icon-knowledge'">
+                    <el-icon v-if="!node.isLeaf || data.children?.length"><Folder /></el-icon>
                     <el-icon v-else><Document /></el-icon>
                   </span>
                   <span class="node-label">{{ data.name }}</span>
@@ -59,10 +59,10 @@
             <div class="filter-bar"><el-input v-model="filterText" placeholder="请输入关键字过滤" clearable prefix-icon="Search" size="default" /></div>
             <div class="tree-body" v-loading="loading">
               <el-tree ref="treeRef" :data="filteredTreeData" show-checkbox node-key="id" :props="treeProps" lazy :load="loadTreeNode" :filter-node-method="filterNode" :check-strictly="false" @check="handleTreeCheck">
-                <template #default="{ data }">
+                <template #default="{ node, data }">
                   <span class="tree-node-content">
-                    <span class="node-icon" :class="data.type === 'folder' ? 'icon-folder' : 'icon-knowledge'">
-                      <el-icon v-if="data.type === 'folder'"><FolderOpened /></el-icon>
+                    <span class="node-icon" :class="!node.isLeaf || data.children?.length ? 'icon-folder' : 'icon-knowledge'">
+                      <el-icon v-if="!node.isLeaf || data.children?.length"><Folder /></el-icon>
                       <el-icon v-else><Document /></el-icon>
                     </span>
                     <span class="node-label">{{ data.name }}</span>

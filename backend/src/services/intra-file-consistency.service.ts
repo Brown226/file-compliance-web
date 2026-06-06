@@ -77,7 +77,7 @@ export class IntraFileConsistencyService {
       return {
         taskId,
         fileId,
-        issueType: 'INTRA_CONSISTENCY',
+        issueType: 'CONSISTENCY',
         severity: 'warning' as const,
         ruleCode: 'INTRA_CONSIST_001',
         reviewSource: 'RULE_ENGINE' as const,
