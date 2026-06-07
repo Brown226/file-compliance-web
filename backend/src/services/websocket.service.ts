@@ -1,6 +1,7 @@
 import WebSocket, { WebSocketServer } from 'ws';
-import { IncomingMessage } from 'http';
+import { IncomingMessage, Server } from 'http';
 import prisma from '../config/db';
+import { TokenPayload } from './token.service';
 
 interface WsClient {
   ws: WebSocket;
@@ -22,7 +23,7 @@ export class WebSocketService {
   private static clients: Map<string, WsClient> = new Map();
   private static taskSubscribers: Map<string, Set<string>> = new Map();
 
-  static initialize(server: any) {
+  static initialize(server: Server) {
     this.wss = new WebSocketServer({ server, path: '/ws' });
 
     this.wss.on('connection', (ws: WebSocket, req: IncomingMessage) => {
@@ -44,7 +45,7 @@ export class WebSocketService {
     try {
       const jwt = await import('jsonwebtoken');
       const { env } = await import('../config/env');
-      const decoded = jwt.verify(token, env.jwtSecret) as any;
+      const decoded = jwt.verify(token, env.jwtSecret) as TokenPayload;
       const userId = decoded.id;
 
       const client: WsClient = { ws, userId, tasks: new Set() };

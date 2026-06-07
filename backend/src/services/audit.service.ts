@@ -1,20 +1,34 @@
 import prisma from '../config/db';
 
+/** 审计日志查询参数 */
+interface AuditLogQuery {
+  page?: number;
+  limit?: number;
+  action?: string;
+  resource?: string;
+  userId?: string;
+  startDate?: string;
+  endDate?: string;
+}
+
+/** 审计日志 where 条件 */
+interface AuditLogWhere {
+  action?: string;
+  resource?: string;
+  userId?: string;
+  createdAt?: {
+    gte?: Date;
+    lte?: Date;
+  };
+}
+
 export class AuditService {
-  async getLogs(query: {
-    page?: number;
-    limit?: number;
-    action?: string;
-    resource?: string;
-    userId?: string;
-    startDate?: string;
-    endDate?: string;
-  }) {
+  async getLogs(query: AuditLogQuery) {
     const page = Number(query.page) || 1;
     const limit = Number(query.limit) || 10;
     const skip = (page - 1) * limit;
 
-    const where: any = {};
+    const where: AuditLogWhere = {};
 
     if (query.action) {
       where.action = query.action;
@@ -68,7 +82,7 @@ export class AuditService {
   async createLog(data: {
     action: string;
     resource: string;
-    details?: any;
+    details?: Record<string, unknown>;
     userId?: string;
     ipAddress?: string;
   }) {
@@ -87,7 +101,7 @@ export class AuditService {
     startDate?: string;
     endDate?: string;
   }): Promise<string> {
-    const where: any = {};
+    const where: AuditLogWhere = {};
 
     if (query.action) {
       where.action = query.action;
@@ -125,7 +139,7 @@ export class AuditService {
 
     // CSV header
     const headers = ['ID', '操作', '资源', '用户名', '姓名', 'IP地址', '详情', '时间'];
-    const escapeCSV = (val: any): string => {
+    const escapeCSV = (val: string | number | null | undefined): string => {
       if (val === null || val === undefined) return '';
       const str = String(val);
       if (str.includes(',') || str.includes('"') || str.includes('\n')) {

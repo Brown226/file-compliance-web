@@ -601,7 +601,7 @@ import FilePreviewPanel from '@/views/TaskDetails/FilePreviewPanel.vue'
 import DwgPreviewPanel from '@/views/TaskDetails/DwgPreviewPanel.vue'
 import FalsePositiveDialog from '@/views/TaskDetails/FalsePositiveDialog.vue'
 import IssueCardList from './TaskDetails/IssueCardList.vue'
-import { useTaskExport, useTextLocator } from './TaskDetails/composables'
+import { useTaskExport, useTextLocator, useReviewStats, useWsProgress, useFalsePositive, useSelfCheck, useIssueHelpers } from './TaskDetails/composables'
 
 const route = useRoute()
 const router = useRouter()
@@ -624,14 +624,15 @@ const { exportToWord: handleExportWord, exportToExcel: handleExportExcel, handle
 const handleExportReport = () => handleExportWord()
 
 // ===== 标准引用自检（SELF_CHECK）=====
-const isSelfCheck = computed(() => (task.value as any)?.reviewMode === 'SELF_CHECK')
+const {
+  isSelfCheck, scReport, scSelected, scFilteredItems, scSelectItem,
+  scErrorTagType, scErrorLabel, handleExportScReport,
+} = useSelfCheck(task, taskId, files, filterFileId, selectFile, locateTarget)
 
 // AI 审查空结果警告：审查模式需要 AI 但 AI 未产出结果
 const showAiWarning = computed(() => {
   const mode = (task.value as any)?.reviewMode
-  // RULE_ONLY 和 SELF_CHECK 不使用 AI，不需要警告
   if (!mode || mode === 'RULE_ONLY' || mode === 'SELF_CHECK') return false
-  // AI 审查数为 0 才显示警告
   return (reviewSummary.value?.aiIssues ?? 0) === 0
 })
 
@@ -640,74 +641,12 @@ const SELF_CHECK_LEFT_WIDTH = 40
 const NORMAL_LEFT_WIDTH = 55
 const leftPanelWidth = ref(localStorage.getItem('reviewLeftPanelWidth') ? Number(localStorage.getItem('reviewLeftPanelWidth')) : NORMAL_LEFT_WIDTH)
 
-// 任务加载后，自检模式统一用 40% 左面板（右侧表格需要更多空间）
+// 任务加载后，自检模式统一用 40% 左面板
 watch(isSelfCheck, (val) => {
   if (val) {
     leftPanelWidth.value = SELF_CHECK_LEFT_WIDTH
   }
 }, { immediate: true })
-const scReport = computed(() => (task.value as any)?.selfCheckReport as import('@/types/models').SelfCheckReport | undefined)
-const scSelected = ref<import('@/types/models').SelfCheckReportItem | null>(null)
-
-// 自检报告：根据文件筛选过滤后的数据
-const scFilteredItems = computed(() => {
-  const items = scReport.value?.items || []
-  if (!filterFileId.value) return items
-  const targetFile = files.value.find((f: TaskFile) => f.id === filterFileId.value)
-  if (!targetFile) return items
-  return items.filter((it: any) => it.sourceFile === targetFile.fileName)
-})
-
-const scSelectItem = (row: any) => {
-  scSelected.value = row
-  // 联动左侧原文定位
-  if (row && row.startChar >= 0 && files.value.length > 0) {
-    const file = files.value.find((f: TaskFile) => f.fileName === row.sourceFile)
-    if (file) {
-      selectFile(file.id)
-
-      locateTarget.value = {
-        originalText: row.fullMatch,
-        textPosition: {
-          chunkIndex: Math.floor(row.startChar / 4000),
-          charOffset: row.startChar % 4000,
-        },
-      } as any
-    }
-  }
-}
-
-const scErrorTagType = (type: string) => {
-  if (type === 'NO_MATCH') return 'danger'
-  if (type === 'ABOLISHED') return 'warning'
-  if (type === 'VERSION_MISMATCH') return 'primary'
-  return ''
-}
-
-const scErrorLabel = (type: string) => {
-  const m: Record<string, string> = {
-    NO_MATCH: '不存在', NUMBER_MISMATCH: '编号错误', NAME_MISMATCH: '名称错误',
-    ABOLISHED: '已废止', UPCOMING: '尚未实施', VERSION_MISMATCH: '版本不匹配',
-  }
-  return m[type] || type
-}
-
-const handleExportScReport = async () => {
-  try {
-    const { exportSelfCheckReportApi } = await import('@/api/self-check')
-    const { data } = await exportSelfCheckReportApi(taskId.value)
-    const blob = data as unknown as Blob
-    const url = window.URL.createObjectURL(blob)
-    const link = document.createElement('a')
-    link.href = url
-    link.download = `标准引用自检报告_${new Date().toISOString().slice(0, 10)}.xlsx`
-    document.body.appendChild(link)
-    link.click()
-    document.body.removeChild(link)
-    window.URL.revokeObjectURL(url)
-    ElMessage.success('报告导出成功')
-  } catch (e) { console.error('导出失败:', e); ElMessage.error('导出报告失败') }
-}
 
 // ===== 审查实时进度（WebSocket 推送） =====
 const { subscribeTask, connected: wsConnected } = useWebSocket()
@@ -984,227 +923,30 @@ const navigateToIssue = (issue: TaskDetail) => {
   })
 }
 
-// ===== 误报标记 =====
-const fpDialogVisible = ref(false)
-const fpSubmitting = ref(false)
-const fpTargetDetail = ref<TaskDetail | null>(null)
+// ===== 误报标记（使用 Composable）=====
+const {
+  fpDialogVisible, fpSubmitting, fpTargetDetail,
+  handleFalsePositive, handleConfirmFalsePositive,
+  handleBatchFalsePositiveFromIssueList,
+} = useFalsePositive(allDetails)
 
 // ===== IssueCardList 组件引用 =====
 const issueListRef = ref<InstanceType<typeof IssueCardList> | null>(null)
 
-// ===== 数据过滤 =====
-const reviewSummary = computed(() => {
-  const detail = allDetails.value.find((d: any) => d.issueType === 'REVIEW_SUMMARY')
-  if (detail?.description) return typeof detail.description === 'string' ? JSON.parse(detail.description) : detail.description
-  return null
-})
+// ===== 审查统计（使用 Composable）=====
+const {
+  reviewSummary, reviewPlanSummary,
+  filteredDetails, noResultEntries, issueDetails, noResultReasons,
+  totalIssuesExclSummary, errorIssues, warningIssues, infoIssues, standardRefIssues,
+  fileStatusSummary, tabBadges, getTabBadge,
+} = useReviewStats(task, allDetails, files, filterFileId, runtimeFileStatus)
 
-const objectiveLabelMap: Record<string, string> = {
-  COMPLIANCE: '合规审查',
-  COMPARE: '参照比对',
-  PROOFREAD: '基础校对',
-  STRUCTURED: '结构化审查',
-}
-
-const evidenceLabelMap: Record<string, string> = {
-  STANDARD: '知识库',
-  RULE_LIBRARY: '语义规则库',
-  REFERENCE: '参考文件',
-}
-
-const executionLabelMap: Record<string, string> = {
-  AI_ONLY: 'AI 审查',
-  RULE_ONLY: '仅规则执行',
-}
-
-const getModeLabel = (mode: string) => {
-  const map: Record<string, string> = {
-    LIBRARY_REVIEW: '以库审文',
-    DOC_REVIEW: '以文审文',
-    TYPO_GRAMMAR: '基础校对',
-    MULTIMODAL: '结构化审查',
-    SELF_CHECK: '标准引用自检',
-    // 旧模式兼容映射（历史数据）
-    CONSISTENCY: '一致性审查',
-    RULE_ONLY: '仅规则审查',
-  }
-  return map[mode] || mode
-}
-
-const reviewPlanSummary = computed(() => {
-  const plan = (task.value as any)?.reviewPlan
-  const taskMode = reviewSummary.value?.reviewMode || (task.value as any)?.reviewMode || '-'
-
-  if (!plan || typeof plan !== 'object') {
-    return {
-      module: getModeLabel(taskMode),
-      objective: '—',
-      evidence: '—',
-      execution: '—',
-      enhancements: '无',
-      proofreadingEnhancement: '—',
-      taskMode: getModeLabel(taskMode),
-    }
-  }
-
-  const sources = Array.isArray(plan.evidence?.sources) ? plan.evidence.sources : []
-  const evidence = sources.length > 0
-    ? sources.map((item: string) => evidenceLabelMap[item] || item).join(' + ')
-    : '无外部依据'
-
-  const enhancements: string[] = []
-  if (plan.enhancements?.intraFileConsistency) enhancements.push('文件内一致性')
-  if (plan.enhancements?.crossFileConsistency) enhancements.push('跨文件一致性')
-
-  const module = (() => {
-    if (plan.objective === 'COMPARE') return '一致性审查（对照）'
-    if (plan.objective === 'PROOFREAD') return '基础校对'
-    if (plan.objective === 'STRUCTURED') return '结构化审查'
-    if (plan.execution?.profile === 'RULE_ONLY' && sources.includes('RULE_LIBRARY')) return '语义规则库审查'
-    if (sources.includes('RULE_LIBRARY') && sources.includes('STANDARD')) return '以库审文'
-    if (sources.includes('RULE_LIBRARY')) return '语义规则库审查'
-    return '以库审文'
-  })()
-
-  const proofreadingEnhancement = plan.execution?.profile === 'RULE_ONLY'
-    ? '关闭（纯规则）'
-    : (plan.enhancements?.intraFileConsistency ? '开启' : '关闭')
-
-  return {
-    module,
-    objective: objectiveLabelMap[plan.objective] || plan.objective || '—',
-    evidence,
-    execution: executionLabelMap[plan.execution?.profile] || plan.execution?.profile || '—',
-    enhancements: enhancements.length > 0 ? enhancements.join(' + ') : '无',
-    proofreadingEnhancement,
-    taskMode: getModeLabel(taskMode),
-  }
-})
-
-const filteredDetails = computed(() => {
-  let details = allDetails.value.filter((d: any) => d.issueType !== 'REVIEW_SUMMARY')
-  if (filterFileId.value) details = details.filter((d: any) => d.fileId === filterFileId.value)
-  return details
-})
-const noResultEntries = computed(() =>
-  filteredDetails.value.filter((d: any) => d.ruleCode === 'NO_RESULT')
-)
-const issueDetails = computed(() =>
-  filteredDetails.value.filter((d: any) => d.ruleCode !== 'NO_RESULT')
-)
-const noResultReasons = computed(() =>
-  noResultEntries.value
-    .map((d: any) => d.description)
-    .filter(Boolean)
-)
-const totalIssuesExclSummary = computed(() => issueDetails.value.length)
-const errorIssues = computed(() => issueDetails.value.filter((d: any) => d.severity === 'error'))
-const warningIssues = computed(() => issueDetails.value.filter((d: any) => d.severity === 'warning'))
-const infoIssues = computed(() => issueDetails.value.filter((d: any) => d.severity === 'info'))
-const standardRefIssues = computed(() => issueDetails.value.filter((d: any) => d.standardRef || d.standardRefId))
-
-// ===== 工具函数 =====
-const getIssueTitle = (item: any, index: number): string => {
-  if (item.originalText && item.originalText.trim()) {
-    const text = item.originalText.trim().slice(0, 45)
-    return text.length < item.originalText.trim().length ? `${text}...` : text
-  }
-  if (item.suggestedText && item.suggestedText.trim()) {
-    const text = item.suggestedText.trim().slice(0, 45)
-    return text.length < item.suggestedText.trim().length ? `${text}...` : text
-  }
-  if (item.description && item.description.trim()) {
-    return `问题 ${index + 1}：${item.description.trim().slice(0, 35)}`
-  }
-  return `问题 ${index + 1}`
-}
-
-const getConfidenceLabel = (confidence?: string | null): string => {
-  const map: Record<string, string> = {
-    RULE_EXACT: '规则命中',
-    STD_MATCH: '标准比对',
-    AI_INFERRED: 'AI推断',
-    NO_RESULT: '无问题说明',
-  }
-  return confidence ? (map[confidence] || confidence) : ''
-}
-
-const getConfidenceTagType = (confidence?: string | null): 'success' | 'warning' | 'info' | 'danger' => {
-  if (confidence === 'RULE_EXACT') return 'danger'
-  if (confidence === 'STD_MATCH') return 'success'
-  if (confidence === 'AI_INFERRED') return 'warning'
-  return 'info'
-}
-
-const getStandardRefTitle = (item: TaskDetail): string => {
-  const ref = item.standardRef || item.standardRefId
-  if (typeof ref === 'string') return ref
-  if (ref && typeof ref === 'object') {
-    return (ref as any).standardName || (ref as any).name || '标准引用'
-  }
-  return '标准引用'
-}
-
-const getIssueTypeLabel = (type: string): string => {
-  const m: Record<string, string> = {
-    TYPO: '文本错误',
-    VIOLATION: '合规违规',
-    CONSISTENCY: '一致性',
-    COMPLETENESS: '完整性',
-    // 兼容旧类型
-    NAMING: '一致性',
-    ENCODING: '合规违规',
-    ATTRIBUTE: '完整性',
-    HEADER: '合规违规',
-    PAGE: '合规违规',
-    FORMAT: '合规违规',
-    LAYOUT: '合规违规',
-    STD_REF: '合规违规',
-    DWG: '合规违规',
-    FLUENCY: '文本错误',
-    SCAN: '文本错误',
-    TEMPLATE: '合规违规',
-    CROSS_REFERENCE: '一致性',
-  }
-  return m[type] || type
-}
-
-const getCategoryTagType = (type: string): any => {
-  const m: Record<string, any> = {
-    VIOLATION: 'danger',
-    CONSISTENCY: 'info',
-    COMPLETENESS: 'warning',
-    TYPO: 'warning',
-    // 兼容旧类型
-    NAMING: 'info',
-    ENCODING: 'danger',
-    ATTRIBUTE: 'warning',
-    HEADER: 'success',
-    PAGE: 'info',
-    FORMAT: 'warning',
-    LAYOUT: 'info',
-    STD_REF: 'warning',
-    DWG: 'info',
-    FLUENCY: 'warning',
-    SCAN: 'info',
-    TEMPLATE: 'warning',
-    CROSS_REFERENCE: 'info',
-  }
-  return m[type] || 'info'
-}
-
-/** 计算百分比（用于严重度分布条） */
-const pct = (part: number, total: number): string => {
-  if (total <= 0) return '0%'
-  return Math.round((part / total) * 100) + '%'
-}
-
-/** 截断文本 */
-const truncateText = (text: string, maxLen: number): string => {
-  if (!text) return ''
-  const t = text.trim()
-  return t.length > maxLen ? t.slice(0, maxLen) + '...' : t
-}
+// ===== 工具函数（使用 Composable）=====
+const {
+  getIssueTitle, getConfidenceLabel, getConfidenceTagType,
+  getStandardRefTitle, getIssueTypeLabel, getCategoryTagType,
+  pct, truncateText, pickLocateKeyword, collectLocateAnchors,
+} = useIssueHelpers()
 
 // ===== WebSocket 实时进度处理 =====
 
@@ -1459,32 +1201,6 @@ const collectLocateAnchors = (item: TaskDetail): string[] => {
     })
 }
 
-
-const handleFalsePositive = (item: TaskDetail) => {
-  fpTargetDetail.value = item
-  fpDialogVisible.value = true
-}
-
-const handleConfirmFalsePositive = async (reason: string) => {
-  if (!fpTargetDetail.value) return
-  fpSubmitting.value = true
-  try {
-    await toggleFalsePositiveApi(fpTargetDetail.value.id, {
-      isFalsePositive: true,
-      reason: reason || undefined,
-    })
-    const detail = allDetails.value.find((d: any) => d.id === fpTargetDetail.value!.id)
-    if (detail) {
-      detail.isFalsePositive = true
-    }
-    ElMessage.success('已标记为误报')
-    fpDialogVisible.value = false
-  } catch (e: any) {
-    ElMessage.error(e?.response?.data?.message || '标记误报失败')
-  } finally {
-    fpSubmitting.value = false
-  }
-}
 
 // ===== IssueCardList 桥接事件处理 =====
 

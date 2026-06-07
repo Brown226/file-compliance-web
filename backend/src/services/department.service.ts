@@ -1,19 +1,20 @@
 import prisma from '../config/db';
 import { AppError } from '../middlewares/error.middleware';
+import { DepartmentTreeNode } from '../types';
 
 export class DepartmentService {
   /**
    * 获取部门树结构
    */
-  async getDepartmentsTree() {
+  async getDepartmentsTree(): Promise<DepartmentTreeNode[]> {
     // 获取所有部门
     const departments = await prisma.department.findMany({
       orderBy: { createdAt: 'asc' },
     });
 
     // 构建树形结构
-    const departmentMap = new Map<string, any>();
-    const roots: any[] = [];
+    const departmentMap = new Map<string, DepartmentTreeNode>();
+    const roots: DepartmentTreeNode[] = [];
 
     // 初始化map，添加children数组
     departments.forEach((dept) => {
@@ -26,13 +27,13 @@ export class DepartmentService {
       if (dept.parentId) {
         const parent = departmentMap.get(dept.parentId);
         if (parent) {
-          parent.children.push(node);
+          parent.children.push(node!);
         } else {
           // 如果父节点不存在（可能数据异常），作为根节点
-          roots.push(node);
+          roots.push(node!);
         }
       } else {
-        roots.push(node);
+        roots.push(node!);
       }
     });
 

@@ -142,7 +142,7 @@ export class DashboardService {
     // Average processing time (completed tasks)
     let averageProcessingTimeMs = 0;
     try {
-      const result: any = await prisma.$queryRaw`
+      const result: { avg_time: string | null }[] = await prisma.$queryRaw`
         SELECT AVG(EXTRACT(EPOCH FROM ("updatedAt" - "createdAt"))) as avg_time
         FROM "tasks"
         WHERE status = 'COMPLETED'
@@ -284,12 +284,12 @@ export class DashboardService {
       comparedToLastPeriod.complianceDelta = Math.round((thisCompliance - lastCompliance) * 100) / 100;
 
       // Avg time comparison
-      const thisAvgResult: any = await prisma.$queryRaw`
+      const thisAvgResult: { avg_time: string | null }[] = await prisma.$queryRaw`
         SELECT AVG(EXTRACT(EPOCH FROM ("updatedAt" - "createdAt"))) as avg_time
         FROM "tasks"
         WHERE status = 'COMPLETED' AND "createdAt" >= ${thisMonthStart}
       `;
-      const lastAvgResult: any = await prisma.$queryRaw`
+      const lastAvgResult: { avg_time: string | null }[] = await prisma.$queryRaw`
         SELECT AVG(EXTRACT(EPOCH FROM ("updatedAt" - "createdAt"))) as avg_time
         FROM "tasks"
         WHERE status = 'COMPLETED' AND "createdAt" >= ${lastMonthStart} AND "createdAt" < ${lastMonthEnd}
@@ -421,7 +421,7 @@ export class DashboardService {
     // 4. Average processing time for user's completed tasks
     let avgProcessingTimeMs = 0;
     try {
-      const result: any = await prisma.$queryRaw`
+      const result: { avg_time: string | null }[] = await prisma.$queryRaw`
         SELECT AVG(EXTRACT(EPOCH FROM ("updatedAt" - "createdAt"))) as avg_time
         FROM "tasks"
         WHERE status = 'COMPLETED' AND "creatorId" = ${userId}
@@ -450,7 +450,7 @@ export class DashboardService {
     since.setHours(0, 0, 0, 0);
 
     // 按天分组统计任务数
-    const taskTrendRaw: any = await prisma.$queryRaw`
+    const taskTrendRaw: { date: Date; count: number }[] = await prisma.$queryRaw`
       SELECT DATE("createdAt") as date, COUNT(*)::int as count
       FROM "tasks"
       WHERE "createdAt" >= ${since}
@@ -459,7 +459,7 @@ export class DashboardService {
     `;
 
     // 按天分组统计问题数
-    const issueTrendRaw: any = await prisma.$queryRaw`
+    const issueTrendRaw: { date: Date; count: number }[] = await prisma.$queryRaw`
       SELECT DATE(td."createdAt") as date, COUNT(*)::int as count
       FROM "task_details" td
       WHERE td."createdAt" >= ${since}

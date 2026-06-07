@@ -1,15 +1,25 @@
-import jwt from 'jsonwebtoken';
+import jwt, { JwtPayload } from 'jsonwebtoken';
 import { env } from '../config/env';
 import { redisClient } from '../utils/redis';
+
+/** JWT Token payload 接口 */
+export interface TokenPayload {
+  id: string;
+  username: string;
+  role: string;
+  departmentId: string | null;
+  iat?: number;
+  exp?: number;
+}
 
 export class TokenService {
   /**
    * 生成 JWT Token
    * @param payload 包含用户信息的数据
    */
-  static generateToken(payload: { id: string; username: string; role: string; departmentId: string | null }): string {
+  static generateToken(payload: TokenPayload): string {
     return jwt.sign(payload, env.jwtSecret, {
-      expiresIn: env.jwtExpiresIn as any,
+      expiresIn: env.jwtExpiresIn as unknown as number,
     });
   }
 
@@ -18,8 +28,8 @@ export class TokenService {
    * @param token JWT Token 字符串
    * @returns 解码后的数据
    */
-  static verifyToken(token: string): any {
-    return jwt.verify(token, env.jwtSecret);
+  static verifyToken(token: string): TokenPayload {
+    return jwt.verify(token, env.jwtSecret) as TokenPayload;
   }
 
   /**

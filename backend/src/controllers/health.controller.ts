@@ -20,10 +20,11 @@ export class HealthController {
         ...status,
         timestamp: new Date().toISOString(),
       });
-    } catch (err: any) {
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Unknown error';
       res.status(503).json({
         status: 'unhealthy',
-        error: err.message,
+        error: message,
         timestamp: new Date().toISOString(),
       });
     }
@@ -37,8 +38,9 @@ export class HealthController {
       const { limit } = req.query;
       const summary = MetricsService.getSummary();
       success(res, summary);
-    } catch (err: any) {
-      error(res, err.message, 500);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Unknown error';
+      error(res, message, 500);
     }
   }
 
@@ -49,8 +51,9 @@ export class HealthController {
     try {
       const counters = MetricsService.getCounters();
       success(res, counters);
-    } catch (err: any) {
-      error(res, err.message, 500);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Unknown error';
+      error(res, message, 500);
     }
   }
 
@@ -68,8 +71,9 @@ export class HealthController {
       }
 
       success(res, stats);
-    } catch (err: any) {
-      error(res, err.message, 500);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Unknown error';
+      error(res, message, 500);
     }
   }
 
@@ -80,8 +84,9 @@ export class HealthController {
     try {
       const stats = CacheService.getStats();
       success(res, stats);
-    } catch (err: any) {
-      error(res, err.message, 500);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Unknown error';
+      error(res, message, 500);
     }
   }
 
@@ -92,8 +97,9 @@ export class HealthController {
     try {
       CacheService.clear();
       success(res, { message: 'Cache cleared' });
-    } catch (err: any) {
-      error(res, err.message, 500);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Unknown error';
+      error(res, message, 500);
     }
   }
 
@@ -105,8 +111,9 @@ export class HealthController {
       MetricsService.reset();
       CacheService.resetStats();
       success(res, { message: 'Metrics reset' });
-    } catch (err: any) {
-      error(res, err.message, 500);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Unknown error';
+      error(res, message, 500);
     }
   }
 }

@@ -1,0 +1,165 @@
+import { HealthController } from '../health.controller';
+import { MetricsService } from '../../services/metrics.service';
+import { CacheService } from '../../services/cache.service';
+
+// Mock services
+jest.mock('../../services/metrics.service');
+jest.mock('../../services/cache.service');
+
+// Mock response helpers
+jest.mock('../../utils/response', () => ({
+  success: jest.fn((res, data) => res.json({ success: true, data })),
+  error: jest.fn((res, message, status) => res.status(status).json({ success: false, message })),
+}));
+
+const mockReq = () => ({} as any);
+const mockRes = () => {
+  const res: any = {};
+  res.status = jest.fn().mockReturnValue(res);
+  res.json = jest.fn().mockReturnValue(res);
+  return res;
+};
+
+describe('HealthController', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  describe('getHealth', () => {
+    it('should return healthy status', async () => {
+      (MetricsService.getHealthStatus as jest.Mock).mockResolvedValue({
+        status: 'healthy',
+        uptime: 1000,
+      });
+
+      const req = mockReq();
+      const res = mockRes();
+
+      await HealthController.getHealth(req, res);
+
+      expect(res.status).toHaveBeenCalledWith(200);
+      expect(res.json).toHaveBeenCalledWith(
+        expect.objectContaining({
+          status: 'healthy',
+          uptime: 1000,
+        })
+      );
+    });
+
+    it('should return 503 for unhealthy status', async () => {
+      (MetricsService.getHealthStatus as jest.Mock).mockResolvedValue({
+        status: 'unhealthy',
+        error: 'DB down',
+      });
+
+      const req = mockReq();
+      const res = mockRes();
+
+      await HealthController.getHealth(req, res);
+
+      expect(res.status).toHaveBeenCalledWith(503);
+    });
+
+    it('should handle service errors', async () => {
+      (MetricsService.getHealthStatus as jest.Mock).mockRejectedValue(new Error('Service error'));
+
+      const req = mockReq();
+      const res = mockRes();
+
+      await HealthController.getHealth(req, res);
+
+      expect(res.status).toHaveBeenCalledWith(503);
+      expect(res.json).toHaveBeenCalledWith(
+        expect.objectContaining({ status: 'unhealthy' })
+      );
+    });
+  });
+
+  describe('getMetrics', () => {
+    it('should return metrics summary', async () => {
+      (MetricsService.getSummary as jest.Mock).mockReturnValue({ totalRequests: 100 });
+
+      const req = mockReq();
+      const res = mockRes();
+
+      await HealthController.getMetrics(req, res);
+
+      expect(res.json).toHaveBeenCalled();
+    });
+  });
+
+  describe('getCounters', () => {
+    it('should return counters', async () => {
+      (MetricsService.getCounters as jest.Mock).mockReturnValue({});
+
+      const req = mockReq();
+      const res = mockRes();
+
+      await HealthController.getCounters(req, res);
+
+      expect(MetricsService.getCounters).toHaveBeenCalled();
+    });
+  });
+
+  describe('getHistogram', () => {
+    it('should return histogram stats', async () => {
+      (MetricsService.getHistogramStats as jest.Mock).mockReturnValue({ min: 0, max: 100 });
+
+      const req = { params: { name: 'response_time' } } as any;
+      const res = mockRes();
+
+      await HealthController.getHistogram(req, res);
+
+      expect(MetricsService.getHistogramStats).toHaveBeenCalledWith('response_time');
+    });
+
+    it('should return 404 for missing histogram', async () => {
+      (MetricsService.getHistogramStats as jest.Mock).mockReturnValue(null);
+
+      const req = { params: { name: 'nonexistent' } } as any;
+      const res = mockRes();
+
+      await HealthController.getHistogram(req, res);
+
+      expect(res.status).toHaveBeenCalledWith(404);
+    });
+  });
+
+  describe('getCacheStats', () => {
+    it('should return cache stats', async () => {
+      (CacheService.getStats as jest.Mock).mockReturnValue({ hits: 10, misses: 2 });
+
+      const req = mockReq();
+      const res = mockRes();
+
+      await HealthController.getCacheStats(req, res);
+
+      expect(CacheService.getStats).toHaveBeenCalled();
+    });
+  });
+
+  describe('clearCache', () => {
+    it('should clear cache', async () => {
+      (CacheService.clear as jest.Mock).mockReturnValue(undefined);
+
+      const req = mockReq();
+      const res = mockRes();
+
+      await HealthController.clearCache(req, res);
+
+      expect(CacheService.clear).toHaveBeenCalled();
+    });
+  });
+
+  describe('resetMetrics', () => {
+    it('should reset metrics and cache stats', async () => {
+      const req = mockReq();
+      const res = mockRes();
+
+      await HealthController.resetMetrics(req, res);
+
+      expect(MetricsService.reset).toHaveBeenCalled();
+      expect(CacheService.resetStats).toHaveBeenCalled();
+    });
+  });
+});
