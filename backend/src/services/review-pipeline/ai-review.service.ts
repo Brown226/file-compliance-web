@@ -13,6 +13,8 @@ import { MaxKBService } from '../maxkb.service';
 import { PromptTemplateService } from '../prompt-template.service';
 import { PromptLoader } from '../prompts';
 import { StandardTraceabilityService } from '../standard-traceability.service';
+import { parallelLimit } from '../../utils/parallel';
+import { EmbeddingService } from '../embedding.service';
 
 export class AiReviewService {
   // ==================== AI 审查实现 ====================
@@ -114,7 +116,9 @@ export class AiReviewService {
     });
     const systemPrompt = AiReviewService.injectSemanticContext(rawSystemPrompt, ctx);
 
-    for (const chunk of chunks) {
+    // 并行处理分片（限流并发，加速 AI 审查）
+    const CONCURRENT_LIMIT = 3;
+    const chunkResults = await parallelLimit(chunks, CONCURRENT_LIMIT, async (chunk, idx) => {
       try {
         let llmIssues: ReviewIssue[];
         if (knowledgeContext) {
@@ -152,13 +156,15 @@ export class AiReviewService {
             },
           });
         }
-        issues.push(...llmIssues);
-        // 每个 chunk 完成后回调进度并传递该片的 issues（用于立即入库推送）
+        // 每个 chunk 完成后回调进度
         ctx.onChunkProgress?.(chunk.text.length, llmIssues, chunk.chunkIndex, totalChunks, knowledgeContext ? 'llm-with-knowledge' : 'llm-direct');
+        return llmIssues;
       } catch (e: any) {
-        console.warn(`[Pipeline] LLM 审查分片失败:`, e.message);
+        console.warn(`[Pipeline] LLM 审查分片 ${chunk.chunkIndex + 1}/${totalChunks} 失败:`, e.message);
+        return [];
       }
-    }
+    });
+    for (const r of chunkResults) issues.push(...r);
 
     const engineName = knowledgeContext ? 'llm-with-knowledge' : 'llm-direct';
     return { issues, engine: engineName };
@@ -242,7 +248,8 @@ export class AiReviewService {
 
       const chunks = LlmService.splitText(text, chunkSize, true);
       const totalChunks = chunks.length;
-      for (const chunk of chunks) {
+      const CONCURRENT_LIMIT = 3;
+      const chunkResults = await parallelLimit(chunks, CONCURRENT_LIMIT, async (chunk) => {
         try {
           const userContent = userTpl.replace(/\$\{text\}/g, chunk.text);
           const llmIssues = await LlmService.reviewText(userContent, {
@@ -256,13 +263,14 @@ export class AiReviewService {
               totalChunks,
             },
           });
-          issues.push(...llmIssues);
-          // 每个 chunk 完成后回调进度并传递该片的 issues
           ctx.onChunkProgress?.(chunk.text.length, llmIssues, chunk.chunkIndex, totalChunks, 'llm-direct');
+          return llmIssues;
         } catch (e: any) {
-          console.warn(`[Pipeline] LLM 审查分片失败:`, e.message);
+          console.warn(`[Pipeline] LLM 审查分片 ${chunk.chunkIndex + 1}/${totalChunks} 失败:`, e.message);
+          return [];
         }
-      }
+      });
+      for (const r of chunkResults) issues.push(...r);
       return { issues: StandardTraceabilityService.enrichWithStandardRef(issues), engine: 'llm-direct' };
     } catch (e) {
       console.error('[Pipeline] LLM 直接调用失败:', e);
@@ -306,8 +314,8 @@ export class AiReviewService {
 
       const chunks = LlmService.splitText(text, chunkSize, true);
       const totalChunks = chunks.length;
-      const issues: ReviewIssue[] = [];
-      for (const chunk of chunks) {
+      const CONCURRENT_LIMIT = 3;
+      const chunkResults = await parallelLimit(chunks, CONCURRENT_LIMIT, async (chunk) => {
         try {
           const userTpl = await PromptLoader.loadUserPrompt(scene, 'default');
           const userContent = userTpl.replace(/\$\{text\}/g, chunk.text);
@@ -323,13 +331,26 @@ export class AiReviewService {
               totalChunks,
             },
           });
-          issues.push(...llmIssues);
           ctx.onChunkProgress?.(chunk.text.length, llmIssues, chunk.chunkIndex, totalChunks, 'llm-only');
+          return llmIssues;
         } catch (e: any) {
-          console.warn(`[Pipeline] LLM 审查分片失败:`, e.message);
+          console.warn(`[Pipeline] LLM 审查分片 ${chunk.chunkIndex + 1}/${totalChunks} 失败:`, e.message);
+          return [];
         }
-      }
-      return { issues: StandardTraceabilityService.enrichWithStandardRef(issues), engine: 'llm-direct' };
+      });
+      const issues: ReviewIssue[] = [];
+      for (const r of chunkResults) issues.push(...r);
+
+      // 跨分片去重：按 originalText 前 60 字符去重（与 semantic-spec 相同策略）
+      const seen = new Set<string>();
+      const deduped = issues.filter(issue => {
+        const key = (issue.originalText || '').slice(0, 60).trim();
+        if (!key || seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      });
+
+      return { issues: StandardTraceabilityService.enrichWithStandardRef(deduped), engine: 'llm-direct' };
     } catch (e) {
       console.error('[Pipeline] LLM 调用失败:', e);
       return { issues: [], engine: 'none' };
@@ -478,21 +499,25 @@ export class AiReviewService {
         }
       }
 
-      // 每分片循环
-      for (const chunk of chunks) {
+      // 预加载用户提示词模板（所有分片共用）
+      const userContentTpl = await PromptTemplateService.getPromptByScene(
+        scene, 'user', 'comparison',
+        '## 参照文件（权威基准）\n\n${refTexts}\n\n---\n\n## 待审文件（被审查对象）\n\n${text}\n\n---\n\n请按照系统指令中的四层审查策略，逐项核对。输出 JSON 数组。',
+      );
+
+      // 并行处理分片（限流并发，加速以文审文）
+      const CONCURRENT_LIMIT = 3;
+      const chunkResults = await parallelLimit(chunks, CONCURRENT_LIMIT, async (chunk) => {
         try {
           let effectiveRefTexts: string;
 
           if (useFullRefs || !refChunks || !refVectors) {
-            // 全量传递 或 向量索引失败 → 使用已截断/全量的参照文本
             effectiveRefTexts = refTextsJoined;
           } else {
             // 向量检索: 嵌入当前待审分片 → 计算余弦相似度 → 取 Top-5 参照段落
             try {
-              const { EmbeddingService } = await import('../embedding.service');
               const chunkVec = await EmbeddingService.embedText(chunk.text);
 
-              // 余弦相似度计算
               const scored = refChunks.map((rc, i) => {
                 const rv = refVectors![i];
                 let dot = 0, na = 0, nb = 0;
@@ -508,7 +533,6 @@ export class AiReviewService {
               scored.sort((a, b) => b.sim - a.sim);
               const topK = scored.slice(0, Math.min(5, scored.length));
 
-              // 按原始顺序重建（保持参照文件间顺序感）
               const selected = new Map<number, string>();
               for (const s of scored.slice(0, Math.min(5, scored.length))) {
                 const idx = refChunks.indexOf(s.chunk);
@@ -520,18 +544,12 @@ export class AiReviewService {
 
               effectiveRefTexts = '## 参照文件（向量检索：以下为与待审内容最相关的参照段落）\n\n'
                 + ordered.join('\n\n---\n\n');
-              console.log(`[AiReview] 分片${chunk.chunkIndex + 1}: 向量检索 ${refChunks.length} 块→Top${topK.length}, 最佳=${topK[0]?.sim?.toFixed(3) || 'N/A'}`);
             } catch (e: any) {
               console.warn(`[AiReview] 分片${chunk.chunkIndex + 1} 向量检索失败: ${e.message}，使用截断参照`);
               effectiveRefTexts = refTextsJoined;
             }
           }
 
-          // 组装 user prompt
-          const userContentTpl = await PromptTemplateService.getPromptByScene(
-            scene, 'user', 'comparison',
-            '## 参照文件（权威基准）\n\n${refTexts}\n\n---\n\n## 待审文件（被审查对象）\n\n${text}\n\n---\n\n请按照系统指令中的四层审查策略，逐项核对。输出 JSON 数组。',
-          );
           const userContent = userContentTpl
             .replace(/\$\{refTexts\}/g, effectiveRefTexts)
             .replace(/\$\{text\}/g, chunk.text);
@@ -548,13 +566,18 @@ export class AiReviewService {
             },
           });
 
-          allIssues.push(...issues);
           ctx.onChunkProgress?.(chunk.text.length, issues, chunk.chunkIndex, totalChunks, 'llm-ref-compare');
+          return { issues, failed: false };
         } catch (e: any) {
-          failedChunks++;
-          errors.push(e.message);
           console.warn(`[AiReview] 分片 ${chunk.chunkIndex + 1}/${totalChunks} 比对失败:`, e.message);
+          return { issues: [], failed: true, error: e.message };
         }
+      });
+
+      for (const r of chunkResults) {
+        allIssues.push(...r.issues);
+        if (r.failed) failedChunks++;
+        if (r.error) errors.push(r.error);
       }
 
       if (failedChunks === totalChunks && totalChunks > 0) {
@@ -562,8 +585,32 @@ export class AiReviewService {
       }
 
       const modeLabel = useFullRefs ? '全量' : (refVectors ? '向量检索' : '截断');
-      console.log(`[AiReview] 以文审文完成(${modeLabel}): ${allIssues.length} 条问题, ${refFileCount} 个参照, ${totalChunks} 个分片, ${failedChunks} 个失败`);
-      return { issues: allIssues, engine: 'llm-ref-compare' };
+      console.log(`[AiReview] 以文审文完成(${modeLabel}): ${allIssues.length} 条问题(raw), ${refFileCount} 个参照, ${totalChunks} 个分片, ${failedChunks} 个失败`);
+
+      // ---- 后处理过滤 ----
+      // 1. 过滤 originalText === suggestedText 的无效条目
+      // 2. 过滤 description 中明确表示"一致/无问题"的误输出（LLM 有时会输出"该项与参照文件一致，无问题"但仍作为条目返回）
+      const filtered = allIssues.filter(issue => {
+        const desc = (issue.description || '').trim();
+        const orig = (issue.originalText || '').trim();
+        const sug = (issue.suggestedText || '').trim();
+        // originalText 与 suggestedText 完全相同 → 无效
+        if (orig && sug && orig === sug) return false;
+        // description 包含"无问题"/"一致，无问题"等 → LLM 明确表示没发现问题
+        if (/(?:与参照文件\s*)?一致\s*[，,]?\s*无问题/.test(desc)) return false;
+        if (/该项\s*与.*一致\s*[，,]?\s*无问题/.test(desc)) return false;
+        if (/^(?:无|没有)(?:差异|问题|不一致)/.test(desc)) return false;
+        // description 过长且包含大量"一致"判定文字 → 可能是 LLM 输出了分析过程而非问题
+        if (desc.length > 200 && /一致/.test(desc) && !/不一致/.test(desc)) return false;
+        return true;
+      });
+
+      const removedCount = allIssues.length - filtered.length;
+      if (removedCount > 0) {
+        console.log(`[AiReview] 后处理过滤掉 ${removedCount} 条无效/一致条目，剩余 ${filtered.length} 条`);
+      }
+
+      return { issues: filtered, engine: 'llm-ref-compare' };
     } catch (e: any) {
       if (e.name === 'AbortError') {
         console.warn('[AiReview] LLM 请求超时，降级到标准 AI 审查');
@@ -754,23 +801,25 @@ export class AiReviewService {
         .replace(/\$\{rulesText\}/g, rulesText)
         .replace(/\$\{ragContext\}/g, ragContextBlock);
 
-      // 分片处理长文本
+      // 分片处理长文本（并行限流）
       const chunks = LlmService.splitText(text, chunkSize, true);
-      for (const chunk of chunks) {
+      const CONCURRENT_LIMIT = 3;
+      const chunkResults = await parallelLimit(chunks, CONCURRENT_LIMIT, async (chunk) => {
         try {
           const userContent = userTpl.replace(/\$\{text\}/g, chunk.text);
-
           const issues = await LlmService.reviewText(userContent, {
             maxTokens: llmMaxTokens,
             timeout: llmTimeout,
             systemPrompt,
             skipUserTemplate: true,
           });
-          allIssues.push(...issues);
+          return issues;
         } catch (e) {
           console.warn('[SemanticSpec] 分片审查失败:', e instanceof Error ? e.message : e);
+          return [];
         }
-      }
+      });
+      for (const r of chunkResults) allIssues.push(...r);
     }
 
     // 简单去重：按 originalText 前 60 字符去重

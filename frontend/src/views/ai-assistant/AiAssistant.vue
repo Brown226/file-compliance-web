@@ -160,8 +160,8 @@
           <el-input v-model="editForm.model" placeholder="例如：DeepSeek-V3" />
         </el-form-item>
         <el-form-item label="应用 ID" required>
-          <el-input v-model="editForm.applicationId" placeholder="MaxKB 中的应用 UUID" />
-          <div class="form-hint">在 MaxKB 应用设置中查看，36 位 UUID 格式</div>
+          <el-input v-model="editForm.applicationId" placeholder="粘贴 UUID 或完整的 MaxKB 对话 URL" />
+          <div class="form-hint">支持两种格式：36 位 UUID 或完整链接（如 http://host:8080/chat/api/xxx-uuid）</div>
         </el-form-item>
         <el-form-item label="图标颜色">
           <el-color-picker v-model="editForm.color" :predefine="colorOptions" />
@@ -216,6 +216,23 @@ const colorOptions = [
   'linear-gradient(135deg, #fa709a 0%, #fee140 100%)',
   'linear-gradient(135deg, #a18cd1 0%, #fbc2eb 100%)',
 ]
+
+// ==================== UUID 提取 ====================
+
+/** 从 URL 或纯文本中提取 MaxKB 应用 UUID */
+const extractUUID = (input: string): string => {
+  const trimmed = input.trim()
+  // 已经是纯 UUID 格式
+  if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(trimmed)) {
+    return trimmed
+  }
+  // 从 URL 中提取：支持 /chat/api/UUID、/app/UUID、/api/application/UUID 等路径
+  const match = trimmed.match(/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/i)
+  if (match) {
+    return match[1]
+  }
+  return trimmed // 无法识别则原样返回，让后端报错
+}
 
 // ==================== 智能体管理 ====================
 
@@ -275,12 +292,20 @@ const saveAgent = () => {
     return
   }
 
+  // 自动从 URL 中提取 UUID（支持粘贴完整 MaxKB 链接）
+  const extractedId = extractUUID(editForm.value.applicationId!)
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(extractedId)) {
+    ElMessage.warning('无法识别应用 ID，请输入 36 位 UUID 或完整的 MaxKB 对话链接')
+    return
+  }
+  editForm.value.applicationId = extractedId
+
   if (editingIndex.value === -1) {
     agents.value.push({
       id: Date.now().toString(),
       name: editForm.value.name!.trim(),
       description: editForm.value.description?.trim() || '',
-      applicationId: editForm.value.applicationId!.trim(),
+      applicationId: extractedId,
       color: editForm.value.color || colorOptions[0],
       category: editForm.value.category?.trim() || '',
       model: editForm.value.model?.trim() || '',
@@ -291,7 +316,7 @@ const saveAgent = () => {
       ...agents.value[editingIndex.value],
       name: editForm.value.name!.trim(),
       description: editForm.value.description?.trim() || '',
-      applicationId: editForm.value.applicationId!.trim(),
+      applicationId: extractedId,
       color: editForm.value.color || colorOptions[0],
       category: editForm.value.category?.trim() || '',
       model: editForm.value.model?.trim() || '',

@@ -78,6 +78,11 @@ export default defineConfig({
         ws: true,
         changeOrigin: true,
       },
+      // MaxKB 管理界面 iframe 嵌入代理（生产环境由 nginx 处理）
+      '/admin': {
+        target: process.env.MAXKB_URL || 'http://localhost:8080',
+        changeOrigin: true,
+      },
     },
   },
   // 开发时跳过类型检查（加速构建）

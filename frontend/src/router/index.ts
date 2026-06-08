@@ -106,7 +106,7 @@ const routes: Array<RouteRecordRaw> = [
         path: 'admin/knowledge',
         name: 'AdminKnowledge',
         component: () => import('../views/StandardLibrary/MaxKBTab.vue'),
-        meta: { title: 'MaxKB 知识库', allowViewer: true }
+        meta: { title: 'MaxKB 知识库', requiresAdminOrManager: true }
       },
       {
         path: 'admin/knowledge-categories',

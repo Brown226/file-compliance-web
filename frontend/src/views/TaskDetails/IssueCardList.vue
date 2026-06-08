@@ -21,69 +21,19 @@
           <el-option label="警告" value="warning" />
           <el-option label="提示" value="info" />
         </el-select>
-        <el-select v-model="filterCategory" placeholder="问题分类" clearable size="small" style="width:130px">
-          <el-option v-for="t in allCategories" :key="t.value" :label="t.label" :value="t.value" />
-        </el-select>
-        <!-- DWG 专属筛选：按图层 -->
-        <el-select
-          v-if="hasDwgDetails"
-          v-model="filterDwgLayers"
-          placeholder="按图层"
-          clearable
-          multiple
-          collapse-tags
-          collapse-tags-tooltip
-          size="small"
-          style="width:160px"
-        >
-          <el-option
-            v-for="layer in dwgLayerOptions"
-            :key="layer"
-            :label="layer"
-            :value="layer"
-          />
-        </el-select>
-        <!-- DWG 专属筛选：按图元类型 -->
-        <el-select
-          v-if="hasDwgDetails"
-          v-model="filterDwgEntityTypes"
-          placeholder="按图元类型"
-          clearable
-          multiple
-          collapse-tags
-          collapse-tags-tooltip
-          size="small"
-          style="width:150px"
-        >
-          <el-option
-            v-for="et in dwgEntityTypeOptions"
-            :key="et.value"
-            :label="et.label"
-            :value="et.value"
-          />
-        </el-select>
-        <!-- DWG 专属筛选：按规则类型 -->
-        <el-select
-          v-if="hasDwgDetails"
-          v-model="filterDwgRuleTypes"
-          placeholder="按规则类型"
-          clearable
-          multiple
-          collapse-tags
-          collapse-tags-tooltip
-          size="small"
-          style="width:150px"
-        >
-          <el-option
-            v-for="rt in dwgRuleTypeOptions"
-            :key="rt.value"
-            :label="rt.label"
-            :value="rt.value"
-          />
-        </el-select>
         <el-input v-model="searchText" placeholder="搜索原文本/描述..." clearable size="small" style="width:200px">
           <template #prefix><el-icon><Search /></el-icon></template>
         </el-input>
+        <el-button
+          v-if="hasDwgDetails || hasActiveAdvancedFilters"
+          size="small"
+          link
+          type="primary"
+          @click="showAdvancedFilters = !showAdvancedFilters"
+        >
+          {{ showAdvancedFilters ? '收起筛选' : '更多筛选' }}
+          <el-icon><ArrowDown /></el-icon>
+        </el-button>
       </div>
       <div class="filter-actions">
         <!-- 全部展开/折叠 -->
@@ -110,6 +60,66 @@
         <el-button link type="info" size="small" @click="resetFilters">
           <el-icon><RefreshRight /></el-icon> 重置
         </el-button>
+      </div>
+      <!-- 高级筛选（默认折叠） -->
+      <div v-if="showAdvancedFilters" class="filter-group filter-advanced">
+        <el-select v-model="filterCategory" placeholder="问题分类" clearable size="small" style="width:130px">
+          <el-option v-for="t in allCategories" :key="t.value" :label="t.label" :value="t.value" />
+        </el-select>
+        <el-select
+          v-if="hasDwgDetails"
+          v-model="filterDwgLayers"
+          placeholder="按图层"
+          clearable
+          multiple
+          collapse-tags
+          collapse-tags-tooltip
+          size="small"
+          style="width:160px"
+        >
+          <el-option
+            v-for="layer in dwgLayerOptions"
+            :key="layer"
+            :label="layer"
+            :value="layer"
+          />
+        </el-select>
+        <el-select
+          v-if="hasDwgDetails"
+          v-model="filterDwgEntityTypes"
+          placeholder="按图元类型"
+          clearable
+          multiple
+          collapse-tags
+          collapse-tags-tooltip
+          size="small"
+          style="width:150px"
+        >
+          <el-option
+            v-for="et in dwgEntityTypeOptions"
+            :key="et.value"
+            :label="et.label"
+            :value="et.value"
+          />
+        </el-select>
+        <el-select
+          v-if="hasDwgDetails"
+          v-model="filterDwgRuleTypes"
+          placeholder="按规则类型"
+          clearable
+          multiple
+          collapse-tags
+          collapse-tags-tooltip
+          size="small"
+          style="width:150px"
+        >
+          <el-option
+            v-for="rt in dwgRuleTypeOptions"
+            :key="rt.value"
+            :label="rt.label"
+            :value="rt.value"
+          />
+        </el-select>
       </div>
     </div>
 
@@ -177,19 +187,6 @@
           退出批量操作
         </el-button>
       </div>
-    </div>
-
-    <!-- 批量操作入口（轻量切换） -->
-    <div class="enter-batch-bar" v-if="filteredAndSearched.length > 0 && !batchMode">
-      <el-button
-        type="default"
-        size="small"
-        plain
-        @click="enterBatchMode"
-      >
-        <el-icon><Operation /></el-icon> 批量
-      </el-button>
-      <span class="batch-hint">勾选问题后可批量标记误报</span>
     </div>
 
     <div class="error-content" :class="{ 'batch-mode-active': batchMode }" ref="errorContentRef" v-loading="loading">
@@ -321,6 +318,7 @@ import {
   WarningFilled,
   Collection,
   ArrowRight,
+  ArrowDown,
   CircleCheck,
   Expand,
   Fold,
@@ -353,6 +351,7 @@ const emit = defineEmits<{
 }>()
 
 const errorContentRef = ref<HTMLElement | null>(null)
+const showAdvancedFilters = ref(false)
 
 // 将 props 转换为 ref 以便 composables 使用
 const detailsRef = computed(() => props.details)
@@ -396,6 +395,8 @@ const {
 // 常量配置
 const allCategories = ALL_CATEGORIES
 const dwgRuleTypeOptions = DWG_RULE_TYPE_OPTIONS
+
+const hasActiveAdvancedFilters = computed(() => !!(filterCategory.value || filterDwgLayers.value?.length || filterDwgEntityTypes.value?.length || filterDwgRuleTypes.value?.length))
 
 // ===== 分组功能 =====
 const groupMode = ref(false)
@@ -758,6 +759,7 @@ defineExpose({
   z-index: 10;
 }
 .filter-group { display: flex; align-items: center; gap: 8px; }
+.filter-advanced { padding-top: 8px; border-top: 1px solid #F0F0F0; margin-top: 8px; }
 
 /* ===== 批量操作工具栏 ===== */
 .batch-toolbar {
@@ -831,10 +833,6 @@ defineExpose({
   flex-shrink: 0;
 }
 
-.batch-hint {
-  font-size: 12px;
-  color: #909399;
-}
 
 /* 批量模式下卡片增加左边距（为checkbox留空间） */
 .batch-mode-active .issue-card {

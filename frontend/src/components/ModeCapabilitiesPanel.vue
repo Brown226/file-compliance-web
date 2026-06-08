@@ -90,7 +90,7 @@
               <el-option label="标准AI" value="standard" />
               <el-option label="纯LLM" value="llmOnly" />
               <el-option label="参照比对" value="refCompare" />
-              <el-option label="结构化审查" value="multimodal" />
+              <!-- <el-option label="结构化审查" value="multimodal" /> -->
             </el-select>
           </template>
         </el-table-column>

@@ -25,6 +25,7 @@ const reportDebug = (_event: string, _data: Record<string, any>) => {
 const props = defineProps<{
   taskId: string
   fileId: string | null
+  fileType?: string
   fileUrl?: string
   locateTarget?: { originalText: string; locateCandidates?: string[]; locateMeta?: any; locateHint?: string } | null
 }>()
@@ -42,6 +43,10 @@ const HIGHLIGHT_CLASS = 'docx-highlight-yellow'
 
 const loadDocx = async () => {
   if (!props.fileId && !props.fileUrl) return
+
+  // .doc 旧格式：通过后端 LibreOffice 转换为 .docx 再渲染
+  const isOldDoc = props.fileType === 'doc'
+
   loading.value = true
   error.value = ''
   renderedHtml.value = ''
@@ -51,6 +56,13 @@ const loadDocx = async () => {
     if (props.fileUrl) {
       const resp = await fetch(props.fileUrl)
       arrayBuffer = await resp.arrayBuffer()
+    } else if (isOldDoc) {
+      // .doc → 后端转换为 .docx
+      const resp = await request.get(
+        `/tasks/${props.taskId}/files/${props.fileId}/convert-doc`,
+        { responseType: 'arraybuffer', timeout: 120000 }
+      )
+      arrayBuffer = resp.data
     } else {
       const resp = await request.get(
         `/tasks/${props.taskId}/files/${props.fileId}/raw`,

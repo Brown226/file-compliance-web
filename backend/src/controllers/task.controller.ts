@@ -363,6 +363,71 @@ export const getTaskFileRaw = async (req: Request, res: Response): Promise<void>
   }
 };
 
+export const convertDocToDocx = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const taskId = req.params.id as string;
+    const fileId = req.params.fileId as string;
+
+    const file = await TaskService.getTaskFileRaw(taskId, fileId);
+    if (!file) {
+      error(res, '未找到文件', 404);
+      return;
+    }
+
+    // 只处理 .doc 文件
+    const ext = path.extname(file.fileName).toLowerCase();
+    if (ext !== '.doc') {
+      error(res, '仅支持 .doc 格式转换', 400);
+      return;
+    }
+
+    let absPath: string;
+    const rawPath = file.filePath;
+    if (rawPath.startsWith('/uploads/') || rawPath.startsWith('\\uploads\\')) {
+      absPath = resolveFilePath(rawPath);
+    } else if (path.isAbsolute(rawPath)) {
+      absPath = rawPath;
+    } else {
+      absPath = resolveFilePath('/uploads/' + rawPath.replace(/^[/\\]+/, ''));
+    }
+    if (!fs.existsSync(absPath)) {
+      error(res, '文件不存在', 404);
+      return;
+    }
+
+    // 调用 doc-parser 服务进行 .doc → .docx 转换
+    const parserUrl = process.env.PARSER_SERVICE_URL || 'http://localhost:8000';
+    const fileBuffer = fs.readFileSync(absPath);
+
+    const formData = new FormData();
+    const blob = new Blob([fileBuffer], { type: 'application/msword' });
+    formData.append('file', blob, file.fileName);
+
+    const response = await fetch(`${parserUrl}/api/convert/doc-to-docx`, {
+      method: 'POST',
+      body: formData,
+      signal: AbortSignal.timeout(120000),
+    });
+
+    if (!response.ok) {
+      const errText = await response.text();
+      console.error('[convertDocToDocx] 转换失败:', response.status, errText);
+      error(res, '文档转换失败，请稍后重试', 500);
+      return;
+    }
+
+    const docxBuffer = Buffer.from(await response.arrayBuffer());
+    const docxFileName = file.fileName.replace(/\.doc$/i, '.docx');
+
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
+    res.setHeader('Content-Disposition', `inline; filename="${encodeURIComponent(docxFileName)}"`);
+    res.send(docxBuffer);
+  } catch (err) {
+    console.error('Convert Doc to Docx Error:', err);
+    error(res, '文档转换服务不可用', 500);
+  }
+};
+
 export const updateTaskStatus = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const id = req.params.id as string;
@@ -419,8 +484,15 @@ export const exportTaskReportWord = async (req: Request, res: Response): Promise
 
 /** 构建Word兼容HTML文档 */
 function buildWordHtml(task: any, details: any): string {
-  const issues = details?.issues || [];
-  const summary = details?.summary || {};
+  const issues = Array.isArray(details) ? details : (details?.issues || []);
+  const summary = Array.isArray(details) ? {} : (details?.summary || {});
+
+  // 从数组中统计严重度
+  if (Array.isArray(details)) {
+    summary.errors = issues.filter((d: any) => d.severity === 'error').length;
+    summary.warnings = issues.filter((d: any) => d.severity === 'warning').length;
+    summary.infos = issues.filter((d: any) => d.severity === 'info').length;
+  }
 
   const issuesHtml = issues.map((issue: any, i: number) => {
     const severityLabels: Record<string, string> = { error: '错误', warning: '警告', info: '提示' };

@@ -318,38 +318,6 @@
                 </div>
               </div>
 
-              <!-- 严重度分布条 -->
-              <div v-if="issueDetails.length > 0" class="severity-distribution">
-                <div class="severity-bar-row">
-                  <span class="sev-label sev-error">严重</span>
-                  <div class="sev-track"><div class="sev-fill sev-fill-error" :style="{ width: pct(errorIssues.length, issueDetails.length) }"></div></div>
-                  <span class="sev-count">{{ errorIssues.length }}</span>
-                </div>
-                <div class="severity-bar-row">
-                  <span class="sev-label sev-warning">警告</span>
-                  <div class="sev-track"><div class="sev-fill sev-fill-warning" :style="{ width: pct(warningIssues.length, issueDetails.length) }"></div></div>
-                  <span class="sev-count">{{ warningIssues.length }}</span>
-                </div>
-                <div class="severity-bar-row">
-                  <span class="sev-label sev-info">提示</span>
-                  <div class="sev-track"><div class="sev-fill sev-fill-info" :style="{ width: pct(infoIssues.length, issueDetails.length) }"></div></div>
-                  <span class="sev-count">{{ infoIssues.length }}</span>
-                </div>
-              </div>
-
-              <!-- 问题来源 -->
-              <div v-if="issueDetails.length > 0" class="source-tags">
-                <span class="source-tag" v-if="reviewSummary?.ruleIssues > 0">
-                  <span class="source-dot rule-dot"></span>规则引擎 {{ reviewSummary.ruleIssues }}
-                </span>
-                <span class="source-tag" v-if="reviewSummary?.aiIssues > 0">
-                  <span class="source-dot ai-dot"></span>AI 审查 {{ reviewSummary.aiIssues }}
-                </span>
-                <span class="source-tag" v-if="reviewSummary?.stdRefIssues > 0">
-                  <span class="source-dot std-dot"></span>标准引用 {{ reviewSummary.stdRefIssues }}
-                </span>
-              </div>
-
               <!-- AI 审查空结果警告 -->
               <div v-if="showAiWarning" class="ai-warning-banner">
                 <el-icon color="#E6A23C" :size="16"><WarningFilled /></el-icon>
@@ -457,20 +425,23 @@
           <div v-if="activeTab === 'suggestions'" class="tab-pane" style="height:100%; display:flex; flex-direction:column;">
             <!-- 审查通过空状态 -->
             <div v-if="!loading && task?.status === 'COMPLETED' && issueDetails.length === 0" class="empty-state-pass">
-              <el-icon :size="64" color="#67C23A"><CircleCheckFilled /></el-icon>
-              <h3>审查通过 ✅</h3>
-              <p>未发现需要处理的问题</p>
+              <div class="pass-icon-wrapper">
+                <el-icon :size="56" color="#67C23A"><CircleCheckFilled /></el-icon>
+              </div>
+              <h3>审查通过</h3>
+              <p class="pass-subtitle">未发现需要处理的问题，文档质量良好</p>
 
               <div class="empty-actions">
-                <el-button type="primary" @click="activeTab = 'overview'">
-                  📊 查看审查摘要
+                <el-button type="primary" size="large" @click="handleExportReport">
+                  <el-icon><Download /></el-icon> 导出审查报告
                 </el-button>
-                <el-button @click="handleExportReport">
-                  📤 导出审查报告
+                <el-button size="large" @click="activeTab = 'overview'">
+                  <el-icon><DataAnalysis /></el-icon> 查看审查摘要
+                </el-button>
+                <el-button size="large" @click="$router.push('/tasks/new')">
+                  <el-icon><Plus /></el-icon> 新建任务
                 </el-button>
               </div>
-
-              <p class="empty-hint">提示：即使没有问题，也可以在"审查摘要"中查看完整的审查统计信息</p>
             </div>
 
             <!-- 有问题时显示问题列表 -->
@@ -588,6 +559,7 @@ import {
   PictureFilled,
   Grid,
   Location,
+  Plus,
 } from '@element-plus/icons-vue'
 import {
   getTaskByIdApi,
@@ -613,6 +585,41 @@ const allDetails = ref<TaskDetail[]>([])
 const files = ref<TaskFile[]>([])
 const loading = ref(false)
 const loadingMessage = ref('正在加载审查结果...')
+
+// ===== 文件预览/选择（提前声明，供 useSelfCheck 和 useTextLocator 使用）=====
+const selectedFileId = ref<string | null>(null)
+const filterFileId = ref<string>('')
+const selectFile = (fileId: string) => {
+  selectedFileId.value = fileId
+  filterFileId.value = fileId
+}
+
+// ===== 定位系统（使用 Composable）=====
+const {
+  locateTarget,
+  locateFeedback,
+  dwgLocateTarget,
+  getLocateStatus,
+  handleLocateResult,
+  handleLocateText,
+} = useTextLocator(files, selectedFileId, (fileId, options) => {
+  // 基础文件上下文切换
+  selectedFileId.value = fileId
+  filterFileId.value = fileId
+
+  // 如果有定位选项，触发定位
+  if (options?.locate) {
+    console.log('[DEBUG locateTarget SET by callback] cadHandleId =', options.locate.cadHandleId)
+    locateTarget.value = {
+      originalText: options.locate.originalText || '',
+      locateCandidates: options.locate.locateCandidates || [],
+      textPosition: options.locate.textPosition || null,
+      locateMeta: options.locate.locateMeta || null,
+      cadHandleId: options.locate.cadHandleId,
+      locateHint: options.locate.locateHint,
+    }
+  }
+})
 
 // ===== 导出功能（使用 Composable）=====
 const { exportToWord: handleExportWord, exportToExcel: handleExportExcel, handleExportCommand } = useTaskExport(
@@ -721,49 +728,13 @@ const rightPanelStyle = computed(() => ({
   overflow: 'hidden',
 }))
 
-// ===== 文件预览相关 =====
-const selectedFileId = ref<string | null>(null)
-const filterFileId = ref<string>('')
-
 const selectedFile = computed(() => files.value.find((f: any) => f.id === selectedFileId.value) as any)
 const selectedFileType = computed(() => selectedFile.value?.fileType || selectedFile.value?.file_type || '')
 const selectedFileName = computed(() => selectedFile.value?.fileName || '')
 
-// ===== 定位系统（使用 Composable）=====
-const {
-  locateTarget,
-  locateFeedback,
-  dwgLocateTarget,
-  getLocateStatus,
-  handleLocateResult,
-  handleLocateText,
-} = useTextLocator(files, selectedFileId, (fileId, options) => {
-  // 基础文件上下文切换
-  selectedFileId.value = fileId
-  filterFileId.value = fileId
-
-  // 如果有定位选项，触发定位
-  if (options?.locate) {
-    console.log('[DEBUG locateTarget SET by callback] cadHandleId =', options.locate.cadHandleId)
-    locateTarget.value = {
-      originalText: options.locate.originalText || '',
-      locateCandidates: options.locate.locateCandidates || [],
-      textPosition: options.locate.textPosition || null,
-      locateMeta: options.locate.locateMeta || null,
-      cadHandleId: options.locate.cadHandleId,
-      locateHint: options.locate.locateHint,
-    }
-  }
-})
-
 // 兼容性包装：供模板使用（内部调用 selectFile）
 const switchToFileContext = (fileId: string, options?: any) => {
   selectFile(fileId)
-}
-
-const selectFile = (fileId: string) => {
-  selectedFileId.value = fileId
-  filterFileId.value = fileId
 }
 
 const getFileNameById = (fileId: string): string => {
@@ -783,22 +754,6 @@ const getFileIconComponent = (fileType: string): any => {
 const getFileIssueCount = (fileId: string): number => {
   return allDetails.value.filter((d: any) => d.fileId === fileId).length
 }
-
-const fileStatusSummary = computed(() => {
-  const ids = new Set(files.value.map((f: any) => f.id))
-  let completed = 0
-  let failed = 0
-  let skipped = 0
-
-  Object.entries(runtimeFileStatus.value).forEach(([fileId, status]) => {
-    if (!ids.has(fileId)) return
-    if (status === 'completed') completed++
-    if (status === 'failed') failed++
-    if (status === 'skipped') skipped++
-  })
-
-  return { completed, failed, skipped }
-})
 
 const isDwgFileSelected = computed(() => {
   if (!selectedFileId.value) return false
@@ -861,50 +816,7 @@ const tabs = [
   { key: 'knowledge', label: '标准引用', icon: 'Reading' },
 ]
 
-// ===== Tab Badge 徽标系统 =====
-const tabBadges = computed(() => ({
-  overview: {
-    total: issueDetails.value.length,
-    errors: errorIssues.value.length,
-    warnings: warningIssues.value.length,
-    hasIssues: issueDetails.value.length > 0
-  },
-  suggestions: {
-    total: issueDetails.value.length,
-    errorCount: errorIssues.value.length,
-    warningCount: warningIssues.value.length
-  },
-  knowledge: {
-    count: standardRefIssues.value.length,
-    isEmpty: standardRefIssues.value.length === 0
-  }
-}))
-
-const getTabBadge = (key: string) => {
-  const badges = tabBadges.value
-
-  switch (key) {
-    case 'overview':
-      return badges.overview.hasIssues
-        ? { value: badges.overview.total, type: 'danger' as const }
-        : { value: '✓', type: 'success' as const }
-
-    case 'suggestions':
-      if (badges.suggestions.total === 0) return null
-      return {
-        value: `${badges.suggestions.errorCount}/${badges.suggestions.total}`,
-        type: 'danger' as const
-      }
-
-    case 'knowledge':
-      return badges.knowledge.isEmpty
-        ? null
-        : { value: badges.knowledge.count, type: 'success' as const }
-
-    default:
-      return null
-  }
-}
+// ===== Tab Badge / getTabBadge 已迁移到 useReviewStats composable =====
 
 // 从审查摘要跳转到问题明细
 const navigateToIssue = (issue: TaskDetail) => {
@@ -1149,58 +1061,7 @@ const fetchData = async (silent = false) => {
 }
 
 // ===== 操作函数 =====
-const pickLocateKeyword = (text: string): string => {
-  const raw = (text || '').trim()
-  if (!raw) return ''
-
-  const candidates = raw
-    .split(/[|｜\n\r\t]/)
-    .map(s => s.trim())
-    .filter(Boolean)
-    .sort((a, b) => b.length - a.length)
-
-  // 优先使用长度适中的片段，避免整段表格文本导致无法命中
-  const preferred = candidates.find(s => s.length >= 6 && s.length <= 40)
-  if (preferred) return preferred
-
-  return candidates[0] || raw.slice(0, 40)
-}
-
-const collectLocateAnchors = (item: TaskDetail): string[] => {
-  const anchors: string[] = []
-
-  if (item.originalText) anchors.push(item.originalText)
-
-  const refs = Array.isArray(item.sourceReferences) ? item.sourceReferences : []
-  refs.forEach((ref: any) => {
-    if (typeof ref?.chunkContent === 'string' && ref.chunkContent.trim()) {
-      anchors.push(ref.chunkContent)
-    }
-    if (typeof ref?.standardTitle === 'string' && ref.standardTitle.trim()) {
-      anchors.push(ref.standardTitle)
-    }
-  })
-
-  const diffRanges = item.diffRanges as any
-  if (diffRanges && typeof diffRanges === 'object') {
-    const maybeOriginal = diffRanges.originalText || diffRanges.original || diffRanges.rawText
-    if (typeof maybeOriginal === 'string' && maybeOriginal.trim()) {
-      anchors.push(maybeOriginal)
-    }
-  }
-
-  const seen = new Set<string>()
-  return anchors
-    .map(s => String(s || '').trim())
-    .filter(Boolean)
-    .filter(s => {
-      const key = s.replace(/\s+/g, '').toLowerCase()
-      if (!key || seen.has(key)) return false
-      seen.add(key)
-      return true
-    })
-}
-
+// pickLocateKeyword, collectLocateAnchors 已迁移到 useIssueHelpers composable =====
 
 // ===== IssueCardList 桥接事件处理 =====
 
@@ -1235,11 +1096,7 @@ const handleBatchAdoptFromIssueList = async (issueIds: string[]) => {
   await handleBatchAdopt(issueIds)
 }
 
-const handleBatchFalsePositiveFromIssueList = async (issueIds: string[], reason?: string) => {
-  console.log('批量标记误报:', issueIds.length, '条, 原因:', reason)
-  // 可以复用 FalsePositiveDialog 或直接调用 API
-  // TODO: 根据实际需求实现批量误报标记逻辑
-}
+// handleBatchFalsePositiveFromIssueList 已迁移到 useFalsePositive composable
 
 const goBack = () => {
   router.push('/tasks/history')
@@ -1802,23 +1659,22 @@ onUnmounted(() => {
 .stats-grid {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
-  gap: 12px;
-  margin-bottom: 16px;
+  gap: 8px;
 }
 
 .stat-card-dash {
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding: 16px;
+  gap: 8px;
+  padding: 10px 12px;
   background: #F9FAFB;
   border: 1px solid #E5E7EB;
-  border-radius: 8px;
+  border-radius: 6px;
   transition: border-color 0.15s, box-shadow 0.15s;
 }
 .stat-card-dash:hover {
   border-color: #D1D5DB;
-  box-shadow: 0 2px 6px rgba(0,0,0,0.04);
+  box-shadow: 0 1px 4px rgba(0,0,0,0.04);
 }
 .stat-card-dash.has-issues {
   background: #FEF2F2;
@@ -1826,110 +1682,28 @@ onUnmounted(() => {
 }
 
 .stat-icon-dash {
-  font-size: 24px;
+  font-size: 18px;
   flex-shrink: 0;
 }
 
 .stat-body {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 1px;
   min-width: 0;
 }
 
 .stat-value-dash {
-  font-size: 18px;
+  font-size: 15px;
   font-weight: 700;
   color: #111827;
   line-height: 1.2;
 }
 
 .stat-label-dash {
-  font-size: 12px;
+  font-size: 11px;
   color: #6B7280;
 }
-
-/* 严重度分布条 */
-.severity-distribution {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  padding: 14px 16px;
-  background: #F9FAFB;
-  border: 1px solid #E5E7EB;
-  border-radius: 8px;
-  margin-bottom: 12px;
-}
-
-.severity-bar-row {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-
-.sev-label {
-  font-size: 12px;
-  font-weight: 600;
-  min-width: 36px;
-  flex-shrink: 0;
-}
-.sev-error { color: #EF4444; }
-.sev-warning { color: #F59E0B; }
-.sev-info { color: #6B7280; }
-
-.sev-track {
-  flex: 1;
-  height: 8px;
-  background: #F3F4F6;
-  border-radius: 4px;
-  overflow: hidden;
-}
-
-.sev-fill {
-  height: 100%;
-  border-radius: 4px;
-  transition: width 0.4s ease;
-}
-.sev-fill-error { background: #EF4444; }
-.sev-fill-warning { background: #F59E0B; }
-.sev-fill-info { background: #6B7280; }
-
-.sev-count {
-  font-size: 13px;
-  font-weight: 700;
-  color: #374151;
-  min-width: 24px;
-  text-align: right;
-}
-
-/* 问题来源标签 */
-.source-tags {
-  display: flex;
-  gap: 12px;
-  flex-wrap: wrap;
-}
-
-.source-tag {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  font-size: 12px;
-  color: #6B7280;
-  padding: 4px 10px;
-  background: #F9FAFB;
-  border-radius: 16px;
-  border: 1px solid #E5E7EB;
-}
-
-.source-dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  flex-shrink: 0;
-}
-.rule-dot { background: #8B5CF6; }
-.ai-dot { background: #3B82F6; }
-.std-dot { background: #10B981; }
 
 /* ===== Overview Tab: 问题预览列表 ===== */
 .overview-issue-list {
@@ -2866,11 +2640,29 @@ onUnmounted(() => {
   text-align: center;
 }
 
+.pass-icon-wrapper {
+  width: 80px;
+  height: 80px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #ECFDF5 0%, #D1FAE5 100%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 16px;
+}
+
 .empty-state-pass h3,
 .empty-state-knowledge h4 {
-  margin: 16px 0 8px;
-  font-size: 18px;
-  color: #374151;
+  margin: 0 0 8px;
+  font-size: 20px;
+  font-weight: 600;
+  color: #065F46;
+}
+
+.pass-subtitle {
+  margin: 0 0 28px;
+  font-size: 14px;
+  color: #6B7280;
 }
 
 .empty-state-pass p,

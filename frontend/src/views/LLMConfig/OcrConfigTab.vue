@@ -19,7 +19,7 @@
               placeholder="https://api.openai.com/v1"
               clearable
             />
-            <div class="form-tip">默认主路径是独立 OCR 服务。只有在视觉模型兜底场景下才依赖这里的接口。</div>
+            <div class="form-tip">通过 doc-parser 的视觉模型端点进行扫描件识别。</div>
           </el-form-item>
 
           <el-form-item label="模型名称" required>
@@ -38,7 +38,7 @@
                 :value="model"
               />
             </el-select>
-            <div class="form-tip">建议仅在需要更高识别质量时配置视觉模型兜底。</div>
+            <div class="form-tip">扫描件 PDF 和图片的文字识别将使用此视觉模型完成。</div>
           </el-form-item>
 
           <el-form-item label="超时时间">

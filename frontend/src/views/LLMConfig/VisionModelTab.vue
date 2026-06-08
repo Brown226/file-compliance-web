@@ -1,8 +1,8 @@
 <template>
   <div class="engine-tab">
     <el-alert type="info" :closable="false" show-icon style="margin-bottom: 16px">
-      <template #title>多模态视觉模型 — OCR 兜底</template>
-      PaddleOCR 是主力识别引擎（无需配置）。此视觉模型仅作为备胎，在 PaddleOCR 失败时启用。
+      <template #title>多模态视觉模型 — 扫描件 OCR</template>
+      扫描件 PDF 和图片的文字识别通过视觉大模型完成。配置 API 密钥和模型后即可识别扫描件。
     </el-alert>
     <section class="config-section">
       <div class="config-card">

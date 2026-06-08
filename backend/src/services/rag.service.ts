@@ -173,18 +173,22 @@ export class RAGService {
       console.log(`[RAG] 处理分片 ${i + 1}/${totalChunks} (${chunk.text.length}字)`);
 
       try {
-        // 2a. 向量检索：从多个知识库获取与该分片相关的标准规范
+        // 2a. 向量检索：并行从多个知识库获取相关标准规范
         const allRetrievedChunks: RAGRetrievedChunk[] = [];
-        for (const kbId of kbIds) {
-          try {
-            const kbChunks = await this.retrieve(kbId, chunk.text, {
+        const kbResults = await Promise.allSettled(
+          kbIds.map(kbId =>
+            this.retrieve(kbId, chunk.text, {
               topNumber: topK,
-              similarity: 0.2,  // 审查场景降低阈值以获得更多参考
+              similarity: 0.2,
               searchMode: 'blend',
-            });
-            allRetrievedChunks.push(...kbChunks);
-          } catch (e: any) {
-            console.warn(`[RAG] 知识库 ${kbId} 检索失败:`, e.message);
+            })
+          )
+        );
+        for (const result of kbResults) {
+          if (result.status === 'fulfilled') {
+            allRetrievedChunks.push(...result.value);
+          } else {
+            console.warn(`[RAG] 知识库检索失败:`, result.reason?.message || result.reason);
           }
         }
 

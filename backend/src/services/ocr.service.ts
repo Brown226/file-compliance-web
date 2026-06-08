@@ -1,6 +1,7 @@
 import prisma from '../config/db';
 import fs from 'fs';
 import path from 'path';
+import { PythonParserService } from './python-parser.service';
 import { FileTypeService } from './file-type.service';
 
 interface OcrConfig {
@@ -12,13 +13,15 @@ interface OcrConfig {
 
 const DEFAULT_OCR_CONFIG: OcrConfig = {
   apiBaseUrl: 'https://api.siliconflow.cn/v1',
-  timeout: 180000,
+  timeout: 300000,
 };
 
-const DEFAULT_OCR_SERVICE_URL = process.env.OCR_SERVICE_URL || 'http://localhost:8001';
-
-const OCR_SERVICE_URL = process.env.OCR_SERVICE_URL || 'http://localhost:8001';
-
+/**
+ * OCR 服务 — 使用 doc-parser 的视觉模型 OCR 端点
+ *
+ * 不再依赖独立 OCR 服务（PaddleOCR 容器），改为调用 doc-parser 的 /api/ocr/scan 端点。
+ * doc-parser 内部使用 pdf2image + 视觉大模型 API 完成扫描件识别。
+ */
 export class OcrService {
   /**
    * 获取视觉模型兜底配置（优先从 llm_vision_model 读取，兼容旧 llm_ocr_model）
@@ -36,7 +39,7 @@ export class OcrService {
               apiBaseUrl: v.apiBaseUrl || DEFAULT_OCR_CONFIG.apiBaseUrl,
               apiKey: v.apiKey,
               modelName: v.modelName,
-              timeout: (v.timeout || 180) * 1000,
+              timeout: (v.timeout || 300) * 1000,
             };
           }
         }
@@ -48,64 +51,66 @@ export class OcrService {
   }
 
   /**
-   * 检测 PaddleOCR 服务连通状态
+   * 检测 OCR 能力状态
+   * 现在检查的是 doc-parser 服务 + 视觉模型配置
    */
   static async healthCheck(): Promise<{ healthy: boolean; info?: any; error?: string }> {
     try {
-      const resp = await fetch(`${OCR_SERVICE_URL}/health`, { signal: AbortSignal.timeout(5000) });
-      const data = await resp.json();
-      // 同时获取支持的模型列表
-      let models: string[] = [];
-      try {
-        const mResp = await fetch(`${OCR_SERVICE_URL}/models`, { signal: AbortSignal.timeout(3000) });
-        const mData = await mResp.json();
-        models = mData.models || [];
-      } catch {}
+      const { reachable, error } = await PythonParserService.healthCheck();
+      if (!reachable) {
+        return { healthy: false, error: error || 'doc-parser 服务不可用' };
+      }
+
+      const visionConfig = await this.getVisionConfig();
       return {
         healthy: true,
         info: {
-          url: OCR_SERVICE_URL,
-          service: data.service || 'PaddleOCR',
-          status: data.status || 'healthy',
-          models,
+          service: 'doc-parser (vision-llm)',
+          status: 'healthy',
+          visionConfigured: !!(visionConfig.apiKey && visionConfig.modelName),
+          visionModel: visionConfig.modelName || '未配置',
         },
       };
     } catch (e: any) {
-      return { healthy: false, error: e.message || '无法连接 OCR 服务' };
+      return { healthy: false, error: e.message || 'OCR 健康检查失败' };
     }
   }
 
   /**
    * 识别文件中的文字
-   * 后端只负责传递原始文件内容与识别配置；PDF 渲染和 OCR 识别由独立 OCR 容器完成。
+   * 通过 doc-parser 的 /api/ocr/scan 端点，使用视觉大模型识别扫描件。
    */
   static async recognizeFile(filePath: string, fileType: string): Promise<string> {
     const config = await this.getVisionConfig();
-    const base64Data = fs.readFileSync(filePath).toString('base64');
-    const normalizedFileType = FileTypeService.normalizeFileType(fileType, path.basename(filePath));
-    const requestBody: Record<string, unknown> = {
-      image: base64Data,
-      fileType: normalizedFileType,
-      fileName: path.basename(filePath),
-      timeoutMs: config.timeout,
-    };
 
-    if (config.apiKey && config.modelName) {
-      requestBody.apiBaseUrl = config.apiBaseUrl;
-      requestBody.apiKey = config.apiKey;
-      requestBody.modelName = config.modelName;
+    if (!config.apiKey || !config.modelName) {
+      console.warn('[OCR] 未配置视觉模型 (llm_vision_model)，跳过 OCR');
+      return '';
     }
+
+    const serviceUrl = await PythonParserService.getServiceUrl();
+    const fileName = path.basename(filePath);
+
+    const FormData = (await import('form-data')).default;
+    const form = new FormData();
+    const fileBuffer = await fs.promises.readFile(filePath);
+    form.append('file', fileBuffer, fileName);
+    form.append('apiBaseUrl', config.apiBaseUrl);
+    form.append('apiKey', config.apiKey);
+    form.append('modelName', config.modelName);
+    form.append('timeoutSec', String(Math.round(config.timeout / 1000)));
 
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), config.timeout);
 
     try {
-      const response = await fetch(`${DEFAULT_OCR_SERVICE_URL}/api/ocr/base64`, {
+      console.log(`[OCR] 调用 doc-parser 视觉模型 OCR: ${fileName}, model=${config.modelName}`);
+      const response = await fetch(`${serviceUrl}/api/ocr/scan`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(requestBody),
+        body: form as any,
+        headers: form.getHeaders(),
         signal: controller.signal,
-      });
+      } as any);
 
       if (!response.ok) {
         const errorText = await response.text();
@@ -113,7 +118,9 @@ export class OcrService {
       }
 
       const data = (await response.json()) as any;
-      return OcrService.postProcessOcrText(data.text || '');
+      const text = data.data?.text || '';
+      console.log(`[OCR] 识别完成: ${fileName}, ${text.length} 字符`);
+      return OcrService.postProcessOcrText(text);
     } finally {
       clearTimeout(timeoutId);
     }

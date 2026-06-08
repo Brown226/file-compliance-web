@@ -5,6 +5,7 @@
       v-if="isDocx"
       :taskId="taskId"
       :fileId="fileId"
+      :fileType="ext"
       :locateTarget="locateTarget"
       @locateResult="forwardLocateResult"
     />

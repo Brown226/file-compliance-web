@@ -68,7 +68,14 @@ const handleTypoGrammar: ReviewHandler = async (ctx) => {
   const scene = ctx.scene || MODE_SCENE.TYPO_GRAMMAR;
   const config = getEffectiveConfig(ctx);
   const result = await AiReviewService.runLLMOnlyStrategy(text, ctx, scene, config);
+
+  // 过滤术语白名单
   result.issues = await TerminologyService.filterTerminologyIssues(text, result.issues);
+
+  // 基础校对模式允许 TYPO、FLUENCY 和轻量 CONSISTENCY（上下文数据矛盾），拒绝格式/合规/完整性等超出范围的问题
+  const allowedTypes = new Set(['TYPO', 'FLUENCY', 'CONSISTENCY']);
+  result.issues = result.issues.filter(issue => allowedTypes.has(issue.issueType));
+
   return { aiIssues: result.issues, usedEngine: result.engine, sources: result.sources };
 };
 

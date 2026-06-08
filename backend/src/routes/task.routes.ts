@@ -15,6 +15,7 @@ import {
   getTaskProgress,
   getTaskFileContent,
   getTaskFileRaw,
+  convertDocToDocx,
   updateTaskStatus,
   exportTaskReport,
   exportTaskReportWord,
@@ -135,6 +136,7 @@ router.get('/:id/details', getTaskDetails);
 router.get('/:id/progress', getTaskProgress);
 router.get('/:id/files/:fileId/content', getTaskFileContent);
 router.get('/:id/files/:fileId/raw', getTaskFileRaw);
+router.get('/:id/files/:fileId/convert-doc', convertDocToDocx);
 router.get('/:id/export', exportTaskReport);
 router.get('/:id/export-word', exportTaskReportWord);
 router.get('/:id/review-summary', getReviewSummary);

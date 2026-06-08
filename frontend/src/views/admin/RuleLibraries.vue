@@ -70,23 +70,23 @@
                   </div>
                 </template>
                 <!-- 解析完成：显示查看结果按钮 -->
-                <template v-else-if="getActiveTask(library.id) && getActiveTask(library.id)?.status === 'COMPLETED'">
+                <template v-else-if="canManage && getActiveTask(library.id) && getActiveTask(library.id)?.status === 'COMPLETED'">
                   <el-button type="warning" size="small" @click.stop="showPreviewFromTask(library.id)">
                     <el-icon><View /></el-icon> 查看解析结果 ({{ getActiveTask(library.id)?.items?.length || 0 }}条)
                   </el-button>
                   <el-button size="small" @click.stop="dismissTask(library.id)">忽略</el-button>
                 </template>
                 <!-- 解析失败：显示重试 -->
-                <template v-else-if="getActiveTask(library.id) && getActiveTask(library.id)?.status === 'FAILED'">
+                <template v-else-if="canManage && getActiveTask(library.id) && getActiveTask(library.id)?.status === 'FAILED'">
                   <el-tag type="danger" size="small">解析失败</el-tag>
                   <el-button size="small" @click.stop="dismissTask(library.id)">忽略</el-button>
                 </template>
                 <!-- 正常状态：显示操作按钮 -->
                 <template v-else>
                   <el-button type="primary" size="small" @click.stop="showDetail(library)">查看详情</el-button>
-                  <el-button type="success" size="small" @click.stop="showUploadRules(library)">AI 解析</el-button>
+                  <el-button v-if="canManage" type="success" size="small" @click.stop="showUploadRules(library)">AI 解析</el-button>
                 </template>
-                <el-dropdown trigger="click" @command="(cmd: string) => handleRowCommand(cmd, library)">
+                <el-dropdown v-if="canManage" trigger="click" @command="(cmd: string) => handleRowCommand(cmd, library)">
                   <el-button type="text" size="small">更多</el-button>
                   <template #dropdown>
                     <el-dropdown-menu>
@@ -130,7 +130,7 @@
           v-model="drawerVisible" 
           :title="selectedLibrary?.name || '规则详情'" 
           :direction="'rtl'"
-          :size="780"
+          size="75%"
           class="detail-drawer"
         >
           <div v-if="selectedLibrary" class="drawer-content">

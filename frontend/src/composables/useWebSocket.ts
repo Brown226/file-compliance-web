@@ -41,14 +41,24 @@ class WebSocketManager {
   private globalListeners: Set<(msg: WsMessage) => void> = new Set()
   private subscribedTasks: Set<string> = new Set()
   private connected = ref(false)
+  private reconnectAttempts = 0
+  private maxReconnectAttempts = 10
+  private reconnectDelay = 3000
 
   connect() {
     if (this.ws && this.ws.readyState === WebSocket.OPEN) return
 
+    // 超过最大重连次数，停止重连
+    if (this.reconnectAttempts >= this.maxReconnectAttempts) {
+      console.warn(`[WS] 已达到最大重连次数 (${this.maxReconnectAttempts})，停止重连`)
+      return
+    }
+
     const userStore = useUserStore()
     const token = userStore.token
     if (!token) {
-      setTimeout(() => this.connect(), 1000)
+      console.warn('[WS] 无 token，延迟重连')
+      setTimeout(() => this.connect(), this.reconnectDelay)
       return
     }
 
@@ -60,6 +70,7 @@ class WebSocketManager {
 
     this.ws.onopen = () => {
       this.connected.value = true
+      this.reconnectAttempts = 0 // 连接成功，重置计数
       console.log('[WS] Connected')
       this.resubscribeTasks()
     }
@@ -88,10 +99,19 @@ class WebSocketManager {
       }
     }
 
-    this.ws.onclose = () => {
+    this.ws.onclose = (event) => {
       this.connected.value = false
-      console.log('[WS] Disconnected, reconnecting in 3s...')
-      this.reconnectTimer = window.setTimeout(() => this.connect(), 3000)
+      this.reconnectAttempts++
+      
+      if (event.code === 1008) {
+        // 认证失败，不重连
+        console.warn('[WS] 认证失败，请重新登录')
+        return
+      }
+      
+      const delay = Math.min(this.reconnectDelay * Math.pow(1.5, this.reconnectAttempts - 1), 30000)
+      console.log(`[WS] Disconnected, reconnecting in ${Math.round(delay / 1000)}s... (attempt ${this.reconnectAttempts}/${this.maxReconnectAttempts})`)
+      this.reconnectTimer = window.setTimeout(() => this.connect(), delay)
     }
 
     this.ws.onerror = () => {

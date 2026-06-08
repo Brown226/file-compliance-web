@@ -111,7 +111,12 @@ export class LlmService {
 
       if (Array.isArray(parsed)) {
         return parsed
-          .filter((item: any) => item.issueType && item.originalText)
+          .filter((item: any) => {
+            if (!item.issueType || !item.originalText) return false;
+            // 过滤 originalText 与 suggestedText 完全一致的无效条目
+            if (item.suggestedText && String(item.originalText).trim() === String(item.suggestedText).trim()) return false;
+            return true;
+          })
           .map((item: any) => ({
             issueType: validTypes.includes(item.issueType) ? item.issueType : 'VIOLATION',
             originalText: String(item.originalText || ''),

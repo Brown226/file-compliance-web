@@ -26,7 +26,7 @@ export const reviewQueue = new Bull<ReviewJobData>('review', env.redisUrl, {
 /** 初始化队列处理器（仅在主进程中调用一次） */
 export function initQueueProcessors(): void {
   // ── 审查队列处理器 ──
-  reviewQueue.process('review', 2, async (job) => {
+  reviewQueue.process('review', 5, async (job) => {
     const { taskId } = job.data;
     console.log(`[Queue] 开始处理审查任务: ${taskId} (attempt ${job.attemptsMade + 1})`);
 

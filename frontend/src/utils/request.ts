@@ -47,7 +47,8 @@ request.interceptors.response.use(
     }
     const data = response.data
     // 统一格式: { code: 200, message: 'success', data: {...} }
-    if (data && typeof data === 'object' && 'code' in data) {
+    // 跳过 blob 响应（文件下载场景）
+    if (data && typeof data === 'object' && !(data instanceof Blob) && 'code' in data) {
       if (data.code === 200) {
         // 提取 data 字段，兼容现有前端逻辑
         response.data = data.data

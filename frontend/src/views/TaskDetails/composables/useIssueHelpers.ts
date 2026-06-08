@@ -5,6 +5,58 @@
 import type { TaskDetail } from '@/types/models'
 
 export function useIssueHelpers() {
+  const getSeverityLabel = (severity: string): string => {
+    const m: Record<string, string> = {
+      error: '错误',
+      warning: '警告',
+      info: '提示',
+    }
+    return m[severity] || severity
+  }
+
+  const getSeverityType = (severity: string): string => {
+    const m: Record<string, string> = {
+      error: 'danger',
+      warning: 'warning',
+      info: 'info',
+    }
+    return m[severity] || 'info'
+  }
+
+  /** DWG 图层颜色（根据图层名 hash 生成稳定色相） */
+  const getLayerColor = (layer: string): string => {
+    if (!layer) return '#909399'
+    let hash = 0
+    for (let i = 0; i < layer.length; i++) {
+      hash = layer.charCodeAt(i) + ((hash << 5) - hash)
+    }
+    const hue = Math.abs(hash) % 360
+    return `hsl(${hue}, 65%, 45%)`
+  }
+
+  /** DWG 图元类型标签 */
+  const getEntityTypeLabel = (type: string): string => {
+    const m: Record<string, string> = {
+      TEXT: '文本',
+      MTEXT: '多行文本',
+      DIMENSION: '标注',
+      LINE: '直线',
+      POLYLINE: '多段线',
+      CIRCLE: '圆',
+      ARC: '圆弧',
+      INSERT: '块引用',
+      HATCH: '填充',
+      LEADER: '引线',
+      TABLE: '表格',
+    }
+    return m[type] || type
+  }
+
+  /** 取 Top N 相似文档引用（默认前 3 条） */
+  const topSourceRefs = (refs: any[], n = 3): any[] => {
+    if (!Array.isArray(refs)) return []
+    return refs.slice(0, n)
+  }
   const getIssueTitle = (item: any, index: number): string => {
     if (item.originalText && item.originalText.trim()) {
       const text = item.originalText.trim().slice(0, 45)
@@ -161,6 +213,11 @@ export function useIssueHelpers() {
     getStandardRefTitle,
     getIssueTypeLabel,
     getCategoryTagType,
+    getSeverityType,
+    getSeverityLabel,
+    getLayerColor,
+    getEntityTypeLabel,
+    topSourceRefs,
     pct,
     truncateText,
     pickLocateKeyword,

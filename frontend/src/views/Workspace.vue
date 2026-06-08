@@ -99,7 +99,7 @@
                 <span class="link-desc">查看标准清单、白名单库和误报标记库</span>
               </div>
             </div>
-            <div class="sidebar-link-item" @click="$router.push('/admin/knowledge')">
+            <div v-if="userStore.isAdminOrManager()" class="sidebar-link-item" @click="$router.push('/admin/knowledge')">
               <div class="link-icon knowledge-icon">
                 <el-icon :size="18"><FolderOpened /></el-icon>
               </div>
@@ -126,7 +126,7 @@
                 <span class="link-desc">查看审查规则配置</span>
               </div>
             </div>
-            <div class="sidebar-link-item" @click="$router.push('/langchain/qa')">
+            <div class="sidebar-link-item" @click="$router.push('/ai-assistant')">
               <div class="link-icon qna-icon">
                 <el-icon :size="18"><ChatLineSquare /></el-icon>
               </div>
@@ -237,7 +237,9 @@ const fetchMyTasks = async () => {
     stats.processing = byStatus.PROCESSING || 0
     stats.completed = byStatus.COMPLETED || 0
     stats.failed = byStatus.FAILED || 0
-  } catch (e) {
+  } catch (e: any) {
+    // 路由切换时请求被 abort 属于正常行为，不报错
+    if (e?.name === 'CanceledError' || e?.message === 'canceled') return
     console.error('获取我的任务失败:', e)
     ElMessage.error('获取任务数据失败，请刷新重试')
   } finally {

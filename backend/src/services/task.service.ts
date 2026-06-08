@@ -367,7 +367,7 @@ export class TaskService {
             select: { id: true, username: true, name: true }
           },
           _count: {
-            select: { files: true }
+            select: { files: true, details: { where: { ruleCode: { not: 'NO_RESULT' } } } }
           },
           files: {
             select: { status: true, textLength: true, processedLength: true, errorCount: true }
@@ -395,11 +395,11 @@ export class TaskService {
       if (task.status === 'COMPLETED') progress = 100;
       if (task.status === 'PENDING') progress = 0;
 
-      // 统计真实问题数：对每个文件的 errorCount 求和（文件级 errorCount 已排除 NO_RESULT）
+      // 统计真实问题数：直接从 task_details 表计数（排除 NO_RESULT 系统消息）
       const isSelfCheck = task.reviewMode === 'SELF_CHECK';
       const errorCount = isSelfCheck
         ? (task.selfCheckReport as any)?.errorCount ?? 0
-        : files.reduce((sum, f) => sum + ((f as any).errorCount || 0), 0);
+        : (_count as any).details ?? 0;
 
       return {
         ...task,

@@ -68,8 +68,8 @@ const tabs = [
   { key: 'chat', label: '对话模型', short: 'CHAT MODEL', desc: '管理主聊天模型、API 密钥与兼容接口。' },
   { key: 'embedding', label: 'Embedding 模型', short: 'EMBEDDING', desc: '管理向量化模型，供知识库检索与语义召回使用。' },
   { key: 'reranker', label: 'Reranker 模型', short: 'RERANKER', desc: '管理重排序模型，优化候选结果排序质量。' },
-  { key: 'ocr', label: 'OCR 服务', short: 'PADDLE OCR', desc: '查看内嵌 PaddleOCR 引擎运行状态，无需额外配置。' },
-  { key: 'vision', label: '多模态视觉', short: 'VISION MODEL', desc: '配置视觉大模型作为 OCR 兜底，提升识别准确率。' },
+  { key: 'ocr', label: 'OCR 服务', short: 'OCR SERVICE', desc: '查看 doc-parser 视觉模型 OCR 运行状态。' },
+  { key: 'vision', label: '视觉模型配置', short: 'VISION MODEL', desc: '配置视觉大模型用于扫描件 PDF 和图片的文字识别。' },
   { key: 'maxkb', label: 'MaxKB 知识库', short: 'MAXKB', desc: '管理 MaxKB 知识库集成，同步标准规范到向量检索引擎。' },
 ]
 

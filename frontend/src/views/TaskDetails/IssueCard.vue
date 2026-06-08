@@ -59,6 +59,30 @@
         </div>
       </div>
       <div class="header-right">
+        <!-- 快捷操作按钮 -->
+        <div class="header-quick-actions" @click.stop>
+          <el-tooltip content="定位原文" placement="top" :show-after="300">
+            <el-button
+              v-if="detail.textPosition || detail.cadHandleId"
+              circle
+              size="small"
+              class="locate-action-btn"
+              @click="emit('locateText', { detail, elementId: `issue-${detail.id}` })"
+            >
+              <el-icon :size="14"><Location /></el-icon>
+            </el-button>
+          </el-tooltip>
+          <el-tooltip :content="detail.isFalsePositive ? '取消误报' : '标记误报'" placement="top" :show-after="300">
+            <el-button
+              circle
+              size="small"
+              :class="['fp-action-btn', { 'is-fp': detail.isFalsePositive }]"
+              @click="detail.isFalsePositive ? emit('cancelFp', detail) : emit('openFpDialog', detail)"
+            >
+              <el-icon :size="14"><WarningFilled /></el-icon>
+            </el-button>
+          </el-tooltip>
+        </div>
         <!-- 展开箭头 -->
         <el-icon class="expand-arrow" :class="{ rotated: cardExpanded }"><ArrowDown /></el-icon>
       </div>
@@ -66,48 +90,6 @@
 
     <!-- 卡片内容体：可折叠 -->
     <div v-show="cardExpanded" class="issue-body">
-      <!-- 操作按钮（展开后显示） -->
-      <div class="expanded-actions" @click.stop>
-        <el-button
-          v-if="detail.textPosition"
-          type="primary"
-          size="small"
-          @click="emit('locateText', { detail, elementId: `issue-${detail.id}` })"
-          class="action-btn locate-btn"
-        >
-          <el-icon><Location /></el-icon> 定位原文
-        </el-button>
-        <el-button
-          v-if="detail.cadHandleId"
-          type="primary"
-          size="small"
-          @click="emit('locateText', { detail, elementId: `issue-${detail.id}` })"
-          class="action-btn cad-locate-btn"
-        >
-          <el-icon><Location /></el-icon> CAD 定位
-        </el-button>
-        <el-button
-          v-if="!detail.isFalsePositive"
-          type="warning"
-          size="small"
-          plain
-          @click="emit('openFpDialog', detail)"
-          class="action-btn action-fp-btn"
-        >
-          标记误报
-        </el-button>
-        <el-button
-          v-if="detail.isFalsePositive"
-          type="info"
-          size="small"
-          plain
-          @click="emit('cancelFp', detail)"
-          class="action-btn"
-        >
-          取消误报
-        </el-button>
-      </div>
-
       <!-- 原文 / 建议修改 — 双向 diff 高亮 -->
       <div class="issue-row" v-if="detail.originalText">
         <span class="row-label">原文本</span>
@@ -267,6 +249,7 @@ import {
   Location,
   ArrowDown,
   Reading,
+  WarningFilled,
 } from '@element-plus/icons-vue'
 import DiffHighlight from './DiffHighlight.vue'
 import { useIssueHelpers } from './composables'
@@ -290,8 +273,8 @@ const emit = defineEmits<{
   selectFileById: [fileId: string]
 }>()
 
-// 卡片展开状态（默认折叠）
-const cardExpanded = ref(false)
+// 卡片展开状态：error 默认展开，其他默认折叠
+const cardExpanded = ref(props.detail.severity === 'error')
 
 // 来源内容展开状态
 const expandedSources = reactive<Record<number, boolean>>({})
@@ -422,16 +405,6 @@ const {
   margin-right: 3px;
 }
 
-/* 展开后的操作按钮栏 */
-.expanded-actions {
-  display: flex;
-  gap: 6px;
-  padding: 6px 0 10px;
-  border-bottom: 1px solid #F0F0F0;
-  margin-bottom: 8px;
-  flex-wrap: wrap;
-}
-
 .severity-tag { font-size: 11px; }
 .severity-error { font-weight: 700; }
 .fp-tag {
@@ -452,25 +425,49 @@ const {
   font-size: 12px;
 }
 
-/* 操作按钮 */
-.action-btn {
-  border-radius: var(--radius-sm);
-  padding: 5px 10px;
-  font-size: 12px;
+
+/* 快捷操作按钮（始终可见，彩色） */
+.header-quick-actions {
+  display: flex;
+  gap: 2px;
+  flex-shrink: 0;
 }
-.locate-btn, .cad-locate-btn {
-  padding: 5px 10px;
+.locate-action-btn {
+  width: 28px;
+  height: 28px;
+  border: none;
+  background: #EFF6FF;
+  color: #2563EB;
+  border-radius: 6px;
+  transition: all 0.15s ease;
 }
-.locate-btn .el-icon,
-.cad-locate-btn .el-icon {
-  font-size: 12px;
+.locate-action-btn:hover {
+  background: #DBEAFE;
+  color: #1D4ED8;
+  transform: scale(1.1);
 }
-.action-fp-btn.el-button {
-  border-color: #D97706 !important;
-  color: #92400E !important;
-  background: #FEF3C7 !important;
+.fp-action-btn {
+  width: 28px;
+  height: 28px;
+  border: none;
+  background: #FEF3C7;
+  color: #D97706;
+  border-radius: 6px;
+  transition: all 0.15s ease;
 }
-.action-fp-btn.el-button:hover { background: #FDE68A !important; }
+.fp-action-btn:hover {
+  background: #FDE68A;
+  color: #B45309;
+  transform: scale(1.1);
+}
+.fp-action-btn.is-fp {
+  background: #F3F4F6;
+  color: #6B7280;
+}
+.fp-action-btn.is-fp:hover {
+  background: #E5E7EB;
+  color: #374151;
+}
 
 /* 展开箭头 */
 .expand-arrow {

@@ -3,7 +3,7 @@ import { WebSocketService } from './websocket.service';
 
 const GLOBAL_CONCURRENCY_KEY = 'review:global:concurrency';
 const GLOBAL_QUEUE_KEY = 'review:global:queue';
-const DEFAULT_GLOBAL_LIMIT = 5;
+const DEFAULT_GLOBAL_LIMIT = 15;
 const QUEUE_CHECK_INTERVAL_MS = 2000;
 const MAX_WAIT_TIMEOUT_MS = 30 * 60 * 1000; // 30 分钟最大等待时间
 

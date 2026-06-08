@@ -17,7 +17,7 @@ export function getEffectiveConfig(ctx: PipelineContext): PipelineReviewConfig {
       llmMaxTokens: 4096,
       llmTimeout: 180,
       ocrTimeout: 60,
-      maxConcurrentReviews: 3,
+      maxConcurrentReviews: 5,
       logLevel: 'info',
       contextWindow: 131072, // 默认 128K 上下文（字符数，约 32K tokens）
     };

@@ -97,7 +97,7 @@ const commonModules: ModuleItem[] = [
 const specialModules: ModuleItem[] = [
   { id: 'PROOFREAD', title: '基础校对', desc: '纯 LLM 驱动的文字、语法检查', scenario: '终稿发布前的文字把关', icon: EditPen, color: '#059669' },
   { id: 'RULE_ONLY', title: '规则库审查', desc: '仅执行预定义规则，不调用 AI', scenario: '批量格式检查、快速初筛', icon: List, color: '#d97706' },
-  { id: 'MULTIMODAL', title: '结构化审查', desc: '图纸、表格、公式结构化审查', scenario: 'DWG 工程图纸、含公式计算书', icon: PictureFilled, color: '#dc2626' },
+  // { id: 'MULTIMODAL', title: '结构化审查', desc: '图纸、表格、公式结构化审查', scenario: 'DWG 工程图纸、含公式计算书', icon: PictureFilled, color: '#dc2626' }, // 待定：暂未确定审查方向
   { id: 'SELF_CHECK', title: '标准引用自检', desc: '引用与标准库逐条比对校验', scenario: '核查设计文件中的标准是否现行有效', icon: CircleCheck, color: '#4f46e5' },
 ]
 

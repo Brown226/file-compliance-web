@@ -174,7 +174,7 @@ export function useTaskHistory() {
       }
       const hasProcessing = tableData.value.some((r: any) => r.status === 'PROCESSING')
       if (hasProcessing) { startPolling() } else { stopPolling() }
-    } catch (e) {} finally {
+    } catch (e) { console.error('[TaskHistory] fetchTasks error:', e) } finally {
       loading.value = false
     }
   }
@@ -246,17 +246,19 @@ export function useTaskHistory() {
 
   const handleExportTask = async (row: any) => {
     try {
-      const { data } = await exportTaskReportApi(row.id)
-      if (data) {
-        const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' })
-        const url = window.URL.createObjectURL(blob)
-        const link = document.createElement('a')
-        link.href = url
-        link.download = `${row.title}_审查报告.json`
-        link.click()
-        window.URL.revokeObjectURL(url)
-        ElMessage.success('导出成功')
+      const res = await exportTaskReportApi(row.id)
+      const blob = res.data
+      if (!blob || blob.size === 0) {
+        ElMessage.warning('暂无可导出的内容')
+        return
       }
+      const url = window.URL.createObjectURL(blob)
+      const link = document.createElement('a')
+      link.href = url
+      link.download = `${row.title || '审查报告'}_Excel版.xlsx`
+      link.click()
+      window.URL.revokeObjectURL(url)
+      ElMessage.success('导出成功')
     } catch (e) {
       ElMessage.warning('导出功能暂不可用')
     }

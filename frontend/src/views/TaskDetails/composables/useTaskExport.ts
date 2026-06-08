@@ -23,7 +23,7 @@ export function useTaskExport(taskId: () => string, taskTitle: () => string) {
     if (exporting.value) return
     exporting.value = true
     try {
-      const res = await exportTaskReportWordApi(taskId.value)
+      const res = await exportTaskReportWordApi(taskId())
       const success = downloadBlob(res.data, `${taskTitle() || '审查报告'}_Word版.docx`)
       if (success) ElMessage.success('Word导出成功')
     } catch (e) {
@@ -38,7 +38,7 @@ export function useTaskExport(taskId: () => string, taskTitle: () => string) {
     if (exporting.value) return
     exporting.value = true
     try {
-      const res = await exportTaskReportApi(taskId.value)
+      const res = await exportTaskReportApi(taskId())
       const success = downloadBlob(res.data, `${taskTitle() || '审查报告'}_Excel版.xlsx`)
       if (success) ElMessage.success('Excel导出成功')
     } catch (e) {

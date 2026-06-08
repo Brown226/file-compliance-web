@@ -4,11 +4,10 @@
 #
 # 用法:
 #   .\offline-deploy\scripts\build-all.ps1          # 完整构建
-#   .\offline-deploy\scripts\build-all.ps1 -SkipOCR  # 跳过 OCR
 # ============================================
 
 param(
-    [switch]$SkipOCR,       # 跳过 OCR 服务构建（可选，镜像较大 ~3-4GB）
+    [switch]$SkipOCR,       # 已废弃（OCR 已合并到 doc-parser）
     [switch]$SkipDocParser  # 跳过文档解析服务构建（已有 tar 时自动跳过）
 )
 
@@ -37,7 +36,6 @@ Write-Host ""
 Write-Host "  项目根目录:  $ProjectRoot"
 Write-Host "  离线包目录:  $OfflineDir"
 Write-Host "  镜像输出:    $ImageDir"
-Write-Host "  跳过 OCR:    $SkipOCR"
 Write-Host ""
 
 # 创建镜像输出目录
@@ -124,20 +122,8 @@ if ($SkipDocParser -or (Test-Path $docParserTar)) {
     }
 }
 
-# 3d. OCR 服务镜像（可选，检查是否已存在 tar）
-$ocrTar = "$ImageDir\ocr-v1.0.tar"
-if (!$SkipOCR -and !(Test-Path $ocrTar)) {
-    Write-Host "  构建: file-review-ocr:v1.0 ..."
-    Write-Warn "OCR 镜像较大 (~3-4GB)，可能需要较长时间"
-    docker build -f "$ProjectRoot\backend\ocr-service\Dockerfile" -t file-review-ocr:v1.0 "$ProjectRoot\backend\ocr-service"
-    if ($LASTEXITCODE -ne 0) { Write-Err "OCR 镜像构建失败" }
-    Write-Ok "OCR 服务镜像构建完成"
-} elseif (Test-Path $ocrTar) {
-    $size = [math]::Round((Get-Item $ocrTar).Length / 1MB, 1)
-    Write-Warn "ocr-v1.0.tar 已存在 ($size MB)，跳过构建"
-} else {
-    Write-Warn "跳过 OCR 镜像构建"
-}
+# 3d. OCR 服务已废弃 — 功能合并到 doc-parser（视觉模型 OCR）
+# 保留注释供参考：原 OCR 镜像构建不再需要
 
 # ==========================================
 # 步骤 4: 导出镜像为 .tar
@@ -151,9 +137,7 @@ $customImages = @(
     @{ Name = "file-review-doc-parser:v1.0"; File = "doc-parser-v1.0.tar" }
 )
 
-if (!$SkipOCR) {
-    $customImages += @{ Name = "file-review-ocr:v1.0"; File = "ocr-v1.0.tar" }
-}
+
 
 foreach ($img in $customImages) {
     $tarPath = "$ImageDir\$($img.File)"

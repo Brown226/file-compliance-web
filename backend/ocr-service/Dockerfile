@@ -13,6 +13,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libglib2.0-0 \
     poppler-utils \
     libgomp1 \
+    tesseract-ocr \
+    tesseract-ocr-chi-sim \
+    tesseract-ocr-eng \
     && rm -rf /var/lib/apt/lists/*
 
 RUN pip install --no-cache-dir \
@@ -22,7 +25,8 @@ RUN pip install --no-cache-dir \
     uvicorn==0.24.0.post1 \
     python-multipart==0.0.6 \
     python-dotenv==1.0.0 \
-    pdf2image==1.17.0
+    pdf2image==1.17.0 \
+    pytesseract==0.3.13
 
 RUN python -c "from paddleocr import PaddleOCR; ocr = PaddleOCR(use_angle_cls=True, lang='ch')"
 

@@ -81,7 +81,7 @@ export class WordStructureService {
     try {
       const JSZip = (await import('jszip')).default;
       const fs = await import('fs');
-      const buffer = fs.readFileSync(filePath);
+      const buffer = await fs.promises.readFile(filePath);
       const zip = await JSZip.loadAsync(buffer);
 
       // 读取 word/header1.xml, word/header2.xml, ...

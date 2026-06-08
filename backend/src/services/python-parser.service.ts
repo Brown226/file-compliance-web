@@ -78,7 +78,7 @@ export class PythonParserService {
   /**
    * 获取 Python 解析服务的 URL
    */
-  private static async getServiceUrl(): Promise<string> {
+  static async getServiceUrl(): Promise<string> {
     try {
       const config = await prisma.systemConfig.findUnique({
         where: { key: 'parser_service_url' },
@@ -103,7 +103,7 @@ export class PythonParserService {
     }
 
     const serviceUrl = await this.getServiceUrl();
-    const fileBuffer = fs.readFileSync(absolutePath);
+    const fileBuffer = await fs.promises.readFile(absolutePath);
     const fileName = path.basename(absolutePath);
 
     const FormData = (await import('form-data')).default;

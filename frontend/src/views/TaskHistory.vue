@@ -48,7 +48,7 @@
           <el-option label="以文审文" value="DOC_REVIEW" />
           <el-option label="一致性审查" value="CONSISTENCY" />
           <el-option label="错别字/语法" value="TYPO_GRAMMAR" />
-          <el-option label="结构化审查" value="MULTIMODAL" />
+          <!-- <el-option label="结构化审查" value="MULTIMODAL" /> -->
           <el-option label="仅规则审查" value="RULE_ONLY" />
           <el-option label="标准引用自检" value="SELF_CHECK" />
         </el-select>
@@ -383,6 +383,7 @@
 </template>
 
 <script setup lang="ts">
+import { onMounted } from 'vue'
 import {
   Download,
   Search,
@@ -430,6 +431,10 @@ const {
   handleBatchDelete,
   handleReReview,
 } = useTaskHistory()
+
+onMounted(() => {
+  fetchTasks()
+})
 </script>
 
 <style scoped>

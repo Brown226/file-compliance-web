@@ -5,8 +5,8 @@
         <div class="status-header">
           <el-icon :size="28"><CircleCheckFilled v-if="healthy" /><WarningFilled v-else /></el-icon>
           <div>
-            <h4>PaddleOCR 服务 — {{ healthy ? '运行正常' : '连接异常' }}</h4>
-            <p class="status-desc">{{ healthy ? '内嵌 OCR 引擎已就绪，图片和扫描件识别无需额外配置。' : 'PaddleOCR 容器可能未启动或无法访问，请检查 Docker 服务。' }}</p>
+            <h4>OCR 识别服务 — {{ healthy ? '运行正常' : '连接异常' }}</h4>
+            <p class="status-desc">{{ healthy ? 'doc-parser 视觉模型 OCR 已就绪，扫描件和图片识别通过视觉大模型完成。' : 'doc-parser 服务不可用，请检查 Docker 服务。' }}</p>
           </div>
           <el-button size="small" :loading="checking" @click="check" :type="healthy ? 'success' : 'danger'">刷新检测</el-button>
         </div>
@@ -61,7 +61,7 @@ onMounted(() => check())
 
 defineExpose({
   get hasUnsavedChanges() { return false },
-  get summary() { return [{ label: 'PaddleOCR', value: healthy.value ? '✅ 正常' : '❌ 异常' }] }
+  get summary() { return [{ label: 'OCR', value: healthy.value ? '✅ 正常' : '❌ 异常' }] }
 })
 </script>
 

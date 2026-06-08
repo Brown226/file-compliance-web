@@ -60,7 +60,7 @@ export class ParserService {
     // 纯文本格式直接读取，无需调用解析服务
     const textFormats = ['txt', 'md', 'csv', 'json', 'xml', 'html', 'htm', 'log', 'ini', 'yaml', 'yml'];
     if (textFormats.includes(fileType.toLowerCase())) {
-      const text = fs.readFileSync(absolutePath, 'utf-8');
+      const text = await fs.promises.readFile(absolutePath, 'utf-8');
       const result: ParseResult = {
         text,
         markdown: text,
