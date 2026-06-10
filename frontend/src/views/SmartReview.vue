@@ -321,6 +321,7 @@ onMounted(async () => {
 
 /* ---- 证据源 ---- */
 .evidence-cards { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; }
+.stance-selector { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; }
 .execution-options { display: flex; gap: 8px; }
 
 /* ---- 已选项目 ---- */
