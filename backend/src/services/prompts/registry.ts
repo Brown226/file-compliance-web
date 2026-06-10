@@ -24,6 +24,7 @@ export const SCENE_MODULE_MAP: Record<string, string> = {
   DOC_REVIEW: 'doc_review',
   MULTIMODAL: 'multimodal',
   RULE_ONLY: 'library_review', // 复用 library_review 提示词
+  CONTRACT_REVIEW: 'contract_review', // 合同风险审查
 };
 
 /**
@@ -794,6 +795,68 @@ Please give a short succinct context to situate this chunk within the overall do
 
 输出时，每条问题的 ruleCode 必须引用上述条文编号（如 [条文编号]），description 中必须说明违反了哪条具体条文。`,
     placeholders: JSON.stringify(['${items}']),
+    isBuiltin: true,
+    enabled: true,
+  },
+
+  // ==================== 合同风险审查（contract_review）====================
+  {
+    key: 'contract_review_system_default',
+    module: 'contract_review',
+    role: 'system',
+    variant: 'default',
+    name: '合同风险审查-系统提示词',
+    description: '合同风险审查场景的系统提示词，代表指定立场识别风险条款',
+    content: '你是核电工程合同审查专家，代表\${stance}立场进行合同风险审查。\n\n## 审查目标\n识别待审合同中对该立场不利的风险条款、缺失的关键保护条款、以及与合同模板的实质性差异。\n\n## 风险分类（按严重程度）\n\n### HIGH（高风险）\n可能导致该立场方重大损失或法律责任的条款：\n- 单方面有利于对方的免责条款\n- 缺失关键保护条款（如质量保证金、违约责任）\n- 付款条件过于宽松（如预付款比例过高、无履约保函要求）\n- 知识产权归属不明确或偏向对方\n- 争议解决条款对该立场不利（如仲裁地在对方所在地）\n\n### MEDIUM（中风险）\n可能影响该立场方权益但可控的条款：\n- 工期延误的违约金标准偏低（低于合同金额的0.1%/天）\n- 变更/索赔流程不够明确或时限过短\n- 验收标准模糊或缺少明确的验收程序\n- 质保期偏短（通常核电工程应≥24个月）\n- 保险覆盖范围不完整\n\n### LOW（低风险）\n建议优化但不影响核心权益：\n- 术语不一致（同一概念多种称呼）\n- 条款编号/引用错误\n- 格式/排版问题\n- 非关键条款的措辞优化建议\n\n## 审查策略\n1. **条款完整性**：检查合同模板中有的关键条款，待审合同是否缺失\n2. **条款差异**：同一条款在待审合同和模板中的实质性差异\n3. **风险识别**：识别对该立场不利的条款措辞和潜在风险\n\n## 排除项（以下情况不要报告）\n- 措辞差异但含义一致的条款\n- 模板中有但待审合同合理省略的非必要条款（需判断是否真的非必要）\n- 格式/排版层面的微小差异\n\n## originalText 字段要求（极其重要）\n- originalText 必须从待审合同中**逐字原样复制**，不得改写、合并、截断\n- 原文有错误也按原样复制，在 suggestedText 中给出正确内容\n\n## 输出要求\n严格按照 JSON 数组格式输出，每条风险包含：\n- riskLevel: HIGH / MEDIUM / LOW\n- clauseType: 条款类型（payment/penalty/warranty/ip/change/claim/insurance/dispute/other）\n- originalText: 待审合同中的原文（逐字复制，不得修改）\n- suggestedText: 模板中的对应条款或建议修改内容\n- description: 风险说明（站在\${stance}角度解释为什么这是风险）\n- recommendation: 具体的修改建议\n- ruleCode: 问题编码（如 CONTRACT_PAYMENT_001、CONTRACT_PENALTY_001）\n\n如果没有发现风险，输出空数组 []\n只输出 JSON 数组，不要输出任何其他文字说明',
+    placeholders: JSON.stringify(['${stance}']),
+    isBuiltin: true,
+    enabled: true,
+  },
+  {
+    key: 'contract_review_user_with_ref',
+    module: 'contract_review',
+    role: 'user',
+    variant: 'with_ref',
+    name: '合同风险审查-用户提示词(有模板)',
+    description: '合同风险审查场景下，提供了合同模板作为参照时的用户提示词',
+    content: '【合同模板（权威基准）】\n${refTexts}\n\n【待审合同】\n${text}\n\n请站在${stance}立场，逐项审查待审合同的风险条款。重点识别：\n1. 与模板不一致的关键条款\n2. 对该立场不利的风险条款\n3. 缺失的重要保护条款\n\n严格按照 JSON 数组格式输出审查结果。',
+    placeholders: JSON.stringify(['${refTexts}', '${text}', '${stance}']),
+    isBuiltin: true,
+    enabled: true,
+  },
+  {
+    key: 'contract_review_user_no_ref',
+    module: 'contract_review',
+    role: 'user',
+    variant: 'no_ref',
+    name: '合同风险审查-用户提示词(无模板)',
+    description: '合同风险审查场景下，未提供合同时的用户提示词',
+    content: '【待审合同】\n${text}\n\n请站在${stance}立场，基于核电工程合同通用风险清单，审查上述合同的风险条款。\n\n重点检查：\n1. 付款条件是否对该立场有利\n2. 违约责任是否明确且合理\n3. 质保条款是否完整\n4. 知识产权归属是否明确\n5. 争议解决条款是否对该立场有利\n\n严格按照 JSON 数组格式输出审查结果。',
+    placeholders: JSON.stringify(['${text}', '${stance}']),
+    isBuiltin: true,
+    enabled: true,
+  },
+  {
+    key: 'contract_review_user_comparison',
+    module: 'contract_review',
+    role: 'user',
+    variant: 'comparison',
+    name: '合同风险审查-用户提示词(参照比对)',
+    description: '合同风险审查场景下，runRefCompareStrategy 使用的用户提示词',
+    content: '## 合同模板（权威基准）\n\n${refTexts}\n\n---\n\n## 待审合同（被审查对象）\n\n${text}\n\n---\n\n请站在${stance}立场，按照系统指令中的审查策略，逐项核对待审合同的风险条款。重点识别：\n1. 与模板不一致的关键条款\n2. 对审查立场不利的风险条款\n3. 缺失的重要保护条款\n\n严格按照 JSON 数组格式输出审查结果。',
+    placeholders: JSON.stringify(['${refTexts}', '${text}', '${stance}']),
+    isBuiltin: true,
+    enabled: true,
+  },
+  {
+    key: 'contract_review_user_comparison_with_rag',
+    module: 'contract_review',
+    role: 'user',
+    variant: 'comparison_with_rag',
+    name: '合同风险审查-用户提示词(参照比对+知识库)',
+    description: '合同风险审查场景下，同时有参照文件和知识库检索结果时的用户提示词',
+    content: '## 合同模板（权威基准）\n\n${refTexts}\n\n---\n\n## 企业知识库参考（辅助审查依据）\n\n${ragContext}\n\n---\n\n## 待审合同（被审查对象）\n\n${text}\n\n---\n\n请站在${stance}立场，结合合同模板和企业知识库，逐项核对待审合同的风险条款。重点识别：\n1. 与模板不一致的关键条款\n2. 对审查立场不利的风险条款\n3. 缺失的重要保护条款\n4. 不符合企业知识库中规定的条款\n\n严格按照 JSON 数组格式输出审查结果。',
+    placeholders: JSON.stringify(['${refTexts}', '${ragContext}', '${text}', '${stance}']),
     isBuiltin: true,
     enabled: true,
   },

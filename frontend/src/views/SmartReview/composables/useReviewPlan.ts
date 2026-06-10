@@ -157,6 +157,17 @@ export function useReviewPlan(state: ReturnType<typeof useSmartReviewState>) {
         draft.enhancements.crossFileConsistency = false
         draft.execution.profile = 'RULE_ONLY'
         break
+
+      case 'CONTRACT':
+        draft.objective = 'COMPARE'
+        draft.evidence.sources = ['REFERENCE']  // 默认只用参照文件
+        draft.evidence.ruleLibraryId = null
+        draft.evidence.maxkbKnowledgeIds = []  // 知识库可选
+        draft.enhancements.intraFileConsistency = true
+        draft.enhancements.crossFileConsistency = false
+        draft.execution.profile = 'AI_ONLY'
+        draft.contractStance = 'owner'
+        break
     }
   }
 

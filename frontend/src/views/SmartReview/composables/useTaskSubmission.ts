@@ -38,6 +38,11 @@ export function useTaskSubmission(
       fd.append('entryModule', state.entryModule.value)
     }
 
+    // 合同审查立场
+    if (state.entryModule.value === 'CONTRACT' && state.reviewPlanDraft.contractStance) {
+      fd.append('contractStance', state.reviewPlanDraft.contractStance)
+    }
+
     // 文件
     state.fileList.value.forEach(f => { if (f.raw) fd.append('files', f.raw) })
 

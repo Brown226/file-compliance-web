@@ -87,7 +87,13 @@ export class AuditService {
     ipAddress?: string;
   }) {
     return prisma.auditLog.create({
-      data,
+      data: {
+        action: data.action,
+        resource: data.resource,
+        details: data.details as any ?? undefined,
+        userId: data.userId ?? null,
+        ipAddress: data.ipAddress ?? undefined,
+      },
     });
   }
 

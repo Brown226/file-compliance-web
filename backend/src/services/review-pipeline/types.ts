@@ -13,7 +13,8 @@ export type ReviewModeType =
   | 'TYPO_GRAMMAR'
   | 'MULTIMODAL'
   | 'RULE_ONLY'
-  | 'SELF_CHECK';
+  | 'SELF_CHECK'
+  | 'CONTRACT_REVIEW';
 
 /** 审查全局配置（存储在 SystemConfig 'pipeline_review_config' 中） */
 export interface PipelineReviewConfig {
@@ -95,6 +96,7 @@ export interface PipelineContext {
       extractedText?: string;
     }>;
   };
+  contractStance?: 'owner' | 'contractor';  // 合同审查立场
   pipelineConfig?: PipelineReviewConfig;  // 审查流水线配置
   executionOverrides?: {
     crossFileConsistency?: boolean;

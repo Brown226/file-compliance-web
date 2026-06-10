@@ -34,15 +34,25 @@ interface RerankConfig {
 
 export class EmbeddingService {
 
-  // ============ 配置读取 ============
+  // ============ 配置读取（带缓存） ============
+
+  private static _embeddingConfigCache: { config: EmbeddingConfig | null; timestamp: number } | null = null;
+  private static _rerankConfigCache: { config: RerankConfig | null; timestamp: number } | null = null;
+  private static readonly CONFIG_CACHE_TTL = 5 * 60 * 1000; // 5分钟缓存
 
   private static async getEmbeddingConfig(): Promise<EmbeddingConfig | null> {
+    // 检查缓存
+    if (this._embeddingConfigCache && Date.now() - this._embeddingConfigCache.timestamp < this.CONFIG_CACHE_TTL) {
+      return this._embeddingConfigCache.config;
+    }
+
     try {
       const config = await prisma.systemConfig.findUnique({ where: { key: 'embedding_model' } });
+      let result: EmbeddingConfig | null = null;
       if (config?.value && typeof config.value === 'object') {
         const v = config.value as any;
         if (v.apiKey) {
-          return {
+          result = {
             baseUrl: v.apiBaseUrl || 'https://api.siliconflow.cn/v1',
             apiKey: v.apiKey,
             model: v.modelName || 'BAAI/bge-m3',
@@ -50,6 +60,8 @@ export class EmbeddingService {
           };
         }
       }
+      this._embeddingConfigCache = { config: result, timestamp: Date.now() };
+      return result;
     } catch (e) {
       console.warn('[Embedding] 获取配置失败:', e);
     }
@@ -57,18 +69,26 @@ export class EmbeddingService {
   }
 
   private static async getRerankConfig(): Promise<RerankConfig | null> {
+    // 检查缓存
+    if (this._rerankConfigCache && Date.now() - this._rerankConfigCache.timestamp < this.CONFIG_CACHE_TTL) {
+      return this._rerankConfigCache.config;
+    }
+
     try {
       const config = await prisma.systemConfig.findUnique({ where: { key: 'reranker_model' } });
+      let result: RerankConfig | null = null;
       if (config?.value && typeof config.value === 'object') {
         const v = config.value as any;
         if (v.apiKey) {
-          return {
+          result = {
             baseUrl: v.apiBaseUrl || 'https://api.siliconflow.cn/v1',
             apiKey: v.apiKey,
             model: v.modelName || 'BAAI/bge-reranker-v2-m3',
           };
         }
       }
+      this._rerankConfigCache = { config: result, timestamp: Date.now() };
+      return result;
     } catch (e) {
       console.warn('[Reranker] 获取配置失败:', e);
     }

@@ -16,6 +16,7 @@
 import { MaxKBService } from './maxkb.service';
 import { LlmService, ReviewIssue, SourceReference } from './llm.service';
 import { PromptTemplateService } from './prompt-template.service';
+import { CacheService } from './cache.service';
 
 // ==================== 类型定义 ====================
 
@@ -73,10 +74,23 @@ export class RAGService {
     options?: { topNumber?: number; similarity?: number; searchMode?: 'embedding' | 'blend' | 'keywords' },
   ): Promise<RAGRetrievedChunk[]> {
 
-    const workspaceId = await MaxKBService.getDefaultWorkspaceId();
     const topNumber = options?.topNumber ?? 5;
     const similarity = options?.similarity ?? 0.3;
     const searchMode = options?.searchMode || 'blend';
+
+    // 缓存键：基于查询内容和参数
+    const queryHash = queryText.length > 100 ? queryText.substring(0, 100) : queryText;
+    const cacheKey = `rag:retrieve:${knowledgeId}:${searchMode}:${topNumber}:${queryHash}`;
+    const CACHE_TTL = 5 * 60 * 1000; // 5分钟缓存
+
+    // 检查缓存
+    const cached = CacheService.get<RAGRetrievedChunk[]>(cacheKey);
+    if (cached !== null) {
+      console.log(`[RAG] 缓存命中: kb=${knowledgeId}, results=${cached.length}`);
+      return cached;
+    }
+
+    const workspaceId = await MaxKBService.getDefaultWorkspaceId();
 
     console.log(`[RAG] 开始检索: kb=${knowledgeId}, query_len=${queryText.length}, mode=${searchMode}, top=${topNumber}`);
 
@@ -104,6 +118,9 @@ export class RAGService {
       similarity: r.similarity ?? 0,
       comprehensive_score: r.comprehensive_score ?? 0,
     }));
+
+    // 缓存结果
+    CacheService.set(cacheKey, chunks, CACHE_TTL);
 
     console.log(`[RAG] 检索到 ${chunks.length} 条段落, 相似度范围: [${Math.min(...chunks.map(c => c.similarity)).toFixed(4)}, ${Math.max(...chunks.map(c => c.similarity)).toFixed(4)}]`);
     return chunks;

@@ -243,17 +243,29 @@ export class PromptTemplateService {
     return null;
   }
 
+  private static _promptCache = new Map<string, { content: string; timestamp: number }>();
+  private static readonly PROMPT_CACHE_TTL = 5 * 60 * 1000; // 5分钟缓存
+
   static async getPromptByScene(
     module: string,
     role: 'system' | 'user',
     variant: string = 'default',
     fallback?: string,
   ): Promise<string> {
+    const cacheKey = `${module}/${role}/${variant}`;
+
+    // 检查缓存
+    const cached = this._promptCache.get(cacheKey);
+    if (cached && Date.now() - cached.timestamp < this.PROMPT_CACHE_TTL) {
+      return cached.content;
+    }
+
     try {
       const tpl = await prisma.promptTemplate.findFirst({
         where: { module, role, variant, enabled: true },
       });
       if (tpl && tpl.content) {
+        this._promptCache.set(cacheKey, { content: tpl.content, timestamp: Date.now() });
         return tpl.content;
       }
       if (variant !== 'default') {
@@ -261,6 +273,8 @@ export class PromptTemplateService {
           where: { module, role, variant: 'default', enabled: true },
         });
         if (defaultTpl && defaultTpl.content) {
+          const defaultCacheKey = `${module}/${role}/default`;
+          this._promptCache.set(defaultCacheKey, { content: defaultTpl.content, timestamp: Date.now() });
           return defaultTpl.content;
         }
       }

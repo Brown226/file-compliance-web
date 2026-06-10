@@ -15,6 +15,8 @@ import prisma from '../config/db';
  *       审查功能已迁移到自有 LLM + RAG 知识库检索
  */
 
+import { CacheService } from './cache.service';
+
 interface MaxKBConfig {
   baseUrl: string;       // MaxKB 服务地址，如 http://localhost:8080
   adminApiPrefix: string;// 管理 API 前缀，默认 /admin/api
@@ -524,6 +526,7 @@ export class MaxKBService {
   /**
    * 获取知识库中的段落内容（用于降级到自有 LLM 时提供上下文）
    * 通过 MaxKB 管理 API 获取指定知识库的文档列表和段落内容
+   * 结果缓存 5 分钟，避免重复调用
    */
   static async getKnowledgeParagraphs(
     knowledgeId: string,
@@ -532,59 +535,65 @@ export class MaxKBService {
     const maxParagraphs = options?.maxParagraphs || 50;
     const maxChars = options?.maxChars || 20000;
 
-    try {
-      const workspaceId = await this.getDefaultWorkspaceId();
+    // 缓存键包含知识库ID和参数
+    const cacheKey = `maxkb:paragraphs:${knowledgeId}:${maxParagraphs}:${maxChars}`;
+    const CACHE_TTL = 5 * 60 * 1000; // 5分钟缓存
 
-      // 获取知识库的文档列表
-      const documents = await this.adminRequest(
-        'GET',
-        `/workspace/${workspaceId}/knowledge/${knowledgeId}/document/1/100`,
-      );
+    return CacheService.getOrSet(cacheKey, async () => {
+      try {
+        const workspaceId = await this.getDefaultWorkspaceId();
 
-      const docList = (documents as any)?.records || (documents as any)?.data || [];
-      if (!Array.isArray(docList) || docList.length === 0) {
-        console.log(`[MaxKB] 知识库 ${knowledgeId} 没有文档`);
-        return '';
-      }
+        // 获取知识库的文档列表
+        const documents = await this.adminRequest(
+          'GET',
+          `/workspace/${workspaceId}/knowledge/${knowledgeId}/document/1/100`,
+        );
 
-      // 收集段落内容
-      let allContent = '';
-      let paragraphCount = 0;
+        const docList = (documents as any)?.records || (documents as any)?.data || [];
+        if (!Array.isArray(docList) || docList.length === 0) {
+          console.log(`[MaxKB] 知识库 ${knowledgeId} 没有文档`);
+          return '';
+        }
 
-      for (const doc of docList) {
-        if (paragraphCount >= maxParagraphs || allContent.length >= maxChars) break;
+        // 收集段落内容
+        let allContent = '';
+        let paragraphCount = 0;
 
-        try {
-          // 获取文档的段落列表
-          const paragraphs = await this.adminRequest(
-            'GET',
-            `/workspace/${workspaceId}/knowledge/${knowledgeId}/document/${doc.id}/paragraph/1/100`,
-          );
+        for (const doc of docList) {
+          if (paragraphCount >= maxParagraphs || allContent.length >= maxChars) break;
 
-          const paraList = (paragraphs as any)?.records || (paragraphs as any)?.data || [];
-          if (Array.isArray(paraList)) {
-            for (const para of paraList) {
-              if (paragraphCount >= maxParagraphs || allContent.length >= maxChars) break;
-              const content = para.content || '';
-              if (content && content.length > 10 && !content.includes('\x00')) {
-                // 过滤掉二进制内容和过短的段落
-                const title = para.title ? `【${para.title}】` : '';
-                allContent += `${title}${content}\n\n`;
-                paragraphCount++;
+          try {
+            // 获取文档的段落列表
+            const paragraphs = await this.adminRequest(
+              'GET',
+              `/workspace/${workspaceId}/knowledge/${knowledgeId}/document/${doc.id}/paragraph/1/100`,
+            );
+
+            const paraList = (paragraphs as any)?.records || (paragraphs as any)?.data || [];
+            if (Array.isArray(paraList)) {
+              for (const para of paraList) {
+                if (paragraphCount >= maxParagraphs || allContent.length >= maxChars) break;
+                const content = para.content || '';
+                if (content && content.length > 10 && !content.includes('\x00')) {
+                  // 过滤掉二进制内容和过短的段落
+                  const title = para.title ? `【${para.title}】` : '';
+                  allContent += `${title}${content}\n\n`;
+                  paragraphCount++;
+                }
               }
             }
+          } catch (e) {
+            // 跳过获取失败的文档
           }
-        } catch (e) {
-          // 跳过获取失败的文档
         }
-      }
 
-      console.log(`[MaxKB] 获取知识库段落: ${paragraphCount} 段, ${allContent.length} 字符`);
-      return allContent.substring(0, maxChars);
-    } catch (e) {
-      console.warn(`[MaxKB] 获取知识库段落失败:`, e);
-      return '';
-    }
+        console.log(`[MaxKB] 获取知识库段落: ${paragraphCount} 段, ${allContent.length} 字符`);
+        return allContent.substring(0, maxChars);
+      } catch (e) {
+        console.warn(`[MaxKB] 获取知识库段落失败:`, e);
+        return '';
+      }
+    }, CACHE_TTL);
   }
 
 

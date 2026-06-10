@@ -7,6 +7,7 @@ export const ENTRY_MODULE_LABEL: Record<EntryModule, string> = {
   RULE_ONLY: '规则库审查',
   MULTIMODAL: '结构化审查',
   DOC_REVIEW: '以文审文',
+  CONTRACT: '合同风险审查',
 }
 
 export const OBJECTIVE_OPTIONS: Array<{ value: ReviewObjective; label: string; desc: string }> = [
@@ -36,6 +37,7 @@ export const EVIDENCE_SOURCE_OPTIONS: Record<ReviewObjective, Array<{ value: Rev
   ],
   COMPARE: [
     { value: 'REFERENCE', label: '参考文件' },
+    { value: 'STANDARD', label: '知识库（可选增强）' },
   ],
   PROOFREAD: [],
   STRUCTURED: [
@@ -63,3 +65,28 @@ export const PROGRESS_STATUS_LABELS: Record<string, string> = {
   completed: '已完成',
   failed: '失败',
 }
+
+// ==================== 合同审查专用常量 ====================
+
+export const CONTRACT_RISK_LEVELS = [
+  { value: 'HIGH', label: '高风险', color: '#f56c6c' },
+  { value: 'MEDIUM', label: '中风险', color: '#e6a23c' },
+  { value: 'LOW', label: '低风险', color: '#409eff' },
+] as const
+
+export const CONTRACT_CLAUSE_TYPES = [
+  { value: 'payment', label: '付款条款' },
+  { value: 'penalty', label: '违约条款' },
+  { value: 'warranty', label: '质保条款' },
+  { value: 'ip', label: '知识产权' },
+  { value: 'change', label: '变更条款' },
+  { value: 'claim', label: '索赔条款' },
+  { value: 'insurance', label: '保险条款' },
+  { value: 'dispute', label: '争议解决' },
+  { value: 'other', label: '其他' },
+] as const
+
+export const CONTRACT_STANCES = [
+  { value: 'owner', label: '业主/建设方', desc: '站在核电业主角度审查，关注承包商履约风险' },
+  { value: 'contractor', label: '承包商', desc: '站在承包商角度审查，关注付款和约束风险' },
+] as const

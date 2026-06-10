@@ -26,6 +26,9 @@ export interface ReviewIssue {
   standardRef?: string;   // 标准规范引用（如 "GB/T 50265-2010 第5.2.1条"）
   sourceReferences?: SourceReference[];  // MaxKB RAG 溯源来源
   severity?: string;      // 问题严重程度: 'error' | 'warning' | 'info'
+  // 合同审查专用字段
+  riskLevel?: string;     // 风险等级: HIGH / MEDIUM / LOW
+  clauseType?: string;    // 条款类型: payment/penalty/warranty/ip/change/claim/insurance/dispute/other
   diffRanges?: any;       // 字符级差异定位范围（标准引用检查使用）
   matchLevel?: number;    // 匹配等级（标准引用检查使用）
   similarity?: number;    // 相似度（标准引用检查使用）
@@ -112,21 +115,62 @@ export class LlmService {
       if (Array.isArray(parsed)) {
         return parsed
           .filter((item: any) => {
-            if (!item.issueType || !item.originalText) return false;
+            // 支持两种格式：标准审查(issueType) 和 合同审查(riskLevel)
+            if ((!item.issueType && !item.riskLevel) || !item.originalText) return false;
             // 过滤 originalText 与 suggestedText 完全一致的无效条目
             if (item.suggestedText && String(item.originalText).trim() === String(item.suggestedText).trim()) return false;
             return true;
           })
-          .map((item: any) => ({
-            issueType: validTypes.includes(item.issueType) ? item.issueType : 'VIOLATION',
-            originalText: String(item.originalText || ''),
-            suggestedText: item.suggestedText ? String(item.suggestedText) : undefined,
-            description: item.description ? String(item.description) : undefined,
-            plainLanguage: item.plain_language ? String(item.plain_language) : undefined,
-            cadHandleId: item.cadHandleId ? String(item.cadHandleId) : undefined,
-            ruleCode: item.ruleCode ? String(item.ruleCode) : undefined,
-            standardRef: item.standardRef ? String(item.standardRef) : undefined,
-          }));
+          .map((item: any) => {
+            // 合同审查格式：riskLevel → issueType 和 severity 映射
+            const riskLevelToIssueType: Record<string, string> = {
+              'HIGH': 'VIOLATION',
+              'MEDIUM': 'COMPLETENESS',
+              'LOW': 'CONSISTENCY',
+            };
+            const riskLevelToSeverity: Record<string, string> = {
+              'HIGH': 'error',
+              'MEDIUM': 'warning',
+              'LOW': 'info',
+            };
+            const clauseTypeLabels: Record<string, string> = {
+              'payment': '付款条款',
+              'penalty': '违约条款',
+              'warranty': '质保条款',
+              'ip': '知识产权',
+              'change': '变更条款',
+              'claim': '索赔条款',
+              'insurance': '保险条款',
+              'dispute': '争议解决',
+              'other': '其他',
+            };
+
+            const isContractReview = !!item.riskLevel;
+            const issueType = item.issueType || riskLevelToIssueType[item.riskLevel] || 'VIOLATION';
+            const severity = isContractReview ? (riskLevelToSeverity[item.riskLevel] || 'warning') : (item.severity || 'warning');
+
+            // 合同审查：将条款类型和风险等级信息融入描述
+            let description = item.description ? String(item.description) : undefined;
+            if (isContractReview && description) {
+              const clauseLabel = clauseTypeLabels[item.clauseType] || item.clauseType || '';
+              const riskLabel = item.riskLevel === 'HIGH' ? '🔴 高风险' : item.riskLevel === 'MEDIUM' ? '🟡 中风险' : '🔵 低风险';
+              description = `[${riskLabel}${clauseLabel ? ' · ' + clauseLabel : ''}] ${description}`;
+            }
+
+            return {
+              issueType: validTypes.includes(issueType) ? issueType : 'VIOLATION',
+              severity,
+              originalText: String(item.originalText || ''),
+              suggestedText: item.suggestedText ? String(item.suggestedText) : undefined,
+              description,
+              plainLanguage: item.plain_language ? String(item.plain_language) : (item.recommendation ? String(item.recommendation) : undefined),
+              cadHandleId: item.cadHandleId ? String(item.cadHandleId) : undefined,
+              ruleCode: item.ruleCode ? String(item.ruleCode) : undefined,
+              standardRef: item.standardRef ? String(item.standardRef) : (item.clauseType ? clauseTypeLabels[item.clauseType] || item.clauseType : undefined),
+              riskLevel: item.riskLevel || undefined,
+              clauseType: item.clauseType || undefined,
+            };
+          });
       }
 
       // JSON 解析成功但不是数组
@@ -766,8 +810,11 @@ export class LlmService {
   }
 
   /**
-   * 从数据库获取 LLM 配置
+   * 从数据库获取 LLM 配置（带缓存）
    */
+  private static _llmConfigCache: { config: any; timestamp: number } | null = null;
+  private static readonly CONFIG_CACHE_TTL = 5 * 60 * 1000; // 5分钟缓存
+
   static async getLlmConfig(): Promise<{
     apiBaseUrl: string;
     apiKey: string;
@@ -776,14 +823,20 @@ export class LlmService {
     temperature: number;
     timeout: number;
   } | null> {
+    // 检查缓存
+    if (this._llmConfigCache && Date.now() - this._llmConfigCache.timestamp < this.CONFIG_CACHE_TTL) {
+      return this._llmConfigCache.config;
+    }
+
     try {
       const config = await prisma.systemConfig.findUnique({
         where: { key: 'llm_chat_model' },
       });
+      let result = null;
       if (config?.value && typeof config.value === 'object') {
         const v = config.value as any;
         if (v.apiKey && v.modelName) {
-          return {
+          result = {
             apiBaseUrl: v.apiBaseUrl || 'https://api.siliconflow.cn/v1',
             apiKey: v.apiKey,
             modelName: v.modelName,
@@ -793,6 +846,8 @@ export class LlmService {
           };
         }
       }
+      this._llmConfigCache = { config: result, timestamp: Date.now() };
+      return result;
     } catch (e) {
       console.warn('[LLM] 获取 LLM 配置失败:', e);
     }

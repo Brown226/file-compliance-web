@@ -42,6 +42,7 @@ export function useSmartReviewState() {
       profile: 'RULE_ONLY',
     },
     templateId: 'general',
+    contractStance: 'owner',
   })
 
   // ===== 规则相关 =====
@@ -65,7 +66,7 @@ export function useSmartReviewState() {
   // ===== 计算属性 =====
   const showEvidenceSection = computed(() => {
     if (!entryModule.value) return true
-    return ['LIBRARY', 'RULE_ONLY', 'DOC_REVIEW'].includes(entryModule.value)
+    return ['LIBRARY', 'RULE_ONLY', 'DOC_REVIEW', 'CONTRACT'].includes(entryModule.value)
   })
 
   const showObjectiveSelector = computed(() => !entryModule.value)

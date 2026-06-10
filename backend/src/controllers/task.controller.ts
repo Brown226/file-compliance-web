@@ -12,7 +12,7 @@ export const createTask = async (req: AuthRequest, res: Response): Promise<void>
   try {
     const { title, description, standardId, standardIds, maxkbKnowledgeId, maxkbKnowledgeIds,
       perspective, selectedTemplateId, intraFileConsistency,
-      reviewPlan, reviewSpecificationId, ruleLibraryId, entryModule, reviewMode } = req.body;
+      reviewPlan, reviewSpecificationId, ruleLibraryId, entryModule, reviewMode, contractStance } = req.body;
     const creatorId = req.user?.id;
     const creatorUsername = req.user?.username || creatorId;
     const filesMap = req.files as Record<string, Express.Multer.File[]> | undefined;
@@ -68,6 +68,11 @@ export const createTask = async (req: AuthRequest, res: Response): Promise<void>
       catch { /* 忽略解析错误 */ }
     } else if (typeof reviewPlan === 'object' && reviewPlan !== null) {
       parsedReviewPlan = reviewPlan;
+    }
+
+    // 合同审查立场：注入到 reviewPlan 中
+    if (contractStance && parsedReviewPlan) {
+      parsedReviewPlan.contractStance = contractStance;
     }
 
     const task = await TaskService.createTask({

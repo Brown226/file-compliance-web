@@ -70,12 +70,12 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import {
-  Document, Fold, Link, EditPen, PictureFilled, List, CircleCheck,
+  Document, Fold, Link, EditPen, PictureFilled, List, CircleCheck, Stamp,
 } from '@element-plus/icons-vue'
 import SmartReviewLegacy from './SmartReview.vue'
 import SelfCheck from './SelfCheck/index.vue'
 
-type ModuleId = 'LIBRARY' | 'CONSISTENCY' | 'PROOFREAD' | 'RULE_ONLY' | 'MULTIMODAL' | 'DOC_REVIEW' | 'SELF_CHECK'
+type ModuleId = 'LIBRARY' | 'CONSISTENCY' | 'PROOFREAD' | 'RULE_ONLY' | 'MULTIMODAL' | 'DOC_REVIEW' | 'SELF_CHECK' | 'CONTRACT'
 
 const selectedModule = ref<ModuleId | ''>('')
 
@@ -91,6 +91,7 @@ interface ModuleItem {
 const commonModules: ModuleItem[] = [
   { id: 'LIBRARY', title: '以库审文', desc: '基于标准库 + AI 的综合合规审查', scenario: '初次送审、标准符合性检查', icon: Document, color: '#2563eb' },
   { id: 'DOC_REVIEW', title: '以文审文', desc: '上传参照文件，AI 逐项比对差异', scenario: '合同 vs 模板、新旧版变更比对', icon: Fold, color: '#7c3aed' },
+  { id: 'CONTRACT', title: '合同风险审查', desc: '审查核电工程合同，识别对业主不利的风险条款', scenario: '合同条款完整性、风险条款识别', icon: Stamp, color: '#f56c6c' },
   { id: 'CONSISTENCY', title: '一致性审查', desc: '多文件间数据与参数自洽性核对', scenario: '总图分图参数核对、跨表校验', icon: Link, color: '#0891b2' },
 ]
 

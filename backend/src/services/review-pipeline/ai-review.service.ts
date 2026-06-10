@@ -1,8 +1,8 @@
-ï»¿/**
- * AI å®¡æŸ¥æœåŠ¡ â€” ä» BasePipeline æå–çš„é™æ€æ–¹æ³•é›†åˆ
+/**
+ * AI Éó²é·şÎñ ¡ª ´Ó BasePipeline ÌáÈ¡µÄ¾²Ì¬·½·¨¼¯ºÏ
  *
- * åŒ…å« RAG å®¡æŸ¥ã€LLM ç›´æ¥è°ƒç”¨ã€é™çº§ç­–ç•¥ç­‰ AI å®¡æŸ¥æ ¸å¿ƒé€»è¾‘ã€‚
- * æ‰€æœ‰æ–¹æ³•å‡ä¸º staticï¼Œç”± BasePipeline å§”æ‰˜è°ƒç”¨ã€‚
+ * °üº¬ RAG Éó²é¡¢LLM Ö±½Óµ÷ÓÃ¡¢½µ¼¶²ßÂÔµÈ AI Éó²éºËĞÄÂß¼­¡£
+ * ËùÓĞ·½·¨¾ùÎª static£¬ÓÉ BasePipeline Î¯ÍĞµ÷ÓÃ¡£
  */
 
 import { PipelineContext, PipelineReviewConfig } from './types';
@@ -17,13 +17,13 @@ import { parallelLimit } from '../../utils/parallel';
 import { EmbeddingService } from '../embedding.service';
 
 export class AiReviewService {
-  // ==================== AI å®¡æŸ¥å®ç° ====================
+  // ==================== AI Éó²éÊµÏÖ ====================
 
   /**
-   * è‡ªå»º RAG å®¡æŸ¥ï¼ˆæ¨èæ–¹æ¡ˆï¼‰
+   * ×Ô½¨ RAG Éó²é£¨ÍÆ¼ö·½°¸£©
    *
-   * ç›´æ¥ä½¿ç”¨æœ¬åœ° pgvector å‘é‡æ£€ç´¢ï¼Œ
-   * è·å–ç›¸å…³æ®µè½åç»„è£… promptï¼Œè°ƒç”¨è‡ªæœ‰ LLM è¿›è¡Œå®¡æŸ¥ã€‚
+   * Ö±½ÓÊ¹ÓÃ±¾µØ pgvector ÏòÁ¿¼ìË÷£¬
+   * »ñÈ¡Ïà¹Ø¶ÎÂäºó×é×° prompt£¬µ÷ÓÃ×ÔÓĞ LLM ½øĞĞÉó²é¡£
    */
   static async runRAGReview(
     text: string,
@@ -31,7 +31,7 @@ export class AiReviewService {
     scene: string,
     config: PipelineReviewConfig,
   ): Promise<{ issues: ReviewIssue[]; engine: string; sources?: SourceReference[] }> {
-    // è·å–çŸ¥è¯†å­åº“ ID
+    // »ñÈ¡ÖªÊ¶×Ó¿â ID
     const knowledgeIds = ctx.maxkbKnowledgeIds && ctx.maxkbKnowledgeIds.length > 0
       ? ctx.maxkbKnowledgeIds
       : ctx.maxkbKnowledgeId
@@ -39,11 +39,11 @@ export class AiReviewService {
         : [];
 
     if (knowledgeIds.length === 0) {
-      console.warn('[Pipeline] runRAGReview: æœªæŒ‡å®šçŸ¥è¯†å­åº“ID');
+      console.warn('[Pipeline] runRAGReview: Î´Ö¸¶¨ÖªÊ¶×Ó¿âID');
       return { issues: [], engine: 'none' };
     }
 
-    console.log(`[Pipeline] å¯åŠ¨è‡ªå»º RAG å®¡æŸ¥: kbs=[${knowledgeIds.join(',')}], text_len=${text.length}`);
+    console.log(`[Pipeline] Æô¶¯×Ô½¨ RAG Éó²é: kbs=[${knowledgeIds.join(',')}], text_len=${text.length}`);
 
     try {
       const result = await RAGService.reviewWithKnowledge(text, knowledgeIds, {
@@ -54,19 +54,19 @@ export class AiReviewService {
         scene,
       });
 
-      // è¿›åº¦å›è°ƒï¼ˆä¸€æ¬¡æ€§ä¼ å®Œæ‰€æœ‰ issuesï¼ŒRAG å†…éƒ¨å·²å¤„ç†æ‰€æœ‰åˆ†ç‰‡ï¼‰
+      // ½ø¶È»Øµ÷£¨Ò»´ÎĞÔ´«ÍêËùÓĞ issues£¬RAG ÄÚ²¿ÒÑ´¦ÀíËùÓĞ·ÖÆ¬£©
       const enriched = StandardTraceabilityService.enrichWithStandardRef(result.issues);
       ctx.onChunkProgress?.(text.length, enriched, 0, 1, 'rag-llm');
       return { issues: enriched, engine: 'rag-llm', sources: result.sourceReferences };
     } catch (e) {
-      console.error('[Pipeline] è‡ªå»º RAG å®¡æŸ¥å¤±è´¥:', e);
-      // RAG å¤±è´¥æ—¶é™çº§åˆ°çº¯ LLM
+      console.error('[Pipeline] ×Ô½¨ RAG Éó²éÊ§°Ü:', e);
+      // RAG Ê§°ÜÊ±½µ¼¶µ½´¿ LLM
       return AiReviewService.fallbackToLLMWithKnowledge(text, ctx, config);
     }
   }
 
   /**
-   * ä»æœ¬åœ°å‘é‡åº“æ£€ç´¢æ ‡å‡†å†…å®¹ä½œä¸ºä¸Šä¸‹æ–‡ï¼Œä¼ ç»™è‡ªæœ‰ LLM è¿›è¡Œå®¡æŸ¥
+   * ´Ó±¾µØÏòÁ¿¿â¼ìË÷±ê×¼ÄÚÈİ×÷ÎªÉÏÏÂÎÄ£¬´«¸ø×ÔÓĞ LLM ½øĞĞÉó²é
    */
   static async fallbackToLLMWithKnowledge(
     text: string,
@@ -79,7 +79,7 @@ export class AiReviewService {
 
     let knowledgeContext = '';
 
-    // ä» MaxKB çŸ¥è¯†åº“æ£€ç´¢ç›¸å…³æ®µè½ä½œä¸ºä¸Šä¸‹æ–‡
+    // ´Ó MaxKB ÖªÊ¶¿â¼ìË÷Ïà¹Ø¶ÎÂä×÷ÎªÉÏÏÂÎÄ
     const knowledgeIds = ctx.maxkbKnowledgeIds && ctx.maxkbKnowledgeIds.length > 0
       ? ctx.maxkbKnowledgeIds
       : ctx.maxkbKnowledgeId
@@ -96,28 +96,28 @@ export class AiReviewService {
           knowledgeContext += kbContext + '\n\n';
         }
       } catch (e) {
-        console.warn(`[Pipeline] è·å–çŸ¥è¯†åº“ ${kbId} æ®µè½å¤±è´¥:`, e);
+        console.warn(`[Pipeline] »ñÈ¡ÖªÊ¶¿â ${kbId} ¶ÎÂäÊ§°Ü:`, e);
       }
     }
 
     if (knowledgeContext) {
-      console.log(`[Pipeline] è·å–åˆ°çŸ¥è¯†åº“æ®µè½ä½œä¸ºä¸Šä¸‹æ–‡: ${knowledgeContext.length} å­—ç¬¦ (${knowledgeIds.length} ä¸ªçŸ¥è¯†åº“)`);
+      console.log(`[Pipeline] »ñÈ¡µ½ÖªÊ¶¿â¶ÎÂä×÷ÎªÉÏÏÂÎÄ: ${knowledgeContext.length} ×Ö·û (${knowledgeIds.length} ¸öÖªÊ¶¿â)`);
     }
 
-    // ä½¿ç”¨è‡ªæœ‰ LLM è¿›è¡Œå®¡æŸ¥ï¼ˆå¸¦ä½ç½®ä¿¡æ¯ï¼‰
+    // Ê¹ÓÃ×ÔÓĞ LLM ½øĞĞÉó²é£¨´øÎ»ÖÃĞÅÏ¢£©
     const issues: ReviewIssue[] = [];
     const chunks = LlmService.splitText(text, chunkSize, true);
     const totalChunks = chunks.length;
 
-    // æŒ‰åœºæ™¯åŠ è½½æç¤ºè¯ï¼ˆç»Ÿä¸€ä½¿ç”¨ PromptLoaderï¼Œå›é€€é“¾ï¼šDB â†’ Registry â†’ å…œåº•ï¼‰
+    // °´³¡¾°¼ÓÔØÌáÊ¾´Ê£¨Í³Ò»Ê¹ÓÃ PromptLoader£¬»ØÍËÁ´£ºDB ¡ú Registry ¡ú ¶µµ×£©
     const scene = AiReviewService.resolveScene(ctx);
     const rawSystemPrompt = await PromptLoader.loadSystemPrompt(scene, {
       hasContext: !!knowledgeContext,
     });
     const systemPrompt = AiReviewService.injectSemanticContext(rawSystemPrompt, ctx);
 
-    // å¹¶è¡Œå¤„ç†åˆ†ç‰‡ï¼ˆé™æµå¹¶å‘ï¼ŒåŠ é€Ÿ AI å®¡æŸ¥ï¼‰
-    const CONCURRENT_LIMIT = 3;
+    // ²¢ĞĞ´¦Àí·ÖÆ¬£¨ÏŞÁ÷²¢·¢£¬¼ÓËÙ AI Éó²é£©
+    const CONCURRENT_LIMIT = 2; // ½µµÍ²¢·¢£¬±ÜÃâ´¥·¢ API ÏŞÁ÷
     const chunkResults = await parallelLimit(chunks, CONCURRENT_LIMIT, async (chunk, idx) => {
       try {
         let llmIssues: ReviewIssue[];
@@ -156,11 +156,11 @@ export class AiReviewService {
             },
           });
         }
-        // æ¯ä¸ª chunk å®Œæˆåå›è°ƒè¿›åº¦
+        // Ã¿¸ö chunk Íê³Éºó»Øµ÷½ø¶È
         ctx.onChunkProgress?.(chunk.text.length, llmIssues, chunk.chunkIndex, totalChunks, knowledgeContext ? 'llm-with-knowledge' : 'llm-direct');
         return llmIssues;
       } catch (e: any) {
-        console.warn(`[Pipeline] LLM å®¡æŸ¥åˆ†ç‰‡ ${chunk.chunkIndex + 1}/${totalChunks} å¤±è´¥:`, e.message);
+        console.warn(`[Pipeline] LLM Éó²é·ÖÆ¬ ${chunk.chunkIndex + 1}/${totalChunks} Ê§°Ü:`, e.message);
         return [];
       }
     });
@@ -171,8 +171,8 @@ export class AiReviewService {
   }
 
   /**
-   * å…¬å…±æ­¥éª¤: AI å®¡æŸ¥ï¼ˆæ ‡å‡†è·¯å¾„ï¼‰
-   * æ”¯æŒ auto/rag/rag_llm/llm_only/disabled å¼•æ“ç­–ç•¥
+   * ¹«¹²²½Öè: AI Éó²é£¨±ê×¼Â·¾¶£©
+   * Ö§³Ö auto/rag/rag_llm/llm_only/disabled ÒıÇæ²ßÂÔ
    */
   static async runAIReview(
     text: string,
@@ -184,48 +184,48 @@ export class AiReviewService {
 
     const hasKnowledgeIds = (ctx.maxkbKnowledgeIds && ctx.maxkbKnowledgeIds.length > 0) || ctx.maxkbKnowledgeId;
 
-    // AI å¼•æ“ç¦ç”¨
+    // AI ÒıÇæ½ûÓÃ
     if (aiEngine === 'disabled') {
       return { issues: [], engine: 'none' };
     }
 
-    // è‡ªå»º RAG æ¨¡å¼ï¼ˆæ¨èï¼šå‘é‡æ£€ç´¢ + è‡ªæœ‰ LLMï¼‰
+    // ×Ô½¨ RAG Ä£Ê½£¨ÍÆ¼ö£ºÏòÁ¿¼ìË÷ + ×ÔÓĞ LLM£©
     if (aiEngine === 'rag' || aiEngine === 'rag_llm') {
       if (!hasKnowledgeIds) {
-        console.warn('[Pipeline] RAG æ¨¡å¼éœ€è¦é€‰æ‹©çŸ¥è¯†åº“ï¼Œé™çº§åˆ° LLM ç›´æ¥è°ƒç”¨');
+        console.warn('[Pipeline] RAG Ä£Ê½ĞèÒªÑ¡ÔñÖªÊ¶¿â£¬½µ¼¶µ½ LLM Ö±½Óµ÷ÓÃ');
         return AiReviewService.runLLMWithFallback(text, ctx, scene, config);
       }
       return AiReviewService.runRAGReview(text, ctx, scene, config);
     }
 
-    // ä»… LLM æ¨¡å¼
+    // ½ö LLM Ä£Ê½
     if (aiEngine === 'llm_only') {
       return AiReviewService.runLLMDirect(text, ctx, scene, config);
     }
 
-    // auto æ¨¡å¼ï¼šæœ‰çŸ¥è¯†åº“æ—¶ä½¿ç”¨ RAGï¼Œæ— çŸ¥è¯†åº“æ—¶ä½¿ç”¨ LLM
+    // auto Ä£Ê½£ºÓĞÖªÊ¶¿âÊ±Ê¹ÓÃ RAG£¬ÎŞÖªÊ¶¿âÊ±Ê¹ÓÃ LLM
     if (hasKnowledgeIds) {
-      console.log('[Pipeline] auto æ¨¡å¼: æ£€æµ‹åˆ°çŸ¥è¯†åº“é€‰æ‹©ï¼Œä½¿ç”¨è‡ªå»º RAG');
+      console.log('[Pipeline] auto Ä£Ê½: ¼ì²âµ½ÖªÊ¶¿âÑ¡Ôñ£¬Ê¹ÓÃ×Ô½¨ RAG');
       try {
         const ragResult = await AiReviewService.runRAGReview(text, ctx, scene, config);
         if (ragResult.issues.length > 0 || ragResult.engine !== 'none') {
           return ragResult;
         }
-        console.log('[Pipeline] è‡ªå»º RAG æ— ç»“æœï¼Œé™çº§åˆ° LLM + çŸ¥è¯†åº“æ®µè½');
+        console.log('[Pipeline] ×Ô½¨ RAG ÎŞ½á¹û£¬½µ¼¶µ½ LLM + ÖªÊ¶¿â¶ÎÂä');
       } catch (e) {
-        console.warn('[Pipeline] è‡ªå»º RAG å¤±è´¥ï¼Œé™çº§åˆ° LLM + çŸ¥è¯†åº“æ®µè½:', e);
+        console.warn('[Pipeline] ×Ô½¨ RAG Ê§°Ü£¬½µ¼¶µ½ LLM + ÖªÊ¶¿â¶ÎÂä:', e);
       }
-      // RAG å¤±è´¥æˆ–æ— ç»“æœæ—¶ï¼Œé™çº§åˆ° LLM + çŸ¥è¯†åº“æ®µè½
+      // RAG Ê§°Ü»òÎŞ½á¹ûÊ±£¬½µ¼¶µ½ LLM + ÖªÊ¶¿â¶ÎÂä
       return AiReviewService.runLLMWithFallback(text, ctx, scene, config);
     } else {
-      // æ— çŸ¥è¯†åº“é€‰æ‹©ï¼Œç›´æ¥ä½¿ç”¨ LLM
-      console.log('[Pipeline] auto æ¨¡å¼: æ— çŸ¥è¯†åº“é€‰æ‹©ï¼Œä½¿ç”¨ LLM ç›´æ¥è°ƒç”¨');
+      // ÎŞÖªÊ¶¿âÑ¡Ôñ£¬Ö±½ÓÊ¹ÓÃ LLM
+      console.log('[Pipeline] auto Ä£Ê½: ÎŞÖªÊ¶¿âÑ¡Ôñ£¬Ê¹ÓÃ LLM Ö±½Óµ÷ÓÃ');
       return AiReviewService.runLLMDirect(text, ctx, scene, config);
     }
   }
 
   /**
-   * LLM ç›´æ¥è°ƒç”¨ï¼ˆæ— çŸ¥è¯†åº“ä¸Šä¸‹æ–‡ï¼‰
+   * LLM Ö±½Óµ÷ÓÃ£¨ÎŞÖªÊ¶¿âÉÏÏÂÎÄ£©
    */
   static async runLLMDirect(
     text: string,
@@ -239,7 +239,7 @@ export class AiReviewService {
     const issues: ReviewIssue[] = [];
 
     try {
-      // runLLMDirect å§‹ç»ˆæ— æ ‡å‡†ä¸Šä¸‹æ–‡ï¼Œä½¿ç”¨ no_context å˜ä½“
+      // runLLMDirect Ê¼ÖÕÎŞ±ê×¼ÉÏÏÂÎÄ£¬Ê¹ÓÃ no_context ±äÌå
       const rawSystemPrompt = await PromptLoader.loadSystemPrompt(scene, {
         hasContext: false,
       });
@@ -248,7 +248,7 @@ export class AiReviewService {
 
       const chunks = LlmService.splitText(text, chunkSize, true);
       const totalChunks = chunks.length;
-      const CONCURRENT_LIMIT = 3;
+      const CONCURRENT_LIMIT = 2; // ½µµÍ²¢·¢£¬±ÜÃâ´¥·¢ API ÏŞÁ÷
       const chunkResults = await parallelLimit(chunks, CONCURRENT_LIMIT, async (chunk) => {
         try {
           const userContent = userTpl.replace(/\$\{text\}/g, chunk.text);
@@ -266,20 +266,20 @@ export class AiReviewService {
           ctx.onChunkProgress?.(chunk.text.length, llmIssues, chunk.chunkIndex, totalChunks, 'llm-direct');
           return llmIssues;
         } catch (e: any) {
-          console.warn(`[Pipeline] LLM å®¡æŸ¥åˆ†ç‰‡ ${chunk.chunkIndex + 1}/${totalChunks} å¤±è´¥:`, e.message);
+          console.warn(`[Pipeline] LLM Éó²é·ÖÆ¬ ${chunk.chunkIndex + 1}/${totalChunks} Ê§°Ü:`, e.message);
           return [];
         }
       });
       for (const r of chunkResults) issues.push(...r);
       return { issues: StandardTraceabilityService.enrichWithStandardRef(issues), engine: 'llm-direct' };
     } catch (e) {
-      console.error('[Pipeline] LLM ç›´æ¥è°ƒç”¨å¤±è´¥:', e);
+      console.error('[Pipeline] LLM Ö±½Óµ÷ÓÃÊ§°Ü:', e);
       return { issues: [], engine: 'none' };
     }
   }
 
   /**
-   * LLM è°ƒç”¨ï¼ˆå¸¦çŸ¥è¯†åº“æ®µè½ä¸Šä¸‹æ–‡ï¼Œé™çº§è·¯å¾„ï¼‰
+   * LLM µ÷ÓÃ£¨´øÖªÊ¶¿â¶ÎÂäÉÏÏÂÎÄ£¬½µ¼¶Â·¾¶£©
    */
   static async runLLMWithFallback(
     text: string,
@@ -295,8 +295,8 @@ export class AiReviewService {
   }
 
   /**
-   * AI ç­–ç•¥: çº¯ LLM ç›´æ¥è°ƒç”¨ï¼ˆè·³è¿‡ RAGï¼‰
-   * ç”¨äº TYPO_GRAMMAR ç­‰è½»é‡æ¨¡å¼
+   * AI ²ßÂÔ: ´¿ LLM Ö±½Óµ÷ÓÃ£¨Ìø¹ı RAG£©
+   * ÓÃÓÚ TYPO_GRAMMAR µÈÇáÁ¿Ä£Ê½
    */
   static async runLLMOnlyStrategy(
     text: string,
@@ -314,7 +314,7 @@ export class AiReviewService {
 
       const chunks = LlmService.splitText(text, chunkSize, true);
       const totalChunks = chunks.length;
-      const CONCURRENT_LIMIT = 3;
+      const CONCURRENT_LIMIT = 2; // ½µµÍ²¢·¢£¬±ÜÃâ´¥·¢ API ÏŞÁ÷
       const chunkResults = await parallelLimit(chunks, CONCURRENT_LIMIT, async (chunk) => {
         try {
           const userTpl = await PromptLoader.loadUserPrompt(scene, 'default');
@@ -334,14 +334,14 @@ export class AiReviewService {
           ctx.onChunkProgress?.(chunk.text.length, llmIssues, chunk.chunkIndex, totalChunks, 'llm-only');
           return llmIssues;
         } catch (e: any) {
-          console.warn(`[Pipeline] LLM å®¡æŸ¥åˆ†ç‰‡ ${chunk.chunkIndex + 1}/${totalChunks} å¤±è´¥:`, e.message);
+          console.warn(`[Pipeline] LLM Éó²é·ÖÆ¬ ${chunk.chunkIndex + 1}/${totalChunks} Ê§°Ü:`, e.message);
           return [];
         }
       });
       const issues: ReviewIssue[] = [];
       for (const r of chunkResults) issues.push(...r);
 
-      // è·¨åˆ†ç‰‡å»é‡ï¼šæŒ‰ originalText å‰ 60 å­—ç¬¦å»é‡ï¼ˆä¸ semantic-spec ç›¸åŒç­–ç•¥ï¼‰
+      // ¿ç·ÖÆ¬È¥ÖØ£º°´ originalText Ç° 60 ×Ö·ûÈ¥ÖØ£¨Óë semantic-spec ÏàÍ¬²ßÂÔ£©
       const seen = new Set<string>();
       const deduped = issues.filter(issue => {
         const key = (issue.originalText || '').slice(0, 60).trim();
@@ -352,25 +352,25 @@ export class AiReviewService {
 
       return { issues: StandardTraceabilityService.enrichWithStandardRef(deduped), engine: 'llm-direct' };
     } catch (e) {
-      console.error('[Pipeline] LLM è°ƒç”¨å¤±è´¥:', e);
+      console.error('[Pipeline] LLM µ÷ÓÃÊ§°Ü:', e);
       return { issues: [], engine: 'none' };
     }
   }
 
   /**
-   * @deprecated ä½¿ç”¨ runLLMOnlyStrategy æ›¿ä»£ã€‚ä¿ç•™ç”¨äºå‘åå…¼å®¹ã€‚
+   * @deprecated Ê¹ÓÃ runLLMOnlyStrategy Ìæ´ú¡£±£ÁôÓÃÓÚÏòºó¼æÈİ¡£
    */
   static async runLLMOnly(text: string, ctx: PipelineContext, scene: string, config: PipelineReviewConfig): Promise<ReviewIssue[]> {
     const result = await AiReviewService.runLLMOnlyStrategy(text, ctx, scene, config);
     return result.issues;
   }
 
-  // ==================== å‚ç…§æ–‡ä»¶æ¯”å¯¹ç­–ç•¥ ====================
+  // ==================== ²ÎÕÕÎÄ¼ş±È¶Ô²ßÂÔ ====================
 
   /**
-   * å‚ç…§æ–‡ä»¶æ¯”å¯¹ç­–ç•¥ï¼ˆä»¥æ–‡å®¡æ–‡æ¨¡å¼ï¼‰
-   * å°†å¾…å®¡æ–‡ä»¶ä¸å‚ç…§æ–‡ä»¶è¿›è¡Œ LLM è¯­ä¹‰çº§é€é¡¹æ¯”å¯¹
-   * æ— å‚ç…§æ–‡ä»¶æ—¶é™çº§åˆ°æ ‡å‡† AI å®¡æŸ¥
+   * ²ÎÕÕÎÄ¼ş±È¶Ô²ßÂÔ£¨ÒÔÎÄÉóÎÄÄ£Ê½£©
+   * ½«´ıÉóÎÄ¼şÓë²ÎÕÕÎÄ¼ş½øĞĞ LLM ÓïÒå¼¶ÖğÏî±È¶Ô
+   * ÎŞ²ÎÕÕÎÄ¼şÊ±½µ¼¶µ½±ê×¼ AI Éó²é
    */
   static async runRefCompareStrategy(
     text: string,
@@ -378,13 +378,13 @@ export class AiReviewService {
     scene: string,
     config: PipelineReviewConfig,
   ): Promise<{ issues: ReviewIssue[]; engine: string; sources?: SourceReference[] }> {
-    // æ— å‚ç…§æ–‡ä»¶æ—¶é™çº§åˆ°æ ‡å‡† AI å®¡æŸ¥
+    // ÎŞ²ÎÕÕÎÄ¼şÊ±½µ¼¶µ½±ê×¼ AI Éó²é£¨±£ÁôÔ­Ê¼ scene£©
     if (!ctx.refFileGroup || ctx.refFileGroup.refFiles.length === 0) {
-      console.log('[AiReview] æ— å‚ç…§æ–‡ä»¶ï¼Œé™çº§åˆ°æ ‡å‡† AI å®¡æŸ¥');
-      return AiReviewService.runAIReview(text, ctx, 'library_review', config);
+      console.log('[AiReview] ÎŞ²ÎÕÕÎÄ¼ş£¬½µ¼¶µ½±ê×¼ AI Éó²é');
+      return AiReviewService.runAIReview(text, ctx, scene, config);
     }
 
-    // è§£æå‚ç…§æ–‡ä»¶æ–‡æœ¬ï¼Œå¸¦æ¥æºæ ‡æ³¨
+    // ½âÎö²ÎÕÕÎÄ¼şÎÄ±¾£¬´øÀ´Ô´±ê×¢
     const { TextExtractionService } = await import('./text-extraction.service');
     const refTexts: string[] = [];
     const refFileNames: string[] = [];
@@ -394,30 +394,30 @@ export class AiReviewService {
         try {
           refContent = await TextExtractionService.extractFileText(refFile.filePath, refFile.fileType, refFile.fileName);
         } catch (e) {
-          console.warn(`[AiReview] å‚ç…§æ–‡ä»¶è§£æå¤±è´¥: ${refFile.fileName}`, e);
+          console.warn(`[AiReview] ²ÎÕÕÎÄ¼ş½âÎöÊ§°Ü: ${refFile.fileName}`, e);
         }
       }
       if (refContent) {
-        refTexts.push(`ã€å‚ç…§æ–‡ä»¶: ${refFile.fileName}ã€‘\n${refContent}`);
+        refTexts.push(`¡¾²ÎÕÕÎÄ¼ş: ${refFile.fileName}¡¿\n${refContent}`);
         refFileNames.push(refFile.fileName);
       }
     }
 
     if (refTexts.length === 0) {
-      console.warn('[AiReview] å‚ç…§æ–‡ä»¶å‡æ— æ–‡æœ¬å†…å®¹ï¼Œé™çº§åˆ°æ ‡å‡† AI å®¡æŸ¥');
+      console.warn('[AiReview] ²ÎÕÕÎÄ¼ş¾ùÎŞÎÄ±¾ÄÚÈİ£¬½µ¼¶µ½±ê×¼ AI Éó²é');
       return AiReviewService.runAIReview(text, ctx, 'library_review', config);
     }
 
     const refFileCount = refTexts.length;
-    console.log(`[AiReview] ä»¥æ–‡å®¡æ–‡: ${refFileCount} ä¸ªå‚ç…§æ–‡ä»¶ (${refFileNames.join(', ')})`);
+    console.log(`[AiReview] ÒÔÎÄÉóÎÄ: ${refFileCount} ¸ö²ÎÕÕÎÄ¼ş (${refFileNames.join(', ')})`);
 
     const llmMaxTokens = config.llmMaxTokens || 4096;
     const llmTimeout = config.llmTimeout || 180;
     const chunkSize = config.chunkSize || 4000;
 
     try {
-      // åŠ¨æ€è®¡ç®—å‚ç…§å†…å®¹å¯ç”¨ç©ºé—´ï¼šä¼˜å…ˆä» LLM æ¨¡å‹é…ç½®è¯»å–ä¸Šä¸‹æ–‡çª—å£
-      let contextWindow = 131072; // é»˜è®¤å€¼ï¼ˆå­—ç¬¦æ•°ï¼‰
+      // ¶¯Ì¬¼ÆËã²ÎÕÕÄÚÈİ¿ÉÓÃ¿Õ¼ä£ºÓÅÏÈ´Ó LLM Ä£ĞÍÅäÖÃ¶ÁÈ¡ÉÏÏÂÎÄ´°¿Ú
+      let contextWindow = 131072; // Ä¬ÈÏÖµ£¨×Ö·ûÊı£©
       try {
         const { default: prisma } = await import('../../config/db');
         const llmCfg = await prisma.systemConfig.findUnique({ where: { key: 'llm_chat_model' } });
@@ -428,36 +428,38 @@ export class AiReviewService {
           }
         }
       } catch (e) {
-        // æ•°æ®åº“ä¸å¯è¾¾ï¼Œä½¿ç”¨é»˜è®¤å€¼
+        // Êı¾İ¿â²»¿É´ï£¬Ê¹ÓÃÄ¬ÈÏÖµ
       }
-      const outputBudget = llmMaxTokens * 3.5;             // è¾“å‡º token â†’ å­—ç¬¦ä¼°ç®—
-      const safetyMargin = 4000;                            // å®‰å…¨è£•é‡
-      const maxTargetChunkPerRequest = chunkSize;           // å•æ¬¡è¯·æ±‚çš„å¾…å®¡åˆ†ç‰‡
+      const outputBudget = llmMaxTokens * 3.5;             // Êä³ö token ¡ú ×Ö·û¹ÀËã
+      const safetyMargin = 4000;                            // °²È«Ô£Á¿
+      const maxTargetChunkPerRequest = chunkSize;           // µ¥´ÎÇëÇóµÄ´ıÉó·ÖÆ¬
 
-      // éªŒè¯ç³»ç»Ÿæç¤ºè¯
+      // ÑéÖ¤ÏµÍ³ÌáÊ¾´Ê
       const systemPrompt = await PromptTemplateService.getPromptByScene(
         scene, 'system', 'default',
-        'ä½ æ˜¯æ ¸ç”µå·¥ç¨‹æ–‡ä»¶åˆè§„å®¡æŸ¥ä¸“å®¶ã€‚è¯·æŒ‰ç…§å®¡æŸ¥ç­–ç•¥é€é¡¹æ ¸å¯¹å¾…å®¡æ–‡ä»¶æ˜¯å¦ä¸å‚ç…§æ–‡ä»¶å®Œå…¨ä¸€è‡´ã€‚ä¸¥æ ¼æŒ‰ç…§ JSON æ•°ç»„æ ¼å¼è¾“å‡ºå®¡æŸ¥ç»“æœã€‚',
+        'ÄãÊÇºËµç¹¤³ÌÎÄ¼şºÏ¹æÉó²é×¨¼Ò¡£Çë°´ÕÕÉó²é²ßÂÔÖğÏîºË¶Ô´ıÉóÎÄ¼şÊÇ·ñÓë²ÎÕÕÎÄ¼şÍêÈ«Ò»ÖÂ¡£ÑÏ¸ñ°´ÕÕ JSON Êı×é¸ñÊ½Êä³öÉó²é½á¹û¡£',
       );
-      const finalSystemPrompt = AiReviewService.injectSemanticContext(systemPrompt, ctx);
+      // ºÏÍ¬Éó²éÁ¢³¡×¢Èë
+      const stanceLabel = ctx.contractStance === 'contractor' ? '³Ğ°üÉÌ' : 'ÒµÖ÷/½¨Éè·½';
+      const finalSystemPrompt = AiReviewService.injectSemanticContext(systemPrompt, ctx).replace(/\$\{stance\}/g, stanceLabel);
       const actualSystemPromptLen = finalSystemPrompt.length;
 
-      // å¯ç”¨å‚ç…§ç©ºé—´ = ä¸Šä¸‹æ–‡ - è¾“å‡º - ç³»ç»Ÿæç¤ºè¯ - å¾…å®¡åˆ†ç‰‡ - å®‰å…¨è£•é‡ - userPrompt æ¨¡æ¿å¼€é”€
+      // ¿ÉÓÃ²ÎÕÕ¿Õ¼ä = ÉÏÏÂÎÄ - Êä³ö - ÏµÍ³ÌáÊ¾´Ê - ´ıÉó·ÖÆ¬ - °²È«Ô£Á¿ - userPrompt Ä£°å¿ªÏú
       const maxRefChars = contextWindow - outputBudget - actualSystemPromptLen - maxTargetChunkPerRequest - safetyMargin;
 
-      // å…¨é‡å‚ç…§æ–‡æœ¬
+      // È«Á¿²ÎÕÕÎÄ±¾
       const rawRefTextsJoined = refTexts.join('\n\n---\n\n');
 
-      // åˆ†æ”¯: å‚ç…§èƒ½æ”¾ä¸‹ â†’ å…¨é‡ä¼ é€’; æ”¾ä¸ä¸‹ â†’ å‘é‡æ£€ç´¢å–æœ€ç›¸å…³æ®µè½
+      // ·ÖÖ§: ²ÎÕÕÄÜ·ÅÏÂ ¡ú È«Á¿´«µİ; ·Å²»ÏÂ ¡ú ÏòÁ¿¼ìË÷È¡×îÏà¹Ø¶ÎÂä
       const useFullRefs = rawRefTextsJoined.length <= maxRefChars;
       let refTextsJoined: string;
 
       if (useFullRefs) {
         refTextsJoined = rawRefTextsJoined;
-        console.log(`[AiReview] å‚ç…§å…¨é‡ä¼ é€’: ${rawRefTextsJoined.length} å­—ç¬¦ / å¯ç”¨ ${Math.floor(maxRefChars)} å­—ç¬¦ (ä¸Šä¸‹æ–‡=${contextWindow}, è¾“å‡º=${Math.floor(outputBudget)}, ç³»ç»Ÿ=${actualSystemPromptLen})`);
+        console.log(`[AiReview] ²ÎÕÕÈ«Á¿´«µİ: ${rawRefTextsJoined.length} ×Ö·û / ¿ÉÓÃ ${Math.floor(maxRefChars)} ×Ö·û (ÉÏÏÂÎÄ=${contextWindow}, Êä³ö=${Math.floor(outputBudget)}, ÏµÍ³=${actualSystemPromptLen})`);
       } else {
-        console.log(`[AiReview] å‚ç…§è¿‡é•¿ (${rawRefTextsJoined.length} > ${Math.floor(maxRefChars)})ï¼Œå¯ç”¨å‘é‡æ£€ç´¢`);
-        // fallback: ç®€å•æˆªæ–­åˆ°ä¸Šé™ï¼ˆå‘é‡æ£€ç´¢è·¯å¾„åœ¨ per-chunk å¾ªç¯ä¸­å®ç°ï¼‰
+        console.log(`[AiReview] ²ÎÕÕ¹ı³¤ (${rawRefTextsJoined.length} > ${Math.floor(maxRefChars)})£¬ÆôÓÃÏòÁ¿¼ìË÷`);
+        // fallback: ¼òµ¥½Ø¶Ïµ½ÉÏÏŞ£¨ÏòÁ¿¼ìË÷Â·¾¶ÔÚ per-chunk Ñ­»·ÖĞÊµÏÖ£©
         refTextsJoined = rawRefTextsJoined.substring(0, Math.floor(maxRefChars));
       }
 
@@ -467,13 +469,13 @@ export class AiReviewService {
       let failedChunks = 0;
       const errors: string[] = [];
 
-      // å‘é‡æ£€ç´¢å…œåº•: åªåœ¨å‚ç…§è¿‡é•¿æ—¶é¢„å…ˆæ„å»ºå‚ç…§å‘é‡ç´¢å¼•
+      // ÏòÁ¿¼ìË÷¶µµ×: Ö»ÔÚ²ÎÕÕ¹ı³¤Ê±Ô¤ÏÈ¹¹½¨²ÎÕÕÏòÁ¿Ë÷Òı
       let refChunks: string[] | null = null;
       let refVectors: number[][] | null = null;
       if (!useFullRefs) {
         try {
           const { EmbeddingService } = await import('../embedding.service');
-          // å°†å‚ç…§æ–‡æœ¬æŒ‰æ®µè½åˆ†å—ï¼ˆ~1500 å­—ç¬¦ï¼‰
+          // ½«²ÎÕÕÎÄ±¾°´¶ÎÂä·Ö¿é£¨~1500 ×Ö·û£©
           refChunks = [];
           for (const refText of refTexts) {
             const paras = refText.split('\n').reduce((acc: string[], line: string) => {
@@ -490,23 +492,54 @@ export class AiReviewService {
           }
           if (refChunks.length > 0) {
             refVectors = await EmbeddingService.embedTexts(refChunks);
-            console.log(`[AiReview] å‚ç…§å‘é‡ç´¢å¼•å®Œæˆ: ${refChunks.length} ä¸ªåˆ†å—Ã—${refVectors[0]?.length || 0}d`);
+            console.log(`[AiReview] ²ÎÕÕÏòÁ¿Ë÷ÒıÍê³É: ${refChunks.length} ¸ö·Ö¿é¡Á${refVectors[0]?.length || 0}d`);
           }
         } catch (e: any) {
-          console.warn(`[AiReview] å‚ç…§å‘é‡ç´¢å¼•å¤±è´¥: ${e.message}ï¼Œå›é€€åˆ°æˆªæ–­æ¨¡å¼`);
+          console.warn(`[AiReview] ²ÎÕÕÏòÁ¿Ë÷ÒıÊ§°Ü: ${e.message}£¬»ØÍËµ½½Ø¶ÏÄ£Ê½`);
           refChunks = null;
           refVectors = null;
         }
       }
 
-      // é¢„åŠ è½½ç”¨æˆ·æç¤ºè¯æ¨¡æ¿ï¼ˆæ‰€æœ‰åˆ†ç‰‡å…±ç”¨ï¼‰
+      // ÖªÊ¶¿â RAG ¼ìË÷£¨¿ÉÑ¡ÔöÇ¿£©
+      let ragContext = '';
+      const knowledgeIds = ctx.maxkbKnowledgeIds && ctx.maxkbKnowledgeIds.length > 0
+        ? ctx.maxkbKnowledgeIds
+        : ctx.maxkbKnowledgeId
+          ? [ctx.maxkbKnowledgeId]
+          : [];
+
+      if (knowledgeIds.length > 0 && scene === 'contract_review') {
+        try {
+          const { MaxKBService } = await import('../maxkb.service');
+          const kbContexts: string[] = [];
+          for (const kbId of knowledgeIds.slice(0, 3)) {  // ×î¶à3¸öÖªÊ¶¿â
+            const kbContext = await MaxKBService.getKnowledgeParagraphs(kbId, {
+              maxParagraphs: 10,
+              maxChars: 5000,
+            });
+            if (kbContext) kbContexts.push(kbContext);
+          }
+          if (kbContexts.length > 0) {
+            ragContext = kbContexts.join('\n\n---\n\n');
+            console.log(`[AiReview] ºÏÍ¬Éó²é RAG ÉÏÏÂÎÄ: ${ragContext.length} ×Ö·û, ${knowledgeIds.length} ¸öÖªÊ¶¿â`);
+          }
+        } catch (e: any) {
+          console.warn(`[AiReview] ºÏÍ¬Éó²é RAG ¼ìË÷Ê§°Ü:`, e.message);
+        }
+      }
+
+      // Ô¤¼ÓÔØÓÃ»§ÌáÊ¾´ÊÄ£°å£¨¸ù¾İÊÇ·ñÓĞ RAG ÉÏÏÂÎÄÑ¡Ôñ variant£©
+      const userPromptVariant = ragContext ? 'comparison_with_rag' : 'comparison';
       const userContentTpl = await PromptTemplateService.getPromptByScene(
-        scene, 'user', 'comparison',
-        '## å‚ç…§æ–‡ä»¶ï¼ˆæƒå¨åŸºå‡†ï¼‰\n\n${refTexts}\n\n---\n\n## å¾…å®¡æ–‡ä»¶ï¼ˆè¢«å®¡æŸ¥å¯¹è±¡ï¼‰\n\n${text}\n\n---\n\nè¯·æŒ‰ç…§ç³»ç»ŸæŒ‡ä»¤ä¸­çš„å››å±‚å®¡æŸ¥ç­–ç•¥ï¼Œé€é¡¹æ ¸å¯¹ã€‚è¾“å‡º JSON æ•°ç»„ã€‚',
+        scene, 'user', userPromptVariant,
+        ragContext
+          ? '## ²ÎÕÕÎÄ¼ş£¨È¨Íş»ù×¼£©\n\n${refTexts}\n\n---\n\n## ÆóÒµÖªÊ¶¿â²Î¿¼\n\n${ragContext}\n\n---\n\n## ´ıÉóÎÄ¼ş£¨±»Éó²é¶ÔÏó£©\n\n${text}\n\n---\n\nÇë°´ÕÕÏµÍ³Ö¸ÁîÖĞµÄÉó²é²ßÂÔ£¬ÖğÏîºË¶Ô¡£Êä³ö JSON Êı×é¡£'
+          : '## ²ÎÕÕÎÄ¼ş£¨È¨Íş»ù×¼£©\n\n${refTexts}\n\n---\n\n## ´ıÉóÎÄ¼ş£¨±»Éó²é¶ÔÏó£©\n\n${text}\n\n---\n\nÇë°´ÕÕÏµÍ³Ö¸ÁîÖĞµÄËÄ²ãÉó²é²ßÂÔ£¬ÖğÏîºË¶Ô¡£Êä³ö JSON Êı×é¡£',
       );
 
-      // å¹¶è¡Œå¤„ç†åˆ†ç‰‡ï¼ˆé™æµå¹¶å‘ï¼ŒåŠ é€Ÿä»¥æ–‡å®¡æ–‡ï¼‰
-      const CONCURRENT_LIMIT = 3;
+      // ²¢ĞĞ´¦Àí·ÖÆ¬£¨ÏŞÁ÷²¢·¢£¬¼ÓËÙÒÔÎÄÉóÎÄ£©
+      const CONCURRENT_LIMIT = 2; // ½µµÍ²¢·¢£¬±ÜÃâ´¥·¢ API ÏŞÁ÷
       const chunkResults = await parallelLimit(chunks, CONCURRENT_LIMIT, async (chunk) => {
         try {
           let effectiveRefTexts: string;
@@ -514,7 +547,7 @@ export class AiReviewService {
           if (useFullRefs || !refChunks || !refVectors) {
             effectiveRefTexts = refTextsJoined;
           } else {
-            // å‘é‡æ£€ç´¢: åµŒå…¥å½“å‰å¾…å®¡åˆ†ç‰‡ â†’ è®¡ç®—ä½™å¼¦ç›¸ä¼¼åº¦ â†’ å– Top-5 å‚ç…§æ®µè½
+            // ÏòÁ¿¼ìË÷: Ç¶Èëµ±Ç°´ıÉó·ÖÆ¬ ¡ú ¼ÆËãÓàÏÒÏàËÆ¶È ¡ú È¡ Top-5 ²ÎÕÕ¶ÎÂä
             try {
               const chunkVec = await EmbeddingService.embedText(chunk.text);
 
@@ -542,17 +575,22 @@ export class AiReviewService {
                 .sort(([a], [b]) => a - b)
                 .map(([, c]) => c);
 
-              effectiveRefTexts = '## å‚ç…§æ–‡ä»¶ï¼ˆå‘é‡æ£€ç´¢ï¼šä»¥ä¸‹ä¸ºä¸å¾…å®¡å†…å®¹æœ€ç›¸å…³çš„å‚ç…§æ®µè½ï¼‰\n\n'
+              effectiveRefTexts = '## ²ÎÕÕÎÄ¼ş£¨ÏòÁ¿¼ìË÷£ºÒÔÏÂÎªÓë´ıÉóÄÚÈİ×îÏà¹ØµÄ²ÎÕÕ¶ÎÂä£©\n\n'
                 + ordered.join('\n\n---\n\n');
             } catch (e: any) {
-              console.warn(`[AiReview] åˆ†ç‰‡${chunk.chunkIndex + 1} å‘é‡æ£€ç´¢å¤±è´¥: ${e.message}ï¼Œä½¿ç”¨æˆªæ–­å‚ç…§`);
+              console.warn(`[AiReview] ·ÖÆ¬${chunk.chunkIndex + 1} ÏòÁ¿¼ìË÷Ê§°Ü: ${e.message}£¬Ê¹ÓÃ½Ø¶Ï²ÎÕÕ`);
               effectiveRefTexts = refTextsJoined;
             }
           }
 
+          // ºÏÍ¬Éó²éÁ¢³¡£ºÄ¬ÈÏÒµÖ÷/½¨Éè·½
+          const stanceLabel = ctx.contractStance === 'contractor' ? '³Ğ°üÉÌ' : 'ÒµÖ÷/½¨Éè·½';
+
           const userContent = userContentTpl
             .replace(/\$\{refTexts\}/g, effectiveRefTexts)
-            .replace(/\$\{text\}/g, chunk.text);
+            .replace(/\$\{ragContext\}/g, ragContext)
+            .replace(/\$\{text\}/g, chunk.text)
+            .replace(/\$\{stance\}/g, stanceLabel);
 
           const issues = await LlmService.reviewText(userContent, {
             maxTokens: llmMaxTokens,
@@ -569,7 +607,7 @@ export class AiReviewService {
           ctx.onChunkProgress?.(chunk.text.length, issues, chunk.chunkIndex, totalChunks, 'llm-ref-compare');
           return { issues, failed: false };
         } catch (e: any) {
-          console.warn(`[AiReview] åˆ†ç‰‡ ${chunk.chunkIndex + 1}/${totalChunks} æ¯”å¯¹å¤±è´¥:`, e.message);
+          console.warn(`[AiReview] ·ÖÆ¬ ${chunk.chunkIndex + 1}/${totalChunks} ±È¶ÔÊ§°Ü:`, e.message);
           return { issues: [], failed: true, error: e.message };
         }
       });
@@ -581,102 +619,102 @@ export class AiReviewService {
       }
 
       if (failedChunks === totalChunks && totalChunks > 0) {
-        throw new Error(`æ‰€æœ‰ ${totalChunks} ä¸ªåˆ†ç‰‡æ¯”å¯¹å‡å¤±è´¥: ${errors[0]}`);
+        throw new Error(`ËùÓĞ ${totalChunks} ¸ö·ÖÆ¬±È¶Ô¾ùÊ§°Ü: ${errors[0]}`);
       }
 
-      const modeLabel = useFullRefs ? 'å…¨é‡' : (refVectors ? 'å‘é‡æ£€ç´¢' : 'æˆªæ–­');
-      console.log(`[AiReview] ä»¥æ–‡å®¡æ–‡å®Œæˆ(${modeLabel}): ${allIssues.length} æ¡é—®é¢˜(raw), ${refFileCount} ä¸ªå‚ç…§, ${totalChunks} ä¸ªåˆ†ç‰‡, ${failedChunks} ä¸ªå¤±è´¥`);
+      const modeLabel = useFullRefs ? 'È«Á¿' : (refVectors ? 'ÏòÁ¿¼ìË÷' : '½Ø¶Ï');
+      console.log(`[AiReview] ÒÔÎÄÉóÎÄÍê³É(${modeLabel}): ${allIssues.length} ÌõÎÊÌâ(raw), ${refFileCount} ¸ö²ÎÕÕ, ${totalChunks} ¸ö·ÖÆ¬, ${failedChunks} ¸öÊ§°Ü`);
 
-      // ---- åå¤„ç†è¿‡æ»¤ ----
-      // 1. è¿‡æ»¤ originalText === suggestedText çš„æ— æ•ˆæ¡ç›®
-      // 2. è¿‡æ»¤ description ä¸­æ˜ç¡®è¡¨ç¤º"ä¸€è‡´/æ— é—®é¢˜"çš„è¯¯è¾“å‡ºï¼ˆLLM æœ‰æ—¶ä¼šè¾“å‡º"è¯¥é¡¹ä¸å‚ç…§æ–‡ä»¶ä¸€è‡´ï¼Œæ— é—®é¢˜"ä½†ä»ä½œä¸ºæ¡ç›®è¿”å›ï¼‰
+      // ---- ºó´¦Àí¹ıÂË ----
+      // 1. ¹ıÂË originalText === suggestedText µÄÎŞĞ§ÌõÄ¿
+      // 2. ¹ıÂË description ÖĞÃ÷È·±íÊ¾"Ò»ÖÂ/ÎŞÎÊÌâ"µÄÎóÊä³ö£¨LLM ÓĞÊ±»áÊä³ö"¸ÃÏîÓë²ÎÕÕÎÄ¼şÒ»ÖÂ£¬ÎŞÎÊÌâ"µ«ÈÔ×÷ÎªÌõÄ¿·µ»Ø£©
       const filtered = allIssues.filter(issue => {
         const desc = (issue.description || '').trim();
         const orig = (issue.originalText || '').trim();
         const sug = (issue.suggestedText || '').trim();
-        // originalText ä¸ suggestedText å®Œå…¨ç›¸åŒ â†’ æ— æ•ˆ
+        // originalText Óë suggestedText ÍêÈ«ÏàÍ¬ ¡ú ÎŞĞ§
         if (orig && sug && orig === sug) return false;
-        // description åŒ…å«"æ— é—®é¢˜"/"ä¸€è‡´ï¼Œæ— é—®é¢˜"ç­‰ â†’ LLM æ˜ç¡®è¡¨ç¤ºæ²¡å‘ç°é—®é¢˜
-        if (/(?:ä¸å‚ç…§æ–‡ä»¶\s*)?ä¸€è‡´\s*[ï¼Œ,]?\s*æ— é—®é¢˜/.test(desc)) return false;
-        if (/è¯¥é¡¹\s*ä¸.*ä¸€è‡´\s*[ï¼Œ,]?\s*æ— é—®é¢˜/.test(desc)) return false;
-        if (/^(?:æ— |æ²¡æœ‰)(?:å·®å¼‚|é—®é¢˜|ä¸ä¸€è‡´)/.test(desc)) return false;
-        // description è¿‡é•¿ä¸”åŒ…å«å¤§é‡"ä¸€è‡´"åˆ¤å®šæ–‡å­— â†’ å¯èƒ½æ˜¯ LLM è¾“å‡ºäº†åˆ†æè¿‡ç¨‹è€Œéé—®é¢˜
-        if (desc.length > 200 && /ä¸€è‡´/.test(desc) && !/ä¸ä¸€è‡´/.test(desc)) return false;
+        // description °üº¬"ÎŞÎÊÌâ"/"Ò»ÖÂ£¬ÎŞÎÊÌâ"µÈ ¡ú LLM Ã÷È·±íÊ¾Ã»·¢ÏÖÎÊÌâ
+        if (/(?:Óë²ÎÕÕÎÄ¼ş\s*)?Ò»ÖÂ\s*[£¬,]?\s*ÎŞÎÊÌâ/.test(desc)) return false;
+        if (/¸ÃÏî\s*Óë.*Ò»ÖÂ\s*[£¬,]?\s*ÎŞÎÊÌâ/.test(desc)) return false;
+        if (/^(?:ÎŞ|Ã»ÓĞ)(?:²îÒì|ÎÊÌâ|²»Ò»ÖÂ)/.test(desc)) return false;
+        // description ¹ı³¤ÇÒ°üº¬´óÁ¿"Ò»ÖÂ"ÅĞ¶¨ÎÄ×Ö ¡ú ¿ÉÄÜÊÇ LLM Êä³öÁË·ÖÎö¹ı³Ì¶ø·ÇÎÊÌâ
+        if (desc.length > 200 && /Ò»ÖÂ/.test(desc) && !/²»Ò»ÖÂ/.test(desc)) return false;
         return true;
       });
 
       const removedCount = allIssues.length - filtered.length;
       if (removedCount > 0) {
-        console.log(`[AiReview] åå¤„ç†è¿‡æ»¤æ‰ ${removedCount} æ¡æ— æ•ˆ/ä¸€è‡´æ¡ç›®ï¼Œå‰©ä½™ ${filtered.length} æ¡`);
+        console.log(`[AiReview] ºó´¦Àí¹ıÂËµô ${removedCount} ÌõÎŞĞ§/Ò»ÖÂÌõÄ¿£¬Ê£Óà ${filtered.length} Ìõ`);
       }
 
       return { issues: filtered, engine: 'llm-ref-compare' };
     } catch (e: any) {
       if (e.name === 'AbortError') {
-        console.warn('[AiReview] LLM è¯·æ±‚è¶…æ—¶ï¼Œé™çº§åˆ°æ ‡å‡† AI å®¡æŸ¥');
+        console.warn('[AiReview] LLM ÇëÇó³¬Ê±£¬½µ¼¶µ½±ê×¼ AI Éó²é');
       } else {
-        console.error('[AiReview] LLM æ¯”å¯¹å¤±è´¥:', e);
+        console.error('[AiReview] LLM ±È¶ÔÊ§°Ü:', e);
       }
       return AiReviewService.runAIReview(text, ctx, 'library_review', config);
     }
   }
 
-  // ==================== å†…éƒ¨è¾…åŠ©æ–¹æ³• ====================
+  // ==================== ÄÚ²¿¸¨Öú·½·¨ ====================
 
   /**
-   * å°†è¯­ä¹‰è§„èŒƒåº“æ¡ç›®æ ¼å¼åŒ–ä¸º AI æç¤ºè¯ä¸Šä¸‹æ–‡ï¼ˆä» DB æ¨¡æ¿åŠ è½½ä¸Šä¸‹æ–‡æ¨¡æ¿ï¼‰
+   * ½«ÓïÒå¹æ·¶¿âÌõÄ¿¸ñÊ½»¯Îª AI ÌáÊ¾´ÊÉÏÏÂÎÄ£¨´Ó DB Ä£°å¼ÓÔØÉÏÏÂÎÄÄ£°å£©
    */
   static async formatSemanticItems(items: NonNullable<PipelineContext['semanticItems']>): Promise<string> {
     if (!items || items.length === 0) return '';
     const lines = items.map((item, i) => {
       const parts = [`${i + 1}. [${item.ruleCode}] ${item.ruleName}`];
-      if (item.description) parts.push(`   å†…å®¹: ${item.description}`);
-      if (item.category) parts.push(`   åˆ†ç±»: ${item.category}`);
+      if (item.description) parts.push(`   ÄÚÈİ: ${item.description}`);
+      if (item.category) parts.push(`   ·ÖÀà: ${item.category}`);
       return parts.join('\n');
     });
     const itemsText = lines.join('\n');
     const tpl = await PromptTemplateService.getPromptByScene(
       'semantic_spec', 'system', 'context',
-      `## è¯­ä¹‰è§„èŒƒåº“æ¡æ–‡ï¼ˆå®¡æŸ¥ä¾æ®ï¼‰\nä»¥ä¸‹æ˜¯æœ¬æ¬¡å®¡æŸ¥å¿…é¡»ä¾æ®çš„è§„èŒƒæ¡æ–‡ï¼Œè¯·é€æ¡æ£€æŸ¥æ–‡ä»¶æ˜¯å¦è¿åï¼š\n\n${itemsText}\n\nè¾“å‡ºæ—¶ï¼Œæ¯æ¡é—®é¢˜çš„ ruleCode å¿…é¡»å¼•ç”¨ä¸Šè¿°æ¡æ–‡ç¼–å·ï¼ˆå¦‚ [æ¡æ–‡ç¼–å·]ï¼‰ï¼Œdescription ä¸­å¿…é¡»è¯´æ˜è¿åäº†å“ªæ¡å…·ä½“æ¡æ–‡ã€‚`,
+      `## ÓïÒå¹æ·¶¿âÌõÎÄ£¨Éó²éÒÀ¾İ£©\nÒÔÏÂÊÇ±¾´ÎÉó²é±ØĞëÒÀ¾İµÄ¹æ·¶ÌõÎÄ£¬ÇëÖğÌõ¼ì²éÎÄ¼şÊÇ·ñÎ¥·´£º\n\n${itemsText}\n\nÊä³öÊ±£¬Ã¿ÌõÎÊÌâµÄ ruleCode ±ØĞëÒıÓÃÉÏÊöÌõÎÄ±àºÅ£¨Èç [ÌõÎÄ±àºÅ]£©£¬description ÖĞ±ØĞëËµÃ÷Î¥·´ÁËÄÄÌõ¾ßÌåÌõÎÄ¡£`,
     );
     return `\n\n${tpl.replace(/\$\{items\}/g, itemsText)}`;
   }
 
   /**
-   * å°†è¯­ä¹‰è§„èŒƒåº“ä¸Šä¸‹æ–‡ã€å®¡æŸ¥ç‚¹å’Œæ ¸å¿ƒç›®çš„æ³¨å…¥ç³»ç»Ÿæç¤ºè¯
+   * ½«ÓïÒå¹æ·¶¿âÉÏÏÂÎÄ¡¢Éó²éµãºÍºËĞÄÄ¿µÄ×¢ÈëÏµÍ³ÌáÊ¾´Ê
    */
   /**
-   * ä¸ºç³»ç»Ÿæç¤ºè¯æ³¨å…¥å®¡æŸ¥ç‚¹ä¸æ ¸å¿ƒç›®çš„
+   * ÎªÏµÍ³ÌáÊ¾´Ê×¢ÈëÉó²éµãÓëºËĞÄÄ¿µÄ
    *
-   * å¹³è¡¡æœºåˆ¶ï¼ˆé˜²ç¡®è®¤åè¯¯ï¼‰ï¼š
-   * 1. TYPO_GRAMMAR / CONSISTENCY æ¨¡å¼ä¸æ³¨å…¥ï¼ˆå‰è€…æœ‰å†²çªï¼Œåè€…æœ‰ç²¾ç¡®å®šä¹‰ï¼‰
-   * 2. å®¡æŸ¥ç‚¹æ³¨å…¥åœ¨ç³»ç»ŸæŒ‡ä»¤ä¹‹å‰ï¼Œé™ä½ recency bias
-   * 3. è¯­è¨€ä»"è¯·é‡ç‚¹å…³æ³¨"æ”¹ä¸º"ä»…ä¾›å‚è€ƒï¼Œä¸é™åˆ¶å®¡æŸ¥èŒƒå›´"
-   * 4. è¿½åŠ åæŒ‡ä»¤å¼ºåˆ¶ LLM æŠ¥å‘Šå®¡æŸ¥ç‚¹ä¹‹å¤–çš„é—®é¢˜
+   * Æ½ºâ»úÖÆ£¨·ÀÈ·ÈÏÆ«Îó£©£º
+   * 1. TYPO_GRAMMAR / CONSISTENCY Ä£Ê½²»×¢Èë£¨Ç°ÕßÓĞ³åÍ»£¬ºóÕßÓĞ¾«È·¶¨Òå£©
+   * 2. Éó²éµã×¢ÈëÔÚÏµÍ³Ö¸ÁîÖ®Ç°£¬½µµÍ recency bias
+   * 3. ÓïÑÔ´Ó"ÇëÖØµã¹Ø×¢"¸ÄÎª"½ö¹©²Î¿¼£¬²»ÏŞÖÆÉó²é·¶Î§"
+   * 4. ×·¼Ó·´Ö¸ÁîÇ¿ÖÆ LLM ±¨¸æÉó²éµãÖ®ÍâµÄÎÊÌâ
    */
   static injectSemanticContext(systemPrompt: string, ctx: PipelineContext): string {
-    // è·³è¿‡æ¨¡å¼ï¼šTYPO_GRAMMARï¼ˆä¸è‡ªèº«æŒ‡ä»¤å†²çªï¼‰ã€CONSISTENCYï¼ˆæœ‰ç²¾ç¡®å®šä¹‰C1-C4ï¼‰
+    // Ìø¹ıÄ£Ê½£ºTYPO_GRAMMAR£¨Óë×ÔÉíÖ¸Áî³åÍ»£©¡¢CONSISTENCY£¨ÓĞ¾«È·¶¨ÒåC1-C4£©
     const skipModes = ['TYPO_GRAMMAR', 'CONSISTENCY'];
     const hasReviewPoints = ctx.reviewPoints && ctx.reviewPoints.length > 0;
     const hasPurposes = ctx.corePurposes && ctx.corePurposes.length > 0;
 
     let prefix = '';
 
-    // å®¡æŸ¥ç‚¹ä½œä¸ºè¾…åŠ©å‚è€ƒï¼ˆéå¼ºåˆ¶æŒ‡ä»¤ï¼‰ï¼Œæ’å…¥åˆ° prompt å‰é¢é™ä½ recency bias
+    // Éó²éµã×÷Îª¸¨Öú²Î¿¼£¨·ÇÇ¿ÖÆÖ¸Áî£©£¬²åÈëµ½ prompt Ç°Ãæ½µµÍ recency bias
     if (!skipModes.includes(ctx.reviewMode || '') && hasReviewPoints) {
-      prefix += `\nã€è¾…åŠ©å‚è€ƒ â€” ä»¥ä¸‹å®¡æŸ¥ç‚¹ä»…ä¾›å‚è€ƒï¼Œä¸é™åˆ¶å®¡æŸ¥èŒƒå›´ï¼Œè¯·å…¨é¢æ£€æŸ¥æ‰€æœ‰é—®é¢˜ã€‘\nå‚è€ƒæ–¹å‘ï¼š${ctx.reviewPoints!.join('ï¼›')}\n`;
+      prefix += `\n¡¾¸¨Öú²Î¿¼ ¡ª ÒÔÏÂÉó²éµã½ö¹©²Î¿¼£¬²»ÏŞÖÆÉó²é·¶Î§£¬ÇëÈ«Ãæ¼ì²éËùÓĞÎÊÌâ¡¿\n²Î¿¼·½Ïò£º${ctx.reviewPoints!.join('£»')}\n`;
     }
     if (!skipModes.includes(ctx.reviewMode || '') && hasPurposes) {
-      prefix += `\nã€å®¡æŸ¥èƒŒæ™¯ã€‘ç›®æ ‡ï¼š${ctx.corePurposes!.join('ï¼›')}\n`;
+      prefix += `\n¡¾Éó²é±³¾°¡¿Ä¿±ê£º${ctx.corePurposes!.join('£»')}\n`;
     }
-    // è¿½åŠ é˜²åè¯¯æç¤º
+    // ×·¼Ó·ÀÆ«ÎóÌáÊ¾
     if (prefix) {
-      prefix += 'æ³¨æ„ï¼šä»¥ä¸Šä»…ä½œè¾…åŠ©å‚è€ƒï¼Œä½ å¿…é¡»ä¾æ®ç³»ç»Ÿè§„åˆ™å…¨é¢å®¡æŸ¥ï¼Œå‘ç°å®¡æŸ¥ç‚¹ä¹‹å¤–çš„ä»»ä½•é—®é¢˜ä¹Ÿåº”å¦‚å®æŠ¥å‘Šã€‚\n\n';
+      prefix += '×¢Òâ£ºÒÔÉÏ½ö×÷¸¨Öú²Î¿¼£¬Äã±ØĞëÒÀ¾İÏµÍ³¹æÔòÈ«ÃæÉó²é£¬·¢ÏÖÉó²éµãÖ®ÍâµÄÈÎºÎÎÊÌâÒ²Ó¦ÈçÊµ±¨¸æ¡£\n\n';
     }
 
     let enhancedPrompt = prefix + systemPrompt;
 
-    // æ³¨å…¥è¯­ä¹‰è§„èŒƒåº“ä¸Šä¸‹æ–‡
+    // ×¢ÈëÓïÒå¹æ·¶¿âÉÏÏÂÎÄ
     if (ctx._semanticPromptContext) {
       enhancedPrompt += ctx._semanticPromptContext;
     }
@@ -685,8 +723,8 @@ export class AiReviewService {
   }
 
   /**
-   * ä» PipelineContext æ¨æ–­å®¡æŸ¥åœºæ™¯ï¼ˆç”¨äº PromptTemplateService åŠ è½½æç¤ºè¯ï¼‰
-   * å¯¹åº” BasePipeline.scene getter çš„é€»è¾‘
+   * ´Ó PipelineContext ÍÆ¶ÏÉó²é³¡¾°£¨ÓÃÓÚ PromptTemplateService ¼ÓÔØÌáÊ¾´Ê£©
+   * ¶ÔÓ¦ BasePipeline.scene getter µÄÂß¼­
    */
   static resolveScene(ctx: PipelineContext): string {
     const modeMap: Record<string, string> = {
@@ -701,16 +739,17 @@ export class AiReviewService {
   }
 
   /**
-   * è¯­ä¹‰è§„èŒƒåº“é€æ¡åŒ¹é…å®¡æŸ¥ï¼ˆæ–¹æ¡ˆ Bï¼‰
+   * ÓïÒå¹æ·¶¿âÖğÌõÆ¥ÅäÉó²é£¨ÓÅ»¯°æ£©
    *
-   * å°†è¯­ä¹‰è§„èŒƒåº“ä¸­çš„æ¯æ¡æ¡æ–‡ä½œä¸ºç‹¬ç«‹æ£€æŸ¥é¡¹ï¼Œé€æ‰¹æäº¤ç»™ LLMï¼Œ
-   * è¦æ±‚ LLM åˆ¤æ–­å¾…å®¡æ–‡æœ¬æ˜¯å¦è¿åè¯¥æ¡æ–‡ã€‚
-   * åŒæ—¶ä½¿ç”¨ RAG æ£€ç´¢çŸ¥è¯†åº“ä¸­ä¸è¯¥æ¡æ–‡ç›¸å…³çš„æ®µè½ä½œä¸ºå‚è€ƒä¸Šä¸‹æ–‡ã€‚
+   * ÓÅ»¯²ßÂÔ£º
+   * 1. Ò»´ÎĞÔ´«ÈëËùÓĞ¹æÔò£¬±ÜÃâ¹æÔòÅú ¡Á ·ÖÆ¬µÄ×éºÏ±¬Õ¨
+   * 2. RAG ¼ìË÷Ö»Ö´ĞĞÒ»´Î£¬½á¹û»º´æ¹²Ïí
+   * 3. ÎÄ±¾·ÖÆ¬Ö»×öÒ»´Î£¬ËùÓĞ¹æÔò¹²Ïí
    *
-   * @param text å¾…å®¡æ–‡æœ¬
-   * @param ctx PipelineContextï¼ˆå« semanticItems + maxkbKnowledgeIdsï¼‰
-   * @param config å®¡æŸ¥é…ç½®
-   * @returns å®¡æŸ¥é—®é¢˜åˆ—è¡¨
+   * @param text ´ıÉóÎÄ±¾
+   * @param ctx PipelineContext£¨º¬ semanticItems + maxkbKnowledgeIds£©
+   * @param config Éó²éÅäÖÃ
+   * @returns Éó²éÎÊÌâÁĞ±í
    */
   static async runSemanticSpecReview(
     text: string,
@@ -725,104 +764,96 @@ export class AiReviewService {
     const chunkSize = config.chunkSize || 4000;
     const llmMaxTokens = config.llmMaxTokens || 4096;
     const llmTimeout = config.llmTimeout || 180;
-    const batchSize = 4; // æ¯æ‰¹æœ€å¤š 4 æ¡è§„åˆ™
 
-    // è·å–çŸ¥è¯†åº“åˆ†ç±» IDï¼ˆç”¨äº RAG æ£€ç´¢è¾…åŠ©ä¸Šä¸‹æ–‡ï¼‰
+    // »ñÈ¡ÖªÊ¶¿â·ÖÀà ID£¨ÓÃÓÚ RAG ¼ìË÷¸¨ÖúÉÏÏÂÎÄ£©
     const categoryIds: string[] = ctx.maxkbKnowledgeIds && ctx.maxkbKnowledgeIds.length > 0
       ? ctx.maxkbKnowledgeIds
       : ctx.maxkbKnowledgeId
         ? [ctx.maxkbKnowledgeId]
         : [];
 
-    const allIssues: ReviewIssue[] = [];
-    const batches: typeof items[] = [];
-
-    // é¢„åŠ è½½ç”¨æˆ·æç¤ºè¯æ¨¡æ¿ï¼ˆæ‰€æœ‰æ‰¹æ¬¡å…±ç”¨ï¼‰
+    // Ô¤¼ÓÔØÓÃ»§ÌáÊ¾´ÊÄ£°å£¨ËùÓĞ·ÖÆ¬¹²ÓÃ£©
     const userTpl = await PromptTemplateService.getPromptByScene(
       'semantic_spec', 'user', 'default',
-      `ã€å¾…å®¡æŸ¥æ–‡æœ¬ã€‘\n\${text}\n\nè¯·é€æ¡æ£€æŸ¥ä»¥ä¸Šæ–‡æœ¬æ˜¯å¦è¿åè§„èŒƒæ¡æ–‡ï¼Œè¾“å‡º JSON æ•°ç»„ã€‚`,
+      `¡¾´ıÉó²éÎÄ±¾¡¿\n\${text}\n\nÇëÖğÌõ¼ì²éÒÔÉÏÎÄ±¾ÊÇ·ñÎ¥·´¹æ·¶ÌõÎÄ£¬Êä³ö JSON Êı×é¡£`,
     );
 
-    // åˆ†æ‰¹ï¼šæ¯ batchSize æ¡è§„åˆ™ä¸€æ‰¹
-    for (let i = 0; i < items.length; i += batchSize) {
-      batches.push(items.slice(i, i + batchSize));
+    // Ò»´ÎĞÔ¹¹½¨ËùÓĞ¹æÔòÌõÎÄÃèÊö£¨²»ÔÙ·ÖÅú£©
+    const rulesText = items.map((item, idx) => {
+      const parts: string[] = [];
+      parts.push(`### ÌõÎÄ ${idx + 1}: [${item.ruleCode || 'N/A'}] ${item.ruleName || ''}`);
+      if (item.description) parts.push(`   ËµÃ÷: ${item.description}`);
+      if (item.category) parts.push(`   ·ÖÀà: ${item.category}`);
+      if (item.severity) parts.push(`   ÑÏÖØ¶È: ${item.severity}`);
+      return parts.join('\n');
+    }).join('\n\n');
+
+    // RAG ¼ìË÷Ö»Ö´ĞĞÒ»´Î£¨»º´æ½á¹û£©
+    let ragContext = '';
+    if (categoryIds.length > 0) {
+      try {
+        const kbContext = await MaxKBService.getKnowledgeParagraphs(categoryIds[0], {
+          maxParagraphs: 6,
+          maxChars: 3000,
+        });
+        if (kbContext) {
+          ragContext = kbContext;
+        }
+      } catch (e) {
+        console.warn('[SemanticSpec] RAG ¼ìË÷Ê§°Ü£¬Ìø¹ı¸¨ÖúÉÏÏÂÎÄ:', e);
+      }
     }
 
-    for (const batch of batches) {
-      // æ„å»ºè§„åˆ™æ¡æ–‡æè¿°
-      const rulesText = batch.map((item, idx) => {
-        const parts: string[] = [];
-        parts.push(`### æ¡æ–‡ ${idx + 1}: [${item.ruleCode || 'N/A'}] ${item.ruleName || ''}`);
-        if (item.description) parts.push(`   è¯´æ˜: ${item.description}`);
-        if (item.category) parts.push(`   åˆ†ç±»: ${item.category}`);
-        if (item.severity) parts.push(`   ä¸¥é‡åº¦: ${item.severity}`);
-        return parts.join('\n');
-      }).join('\n\n');
+    // ¹¹½¨ Prompt£¨´Ó DB Ä£°å¼ÓÔØ£¬º¬¶¯Ì¬±äÁ¿Ìæ»»£©
+    const ragContextBlock = ragContext ? `## ¸¨Öú²Î¿¼£¨ÖªÊ¶¿â¼ìË÷µ½µÄÏà¹ØÄÚÈİ£©\n${ragContext}` : '';
+    const systemPrompt = (await PromptTemplateService.getPromptByScene(
+      'semantic_spec', 'system', 'default',
+      `ÄãÊÇÎÄ¼şºÏ¹æÉó²é×¨¼Ò¡£ÇëÑÏ¸ñ¸ù¾İÒÔÏÂ¹æ·¶ÌõÎÄ£¬ÖğÌõ¼ì²é´ıÉóÎÄ±¾ÊÇ·ñ´æÔÚÎ¥¹æ¡£
 
-      // RAG æ£€ç´¢è¯¥æ‰¹è§„åˆ™ç›¸å…³çš„çŸ¥è¯†åº“æ®µè½
-      let ragContext = '';
-      if (categoryIds.length > 0) {
-        try {
-          const kbContext = await MaxKBService.getKnowledgeParagraphs(categoryIds[0], {
-            maxParagraphs: 6,
-            maxChars: 3000,
-          });
-          if (kbContext) {
-            ragContext = kbContext;
-          }
-        } catch (e) {
-          console.warn('[SemanticSpec] RAG æ£€ç´¢å¤±è´¥ï¼Œè·³è¿‡è¾…åŠ©ä¸Šä¸‹æ–‡:', e);
-        }
-      }
-
-      // æ„å»º Promptï¼ˆä» DB æ¨¡æ¿åŠ è½½ï¼Œå«åŠ¨æ€å˜é‡æ›¿æ¢ï¼‰
-      const ragContextBlock = ragContext ? `## è¾…åŠ©å‚è€ƒï¼ˆçŸ¥è¯†åº“æ£€ç´¢åˆ°çš„ç›¸å…³å†…å®¹ï¼‰\n${ragContext}` : '';
-      const systemPrompt = (await PromptTemplateService.getPromptByScene(
-        'semantic_spec', 'system', 'default',
-        `ä½ æ˜¯æ–‡ä»¶åˆè§„å®¡æŸ¥ä¸“å®¶ã€‚è¯·ä¸¥æ ¼æ ¹æ®ä»¥ä¸‹è§„èŒƒæ¡æ–‡ï¼Œé€æ¡æ£€æŸ¥å¾…å®¡æ–‡æœ¬æ˜¯å¦å­˜åœ¨è¿è§„ã€‚
-
-## å¿…é¡»é€æ¡æ£€æŸ¥çš„è§„èŒƒæ¡æ–‡
+## ±ØĞëÖğÌõ¼ì²éµÄ¹æ·¶ÌõÎÄ
 \${rulesText}
 
 \${ragContext}
 
-## è¾“å‡ºè¦æ±‚
-ä¸¥æ ¼æŒ‰ç…§ JSON æ•°ç»„æ ¼å¼è¾“å‡ºï¼Œæ¯ä¸ªé—®é¢˜åŒ…å«ï¼š
+## Êä³öÒªÇó
+ÑÏ¸ñ°´ÕÕ JSON Êı×é¸ñÊ½Êä³ö£¬Ã¿¸öÎÊÌâ°üº¬£º
 - issueType: "VIOLATION"
-- severity: ä½¿ç”¨æ¡æ–‡å®šä¹‰çš„ä¸¥é‡åº¦ï¼Œé»˜è®¤ "warning"
-- ruleCode: å¿…é¡»å¼•ç”¨æ¡æ–‡ç¼–å·
-- originalText: æ–‡æ¡£ä¸­çš„è¿è§„åŸæ–‡
-- suggestedText: å»ºè®®ä¿®æ”¹å†…å®¹
-- description: è¯´æ˜è¿åäº†å“ªæ¡æ¡æ–‡åŠå…¶åŸå› 
-- standardRef: å¼•ç”¨çš„æ¡æ–‡å†…å®¹æ‘˜è¦
+- severity: Ê¹ÓÃÌõÎÄ¶¨ÒåµÄÑÏÖØ¶È£¬Ä¬ÈÏ "warning"
+- ruleCode: ±ØĞëÒıÓÃÌõÎÄ±àºÅ
+- originalText: ÎÄµµÖĞµÄÎ¥¹æÔ­ÎÄ
+- suggestedText: ½¨ÒéĞŞ¸ÄÄÚÈİ
+- description: ËµÃ÷Î¥·´ÁËÄÄÌõÌõÎÄ¼°ÆäÔ­Òò
+- standardRef: ÒıÓÃµÄÌõÎÄÄÚÈİÕªÒª
 
-å¦‚æœæ²¡æœ‰å‘ç°è¿è§„ï¼Œè¾“å‡ºç©ºæ•°ç»„ []ã€‚ä¸è¦è¾“å‡ºä»»ä½•å…¶ä»–æ–‡å­—è¯´æ˜ã€‚`,
-      ))
-        .replace(/\$\{rulesText\}/g, rulesText)
-        .replace(/\$\{ragContext\}/g, ragContextBlock);
+Èç¹ûÃ»ÓĞ·¢ÏÖÎ¥¹æ£¬Êä³ö¿ÕÊı×é []¡£²»ÒªÊä³öÈÎºÎÆäËûÎÄ×ÖËµÃ÷¡£`,
+    ))
+      .replace(/\$\{rulesText\}/g, rulesText)
+      .replace(/\$\{ragContext\}/g, ragContextBlock);
 
-      // åˆ†ç‰‡å¤„ç†é•¿æ–‡æœ¬ï¼ˆå¹¶è¡Œé™æµï¼‰
-      const chunks = LlmService.splitText(text, chunkSize, true);
-      const CONCURRENT_LIMIT = 3;
-      const chunkResults = await parallelLimit(chunks, CONCURRENT_LIMIT, async (chunk) => {
-        try {
-          const userContent = userTpl.replace(/\$\{text\}/g, chunk.text);
-          const issues = await LlmService.reviewText(userContent, {
-            maxTokens: llmMaxTokens,
-            timeout: llmTimeout,
-            systemPrompt,
-            skipUserTemplate: true,
-          });
-          return issues;
-        } catch (e) {
-          console.warn('[SemanticSpec] åˆ†ç‰‡å®¡æŸ¥å¤±è´¥:', e instanceof Error ? e.message : e);
-          return [];
-        }
-      });
-      for (const r of chunkResults) allIssues.push(...r);
-    }
+    // ÎÄ±¾·ÖÆ¬Ö»×öÒ»´Î£¨ËùÓĞ¹æÔò¹²Ïí£©
+    const chunks = LlmService.splitText(text, chunkSize, true);
+    const allIssues: ReviewIssue[] = [];
 
-    // ç®€å•å»é‡ï¼šæŒ‰ originalText å‰ 60 å­—ç¬¦å»é‡
+    // ²¢ĞĞÏŞÁ÷´¦Àí·ÖÆ¬
+    const CONCURRENT_LIMIT = 2; // ½µµÍ²¢·¢£¬±ÜÃâ API ÏŞÁ÷
+    const chunkResults = await parallelLimit(chunks, CONCURRENT_LIMIT, async (chunk) => {
+      try {
+        const userContent = userTpl.replace(/\$\{text\}/g, chunk.text);
+        const issues = await LlmService.reviewText(userContent, {
+          maxTokens: llmMaxTokens,
+          timeout: llmTimeout,
+          systemPrompt,
+          skipUserTemplate: true,
+        });
+        return issues;
+      } catch (e) {
+        console.warn('[SemanticSpec] ·ÖÆ¬Éó²éÊ§°Ü:', e instanceof Error ? e.message : e);
+        return [];
+      }
+    });
+    for (const r of chunkResults) allIssues.push(...r);
+
+    // ¼òµ¥È¥ÖØ£º°´ originalText Ç° 60 ×Ö·ûÈ¥ÖØ
     const seen = new Set<string>();
     const deduped = allIssues.filter(issue => {
       const key = (issue.originalText || '').slice(0, 60).trim();

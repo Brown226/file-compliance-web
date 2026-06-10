@@ -17,7 +17,7 @@ export interface ReviewJobData {
 export const reviewQueue = new Bull<ReviewJobData>('review', env.redisUrl, {
   defaultJobOptions: {
     attempts: 3,
-    backoff: { type: 'exponential', delay: 5000 },
+    backoff: { type: 'exponential', delay: 30000 },  // 30秒起始延迟，避免频繁重试浪费 API 调用
     removeOnComplete: { age: 3600, count: 100 },
     removeOnFail: { age: 86400, count: 50 },
   },
@@ -26,7 +26,7 @@ export const reviewQueue = new Bull<ReviewJobData>('review', env.redisUrl, {
 /** 初始化队列处理器（仅在主进程中调用一次） */
 export function initQueueProcessors(): void {
   // ── 审查队列处理器 ──
-  reviewQueue.process('review', 5, async (job) => {
+  reviewQueue.process('review', 3, async (job) => {  // 并发从5降到3，减少同时运行的审查任务
     const { taskId } = job.data;
     console.log(`[Queue] 开始处理审查任务: ${taskId} (attempt ${job.attemptsMade + 1})`);
 
@@ -39,6 +39,10 @@ export function initQueueProcessors(): void {
       if (task.status === 'COMPLETED' || task.status === 'FAILED') {
         console.warn(`[Queue] 任务已完成/失败，跳过: ${taskId} (status=${task.status})`);
         return { skipped: true, reason: 'already_terminal' };
+      }
+      if (task.status === 'PROCESSING' && job.attemptsMade > 0) {
+        // 重试时如果任务已处于 PROCESSING 状态，检查是否有文件已处理完成
+        console.warn(`[Queue] 重试 PROCESSING 任务: ${taskId} (attempt ${job.attemptsMade + 1})`);
       }
 
       await job.progress(10);

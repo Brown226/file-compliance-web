@@ -86,6 +86,32 @@
               <el-icon><WarningFilled /></el-icon> 参照比对目标强制使用参考文件，未上传参考文件将无法提交。
             </div>
 
+            <!-- 合同审查专用：立场选择 -->
+            <div v-if="entryModule==='CONTRACT'" class="config-section">
+              <div class="config-section-label">审查立场</div>
+              <div class="stance-selector">
+                <div
+                  v-for="stance in contractStances"
+                  :key="stance.value"
+                  class="selectable-card selectable-card--compact"
+                  :class="{ 'selectable-card--active': reviewPlanDraft?.contractStance === stance.value }"
+                  @click="reviewPlanDraft.contractStance = stance.value"
+                  tabindex="0"
+                >
+                  <div class="selectable-card__icon">
+                    <el-icon :size="14"><Stamp /></el-icon>
+                  </div>
+                  <div class="selectable-card__content">
+                    <div class="selectable-card__label">{{ stance.label }}</div>
+                    <div class="selectable-card__desc">{{ stance.desc }}</div>
+                  </div>
+                </div>
+              </div>
+              <div v-if="entryModule==='CONTRACT'&&reviewPlanDraft?.objective==='COMPARE'" class="config-reason config-reason--info" style="margin-top: 8px;">
+                <el-icon><InfoFilled /></el-icon> 合同审查需要上传合同模板作为参照，系统将对比待审合同与模板的差异。
+              </div>
+            </div>
+
           </div>
         </div>
 
@@ -127,7 +153,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, nextTick } from 'vue'
 import { ElMessage } from 'element-plus'
-import { Check, MagicStick, WarningFilled, Loading, FolderOpened, Files, Link, Document, EditPen, DataAnalysis, Plus } from '@element-plus/icons-vue'
+import { Check, MagicStick, WarningFilled, Loading, FolderOpened, Files, Link, Document, EditPen, DataAnalysis, Plus, Stamp, InfoFilled } from '@element-plus/icons-vue'
 import { getKnowledgeTreeApi } from '@/api/maxkb'
 import { getRuleLibrariesApi } from '@/api/rule-library'
 import { getRuleRegistryApi, type RuleGroupMeta } from '@/api/system'
@@ -137,7 +163,7 @@ import SmartReviewRuleLibraryDialog from './components/SmartReviewRuleLibraryDia
 import { useSmartReviewState } from './SmartReview/composables/useSmartReviewState'
 import { useReviewPlan } from './SmartReview/composables/useReviewPlan'
 import { useTaskSubmission } from './SmartReview/composables/useTaskSubmission'
-import { PROGRESS_STEP_LABELS, PROGRESS_STATUS_LABELS } from './SmartReview/constants/review-config'
+import { PROGRESS_STEP_LABELS, PROGRESS_STATUS_LABELS, CONTRACT_STANCES } from './SmartReview/constants/review-config'
 import type { EntryModule } from './SmartReview/types/smart-review'
 
 const state = useSmartReviewState()
@@ -156,6 +182,9 @@ const evidenceIconComponentMap: Record<string, any> = {
   RULE_LIBRARY: Files,
   REFERENCE: Link,
 }
+
+// 合同审查立场选项
+const contractStances = CONTRACT_STANCES
 
 const maxkbDialogVisible = ref(false)
 const ruleLibraryDialogVisible = ref(false)
@@ -214,7 +243,7 @@ onMounted(async () => {
   const restored = state.restoreState()
   if (restored && state.currentStep.value>0) { nextTick(()=>{ if(state.currentStep.value>=1&&state.fileList.value.length===0){ ElMessage.warning('已恢复之前的配置草稿，但文件需要重新上传'); state.currentStep.value=0; state.clearSavedState() } }) }
   const entry = sessionStorage.getItem('smartReview.entryModule') as EntryModule|null
-  if (entry && ['LIBRARY','CONSISTENCY','PROOFREAD','RULE_ONLY','MULTIMODAL','DOC_REVIEW'].includes(entry)) { state.entryModule.value=entry; plan.applyEntryModulePreset(entry) }
+  if (entry && ['LIBRARY','CONSISTENCY','PROOFREAD','RULE_ONLY','MULTIMODAL','DOC_REVIEW','CONTRACT'].includes(entry)) { state.entryModule.value=entry; plan.applyEntryModulePreset(entry) }
   try {
     await buildKnowledgeNameMap()
     const [libRes, ruleRegRes] = await Promise.all([getRuleLibrariesApi(), getRuleRegistryApi()])

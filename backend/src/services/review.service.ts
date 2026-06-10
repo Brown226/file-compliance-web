@@ -42,6 +42,7 @@ export class ReviewService {
     refFileGroupRequired: boolean;
     intraFileConsistency: boolean;
     crossFileConsistency: boolean;
+    contractStance?: string;
     executionOverrides?: {
       crossFileConsistency?: boolean;
       stages?: {
@@ -84,6 +85,7 @@ export class ReviewService {
       refFileGroupRequired: plan.objective === 'COMPARE' || plan.evidence.sources.includes('REFERENCE'),
       intraFileConsistency: !!plan.enhancements.intraFileConsistency,
       crossFileConsistency,
+      contractStance: (plan as any).contractStance,
       executionOverrides: stages || plan.enhancements.intraFileConsistency || crossFileConsistency
         ? {
             crossFileConsistency,
@@ -500,6 +502,7 @@ export class ReviewService {
             : [],
           maxkbKnowledgeId: executionPlan.ruleSource.includes('STANDARD') ? (maxkbKnowledgeId || undefined) : undefined,
           maxkbKnowledgeIds: executionPlan.ruleSource.includes('STANDARD') ? (maxkbKnowledgeIds || undefined) : undefined,
+          contractStance: executionPlan.contractStance as any,
           pipelineConfig,
           executionOverrides: executionPlan.executionOverrides,
           refFileGroup: refFileGroupCtx,

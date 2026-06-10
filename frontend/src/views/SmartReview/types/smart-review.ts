@@ -1,4 +1,4 @@
-﻿export type EntryModule = 'LIBRARY' | 'CONSISTENCY' | 'PROOFREAD' | 'RULE_ONLY' | 'MULTIMODAL' | 'DOC_REVIEW'
+﻿export type EntryModule = 'LIBRARY' | 'CONSISTENCY' | 'PROOFREAD' | 'RULE_ONLY' | 'MULTIMODAL' | 'DOC_REVIEW' | 'CONTRACT'
 
 export type ReviewObjective = 'COMPLIANCE' | 'COMPARE' | 'PROOFREAD' | 'STRUCTURED'
 
@@ -21,6 +21,7 @@ export type ReviewPlan = {
     profile: 'AI_ONLY' | 'RULE_ONLY' | 'HYBRID'
   }
   templateId?: string
+  contractStance?: 'owner' | 'contractor'
 }
 
 export interface PersistedState {

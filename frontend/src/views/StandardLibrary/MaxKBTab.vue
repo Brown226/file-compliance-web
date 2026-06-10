@@ -63,11 +63,10 @@ const loadMaxKBIframe = async () => {
   try {
     const { data } = await getMaxKBKnowledgeUrlApi()
     if (data.knowledgePageUrl) {
-      // 将 MaxKB 原始 URL 替换为 nginx 代理路径（同源）
-      let url = data.knowledgePageUrl
-      // http://localhost:8080/admin/knowledge?token=xxx → /admin/knowledge?token=xxx
-      url = url.replace(/^https?:\/\/[^\/]+/, '')
-      maxkbIframeUrl.value = url
+      // 直接使用 MaxKB 的完整 URL（后端已返回可访问的地址）
+      // 不再转换为相对路径，避免 nginx 代理冲突
+      maxkbIframeUrl.value = data.knowledgePageUrl
+      console.log('[MaxKBTab] iframe URL:', data.knowledgePageUrl)
     }
   } catch (e: any) {
     ElMessage.error(e?.response?.data?.error || '获取 MaxKB 知识库 URL 失败')
