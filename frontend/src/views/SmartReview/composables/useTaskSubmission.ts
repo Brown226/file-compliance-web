@@ -87,13 +87,9 @@ export function useTaskSubmission(
       const reasons: string[] = []
       if (!state.form.title.trim()) reasons.push('请输入任务标题')
       
-      // 合同审查模式：允许无参考文件（仅知识库增强）
+      // 合同审查模式：允许无参考文件无知识库（基于通用知识审查）
       if (state.reviewPlanDraft.objective === 'COMPARE' && state.entryModule.value !== 'CONTRACT' && state.refFileList.value.length === 0)
         reasons.push('以文审文/参照比对模式需要上传参照文件')
-      
-      // 合同审查模式：至少需要参考文件或知识库
-      if (state.entryModule.value === 'CONTRACT' && state.refFileList.value.length === 0 && (!state.reviewPlanDraft.evidence.maxkbKnowledgeIds || state.reviewPlanDraft.evidence.maxkbKnowledgeIds.length === 0))
-        reasons.push('合同审查至少需要上传合同模板或选择知识库')
       
       if (state.reviewPlanDraft.evidence.sources.includes('RULE_LIBRARY') && !state.reviewPlanDraft.evidence.ruleLibraryId)
         reasons.push('语义规则库模式需要选择具体的规则库')

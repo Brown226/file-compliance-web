@@ -207,10 +207,8 @@ export function useReviewPlan(state: ReturnType<typeof useSmartReviewState>) {
   const canSubmit = computed(() => {
     if (!state.form.title.trim()) return false
     if (state.fileList.value.length === 0) return false
-    // COMPARE 模式需要参考文件，但 CONTRACT 模式例外（允许纯知识库审查）
+    // COMPARE 模式需要参考文件，但 CONTRACT 模式例外（允许纯知识库或无参照审查）
     if (state.reviewPlanDraft.objective === 'COMPARE' && state.entryModule.value !== 'CONTRACT' && state.refFileList.value.length === 0) return false
-    // 合同审查：至少需要参考文件或知识库
-    if (state.entryModule.value === 'CONTRACT' && state.refFileList.value.length === 0 && (!state.reviewPlanDraft.evidence.maxkbKnowledgeIds || state.reviewPlanDraft.evidence.maxkbKnowledgeIds.length === 0)) return false
     // 勾选了证据源但未做具体选择时，阻断提交
     if (state.reviewPlanDraft.evidence.sources.includes('RULE_LIBRARY') && !state.reviewPlanDraft.evidence.ruleLibraryId) return false
     if (state.reviewPlanDraft.evidence.sources.includes('STANDARD') && (!state.reviewPlanDraft.evidence.maxkbKnowledgeIds || state.reviewPlanDraft.evidence.maxkbKnowledgeIds.length === 0)) return false

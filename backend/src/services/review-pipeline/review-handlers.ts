@@ -38,7 +38,7 @@ const MODE_META: Record<ReviewModeType, { displayName: string; description: stri
   CONSISTENCY:    { displayName: '全文一致性', description: '单文件内一致性检查 + 跨文件参数一致性检查', needsRefFiles: false },
   TYPO_GRAMMAR:   { displayName: '基础校对', description: '文字质量审查（错别字/语法/通顺性/术语一致性等，跳过RAG，直接LLM）', needsRefFiles: false },
   DOC_REVIEW:     { displayName: '以文审文', description: '使用上游参照文件与待审文件进行比对审查', needsRefFiles: true },
-  CONTRACT_REVIEW: { displayName: '合同风险审查', description: '审查核电工程合同，识别对业主不利的风险条款', needsRefFiles: true },
+  CONTRACT_REVIEW: { displayName: '合同风险审查', description: '审查核电工程合同，识别对业主不利的风险条款', needsRefFiles: false },
   MULTIMODAL:     { displayName: '结构化审查', description: '表格数据/数值/公式/图纸标注的结构化审查', needsRefFiles: false },
   RULE_ONLY:      { displayName: '仅规则审查', description: '仅执行预定义规则引擎检查，不调用 AI，速度最快', needsRefFiles: false },
   SELF_CHECK:     { displayName: '标准引用自检', description: '提取文档中的标准引用并与标准库机械匹配', needsRefFiles: false },

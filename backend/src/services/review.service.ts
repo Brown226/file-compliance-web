@@ -82,7 +82,8 @@ export class ReviewService {
       enabledPrefixes: hasDirectPrefixes ? plan.evidence.enabledPrefixes : undefined,
       // 知识库：有 STANDARD 源时传递 maxkbKnowledgeIds
       maxkbKnowledgeIds: hasStandard ? (Array.isArray(plan.evidence.maxkbKnowledgeIds) ? plan.evidence.maxkbKnowledgeIds : []) : [],
-      refFileGroupRequired: plan.objective === 'COMPARE' || plan.evidence.sources.includes('REFERENCE'),
+      // 合同审查模式：参考文件可选，不要求必须有
+      refFileGroupRequired: (plan.objective === 'COMPARE' && (plan as any).entryModule !== 'CONTRACT') || (plan.evidence.sources.includes('REFERENCE') && (plan as any).entryModule !== 'CONTRACT'),
       intraFileConsistency: !!plan.enhancements.intraFileConsistency,
       crossFileConsistency,
       contractStance: (plan as any).contractStance,
