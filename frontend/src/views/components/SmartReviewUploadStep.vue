@@ -70,12 +70,11 @@
       <div v-if="entryModule === 'DOC_REVIEW' || entryModule === 'CONTRACT'" class="reference-upload-section">
         <h3 class="section-title">
           <el-icon><Link /></el-icon>
-          {{ entryModule === 'CONTRACT' ? '合同模板（必选）' : '参考文件（用于以文审文）' }}
-          <el-tag v-if="entryModule === 'CONTRACT'" type="danger" size="small">必选</el-tag>
-          <el-tag v-else type="info" size="small">可选</el-tag>
+          {{ entryModule === 'CONTRACT' ? '合同模板（可选）' : '参考文件（用于以文审文）' }}
+          <el-tag type="info" size="small">可选</el-tag>
         </h3>
         <p class="section-description">
-          {{ entryModule === 'CONTRACT' ? '上传合同模板作为审查基准，系统将对比待审合同与模板的差异。' : '上传参考文件作为审查依据，系统将基于参考文件对待审文件进行逐项比对。' }}
+          {{ entryModule === 'CONTRACT' ? '上传合同模板作为审查基准，系统将对比待审合同与模板的差异。无模板时仅使用知识库增强审查。' : '上传参考文件作为审查依据，系统将基于参考文件对待审文件进行逐项比对。' }}
         </p>
         <el-upload
           ref="referenceUploadRef"
