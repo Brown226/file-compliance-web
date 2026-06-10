@@ -274,7 +274,6 @@ export class ReviewService {
     checkIntervalMs: number = 1000
   ): Promise<void> {
     while (this.getUserProcessingCount(userId) >= maxConcurrent) {
-      console.log(`[Review] 用户 ${userId} 并发配额已满 (${this.getUserProcessingCount(userId)}/${maxConcurrent})，等待中...`);
       await new Promise(resolve => setTimeout(resolve, checkIntervalMs));
     }
   }
@@ -285,7 +284,6 @@ export class ReviewService {
   private static incrementUserCount(userId: string): void {
     const current = this.userConcurrencyMap.get(userId) || 0;
     this.userConcurrencyMap.set(userId, current + 1);
-    console.log(`[Review] 用户 ${userId} 并发计数: ${current + 1}`);
   }
 
   /**
@@ -295,7 +293,6 @@ export class ReviewService {
     const current = this.userConcurrencyMap.get(userId) || 0;
     if (current > 0) {
       this.userConcurrencyMap.set(userId, current - 1);
-      console.log(`[Review] 用户 ${userId} 并发计数: ${current - 1}`);
     }
   }
 
@@ -352,7 +349,6 @@ export class ReviewService {
    *  7. 更新任务状态 + 最终推送
    */
   static async processTask(taskId: string): Promise<void> {
-    console.log(`[Review] 开始处理任务: ${taskId}`);
 
     // 全局并发控制：等待获取槽位
     let slotAcquired = false;
@@ -438,7 +434,6 @@ export class ReviewService {
           });
           if (specItems.length > 0) {
             semanticItems = specItems;
-            console.log(`[Review] 加载规则库条目: ${specItems.length} 条`);
           }
         } catch (e) {
           console.warn('[Review] 加载规则库条目失败:', e);
@@ -522,7 +517,6 @@ export class ReviewService {
       });
 
       // ===== 阶段1: 所有文件并行规则审查（快速，毫秒~秒级，无需限流） =====
-      console.log(`[Review] 阶段1开始: ${totalFiles} 个文件并行规则审查`);
       WebSocketService.emitTaskProgress(taskId, {
         type: 'phase1_start',
         step: '规则审查',
@@ -567,7 +561,6 @@ export class ReviewService {
         }
       }
 
-      console.log(`[Review] 阶段1完成: 成功 ${fastSuccessCount}, 失败 ${fastFailedCount}`);
 
       // ===== 文件内一致性检查（启动后与阶段2并行，最后 await 汇总） =====
       let intraConsistencyPromise: Promise<Array<{ fileId: string; issueCount: number }>> | null = null;
@@ -591,7 +584,6 @@ export class ReviewService {
                 taskId, file.id, file.fileName, ctx.extractedText,
               );
               if (issueCount > 0) {
-                console.log(`[Review] ${file.fileName} 文件内一致性: 发现 ${issueCount} 个不一致`);
               }
               return { fileId: file.id, issueCount };
             } catch (e) {
@@ -607,7 +599,6 @@ export class ReviewService {
       let slowPhaseResults: any[] = [];
       if (!needsAI) {
         // 不需要 AI 审查的模式，根据阶段1结果标记文件状态
-        console.log(`[Review] 阶段2跳过: ${reviewMode} 模式不需要 AI 审查`);
         const failedFileIds = new Set(
           fastPhaseResults.filter(r => 'error' in r).map(r => r.fileId)
         );
@@ -656,14 +647,11 @@ export class ReviewService {
               timestamp: Date.now(),
             });
           } else {
-            console.log(`[Review] LLM 配置检查通过: ${llmConfig.modelName} @ ${llmConfig.apiBaseUrl}`);
           }
         } catch (e) {
           console.warn('[Review] LLM 配置检查异常:', e);
         }
 
-        console.log(`[Review] 阶段2开始: ${eligibleForAI.length} 个文件 AI 审查 (跳过 ${skippedCount} 个阶段1失败文件, 用户 ${task.creatorId} 并发上限 ${maxConcurrent})`);
-        console.log(`[Review] 用户 ${task.creatorId} 当前并发数: ${this.getUserProcessingCount(task.creatorId)}`);
         WebSocketService.emitTaskProgress(taskId, {
           type: 'phase2_start',
           step: 'AI 深度审查',
@@ -720,7 +708,6 @@ export class ReviewService {
         }).catch((e) => { console.warn(`[Review] 更新文件状态失败 (${result.fileId}):`, e); });
       }
 
-      console.log(`[Review] 阶段2完成: 成功 ${slowSuccessCount}, 失败 ${slowFailedCount}`);
 
       // ===== 跨文件一致性检查 =====
       // 使用 capabilities.crossFile 判断（能力驱动，替代原先硬编码模式列表）
@@ -729,7 +716,6 @@ export class ReviewService {
         try {
           const intraResults = await intraConsistencyPromise;
           const totalIntraIssues = intraResults.reduce((sum, r) => sum + r.issueCount, 0);
-          console.log(`[Review] 文件内一致性检查完成: 发现 ${totalIntraIssues} 个不一致`);
           WebSocketService.emitTaskProgress(taskId, {
             type: 'intra_consistency_done',
             step: '文件内一致性检查完成',
@@ -755,7 +741,6 @@ export class ReviewService {
 
         try {
           const crossIssueCount = await CrossFileConsistencyService.check(taskId, task.files);
-          console.log(`[Review] 跨文件一致性检查完成: 发现 ${crossIssueCount} 个不一致`);
           WebSocketService.emitTaskProgress(taskId, {
             type: 'cross_file_done',
             step: '一致性检查完成',
@@ -808,7 +793,6 @@ export class ReviewService {
         status: newStatus,
       });
 
-      console.log(`[Review] 任务处理完成: ${taskId}, 阶段1成功=${fastSuccessCount}, 阶段2成功=${successCount}, 失败=${failedCount}`);
     } catch (error) {
       console.error(`[Review] 任务处理异常: ${taskId}`, error);
       try {
@@ -880,7 +864,6 @@ export class ReviewService {
         if (parsed.text && parsed.text.trim().length > 0) {
           ctx.extractedText = parsed.text;
           parseResultFromPreExtract = parsed.result;
-          console.log(`[Review] 预提取成功: ${file.fileName}, ${parsed.text.length} 字符`);
         } else {
           console.warn(`[Review] 预提取返回空文本: ${file.fileName}, fileType=${file.fileType}`);
         }
@@ -977,7 +960,6 @@ export class ReviewService {
       const strippedExtra = extraData.map((item) => this.stripDbUnsupportedFields(item));
       try {
         await prisma.taskDetail.createMany({ data: strippedExtra, skipDuplicates: true });
-        console.log(`[Review] ? MULTIMODAL 前置检测写入成功: ${extraData.length}条 (${file.fileName})`);
       } catch (e) {
         console.error(`[Review] ? MULTIMODAL 前置检测写入失败: ${file.fileName}`, e);
       }
@@ -1054,7 +1036,6 @@ export class ReviewService {
             data: strippedRuleData,
             skipDuplicates: true,
           });
-          console.log(`[Review] ? 规则结果事务写入成功: ${ruleData.length}条 (${file.fileName})`);
         });
       } catch (txError) {
         console.error(`[Review] ? 规则结果事务写入失败: ${file.fileName}`, txError);
@@ -1065,7 +1046,6 @@ export class ReviewService {
             data: strippedRuleData,
             skipDuplicates: true,
           });
-          console.log(`[Review] ? 规则结果重试写入成功: ${ruleData.length}条 (${file.fileName})`);
         } catch (retryError) {
           console.error(`[Review] ? 规则结果重试也失败，数据将丢失: ${file.fileName}`, retryError);
 
@@ -1111,7 +1091,6 @@ export class ReviewService {
             data: strippedStdRefData,
             skipDuplicates: true,
           });
-          console.log(`[Review] ? 标准引用结果事务写入成功: ${stdRefData.length}条 (${file.fileName})`);
         });
       } catch (txError) {
         console.error(`[Review] ? 标准引用结果事务写入失败: ${file.fileName}`, txError);
@@ -1122,7 +1101,6 @@ export class ReviewService {
             data: strippedStdRefData,
             skipDuplicates: true,
           });
-          console.log(`[Review] ? 标准引用结果重试写入成功: ${stdRefData.length}条 (${file.fileName})`);
         } catch (retryError) {
           console.error(`[Review] ? 标准引用结果重试也失败，数据将丢失: ${file.fileName}`, retryError);
           await this.createErrorDetail(taskId, file.id, file.fileName, `标准引用保存失败(重试后): ${retryError instanceof Error ? retryError.message : String(retryError)}`);
@@ -1202,7 +1180,6 @@ export class ReviewService {
     // 更新错误计数
     await this.updateFileErrorCount(file.id).catch((e) => { console.warn(`[Review] 更新错误计数失败 (${file.id}):`, e); });
 
-    console.log(`[Review] 文件 ${file.fileName} 阶段1完成: 规则=${fastResult.ruleIssues.length}, 标准引用=${fastResult.stdRefIssues.length}`);
 
     return { ruleIssues: fastResult.ruleIssues, stdRefIssues: fastResult.stdRefIssues };
   }
@@ -1300,7 +1277,6 @@ export class ReviewService {
           });
           dbWriteSuccess = true;
           anyChunkWritten = true;
-          console.log(`[Review] ? 分片 ${chunkIndex}/${totalChunks} 事务写入成功: ${aiData.length}条 (${file.fileName})`);
         } catch (txError) {
           console.error(`[Review] ? 分片 ${chunkIndex}/${totalChunks} 事务写入失败: ${file.fileName}`, txError);
 
@@ -1312,7 +1288,6 @@ export class ReviewService {
             });
             dbWriteSuccess = true;
             anyChunkWritten = true;
-            console.log(`[Review] ? 分片 ${chunkIndex}/${totalChunks} 重试写入成功: ${aiData.length}条 (${file.fileName})`);
           } catch (retryError) {
             console.error(`[Review] ? 分片 ${chunkIndex}/${totalChunks} 重试也失败: ${file.fileName}`, retryError);
 
@@ -1362,13 +1337,11 @@ export class ReviewService {
     }
 
     if (aiResult.usedEngine === 'none' && aiResult.aiIssues.length === 0) {
-      console.log(`[Review] ${ctx.fileName}: handler 返回空结果（可能为 RULE_ONLY 或无文本模式）`);
     }
     const slowResult = { aiIssues: aiResult.aiIssues || [], usedEngine: aiResult.usedEngine || 'unknown' };
 
     // AI 结果已通过 ctx.onChunkProgress 增量写入（每个分片审查完成后立即入库 + 推送 WebSocket）
     // 此处仅做兜底：使用内存标记检查，若无分片成功写入则一次性写入（极端情况下 onChunkProgress 全部失败时的保底）
-    console.log(`[Review] AI 审查完成，slowResult.aiIssues.length=${slowResult.aiIssues.length}, anyChunkWritten=${anyChunkWritten}`);
     if (slowResult.aiIssues.length > 0 && !anyChunkWritten) {
       try {
         console.warn(`[Review] 兜底写入: ${slowResult.aiIssues.length} 条 (${file.fileName})`);
@@ -1409,7 +1382,6 @@ export class ReviewService {
         await prisma.taskDetail.createMany({
           data: aiData.map((item) => this.stripDbUnsupportedFields(item)) as any,
         });
-        console.log(`[Review] 兜底写入 ${aiData.length} 条`);
       } catch (e) {
         console.error(`[Review] 兜底写入失败:`, e);
       }
@@ -1459,7 +1431,6 @@ export class ReviewService {
       timestamp: Date.now(),
     });
 
-    console.log(`[Review] 文件 ${file.fileName} 阶段2完成: AI=${slowResult.aiIssues.length}, engine=${slowResult.usedEngine}`);
 
     return { aiIssues: slowResult.aiIssues, usedEngine: slowResult.usedEngine, skippedNoText };
   }

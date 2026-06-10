@@ -90,7 +90,6 @@ export class LlmService {
     try {
       // 尝试从内容中提取 JSON 数组
       let jsonStr = content.trim();
-      console.log(`[LLM] parseReviewResult input_len=${content.length}, preview=${content.slice(0, 200)}`);
 
       // 去掉 markdown 代码块标记
       if (jsonStr.startsWith('```')) {
@@ -137,7 +136,6 @@ export class LlmService {
       }
 
       if (Array.isArray(parsed)) {
-        console.log(`[LLM] parseReviewResult parsed OK: ${parsed.length} items, types=[${parsed.map((i: any) => i.issueType || i.riskLevel || '?').join(', ')}]`);
         return parsed
           .filter((item: any) => {
             // 支持两种格式：标准审查(issueType) 和 合同审查(riskLevel)
@@ -205,7 +203,6 @@ export class LlmService {
       // JSON 解析失败，尝试从 Markdown 文本中提取结构化问题
       const markdownIssues = this.parseMarkdownReviewResult(content);
       if (markdownIssues.length > 0) {
-        console.log(`[LLM] 从 Markdown 格式中提取到 ${markdownIssues.length} 个审查问题`);
         return markdownIssues;
       }
       console.warn('[LLM] 解析审查结果失败:', (e as Error).message, '\n原始内容:', content.substring(0, 200));
@@ -937,7 +934,6 @@ export class LlmService {
 
       // 取第一行作为优化查询（LLM可能返回多行）
       const rewritten = content.split('\n').filter((l: string) => l.trim())[0] || query;
-      console.log(`[LLM] 查询优化: "${query}" → "${rewritten}"`);
       return rewritten;
     } catch (err: any) {
       console.warn(`[LLM] 查询优化失败，使用原始查询: ${err.message}`);

@@ -43,8 +43,6 @@ export class AiReviewService {
       return { issues: [], engine: 'none' };
     }
 
-    console.log(`[Pipeline] 启动自建 RAG 审查: kbs=[${knowledgeIds.join(',')}], text_len=${text.length}`);
-
     try {
       const result = await RAGService.reviewWithKnowledge(text, knowledgeIds, {
         chunkSize: config.chunkSize || 4000,
@@ -101,7 +99,6 @@ export class AiReviewService {
     }
 
     if (knowledgeContext) {
-      console.log(`[Pipeline] 获取到知识库段落作为上下文: ${knowledgeContext.length} 字符 (${knowledgeIds.length} 个知识库)`);
     }
 
     // 使用自有 LLM 进行审查（带位置信息）
@@ -210,13 +207,11 @@ export class AiReviewService {
 
     // auto 模式：有知识库时使用 RAG，无知识库时使用 LLM
     if (hasKnowledgeIds) {
-      console.log('[Pipeline] auto 模式: 检测到知识库选择，使用自建 RAG');
       try {
         const ragResult = await AiReviewService.runRAGReview(text, ctx, scene, config);
         if (ragResult.issues.length > 0 || ragResult.engine !== 'none') {
           return ragResult;
         }
-        console.log('[Pipeline] 自建 RAG 无结果，降级到 LLM + 知识库段落');
       } catch (e) {
         console.warn('[Pipeline] 自建 RAG 失败，降级到 LLM + 知识库段落:', e);
       }
@@ -224,7 +219,6 @@ export class AiReviewService {
       return AiReviewService.runLLMWithFallback(text, ctx, scene, config);
     } else {
       // 无知识库选择，直接使用 LLM
-      console.log('[Pipeline] auto 模式: 无知识库选择，使用 LLM 直接调用');
       return AiReviewService.runLLMDirect(text, ctx, scene, config);
     }
   }
@@ -248,7 +242,6 @@ export class AiReviewService {
       const rawSystemPrompt = await PromptLoader.loadSystemPrompt(scene, {
         hasContext: false,
       });
-      console.log(`[AiReview] runLLMDirect scene=${scene}, prompt_len=${rawSystemPrompt.length}, prompt_preview=${rawSystemPrompt.slice(0, 120)}`);
       let systemPrompt = AiReviewService.injectSemanticContext(rawSystemPrompt, ctx);
       // 合同审查立场注入
       if (scene === 'contract_review') {
@@ -406,7 +399,6 @@ export class AiReviewService {
   ): Promise<{ issues: ReviewIssue[]; engine: string; sources?: SourceReference[] }> {
     // 无参照文件时降级到标准 AI 审查（保留原始 scene）
     if (!ctx.refFileGroup || ctx.refFileGroup.refFiles.length === 0) {
-      console.log('[AiReview] 无参照文件，降级到标准 AI 审查');
       return AiReviewService.runAIReview(text, ctx, scene, config);
     }
 
@@ -435,7 +427,6 @@ export class AiReviewService {
     }
 
     const refFileCount = refTexts.length;
-    console.log(`[AiReview] 以文审文: ${refFileCount} 个参照文件 (${refFileNames.join(', ')})`);
 
     const llmMaxTokens = config.llmMaxTokens || 4096;
     const llmTimeout = config.llmTimeout || 180;
@@ -482,9 +473,7 @@ export class AiReviewService {
 
       if (useFullRefs) {
         refTextsJoined = rawRefTextsJoined;
-        console.log(`[AiReview] 参照全量传递: ${rawRefTextsJoined.length} 字符 / 可用 ${Math.floor(maxRefChars)} 字符 (上下文=${contextWindow}, 输出=${Math.floor(outputBudget)}, 系统=${actualSystemPromptLen})`);
       } else {
-        console.log(`[AiReview] 参照过长 (${rawRefTextsJoined.length} > ${Math.floor(maxRefChars)})，启用向量检索`);
         // fallback: 简单截断到上限（向量检索路径在 per-chunk 循环中实现）
         refTextsJoined = rawRefTextsJoined.substring(0, Math.floor(maxRefChars));
       }
@@ -518,7 +507,6 @@ export class AiReviewService {
           }
           if (refChunks.length > 0) {
             refVectors = await EmbeddingService.embedTexts(refChunks);
-            console.log(`[AiReview] 参照向量索引完成: ${refChunks.length} 个分块×${refVectors[0]?.length || 0}d`);
           }
         } catch (e: any) {
           console.warn(`[AiReview] 参照向量索引失败: ${e.message}，回退到截断模式`);
@@ -548,7 +536,6 @@ export class AiReviewService {
           }
           if (kbContexts.length > 0) {
             ragContext = kbContexts.join('\n\n---\n\n');
-            console.log(`[AiReview] 合同审查 RAG 上下文: ${ragContext.length} 字符, ${knowledgeIds.length} 个知识库`);
           }
         } catch (e: any) {
           console.warn(`[AiReview] 合同审查 RAG 检索失败:`, e.message);
@@ -649,7 +636,6 @@ export class AiReviewService {
       }
 
       const modeLabel = useFullRefs ? '全量' : (refVectors ? '向量检索' : '截断');
-      console.log(`[AiReview] 以文审文完成(${modeLabel}): ${allIssues.length} 条问题(raw), ${refFileCount} 个参照, ${totalChunks} 个分片, ${failedChunks} 个失败`);
 
       // ---- 后处理过滤 ----
       // 1. 过滤 originalText === suggestedText 的无效条目
@@ -671,7 +657,6 @@ export class AiReviewService {
 
       const removedCount = allIssues.length - filtered.length;
       if (removedCount > 0) {
-        console.log(`[AiReview] 后处理过滤掉 ${removedCount} 条无效/一致条目，剩余 ${filtered.length} 条`);
       }
 
       return { issues: filtered, engine: 'llm-ref-compare' };
