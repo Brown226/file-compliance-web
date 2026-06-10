@@ -6,7 +6,7 @@
  * handler 只关注"如何运行该模式的 AI 审查"。
  */
 
-import { PipelineContext, ReviewModeType } from './types';
+import { PipelineContext, ReviewModeType, getModeScene } from './types';
 import { ReviewIssue, SourceReference } from '../llm.service';
 import { AiReviewService } from './ai-review.service';
 import { TerminologyService } from '../terminology.service';
@@ -19,18 +19,6 @@ export type ReviewHandler = (ctx: PipelineContext) => Promise<{
   sources?: SourceReference[];
   usedEngine?: string;
 }>;
-
-/** 模式到场景名的映射（用于加载提示词模板） */
-const MODE_SCENE: Record<ReviewModeType, string> = {
-  LIBRARY_REVIEW: 'library_review',
-  CONSISTENCY:    'consistency',
-  TYPO_GRAMMAR:   'typo_grammar',
-  DOC_REVIEW:     'doc_review',
-  CONTRACT_REVIEW: 'contract_review',  // 合同风险审查
-  MULTIMODAL:     'multimodal',
-  RULE_ONLY:      'library_review',
-  SELF_CHECK:     'self_check',
-};
 
 /** 各模式的显示名称与描述 */
 const MODE_META: Record<ReviewModeType, { displayName: string; description: string; needsRefFiles: boolean }> = {
@@ -67,7 +55,7 @@ const handleTypoGrammar: ReviewHandler = async (ctx) => {
   const text = ctx.extractedText || '';
   if (!text.trim()) return { aiIssues: [], usedEngine: 'none' };
 
-  const scene = ctx.scene || MODE_SCENE.TYPO_GRAMMAR;
+  const scene = ctx.scene || getModeScene('TYPO_GRAMMAR');
   const config = getEffectiveConfig(ctx);
   const result = await AiReviewService.runLLMOnlyStrategy(text, ctx, scene, config);
 
@@ -89,7 +77,7 @@ const handleLibraryReview: ReviewHandler = async (ctx) => {
   const text = ctx.extractedText || '';
   if (!text.trim()) return { aiIssues: [], usedEngine: 'none' };
 
-  const scene = ctx.scene || MODE_SCENE.LIBRARY_REVIEW;
+  const scene = ctx.scene || getModeScene('LIBRARY_REVIEW');
   const config = getEffectiveConfig(ctx);
   const hasKnowledge = ctx.ruleSource?.includes('STANDARD')
     && (ctx.maxkbKnowledgeIds?.length || ctx.maxkbKnowledgeId);
@@ -150,7 +138,7 @@ const handleConsistency: ReviewHandler = async (ctx) => {
   );
   if (text.length <= effectiveChunkSize) {
     console.log('[Handler] CONSISTENCY: 文本较短，使用直调路径');
-    const scene = ctx.scene || MODE_SCENE.CONSISTENCY;
+    const scene = ctx.scene || getModeScene('CONSISTENCY');
     const result = await AiReviewService.runLLMDirect(text, ctx, scene, config);
     return { aiIssues: result.issues, usedEngine: result.engine, sources: result.sources };
   }
@@ -169,7 +157,7 @@ const handleDocReview: ReviewHandler = async (ctx) => {
   const text = ctx.extractedText || '';
   if (!text.trim()) return { aiIssues: [], usedEngine: 'none' };
 
-  const scene = ctx.scene || MODE_SCENE.DOC_REVIEW;
+  const scene = ctx.scene || getModeScene('DOC_REVIEW');
   const config = getEffectiveConfig(ctx);
   const result = await AiReviewService.runRefCompareStrategy(text, ctx, scene, config);
   return { aiIssues: result.issues, usedEngine: result.engine, sources: result.sources };
@@ -184,7 +172,7 @@ const handleMultimodal: ReviewHandler = async (ctx) => {
   const text = ctx.extractedText || '';
   if (!text.trim()) return { aiIssues: [], usedEngine: 'none' };
 
-  const scene = ctx.scene || MODE_SCENE.MULTIMODAL;
+  const scene = ctx.scene || getModeScene('MULTIMODAL');
   const config = getEffectiveConfig(ctx);
   const result = await AiReviewService.runLLMDirect(text, ctx, scene, config);
   return { aiIssues: result.issues, usedEngine: result.engine, sources: result.sources };
@@ -211,11 +199,6 @@ export const REVIEW_HANDLERS: Record<ReviewModeType, ReviewHandler> = {
 /** 获取模式显示名称 */
 export function getModeDisplayName(mode: ReviewModeType): string {
   return MODE_META[mode]?.displayName || mode;
-}
-
-/** 获取模式场景名 */
-export function getModeScene(mode: ReviewModeType): string {
-  return MODE_SCENE[mode] || 'library_review';
 }
 
 // ==================== 对外导出 ====================
@@ -264,3 +247,5 @@ export async function getAvailableModes(): Promise<Array<{
 /** 清除模式配置缓存 */
 export { clearCapabilitiesCache } from './mode-config.service';
 export { getModeCapabilitiesConfig, saveModeCapabilitiesConfig } from './mode-config.service';
+/** 重新导出 getModeScene（唯一实现在 types.ts） */
+export { getModeScene } from './types';

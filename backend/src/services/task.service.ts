@@ -28,7 +28,11 @@ export class TaskService {
 
   /** 从 ReviewPlan 推导 Pipeline 需要的模式标识（内部分发用，不暴露给前端） */
   static resolvePipelineSelector(plan: ReviewPlan): ReviewModeType {
-    if (plan.objective === 'COMPARE') return 'DOC_REVIEW';
+    if (plan.objective === 'COMPARE') {
+      // 合同审查模式：reviewPlan 中有 contractStance 时走合同审查 handler
+      if ((plan as any).contractStance) return 'CONTRACT_REVIEW';
+      return 'DOC_REVIEW';
+    }
     if (plan.objective === 'PROOFREAD') return 'TYPO_GRAMMAR';
     if (plan.objective === 'STRUCTURED') return 'MULTIMODAL';
     if (plan.execution.profile === 'RULE_ONLY') {
@@ -74,6 +78,7 @@ export class TaskService {
           profile: input?.execution?.profile === 'RULE_ONLY' ? 'RULE_ONLY' : 'AI_ONLY',
         },
         templateId: typeof input?.templateId === 'string' && input.templateId.trim() ? input.templateId.trim() : undefined,
+        contractStance: input?.contractStance === 'contractor' ? 'contractor' : 'owner',
       };
     }
     // 兜底：无有效 plan 时默认合规审查 + 标准依据
@@ -155,7 +160,9 @@ export class TaskService {
       : entryModule
         ? this.mapEntryModule(entryModule)
         : this.resolvePipelineSelector(normalizedReviewPlan);
-    const shouldDelayReview = normalizedReviewPlan.objective === 'COMPARE';
+    // 合同审查（CONTRACT_REVIEW）允许无模板直接审查，不需要等待参照文件上传
+    const isContractReview = resolvedReviewMode === 'CONTRACT_REVIEW';
+    const shouldDelayReview = normalizedReviewPlan.objective === 'COMPARE' && !isContractReview;
 
     // 知识库 ID：多选优先，回退到单选
     // 存储策略：将多个知识库 ID 存为 JSON 字符串到 maxkbKnowledgeId 字段

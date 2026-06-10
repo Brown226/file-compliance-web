@@ -51,4 +51,8 @@ export interface IssueDetail {
   sourceReferences?: SourceReference[]
   isFalsePositive?: boolean
   fpReason?: string
+  // 合同审查专属字段
+  riskLevel?: 'HIGH' | 'MEDIUM' | 'LOW'
+  clauseType?: string
+  recommendation?: string
 }

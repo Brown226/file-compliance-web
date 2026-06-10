@@ -28,10 +28,16 @@ export const SCENE_MODULE_MAP: Record<string, string> = {
 };
 
 /**
- * 解析审查模式 → 提示词模块名
+ * 解析审查模式/场景名 → 提示词模块名
+ * 支持大写 review mode（CONTRACT_REVIEW）和小写 scene（contract_review）
  */
-export function resolveModule(reviewMode: string): string {
-  return SCENE_MODULE_MAP[reviewMode] || 'library_review';
+export function resolveModule(input: string): string {
+  // 直接匹配 review mode key（如 CONTRACT_REVIEW → contract_review）
+  if (SCENE_MODULE_MAP[input]) return SCENE_MODULE_MAP[input];
+  // 已经是 module 名（如 contract_review），直接返回
+  const moduleValues = new Set(Object.values(SCENE_MODULE_MAP));
+  if (moduleValues.has(input)) return input;
+  return 'library_review';
 }
 
 // ============================================================

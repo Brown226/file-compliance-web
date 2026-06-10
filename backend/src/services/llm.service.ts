@@ -90,11 +90,35 @@ export class LlmService {
     try {
       // 尝试从内容中提取 JSON 数组
       let jsonStr = content.trim();
+      console.log(`[LLM] parseReviewResult input_len=${content.length}, preview=${content.slice(0, 200)}`);
 
       // 去掉 markdown 代码块标记
       if (jsonStr.startsWith('```')) {
         jsonStr = jsonStr.replace(/^```(?:json)?\n?/, '').replace(/\n?```$/, '');
       }
+
+      // 清理 LLM 输出中的控制字符：只处理字符串值内部的，保留 JSON 结构空白
+      jsonStr = (() => {
+        let result = '';
+        let inString = false;
+        let escaped = false;
+        for (let i = 0; i < jsonStr.length; i++) {
+          const ch = jsonStr[i];
+          if (escaped) { result += ch; escaped = false; continue; }
+          if (ch === '\\' && inString) { result += ch; escaped = true; continue; }
+          if (ch === '"') { inString = !inString; result += ch; continue; }
+          if (inString && ch.charCodeAt(0) < 0x20) {
+            // 字符串内部的控制字符：\n \r \t 保留转义形式，其余替换为空格
+            if (ch === '\n') result += '\\n';
+            else if (ch === '\r') result += '\\r';
+            else if (ch === '\t') result += '\\t';
+            else result += ' ';
+          } else {
+            result += ch;
+          }
+        }
+        return result;
+      })();
 
       // 优先直接解析；失败则提取首个完整 JSON 数组
       let parsed: any;
@@ -113,6 +137,7 @@ export class LlmService {
       }
 
       if (Array.isArray(parsed)) {
+        console.log(`[LLM] parseReviewResult parsed OK: ${parsed.length} items, types=[${parsed.map((i: any) => i.issueType || i.riskLevel || '?').join(', ')}]`);
         return parsed
           .filter((item: any) => {
             // 支持两种格式：标准审查(issueType) 和 合同审查(riskLevel)

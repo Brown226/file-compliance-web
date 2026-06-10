@@ -141,6 +141,7 @@ enum ReviewMode {
   MULTIMODAL        // 多模态识别 — 表格/公式/图纸
   RULE_ONLY       // 仅规则审查 — 只跑规则引擎，不调 AI
   SELF_CHECK        // 标准引用自检 — 机械匹配，独立于AI审查
+  CONTRACT_REVIEW   // 合同风险审查 — 合同专用审查模式
   RULE_PARSING      // 规则解析 — 从文档中异步解析候选规则
   CUSTOM_RULE       // 兼容历史数据
   FULL_REVIEW       // 兼容历史数据
@@ -225,6 +226,12 @@ model TaskDetail {
   dwgMetadata      Json?    @map("dwg_metadata") // DWG 解析元数据（图层、图元、标注等）
 
   locateMeta       Json?    @map("locate_meta") // 新版定位元数据：absolute range + quote + context
+
+  // 合同审查专属字段
+  riskLevel        String?  // 风险等级: HIGH / MEDIUM / LOW
+  clauseType       String?  // 条款类型: payment / penalty / warranty / ip / change / claim / insurance / dispute / other
+  recommendation   String?  @db.Text  // 修改建议
+
   @@unique([taskId, fileId, issueType, ruleCode, originalText])
   @@map("task_details")
 }

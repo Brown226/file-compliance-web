@@ -16,6 +16,23 @@ export type ReviewModeType =
   | 'SELF_CHECK'
   | 'CONTRACT_REVIEW';
 
+/** 审查模式 → prompt 场景名映射（唯一数据源，review-handlers / ai-review 共用） */
+export const MODE_SCENE_MAP: Record<ReviewModeType, string> = {
+  LIBRARY_REVIEW: 'library_review',
+  CONSISTENCY:    'consistency',
+  TYPO_GRAMMAR:   'typo_grammar',
+  DOC_REVIEW:     'doc_review',
+  CONTRACT_REVIEW: 'contract_review',
+  MULTIMODAL:     'multimodal',
+  RULE_ONLY:      'library_review',
+  SELF_CHECK:     'self_check',
+};
+
+/** 根据审查模式获取 prompt 场景名 */
+export function getModeScene(mode: ReviewModeType): string {
+  return MODE_SCENE_MAP[mode] || 'library_review';
+}
+
 /** 审查全局配置（存储在 SystemConfig 'pipeline_review_config' 中） */
 export interface PipelineReviewConfig {
   aiEngine: 'auto' | 'rag' | 'rag_llm' | 'llm_only' | 'disabled';  // AI 引擎策略

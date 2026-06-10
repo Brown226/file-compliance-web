@@ -322,10 +322,15 @@
               <div v-if="showAiWarning" class="ai-warning-banner">
                 <el-icon color="#E6A23C" :size="16"><WarningFilled /></el-icon>
                 <span>
-                  AI 审查未产出结果。
-                  <template v-if="!task?.aiEngineUsed">任务未配置或未使用 AI 引擎。</template>
-                  <template v-else-if="task.aiEngineUsed === 'none'">AI 引擎已禁用。</template>
-                  <template v-else>引擎 {{ task.aiEngineUsed }} 已执行但未发现问题，请结合规则覆盖范围人工复核。</template>
+                  <template v-if="(task as any)?.reviewMode === 'CONTRACT_REVIEW'">
+                    合同风险审查未发现风险条款。可能原因：上传的文件不是合同文本，或合同条款对该立场无明显风险。建议更换为正式合同文件后重新审查。
+                  </template>
+                  <template v-else>
+                    AI 审查未产出结果。
+                    <template v-if="!task?.aiEngineUsed">任务未配置或未使用 AI 引擎。</template>
+                    <template v-else-if="task.aiEngineUsed === 'none'">AI 引擎已禁用。</template>
+                    <template v-else>引擎 {{ task.aiEngineUsed }} 已执行但未发现问题，请结合规则覆盖范围人工复核。</template>
+                  </template>
                 </span>
               </div>
 

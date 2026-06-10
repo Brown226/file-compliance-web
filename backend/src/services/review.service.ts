@@ -86,7 +86,7 @@ export class ReviewService {
       refFileGroupRequired: (plan.objective === 'COMPARE' && (plan as any).entryModule !== 'CONTRACT') || (plan.evidence.sources.includes('REFERENCE') && (plan as any).entryModule !== 'CONTRACT'),
       intraFileConsistency: !!plan.enhancements.intraFileConsistency,
       crossFileConsistency,
-      contractStance: (plan as any).contractStance,
+      contractStance: plan.contractStance,
       executionOverrides: stages || plan.enhancements.intraFileConsistency || crossFileConsistency
         ? {
             crossFileConsistency,
@@ -1281,6 +1281,10 @@ export class ReviewService {
             diffRanges: issue.diffRanges || null,
             textPosition: this.buildLegacyTextPosition(meta, ctx.extractedText, issue.originalText),
             locateMeta: meta,
+            // 合同审查专属字段
+            riskLevel: (issue as any).riskLevel || null,
+            clauseType: (issue as any).clauseType || null,
+            recommendation: (issue as any).recommendation || null,
           };
         });
 
@@ -1396,6 +1400,10 @@ export class ReviewService {
             diffRanges: issue.diffRanges || null,
             textPosition: this.buildLegacyTextPosition(meta, ctx.extractedText, issue.originalText),
             locateMeta: meta,
+            // 合同审查专属字段
+            riskLevel: (issue as any).riskLevel || null,
+            clauseType: (issue as any).clauseType || null,
+            recommendation: (issue as any).recommendation || null,
           };
         });
         await prisma.taskDetail.createMany({

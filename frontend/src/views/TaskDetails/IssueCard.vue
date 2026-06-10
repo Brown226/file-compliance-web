@@ -37,6 +37,20 @@
           <el-tag v-if="detail.isFalsePositive" type="info" size="small" effect="plain" round class="fp-tag">
             误报
           </el-tag>
+          <!-- 合同审查：风险等级 + 条款类型 -->
+          <el-tag
+            v-if="reviewMode === 'CONTRACT_REVIEW' && detail.riskLevel"
+            :type="detail.riskLevel === 'HIGH' ? 'danger' : detail.riskLevel === 'MEDIUM' ? 'warning' : 'info'"
+            size="small" effect="dark" round
+          >
+            {{ detail.riskLevel === 'HIGH' ? '🔴 高风险' : detail.riskLevel === 'MEDIUM' ? '🟡 中风险' : '🔵 低风险' }}
+          </el-tag>
+          <el-tag
+            v-if="reviewMode === 'CONTRACT_REVIEW' && detail.clauseType"
+            type="info" size="small" effect="plain" round
+          >
+            {{ clauseTypeLabel(detail.clauseType) }}
+          </el-tag>
           <!-- 文件来源标签 -->
           <el-tag v-if="detail.file && !selectedFileId" type="info" size="small" effect="plain" round class="file-source-tag">
             <span class="file-icon-inline">{{ getFileEmoji(detail.file.fileType || detail.file.file_type) }}</span>
@@ -110,6 +124,17 @@
             mode="suggested"
           />
         </span>
+      </div>
+
+      <!-- 合同审查：修改建议 -->
+      <div v-if="reviewMode === 'CONTRACT_REVIEW' && detail.recommendation" class="recommendation-section">
+        <div class="recommendation-header">
+          <el-icon><Edit /></el-icon>
+          <span>修改建议</span>
+        </div>
+        <div class="recommendation-body">
+          {{ detail.recommendation }}
+        </div>
       </div>
 
       <!-- 标准条文 — 提权展示 -->
@@ -250,6 +275,7 @@ import {
   ArrowDown,
   Reading,
   WarningFilled,
+  Edit,
 } from '@element-plus/icons-vue'
 import DiffHighlight from './DiffHighlight.vue'
 import { useIssueHelpers } from './composables'
@@ -262,6 +288,7 @@ const props = defineProps<{
   highlightedId?: string | null
   selectedFileId?: string | null
   forceExpanded?: boolean
+  reviewMode?: string
 }>()
 
 const emit = defineEmits<{
@@ -315,6 +342,16 @@ const {
   getEntityTypeLabel,
   topSourceRefs,
 } = useIssueHelpers()
+
+/** 条款类型中文映射 */
+const clauseTypeLabel = (type: string): string => {
+  const map: Record<string, string> = {
+    payment: '付款条款', penalty: '违约条款', warranty: '质保条款',
+    ip: '知识产权', change: '变更条款', claim: '索赔条款',
+    insurance: '保险条款', dispute: '争议解决', other: '其他',
+  }
+  return map[type] || type
+}
 </script>
 
 <style scoped>
@@ -604,6 +641,29 @@ const {
   background: #F3F4F6;
   padding: 3px 8px;
   border-radius: 4px;
+}
+
+/* ===== 合同审查：修改建议块 ===== */
+.recommendation-section {
+  margin: 8px 0;
+  padding: 6px 8px;
+  background: #FFF7ED;
+  border-radius: 4px;
+  border-left: 3px solid #F97316;
+}
+.recommendation-header {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  color: #C2410C;
+  font-size: 12px;
+  font-weight: 600;
+  margin-bottom: 4px;
+}
+.recommendation-body {
+  font-size: 12px;
+  color: #9A3412;
+  line-height: 1.5;
 }
 
 /* ===== 来源参考块 ===== */

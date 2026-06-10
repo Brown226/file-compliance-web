@@ -5,7 +5,7 @@
  * 所有方法均为 static，由 BasePipeline 委托调用。
  */
 
-import { PipelineContext, PipelineReviewConfig } from './types';
+import { PipelineContext, PipelineReviewConfig, getModeScene } from './types';
 import { ReviewIssue, SourceReference, LlmService } from '../llm.service';
 import { RAGService } from '../rag.service';
 import { MaxKBService } from '../maxkb.service';
@@ -114,7 +114,12 @@ export class AiReviewService {
     const rawSystemPrompt = await PromptLoader.loadSystemPrompt(scene, {
       hasContext: !!knowledgeContext,
     });
-    const systemPrompt = AiReviewService.injectSemanticContext(rawSystemPrompt, ctx);
+    let systemPrompt = AiReviewService.injectSemanticContext(rawSystemPrompt, ctx);
+    // 合同审查立场注入
+    if (scene === 'contract_review') {
+      const stanceLabel = ctx.contractStance === 'contractor' ? '承包商' : '业主/建设方';
+      systemPrompt = systemPrompt.replace(/\$\{stance\}/g, stanceLabel);
+    }
 
     // 并行处理分片（限流并发，加速 AI 审查）
     const CONCURRENT_LIMIT = 2; // 降低并发，避免触发 API 限流
@@ -243,8 +248,19 @@ export class AiReviewService {
       const rawSystemPrompt = await PromptLoader.loadSystemPrompt(scene, {
         hasContext: false,
       });
-      const systemPrompt = AiReviewService.injectSemanticContext(rawSystemPrompt, ctx);
-      const userTpl = await PromptLoader.loadUserPrompt(scene, 'no_context');
+      console.log(`[AiReview] runLLMDirect scene=${scene}, prompt_len=${rawSystemPrompt.length}, prompt_preview=${rawSystemPrompt.slice(0, 120)}`);
+      let systemPrompt = AiReviewService.injectSemanticContext(rawSystemPrompt, ctx);
+      // 合同审查立场注入
+      if (scene === 'contract_review') {
+        const stanceLabel = ctx.contractStance === 'contractor' ? '承包商' : '业主/建设方';
+        systemPrompt = systemPrompt.replace(/\$\{stance\}/g, stanceLabel);
+      }
+      let userTpl = await PromptLoader.loadUserPrompt(scene, 'no_context');
+      // 合同审查：user prompt 也含 ${stance}
+      if (scene === 'contract_review') {
+        const stanceLabel = ctx.contractStance === 'contractor' ? '承包商' : '业主/建设方';
+        userTpl = userTpl.replace(/\$\{stance\}/g, stanceLabel);
+      }
 
       const chunks = LlmService.splitText(text, chunkSize, true);
       const totalChunks = chunks.length;
@@ -310,14 +326,24 @@ export class AiReviewService {
 
     try {
       const rawSystemPrompt = await PromptLoader.loadSystemPrompt(scene, { hasContext: false });
-      const systemPrompt = AiReviewService.injectSemanticContext(rawSystemPrompt, ctx);
+      let systemPrompt = AiReviewService.injectSemanticContext(rawSystemPrompt, ctx);
+      // 合同审查立场注入
+      if (scene === 'contract_review') {
+        const stanceLabel = ctx.contractStance === 'contractor' ? '承包商' : '业主/建设方';
+        systemPrompt = systemPrompt.replace(/\$\{stance\}/g, stanceLabel);
+      }
 
       const chunks = LlmService.splitText(text, chunkSize, true);
       const totalChunks = chunks.length;
       const CONCURRENT_LIMIT = 2; // 降低并发，避免触发 API 限流
       const chunkResults = await parallelLimit(chunks, CONCURRENT_LIMIT, async (chunk) => {
         try {
-          const userTpl = await PromptLoader.loadUserPrompt(scene, 'default');
+          let userTpl = await PromptLoader.loadUserPrompt(scene, 'default');
+          // 合同审查：user prompt 也含 ${stance}
+          if (scene === 'contract_review') {
+            const stanceLabel = ctx.contractStance === 'contractor' ? '承包商' : '业主/建设方';
+            userTpl = userTpl.replace(/\$\{stance\}/g, stanceLabel);
+          }
           const userContent = userTpl.replace(/\$\{text\}/g, chunk.text);
 
           const llmIssues = await LlmService.reviewText(userContent, {
@@ -727,15 +753,7 @@ export class AiReviewService {
    * 对应 BasePipeline.scene getter 的逻辑
    */
   static resolveScene(ctx: PipelineContext): string {
-    const modeMap: Record<string, string> = {
-      LIBRARY_REVIEW: 'library_review',
-      CONSISTENCY: 'consistency',
-      TYPO_GRAMMAR: 'typo_grammar',
-      DOC_REVIEW: 'doc_review',
-      MULTIMODAL: 'multimodal',
-      RULE_ONLY: 'library_review',
-    };
-    return modeMap[ctx.reviewMode] || 'library_review';
+    return getModeScene(ctx.reviewMode);
   }
 
   /**
