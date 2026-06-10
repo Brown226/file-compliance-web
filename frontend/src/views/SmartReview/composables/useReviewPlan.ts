@@ -41,6 +41,12 @@ export function useReviewPlan(state: ReturnType<typeof useSmartReviewState>) {
     if (state.entryModule.value === 'CONSISTENCY' && state.reviewPlanDraft.objective === 'COMPARE') {
       return source !== 'REFERENCE'
     }
+    // 合同审查模式：REFERENCE 必选，STANDARD 可选（知识库增强）
+    if (state.entryModule.value === 'CONTRACT') {
+      if (source === 'STANDARD') return false  // 知识库可选
+      if (source === 'REFERENCE') return true  // 参考文件必选（锁定）
+      return state.reviewPlanDraft.objective === 'COMPARE'
+    }
     return state.reviewPlanDraft.objective === 'COMPARE'
   }
 
