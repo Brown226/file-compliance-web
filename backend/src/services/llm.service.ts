@@ -699,6 +699,8 @@ export class LlmService {
       standardContext?: string;
       systemPrompt?: string;
       skipUserTemplate?: boolean;
+      /** 文档ID，用于构建缓存键 */
+      documentId?: string;
       /** 位置信息：当前 chunk 在原始文本中的起始位置 */
       positionInfo?: {
         chunkIndex: number;
@@ -763,8 +765,10 @@ export class LlmService {
       temperature,
     };
 
-    // ★ LLM 响应缓存：相同 prompt+model+temperature 命中缓存，避免重复 API 调用
-    const llmCacheKey = CacheService.generateKey('llm:review', config.modelName, String(temperature), systemPrompt, userContent);
+    // ★ LLM 响应缓存：基于文档ID+chunkIndex，避免相同文档片段重复调用 API
+    const chunkIdx = options?.positionInfo?.chunkIndex ?? 0;
+    const docId = options?.documentId || 'unknown';
+    const llmCacheKey = CacheService.generateKey('llm:review', docId, String(chunkIdx), config.modelName, String(temperature));
     const LLM_CACHE_TTL = 24 * 3600; // 24 小时
     const cachedContent = CacheService.get<string>(llmCacheKey);
     if (cachedContent !== null) {

@@ -53,6 +53,8 @@ export interface RAGReviewOptions {
   llmTimeout?: number;
   /** 审查场景（对应 PromptTemplate module），默认 library_review */
   scene?: string;
+  /** 文档ID，用于LLM缓存键 */
+  documentId?: string;
 }
 
 // ==================== RAG 检索服务 ====================
@@ -258,6 +260,7 @@ export class RAGService {
           timeout: llmTimeout,
           systemPrompt: systemPrompt,
           skipUserTemplate: true,
+          documentId: options?.documentId,
           positionInfo: {
             chunkIndex: chunk.chunkIndex,
             chunkStartIndex: chunk.startIndex,
