@@ -30,7 +30,7 @@ export interface CacheItem<T = any> {
 export class CacheService {
   private static store = new Map<string, CacheItem>();
   private static defaultTTL = 300;
-  private static maxSize = 1000;
+  private static maxSize = 5000; // 从 1000 增至 5000，容纳 LLM 响应缓存
   private static stats = {
     hits: 0,
     misses: 0,

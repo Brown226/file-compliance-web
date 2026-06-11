@@ -78,9 +78,8 @@ export class RAGService {
     const similarity = options?.similarity ?? 0.3;
     const searchMode = options?.searchMode || 'blend';
 
-    // 缓存键：基于查询内容和参数
-    const queryHash = queryText.length > 100 ? queryText.substring(0, 100) : queryText;
-    const cacheKey = `rag:retrieve:${knowledgeId}:${searchMode}:${topNumber}:${queryHash}`;
+    // 缓存键：基于查询内容的完整哈希（不再截断，提高缓存命中率）
+    const cacheKey = CacheService.generateKey('rag:retrieve', knowledgeId, searchMode, String(topNumber), queryText);
     const CACHE_TTL = 5 * 60 * 1000; // 5分钟缓存
 
     // 检查缓存

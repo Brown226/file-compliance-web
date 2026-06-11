@@ -551,6 +551,18 @@ export class AiReviewService {
           : '## 参照文件（权威基准）\n\n${refTexts}\n\n---\n\n## 待审文件（被审查对象）\n\n${text}\n\n---\n\n请按照系统指令中的四层审查策略，逐项核对。输出 JSON 数组。',
       );
 
+      // ★ 批量预嵌入所有审查分片（避免逐片调用 Embedding API，从 N 次降为 1 次）
+      let chunkVectors: number[][] | null = null;
+      if (!useFullRefs && refChunks && refVectors) {
+        try {
+          const allChunkTexts = chunks.map(c => c.text);
+          chunkVectors = await EmbeddingService.embedTexts(allChunkTexts);
+          console.log(`[AiReview] 批量嵌入 ${chunks.length} 个审查分片完成`);
+        } catch (e: any) {
+          console.warn(`[AiReview] 批量嵌入失败，降级为逐片嵌入: ${e.message}`);
+        }
+      }
+
       // 并行处理分片（限流并发，加速以文审文）
       const CONCURRENT_LIMIT = 2; // 降低并发，避免触发 API 限流
       const chunkResults = await parallelLimit(chunks, CONCURRENT_LIMIT, async (chunk) => {
@@ -560,9 +572,9 @@ export class AiReviewService {
           if (useFullRefs || !refChunks || !refVectors) {
             effectiveRefTexts = refTextsJoined;
           } else {
-            // 向量检索: 嵌入当前待审分片 → 计算余弦相似度 → 取 Top-5 参照段落
+            // 向量检索: 使用预嵌入的向量 → 计算余弦相似度 → 取 Top-5 参照段落
             try {
-              const chunkVec = await EmbeddingService.embedText(chunk.text);
+              const chunkVec = chunkVectors ? chunkVectors[chunk.chunkIndex] : await EmbeddingService.embedText(chunk.text);
 
               const scored = refChunks.map((rc, i) => {
                 const rv = refVectors![i];

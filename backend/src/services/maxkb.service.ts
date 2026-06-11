@@ -54,6 +54,8 @@ export interface MaxKBDocument {
 
 export class MaxKBService {
   private static tokenCache: { token: string; expires: number } | null = null;
+  private static workspaceCache: { data: any[]; expires: number } | null = null;
+  private static readonly WORKSPACE_CACHE_TTL = 30 * 60 * 1000; // 30 分钟
 
   /**
    * 获取 MaxKB 配置（从数据库或默认值）
@@ -184,11 +186,16 @@ export class MaxKBService {
   // ==================== 工作空间 ====================
 
   /**
-   * 获取工作空间列表
+   * 获取工作空间列表（缓存 30 分钟，避免每次 RAG 检索都请求 MaxKB）
    */
   static async getWorkspaces(): Promise<any[]> {
+    if (this.workspaceCache && Date.now() < this.workspaceCache.expires) {
+      return this.workspaceCache.data;
+    }
     const profile = await this.adminRequest('GET', '/user/profile');
-    return profile?.workspace_list || [];
+    const list = profile?.workspace_list || [];
+    this.workspaceCache = { data: list, expires: Date.now() + this.WORKSPACE_CACHE_TTL };
+    return list;
   }
 
   /**

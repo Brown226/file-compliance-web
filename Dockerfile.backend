@@ -6,15 +6,11 @@
 # ============================================
 # 阶段1: 构建阶段（安装全量依赖，生成 Prisma Client）
 # ============================================
-FROM node:20-bullseye AS prisma-builder
+FROM node:20-alpine AS prisma-builder
 
 WORKDIR /app
 
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    openssl \
-    ca-certificates \
-    wget \
-    && rm -rf /var/lib/apt/lists/*
+RUN apk add --no-cache openssl ca-certificates wget
 
 # 复制 package 文件并安装全量依赖（用于 build + prisma generate）
 COPY backend/package*.json ./
@@ -27,14 +23,11 @@ RUN npx -p prisma@5.22.0 prisma generate
 # ============================================
 # 阶段2: 运行阶段（仅生产依赖）
 # ============================================
-FROM node:20-bullseye
+FROM node:20-alpine
 
 WORKDIR /app
 
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    openssl \
-    ca-certificates \
-    && rm -rf /var/lib/apt/lists/*
+RUN apk add --no-cache openssl ca-certificates
 
 # 仅安装生产依赖，避免 devDependencies 膨胀镜像
 COPY backend/package*.json ./

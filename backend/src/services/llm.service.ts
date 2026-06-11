@@ -8,6 +8,7 @@
 import prisma from '../config/db';
 import { PromptTemplateService } from './prompt-template.service';
 import { PromptLoader } from './prompts';
+import { CacheService } from './cache.service';
 
 export interface SourceReference {
   content: string;        // MaxKB 检索到的知识库片段原文
@@ -762,6 +763,36 @@ export class LlmService {
       temperature,
     };
 
+    // ★ LLM 响应缓存：相同 prompt+model+temperature 命中缓存，避免重复 API 调用
+    const llmCacheKey = CacheService.generateKey('llm:review', config.modelName, String(temperature), systemPrompt, userContent);
+    const LLM_CACHE_TTL = 24 * 3600; // 24 小时
+    const cachedContent = CacheService.get<string>(llmCacheKey);
+    if (cachedContent !== null) {
+      console.log(`[LLM] reviewText 缓存命中 (${cachedContent.length}字)`);
+      const issues = this.parseReviewResult(cachedContent);
+      if (options?.positionInfo && issues.length > 0) {
+        const { chunkIndex, chunkStartIndex, totalChunks } = options.positionInfo;
+        return issues.map(issue => {
+          const offsetInChunk = text.indexOf(issue.originalText);
+          const absoluteStart = offsetInChunk >= 0 ? chunkStartIndex + offsetInChunk : chunkStartIndex;
+          const absoluteEnd = offsetInChunk >= 0 ? absoluteStart + issue.originalText.length : Math.min(chunkStartIndex + text.length, absoluteStart + 40);
+          return {
+            ...issue,
+            textPosition: { chunkIndex, charOffset: absoluteStart, totalChunks },
+            locateMeta: {
+              version: 2, mode: 'text',
+              confidence: offsetInChunk >= 0 ? 'exact' : 'fallback',
+              absolute: { start: absoluteStart, end: absoluteEnd },
+              quote: { text: issue.originalText || text.slice(Math.max(0, absoluteStart - chunkStartIndex), Math.max(0, absoluteEnd - chunkStartIndex)), normalizedText: this.normalizeForLocate(issue.originalText || text.slice(Math.max(0, absoluteStart - chunkStartIndex), Math.max(0, absoluteEnd - chunkStartIndex))) },
+              context: { prefix: text.slice(Math.max(0, absoluteStart - chunkStartIndex - 30), Math.max(0, absoluteStart - chunkStartIndex)), suffix: text.slice(Math.max(0, absoluteEnd - chunkStartIndex), Math.min(text.length, absoluteEnd - chunkStartIndex + 30)) },
+              chunk: { index: chunkIndex, start: chunkStartIndex, end: chunkStartIndex + text.length, total: totalChunks },
+            },
+          };
+        });
+      }
+      return issues;
+    }
+
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
 
@@ -783,6 +814,11 @@ export class LlmService {
 
       const data = await response.json() as any;
       const content = data.choices?.[0]?.message?.content || '';
+
+      // ★ 缓存 LLM 原始响应（不含位置信息，位置信息每次实时计算）
+      CacheService.set(llmCacheKey, content, LLM_CACHE_TTL);
+      console.log(`[LLM] reviewText 已缓存响应 (${content.length}字)`);
+
       const issues = this.parseReviewResult(content);
 
       // 为每个 issue 添加位置信息
@@ -966,6 +1002,15 @@ export class LlmService {
       temperature,
     };
 
+    // ★ LLM chat 响应缓存
+    const chatCacheKey = CacheService.generateKey('llm:chat', config.modelName, String(temperature), systemPrompt, prompt);
+    const CHAT_CACHE_TTL = 24 * 3600;
+    const cachedChat = CacheService.get<string>(chatCacheKey);
+    if (cachedChat !== null) {
+      console.log(`[LLM] chat 缓存命中 (${cachedChat.length}字)`);
+      return cachedChat;
+    }
+
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
 
@@ -986,7 +1031,12 @@ export class LlmService {
       }
 
       const data = await response.json() as any;
-      return data.choices?.[0]?.message?.content || '';
+      const result = data.choices?.[0]?.message?.content || '';
+
+      // ★ 缓存 chat 响应
+      CacheService.set(chatCacheKey, result, CHAT_CACHE_TTL);
+
+      return result;
     } finally {
       clearTimeout(timeoutId);
     }
