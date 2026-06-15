@@ -23,7 +23,19 @@
         <div class="form-group-title">性能设置</div>
         <el-form-item label="全局并发上限">
           <el-input-number v-model="basicSettings.globalConcurrencyLimit" :min="1" :max="20" />
-          <div class="form-tip">同时处理的审查任务总数上限，超出的任务进入排队。</div>
+          <div class="form-tip">同时运行的审查任务总数上限，超出的任务进入排队等待。</div>
+        </el-form-item>
+        <el-form-item label="任务队列并发数">
+          <el-input-number v-model="basicSettings.queueConcurrency" :min="1" :max="10" />
+          <div class="form-tip">同时从队列取出处理的任务数，建议不超过 CPU 核心数。</div>
+        </el-form-item>
+        <el-form-item label="每用户文件并发数">
+          <el-input-number v-model="basicSettings.maxConcurrentReviews" :min="1" :max="10" />
+          <div class="form-tip">单个用户同时进入 AI 审查阶段的文件数。</div>
+        </el-form-item>
+        <el-form-item label="LLM 分片并发数">
+          <el-input-number v-model="basicSettings.chunkConcurrency" :min="1" :max="5" />
+          <div class="form-tip">单个文件内同时调用 LLM API 的分片数，过高可能触发 API 限流。</div>
         </el-form-item>
         <el-form-item>
           <el-button type="primary" @click="handleSaveBasicSettings" :loading="basicSettingsSaving">保存设置</el-button>
@@ -79,6 +91,9 @@ const basicSettings = reactive({
   maxUploadSizeMB: 100,
   autoCleanupDays: 0,
   globalConcurrencyLimit: 5,
+  queueConcurrency: 3,
+  maxConcurrentReviews: 3,
+  chunkConcurrency: 2,
 })
 
 const serviceStatuses = ref<Array<{ name: string; reachable: boolean; error?: string }>>([])
@@ -107,6 +122,9 @@ const loadBasicSettings = async () => {
       if (v.maxUploadSizeMB) basicSettings.maxUploadSizeMB = v.maxUploadSizeMB
       if (v.autoCleanupDays != null) basicSettings.autoCleanupDays = v.autoCleanupDays
       if (v.globalConcurrencyLimit) basicSettings.globalConcurrencyLimit = v.globalConcurrencyLimit
+      if (v.queueConcurrency) basicSettings.queueConcurrency = v.queueConcurrency
+      if (v.maxConcurrentReviews) basicSettings.maxConcurrentReviews = v.maxConcurrentReviews
+      if (v.chunkConcurrency) basicSettings.chunkConcurrency = v.chunkConcurrency
     }
   } catch {}
 }

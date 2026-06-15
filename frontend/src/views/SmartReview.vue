@@ -22,8 +22,8 @@
       <div class="flow-section flow-section--config">
         <div class="review-items-section">
           <div class="review-item-config">
-            <!-- 目标选择 -->
-            <div v-if="showObjectiveSelector" class="config-section">
+            <!-- 目标选择（合同审查模式隐藏，锁定为 COMPARE） -->
+            <div v-if="showObjectiveSelector && entryModule !== 'CONTRACT'" class="config-section">
               <div class="config-section-label">审查目标</div>
               <div class="objective-cards">
                 <div v-for="option in objectiveOptions" :key="option.value" class="selectable-card" :class="{ 'selectable-card--active': (reviewPlanDraft?.objective ?? '') === option.value }" @click="reviewPlanDraft.objective = option.value as any" tabindex="0">
@@ -33,6 +33,16 @@
                     <div class="selectable-card__desc">{{ option.desc }}</div>
                   </div>
                 </div>
+              </div>
+            </div>
+
+            <!-- 合同审查：显示锁定的审查目标 -->
+            <div v-if="entryModule === 'CONTRACT'" class="config-section">
+              <div class="config-section-label">审查目标</div>
+              <div class="locked-objective">
+                <el-icon :size="16"><Stamp /></el-icon>
+                <span>合同风险比对</span>
+                <el-tag size="small" type="info" effect="plain">已锁定</el-tag>
               </div>
             </div>
 
@@ -60,8 +70,8 @@
               </div>
             </template>
 
-            <!-- 其他模式：证据源 -->
-            <template v-else-if="showEvidenceSection && entryModule !== 'DOC_REVIEW'">
+            <!-- 其他模式：证据源（合同审查隐藏，改为独立知识库入口） -->
+            <template v-else-if="showEvidenceSection && entryModule !== 'DOC_REVIEW' && entryModule !== 'CONTRACT'">
               <div class="config-section">
                 <div class="config-section-label">审查依据</div>
                 <div class="evidence-cards">
@@ -107,8 +117,27 @@
                   </div>
                 </div>
               </div>
-              <div v-if="entryModule==='CONTRACT'&&reviewPlanDraft?.objective==='COMPARE'" class="config-reason config-reason--info" style="margin-top: 8px;">
-                <el-icon><InfoFilled /></el-icon> 合同审查需要上传合同模板作为参照，系统将对比待审合同与模板的差异。
+              <div class="config-reason config-reason--info" style="margin-top: 8px;">
+                <el-icon><InfoFilled /></el-icon> 系统将从所选立场出发，重点识别对该方不利的风险条款。
+              </div>
+              <div v-if="reviewPlanDraft?.objective==='COMPARE'" class="config-reason config-reason--info" style="margin-top: 4px;">
+                <el-icon><InfoFilled /></el-icon> 上传合同模板可进行模板比对审查；不上传则基于通用合同知识进行纯风险扫描。
+              </div>
+            </div>
+
+            <!-- 合同审查专用：知识库选择（可选增强） -->
+            <div v-if="entryModule==='CONTRACT'" class="config-section">
+              <div class="config-section-label">知识库 <el-tag size="small" type="info" effect="plain" style="margin-left: 4px;">可选增强</el-tag></div>
+              <div class="selected-items-display" style="margin-top: 0;">
+                <div class="selected-items-header">
+                  <span>{{ (reviewPlanDraft?.evidence?.maxkbKnowledgeIds??[]).length > 0 ? `已选 ${reviewPlanDraft.evidence.maxkbKnowledgeIds.length} 个知识库` : '选择相关知识库增强审查准确性' }}</span>
+                  <el-button size="small" @click="openMaxKBDialog"><el-icon><Plus /></el-icon>添加</el-button>
+                </div>
+                <div v-if="(reviewPlanDraft?.evidence?.maxkbKnowledgeIds??[]).length>0" class="selected-items-tags">
+                  <el-tag v-for="id in (reviewPlanDraft?.evidence?.maxkbKnowledgeIds??[])" :key="id" closable type="primary" effect="plain" size="small" @close="removeMaxKBKnowledge(id)">
+                    <el-icon style="margin-right:4px"><Document /></el-icon>{{ getMaxKBKnowledgeName(id) }}
+                  </el-tag>
+                </div>
               </div>
             </div>
 
@@ -119,7 +148,7 @@
         <div class="submit-bar">
           <el-button type="primary" size="large" :disabled="!canSubmit" @click="startAnalysis" class="submit-btn">
             <el-icon><MagicStick /></el-icon>
-            {{ fileList.length > 0 ? '开始分析' : '请先上传文件' }}
+            {{ fileList.length > 0 ? (entryModule === 'CONTRACT' ? '开始合同风险审查' : '开始分析') : '请先上传文件' }}
           </el-button>
         </div>
       </div>
@@ -318,6 +347,7 @@ onMounted(async () => {
 
 /* ---- 目标选择 ---- */
 .objective-cards { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.locked-objective { display: flex; align-items: center; gap: 8px; padding: 10px 14px; background: #F8FAFC; border: 1px solid #E2E8F0; border-radius: 8px; font-size: 13px; font-weight: 600; color: #475569; }
 
 /* ---- 证据源 ---- */
 .evidence-cards { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; }

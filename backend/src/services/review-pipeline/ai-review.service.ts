@@ -9,6 +9,7 @@ import { PipelineContext, PipelineReviewConfig, getModeScene } from './types';
 import { ReviewIssue, SourceReference, LlmService } from '../llm.service';
 import { RAGService } from '../rag.service';
 import { MaxKBService } from '../maxkb.service';
+import { getChunkConcurrency } from '../../utils/system-config';
 
 import { PromptTemplateService } from '../prompt-template.service';
 import { PromptLoader } from '../prompts';
@@ -120,7 +121,7 @@ export class AiReviewService {
     }
 
     // ���д�����Ƭ���������������� AI ��飩
-    const CONCURRENT_LIMIT = 2; // ���Ͳ��������ⴥ�� API ����
+    const CONCURRENT_LIMIT = await getChunkConcurrency();
     const chunkResults = await parallelLimit(chunks, CONCURRENT_LIMIT, async (chunk, idx) => {
       try {
         let llmIssues: ReviewIssue[];
@@ -260,7 +261,7 @@ export class AiReviewService {
 
       const chunks = LlmService.splitText(text, chunkSize, true);
       const totalChunks = chunks.length;
-      const CONCURRENT_LIMIT = 2; // ���Ͳ��������ⴥ�� API ����
+      const CONCURRENT_LIMIT = await getChunkConcurrency();
       const chunkResults = await parallelLimit(chunks, CONCURRENT_LIMIT, async (chunk) => {
         try {
           const userContent = userTpl.replace(/\$\{text\}/g, chunk.text);
@@ -332,7 +333,7 @@ export class AiReviewService {
 
       const chunks = LlmService.splitText(text, chunkSize, true);
       const totalChunks = chunks.length;
-      const CONCURRENT_LIMIT = 2; // ���Ͳ��������ⴥ�� API ����
+      const CONCURRENT_LIMIT = await getChunkConcurrency();
       const chunkResults = await parallelLimit(chunks, CONCURRENT_LIMIT, async (chunk) => {
         try {
           let userTpl = await PromptLoader.loadUserPrompt(scene, 'default');
@@ -461,9 +462,7 @@ export class AiReviewService {
         scene, 'system', 'default',
         '���Ǻ˵繤���ļ��Ϲ����ר�ҡ��밴������������˶Դ����ļ��Ƿ�������ļ���ȫһ�¡��ϸ��� JSON �����ʽ����������',
       );
-      // ��ͬ�������ע��
-      const stanceLabel = ctx.contractStance === 'contractor' ? '�а���' : 'ҵ��/���跽';
-      const finalSystemPrompt = AiReviewService.injectSemanticContext(systemPrompt, ctx).replace(/\$\{stance\}/g, stanceLabel);
+      const finalSystemPrompt = AiReviewService.injectSemanticContext(systemPrompt, ctx);
       const actualSystemPromptLen = finalSystemPrompt.length;
 
       // ���ò��տռ� = ������ - ��� - ϵͳ��ʾ�� - �����Ƭ - ��ȫԣ�� - userPrompt ģ�忪��
@@ -520,40 +519,13 @@ export class AiReviewService {
         }
       }
 
-      // ֪ʶ�� RAG ��������ѡ��ǿ��
-      let ragContext = '';
-      const knowledgeIds = ctx.maxkbKnowledgeIds && ctx.maxkbKnowledgeIds.length > 0
-        ? ctx.maxkbKnowledgeIds
-        : ctx.maxkbKnowledgeId
-          ? [ctx.maxkbKnowledgeId]
-          : [];
+      // 以文审文不使用知识库 RAG
+      const ragContext = '';
 
-      if (knowledgeIds.length > 0 && scene === 'contract_review') {
-        try {
-          const { MaxKBService } = await import('../maxkb.service');
-          const kbContexts: string[] = [];
-          for (const kbId of knowledgeIds.slice(0, 3)) {  // ���3��֪ʶ��
-            const kbContext = await MaxKBService.getKnowledgeParagraphs(kbId, {
-              maxParagraphs: 10,
-              maxChars: 5000,
-            });
-            if (kbContext) kbContexts.push(kbContext);
-          }
-          if (kbContexts.length > 0) {
-            ragContext = kbContexts.join('\n\n---\n\n');
-          }
-        } catch (e: any) {
-          console.warn(`[AiReview] ��ͬ��� RAG ����ʧ��:`, e.message);
-        }
-      }
-
-      // Ԥ�����û���ʾ��ģ�壨�����Ƿ��� RAG ������ѡ�� variant��
-      const userPromptVariant = ragContext ? 'comparison_with_rag' : 'comparison';
+      // 预加载用户提示词模板（以文审文只用 comparison variant）
       const userContentTpl = await PromptTemplateService.getPromptByScene(
-        scene, 'user', userPromptVariant,
-        ragContext
-          ? '## �����ļ���Ȩ����׼��\n\n${refTexts}\n\n---\n\n## ��ҵ֪ʶ��ο�\n\n${ragContext}\n\n---\n\n## �����ļ�����������\n\n${text}\n\n---\n\n�밴��ϵͳָ���е������ԣ�����˶ԡ���� JSON ���顣'
-          : '## �����ļ���Ȩ����׼��\n\n${refTexts}\n\n---\n\n## �����ļ�����������\n\n${text}\n\n---\n\n�밴��ϵͳָ���е��Ĳ������ԣ�����˶ԡ���� JSON ���顣',
+        scene, 'user', 'comparison',
+        '## 参照文件（权威基准）\n\n${refTexts}\n\n---\n\n## 待审文件（被审查对象）\n\n${text}\n\n---\n\n请按系统指令中的审查策略，逐项比对。输出 JSON 数组。',
       );
 
       // �� ����ԤǶ����������Ƭ��������Ƭ���� Embedding API���� N �ν�Ϊ 1 �Σ�
@@ -569,7 +541,7 @@ export class AiReviewService {
       }
 
       // ���д�����Ƭ�����������������������ģ�
-      const CONCURRENT_LIMIT = 2; // ���Ͳ��������ⴥ�� API ����
+      const CONCURRENT_LIMIT = await getChunkConcurrency();
       const chunkResults = await parallelLimit(chunks, CONCURRENT_LIMIT, async (chunk) => {
         try {
           let effectiveRefTexts: string;
@@ -613,14 +585,9 @@ export class AiReviewService {
             }
           }
 
-          // ��ͬ���������Ĭ��ҵ��/���跽
-          const stanceLabel = ctx.contractStance === 'contractor' ? '�а���' : 'ҵ��/���跽';
-
           const userContent = userContentTpl
             .replace(/\$\{refTexts\}/g, effectiveRefTexts)
-            .replace(/\$\{ragContext\}/g, ragContext)
-            .replace(/\$\{text\}/g, chunk.text)
-            .replace(/\$\{stance\}/g, stanceLabel);
+            .replace(/\$\{text\}/g, chunk.text);
 
           const issues = await LlmService.reviewText(userContent, {
             maxTokens: llmMaxTokens,
@@ -688,7 +655,267 @@ export class AiReviewService {
     }
   }
 
-  // ==================== �ڲ��������� ====================
+  // ==================== 合同风险审查独立策略 ====================
+
+  /**
+   * 合同风险审查策略（完全独立，不复用 runRefCompareStrategy）
+   *
+   * 与以文审文的核心区别：
+   * 1. 立场驱动：必须注入 stance（业主/承包商），审查视角完全不同
+   * 2. 可选参照文件：允许无参照文件的纯风险扫描
+   * 3. 可选知识库 RAG：scene === 'contract_review' 时拉取 MaxKB 知识库
+   * 4. 独立 prompt 模板：使用 contract_review 场景的 system/user prompt
+   * 5. 独立结果解析：输出 riskLevel + clauseType + recommendation
+   */
+  static async runContractReviewStrategy(
+    text: string,
+    ctx: PipelineContext,
+    config: PipelineReviewConfig,
+  ): Promise<{ issues: ReviewIssue[]; engine: string; sources?: SourceReference[] }> {
+    const scene = 'contract_review';
+    const llmMaxTokens = config.llmMaxTokens || 4096;
+    const llmTimeout = config.llmTimeout || 180;
+    const chunkSize = config.chunkSize || 4000;
+
+    // 立场标签（合同审查必须有立场）
+    const stanceLabel = ctx.contractStance === 'contractor' ? '承包商' : '业主/建设方';
+
+    // ---- 加载参照文件（可选） ----
+    let refTextsJoined = '';
+    let hasRefFiles = false;
+    if (ctx.refFileGroup && ctx.refFileGroup.refFiles.length > 0) {
+      const { TextExtractionService } = await import('./text-extraction.service');
+      const refTexts: string[] = [];
+      for (const refFile of ctx.refFileGroup.refFiles) {
+        let refContent = refFile.extractedText || null;
+        if (!refContent) {
+          try {
+            refContent = await TextExtractionService.extractFileText(refFile.filePath, refFile.fileType, refFile.fileName);
+          } catch (e) {
+            console.warn(`[ContractReview] 参照文件解析失败: ${refFile.fileName}`, e);
+          }
+        }
+        if (refContent) {
+          refTexts.push(`【参照文件: ${refFile.fileName}】\n${refContent}`);
+        }
+      }
+      if (refTexts.length > 0) {
+        refTextsJoined = refTexts.join('\n\n---\n\n');
+        hasRefFiles = true;
+      }
+    }
+
+    // ---- 知识库 RAG（可选，仅合同审查场景） ----
+    let ragContext = '';
+    const knowledgeIds = ctx.maxkbKnowledgeIds && ctx.maxkbKnowledgeIds.length > 0
+      ? ctx.maxkbKnowledgeIds
+      : ctx.maxkbKnowledgeId
+        ? [ctx.maxkbKnowledgeId]
+        : [];
+
+    if (knowledgeIds.length > 0) {
+      try {
+        const { MaxKBService } = await import('../maxkb.service');
+        const kbContexts: string[] = [];
+        for (const kbId of knowledgeIds.slice(0, 3)) {
+          const kbContext = await MaxKBService.getKnowledgeParagraphs(kbId, {
+            maxParagraphs: 10,
+            maxChars: 5000,
+          });
+          if (kbContext) kbContexts.push(kbContext);
+        }
+        if (kbContexts.length > 0) {
+          ragContext = kbContexts.join('\n\n---\n\n');
+        }
+      } catch (e: any) {
+        console.warn(`[ContractReview] RAG 知识库拉取失败:`, e.message);
+      }
+    }
+
+    // ---- 加载 prompt ----
+    // 系统提示词：合同审查专家 + 立场注入
+    let systemPrompt = await PromptTemplateService.getPromptByScene(
+      scene, 'system', 'default',
+      `你是核电工程合同审查专家，代表 \${stance} 立场。请识别合同中对该方不利的风险条款、缺失的保护条款、与模板的差异。按风险等级（HIGH/MEDIUM/LOW）输出 JSON 数组。`,
+    );
+    systemPrompt = AiReviewService.injectSemanticContext(systemPrompt, ctx).replace(/\$\{stance\}/g, stanceLabel);
+
+    // 用户提示词：根据有无参照文件和知识库选择 variant
+    let userPromptVariant: string;
+    if (hasRefFiles && ragContext) {
+      userPromptVariant = 'comparison_with_rag';
+    } else if (hasRefFiles) {
+      userPromptVariant = 'comparison';
+    } else if (ragContext) {
+      userPromptVariant = 'with_context';
+    } else {
+      userPromptVariant = 'no_ref';
+    }
+
+    const userContentTpl = await PromptTemplateService.getPromptByScene(
+      scene, 'user', userPromptVariant,
+      hasRefFiles
+        ? '## 合同模板（参照基准）\n\n${refTexts}\n\n---\n\n## 待审合同\n\n${text}\n\n---\n\n请按系统指令中的审查策略，识别风险条款。输出 JSON 数组。'
+        : '## 待审合同\n\n${text}\n\n---\n\n请按系统指令中的审查策略，识别风险条款。输出 JSON 数组。',
+    );
+
+    // ---- 参照文件超长时的 Embedding 智能检索 ----
+    let refChunks: string[] | null = null;
+    let refVectors: number[][] | null = null;
+    if (hasRefFiles) {
+      // 动态计算上下文窗口
+      let contextWindow = 131072;
+      try {
+        const { default: prisma } = await import('../../config/db');
+        const llmCfg = await prisma.systemConfig.findUnique({ where: { key: 'llm_chat_model' } });
+        if (llmCfg?.value && typeof llmCfg.value === 'object') {
+          const v = llmCfg.value as any;
+          if (typeof v.contextLength === 'number' && v.contextLength > 0) {
+            contextWindow = v.contextLength;
+          }
+        }
+      } catch (e) { /* 用默认值 */ }
+
+      const outputBudget = llmMaxTokens * 3.5;
+      const safetyMargin = 4000;
+      const maxRefChars = contextWindow - outputBudget - systemPrompt.length - chunkSize - safetyMargin;
+
+      if (refTextsJoined.length > maxRefChars) {
+        // 参照文件超长，尝试 Embedding 智能检索
+        try {
+          refChunks = [];
+          for (const refText of refTextsJoined.split('\n\n---\n\n')) {
+            const paras = refText.split('\n').reduce((acc: string[], line: string) => {
+              if (!line.trim()) { acc.push(''); return acc; }
+              const last = acc.length > 0 ? acc[acc.length - 1] : '';
+              if (last.length + line.length < 1500) {
+                acc[acc.length - 1] = last + '\n' + line;
+              } else {
+                acc.push(line);
+              }
+              return acc;
+            }, ['']);
+            refChunks.push(...paras.filter((p: string) => p.length >= 50));
+          }
+          if (refChunks.length > 0) {
+            refVectors = await EmbeddingService.embedTexts(refChunks);
+          }
+        } catch (e: any) {
+          console.warn(`[ContractReview] 参照文件 Embedding 失败，降级截断: ${e.message}`);
+          refChunks = null;
+          refVectors = null;
+          refTextsJoined = refTextsJoined.substring(0, Math.floor(maxRefChars));
+        }
+      }
+    }
+
+    // ---- 分片处理 ----
+    const chunks = LlmService.splitText(text, chunkSize, true);
+    const totalChunks = chunks.length;
+    const allIssues: ReviewIssue[] = [];
+    let failedChunks = 0;
+    const errors: string[] = [];
+
+    // 预计算待审分片的 Embedding（仅在需要 Embedding 检索参照文件时）
+    let chunkVectors: number[][] | null = null;
+    if (refChunks && refVectors) {
+      try {
+        const allChunkTexts = chunks.map(c => c.text);
+        chunkVectors = await EmbeddingService.embedTexts(allChunkTexts);
+      } catch (e: any) {
+        console.warn(`[ContractReview] 待审分片 Embedding 失败: ${e.message}`);
+      }
+    }
+
+    const CONCURRENT_LIMIT = await getChunkConcurrency();
+    const chunkResults = await parallelLimit(chunks, CONCURRENT_LIMIT, async (chunk) => {
+      try {
+        // 构建参照文本（如有）
+        let effectiveRefTexts = refTextsJoined;
+        if (refChunks && refVectors && chunkVectors) {
+          try {
+            const chunkVec = chunkVectors[chunk.chunkIndex];
+            const scored = refChunks.map((rc, i) => {
+              const rv = refVectors![i];
+              let dot = 0, na = 0, nb = 0;
+              for (let j = 0; j < rv.length; j++) {
+                dot += chunkVec[j] * rv[j];
+                na += chunkVec[j] * chunkVec[j];
+                nb += rv[j] * rv[j];
+              }
+              const sim = dot / (Math.sqrt(na) * Math.sqrt(nb) + 1e-10);
+              return { chunk: rc, sim };
+            });
+            scored.sort((a, b) => b.sim - a.sim);
+            const selected = new Map<number, string>();
+            for (const s of scored.slice(0, Math.min(5, scored.length))) {
+              const idx = refChunks.indexOf(s.chunk);
+              if (idx >= 0 && !selected.has(idx)) selected.set(idx, s.chunk);
+            }
+            effectiveRefTexts = Array.from(selected.entries())
+              .sort(([a], [b]) => a - b)
+              .map(([, c]) => c)
+              .join('\n\n---\n\n');
+          } catch (e: any) {
+            console.warn(`[ContractReview] 分片${chunk.chunkIndex + 1} Embedding 检索失败: ${e.message}`);
+          }
+        }
+
+        // 构建 userContent
+        const userContent = userContentTpl
+          .replace(/\$\{refTexts\}/g, effectiveRefTexts)
+          .replace(/\$\{ragContext\}/g, ragContext)
+          .replace(/\$\{text\}/g, chunk.text)
+          .replace(/\$\{stance\}/g, stanceLabel);
+
+        const issues = await LlmService.reviewText(userContent, {
+          maxTokens: llmMaxTokens,
+          timeout: llmTimeout,
+          systemPrompt,
+          skipUserTemplate: true,
+          documentId: ctx.fileId,
+          positionInfo: {
+            chunkIndex: chunk.chunkIndex,
+            chunkStartIndex: chunk.startIndex,
+            totalChunks,
+          },
+        });
+
+        ctx.onChunkProgress?.(chunk.text.length, issues, chunk.chunkIndex, totalChunks, 'contract-review');
+        return { issues, failed: false };
+      } catch (e: any) {
+        console.warn(`[ContractReview] 分片 ${chunk.chunkIndex + 1}/${totalChunks} 审查失败:`, e.message);
+        return { issues: [], failed: true, error: e.message };
+      }
+    });
+
+    for (const r of chunkResults) {
+      allIssues.push(...r.issues);
+      if (r.failed) failedChunks++;
+      if (r.error) errors.push(r.error);
+    }
+
+    if (failedChunks === totalChunks && totalChunks > 0) {
+      throw new Error(`合同审查 ${totalChunks} 个分片全部失败: ${errors[0]}`);
+    }
+
+    // ---- 结果过滤 ----
+    const filtered = allIssues.filter(issue => {
+      const desc = (issue.description || '').trim();
+      const orig = (issue.originalText || '').trim();
+      const sug = (issue.suggestedText || '').trim();
+      if (orig && sug && orig === sug) return false;
+      if (/(?:参照文件\s*)?一致\s*[，,]?\s*无问题/.test(desc)) return false;
+      if (/没有\s*[发现].*一致\s*[，,]?\s*无问题/.test(desc)) return false;
+      if (/^(?:无|没有)(?:发现|问题|不一致)/.test(desc)) return false;
+      if (desc.length > 200 && /一致/.test(desc) && !/不一致/.test(desc)) return false;
+      return true;
+    });
+
+    return { issues: filtered, engine: 'contract-review' };
+  }
+
+  // ==================== 内部辅助方法 ====================
 
   /**
    * ������淶����Ŀ��ʽ��Ϊ AI ��ʾ�������ģ��� DB ģ�����������ģ�壩
@@ -856,7 +1083,7 @@ export class AiReviewService {
     const allIssues: ReviewIssue[] = [];
 
     // ��������������Ƭ
-    const CONCURRENT_LIMIT = 2; // ���Ͳ��������� API ����
+    const CONCURRENT_LIMIT = await getChunkConcurrency();
     const chunkResults = await parallelLimit(chunks, CONCURRENT_LIMIT, async (chunk) => {
       try {
         const userContent = userTpl.replace(/\$\{text\}/g, chunk.text);

@@ -19,6 +19,7 @@ import { TaskService } from './task.service';
 import { DwgHandlerService } from './dwg-handler.service';
 import { StandardRefCheckService } from './review-pipeline/standard-ref-check.service';
 import { getModeCapabilitiesConfig } from './review-pipeline/mode-config.service';
+import { getMaxConcurrentReviews } from '../utils/system-config';
 
 /**
  * 审查编排服务 - 两阶段分批并发编排
@@ -533,8 +534,8 @@ export class ReviewService {
       );
       const fastPhaseResults = await Promise.all(fastPhasePromises);
 
-      // 获取阶段2的并发限制（默认 3，AI审查耗资源，需要限流）
-      const maxConcurrent = pipelineConfig.maxConcurrentReviews || 3;
+      // 获取阶段2的并发限制（从 basic_settings 读取，默认 3）
+      const maxConcurrent = await getMaxConcurrentReviews();
 
       // ===== 批量入库: 阶段1结果 =====
       let fastSuccessCount = 0;

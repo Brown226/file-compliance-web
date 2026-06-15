@@ -29,6 +29,7 @@ const evidenceLabelMap: Record<string, string> = {
 const reviewModeLabelMap: Record<string, string> = {
   LIBRARY_REVIEW: '以库审文',
   DOC_REVIEW: '以文审文',
+  CONTRACT_REVIEW: '合同风险审查',
   TYPO_GRAMMAR: '基础校对',
   MULTIMODAL: '结构化审查',
   SELF_CHECK: '标准引用自检',

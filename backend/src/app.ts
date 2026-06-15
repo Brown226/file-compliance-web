@@ -35,7 +35,7 @@ import './services/scheduler.service';
 
 // 异步任务队列（Bull/Redis）
 import { initQueueProcessors, closeQueue } from './services/queue.service';
-initQueueProcessors();
+initQueueProcessors().catch(e => console.error('[Queue] 初始化失败:', e));
 
 
 const app: Express = express();

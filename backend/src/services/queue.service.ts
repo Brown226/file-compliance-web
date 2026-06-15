@@ -7,6 +7,7 @@ import Bull from 'bull';
 import { env } from '../config/env';
 import { ReviewService } from './review.service';
 import prisma from '../config/db';
+import { getQueueConcurrency } from '../utils/system-config';
 
 export interface ReviewJobData {
   taskId: string;
@@ -24,9 +25,11 @@ export const reviewQueue = new Bull<ReviewJobData>('review', env.redisUrl, {
 });
 
 /** 初始化队列处理器（仅在主进程中调用一次） */
-export function initQueueProcessors(): void {
+export async function initQueueProcessors(): Promise<void> {
   // ── 审查队列处理器 ──
-  reviewQueue.process('review', 3, async (job) => {  // 并发从5降到3，减少同时运行的审查任务
+  const queueConcurrency = await getQueueConcurrency();
+  console.log(`[Queue] 队列并发数: ${queueConcurrency}`);
+  reviewQueue.process('review', queueConcurrency, async (job) => {
     const { taskId } = job.data;
     console.log(`[Queue] 开始处理审查任务: ${taskId} (attempt ${job.attemptsMade + 1})`);
 

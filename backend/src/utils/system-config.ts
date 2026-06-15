@@ -25,6 +25,27 @@ export async function getMaxUploadSizeMB(): Promise<number> {
   return (typeof v === 'number' && v > 0) ? v : 100;
 }
 
+/** Bull 队列并发数：同时从队列取出处理的审查任务数 */
+export async function getQueueConcurrency(): Promise<number> {
+  const s = await getBasicSettings();
+  const v = s.queueConcurrency;
+  return (typeof v === 'number' && v > 0 && v <= 20) ? v : 3;
+}
+
+/** 每用户文件并发数：单用户同时进入 AI 审查阶段的文件数 */
+export async function getMaxConcurrentReviews(): Promise<number> {
+  const s = await getBasicSettings();
+  const v = s.maxConcurrentReviews;
+  return (typeof v === 'number' && v > 0 && v <= 10) ? v : 3;
+}
+
+/** LLM 分片并发数：单文件内同时调用 LLM API 的 chunk 数 */
+export async function getChunkConcurrency(): Promise<number> {
+  const s = await getBasicSettings();
+  const v = s.chunkConcurrency;
+  return (typeof v === 'number' && v > 0 && v <= 5) ? v : 2;
+}
+
 export function invalidateConfigCache(): void {
   cachedBasicSettings = null;
   cacheTs = 0;

@@ -143,6 +143,15 @@ frontend/README.md
 
 # Bug fix / report markdown files
 BUGFIX-REPORT-*.md
+
+# Temp test scripts and debug artifacts
+backend/ocr-service/test_*.py
+test_mimo*.sh
+embedding.orig.js
+.kunsdd/
+offline-deploy-v6/
+offline-deploy-v6.zip
+test-screenshots/
 BUGFIX-SUMMARY-*.md
 CODEBUDDY.md
 CONTEXT.md

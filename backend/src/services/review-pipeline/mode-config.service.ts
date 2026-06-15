@@ -14,7 +14,7 @@ export interface ModeConfigOverride {
   rules?: boolean;
   standardRef?: boolean;
   ai?: boolean;
-  aiStrategy?: 'standard' | 'llmOnly' | 'refCompare' | 'multimodal';
+  aiStrategy?: 'standard' | 'llmOnly' | 'refCompare' | 'contractReview' | 'multimodal';
   crossFile?: boolean;
 }
 
@@ -28,12 +28,12 @@ const DEFAULT_MODE_CONFIGS: Record<ReviewModeType, {
   rules: boolean;
   standardRef: boolean;
   ai: boolean;
-  aiStrategy: 'standard' | 'llmOnly' | 'refCompare' | 'multimodal';
+  aiStrategy: 'standard' | 'llmOnly' | 'refCompare' | 'contractReview' | 'multimodal';
   crossFile: boolean;
 }> = {
   LIBRARY_REVIEW: { enabled: true, rules: false, standardRef: false, ai: true, aiStrategy: 'standard', crossFile: false },
   DOC_REVIEW:     { enabled: true, rules: false, standardRef: false, ai: true, aiStrategy: 'refCompare', crossFile: false },
-  CONTRACT_REVIEW: { enabled: true, rules: false, standardRef: false, ai: true, aiStrategy: 'refCompare', crossFile: false },
+  CONTRACT_REVIEW: { enabled: true, rules: false, standardRef: false, ai: true, aiStrategy: 'contractReview', crossFile: false },
   CONSISTENCY:    { enabled: true, rules: false, standardRef: false, ai: true, aiStrategy: 'standard', crossFile: true },
   TYPO_GRAMMAR:   { enabled: true, rules: false, standardRef: false, ai: true, aiStrategy: 'llmOnly', crossFile: false },
   MULTIMODAL:     { enabled: true, rules: false, standardRef: false, ai: true, aiStrategy: 'multimodal', crossFile: false },
@@ -47,7 +47,7 @@ export async function getModeCapabilitiesConfig(): Promise<Record<ReviewModeType
   rules: boolean;
   standardRef: boolean;
   ai: boolean;
-  aiStrategy: 'standard' | 'llmOnly' | 'refCompare' | 'multimodal';
+  aiStrategy: 'standard' | 'llmOnly' | 'refCompare' | 'contractReview' | 'multimodal';
   crossFile: boolean;
 }>> {
   // 以默认配置为基底

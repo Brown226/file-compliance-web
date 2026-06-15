@@ -5,7 +5,7 @@
         <p class="hero-tag">AI CONTROL CENTER</p>
         <h2>AI 引擎配置</h2>
         <p>
-          这个页面只管理模型、向量、重排和 OCR 识别能力。提示词模板属于审查策略配置，保留在独立页面维护，避免在同一处重复配置。
+          这个页面只管理模型、向量和 OCR 识别能力。提示词模板属于审查策略配置，保留在独立页面维护，避免在同一处重复配置。
         </p>
       </div>
       <div class="hero-actions">
@@ -66,8 +66,9 @@ const router = useRouter()
 
 const tabs = [
   { key: 'chat', label: '对话模型', short: 'CHAT MODEL', desc: '管理主聊天模型、API 密钥与兼容接口。' },
-  { key: 'embedding', label: 'Embedding 模型', short: 'EMBEDDING', desc: '管理向量化模型，供知识库检索与语义召回使用。' },
-  { key: 'reranker', label: 'Reranker 模型', short: 'RERANKER', desc: '管理重排序模型，优化候选结果排序质量。' },
+  { key: 'embedding', label: 'Embedding 模型', short: 'EMBEDDING', desc: '管理向量化模型，供以文审文的参照文件智能检索使用。' },
+  // Reranker 暂未启用（核心业务未集成），隐藏入口
+  // { key: 'reranker', label: 'Reranker 模型', short: 'RERANKER', desc: '管理重排序模型，优化候选结果排序质量。' },
   { key: 'ocr', label: 'OCR 服务', short: 'OCR SERVICE', desc: '查看 doc-parser 视觉模型 OCR 运行状态。' },
   { key: 'vision', label: '视觉模型配置', short: 'VISION MODEL', desc: '配置视觉大模型用于扫描件 PDF 和图片的文字识别。' },
   { key: 'maxkb', label: 'MaxKB 知识库', short: 'MAXKB', desc: '管理 MaxKB 知识库集成，同步标准规范到向量检索引擎。' },

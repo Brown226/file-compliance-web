@@ -46,6 +46,7 @@
         >
           <el-option label="以库审文" value="LIBRARY_REVIEW" />
           <el-option label="以文审文" value="DOC_REVIEW" />
+          <el-option label="合同风险审查" value="CONTRACT_REVIEW" />
           <el-option label="一致性审查" value="CONSISTENCY" />
           <el-option label="错别字/语法" value="TYPO_GRAMMAR" />
           <!-- <el-option label="结构化审查" value="MULTIMODAL" /> -->

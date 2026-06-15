@@ -85,13 +85,6 @@ router.get('/health', async (_req: Request, res: Response) => {
     encoding_format: 'float',
   }));
 
-  // 7. Reranker 重排序
-  services.push(await checkLlmService('reranker_model', 'Reranker 重排序', '/rerank', {
-    query: 'test',
-    documents: ['test document'],
-    top_n: 1,
-  }));
-
   res.json({ code: 200, data: { services } });
 });
 

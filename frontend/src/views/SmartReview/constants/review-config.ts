@@ -87,6 +87,6 @@ export const CONTRACT_CLAUSE_TYPES = [
 ] as const
 
 export const CONTRACT_STANCES = [
-  { value: 'owner', label: '业主/建设方', desc: '站在核电业主角度审查，关注承包商履约风险' },
-  { value: 'contractor', label: '承包商', desc: '站在承包商角度审查，关注付款和约束风险' },
+  { value: 'owner', label: '业主/建设方', desc: '重点识别承包商履约风险、付款条件不利、违约责任不对等等问题' },
+  { value: 'contractor', label: '承包商', desc: '重点识别付款保障不足、变更索赔受限、工期约束过严等问题' },
 ] as const

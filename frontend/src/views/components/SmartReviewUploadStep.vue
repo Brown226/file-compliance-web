@@ -70,11 +70,11 @@
       <div v-if="entryModule === 'DOC_REVIEW' || entryModule === 'CONTRACT'" class="reference-upload-section">
         <h3 class="section-title">
           <el-icon><Link /></el-icon>
-          {{ entryModule === 'CONTRACT' ? '合同模板（可选）' : '参考文件（用于以文审文）' }}
+          {{ entryModule === 'CONTRACT' ? '合同模板' : '参考文件（用于以文审文）' }}
           <el-tag type="info" size="small">可选</el-tag>
         </h3>
         <p class="section-description">
-          {{ entryModule === 'CONTRACT' ? '上传合同模板作为审查基准，系统将对比待审合同与模板的差异。无模板时仅使用知识库增强审查。' : '上传参考文件作为审查依据，系统将基于参考文件对待审文件进行逐项比对。' }}
+          {{ entryModule === 'CONTRACT' ? '上传合同模板进行比对审查，不上传则基于通用知识纯风险扫描' : '上传参考文件作为审查依据，系统将基于参考文件对待审文件进行逐项比对。' }}
         </p>
         <el-upload
           ref="referenceUploadRef"
@@ -147,7 +147,7 @@ import {
   PictureFilled, Files, Grid,
 } from '@element-plus/icons-vue'
 
-type EntryModule = 'LIBRARY' | 'CONSISTENCY' | 'PROOFREAD' | 'RULE_ONLY' | 'MULTIMODAL' | 'DOC_REVIEW'
+type EntryModule = 'LIBRARY' | 'CONSISTENCY' | 'PROOFREAD' | 'RULE_ONLY' | 'MULTIMODAL' | 'DOC_REVIEW' | 'CONTRACT'
 
 const props = defineProps<{
   fileList: UploadFile[]
@@ -190,6 +190,10 @@ const moduleMeta: Record<string, { title: string; subtitle: string }> = {
   RULE_ONLY: {
     title: '规则库审查',
     subtitle: '仅执行预定义规则检查，不调用 AI，速度最快。上传文件后自动按规则进行格式、编码等检查。',
+  },
+  CONTRACT: {
+    title: '合同风险审查',
+    subtitle: '上传待审合同文件，AI 将从所选立场出发，识别不利风险条款、缺失保护条款及与模板的差异。',
   },
 }
 

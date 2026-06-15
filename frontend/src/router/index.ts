@@ -91,12 +91,6 @@ const routes: Array<RouteRecordRaw> = [
         meta: { title: '统一管理面板', requiresAdminOrManager: true }
       },
       {
-        path: 'admin/dashboard',
-        name: 'AdminDashboard',
-        component: () => import('../views/Dashboard.vue'),
-        meta: { title: '数据看板', requiresAdminOrManager: true }
-      },
-      {
         path: 'admin/standards',
         name: 'AdminStandards',
         component: () => import('../views/StandardLibrary/index.vue'),
@@ -178,7 +172,7 @@ const routes: Array<RouteRecordRaw> = [
       },
 
       // ===== 旧路由重定向（兼容已有书签）=====
-      { path: 'dashboard', redirect: '/admin/dashboard' },
+      { path: 'dashboard', redirect: '/workspace' },
       { path: 'tasks/new', redirect: '/review' },
       { path: 'tasks/history', redirect: '/tasks' },
       { path: 'standards', redirect: '/admin/standards' },

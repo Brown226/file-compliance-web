@@ -164,6 +164,25 @@ const handleDocReview: ReviewHandler = async (ctx) => {
 };
 
 /**
+ * CONTRACT_REVIEW — 合同风险审查（完全独立，不复用以文审文逻辑）
+ *
+ * 与 DOC_REVIEW 的核心区别：
+ * - 立场驱动：必须注入 stance（业主/承包商），审查视角完全不同
+ * - 可选参照文件：允许无参照文件的纯风险扫描
+ * - 可选知识库 RAG：拉取 MaxKB 知识库作为辅助审查依据
+ * - 独立 prompt 模板：使用 contract_review 场景
+ * - 独立结果解析：输出 riskLevel + clauseType + recommendation
+ */
+const handleContractReview: ReviewHandler = async (ctx) => {
+  const text = ctx.extractedText || '';
+  if (!text.trim()) return { aiIssues: [], usedEngine: 'none' };
+
+  const config = getEffectiveConfig(ctx);
+  const result = await AiReviewService.runContractReviewStrategy(text, ctx, config);
+  return { aiIssues: result.issues, usedEngine: result.engine, sources: result.sources };
+};
+
+/**
  * MULTIMODAL — 结构化审查
  * 直接调用 LLM，对表格数据/数值/公式/图纸标注进行结构化审查。
  * 注意：表格/公式的规则级检测已在阶段1完成，此处只做 AI 审查。
@@ -187,7 +206,7 @@ export const REVIEW_HANDLERS: Record<ReviewModeType, ReviewHandler> = {
   LIBRARY_REVIEW: handleLibraryReview,
   CONSISTENCY:    handleConsistency,
   DOC_REVIEW:     handleDocReview,
-  CONTRACT_REVIEW: handleDocReview,  // 合同风险审查：复用以文审文 handler
+  CONTRACT_REVIEW: handleContractReview,  // 合同风险审查：完全独立的 handler
   // SELF_CHECK 不走 handler 映射表，有独立的 SelfCheckController 处理
   SELF_CHECK:     async (_ctx) => {
     console.warn('[Handler] SELF_CHECK 被 processTask 误调用，请使用独立的 /api/self-check/run 端点');

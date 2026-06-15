@@ -5,6 +5,7 @@
  */
 
 import { PipelineContext, PipelineReviewConfig, ReviewModeType } from './types';
+import { getMaxConcurrentReviews } from '../../utils/system-config';
 /**
  * 获取有效的审查配置（带默认值回退）
  */
@@ -17,7 +18,7 @@ export function getEffectiveConfig(ctx: PipelineContext): PipelineReviewConfig {
       llmMaxTokens: 4096,
       llmTimeout: 180,
       ocrTimeout: 60,
-      maxConcurrentReviews: 5,
+      maxConcurrentReviews: 3, // 默认值，实际运行时从 DB 读取
       logLevel: 'info',
       contextWindow: 131072, // 默认 128K 上下文（字符数，约 32K tokens）
     };
@@ -33,6 +34,12 @@ export function getEffectiveConfig(ctx: PipelineContext): PipelineReviewConfig {
     contextWindow: cfg.contextWindow || 131072,
   };
 }
+
+/**
+ * 获取每用户文件并发数（从 basic_settings 读取，带回退默认值）
+ * 供 review.service.ts 在运行时调用
+ */
+export { getMaxConcurrentReviews };
 
 /**
  * 检查某阶段是否应该运行

@@ -142,7 +142,6 @@ const componentsMap: Record<string, any> = {
   prompts: markRaw(defineAsyncComponent(() => import('./PromptConfig.vue'))),
 
   // 系统设置
-  systemOverview: markRaw(defineAsyncComponent(() => import('./Dashboard.vue'))),
   aiEngine: markRaw(defineAsyncComponent(() => import('./admin/AiEngineConfig.vue'))),
   storage: markRaw(defineAsyncComponent(() => import('./admin/StorageManagement.vue'))),
   basicSettings: markRaw(defineAsyncComponent(() => import('./admin/BasicSettings.vue'))),
@@ -219,7 +218,6 @@ const navGroups = computed<NavGroup[]>(() => {
     name: '系统设置',
     icon: 'Connection',
     items: [
-      { id: 'systemOverview', name: '系统总览', icon: 'DataBoard', description: '查看系统整体运行状态' },
       { id: 'aiEngine', name: 'AI 引擎', icon: 'WarningFilled', description: '管理AI模型、OCR、向量检索等配置' },
       { id: 'storage', name: '存储管理', icon: 'FolderOpened', description: '管理系统存储空间和文件' },
       { id: 'basicSettings', name: '基础设置', icon: 'Setting', description: '管理系统基础参数和配置' },
