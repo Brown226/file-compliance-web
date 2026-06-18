@@ -51,11 +51,31 @@ interface ExtractedRef {
   chunkStartIndex: number;
 }
 
+/** LLM 抽取的文档元信息 */
+interface ExtractedMeta {
+  key: string;
+  value: string;
+  lineHint: number;
+  chunkIndex: number;
+  chunkStartIndex: number;
+}
+
+/** LLM 抽取的事实断言 */
+interface ExtractedFact {
+  subject: string;
+  claim: string;
+  lineHint: number;
+  chunkIndex: number;
+  chunkStartIndex: number;
+}
+
 /** 单个分片的抽取结果 */
 interface ChunkSummary {
   params: ExtractedParam[];
   codes: ExtractedCode[];
   refs: ExtractedRef[];
+  meta: ExtractedMeta[];
+  facts: ExtractedFact[];
 }
 
 /** LLM 返回的原始 JSON 结构 */
@@ -63,6 +83,8 @@ interface RawExtractResult {
   params?: Array<{ name?: string; value?: string; lineHint?: number }>;
   codes?: Array<{ code?: string; context?: string; lineHint?: number }>;
   refs?: Array<{ ref?: string; lineHint?: number }>;
+  meta?: Array<{ key?: string; value?: string; lineHint?: number }>;
+  facts?: Array<{ subject?: string; claim?: string; lineHint?: number }>;
 }
 
 /** 上下文预算 */
@@ -140,16 +162,17 @@ export class StructuredConsistencyService {
         );
       } catch (e: any) {
         console.warn(`[StructConsist] 分片 ${chunk.chunkIndex + 1} 抽取失败:`, e.message);
-        summaries.push({ params: [], codes: [], refs: [] });
+        summaries.push({ params: [], codes: [], refs: [], meta: [], facts: [] });
       }
     }
 
     // ---- Phase B: Merge — 汇总去重 ----
     const merged = this.mergeSummaries(summaries);
-    const totalItems = merged.params.length + merged.codes.length + merged.refs.length;
+    const totalItems = merged.params.length + merged.codes.length + merged.refs.length + merged.meta.length + merged.facts.length;
     console.log(
       `[StructConsist] 抽取完成: params=${merged.params.length} ` +
-      `codes=${merged.codes.length} refs=${merged.refs.length}`,
+      `codes=${merged.codes.length} refs=${merged.refs.length} ` +
+      `meta=${merged.meta.length} facts=${merged.facts.length}`,
     );
 
     if (totalItems === 0) {
@@ -263,7 +286,7 @@ export class StructuredConsistencyService {
    * chunk 对象提供了 startIndex，用于后续精确计算原文绝对位置
    */
   private static parseExtractResult(raw: string, chunk: TextChunk): ChunkSummary {
-    const empty = { params: [], codes: [], refs: [] };
+    const empty = { params: [], codes: [], refs: [], meta: [], facts: [] };
 
     try {
       let jsonStr = raw.trim();
@@ -308,7 +331,27 @@ export class StructuredConsistencyService {
           chunkStartIndex: chunk.startIndex,
         }));
 
-      return { params, codes, refs };
+      const meta: ExtractedMeta[] = (parsed.meta || [])
+        .filter(m => m.key && m.value)
+        .map(m => ({
+          key: String(m.key).trim(),
+          value: String(m.value).trim(),
+          lineHint: typeof m.lineHint === 'number' ? m.lineHint : 0,
+          chunkIndex: chunk.chunkIndex,
+          chunkStartIndex: chunk.startIndex,
+        }));
+
+      const facts: ExtractedFact[] = (parsed.facts || [])
+        .filter(f => f.subject && f.claim)
+        .map(f => ({
+          subject: String(f.subject).trim(),
+          claim: String(f.claim).trim(),
+          lineHint: typeof f.lineHint === 'number' ? f.lineHint : 0,
+          chunkIndex: chunk.chunkIndex,
+          chunkStartIndex: chunk.startIndex,
+        }));
+
+      return { params, codes, refs, meta, facts };
     } catch (e) {
       console.warn('[StructConsist] JSON 解析失败:', e, 'raw:', raw.slice(0, 200));
       return empty;
@@ -323,6 +366,8 @@ export class StructuredConsistencyService {
     params: ExtractedParam[];
     codes: ExtractedCode[];
     refs: ExtractedRef[];
+    meta: ExtractedMeta[];
+    facts: ExtractedFact[];
   } {
     const paramMap = new Map<string, ExtractedParam[]>();
     for (const s of summaries) {
@@ -358,7 +403,25 @@ export class StructuredConsistencyService {
     }
     const mergedRefs = [...refMap.values()];
 
-    return { params: mergedParams, codes: mergedCodes, refs: mergedRefs };
+    const metaMap = new Map<string, ExtractedMeta>();
+    for (const s of summaries) {
+      for (const m of s.meta || []) {
+        const normKey = m.key.trim().toLowerCase();
+        if (!metaMap.has(normKey)) metaMap.set(normKey, m);
+      }
+    }
+    const mergedMeta = [...metaMap.values()];
+
+    const factMap = new Map<string, ExtractedFact>();
+    for (const s of summaries) {
+      for (const f of s.facts || []) {
+        const normSubject = f.subject.trim().toLowerCase();
+        if (!factMap.has(normSubject)) factMap.set(normSubject, f);
+      }
+    }
+    const mergedFacts = [...factMap.values()];
+
+    return { params: mergedParams, codes: mergedCodes, refs: mergedRefs, meta: mergedMeta, facts: mergedFacts };
   }
 
   // ==========================================================
@@ -369,6 +432,8 @@ export class StructuredConsistencyService {
     params: ExtractedParam[];
     codes: ExtractedCode[];
     refs: ExtractedRef[];
+    meta: ExtractedMeta[];
+    facts: ExtractedFact[];
   }): string {
     const paramGroups = new Map<string, ExtractedParam[]>();
     for (const p of merged.params) {
@@ -394,7 +459,15 @@ export class StructuredConsistencyService {
       .map(r => `- ${r.ref} (分片${r.chunkIndex + 1}L${r.lineHint})`)
       .join('\n') || '(无)';
 
-    return `## 参数汇总\n${paramsList}\n\n## 编码汇总\n${codesList}\n\n## 引用汇总\n${refsList}`;
+    const metaList = merged.meta
+      .map(m => `- ${m.key}: ${m.value} (分片${m.chunkIndex + 1}L${m.lineHint})`)
+      .join('\n') || '(无)';
+
+    const factsList = merged.facts
+      .map(f => `- ${f.subject}: ${f.claim} (分片${f.chunkIndex + 1}L${f.lineHint})`)
+      .join('\n') || '(无)';
+
+    return `## 参数汇总\n${paramsList}\n\n## 编码汇总\n${codesList}\n\n## 引用汇总\n${refsList}\n\n## 文档元信息\n${metaList}\n\n## 事实断言\n${factsList}`;
   }
 
   private static compressSummary(
@@ -402,6 +475,8 @@ export class StructuredConsistencyService {
       params: ExtractedParam[];
       codes: ExtractedCode[];
       refs: ExtractedRef[];
+      meta: ExtractedMeta[];
+      facts: ExtractedFact[];
     },
     maxChars: number,
   ): string {
