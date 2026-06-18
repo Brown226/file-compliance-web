@@ -266,8 +266,13 @@
             </el-table-column>
             <el-table-column label="正确标准" min-width="180" show-overflow-tooltip>
               <template #default="{ row: it }">
-                <div class="correct-text">{{ it.matchResult.libraryStandardNo || '-' }}</div>
-                <div class="sc-name-sub correct-text">{{ it.matchResult.libraryStandardName || '' }}</div>
+                <template v-if="it.matchResult.matched">
+                  <div class="correct-text">{{ it.matchResult.libraryStandardNo || '-' }}</div>
+                  <div class="sc-name-sub correct-text">{{ it.matchResult.libraryStandardName || '' }}</div>
+                  <el-tag v-if="it.matchResult.libraryStandardStatus === 'ABOLISHED'" type="danger" size="mini" effect="plain" style="margin-top:2px;">已废止</el-tag>
+                  <el-tag v-else-if="it.matchResult.libraryStandardStatus === 'UPCOMING'" type="warning" size="mini" effect="plain" style="margin-top:2px;">即将实施</el-tag>
+                </template>
+                <span v-else>-</span>
               </template>
             </el-table-column>
             <el-table-column label="级别" width="52">
@@ -466,6 +471,7 @@
               @locate-text="handleLocateTextFromIssueList"
               @open-fp-dialog="(detail) => handleFalsePositive(detail)"
               @batch-false-positive="handleBatchFalsePositiveFromIssueList"
+              @batch-adopt="handleBatchAdoptFromIssueList"
             />
           </div>
 
@@ -571,6 +577,7 @@ import {
   getTaskByIdApi,
   getTaskDetailsApi,
   toggleFalsePositiveApi,
+  toggleAdoptApi,
 } from '@/api/task'
 import { useWebSocket, type WsMessage } from '@/composables/useWebSocket'
 import request from '@/utils/request'
@@ -896,6 +903,15 @@ const appendNewIssues = (msg: WsMessage) => {
     taskFileId: msg.fileId || '',
   }))
   allDetails.value = [...allDetails.value, ...newIssues]
+
+  // 去重：基于 (fileId + issueType + originalText) 去重，移除 WS 临时 ID 和 API 真实 ID 的重复
+  const seen = new Set<string>()
+  allDetails.value = allDetails.value.filter((d: any) => {
+    const key = `${d.fileId}:${d.issueType}:${d.originalText}`
+    if (seen.has(key)) return false
+    seen.add(key)
+    return true
+  })
 }
 
 /** 处理 WebSocket 推送的消息 */
@@ -1022,6 +1038,8 @@ const fetchData = async (silent = false) => {
       file: d.file,
       isFalsePositive: d.isFalsePositive || false,
       adopted: d.adopted || false,
+      adoptedBy: d.adoptedBy || null,
+      adoptedAt: d.adoptedAt || null,
       taskId: d.taskId || taskId.value,
       taskFileId: d.taskFileId || '',
     }))
@@ -1136,7 +1154,16 @@ const handleLocateKnowledgeItem = (item: TaskDetail) => {
 }
 
 const handleBatchAdoptFromIssueList = async (issueIds: string[]) => {
-  await handleBatchAdopt(issueIds)
+  if (!issueIds.length) return
+  try {
+    await Promise.all(issueIds.map(id => toggleAdoptApi(id, { adopted: true })))
+    ElMessage.success(`已采纳 ${issueIds.length} 条建议`)
+    // 刷新数据
+    await fetchData(true)
+  } catch (e: any) {
+    console.error('批量采纳失败:', e)
+    ElMessage.error('批量采纳失败')
+  }
 }
 
 // handleBatchFalsePositiveFromIssueList 已迁移到 useFalsePositive composable

@@ -634,8 +634,7 @@ export class AiReviewService {
         // description ����"������"/"һ�£�������"�� �� LLM ��ȷ��ʾû��������
         if (/(?:������ļ�\s*)?һ��\s*[��,]?\s*������/.test(desc)) return false;
         if (/����\s*��.*һ��\s*[��,]?\s*������/.test(desc)) return false;
-        if (/^(?:��|û��)(?:����|����|��һ��)/.test(desc)) return false;
-        // description �����Ұ�������"һ��"�ж����� �� ������ LLM ����˷������̶�������
+                if (/无(?:问题|争议|异议|条款)/.test(desc)) return false;        // description �����Ұ�������"һ��"�ж����� �� ������ LLM ����˷������̶�������
         if (desc.length > 200 && /һ��/.test(desc) && !/��һ��/.test(desc)) return false;
         return true;
       });
@@ -907,7 +906,7 @@ export class AiReviewService {
       if (orig && sug && orig === sug) return false;
       if (/(?:参照文件\s*)?一致\s*[，,]?\s*无问题/.test(desc)) return false;
       if (/没有\s*[发现].*一致\s*[，,]?\s*无问题/.test(desc)) return false;
-      if (/^(?:无|没有)(?:发现|问题|不一致)/.test(desc)) return false;
+      if (/无(?:问题|争议|异议|条款)/.test(desc)) return false;
       if (desc.length > 200 && /一致/.test(desc) && !/不一致/.test(desc)) return false;
       return true;
     });

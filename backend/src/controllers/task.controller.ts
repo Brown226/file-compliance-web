@@ -654,6 +654,31 @@ export const getReviewModes = async (_req: Request, res: Response): Promise<void
   }
 };
 
+/** 标记/取消标记采纳 */
+export const toggleAdopt = async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const detailId = req.params.detailId as string;
+    const { adopted } = req.body;
+    const userId = req.user?.id;
+
+    if (!userId) {
+      error(res, '未认证用户', 401);
+      return;
+    }
+
+    if (typeof adopted !== 'boolean') {
+      error(res, 'adopted 必须为布尔值', 400);
+      return;
+    }
+
+    const updated = await TaskService.toggleAdopt(detailId, userId, adopted);
+    success(res, updated, adopted ? '已标记为采纳' : '已取消采纳标记');
+  } catch (err: any) {
+    console.error('Toggle Adopt Error:', err);
+    error(res, err.message || '操作失败', 500);
+  }
+};
+
 /** 标记/取消标记误报 */
 export const toggleFalsePositive = async (req: AuthRequest, res: Response): Promise<void> => {
   try {

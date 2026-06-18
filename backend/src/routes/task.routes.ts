@@ -25,6 +25,7 @@ import {
   uploadRefFiles,
   getReviewModes,
   toggleFalsePositive,
+  toggleAdopt,
   getModeCapabilities,
   saveModeCapabilities,
   getReviewSummary,
@@ -153,5 +154,6 @@ router.post('/:id/ref-files', upload.array('files', 20), uploadRefFiles);
 
 // 标记/取消标记误报
 router.patch('/details/:detailId/false-positive', toggleFalsePositive);
+router.patch('/details/:detailId/adopt', toggleAdopt);
 
 export default router;

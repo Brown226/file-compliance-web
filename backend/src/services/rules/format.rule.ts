@@ -55,6 +55,9 @@ export function checkFormatRules(ctx: FileContext, config?: any): RuleIssue[] {
   // FORMAT_005: 表格表头层级规范性（检测是否为复合表头）
   issues.push(...checkFormatTableHeaderStructure(ctx));
 
+  // FORMAT_008/009: Unicode 上标/下标检测
+  issues.push(...checkSuperscript(text, config));
+
   return issues;
 }
 
@@ -173,8 +176,12 @@ function checkFormatCnEnSpacing(text: string, config?: any): RuleIssue[] {
   // 排除列表
   const excludePatterns = [
     /\d+[%‰℃°]/,           // 百分比、度数
-    /\d+(kg|g|mg|m|cm|mm|km|m²|m³|kPa|MPa|Pa|V|A|W|kW|MW|Hz)\b/i,  // 单位符号
+    /\d+(kg|g|mg|m|cm|mm|km|m²|m³|kPa|MPa|Pa|V|A|W|kW|MW|Hz|GHz|kHz|t|N|kN|Nm|kWh|MWh|bar)\b/i,  // 单位符号
     /[A-Z]\d{2,}[A-Z]/,   // 编码格式如 FJ24A00AC
+    /DN\d+/i,              // 管径如 DN100
+    /\d+(MPa|kPa|mm²|m³|kV|kVA|MVA)\b/i,  // 更多单位
+    /[A-Z]{2,}\d+[A-Z]?[A-Z0-9]*/,  // 工程编码如 1EAA360CR、CRH380
+    /Q\d+[A-Z]/,           // 钢材牌号如 Q345R
     /\d{4}[-/年]\d{1,2}/,  // 日期格式
     /v\d+(\.\d+)*/i,       // 版本号
     /ISO\d+|GB\d+/i,       // 标准编号
@@ -288,6 +295,55 @@ function checkFormatTableHeaderStructure(ctx: FileContext): RuleIssue[] {
         description: '数据表格可能未使用公司规定的标准多级表头模板。电缆/设备清单表格应采用多级复合表头（包含系列、色标、起终点等独立列）。',
       });
     }
+  }
+
+  return issues;
+}
+
+/**
+ * 检测幂次/角标符号的使用问题
+ * Unicode 上标/下标字符在文本中不可见，容易导致混淆
+ */
+function checkSuperscript(text: string, _config?: any): RuleIssue[] {
+  const issues: RuleIssue[] = [];
+
+  // Unicode 上标范围
+  const superscriptPattern = /[\u00B2\u00B3\u00B9\u2070\u2071\u2074-\u2079\u207A-\u207C\u207F]/;
+  // Unicode 下标范围
+  const subscriptPattern = /[\u2080-\u209C]/;
+
+  const lines = text.split('\n');
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+
+    // 检查上标
+    let m = superscriptPattern.exec(line);
+    if (m) {
+      const contextLine = line.substring(Math.max(0, m.index - 15), m.index + 15).trim();
+      issues.push({
+        ruleCode: 'FORMAT_008',
+        severity: 'info',
+        issueType: 'FORMAT',
+        originalText: contextLine,
+        description: `文本中包含 Unicode 上标字符: ${contextLine}`,
+      });
+    }
+
+    // 检查下标
+    m = subscriptPattern.exec(line);
+    if (m) {
+      const contextLine = line.substring(Math.max(0, m.index - 15), m.index + 15).trim();
+      issues.push({
+        ruleCode: 'FORMAT_009',
+        severity: 'info',
+        issueType: 'FORMAT',
+        originalText: contextLine,
+        description: `文本中包含 Unicode 下标字符: ${contextLine}`,
+      });
+    }
+
+    // 限制每行最多报告一个角标问题
+    if (issues.length > 20) break;
   }
 
   return issues;

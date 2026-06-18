@@ -947,6 +947,37 @@ export class TaskService {
   }
 
   /**
+   * 标记/取消标记采纳
+   */
+  static async toggleAdopt(
+    detailId: string,
+    userId: string,
+    adopted: boolean,
+  ): Promise<TaskDetail> {
+    const detail = await prisma.taskDetail.findUnique({ where: { id: detailId } });
+    if (!detail) {
+      throw new Error('Detail not found');
+    }
+
+    const updated = await prisma.taskDetail.update({
+      where: { id: detailId },
+      data: adopted
+        ? {
+            adopted: true,
+            adoptedBy: userId,
+            adoptedAt: new Date(),
+          }
+        : {
+            adopted: false,
+            adoptedBy: null,
+            adoptedAt: null,
+          },
+    });
+
+    return updated;
+  }
+
+  /**
    * 获取审查摘要：聚合 TaskDetail 结果，按严重度/文件/类型统计
    */
   static async getReviewSummary(taskId: string) {

@@ -218,6 +218,9 @@ model TaskDetail {
   standardRefId   String?   // 关联的标准库记录ID（用于跳转到标准详情）
   standardRef     String?   // 标准条文引用（如 "GB/T 50265-2010 第5.2.1条"）
   isFalsePositive  Boolean   @default(false)   // 是否为误报
+  adopted          Boolean   @default(false)   // 是否已采纳
+  adoptedBy        String?                      // 采纳人用户ID
+  adoptedAt        DateTime?                    // 采纳时间
   fpMarkedBy       String?                     // 标记误报的用户ID
   fpMarkedAt       DateTime?                    // 标记误报的时间
   fpReason         String?                      // 误报原因

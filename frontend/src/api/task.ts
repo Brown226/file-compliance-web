@@ -117,6 +117,11 @@ export function toggleFalsePositiveApi(detailId: string, data: { isFalsePositive
   return request.patch<TaskDetail>(`/tasks/details/${detailId}/false-positive`, data)
 }
 
+// 标记/取消标记采纳
+export function toggleAdoptApi(detailId: string, data: { adopted: boolean }) {
+  return request.patch<TaskDetail>(`/tasks/details/${detailId}/adopt`, data)
+}
+
 // 轻量级上传（仅用于预分析，不创建任务）
 export function uploadOnlyApi(formData: FormData) {
   return request.post<{
