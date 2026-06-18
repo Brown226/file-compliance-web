@@ -625,6 +625,11 @@ export class ReviewService {
         const eligibleForAI = fileContexts.filter(({ file }) => !failedFileIds.has(file.id));
         const skippedCount = fileContexts.length - eligibleForAI.length;
 
+        if (skippedCount > 0) {
+          console.warn(`[Review] ⚠️ ${skippedCount} 个文件阶段1失败，跳过阶段2:`,
+            fileContexts.filter(({ file }) => failedFileIds.has(file.id)).map(({ file }) => file.fileName));
+        }
+
         // 标记阶段1失败的文件状态
         for (const fileId of failedFileIds) {
           await prisma.taskFile.update({

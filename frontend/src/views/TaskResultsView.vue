@@ -121,6 +121,7 @@
               style="width: 160px;"
               clearable
               placeholder="全部文件"
+              popper-class="file-filter-popper"
               @change="(val: string) => { if (val) switchToFileContext(val); else { selectedFileId.value = files.value[0]?.id || null } }"
             >
               <el-option
@@ -459,7 +460,7 @@
               :is-docx-selected="isDocxFileSelected"
               :review-mode="(task as any)?.reviewMode"
               :enabled-prefixes="(task as any)?.reviewPlan?.evidence?.enabledPrefixes"
-              @update:selected-file-id="(id) => { if (id) switchToFileContext(id) }"
+              @update:selected-file-id="(id) => { selectedFileId.value = id; if (id) switchToFileContext(id) }"
               @select-file-by-id="switchToFileContext"
               @copy-handle-id="handleCopyCadHandle"
               @locate-text="handleLocateTextFromIssueList"
@@ -667,6 +668,7 @@ const reviewProgress = ref(0)
 const reviewStep = ref('')
 const reviewMessage = ref('')
 let pollTimer: ReturnType<typeof setInterval> | null = null
+let reviewTimeoutTimer: ReturnType<typeof setTimeout> | null = null
 const reviewFileProgress = reactive({
   fileName: '',
   chunkIndex: 0,
@@ -923,9 +925,9 @@ const handleWsMessage = (msg: WsMessage) => {
   }
 }
 
-/** WS 断连时使用轮询兜底检测任务完成状态 */
+/** 轮询兜底检测任务完成状态（不依赖 WS 连接状态） */
 const startPollFallback = () => {
-  if (!reviewing.value || wsConnected.value || pollTimer) return
+  if (!reviewing.value || pollTimer) return
   pollTimer = setInterval(async () => {
     try {
       const res = await getTaskByIdApi(taskId.value)
@@ -944,10 +946,25 @@ const startPollFallback = () => {
   }, 3000)
 }
 
+/** 超时强制完成审查（防止 reviewing 永不退出） */
+const startReviewTimeout = () => {
+  // 30分钟后强制退出 reviewing 状态
+  reviewTimeoutTimer = setTimeout(() => {
+    if (reviewing.value) {
+      console.warn('[TaskResultsView] ⏰ 审查超时，强制退出 reviewing 状态')
+      finishReview()
+    }
+  }, 30 * 60 * 1000)
+}
+
 const stopPollFallback = () => {
   if (pollTimer) {
     clearInterval(pollTimer)
     pollTimer = null
+  }
+  if (reviewTimeoutTimer) {
+    clearTimeout(reviewTimeoutTimer)
+    reviewTimeoutTimer = null
   }
 }
 
@@ -1010,6 +1027,12 @@ const fetchData = async (silent = false) => {
     }))
     files.value = task.value?.files || []
 
+    // ===== 状态同步：如果任务已完成但 reviewing 仍为 true，清理状态 =====
+    if ((task.value?.status === 'COMPLETED' || task.value?.status === 'FAILED') && reviewing.value) {
+      finishReview()
+      return
+    }
+
     // ===== 结果完整性校验（增强版） =====
     if (task.value?.status === 'COMPLETED' && files.value.length > 0) {
       const totalDetails = allDetails.value.length
@@ -1018,6 +1041,21 @@ const fetchData = async (silent = false) => {
       const validResults = totalDetails - noResultCount - errorDetails.length
 
       console.log(`[TaskResultsView] 📊 结果校验: 总计=${totalDetails}, 有效=${validResults}, 无结果标记=${noResultCount}, 错误记录=${errorDetails.length}`)
+
+      // 场景0：检查是否有文件完全没有结果（既无 NO_RESULT 也无有效结果）
+      const filesWithResults = new Set(allDetails.value.map((d: any) => d.fileId))
+      const filesWithoutAnyResult = files.value.filter((f: any) => !filesWithResults.has(f.id))
+      if (filesWithoutAnyResult.length > 0) {
+        console.warn(`[TaskResultsView] ⚠️ ${filesWithoutAnyResult.length} 个文件无任何审查结果:`, filesWithoutAnyResult.map((f: any) => f.fileName).join(', '))
+        if (!silent) {
+          ElMessage({
+            type: 'warning',
+            message: `${filesWithoutAnyResult.length} 个文件无审查结果（可能解析失败或无文本内容）: ${filesWithoutAnyResult.map((f: any) => f.fileName).join('、')}`,
+            duration: 8000,
+            showClose: true,
+          })
+        }
+      }
 
       // 场景1：有错误记录（保存失败）
       if (errorDetails.length > 0) {
@@ -1104,7 +1142,12 @@ const handleBatchAdoptFromIssueList = async (issueIds: string[]) => {
 // handleBatchFalsePositiveFromIssueList 已迁移到 useFalsePositive composable
 
 const goBack = () => {
-  router.push('/tasks/history')
+  // 优先返回上一页，无历史记录时回退到任务列表
+  if (window.history.length > 1) {
+    router.back()
+  } else {
+    router.push('/tasks')
+  }
 }
 
 // Tab 切换时同步 URL 参数（支持浏览器前进/后退）
@@ -1129,8 +1172,10 @@ onMounted(async () => {
     reviewMessage.value = isSelfCheck.value ? '正在初始化自检...' : '正在初始化审查...'
     unsubscribeWs = subscribeTask(taskId.value, handleWsMessage)
 
-    // WS 断连时使用轮询兜底（10秒后检查 WS 是否连接成功）
-    setTimeout(() => startPollFallback(), 10000)
+    // WS 断连时使用轮询兜底（立即启动，不等待 WS 连接状态）
+    startPollFallback()
+    // 超时强制退出（防止 reviewing 永不退出）
+    startReviewTimeout()
   }
 })
 
@@ -2712,5 +2757,13 @@ onUnmounted(() => {
   color: #78716C;
   font-size: 13px;
   line-height: 1.8;
+}
+</style>
+
+<!-- 全局样式：el-select popper 下拉框高度限制 -->
+<style>
+.file-filter-popper {
+  max-height: 40vh !important;
+  overflow-y: auto !important;
 }
 </style>

@@ -143,6 +143,8 @@ export class LlmService {
             if ((!item.issueType && !item.riskLevel) || !item.originalText) return false;
             // 过滤 originalText 与 suggestedText 完全一致的无效条目
             if (item.suggestedText && String(item.originalText).trim() === String(item.suggestedText).trim()) return false;
+            // 过滤 originalText 看起来像 JSON 的条目
+            if (this.isLikelyJsonText(String(item.originalText))) return false;
             return true;
           })
           .map((item: any) => {
@@ -204,7 +206,8 @@ export class LlmService {
       // JSON 解析失败，尝试从 Markdown 文本中提取结构化问题
       const markdownIssues = this.parseMarkdownReviewResult(content);
       if (markdownIssues.length > 0) {
-        return markdownIssues;
+        // 后处理：过滤掉 originalText 看起来像 JSON 的条目（LLM 误将 JSON 片段当问题输出）
+        return markdownIssues.filter(item => !this.isLikelyJsonText(item.originalText));
       }
       console.warn('[LLM] 解析审查结果失败:', (e as Error).message, '\n原始内容:', content.substring(0, 200));
       return [];
@@ -378,6 +381,23 @@ export class LlmService {
     const match = text.match(/[""「]([^""」]+)[""」]|《([^》]+)》/);
     if (match) return match[1] || match[2];
     return '';
+  }
+
+  /**
+   * 判断文本是否看起来像 JSON 片段（用于过滤 LLM 误输出的 JSON）
+   */
+  private static isLikelyJsonText(text: string): boolean {
+    if (!text) return false;
+    const trimmed = text.trim();
+    // 以 { 或 [ 开头且包含 : 或 , 的较长文本
+    if ((trimmed.startsWith('{') || trimmed.startsWith('[')) && (trimmed.includes(':') || trimmed.includes(','))) {
+      return true;
+    }
+    // 包含 "issueType"、"originalText" 等 JSON 字段名
+    if (/"(?:issueType|originalText|suggestedText|severity|riskLevel|description)"/.test(trimmed)) {
+      return true;
+    }
+    return false;
   }
 
   /**

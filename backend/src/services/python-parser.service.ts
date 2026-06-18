@@ -111,6 +111,25 @@ export class PythonParserService {
     form.append('file', fileBuffer, fileName);
     form.append('file_type', fileType.toLowerCase());
 
+    // 传递视觉模型配置（可选，用于扫描件 PDF OCR 降级）
+    try {
+      const visionKeys = ['llm_vision_model', 'llm_ocr_model'];
+      for (const key of visionKeys) {
+        const cfg = await prisma.systemConfig.findUnique({ where: { key } });
+        if (cfg?.value && typeof cfg.value === 'object') {
+          const v = cfg.value as any;
+          if (v.apiKey && v.modelName) {
+            form.append('vision_api_key', v.apiKey);
+            form.append('vision_model_name', v.modelName);
+            form.append('vision_base_url', v.apiBaseUrl || '');
+            break;
+          }
+        }
+      }
+    } catch {
+      // 配置读取失败时静默跳过
+    }
+
     if (FileTypeService.isCadFile(fileType)) {
       return {
         text: '',

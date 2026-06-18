@@ -779,6 +779,7 @@ export class StandardService {
     // 注意：不要让不同字段匹配相同的表头
     const columnMappings: Record<string, string[]> = {
       purchasingStatus: ['状态', ' PurchasingStatus', '采购状态'],
+      standardStatus: ['标准状态', '标准状况', 'StandardStatus', '规范状态'],
       standardNo: ['标准编号', 'StandardNo', '编号'],
       standardName: ['标准名称', 'StandardName', '名称'],
       publishDate: ['发布日期', 'PublishDate', '发布', '出版日期'],
@@ -940,12 +941,22 @@ export class StandardService {
         // 自动提取标识符
         const standardIdent = StandardExtractorService.getIdent(standardNo);
 
-        // 确定标准状态
+        // 确定标准状态：优先使用 Excel 状态列文本，日期作为辅助判断
         let mappedStatus: 'CURRENT' | 'UPCOMING' | 'ABOLISHED' = 'CURRENT';
-        if (repealDate && repealDate <= new Date()) {
+        const statusText = (purchasingStatus || standardStatus || '').toLowerCase().trim();
+        if (/已废止|abolished|废止|失效|repealed/i.test(statusText)) {
           mappedStatus = 'ABOLISHED';
-        } else if (implementDate && implementDate > new Date()) {
+        } else if (/即将实施|upcoming|即将|待实施/i.test(statusText)) {
           mappedStatus = 'UPCOMING';
+        } else if (/现行|current|有效|active/i.test(statusText)) {
+          mappedStatus = 'CURRENT';
+        } else {
+          // 无明确状态文本时，使用日期推断
+          if (repealDate && repealDate <= new Date()) {
+            mappedStatus = 'ABOLISHED';
+          } else if (implementDate && implementDate > new Date()) {
+            mappedStatus = 'UPCOMING';
+          }
         }
 
         validCount++;

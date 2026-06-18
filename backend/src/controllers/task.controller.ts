@@ -476,7 +476,7 @@ export const exportTaskReportWord = async (req: Request, res: Response): Promise
     const fileName = task ? `${task.title}_审查报告.doc` : '审查报告.doc';
 
     const html = buildWordHtml(task, details);
-    const buffer = Buffer.from(html, 'utf-8');
+    const buffer = Buffer.from('\ufeff' + html, 'utf-8');
 
     res.setHeader('Content-Type', 'application/msword');
     res.setHeader('Content-Disposition', `attachment; filename*=UTF-8''${encodeURIComponent(fileName)}`);

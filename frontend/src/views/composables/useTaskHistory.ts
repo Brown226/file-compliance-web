@@ -361,6 +361,7 @@ export function useTaskHistory() {
       await reReviewTaskApi(row.id)
       ElMessage.success('已提交重新审核，请稍后刷新查看结果')
 
+      reviewingMap.set(row.id, false)
       fetchTasks()
     } catch (e: any) {
       if (e !== 'cancel') {

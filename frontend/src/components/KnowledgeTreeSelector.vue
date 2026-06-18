@@ -511,6 +511,8 @@ function collectChildKbs(children: KbTreeNode[]): KbTreeNode[] {
   gap: 6px;
   vertical-align: middle;
   line-height: normal;
+  max-width: 100%;
+  overflow: hidden;
 }
 
 .node-icon {
@@ -533,6 +535,7 @@ function collectChildKbs(children: KbTreeNode[]): KbTreeNode[] {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  max-width: 180px;
   color: var(--corp-text-primary);
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', 'Helvetica Neue', Helvetica, Arial, sans-serif;
 }

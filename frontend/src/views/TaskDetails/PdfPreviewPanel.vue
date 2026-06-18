@@ -85,14 +85,15 @@ function updateScale(newScale: number) {
 // 缩放后重新计算 PDF 渲染宽度（使用实际渲染的缩放）
 const pdfRenderWidth = computed(() => Math.round(containerWidth.value * renderScale.value))
 
-// 鼠标滚轮缩放（直接滚动即可，带节流优化）
+// 鼠标滚轮：Ctrl+滚轮 = 缩放，普通滚轮 = 上下翻页
 function onWheel(e: WheelEvent) {
-  e.preventDefault()
-  
-  const factor = e.deltaY < 0 ? 1.15 : 1 / 1.15
-  const newScale = Math.max(MIN_SCALE, Math.min(MAX_SCALE, +((displayScale.value) * factor).toFixed(2)))
-  
-  updateScale(newScale)
+  if (e.ctrlKey || e.metaKey) {
+    e.preventDefault()
+    const factor = e.deltaY < 0 ? 1.15 : 1 / 1.15
+    const newScale = Math.max(MIN_SCALE, Math.min(MAX_SCALE, +((displayScale.value) * factor).toFixed(2)))
+    updateScale(newScale)
+  }
+  // 非 Ctrl 滚轮保持默认行为（上下滚动）
 }
 
 // 鼠标拖拽平移
@@ -442,7 +443,7 @@ defineExpose({ clearHighlights, loadPdf })
     </div>
 
     <template v-else-if="pdfSource">
-      <div ref="containerRef" class="pdf-container" @wheel.prevent="onWheel" @mousedown="onMouseDown">
+      <div ref="containerRef" class="pdf-container" @wheel="onWheel" @mousedown="onMouseDown">
         <div class="pdf-zoom-wrapper" :style="{ transform: `scale(${displayScale})`, transformOrigin: 'top left' }">
           <VuePdfEmbed
             ref="pdfEmbedRef"

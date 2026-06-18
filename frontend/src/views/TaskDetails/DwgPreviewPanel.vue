@@ -51,7 +51,7 @@
       v-else-if="svgContent"
       class="svg-viewport"
       ref="viewportRef"
-      @wheel.prevent="onWheel"
+      @wheel="onWheel"
       @mousedown.prevent="onMouseDown"
     >
       <div
@@ -510,6 +510,8 @@ function fitToWindowWithRetry(retries = 3, delay = 200) {
 }
 
 function onWheel(e: WheelEvent) {
+  if (!e.ctrlKey && !e.metaKey) return // 非 Ctrl 滚轮保持默认滚动行为
+  e.preventDefault()
   const factor = e.deltaY < 0 ? ZOOM_FACTOR : 1 / ZOOM_FACTOR
   const newScale = Math.min(MAX_SCALE, Math.max(MIN_SCALE, scale.value * factor))
 
