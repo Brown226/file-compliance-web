@@ -102,7 +102,7 @@ export class ParserService {
     const normalized = fileType.toLowerCase();
     // PDF 或图片类型：文本过少时触发 OCR
     const imageTypes = ['pdf', 'png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'tiff'];
-    if (imageTypes.includes(normalized) && extractedText.length < 20) {
+    if (imageTypes.includes(normalized) && extractedText.length < 200) {
       return true;
     }
     // DWG/DXF 不走 OCR
