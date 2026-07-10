@@ -230,3 +230,12 @@ backend/_tmp_prisma_check.js
 
 # Parser temp scripts
 backend/src/services/parser
+
+# ===== 无用资料屏蔽（非源码，避免误提交）=====
+# 参考开源项目（仅本地对照用，不入库）
+可参考开源项目/
+
+# 根目录个人/参赛素材
+wechat-article.md
+做汇报的PPT/
+华智杯参赛PPT/
