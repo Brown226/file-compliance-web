@@ -280,6 +280,20 @@ export class TerminologyService {
     });
   }
 
+  /**
+   * 采样术语白名单，生成供 LLM 提示词注入的术语串。
+   * 借鉴 TextGuard proofread.py 的 _build_global_words_section：仅取前 N 条示例，
+   * 避免超长 prompt；让 LLM 在校对前预先知道这些是正确的专业术语，减少误报。
+   *
+   * @param limit 采样条数上限（默认 20）
+   * @returns 形如 "术语A、术语B、术语C" 的字符串；未初始化或为空时返回空串
+   */
+  static getWhitelistGlossary(limit = 20): string {
+    if (!initialized || termLookupSet.size === 0) return '';
+    const sample = Array.from(termLookupSet).slice(0, limit);
+    return sample.join('、');
+  }
+
   // ===== CRUD 方法 =====
 
   /** 查询术语列表（分页 + 搜索） */

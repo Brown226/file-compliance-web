@@ -95,6 +95,13 @@ export class LlmService {
       // 去掉 markdown 代码块标记
       if (jsonStr.startsWith('```')) {
         jsonStr = jsonStr.replace(/^```(?:json)?\n?/, '').replace(/\n?```$/, '');
+      } else {
+        // 兼容「说明文字 + 代码块」混合场景：提取首个 ```json/``` 代码块内容
+        // （借鉴 TextGuard parse_proofread_result 的 markdown 代码块兜底）
+        const fenceMatch = content.match(/```(?:json)?\s*\n?([\s\S]*?)\n?```/);
+        if (fenceMatch && fenceMatch[1].trim().startsWith('[')) {
+          jsonStr = fenceMatch[1];
+        }
       }
 
       // 清理 LLM 输出中的控制字符：只处理字符串值内部的，保留 JSON 结构空白
@@ -923,7 +930,7 @@ export class LlmService {
             apiKey: v.apiKey,
             modelName: v.modelName,
             maxTokens: typeof v.maxTokens === 'number' ? v.maxTokens : 8192,
-            temperature: typeof v.temperature === 'number' ? v.temperature : 0.3,
+            temperature: typeof v.temperature === 'number' ? v.temperature : 0.1,
             timeout: typeof v.timeout === 'number' ? v.timeout : 120,
           };
         }

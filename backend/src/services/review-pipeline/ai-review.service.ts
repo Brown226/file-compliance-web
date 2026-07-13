@@ -16,6 +16,7 @@ import { PromptLoader } from '../prompts';
 import { StandardTraceabilityService } from '../standard-traceability.service';
 import { parallelLimit } from '../../utils/parallel';
 import { EmbeddingService } from '../embedding.service';
+import { TerminologyService } from '../terminology.service';
 
 export class AiReviewService {
   // ==================== AI ���ʵ�� ====================
@@ -325,6 +326,14 @@ export class AiReviewService {
     try {
       const rawSystemPrompt = await PromptLoader.loadSystemPrompt(scene, { hasContext: false });
       let systemPrompt = AiReviewService.injectSemanticContext(rawSystemPrompt, ctx);
+      // 文本校对场景：将术语白名单采样注入提示词，让 LLM 预先知道正确术语，减少误报。
+      // 借鉴 TextGuard proofread.py 的 _build_global_words_section（仅取前 N 条示例避免超长）。
+      if (scene === 'typo_grammar') {
+        const glossary = TerminologyService.getWhitelistGlossary(20);
+        if (glossary) {
+          systemPrompt += `\n\n## 专业术语白名单（以下均为正确写法，切勿作为错别字/语法问题报告）\n${glossary}`;
+        }
+      }
       // ��ͬ�������ע��
       if (scene === 'contract_review') {
         const stanceLabel = ctx.contractStance === 'contractor' ? '�а���' : 'ҵ��/���跽';
@@ -367,10 +376,12 @@ export class AiReviewService {
       for (const r of chunkResults) issues.push(...r);
 
       // ���Ƭȥ�أ��� originalText ǰ 60 �ַ�ȥ�أ��� semantic-spec ��ͬ���ԣ�
+      // 分片去重：基于 issueType + 归一化全文 去重（避免"前60字相同"误删不同问题）
       const seen = new Set<string>();
       const deduped = issues.filter(issue => {
-        const key = (issue.originalText || '').slice(0, 60).trim();
-        if (!key || seen.has(key)) return false;
+        const normalized = (issue.originalText || '').replace(/\s+/g, '').trim();
+        const key = (issue.issueType || '') + '::' + normalized;
+        if (!normalized || seen.has(key)) return false;
         seen.add(key);
         return true;
       });
@@ -634,7 +645,8 @@ export class AiReviewService {
         // description ����"������"/"һ�£�������"�� �� LLM ��ȷ��ʾû��������
         if (/(?:������ļ�\s*)?һ��\s*[��,]?\s*������/.test(desc)) return false;
         if (/����\s*��.*һ��\s*[��,]?\s*������/.test(desc)) return false;
-                if (/无(?:问题|争议|异议|条款)/.test(desc)) return false;        // description �����Ұ�������"һ��"�ж����� �� ������ LLM ����˷������̶�������
+                if (/无(?:问题|争议|异议|条款)/.test(desc)) return false;
+        // description �����Ұ�������"һ��"�ж����� �� ������ LLM ����˷������̶�������
         if (desc.length > 200 && /һ��/.test(desc) && !/��һ��/.test(desc)) return false;
         return true;
       });

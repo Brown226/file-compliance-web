@@ -66,6 +66,15 @@ const handleTypoGrammar: ReviewHandler = async (ctx) => {
   const allowedTypes = new Set(['TYPO', 'FLUENCY', 'CONSISTENCY']);
   result.issues = result.issues.filter(issue => allowedTypes.has(issue.issueType));
 
+  // FLUENCE（语病/修辞微调，如"空水→空管"）是低价值噪声，占校对产出过半。
+  // 借鉴 TextGuard：修辞类归 info 级，避免淹没 TYPO/CONSISTENCY 等高价值问题。
+  // 与前端「仅看实质问题」开关（过滤 FLUENCE + info/prompt）协同，降低信噪比。
+  result.issues = result.issues.map(issue =>
+    issue.issueType === 'FLUENCE' && issue.severity !== 'info'
+      ? { ...issue, severity: 'info' as const }
+      : issue,
+  );
+
   return { aiIssues: result.issues, usedEngine: result.engine, sources: result.sources };
 };
 
@@ -90,9 +99,11 @@ const handleLibraryReview: ReviewHandler = async (ctx) => {
       AiReviewService.runSemanticSpecReview(text, ctx, config),
     ]);
     const mergedIssues = [...ragResult.issues];
-    const ragKeys = new Set(ragResult.issues.map(i => (i.originalText || '').slice(0, 60).trim()));
+    // 基于 issueType + 归一化全文 去重，避免"前60字相同"误删不同问题
+    const norm = (i) => ((i.issueType || '') + '::' + (i.originalText || '').replace(/\s+/g, '').trim());
+    const ragKeys = new Set(ragResult.issues.map(norm));
     for (const issue of specResult.issues) {
-      const key = (issue.originalText || '').slice(0, 60).trim();
+      const key = norm(issue);
       if (key && !ragKeys.has(key)) mergedIssues.push(issue);
     }
     return { aiIssues: mergedIssues, usedEngine: `${ragResult.engine}+${specResult.engine}` };
