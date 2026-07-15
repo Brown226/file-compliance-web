@@ -44,7 +44,8 @@
             <RerankerModelTab v-else-if="activeTab === 'reranker'" />
             <OcrStatusTab v-else-if="activeTab === 'ocr'" />
             <VisionModelTab v-else-if="activeTab === 'vision'" />
-            <MaxKBConfigTab v-else-if="activeTab === 'maxkb'" />
+            <MaxKBConfigTab v-else-if="activeTab === 'maxkb'" />
+            <RAGFlowConfigTab v-else-if="activeTab === 'ragflow'" />
           </div>
         </section>
       </main>
@@ -60,7 +61,8 @@ import EmbeddingModelTab from '@/views/LLMConfig/EmbeddingModelTab.vue'
 import RerankerModelTab from '@/views/LLMConfig/RerankerModelTab.vue'
 import OcrStatusTab from '@/views/LLMConfig/OcrStatusTab.vue'
 import VisionModelTab from '@/views/LLMConfig/VisionModelTab.vue'
-import MaxKBConfigTab from '@/views/LLMConfig/MaxKBConfigTab.vue'
+import MaxKBConfigTab from '@/views/LLMConfig/MaxKBConfigTab.vue'
+import RAGFlowConfigTab from '@/views/LLMConfig/RAGFlowConfigTab.vue'
 
 const router = useRouter()
 
@@ -72,6 +74,7 @@ const tabs = [
   { key: 'ocr', label: 'OCR 服务', short: 'OCR SERVICE', desc: '查看 doc-parser 视觉模型 OCR 运行状态。' },
   { key: 'vision', label: '视觉模型配置', short: 'VISION MODEL', desc: '配置视觉大模型用于扫描件 PDF 和图片的文字识别。' },
   { key: 'maxkb', label: 'MaxKB 知识库', short: 'MAXKB', desc: '管理 MaxKB 知识库集成，同步标准规范到向量检索引擎。' },
+  { key: 'ragflow', label: 'RAGFlow 知识库', short: 'RAGFLOW', desc: '配置 RAGFlow 作为第二个知识库检索源，与 MaxKB 并列使用。' },
 ]
 
 const activeTab = ref('chat')

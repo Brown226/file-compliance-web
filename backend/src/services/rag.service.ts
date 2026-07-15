@@ -14,6 +14,7 @@
  */
 
 import { MaxKBService } from './maxkb.service';
+import { RagflowProvider } from './ragflow.service';
 import { LlmService, ReviewIssue, SourceReference } from './llm.service';
 import { PromptTemplateService } from './prompt-template.service';
 import { CacheService } from './cache.service';
@@ -177,6 +178,17 @@ export class RAGService {
     const llmMaxTokens = options?.llmMaxTokens || 4096;
     const llmTimeout = options?.llmTimeout || 180;
 
+    // 一期 A：知识库审查 Agent 化（疑点驱动检索闭环）。通过 system_configs.rag_agent_enabled 灰度开关控制，默认关闭。
+    const agentEnabled = await RAGService.isAgentEnabled();
+    if (agentEnabled) {
+      console.log(`[RAG] Agent 模式启用（疑点驱动检索），共 ${kbIds.length} 个知识库`);
+      try {
+        return await RAGService.runRAGReviewAgent(text, kbIds, { chunkSize, topK, llmMaxTokens, llmTimeout, scene, documentId: options?.documentId });
+      } catch (e: any) {
+        console.warn(`[RAG] Agent 模式失败，降级到单跳 legacy:`, e.message);
+      }
+    }
+
     // 1. 文本分片（带位置信息）
     const chunks = LlmService.splitText(text, chunkSize, true);
     const totalChunks = chunks.length;
@@ -194,13 +206,19 @@ export class RAGService {
         // 2a. 向量检索：并行从多个知识库获取相关标准规范
         const allRetrievedChunks: RAGRetrievedChunk[] = [];
         const kbResults = await Promise.allSettled(
-          kbIds.map(kbId =>
-            this.retrieve(kbId, chunk.text, {
+          kbIds.map(kbId => {
+            // 按前缀路由：ragflow: 前缀走 RAGFlow 提供方，否则走 MaxKB（默认）
+            if (typeof kbId === 'string' && kbId.startsWith('ragflow:')) {
+              return RagflowProvider.retrieve(kbId.slice('ragflow:'.length), chunk.text, {
+                topNumber: topK,
+              });
+            }
+            return this.retrieve(kbId, chunk.text, {
               topNumber: topK,
-              similarity: 0.2,
+              similarity: 0.5,
               searchMode: 'blend',
-            })
-          )
+            });
+          })
         );
         for (const result of kbResults) {
           if (result.status === 'fulfilled') {
@@ -268,12 +286,18 @@ export class RAGService {
           },
         });
 
-        // 2f. 为每个 issue 附加来源引用
+        // 2f. 来源引用真实绑定：仅当本分片确有检索结果时才挂引用，避免"假引用"
+        // 检索为空时标记 ruleCode=UNVERIFIED，前端可显式标注"AI 推测，无知识库依据"
         if (sources.length > 0 && issues.length > 0) {
           for (const issue of issues) {
             issue.sourceReferences = sources;
+            if (issue.ruleCode === undefined) issue.ruleCode = 'KB_VERIFIED';
           }
           allSources.push(...sources);
+        } else if (issues.length > 0) {
+          for (const issue of issues) {
+            if (issue.ruleCode === undefined) issue.ruleCode = 'UNVERIFIED';
+          }
         }
 
         allIssues.push(...issues);
@@ -291,11 +315,132 @@ export class RAGService {
     };
   }
 
+  /** 读取 Agent 灰度开关（system_configs.rag_agent_enabled，默认关闭） */
+  static async isAgentEnabled(): Promise<boolean> {
+    try {
+      const prisma = (global as any).prisma;
+      if (!prisma) return false;
+      const row = await prisma.systemConfig.findUnique({ where: { key: 'rag_agent_enabled' } });
+      const v = row?.value;
+      if (v === true || v === 'true') return true;
+      if (v && typeof v === 'object' && (v.enabled === true || v.enabled === 'true')) return true;
+      return false;
+    } catch {
+      return false;
+    }
+  }
+
+  /**
+   * 一期 A：知识库审查 Agent 化 —— 疑点驱动检索闭环
+   *
+   * 流程（每个分片）：
+   *   ① 疑点抽取：LLM 通读分片，只列"可能违规/存疑的点"（不下结论、不检索）
+   *   ② 定向检索：对每个疑点做 hit_test(top3, sim 0.5)，检索的是疑点本身而非整段
+   *   ③ 判定：LLM 结合疑点 + 命中条款判定是否违规，引用真实绑定到该疑点命中的条款
+   *   ④ 无命中：标记 UNVERIFIED（AI 推测，无知识库依据），不编造引用
+   *
+   * 相比单跳：检索更精准（query=疑点）、引用真实（每 issue 绑自己的依据）、可标注未核实。
+   */
+  static async runRAGReviewAgent(
+    text: string,
+    kbIds: string[],
+    options: { chunkSize: number; topK: number; llmMaxTokens: number; llmTimeout: number; scene: string; documentId?: string },
+  ): Promise<RAGReviewResult> {
+    const { chunkSize, llmMaxTokens, llmTimeout, documentId } = options;
+    const chunks = LlmService.splitText(text, chunkSize, true);
+    const totalChunks = chunks.length;
+    const allIssues: ReviewIssue[] = [];
+    const allSources: SourceReference[] = [];
+
+    const EXTRACT_SYS = '你是核电工程文件合规审查助手。请通读给定文本，只列出"可能违反标准规范或存在合规疑点"的地方，不要下最终结论、不要编造标准。' +
+      '输出 JSON 数组，每条含 {"question": "疑点的简明问法（用于检索标准条款）", "snippet": "对应的原文片段（逐字复制，20-60字）"}。' +
+      '只列合规/规范性疑点（如引用标准是否正确、参数是否符合规定、设计依据是否充分），不要列语句通顺性/错别字/排版问题。若无疑点输出 []。';
+
+    const VERIFY_SYS = '你是核电工程文件合规审查专家。给你一个"疑点"和从知识库检索到的"相关条款"，请判定该疑点是否确实违规。' +
+      '严格依据条款判定：条款能支持判定才报告问题；条款不足以判定则不要编造。' +
+      '输出 JSON 数组（0 或 1 条）：{"issueType":"VIOLATION|CONSISTENCY|COMPLETENESS","originalText":"逐字复制的原文片段","suggestedText":"修改建议","description":"问题描述","ruleCode":"KB_VERIFIED","standardRef":"依据的条款编号或名称","plain_language":"通俗解释"}。若不构成问题输出 []。';
+
+    for (let i = 0; i < chunks.length; i++) {
+      const chunk = chunks[i];
+      try {
+        // ① 疑点抽取
+        const suspicions = await LlmService.reviewText(chunk.text, {
+          maxTokens: llmMaxTokens, timeout: llmTimeout, systemPrompt: EXTRACT_SYS, skipUserTemplate: true, documentId,
+        }) as any[];
+        // reviewText 返回 ReviewIssue[]；疑点抽取复用其 JSON 解析，字段映射：description/originalText 兜底
+        const points: Array<{ question: string; snippet: string }> = (Array.isArray(suspicions) ? suspicions : [])
+          .map((s: any) => ({
+            question: s.question || s.description || s.originalText || '',
+            snippet: s.snippet || s.originalText || '',
+          }))
+          .filter(p => p.question && p.question.length > 3);
+
+        console.log(`[RAG-Agent] 分片 ${i + 1}/${totalChunks}: 抽取 ${points.length} 个疑点`);
+
+        for (const pt of points) {
+          // ② 定向检索：疑点本身作为 query
+          const retrieved: RAGRetrievedChunk[] = [];
+          const results = await Promise.allSettled(
+            kbIds.map(kbId =>
+              kbId.startsWith('ragflow:')
+                ? RagflowProvider.retrieve(kbId.slice('ragflow:'.length), pt.question, { topNumber: 3 })
+                : this.retrieve(kbId, pt.question, { topNumber: 3, similarity: 0.5, searchMode: 'blend' }),
+            ),
+          );
+          for (const r of results) if (r.status === 'fulfilled') retrieved.push(...r.value);
+          retrieved.sort((a, b) => b.similarity - a.similarity);
+          const top = retrieved.slice(0, 3);
+
+          if (top.length === 0) {
+            // ④ 无命中：AI 推测，标记未核实
+            allIssues.push({
+              issueType: 'VIOLATION',
+              originalText: pt.snippet,
+              suggestedText: '',
+              description: `疑点：${pt.question}（未在知识库检索到支撑条款，需人工确认）`,
+              ruleCode: 'UNVERIFIED',
+              standardRef: null,
+              severity: 'info',
+            } as any);
+            continue;
+          }
+
+          // ③ 判定：疑点 + 命中条款
+          const clauseCtx = this.formatRAGContext(top);
+          const verifyUser = `【疑点】${pt.question}\n【原文片段】${pt.snippet}\n\n【知识库检索到的相关条款】\n${clauseCtx}\n\n请依据条款判定该疑点是否违规，按要求输出 JSON。`;
+          const verdicts = await LlmService.reviewText(verifyUser, {
+            maxTokens: llmMaxTokens, timeout: llmTimeout, systemPrompt: VERIFY_SYS, skipUserTemplate: true, documentId,
+          });
+          const srcRefs: SourceReference[] = top.map(c => ({
+            content: c.content.substring(0, 200), document_name: c.document_name, similarity: c.similarity,
+          }));
+          for (const v of verdicts) {
+            v.sourceReferences = srcRefs;               // 真实绑定：本疑点命中的条款
+            if (v.ruleCode === undefined) v.ruleCode = 'KB_VERIFIED';
+            allIssues.push(v);
+          }
+          allSources.push(...srcRefs);
+        }
+      } catch (e: any) {
+        console.warn(`[RAG-Agent] 分片 ${i + 1} 处理失败:`, e.message);
+      }
+    }
+
+    console.log(`[RAG-Agent] 完成: ${allIssues.length} 个问题, ${allSources.length} 条引用`);
+    return { issues: allIssues, sourceReferences: allSources };
+  }
+
   /**
    * 获取知识库树形结构（含文件夹分组和文档数）
    * 数据完全来自 MaxKB API，根目录名使用工作空间名称
    */
   static async getKnowledgeTree(): Promise<KnowledgeTreeNode[]> {
+    // 并行获取 RAGFlow 知识库（独立提供方，无配置时返回空，不影响 MaxKB）
+    const ragflowKbs = await RagflowProvider.getKnowledgeTree();
+    const ragflowRoot: KnowledgeTreeNode | null = ragflowKbs.length
+      ? { id: 'ragflow-root', name: 'RAGFlow 知识库', type: 'folder', children: ragflowKbs.map(k => ({ id: k.id, name: k.name, type: 'knowledge' as const, documentCount: k.documentCount })) }
+      : null;
+
     const workspace = await MaxKBService.getDefaultWorkspace();
     const workspaceId = workspace.id;
     const workspaceName = workspace.name;
@@ -379,6 +524,18 @@ export class RAGService {
       return (b.documentCount || 0) - (a.documentCount || 0);
     });
 
+    // 扁平分支：附带 RAGFlow 顶级 folder（若有）
+    if (ragflowRoot) {
+      const flat: KnowledgeTreeNode[] = enrichedKbs.map(kb => ({
+        id: kb.id,
+        name: kb.name,
+        type: 'knowledge' as const,
+        documentCount: kb.documentCount,
+      }));
+      flat.push(ragflowRoot);
+      return flat;
+    }
+
     if (root.children!.length <= 2 && !folderMap.size) {
       return enrichedKbs.map(kb => ({
         id: kb.id,
@@ -386,6 +543,11 @@ export class RAGService {
         type: 'knowledge' as const,
         documentCount: kb.documentCount,
       }));
+    }
+
+    // 树形分支：把 RAGFlow 作为独立顶级节点挂到 root 下
+    if (ragflowRoot) {
+      root.children!.push(ragflowRoot);
     }
 
     return [root];

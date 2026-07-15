@@ -10,6 +10,7 @@ import { IntraFileConsistencyService } from './intra-file-consistency.service';
 import { WebSocketService } from './websocket.service';
 import { resolveFilePath } from '../config/upload';
 import { ConcurrencyService } from './concurrency.service';
+import { withLock } from '../utils/redis-lock';
 import { RuleLibraryService } from './rule-library.service';
 import { TableExtractionService } from './table-extraction.service';
 import { FormulaOcrService } from './formula-ocr.service';
@@ -22,15 +23,15 @@ import { getModeCapabilitiesConfig } from './review-pipeline/mode-config.service
 import { getMaxConcurrentReviews } from '../utils/system-config';
 
 /**
- * Éó²é±àÅÅ·þÎñ - Á½½×¶Î·ÖÅú²¢·¢±àÅÅ
- * ½×¶Î1£¨¹æÔòÉó²é£©£º·ÖÅú²¢ÐÐ¹æÔòÉó²é ¡ú Á¢¼´Èë¿âÍÆËÍ
- * ½×¶Î2£¨AIÉó²é£©£º¹æÔòÈ«²¿Íê³Éºó£¬·ÖÅú²¢ÐÐ AI Éó²é ¡ú ÅúÁ¿Èë¿âÍÆËÍ
- * ²¢·¢ÊýÓÉ pipelineConfig.maxConcurrentReviews ¿ØÖÆ£¨ÓÃ»§¼¶±ðÏÞÖÆ£©
+ * ï¿½ï¿½ï¿½ï¿½ï¿½Å·ï¿½ï¿½ï¿½ - ï¿½ï¿½ï¿½×¶Î·ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
+ * ï¿½×¶ï¿½1ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½é£©ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ð¹ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
+ * ï¿½×¶ï¿½2ï¿½ï¿½AIï¿½ï¿½é£©ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½È«ï¿½ï¿½ï¿½ï¿½Éºó£¬·ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ AI ï¿½ï¿½ï¿½ ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
+ * ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ pipelineConfig.maxConcurrentReviews ï¿½ï¿½ï¿½Æ£ï¿½ï¿½Ã»ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Æ£ï¿½
  *
- * ¡¾ÓÃ»§¼¶±ð²¢·¢¿ØÖÆ»úÖÆ¡¿
- * - Ã¿¸öÓÃ»§Í¬Ê±×î¶à´¦Àí maxConcurrentReviews ¸öÎÄ¼þµÄ AI Éó²é
- * - ²»Í¬ÓÃ»§Ö®¼ä»¥²»Ó°Ïì£¬ÊµÏÖ¶àÓÃ»§¹«Æ½µÄ×ÊÔ´·ÖÅä
- * - Ê¹ÓÃÄÚ´æ Map ×·×Ù£ºMap<userId, { processingCount, pendingQueue }>
+ * ï¿½ï¿½ï¿½Ã»ï¿½ï¿½ï¿½ï¿½ð²¢·ï¿½ï¿½ï¿½ï¿½Æ»ï¿½ï¿½Æ¡ï¿½
+ * - Ã¿ï¿½ï¿½ï¿½Ã»ï¿½Í¬Ê±ï¿½ï¿½à´¦ï¿½ï¿½ maxConcurrentReviews ï¿½ï¿½ï¿½Ä¼ï¿½ï¿½ï¿½ AI ï¿½ï¿½ï¿½
+ * - ï¿½ï¿½Í¬ï¿½Ã»ï¿½Ö®ï¿½ä»¥ï¿½ï¿½Ó°ï¿½ì£¬Êµï¿½Ö¶ï¿½ï¿½Ã»ï¿½ï¿½ï¿½Æ½ï¿½ï¿½ï¿½ï¿½Ô´ï¿½ï¿½ï¿½ï¿½
+ * - Ê¹ï¿½ï¿½ï¿½Ú´ï¿½ Map ×·ï¿½Ù£ï¿½Map<userId, { processingCount, pendingQueue }>
  */
 export class ReviewService {
   private static adaptReviewPlanForExecution(task: any): {
@@ -55,7 +56,7 @@ export class ReviewService {
   } {
     const plan = TaskService.normalizeReviewPlan(task?.reviewPlan);
     const reviewMode = TaskService.resolvePipelineSelector(plan);
-    // Ö§³ÖÍ¬Ê±Ñ¡ÔñÖªÊ¶¿â(STANDARD)ºÍÓïÒå¹æÔò¿â(RULE_LIBRARY)
+    // Ö§ï¿½ï¿½Í¬Ê±Ñ¡ï¿½ï¿½ÖªÊ¶ï¿½ï¿½(STANDARD)ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½(RULE_LIBRARY)
     const ruleSource: ('STANDARD' | 'RULE_LIBRARY')[] = [];
     if (plan.evidence.sources.includes('STANDARD')) ruleSource.push('STANDARD');
     if (plan.evidence.sources.includes('RULE_LIBRARY')) {
@@ -78,12 +79,12 @@ export class ReviewService {
       plan,
       reviewMode,
       ruleSource,
-      // ÓïÒå¹æÔò¿â£ºÓÐ RULE_LIBRARY Ô´ÇÒÎÞÖ±½Ó¹æÔòÇ°×ºÊ±´«µÝ
+      // ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½â£ºï¿½ï¿½ RULE_LIBRARY Ô´ï¿½ï¿½ï¿½ï¿½Ö±ï¿½Ó¹ï¿½ï¿½ï¿½Ç°×ºÊ±ï¿½ï¿½ï¿½ï¿½
       ruleLibraryId: hasReviewSpec && !hasDirectPrefixes ? plan.evidence.ruleLibraryId || undefined : undefined,
       enabledPrefixes: hasDirectPrefixes ? plan.evidence.enabledPrefixes : undefined,
-      // ÖªÊ¶¿â£ºÓÐ STANDARD Ô´Ê±´«µÝ maxkbKnowledgeIds
+      // ÖªÊ¶ï¿½â£ºï¿½ï¿½ STANDARD Ô´Ê±ï¿½ï¿½ï¿½ï¿½ maxkbKnowledgeIds
       maxkbKnowledgeIds: hasStandard ? (Array.isArray(plan.evidence.maxkbKnowledgeIds) ? plan.evidence.maxkbKnowledgeIds : []) : [],
-      // ºÏÍ¬Éó²éÄ£Ê½£º²Î¿¼ÎÄ¼þ¿ÉÑ¡£¬²»ÒªÇó±ØÐëÓÐ
+      // ï¿½ï¿½Í¬ï¿½ï¿½ï¿½Ä£Ê½ï¿½ï¿½ï¿½Î¿ï¿½ï¿½Ä¼ï¿½ï¿½ï¿½Ñ¡ï¿½ï¿½ï¿½ï¿½Òªï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
       refFileGroupRequired: (plan.objective === 'COMPARE' && (plan as any).entryModule !== 'CONTRACT') || (plan.evidence.sources.includes('REFERENCE') && (plan as any).entryModule !== 'CONTRACT'),
       intraFileConsistency: !!plan.enhancements.intraFileConsistency,
       crossFileConsistency,
@@ -136,7 +137,7 @@ export class ReviewService {
     }).catch(() => { /* ignore */ });
   }
 
-  // ÓÃ»§¼¶±ð²¢·¢¿ØÖÆ£º×·×ÙÃ¿¸öÓÃ»§ÕýÔÚ½øÐÐµÄ AI Éó²éÎÄ¼þÊýÁ¿
+  // ï¿½Ã»ï¿½ï¿½ï¿½ï¿½ð²¢·ï¿½ï¿½ï¿½ï¿½Æ£ï¿½×·ï¿½ï¿½Ã¿ï¿½ï¿½ï¿½Ã»ï¿½ï¿½ï¿½ï¿½Ú½ï¿½ï¿½Ðµï¿½ AI ï¿½ï¿½ï¿½ï¿½Ä¼ï¿½ï¿½ï¿½ï¿½ï¿½
   private static userConcurrencyMap = new Map<string, number>();
 
   private static buildLocateMeta(
@@ -189,16 +190,16 @@ export class ReviewService {
   }
 
   /**
-   * ´Ó locateMeta µÄ×Ö·ûÎ»ÖÃÍÆµ¼ËùÔÚÒ³Âë
+   * ï¿½ï¿½ locateMeta ï¿½ï¿½ï¿½Ö·ï¿½Î»ï¿½ï¿½ï¿½Æµï¿½ï¿½ï¿½ï¿½ï¿½Ò³ï¿½ï¿½
    *
-   * PDF: ÀûÓÃÖðÒ³ÎÄ±¾Êý×é¼ÆËã×Ö·ûÆ«ÒÆ ¡ú Ò³Âë
-   * DOCX/PPTX: ÀûÓÃ parseResult.structure.paragraphs µÄ page ÐÅÏ¢
-   * ÆäËû: ·µ»Ø undefined
+   * PDF: ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ò³ï¿½Ä±ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ö·ï¿½Æ«ï¿½ï¿½ ï¿½ï¿½ Ò³ï¿½ï¿½
+   * DOCX/PPTX: ï¿½ï¿½ï¿½ï¿½ parseResult.structure.paragraphs ï¿½ï¿½ page ï¿½ï¿½Ï¢
+   * ï¿½ï¿½ï¿½ï¿½: ï¿½ï¿½ï¿½ï¿½ undefined
    */
   /**
-   * DWG ÎÄ¼þÔÚ·Ç DWG Éó²éÄ£Ê½ÏÂ£¬AI Êä³ö text ¶ø·Ç cadHandleId¡£
-   * ´Ó ctx.dwgStructure.textEntities ÖÐ°´ÎÄ±¾Æ¥Åä£¬»ØÌî cadHandleId£¬
-   * Ê¹Ç°¶ËÄÜ¾«È·Ìø×ªµ½ CAD ÊµÌå¡£
+   * DWG ï¿½Ä¼ï¿½ï¿½Ú·ï¿½ DWG ï¿½ï¿½ï¿½Ä£Ê½ï¿½Â£ï¿½AI ï¿½ï¿½ï¿½ text ï¿½ï¿½ï¿½ï¿½ cadHandleIdï¿½ï¿½
+   * ï¿½ï¿½ ctx.dwgStructure.textEntities ï¿½Ð°ï¿½ï¿½Ä±ï¿½Æ¥ï¿½ä£¬ï¿½ï¿½ï¿½ï¿½ cadHandleIdï¿½ï¿½
+   * Ê¹Ç°ï¿½ï¿½ï¿½Ü¾ï¿½È·ï¿½ï¿½×ªï¿½ï¿½ CAD Êµï¿½å¡£
    */
   private static enrichDwgHandle(
     issue: { originalText?: string; cadHandleId?: string | null },
@@ -232,7 +233,7 @@ export class ReviewService {
     const absStart = locateMeta?.absolute?.start;
     if (absStart == null || absStart < 0) return undefined;
 
-    // PDF: ÖðÒ³ÀÛ»ý×Ö·ûÆ«ÒÆ
+    // PDF: ï¿½ï¿½Ò³ï¿½Û»ï¿½ï¿½Ö·ï¿½Æ«ï¿½ï¿½
     if (pdfPages && pdfPages.length > 0) {
       let offset = 0;
       for (let i = 0; i < pdfPages.length; i++) {
@@ -241,7 +242,7 @@ export class ReviewService {
       }
     }
 
-    // DOCX/PPTX: °´¶ÎÂä page ×Ö¶Î¹ÀËã
+    // DOCX/PPTX: ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ page ï¿½Ö¶Î¹ï¿½ï¿½ï¿½
     const paragraphs = parseResult?.structure?.paragraphs;
     if (paragraphs && paragraphs.length > 0) {
       let accumulated = 0;
@@ -257,17 +258,17 @@ export class ReviewService {
   }
 
   /**
-   * »ñÈ¡ÓÃ»§µ±Ç°ÕýÔÚ½øÐÐµÄ AI Éó²éÎÄ¼þÊýÁ¿
+   * ï¿½ï¿½È¡ï¿½Ã»ï¿½ï¿½ï¿½Ç°ï¿½ï¿½ï¿½Ú½ï¿½ï¿½Ðµï¿½ AI ï¿½ï¿½ï¿½ï¿½Ä¼ï¿½ï¿½ï¿½ï¿½ï¿½
    */
   static getUserProcessingCount(userId: string): number {
     return this.userConcurrencyMap.get(userId) || 0;
   }
 
   /**
-   * µÈ´ýÓÃ»§¿ÉÓÃÅä¶î
-   * @param userId ÓÃ»§ID
-   * @param maxConcurrent ×î´ó²¢·¢Êý
-   * @param checkIntervalMs ¼ì²é¼ä¸ô£¨ºÁÃë£©
+   * ï¿½È´ï¿½ï¿½Ã»ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
+   * @param userId ï¿½Ã»ï¿½ID
+   * @param maxConcurrent ï¿½ï¿½ó²¢·ï¿½ï¿½ï¿½
+   * @param checkIntervalMs ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ë£©
    */
   private static async waitForUserQuota(
     userId: string,
@@ -280,7 +281,7 @@ export class ReviewService {
   }
 
   /**
-   * µÝÔöÓÃ»§´¦Àí¼ÆÊý
+   * ï¿½ï¿½ï¿½ï¿½ï¿½Ã»ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
    */
   private static incrementUserCount(userId: string): void {
     const current = this.userConcurrencyMap.get(userId) || 0;
@@ -288,7 +289,7 @@ export class ReviewService {
   }
 
   /**
-   * µÝ¼õÓÃ»§´¦Àí¼ÆÊý
+   * ï¿½Ý¼ï¿½ï¿½Ã»ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
    */
   private static decrementUserCount(userId: string): void {
     const current = this.userConcurrencyMap.get(userId) || 0;
@@ -298,14 +299,14 @@ export class ReviewService {
   }
 
   /**
-   * ÓÃ»§¼¶±ð²¢·¢¿ØÖÆÖ´ÐÐ
-   * - Ã¿¸öÓÃ»§Í¬Ê±×î¶à´¦Àí limit ¸öÎÄ¼þ
-   * - ²»Í¬ÓÃ»§Ö®¼ä»¥²»Ó°Ïì
+   * ï¿½Ã»ï¿½ï¿½ï¿½ï¿½ð²¢·ï¿½ï¿½ï¿½ï¿½ï¿½Ö´ï¿½ï¿½
+   * - Ã¿ï¿½ï¿½ï¿½Ã»ï¿½Í¬Ê±ï¿½ï¿½à´¦ï¿½ï¿½ limit ï¿½ï¿½ï¿½Ä¼ï¿½
+   * - ï¿½ï¿½Í¬ï¿½Ã»ï¿½Ö®ï¿½ä»¥ï¿½ï¿½Ó°ï¿½ï¿½
    *
-   * @param userId ÓÃ»§ID
-   * @param items ´ý´¦ÀíÏîÁÐ±í
-   * @param limit µ¥ÓÃ»§×î´ó²¢·¢Êý
-   * @param fn ´¦Àíº¯Êý
+   * @param userId ï¿½Ã»ï¿½ID
+   * @param items ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ð±ï¿½
+   * @param limit ï¿½ï¿½ï¿½Ã»ï¿½ï¿½ï¿½ó²¢·ï¿½ï¿½ï¿½
+   * @param fn ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
    */
   private static async runUserLevelConcurrency<T, R>(
     userId: string,
@@ -315,21 +316,21 @@ export class ReviewService {
   ): Promise<R[]> {
     const results: R[] = [];
 
-    // °´ÓÃ»§·Ö×é¿ØÖÆ²¢·¢
+    // ï¿½ï¿½ï¿½Ã»ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Æ²ï¿½ï¿½ï¿½
     for (let i = 0; i < items.length; i++) {
-      // µÈ´ý¸ÃÓÃ»§»ñµÃÅä¶î
+      // ï¿½È´ï¿½ï¿½ï¿½ï¿½Ã»ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
       await this.waitForUserQuota(userId, limit);
 
-      // Æô¶¯ÈÎÎñ£¨²»µÈ´ýÍê³É£©
+      // ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ñ£¨²ï¿½ï¿½È´ï¿½ï¿½ï¿½É£ï¿½
       const promise = fn(items[i], i).finally(() => {
-        // ÈÎÎñÍê³ÉºóµÝ¼õ¼ÆÊý
+        // ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Éºï¿½Ý¼ï¿½ï¿½ï¿½ï¿½ï¿½
         this.decrementUserCount(userId);
       });
 
-      // µÝÔö¼ÆÊý
+      // ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
       this.incrementUserCount(userId);
 
-      // µÈ´ý¸ÃÈÎÎñÍê³É
+      // ï¿½È´ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
       const result = await promise;
       results.push(result);
     }
@@ -338,34 +339,49 @@ export class ReviewService {
   }
 
   /**
-   * Ö÷Èë¿Ú: Á½½×¶Î·ÖÅú²¢·¢´¦ÀíÈÎÎñ
+   * ï¿½ï¿½ï¿½ï¿½ï¿½: ï¿½ï¿½ï¿½×¶Î·ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
    *
-   * Á÷³Ì:
-   *  1. ¼ÓÔØÈÎÎñ/ÎÄ¼þ/ÅäÖÃ£¨Ò»´ÎÐÔ£©
-   *  2. ½×¶Î1: ·ÖÅú²¢·¢¹æÔòÉó²é£¨ÊÜ maxConcurrentReviews ÏÞÖÆ£©
-   *  3. ÅúÁ¿Èë¿â: ËùÓÐ¹æÔò½á¹û + WebSocket ÍÆËÍ
-   *  4. ½×¶Î2: ·ÖÅú²¢·¢ AI Éó²é£¨ÊÜ maxConcurrentReviews ÏÞÖÆ£©
-   *  5. ÅúÁ¿Èë¿â: ËùÓÐ AI ½á¹û + WebSocket ÍÆËÍ
-   *  6. ¿çÎÄ¼þÒ»ÖÂÐÔ¼ì²é£¨CONSISTENCY£©
-   *  7. ¸üÐÂÈÎÎñ×´Ì¬ + ×îÖÕÍÆËÍ
+   * ï¿½ï¿½ï¿½ï¿½:
+   *  1. ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½/ï¿½Ä¼ï¿½/ï¿½ï¿½ï¿½Ã£ï¿½Ò»ï¿½ï¿½ï¿½Ô£ï¿½
+   *  2. ï¿½×¶ï¿½1: ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½é£¨ï¿½ï¿½ maxConcurrentReviews ï¿½ï¿½ï¿½Æ£ï¿½
+   *  3. ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½: ï¿½ï¿½ï¿½Ð¹ï¿½ï¿½ï¿½ï¿½ï¿½ + WebSocket ï¿½ï¿½ï¿½ï¿½
+   *  4. ï¿½×¶ï¿½2: ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ AI ï¿½ï¿½é£¨ï¿½ï¿½ maxConcurrentReviews ï¿½ï¿½ï¿½Æ£ï¿½
+   *  5. ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½: ï¿½ï¿½ï¿½ï¿½ AI ï¿½ï¿½ï¿½ + WebSocket ï¿½ï¿½ï¿½ï¿½
+   *  6. ï¿½ï¿½ï¿½Ä¼ï¿½Ò»ï¿½ï¿½ï¿½Ô¼ï¿½é£¨CONSISTENCYï¿½ï¿½
+   *  7. ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½×´Ì¬ + ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
    */
   static async processTask(taskId: string): Promise<void> {
+    // é˜²é‡å¤æäº¤é”ï¼šåŒä¸€ taskId ä¸èƒ½åŒæ—¶è¢«å¤„ç†
+    const { acquired } = await withLock(
+      `review:task:${taskId}`,
+      async () => { await ReviewService._processTaskImpl(taskId); },
+      300, // 5 åˆ†é’Ÿè¶…æ—¶ï¼ˆé•¿ä»»åŠ¡ï¼‰
+      true, // è‡ªåŠ¨ç»­æœŸ
+    );
 
-    // È«¾Ö²¢·¢¿ØÖÆ£ºµÈ´ý»ñÈ¡²ÛÎ»
+    if (!acquired) {
+      console.warn(`[Review] task ${taskId} already being processed by another worker, skipping`);
+      return;
+    }
+  }
+
+  private static async _processTaskImpl(taskId: string): Promise<void> {
+
+    // È«ï¿½Ö²ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Æ£ï¿½ï¿½È´ï¿½ï¿½ï¿½È¡ï¿½ï¿½Î»
     let slotAcquired = false;
     try {
-      // ÏÈ»ñÈ¡ÈÎÎñÐÅÏ¢ÒÔÄÃµ½ userId
+      // ï¿½È»ï¿½È¡ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ï¢ï¿½ï¿½ï¿½Ãµï¿½ userId
       const taskForQueue = await prisma.task.findUnique({ where: { id: taskId }, select: { creatorId: true } });
       if (taskForQueue) {
         await ConcurrencyService.waitForSlot(taskId, taskForQueue.creatorId);
         slotAcquired = true;
       }
     } catch (e) {
-      console.warn(`[Review] È«¾Ö²¢·¢¿ØÖÆÒì³££¬¼ÌÐøÖ´ÐÐ: ${e}`);
+      console.warn(`[Review] È«ï¿½Ö²ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ì³£ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ö´ï¿½ï¿½: ${e}`);
     }
 
     try {
-      // ===== Ò»´ÎÐÔ¼ÓÔØËùÓÐÊý¾Ý =====
+      // ===== Ò»ï¿½ï¿½ï¿½Ô¼ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ =====
       const task = await prisma.task.findUnique({
         where: { id: taskId },
         include: {
@@ -377,18 +393,18 @@ export class ReviewService {
       });
 
       if (!task) {
-        console.error(`[Review] ÈÎÎñ²»´æÔÚ: ${taskId}`);
+        console.error(`[Review] ï¿½ï¿½ï¿½ñ²»´ï¿½ï¿½ï¿½: ${taskId}`);
         return;
       }
 
       const totalFiles = task.files.length;
 
-      // ÍÆËÍÈÎÎñ¿ªÊ¼
+      // ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ê¼
       WebSocketService.emitTaskProgress(taskId, {
         type: 'started',
-        step: '³õÊ¼»¯',
+        step: 'ï¿½ï¿½Ê¼ï¿½ï¿½',
         progress: 0,
-        message: 'ÈÎÎñ¿ªÊ¼´¦Àí',
+        message: 'ï¿½ï¿½ï¿½ï¿½Ê¼ï¿½ï¿½ï¿½ï¿½',
         timestamp: Date.now(),
       });
 
@@ -398,17 +414,17 @@ export class ReviewService {
       const ruleLibraryId = executionPlan.ruleLibraryId;
       const directPrefixes = executionPlan.enabledPrefixes;
 
-      // ===== Ä£Ê½ÐÐÎªÅäÖÃ£¨¹Ì¶¨Ä£Ê½Ö±½Ó²é±í£¬ÎÞÐè´´½¨ Pipeline£© =====
+      // ===== Ä£Ê½ï¿½ï¿½Îªï¿½ï¿½ï¿½Ã£ï¿½ï¿½Ì¶ï¿½Ä£Ê½Ö±ï¿½Ó²ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½è´´ï¿½ï¿½ Pipelineï¿½ï¿½ =====
       const needsAI = reviewMode !== 'RULE_ONLY';
       const modeDisplayName = getModeDisplayName(reviewMode as ReviewModeType);
-      // ÓÅÏÈÊ¹ÓÃÇ°¶Ë´«ÈëµÄÆôÓÃÇ°×º£¬·ñÔò´ÓÉó²é¹æ·¶¼¯/¹æÔò¿â¼ÓÔØ
+      // ï¿½ï¿½ï¿½ï¿½Ê¹ï¿½ï¿½Ç°ï¿½Ë´ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ç°×ºï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½æ·¶ï¿½ï¿½/ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
       let ruleExecutionPlan = directPrefixes && directPrefixes.length > 0
         ? { enabledPrefixes: directPrefixes, executableItems: [] }
         : null;
       if (!ruleExecutionPlan && ruleLibraryId) {
         ruleExecutionPlan = await RuleLibraryService.getExecutionPlan(ruleLibraryId).catch(() => null);
         if (!ruleExecutionPlan) {
-          console.warn('[Review] ¹æÔò¿âÖ´ÐÐ¼Æ»®¼ÓÔØÊ§°Ü, ID:', ruleLibraryId);
+          console.warn('[Review] ï¿½ï¿½ï¿½ï¿½ï¿½Ö´ï¿½Ð¼Æ»ï¿½ï¿½ï¿½ï¿½ï¿½Ê§ï¿½ï¿½, ID:', ruleLibraryId);
         }
       }
 
@@ -416,7 +432,7 @@ export class ReviewService {
       const reviewPoints: string[] = [];
       const corePurposes: string[] = [];
 
-      // ½âÎö¶àÖªÊ¶×Ó¿â ID
+      // ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ÖªÊ¶ï¿½Ó¿ï¿½ ID
       let maxkbKnowledgeIds: string[] | undefined;
       if (executionPlan.maxkbKnowledgeIds.length > 0) {
         maxkbKnowledgeIds = executionPlan.maxkbKnowledgeIds;
@@ -424,7 +440,7 @@ export class ReviewService {
         maxkbKnowledgeIds = [maxkbKnowledgeId];
       }
 
-      // ===== ¼ÓÔØ¹æÔò¿âÌõÄ¿£¨ÓÃÓÚ AI ÓïÒåÉó²é£© =====
+      // ===== ï¿½ï¿½ï¿½Ø¹ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ä¿ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ AI ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½é£© =====
       let semanticItems: PipelineContext['semanticItems'] = undefined;
       const effectiveSpecId = executionPlan.ruleLibraryId || (task as any).ruleLibraryId;
       if (effectiveSpecId) {
@@ -437,24 +453,24 @@ export class ReviewService {
             semanticItems = specItems;
           }
         } catch (e) {
-          console.warn('[Review] ¼ÓÔØ¹æÔò¿âÌõÄ¿Ê§°Ü:', e);
+          console.warn('[Review] ï¿½ï¿½ï¿½Ø¹ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ä¿Ê§ï¿½ï¿½:', e);
         }
       }
 
-      // ±ê¼ÇËùÓÐÎÄ¼þÎª PENDING
+      // ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ä¼ï¿½Îª PENDING
       await prisma.taskFile.updateMany({
         where: { taskId },
         data: { status: 'PENDING' },
       });
 
-      // ===== Ò»´ÎÐÔ¼ÓÔØ pipeline ÅäÖÃ =====
+      // ===== Ò»ï¿½ï¿½ï¿½Ô¼ï¿½ï¿½ï¿½ pipeline ï¿½ï¿½ï¿½ï¿½ =====
       let pipelineConfig: any = {};
       try {
         const cfg = await prisma.systemConfig.findUnique({ where: { key: 'pipeline_review_config' } });
         if (cfg?.value) pipelineConfig = cfg.value;
-      } catch (e) { /* Ê¹ÓÃÄ¬ÈÏÖµ */ }
+      } catch (e) { /* Ê¹ï¿½ï¿½Ä¬ï¿½ï¿½Öµ */ }
 
-      // ===== Ò»´ÎÐÔ¼ÓÔØ²ÎÕÕÎÄ¼þ£¨ÒÔÎÄÉóÎÄÄ£Ê½£© =====
+      // ===== Ò»ï¿½ï¿½ï¿½Ô¼ï¿½ï¿½Ø²ï¿½ï¿½ï¿½ï¿½Ä¼ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ä£Ê½ï¿½ï¿½ =====
       let refFileGroupCtx: PipelineContext['refFileGroup'] | undefined;
       if (executionPlan.refFileGroupRequired) {
         const groups = await prisma.refFileGroup.findMany({
@@ -476,7 +492,7 @@ export class ReviewService {
         }
       }
 
-      // ===== ÎªÃ¿¸öÎÄ¼þ¹¹½¨ PipelineContext£¨²»º¬½×¶Î½á¹û£© =====
+      // ===== ÎªÃ¿ï¿½ï¿½ï¿½Ä¼ï¿½ï¿½ï¿½ï¿½ï¿½ PipelineContextï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½×¶Î½ï¿½ï¿½ï¿½ï¿½ =====
       const fileContexts = task.files.map(file => {
         const absolutePath = resolveFilePath(file.filePath);
 
@@ -509,7 +525,7 @@ export class ReviewService {
           corePurposes,
         };
 
-        // ¡ï DWG Ç°¶Ë WASM Êý¾Ý£ºÊ¹ÓÃ DwgHandlerService Í³Ò»´¦Àí
+        // ï¿½ï¿½ DWG Ç°ï¿½ï¿½ WASM ï¿½ï¿½ï¿½Ý£ï¿½Ê¹ï¿½ï¿½ DwgHandlerService Í³Ò»ï¿½ï¿½ï¿½ï¿½
         const dwgMeta = (file as any).dwgMetadata as any;
         const wasmText = ((file as any).extractedText || '').trim();
         DwgHandlerService.populateContextFromWasm(ctx, dwgMeta, wasmText);
@@ -517,16 +533,16 @@ export class ReviewService {
         return { file, ctx };
       });
 
-      // ===== ½×¶Î1: ËùÓÐÎÄ¼þ²¢ÐÐ¹æÔòÉó²é£¨¿ìËÙ£¬ºÁÃë~Ãë¼¶£¬ÎÞÐèÏÞÁ÷£© =====
+      // ===== ï¿½×¶ï¿½1: ï¿½ï¿½ï¿½ï¿½ï¿½Ä¼ï¿½ï¿½ï¿½ï¿½Ð¹ï¿½ï¿½ï¿½ï¿½ï¿½é£¨ï¿½ï¿½ï¿½Ù£ï¿½ï¿½ï¿½ï¿½ï¿½~ï¿½ë¼¶ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ =====
       WebSocketService.emitTaskProgress(taskId, {
         type: 'phase1_start',
-        step: '¹æÔòÉó²é',
+        step: 'ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½',
         progress: 5,
-        message: `¿ªÊ¼²¢ÐÐ¹æÔòÉó²é£¨${totalFiles} ¸öÎÄ¼þ£©`,
+        message: `ï¿½ï¿½Ê¼ï¿½ï¿½ï¿½Ð¹ï¿½ï¿½ï¿½ï¿½ï¿½é£¨${totalFiles} ï¿½ï¿½ï¿½Ä¼ï¿½ï¿½ï¿½`,
         timestamp: Date.now(),
       });
 
-      // ½×¶Î1£º¹æÔòÉó²éÈ«²¿²¢ÐÐ£¨×ÊÔ´ÏûºÄµÍ£¬¿ìËÙÏìÓ¦£©
+      // ï¿½×¶ï¿½1ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½È«ï¿½ï¿½ï¿½ï¿½ï¿½Ð£ï¿½ï¿½ï¿½Ô´ï¿½ï¿½ï¿½ÄµÍ£ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ó¦ï¿½ï¿½
       const fastPhasePromises = fileContexts.map(({ file, ctx }, index) =>
         this.runFileFastPhase(taskId, file, ctx, index, totalFiles)
           .then(res => ({ ...res, fileId: file.id, fileName: file.fileName }))
@@ -534,25 +550,25 @@ export class ReviewService {
       );
       const fastPhaseResults = await Promise.all(fastPhasePromises);
 
-      // »ñÈ¡½×¶Î2µÄ²¢·¢ÏÞÖÆ£¨´Ó basic_settings ¶ÁÈ¡£¬Ä¬ÈÏ 3£©
+      // ï¿½ï¿½È¡ï¿½×¶ï¿½2ï¿½Ä²ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Æ£ï¿½ï¿½ï¿½ basic_settings ï¿½ï¿½È¡ï¿½ï¿½Ä¬ï¿½ï¿½ 3ï¿½ï¿½
       const maxConcurrent = await getMaxConcurrentReviews();
 
-      // ===== ÅúÁ¿Èë¿â: ½×¶Î1½á¹û =====
+      // ===== ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½: ï¿½×¶ï¿½1ï¿½ï¿½ï¿½ =====
       let fastSuccessCount = 0;
       let fastFailedCount = 0;
       for (const result of fastPhaseResults) {
         if ('error' in result) {
           fastFailedCount++;
-          console.error(`[Review] ÎÄ¼þ ${result.fileName} ½×¶Î1Ê§°Ü:`, result.error);
+          console.error(`[Review] ï¿½Ä¼ï¿½ ${result.fileName} ï¿½×¶ï¿½1Ê§ï¿½ï¿½:`, result.error);
           await this.createErrorDetail(taskId, result.fileId, result.fileName, result.error);
         } else {
           fastSuccessCount++;
-          // ½×¶Î1½á¹ûÒÑÔÚ runFileFastPhase ÖÐÈë¿â£¬´Ë´¦½öÍÆËÍ WebSocket
+          // ï¿½×¶ï¿½1ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ runFileFastPhase ï¿½ï¿½ï¿½ï¿½â£¬ï¿½Ë´ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ WebSocket
           WebSocketService.emitTaskProgress(taskId, {
             type: 'fast_phase_complete',
-            step: '¹æÔòÉó²éÍê³É',
+            step: 'ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½',
             progress: 40,
-            message: `¹æÔòÉó²éÍê³É: ${result.ruleIssues.length} ¸ö¹æÔòÎÊÌâ, ${result.stdRefIssues.length} ¸ö±ê×¼ÒýÓÃÎÊÌâ`,
+            message: `ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½: ${result.ruleIssues.length} ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½, ${result.stdRefIssues.length} ï¿½ï¿½ï¿½ï¿½×¼ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½`,
             fileName: result.fileName,
             phase: 'phase1',
             ruleCount: result.ruleIssues.length,
@@ -563,21 +579,21 @@ export class ReviewService {
       }
 
 
-      // ===== ÎÄ¼þÄÚÒ»ÖÂÐÔ¼ì²é£¨Æô¶¯ºóÓë½×¶Î2²¢ÐÐ£¬×îºó await »ã×Ü£© =====
+      // ===== ï¿½Ä¼ï¿½ï¿½ï¿½Ò»ï¿½ï¿½ï¿½Ô¼ï¿½é£¨ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½×¶ï¿½2ï¿½ï¿½ï¿½Ð£ï¿½ï¿½ï¿½ï¿½ await ï¿½ï¿½ï¿½Ü£ï¿½ =====
       let intraConsistencyPromise: Promise<Array<{ fileId: string; issueCount: number }>> | null = null;
       if (intraFileConsistency) {
         WebSocketService.emitTaskProgress(taskId, {
           type: 'intra_consistency_check',
-          step: 'ÎÄ¼þÄÚÒ»ÖÂÐÔ¼ì²é',
+          step: 'ï¿½Ä¼ï¿½ï¿½ï¿½Ò»ï¿½ï¿½ï¿½Ô¼ï¿½ï¿½',
           progress: 42,
-          message: 'ÕýÔÚ½øÐÐÎÄ¼þÄÚÒ»ÖÂÐÔ¼ì²é...',
+          message: 'ï¿½ï¿½ï¿½Ú½ï¿½ï¿½ï¿½ï¿½Ä¼ï¿½ï¿½ï¿½Ò»ï¿½ï¿½ï¿½Ô¼ï¿½ï¿½...',
           timestamp: Date.now(),
         });
 
-        // ÊÕ¼¯ÒÑ³É¹¦ÌáÈ¡ÎÄ±¾µÄÎÄ¼þÉÏÏÂÎÄ
+        // ï¿½Õ¼ï¿½ï¿½Ñ³É¹ï¿½ï¿½ï¿½È¡ï¿½Ä±ï¿½ï¿½ï¿½ï¿½Ä¼ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
         const filesWithText = fileContexts.filter(({ ctx }) => ctx.extractedText && ctx.extractedText.trim().length > 0);
 
-        // Æô¶¯µ«²»Á¢¼´ await£¬Óë½×¶Î2²¢ÐÐÖ´ÐÐ
+        // ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ awaitï¿½ï¿½ï¿½ï¿½×¶ï¿½2ï¿½ï¿½ï¿½ï¿½Ö´ï¿½ï¿½
         intraConsistencyPromise = Promise.all(
           filesWithText.map(async ({ file, ctx }) => {
             try {
@@ -588,18 +604,18 @@ export class ReviewService {
               }
               return { fileId: file.id, issueCount };
             } catch (e) {
-              console.warn(`[Review] ${file.fileName} ÎÄ¼þÄÚÒ»ÖÂÐÔ¼ì²éÊ§°Ü:`, e);
+              console.warn(`[Review] ${file.fileName} ï¿½Ä¼ï¿½ï¿½ï¿½Ò»ï¿½ï¿½ï¿½Ô¼ï¿½ï¿½Ê§ï¿½ï¿½:`, e);
               return { fileId: file.id, issueCount: 0 };
             }
           }),
         );
       }
 
-      // ===== ½×¶Î2: ÓÃ»§¼¶±ð²¢·¢ AI Éó²é =====
-      // Ê¹ÓÃÍ³Ò»´´½¨µÄ pipeline ÅÐ¶ÏÊÇ·ñÐèÒª AI Éó²é
+      // ===== ï¿½×¶ï¿½2: ï¿½Ã»ï¿½ï¿½ï¿½ï¿½ð²¢·ï¿½ AI ï¿½ï¿½ï¿½ =====
+      // Ê¹ï¿½ï¿½Í³Ò»ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ pipeline ï¿½Ð¶ï¿½ï¿½Ç·ï¿½ï¿½ï¿½Òª AI ï¿½ï¿½ï¿½
       let slowPhaseResults: any[] = [];
       if (!needsAI) {
-        // ²»ÐèÒª AI Éó²éµÄÄ£Ê½£¬¸ù¾Ý½×¶Î1½á¹û±ê¼ÇÎÄ¼þ×´Ì¬
+        // ï¿½ï¿½ï¿½ï¿½Òª AI ï¿½ï¿½ï¿½ï¿½Ä£Ê½ï¿½ï¿½ï¿½ï¿½ï¿½Ý½×¶ï¿½1ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ä¼ï¿½×´Ì¬
         const failedFileIds = new Set(
           fastPhaseResults.filter(r => 'error' in r).map(r => r.fileId)
         );
@@ -608,17 +624,17 @@ export class ReviewService {
           await prisma.taskFile.update({
             where: { id: file.id },
             data: { status },
-          }).catch((e) => { console.warn(`[Review] ¸üÐÂÎÄ¼þ×´Ì¬Ê§°Ü (${file.id}):`, e); });
+          }).catch((e) => { console.warn(`[Review] ï¿½ï¿½ï¿½ï¿½ï¿½Ä¼ï¿½×´Ì¬Ê§ï¿½ï¿½ (${file.id}):`, e); });
         }
         WebSocketService.emitTaskProgress(taskId, {
           type: 'phase2_start',
-          step: 'AI Éî¶ÈÉó²é',
+          step: 'AI ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½',
           progress: 45,
-          message: `${modeDisplayName}Ä£Ê½ÎÞÐè AI Éó²é£¬Ö±½ÓÍê³É`,
+          message: `${modeDisplayName}Ä£Ê½ï¿½ï¿½ï¿½ï¿½ AI ï¿½ï¿½é£¬Ö±ï¿½ï¿½ï¿½ï¿½ï¿½`,
           timestamp: Date.now(),
         });
       } else {
-        // ¹ýÂËµô½×¶Î1Ê§°ÜµÄÎÄ¼þ£¬±ÜÃâ¶ÔËüÃÇÖ´ÐÐÎÞÒâÒåµÄ AI Éó²é
+        // ï¿½ï¿½ï¿½Ëµï¿½ï¿½×¶ï¿½1Ê§ï¿½Üµï¿½ï¿½Ä¼ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ö´ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ AI ï¿½ï¿½ï¿½
         const failedFileIds = new Set(
           fastPhaseResults.filter(r => 'error' in r).map(r => r.fileId)
         );
@@ -626,49 +642,49 @@ export class ReviewService {
         const skippedCount = fileContexts.length - eligibleForAI.length;
 
         if (skippedCount > 0) {
-          console.warn(`[Review] 7²2„1‚5 ${skippedCount} ¸öÎÄ¼þ½×¶Î1Ê§°Ü£¬Ìø¹ý½×¶Î2:`,
+          console.warn(`[Review] ï¿½7ï¿½2ï¿½1ï¿½5 ${skippedCount} ï¿½ï¿½ï¿½Ä¼ï¿½ï¿½×¶ï¿½1Ê§ï¿½Ü£ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½×¶ï¿½2:`,
             fileContexts.filter(({ file }) => failedFileIds.has(file.id)).map(({ file }) => file.fileName));
         }
 
-        // ±ê¼Ç½×¶Î1Ê§°ÜµÄÎÄ¼þ×´Ì¬
+        // ï¿½ï¿½Ç½×¶ï¿½1Ê§ï¿½Üµï¿½ï¿½Ä¼ï¿½×´Ì¬
         for (const fileId of failedFileIds) {
           await prisma.taskFile.update({
             where: { id: fileId },
             data: { status: 'FAILED' },
-          }).catch((e) => { console.warn(`[Review] ¸üÐÂ½×¶Î1Ê§°ÜÎÄ¼þ×´Ì¬ (${fileId}):`, e); });
+          }).catch((e) => { console.warn(`[Review] ï¿½ï¿½ï¿½Â½×¶ï¿½1Ê§ï¿½ï¿½ï¿½Ä¼ï¿½×´Ì¬ (${fileId}):`, e); });
         }
 
-        // ¡ï LLM ÅäÖÃÔ¤¼ì£º½×¶Î2¿ªÊ¼Ç°¼ì²é LLM ÊÇ·ñ¿ÉÓÃ£¬ÍÆËÍÃ÷È·×´Ì¬
+        // ï¿½ï¿½ LLM ï¿½ï¿½ï¿½ï¿½Ô¤ï¿½ì£ºï¿½×¶ï¿½2ï¿½ï¿½Ê¼Ç°ï¿½ï¿½ï¿½ LLM ï¿½Ç·ï¿½ï¿½ï¿½Ã£ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½È·×´Ì¬
         let llmConfigAvailable = true;
         try {
           const llmConfig = await LlmService.getLlmConfig();
           if (!llmConfig) {
             llmConfigAvailable = false;
-            console.warn('[Review] ?? LLM Î´ÅäÖÃ£¬AI Éó²é½«ÎÞ·¨Õý³£Ö´ÐÐ');
+            console.warn('[Review] ?? LLM Î´ï¿½ï¿½ï¿½Ã£ï¿½AI ï¿½ï¿½é½«ï¿½Þ·ï¿½ï¿½ï¿½ï¿½ï¿½Ö´ï¿½ï¿½');
             WebSocketService.emitTaskProgress(taskId, {
               type: 'llm_warning',
-              step: 'AI Éó²é¾¯¸æ',
+              step: 'AI ï¿½ï¿½é¾¯ï¿½ï¿½',
               progress: 45,
-              message: '?? LLM Î´ÅäÖÃ£¬AI Éó²é½«ÎÞ·¨Ö´ÐÐ¡£ÇëÔÚÏµÍ³ÅäÖÃÖÐÉèÖÃ LLM API¡£',
+              message: '?? LLM Î´ï¿½ï¿½ï¿½Ã£ï¿½AI ï¿½ï¿½é½«ï¿½Þ·ï¿½Ö´ï¿½Ð¡ï¿½ï¿½ï¿½ï¿½ï¿½ÏµÍ³ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ LLM APIï¿½ï¿½',
               timestamp: Date.now(),
             });
           } else {
           }
         } catch (e) {
-          console.warn('[Review] LLM ÅäÖÃ¼ì²éÒì³£:', e);
+          console.warn('[Review] LLM ï¿½ï¿½ï¿½Ã¼ï¿½ï¿½ï¿½ì³£:', e);
         }
 
         WebSocketService.emitTaskProgress(taskId, {
           type: 'phase2_start',
-          step: 'AI Éî¶ÈÉó²é',
+          step: 'AI ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½',
           progress: 45,
           message: llmConfigAvailable
-            ? `¿ªÊ¼ AI Éó²é£¨${eligibleForAI.length} ¸öÎÄ¼þ£¬ÓÃ»§²¢·¢ÉÏÏÞ ${maxConcurrent}£©`
-            : `¿ªÊ¼ AI Éó²é£¨${eligibleForAI.length} ¸öÎÄ¼þ£©¡ª ?? LLM Î´ÅäÖÃ£¬Éó²é¿ÉÄÜÊ§°Ü`,
+            ? `ï¿½ï¿½Ê¼ AI ï¿½ï¿½é£¨${eligibleForAI.length} ï¿½ï¿½ï¿½Ä¼ï¿½ï¿½ï¿½ï¿½Ã»ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ${maxConcurrent}ï¿½ï¿½`
+            : `ï¿½ï¿½Ê¼ AI ï¿½ï¿½é£¨${eligibleForAI.length} ï¿½ï¿½ï¿½Ä¼ï¿½ï¿½ï¿½ï¿½ï¿½ ?? LLM Î´ï¿½ï¿½ï¿½Ã£ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ê§ï¿½ï¿½`,
           timestamp: Date.now(),
         });
 
-        // ÓÃ»§¼¶±ð²¢·¢Ö´ÐÐ½×¶Î2£¨Ã¿¸öÓÃ»§¶ÀÁ¢ÏÞÁ÷£¬Ìø¹ý½×¶Î1Ê§°ÜµÄÎÄ¼þ£©
+        // ï¿½Ã»ï¿½ï¿½ï¿½ï¿½ð²¢·ï¿½Ö´ï¿½Ð½×¶ï¿½2ï¿½ï¿½Ã¿ï¿½ï¿½ï¿½Ã»ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½×¶ï¿½1Ê§ï¿½Üµï¿½ï¿½Ä¼ï¿½ï¿½ï¿½
         slowPhaseResults = await this.runUserLevelConcurrency(
           task.creatorId,
           eligibleForAI,
@@ -680,25 +696,25 @@ export class ReviewService {
         );
       } // end of needsAI else
 
-      // ===== ÅúÁ¿Èë¿â: ½×¶Î2½á¹û =====
+      // ===== ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½: ï¿½×¶ï¿½2ï¿½ï¿½ï¿½ =====
       let slowSuccessCount = 0;
       let slowFailedCount = 0;
-      const enginesUsed = new Set<string>(); // ÊÕ¼¯ËùÓÐÎÄ¼þÊµ¼ÊÊ¹ÓÃµÄ AI ÒýÇæ
+      const enginesUsed = new Set<string>(); // ï¿½Õ¼ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ä¼ï¿½Êµï¿½ï¿½Ê¹ï¿½Ãµï¿½ AI ï¿½ï¿½ï¿½ï¿½
       for (const result of slowPhaseResults) {
         const isError = 'error' in result;
         if (isError) {
           slowFailedCount++;
-          console.error(`[Review] ÎÄ¼þ ${result.fileName} ½×¶Î2Ê§°Ü:`, result.error);
+          console.error(`[Review] ï¿½Ä¼ï¿½ ${result.fileName} ï¿½×¶ï¿½2Ê§ï¿½ï¿½:`, result.error);
           await this.createErrorDetail(taskId, result.fileId, result.fileName, result.error);
         } else {
           slowSuccessCount++;
           if (result.usedEngine) enginesUsed.add(result.usedEngine);
-          // ÍÆËÍ½×¶Î2Íê³ÉÊÂ¼þ
+          // ï¿½ï¿½ï¿½Í½×¶ï¿½2ï¿½ï¿½ï¿½ï¿½Â¼ï¿½
           WebSocketService.emitTaskProgress(taskId, {
             type: 'slow_phase_complete',
-            step: 'AIÉó²éÍê³É',
+            step: 'AIï¿½ï¿½ï¿½ï¿½ï¿½ï¿½',
             progress: 80,
-            message: `AIÉó²éÍê³É: ${result.aiIssues.length} ¸öÎÊÌâ (${result.usedEngine || 'unknown'})`,
+            message: `AIï¿½ï¿½ï¿½ï¿½ï¿½ï¿½: ${result.aiIssues.length} ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ (${result.usedEngine || 'unknown'})`,
             fileName: result.fileName,
             phase: 'phase2',
             aiCount: result.aiIssues.length,
@@ -706,42 +722,42 @@ export class ReviewService {
             timestamp: Date.now(),
           });
         }
-        // ¸üÐÂÎÄ¼þ×´Ì¬
+        // ï¿½ï¿½ï¿½ï¿½ï¿½Ä¼ï¿½×´Ì¬
         const fileStatus = isError ? 'FAILED' : 'COMPLETED';
         await prisma.taskFile.update({
           where: { id: result.fileId },
           data: { status: fileStatus },
-        }).catch((e) => { console.warn(`[Review] ¸üÐÂÎÄ¼þ×´Ì¬Ê§°Ü (${result.fileId}):`, e); });
+        }).catch((e) => { console.warn(`[Review] ï¿½ï¿½ï¿½ï¿½ï¿½Ä¼ï¿½×´Ì¬Ê§ï¿½ï¿½ (${result.fileId}):`, e); });
       }
 
 
-      // ===== ¿çÎÄ¼þÒ»ÖÂÐÔ¼ì²é =====
-      // Ê¹ÓÃ capabilities.crossFile ÅÐ¶Ï£¨ÄÜÁ¦Çý¶¯£¬Ìæ´úÔ­ÏÈÓ²±àÂëÄ£Ê½ÁÐ±í£©
-      // ===== µÈ´ýÎÄ¼þÄÚÒ»ÖÂÐÔ¼ì²éÍê³É£¨Óë½×¶Î2²¢ÐÐÆô¶¯£¬´Ë´¦»ã×Ü½á¹û£© =====
+      // ===== ï¿½ï¿½ï¿½Ä¼ï¿½Ò»ï¿½ï¿½ï¿½Ô¼ï¿½ï¿½ =====
+      // Ê¹ï¿½ï¿½ capabilities.crossFile ï¿½Ð¶Ï£ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ô­ï¿½ï¿½Ó²ï¿½ï¿½ï¿½ï¿½Ä£Ê½ï¿½Ð±ï¿½ï¿½ï¿½
+      // ===== ï¿½È´ï¿½ï¿½Ä¼ï¿½ï¿½ï¿½Ò»ï¿½ï¿½ï¿½Ô¼ï¿½ï¿½ï¿½ï¿½É£ï¿½ï¿½ï¿½×¶ï¿½2ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ë´ï¿½ï¿½ï¿½ï¿½Ü½ï¿½ï¿½ï¿½ï¿½ =====
       if (intraConsistencyPromise) {
         try {
           const intraResults = await intraConsistencyPromise;
           const totalIntraIssues = intraResults.reduce((sum, r) => sum + r.issueCount, 0);
           WebSocketService.emitTaskProgress(taskId, {
             type: 'intra_consistency_done',
-            step: 'ÎÄ¼þÄÚÒ»ÖÂÐÔ¼ì²éÍê³É',
+            step: 'ï¿½Ä¼ï¿½ï¿½ï¿½Ò»ï¿½ï¿½ï¿½Ô¼ï¿½ï¿½ï¿½ï¿½ï¿½',
             progress: 92,
-            message: `ÎÄ¼þÄÚÒ»ÖÂÐÔ¼ì²éÍê³É: ·¢ÏÖ ${totalIntraIssues} ¸ö²»Ò»ÖÂÎÊÌâ`,
+            message: `ï¿½Ä¼ï¿½ï¿½ï¿½Ò»ï¿½ï¿½ï¿½Ô¼ï¿½ï¿½ï¿½ï¿½ï¿½: ï¿½ï¿½ï¿½ï¿½ ${totalIntraIssues} ï¿½ï¿½ï¿½ï¿½Ò»ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½`,
             timestamp: Date.now(),
           });
         } catch (e) {
-          console.warn(`[Review] ÎÄ¼þÄÚÒ»ÖÂÐÔ¼ì²éÒì³£:`, e);
+          console.warn(`[Review] ï¿½Ä¼ï¿½ï¿½ï¿½Ò»ï¿½ï¿½ï¿½Ô¼ï¿½ï¿½ï¿½ì³£:`, e);
         }
       }
 
-      // ===== ¿çÎÄ¼þÒ»ÖÂÐÔ¼ì²é =====
+      // ===== ï¿½ï¿½ï¿½Ä¼ï¿½Ò»ï¿½ï¿½ï¿½Ô¼ï¿½ï¿½ =====
       const crossFileNeeded = executionPlan.crossFileConsistency && totalFiles >= 2;
       if (crossFileNeeded) {
         WebSocketService.emitTaskProgress(taskId, {
           type: 'cross_file_check',
-          step: '¿çÎÄ¼þÒ»ÖÂÐÔ¼ì²é',
+          step: 'ï¿½ï¿½ï¿½Ä¼ï¿½Ò»ï¿½ï¿½ï¿½Ô¼ï¿½ï¿½',
           progress: 90,
-          message: 'ÕýÔÚ½øÐÐ¿çÎÄ¼þÒ»ÖÂÐÔ¼ì²é...',
+          message: 'ï¿½ï¿½ï¿½Ú½ï¿½ï¿½Ð¿ï¿½ï¿½Ä¼ï¿½Ò»ï¿½ï¿½ï¿½Ô¼ï¿½ï¿½...',
           timestamp: Date.now(),
         });
 
@@ -749,25 +765,25 @@ export class ReviewService {
           const crossIssueCount = await CrossFileConsistencyService.check(taskId, task.files);
           WebSocketService.emitTaskProgress(taskId, {
             type: 'cross_file_done',
-            step: 'Ò»ÖÂÐÔ¼ì²éÍê³É',
+            step: 'Ò»ï¿½ï¿½ï¿½Ô¼ï¿½ï¿½ï¿½ï¿½ï¿½',
             progress: 95,
-            message: `·¢ÏÖ ${crossIssueCount} ¸ö²»Ò»ÖÂÎÊÌâ`,
+            message: `ï¿½ï¿½ï¿½ï¿½ ${crossIssueCount} ï¿½ï¿½ï¿½ï¿½Ò»ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½`,
             timestamp: Date.now(),
           });
         } catch (error) {
-          console.error(`[Review] ¿çÎÄ¼þÒ»ÖÂÐÔ¼ì²éÊ§°Ü: ${taskId}`, error);
+          console.error(`[Review] ï¿½ï¿½ï¿½Ä¼ï¿½Ò»ï¿½ï¿½ï¿½Ô¼ï¿½ï¿½Ê§ï¿½ï¿½: ${taskId}`, error);
         }
       }
 
-      // ===== ¸üÐÂÈÎÎñ×´Ì¬ =====
-      // AI Ä£Ê½£º½×¶Î1Ê§°Ü + ½×¶Î2Ê§°Ü = ×ÜÊ§°ÜÊý
-      // ·Ç AI Ä£Ê½£ºÖ±½ÓÊ¹ÓÃ½×¶Î1¼ÆÊý
+      // ===== ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½×´Ì¬ =====
+      // AI Ä£Ê½ï¿½ï¿½ï¿½×¶ï¿½1Ê§ï¿½ï¿½ + ï¿½×¶ï¿½2Ê§ï¿½ï¿½ = ï¿½ï¿½Ê§ï¿½ï¿½ï¿½ï¿½
+      // ï¿½ï¿½ AI Ä£Ê½ï¿½ï¿½Ö±ï¿½ï¿½Ê¹ï¿½Ã½×¶ï¿½1ï¿½ï¿½ï¿½ï¿½
       const phase1FailedCount = fastFailedCount;
       const successCount = needsAI ? slowSuccessCount : fastSuccessCount;
       const failedCount = needsAI ? (phase1FailedCount + slowFailedCount) : fastFailedCount;
       const newStatus = (failedCount >= totalFiles) ? 'FAILED' : 'COMPLETED';
 
-      // ³Ö¾Ã»¯Êµ¼ÊÊ¹ÓÃµÄ AI ÒýÇæÐÅÏ¢µ½ÈÎÎñ¼ÇÂ¼
+      // ï¿½Ö¾Ã»ï¿½Êµï¿½ï¿½Ê¹ï¿½Ãµï¿½ AI ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ï¢ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Â¼
       const primaryEngine = enginesUsed.size > 0 ? Array.from(enginesUsed).join('+') : (needsAI ? 'none' : undefined);
       await prisma.task.update({
         where: { id: taskId },
@@ -777,62 +793,62 @@ export class ReviewService {
         },
       });
 
-      // ===== ×îÖÕÍÆËÍ =====
+      // ===== ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ =====
       WebSocketService.emitTaskProgress(taskId, {
         type: newStatus === 'COMPLETED' ? 'completed' : 'failed',
-        step: newStatus === 'COMPLETED' ? 'È«²¿Íê³É' : 'ÈÎÎñÊ§°Ü',
+        step: newStatus === 'COMPLETED' ? 'È«ï¿½ï¿½ï¿½ï¿½ï¿½' : 'ï¿½ï¿½ï¿½ï¿½Ê§ï¿½ï¿½',
         progress: 100,
         message: newStatus === 'COMPLETED'
-          ? `Éó²éÍê³É£¬³É¹¦ ${successCount} ¸öÎÄ¼þ£¬Ê§°Ü ${failedCount} ¸ö`
-          : `ËùÓÐ ${failedCount} ¸öÎÄ¼þÉó²éÊ§°Ü`,
+          ? `ï¿½ï¿½ï¿½ï¿½ï¿½É£ï¿½ï¿½É¹ï¿½ ${successCount} ï¿½ï¿½ï¿½Ä¼ï¿½ï¿½ï¿½Ê§ï¿½ï¿½ ${failedCount} ï¿½ï¿½`
+          : `ï¿½ï¿½ï¿½ï¿½ ${failedCount} ï¿½ï¿½ï¿½Ä¼ï¿½ï¿½ï¿½ï¿½Ê§ï¿½ï¿½`,
         result: { successCount, failedCount, fastSuccessCount, fastFailedCount },
         timestamp: Date.now(),
       });
 
       WebSocketService.emitToUser(task.creatorId, {
         type: 'task_complete',
-        title: newStatus === 'COMPLETED' ? 'Éó²éÈÎÎñÍê³É' : 'Éó²éÈÎÎñÊ§°Ü',
+        title: newStatus === 'COMPLETED' ? 'ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½' : 'ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ê§ï¿½ï¿½',
         message: newStatus === 'COMPLETED'
-          ? `ÈÎÎñ¡¸${task.title}¡¹ÒÑÍê³É£¬${successCount} ¸öÎÄ¼þÉó²éÍê³É`
-          : `ÈÎÎñ¡¸${task.title}¡¹Éó²éÊ§°Ü£¬ËùÓÐÎÄ¼þ´¦Àí¾ùÎ´³É¹¦`,
+          ? `ï¿½ï¿½ï¿½ï¿½${task.title}ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½É£ï¿½${successCount} ï¿½ï¿½ï¿½Ä¼ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½`
+          : `ï¿½ï¿½ï¿½ï¿½${task.title}ï¿½ï¿½ï¿½ï¿½ï¿½Ê§ï¿½Ü£ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ä¼ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Î´ï¿½É¹ï¿½`,
         taskId,
         status: newStatus,
       });
 
     } catch (error) {
-      console.error(`[Review] ÈÎÎñ´¦ÀíÒì³£: ${taskId}`, error);
+      console.error(`[Review] ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ì³£: ${taskId}`, error);
       try {
         await prisma.task.update({ where: { id: taskId }, data: { status: 'FAILED' } });
         WebSocketService.emitTaskProgress(taskId, {
           type: 'error',
-          step: 'ÈÎÎñÒì³£',
+          step: 'ï¿½ï¿½ï¿½ï¿½ï¿½ì³£',
           progress: 0,
-          message: `ÈÎÎñ´¦ÀíÒì³£: ${error instanceof Error ? error.message : 'Î´Öª´íÎó'}`,
+          message: `ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ì³£: ${error instanceof Error ? error.message : 'Î´Öªï¿½ï¿½ï¿½ï¿½'}`,
           timestamp: Date.now(),
         });
       } catch (e) { /* ignore */ }
     } finally {
-      // ÊÍ·ÅÈ«¾Ö²¢·¢²ÛÎ»
+      // ï¿½Í·ï¿½È«ï¿½Ö²ï¿½ï¿½ï¿½ï¿½ï¿½Î»
       if (slotAcquired) {
         try {
           await ConcurrencyService.releaseSlot(taskId);
         } catch (e) {
-          console.warn(`[Review] ÊÍ·ÅÈ«¾Ö²ÛÎ»Ê§°Ü: ${e}`);
+          console.warn(`[Review] ï¿½Í·ï¿½È«ï¿½Ö²ï¿½Î»Ê§ï¿½ï¿½: ${e}`);
         }
       }
     }
   }
 
-  // ==================== Á½½×¶ÎÎÄ¼þ´¦Àí·½·¨ ====================
+  // ==================== ï¿½ï¿½ï¿½×¶ï¿½ï¿½Ä¼ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ====================
 
   /**
-   * ½×¶Î1: ¹æÔòÉó²é + ±ê×¼ÒýÓÃ¼ì²é
-   * - ÎÄ±¾ÌáÈ¡£¨Parser + OCR£©
-   * - PDF ÖðÒ³½âÎö / Word ½á¹¹»¯
-   * - ¹æÔòÒýÇæ¼ì²é
-   * - ±ê×¼ÒýÓÃ¹æ·¶ÐÔ¼ì²é
+   * ï¿½×¶ï¿½1: ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ + ï¿½ï¿½×¼ï¿½ï¿½ï¿½Ã¼ï¿½ï¿½
+   * - ï¿½Ä±ï¿½ï¿½ï¿½È¡ï¿½ï¿½Parser + OCRï¿½ï¿½
+   * - PDF ï¿½ï¿½Ò³ï¿½ï¿½ï¿½ï¿½ / Word ï¿½á¹¹ï¿½ï¿½
+   * - ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
+   * - ï¿½ï¿½×¼ï¿½ï¿½ï¿½Ã¹æ·¶ï¿½Ô¼ï¿½ï¿½
    *
-   * Íê³ÉºóÁ¢¼´Èë¿â²¢·µ»Ø½á¹û£¨²»º¬ AI ½á¹û£©
+   * ï¿½ï¿½Éºï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½â²¢ï¿½ï¿½ï¿½Ø½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ AI ï¿½ï¿½ï¿½ï¿½ï¿½
    */
   static async runFileFastPhase(
     taskId: string,
@@ -843,26 +859,26 @@ export class ReviewService {
   ): Promise<{ ruleIssues: any[]; stdRefIssues: any[] }> {
     const absolutePath = resolveFilePath(file.filePath);
 
-    // ÍÆËÍÎÄ¼þ½×¶Î1¿ªÊ¼
+    // ï¿½ï¿½ï¿½ï¿½ï¿½Ä¼ï¿½ï¿½×¶ï¿½1ï¿½ï¿½Ê¼
     const fileProgress = Math.round((fileIndex / totalFiles) * 100);
     WebSocketService.emitTaskProgress(taskId, {
       type: 'file_fast_start',
-      step: `¹æÔòÉó²é ${fileIndex + 1}/${totalFiles}`,
+      step: `ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ${fileIndex + 1}/${totalFiles}`,
       progress: fileProgress,
-      message: `¿ªÊ¼¹æÔòÉó²é: ${file.fileName}`,
+      message: `ï¿½ï¿½Ê¼ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½: ${file.fileName}`,
       fileName: file.fileName,
       phase: 'phase1',
       timestamp: Date.now(),
     });
 
-    // ±ê¼ÇÎÄ¼þÎª´¦ÀíÖÐ
+    // ï¿½ï¿½ï¿½ï¿½Ä¼ï¿½Îªï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
     await prisma.taskFile.update({
       where: { id: file.id },
       data: { status: 'PROCESSING' },
-    }).catch((e) => { console.warn(`[Review] ±ê¼ÇÎÄ¼þ´¦ÀíÖÐÊ§°Ü (${file.fileName}):`, e); });
+    }).catch((e) => { console.warn(`[Review] ï¿½ï¿½ï¿½ï¿½Ä¼ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ê§ï¿½ï¿½ (${file.fileName}):`, e); });
 
-    // Ô¤ÌáÈ¡ÎÄ±¾£¨ÓÃÓÚ½ø¶È·ÖÄ¸¼ÆËã£©
-    // ¡ï Èç¹û ctx.extractedText ÒÑÓÐÇ°¶Ë WASM Êý¾Ý£¬Ìø¹ý Python ½âÎö
+    // Ô¤ï¿½ï¿½È¡ï¿½Ä±ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ú½ï¿½ï¿½È·ï¿½Ä¸ï¿½ï¿½ï¿½ã£©
+    // ï¿½ï¿½ ï¿½ï¿½ï¿½ ctx.extractedText ï¿½ï¿½ï¿½ï¿½Ç°ï¿½ï¿½ WASM ï¿½ï¿½ï¿½Ý£ï¿½ï¿½ï¿½ï¿½ï¿½ Python ï¿½ï¿½ï¿½ï¿½
     let parseResultFromPreExtract: import('./python-parser.service').ParseResult | null = null;
     if (!ctx.extractedText || ctx.extractedText.trim().length === 0) {
       try {
@@ -871,19 +887,19 @@ export class ReviewService {
           ctx.extractedText = parsed.text;
           parseResultFromPreExtract = parsed.result;
         } else {
-          console.warn(`[Review] Ô¤ÌáÈ¡·µ»Ø¿ÕÎÄ±¾: ${file.fileName}, fileType=${file.fileType}`);
+          console.warn(`[Review] Ô¤ï¿½ï¿½È¡ï¿½ï¿½ï¿½Ø¿ï¿½ï¿½Ä±ï¿½: ${file.fileName}, fileType=${file.fileType}`);
         }
       } catch (e) {
-        console.warn(`[Review] Ô¤ÌáÈ¡Òì³£: ${file.fileName}, fileType=${file.fileType}, error=${(e as Error).message || e}`);
+        console.warn(`[Review] Ô¤ï¿½ï¿½È¡ï¿½ì³£: ${file.fileName}, fileType=${file.fileType}, error=${(e as Error).message || e}`);
       }
     }
 
     const textLength = ctx.extractedText?.length || 0;
-    // WASM Â·¾¶ÏÂ extractedMarkdown Ê¹ÓÃ ctx.extractedText£»ÆäËûÂ·¾¶Ê¹ÓÃÔ¤ÌáÈ¡µÄ markdown
+    // WASM Â·ï¿½ï¿½ï¿½ï¿½ extractedMarkdown Ê¹ï¿½ï¿½ ctx.extractedTextï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Â·ï¿½ï¿½Ê¹ï¿½ï¿½Ô¤ï¿½ï¿½È¡ï¿½ï¿½ markdown
     const extractedMarkdown = (ctx.fileType.toLowerCase() === 'dwg' && ctx.extractedText)
       ? ctx.extractedText
       : (parseResultFromPreExtract?.markdown || parseResultFromPreExtract?.text || null);
-    // DWG ÔªÊý¾Ý£º±£´æÍ¼²ã¡¢Í¼ÔªÍ³¼ÆµÈ
+    // DWG Ôªï¿½ï¿½ï¿½Ý£ï¿½ï¿½ï¿½ï¿½ï¿½Í¼ï¿½ã¡¢Í¼ÔªÍ³ï¿½Æµï¿½
     const dwgMetadata = (ctx.parseResult?.metadata && ctx.fileType.toLowerCase() === 'dwg')
       ? {
           dwg_layers: ctx.parseResult.metadata.dwg_layers,
@@ -903,22 +919,22 @@ export class ReviewService {
         extractedMarkdown,
         ...(dwgMetadata ? { dwgMetadata } : {}),
       },
-    }).catch((e) => { console.warn(`[Review] ±£´æÌáÈ¡ÎÄ±¾Ê§°Ü (${file.fileName}):`, e); });
+    }).catch((e) => { console.warn(`[Review] ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½È¡ï¿½Ä±ï¿½Ê§ï¿½ï¿½ (${file.fileName}):`, e); });
 
-    // ===== ½×¶Î1£ºÎÄ±¾ÌáÈ¡ + ¹æÔòÒýÇæ + ±ê×¼ÒýÓÃ¼ì²é£¨Ö±½Óµ÷ÓÃ×Ó·þÎñ£© =====
+    // ===== ï¿½×¶ï¿½1ï¿½ï¿½ï¿½Ä±ï¿½ï¿½ï¿½È¡ + ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ + ï¿½ï¿½×¼ï¿½ï¿½ï¿½Ã¼ï¿½é£¨Ö±ï¿½Óµï¿½ï¿½ï¿½ï¿½Ó·ï¿½ï¿½ï¿½ =====
 
-    // ÎÄ±¾ÌáÈ¡£¨DWG WASM ÒÑÔ¤Ìî³äÊ±Ìø¹ý£©
+    // ï¿½Ä±ï¿½ï¿½ï¿½È¡ï¿½ï¿½DWG WASM ï¿½ï¿½Ô¤ï¿½ï¿½ï¿½Ê±ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
     if (!ctx.extractedText || ctx.extractedText.trim().length === 0) {
       ctx.extractedText = await TextExtractionService.ensureText(ctx);
     }
 
-    // PDF ÖðÒ³½âÎö + Word/DWG ½á¹¹»¯
+    // PDF ï¿½ï¿½Ò³ï¿½ï¿½ï¿½ï¿½ + Word/DWG ï¿½á¹¹ï¿½ï¿½
     const pdfPages = await TextExtractionService.extractPdfPages(ctx);
     ctx.pdfPages = pdfPages;
     await TextExtractionService.ensureWordStructure(ctx);
     TextExtractionService.ensureDwgStructure(ctx);
 
-    // ¶àÄ£Ì¬Ä£Ê½£º±í¸ñÌáÈ¡ + ¹«Ê½¼ì²â
+    // ï¿½ï¿½Ä£Ì¬Ä£Ê½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½È¡ + ï¿½ï¿½Ê½ï¿½ï¿½ï¿½
     let extraRuleIssues: any[] = [];
     if (ctx.reviewMode === 'MULTIMODAL') {
       const tables = TableExtractionService.extractTablesFromText(ctx.extractedText);
@@ -936,11 +952,11 @@ export class ReviewService {
         extraRuleIssues.push({
           issueType: 'VIOLATION', ruleCode: 'FORMULA_001', severity: 'info',
           originalText: region.text,
-          description: '¼ì²âµ½¿ÉÄÜµÄ¹«Ê½ÄÚÈÝ£¬½¨ÒéÈË¹¤È·ÈÏ¹«Ê½ÕýÈ·ÐÔ¡£',
+          description: 'ï¿½ï¿½âµ½ï¿½ï¿½ï¿½ÜµÄ¹ï¿½Ê½ï¿½ï¿½ï¿½Ý£ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ë¹ï¿½È·ï¿½Ï¹ï¿½Ê½ï¿½ï¿½È·ï¿½Ô¡ï¿½',
         });
       }
     }
-    // ¡ï MULTIMODAL Ä£Ê½£ºÁ¢¼´±£´æ±í¸ñ/¹«Ê½¼ì²â½á¹û£¨²»ÒÀÀµ behavior.rules ÃÅ¿Ø£©
+    // ï¿½ï¿½ MULTIMODAL Ä£Ê½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½/ï¿½ï¿½Ê½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ behavior.rules ï¿½Å¿Ø£ï¿½
     if (extraRuleIssues.length > 0 && ctx.reviewMode === 'MULTIMODAL') {
       const extraData = extraRuleIssues.map((issue) => {
         const meta = this.buildLocateMeta(ctx.extractedText, issue, { fileId: file.id });
@@ -967,16 +983,16 @@ export class ReviewService {
       try {
         await prisma.taskDetail.createMany({ data: strippedExtra, skipDuplicates: true });
       } catch (e) {
-        console.error(`[Review] ? MULTIMODAL Ç°ÖÃ¼ì²âÐ´ÈëÊ§°Ü: ${file.fileName}`, e);
+        console.error(`[Review] ? MULTIMODAL Ç°ï¿½Ã¼ï¿½ï¿½Ð´ï¿½ï¿½Ê§ï¿½ï¿½: ${file.fileName}`, e);
       }
     }
 
-    // ¹æÔòÒýÇæ
+    // ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
     let ruleIssues: any[] = [];
     if (ctx.reviewMode === 'RULE_ONLY') {
       const rulesEnabled = ctx.executionOverrides?.stages?.rules !== false;
       if (rulesEnabled) {
-        // ÓÅÏÈÊ¹ÓÃ rulePlan ÖÐµÄÇ°×º¹ýÂË£¨RULE_ONLY Ä£Ê½ÓÃ»§Ñ¡¶¨µÄ¹æÔòÇ°×º£©
+        // ï¿½ï¿½ï¿½ï¿½Ê¹ï¿½ï¿½ rulePlan ï¿½Ðµï¿½Ç°×ºï¿½ï¿½ï¿½Ë£ï¿½RULE_ONLY Ä£Ê½ï¿½Ã»ï¿½Ñ¡ï¿½ï¿½ï¿½Ä¹ï¿½ï¿½ï¿½Ç°×ºï¿½ï¿½
         const prefixes = ctx.rulePlan?.enabledPrefixes?.length
           ? ctx.rulePlan.enabledPrefixes
           : [];
@@ -992,7 +1008,7 @@ export class ReviewService {
       }
     }
 
-    // ±ê×¼ÒýÓÃ¼ì²é£º½öµ±Ä£Ê½ÅäÖÃÖÐ standardRef=true ²ÅÔËÐÐ
+    // ï¿½ï¿½×¼ï¿½ï¿½ï¿½Ã¼ï¿½é£ºï¿½ï¿½ï¿½ï¿½Ä£Ê½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ standardRef=true ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
     let stdRefIssues: any[] = [];
     if (ctx.extractedText?.trim() && ctx.reviewMode) {
       try {
@@ -1002,13 +1018,13 @@ export class ReviewService {
           stdRefIssues = await StandardRefCheckService.runStandardRefCheck(ctx, ctx.extractedText);
         }
       } catch (e) {
-        console.warn(`[Review] ±ê×¼ÒýÓÃ¼ì²éÊ§°Ü: ${ctx.fileName}`, e);
+        console.warn(`[Review] ï¿½ï¿½×¼ï¿½ï¿½ï¿½Ã¼ï¿½ï¿½Ê§ï¿½ï¿½: ${ctx.fileName}`, e);
       }
     }
 
     const fastResult = { ruleIssues, stdRefIssues, textLength: ctx.extractedText?.length || 0 };
 
-    // ÅúÁ¿Ð´Èë¹æÔò½á¹û
+    // ï¿½ï¿½ï¿½ï¿½Ð´ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
     const allFastIssues: any[] = [];
 
     if (fastResult.ruleIssues.length > 0) {
@@ -1034,7 +1050,7 @@ export class ReviewService {
         };
       });
 
-      // ÔöÇ¿°æ£ºÊÂÎñ±£»¤ + ÖØÊÔ»úÖÆ
+      // ï¿½ï¿½Ç¿ï¿½æ£ºï¿½ï¿½ï¿½ñ±£»ï¿½ + ï¿½ï¿½ï¿½Ô»ï¿½ï¿½ï¿½
       const strippedRuleData = ruleData.map((item) => this.stripDbUnsupportedFields(item));
       try {
         await prisma.$transaction(async (tx) => {
@@ -1044,19 +1060,19 @@ export class ReviewService {
           });
         });
       } catch (txError) {
-        console.error(`[Review] ? ¹æÔò½á¹ûÊÂÎñÐ´ÈëÊ§°Ü: ${file.fileName}`, txError);
+        console.error(`[Review] ? ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ð´ï¿½ï¿½Ê§ï¿½ï¿½: ${file.fileName}`, txError);
 
-        // ÖØÊÔÒ»´Î£¨ÍøÂçË²Ê±¹ÊÕÏ»òËø³åÍ»³£¼û£©
+        // ï¿½ï¿½ï¿½ï¿½Ò»ï¿½Î£ï¿½ï¿½ï¿½ï¿½ï¿½Ë²Ê±ï¿½ï¿½ï¿½Ï»ï¿½ï¿½ï¿½ï¿½ï¿½Í»ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
         try {
           await prisma.taskDetail.createMany({
             data: strippedRuleData,
             skipDuplicates: true,
           });
         } catch (retryError) {
-          console.error(`[Review] ? ¹æÔò½á¹ûÖØÊÔÒ²Ê§°Ü£¬Êý¾Ý½«¶ªÊ§: ${file.fileName}`, retryError);
+          console.error(`[Review] ? ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ò²Ê§ï¿½Ü£ï¿½ï¿½ï¿½ï¿½Ý½ï¿½ï¿½ï¿½Ê§: ${file.fileName}`, retryError);
 
-          // ´´½¨´íÎó¼ÇÂ¼ÒÔ±ã×·×Ù
-          await this.createErrorDetail(taskId, file.id, file.fileName, `¹æÔò½á¹û±£´æÊ§°Ü(ÖØÊÔºó): ${retryError instanceof Error ? retryError.message : String(retryError)}`);
+          // ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Â¼ï¿½Ô±ï¿½×·ï¿½ï¿½
+          await this.createErrorDetail(taskId, file.id, file.fileName, `ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ê§ï¿½ï¿½(ï¿½ï¿½ï¿½Ôºï¿½): ${retryError instanceof Error ? retryError.message : String(retryError)}`);
         }
       }
 
@@ -1089,7 +1105,7 @@ export class ReviewService {
         };
       });
 
-      // ÔöÇ¿°æ£ºÊÂÎñ±£»¤ + ÖØÊÔ»úÖÆ
+      // ï¿½ï¿½Ç¿ï¿½æ£ºï¿½ï¿½ï¿½ñ±£»ï¿½ + ï¿½ï¿½ï¿½Ô»ï¿½ï¿½ï¿½
       const strippedStdRefData = stdRefData.map((item) => this.stripDbUnsupportedFields(item));
       try {
         await prisma.$transaction(async (tx) => {
@@ -1099,24 +1115,24 @@ export class ReviewService {
           });
         });
       } catch (txError) {
-        console.error(`[Review] ? ±ê×¼ÒýÓÃ½á¹ûÊÂÎñÐ´ÈëÊ§°Ü: ${file.fileName}`, txError);
+        console.error(`[Review] ? ï¿½ï¿½×¼ï¿½ï¿½ï¿½Ã½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ð´ï¿½ï¿½Ê§ï¿½ï¿½: ${file.fileName}`, txError);
 
-        // ÖØÊÔÒ»´Î
+        // ï¿½ï¿½ï¿½ï¿½Ò»ï¿½ï¿½
         try {
           await prisma.taskDetail.createMany({
             data: strippedStdRefData,
             skipDuplicates: true,
           });
         } catch (retryError) {
-          console.error(`[Review] ? ±ê×¼ÒýÓÃ½á¹ûÖØÊÔÒ²Ê§°Ü£¬Êý¾Ý½«¶ªÊ§: ${file.fileName}`, retryError);
-          await this.createErrorDetail(taskId, file.id, file.fileName, `±ê×¼ÒýÓÃ±£´æÊ§°Ü(ÖØÊÔºó): ${retryError instanceof Error ? retryError.message : String(retryError)}`);
+          console.error(`[Review] ? ï¿½ï¿½×¼ï¿½ï¿½ï¿½Ã½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ò²Ê§ï¿½Ü£ï¿½ï¿½ï¿½ï¿½Ý½ï¿½ï¿½ï¿½Ê§: ${file.fileName}`, retryError);
+          await this.createErrorDetail(taskId, file.id, file.fileName, `ï¿½ï¿½×¼ï¿½ï¿½ï¿½Ã±ï¿½ï¿½ï¿½Ê§ï¿½ï¿½(ï¿½ï¿½ï¿½Ôºï¿½): ${retryError instanceof Error ? retryError.message : String(retryError)}`);
         }
       }
 
       allFastIssues.push(...stdRefData);
     }
 
-    // ÎÞÎÄ±¾Ê±Ð´Èë¾¯¸æ
+    // ï¿½ï¿½ï¿½Ä±ï¿½Ê±Ð´ï¿½ë¾¯ï¿½ï¿½
     if (!fastResult.textLength && allFastIssues.length === 0) {
       const isDwg = file.fileType.toLowerCase() === 'dwg';
       await prisma.taskDetail.create({
@@ -1126,27 +1142,27 @@ export class ReviewService {
           reviewSource: 'SYSTEM',
           originalText: file.fileName,
           description: isDwg
-            ? 'DWG ÎÄ¼þÎ´ÄÜÌáÈ¡ÎÄ±¾ÄÚÈÝ£¨Ç°¶Ë WASM ½âÎö¿ÉÄÜÎ´³É¹¦£©¡£Í¼Ö½Éó²é¿ÉÄÜ²»ÍêÕû£¬½¨ÒéÈË¹¤¼ì²é¡£'
-            : 'ÎÄ¼þÄÚÈÝÎÞ·¨ÌáÈ¡¡£¿ÉÄÜÊÇÉ¨Ãè¼þ»òÍ¼Æ¬ÐÍ PDF£¬ÇÒ OCR Ê¶±ðÎ´ÄÜ³É¹¦»ñÈ¡ÎÄ×Ö¡£½¨ÒéÈË¹¤Éó²é¡£',
+            ? 'DWG ï¿½Ä¼ï¿½Î´ï¿½ï¿½ï¿½ï¿½È¡ï¿½Ä±ï¿½ï¿½ï¿½ï¿½Ý£ï¿½Ç°ï¿½ï¿½ WASM ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Î´ï¿½É¹ï¿½ï¿½ï¿½ï¿½ï¿½Í¼Ö½ï¿½ï¿½ï¿½ï¿½ï¿½Ü²ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ë¹ï¿½ï¿½ï¿½é¡£'
+            : 'ï¿½Ä¼ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Þ·ï¿½ï¿½ï¿½È¡ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½É¨ï¿½ï¿½ï¿½ï¿½ï¿½Í¼Æ¬ï¿½ï¿½ PDFï¿½ï¿½ï¿½ï¿½ OCR Ê¶ï¿½ï¿½Î´ï¿½Ü³É¹ï¿½ï¿½ï¿½È¡ï¿½ï¿½ï¿½Ö¡ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ë¹ï¿½ï¿½ï¿½é¡£',
         },
-      }).catch((e) => { console.warn(`[Review] ÎÞÎÄ±¾¾¯¸æÐ´ÈëÊ§°Ü:`, e); });
+      }).catch((e) => { console.warn(`[Review] ï¿½ï¿½ï¿½Ä±ï¿½ï¿½ï¿½ï¿½ï¿½Ð´ï¿½ï¿½Ê§ï¿½ï¿½:`, e); });
     } else if (fastResult.textLength > 0 && allFastIssues.length === 0) {
       await this.createNoResultDetail(
         taskId,
         file.id,
         file.fileName,
-        '¹æÔòÉó²éºÍ±ê×¼ÒýÓÃ¼ì²é¾ùÎ´ÃüÖÐÎÊÌâ¡£¸Ã½á¹û²»´ú±íÍêÈ«ºÏ¹æ£¬½ö±íÊ¾µ±Ç°¹æÔò¿âÓë±ê×¼¿âÎ´·¢ÏÖÃ÷È·ÎÊÌâ¡£',
+        'ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Í±ï¿½×¼ï¿½ï¿½ï¿½Ã¼ï¿½ï¿½ï¿½Î´ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½â¡£ï¿½Ã½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½È«ï¿½Ï¹æ£¬ï¿½ï¿½ï¿½ï¿½Ê¾ï¿½ï¿½Ç°ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½×¼ï¿½ï¿½Î´ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½È·ï¿½ï¿½ï¿½â¡£',
       );
     }
 
-    // DWG ÎÄ¼þÌØÊâ´¦Àí£º±£´æ³ß´ç±ê×¢ºÍ±ê×¼ÒýÓÃ£¨º¬ cadHandleId£©
+    // DWG ï¿½Ä¼ï¿½ï¿½ï¿½ï¿½â´¦ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ß´ï¿½ï¿½×¢ï¿½Í±ï¿½×¼ï¿½ï¿½ï¿½Ã£ï¿½ï¿½ï¿½ cadHandleIdï¿½ï¿½
     if (file.fileType.toLowerCase() === 'dwg') {
-      // ÓÅÏÈÊ¹ÓÃ ctx.parseResult£¨WASM »òÔ¤ÌáÈ¡µÄ½á¹û£©
+      // ï¿½ï¿½ï¿½ï¿½Ê¹ï¿½ï¿½ ctx.parseResultï¿½ï¿½WASM ï¿½ï¿½Ô¤ï¿½ï¿½È¡ï¿½Ä½ï¿½ï¿½ï¿½ï¿½
       const parseResult = ctx.parseResult;
       if (parseResult && ctx.extractedText && ctx.extractedText.trim().length > 0) {
         const dwgDetails: any[] = [];
 
-        // ³ß´ç±ê×¢
+        // ï¿½ß´ï¿½ï¿½×¢
         if (parseResult.structure.dimensions && parseResult.structure.dimensions.length > 0) {
           for (const dim of parseResult.structure.dimensions) {
             dwgDetails.push({
@@ -1155,13 +1171,13 @@ export class ReviewService {
               ruleCode: null, severity: 'info' as const,
               originalText: dim.text || dim.measurement || '',
               suggestedText: null,
-              description: `Í¼²ã: ${dim.layer}, ÀàÐÍ: ${dim.entity_type}`,
+              description: `Í¼ï¿½ï¿½: ${dim.layer}, ï¿½ï¿½ï¿½ï¿½: ${dim.entity_type}`,
               cadHandleId: dim.handle || null,
             });
           }
         }
 
-        // ±ê×¼ÒýÓÃ£¨´Ó DWG ½âÎöÆ÷ÌáÈ¡£¬º¬ cadHandleId£©
+        // ï¿½ï¿½×¼ï¿½ï¿½ï¿½Ã£ï¿½ï¿½ï¿½ DWG ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½È¡ï¿½ï¿½ï¿½ï¿½ cadHandleIdï¿½ï¿½
         if ((parseResult.structure as any).standardRefs && (parseResult.structure as any).standardRefs.length > 0) {
           for (const ref of (parseResult.structure as any).standardRefs) {
             dwgDetails.push({
@@ -1171,30 +1187,30 @@ export class ReviewService {
               severity: 'info' as const,
               originalText: ref.fullMatch || ref.standardNo,
               suggestedText: null,
-              description: `DWG ±ê×¼ÒýÓÃ: ${ref.standardNo}${ref.standardName ? ` (${ref.standardName})` : ''}`,
+              description: `DWG ï¿½ï¿½×¼ï¿½ï¿½ï¿½ï¿½: ${ref.standardNo}${ref.standardName ? ` (${ref.standardName})` : ''}`,
               cadHandleId: ref.cadHandleId || null,
             });
           }
         }
 
         if (dwgDetails.length > 0) {
-          await prisma.taskDetail.createMany({ data: dwgDetails }).catch((e) => { console.warn(`[Review] DWGÏêÇéÐ´ÈëÊ§°Ü (${file.fileName}):`, e); });
+          await prisma.taskDetail.createMany({ data: dwgDetails }).catch((e) => { console.warn(`[Review] DWGï¿½ï¿½ï¿½ï¿½Ð´ï¿½ï¿½Ê§ï¿½ï¿½ (${file.fileName}):`, e); });
         }
       }
     }
 
-    // ¸üÐÂ´íÎó¼ÆÊý
-    await this.updateFileErrorCount(file.id).catch((e) => { console.warn(`[Review] ¸üÐÂ´íÎó¼ÆÊýÊ§°Ü (${file.id}):`, e); });
+    // ï¿½ï¿½ï¿½Â´ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
+    await this.updateFileErrorCount(file.id).catch((e) => { console.warn(`[Review] ï¿½ï¿½ï¿½Â´ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ê§ï¿½ï¿½ (${file.id}):`, e); });
 
 
     return { ruleIssues: fastResult.ruleIssues, stdRefIssues: fastResult.stdRefIssues };
   }
 
   /**
-   * ½×¶Î2: AI Éî¶ÈÉó²é
-   * - Ê¹ÓÃ½×¶Î1ÒÑÌáÈ¡µÄ ctx.extractedText ºÍ ctx.pdfPages
-   * - Ö´ÐÐ AI/LLM Éó²é
-   * - Íê³ÉºóÐ´ÈëÊý¾Ý¿â²¢·µ»Ø½á¹û
+   * ï¿½×¶ï¿½2: AI ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
+   * - Ê¹ï¿½Ã½×¶ï¿½1ï¿½ï¿½ï¿½ï¿½È¡ï¿½ï¿½ ctx.extractedText ï¿½ï¿½ ctx.pdfPages
+   * - Ö´ï¿½ï¿½ AI/LLM ï¿½ï¿½ï¿½
+   * - ï¿½ï¿½Éºï¿½Ð´ï¿½ï¿½ï¿½ï¿½ï¿½Ý¿â²¢ï¿½ï¿½ï¿½Ø½ï¿½ï¿½
    */
   static async runFileSlowPhase(
     taskId: string,
@@ -1205,39 +1221,39 @@ export class ReviewService {
   ): Promise<{ aiIssues: any[]; usedEngine?: string; skippedNoText?: boolean }> {
     const fileProgress = Math.round((fileIndex / totalFiles) * 100);
 
-    // ÍÆËÍÎÄ¼þ½×¶Î2¿ªÊ¼
+    // ï¿½ï¿½ï¿½ï¿½ï¿½Ä¼ï¿½ï¿½×¶ï¿½2ï¿½ï¿½Ê¼
     WebSocketService.emitTaskProgress(taskId, {
       type: 'file_slow_start',
-      step: `AI Éó²é ${fileIndex + 1}/${totalFiles}`,
+      step: `AI ï¿½ï¿½ï¿½ ${fileIndex + 1}/${totalFiles}`,
       progress: fileProgress,
-      message: `¿ªÊ¼ AI Éî¶ÈÉó²é: ${file.fileName}`,
+      message: `ï¿½ï¿½Ê¼ AI ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½: ${file.fileName}`,
       fileName: file.fileName,
       phase: 'phase2',
       timestamp: Date.now(),
     });
 
-    // ÄÚ´æ±ê¼Ç£º×·×ÙÊÇ·ñÓÐ·ÖÆ¬³É¹¦Ð´Èë DB£¨±ÜÃâ¶µµ×Ð´ÈëµÄ¾ºÌ¬Ìõ¼þ£©
+    // ï¿½Ú´ï¿½ï¿½Ç£ï¿½×·ï¿½ï¿½ï¿½Ç·ï¿½ï¿½Ð·ï¿½Æ¬ï¿½É¹ï¿½Ð´ï¿½ï¿½ DBï¿½ï¿½ï¿½ï¿½ï¿½â¶µï¿½ï¿½Ð´ï¿½ï¿½Ä¾ï¿½Ì¬ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
     let anyChunkWritten = false;
 
-    // ½ø¶È»Øµ÷£¨Ã¿¸ö AI ·ÖÆ¬Éó²éÍê³ÉºóÁ¢¼´Ð´Èë DB ²¢ÍÆËÍ WebSocket£©
+    // ï¿½ï¿½ï¿½È»Øµï¿½ï¿½ï¿½Ã¿ï¿½ï¿½ AI ï¿½ï¿½Æ¬ï¿½ï¿½ï¿½ï¿½ï¿½Éºï¿½ï¿½ï¿½ï¿½ï¿½Ð´ï¿½ï¿½ DB ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ WebSocketï¿½ï¿½
     ctx.onChunkProgress = async (chunkLength: number, issues: any[], chunkIndex: number, totalChunks: number, engine: string) => {
-      // 1. ¸üÐÂÒÑ´¦Àí×Ö·ûÊý
+      // 1. ï¿½ï¿½ï¿½ï¿½ï¿½Ñ´ï¿½ï¿½ï¿½ï¿½Ö·ï¿½ï¿½ï¿½
       try {
         await prisma.taskFile.update({
           where: { id: file.id },
           data: { processedLength: { increment: chunkLength } },
         });
-      } catch (e) { /* ºöÂÔ½ø¶È¸üÐÂÊ§°Ü */ }
+      } catch (e) { /* ï¿½ï¿½ï¿½Ô½ï¿½ï¿½È¸ï¿½ï¿½ï¿½Ê§ï¿½ï¿½ */ }
 
-      // 2. ¸Ã·ÖÆ¬ÓÐÎÊÌâÊ±Á¢¼´Ð´Èë DB
+      // 2. ï¿½Ã·ï¿½Æ¬ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ê±ï¿½ï¿½ï¿½ï¿½Ð´ï¿½ï¿½ DB
       if (issues && issues.length > 0) {
         const aiData = issues.map((issue) => {
-          // Í³Ò»¼ÆËã locateMeta£¨Ö»ËãÒ»´Î£¬±ÜÃâ textPosition ºÍ locateMeta ×Ö¶Î¸÷ËãÒ»±é£©
+          // Í³Ò»ï¿½ï¿½ï¿½ï¿½ locateMetaï¿½ï¿½Ö»ï¿½ï¿½Ò»ï¿½Î£ï¿½ï¿½ï¿½ï¿½ï¿½ textPosition ï¿½ï¿½ locateMeta ï¿½Ö¶Î¸ï¿½ï¿½ï¿½Ò»ï¿½é£©
           const meta = issue.locateMeta
             || this.buildLocateMeta(ctx.extractedText, issue, { fileId: file.id });
-          // DWG ÎÄ¼þ²¹ cadHandleId£¨AI Ä£Ê½ÏÂ¶ªÊ§ Handle£¬´Ó dwgStructure ·´²é£©
+          // DWG ï¿½Ä¼ï¿½ï¿½ï¿½ cadHandleIdï¿½ï¿½AI Ä£Ê½ï¿½Â¶ï¿½Ê§ Handleï¿½ï¿½ï¿½ï¿½ dwgStructure ï¿½ï¿½ï¿½é£©
           if (meta) this.enrichDwgHandle(issue, meta, ctx);
-          // ´Ó×Ö·ûÎ»ÖÃ·´ÍÆÒ³Âë
+          // ï¿½ï¿½ï¿½Ö·ï¿½Î»ï¿½Ã·ï¿½ï¿½ï¿½Ò³ï¿½ï¿½
           if (meta && meta.absolute && !meta.hint?.pageHint) {
             const pageHint = this.resolvePageHint(meta, ctx.pdfPages, ctx.parseResult);
             if (pageHint != null) {
@@ -1264,14 +1280,14 @@ export class ReviewService {
             diffRanges: issue.diffRanges || null,
             textPosition: this.buildLegacyTextPosition(meta, ctx.extractedText, issue.originalText),
             locateMeta: meta,
-            // ºÏÍ¬Éó²é×¨Êô×Ö¶Î
+            // ï¿½ï¿½Í¬ï¿½ï¿½ï¿½×¨ï¿½ï¿½ï¿½Ö¶ï¿½
             riskLevel: (issue as any).riskLevel || null,
             clauseType: (issue as any).clauseType || null,
             recommendation: (issue as any).recommendation || null,
           };
         });
 
-        // ÔöÇ¿°æ£ºÊÂÎñ±£»¤ + ÖØÊÔ»úÖÆ + Ê§°ÜÊ±ÑÓ³ÙÍÆËÍ
+        // ï¿½ï¿½Ç¿ï¿½æ£ºï¿½ï¿½ï¿½ñ±£»ï¿½ + ï¿½ï¿½ï¿½Ô»ï¿½ï¿½ï¿½ + Ê§ï¿½ï¿½Ê±ï¿½Ó³ï¿½ï¿½ï¿½ï¿½ï¿½
         let dbWriteSuccess = false;
         const strippedData = aiData.map((item) => this.stripDbUnsupportedFields(item));
         try {
@@ -1284,9 +1300,9 @@ export class ReviewService {
           dbWriteSuccess = true;
           anyChunkWritten = true;
         } catch (txError) {
-          console.error(`[Review] ? ·ÖÆ¬ ${chunkIndex}/${totalChunks} ÊÂÎñÐ´ÈëÊ§°Ü: ${file.fileName}`, txError);
+          console.error(`[Review] ? ï¿½ï¿½Æ¬ ${chunkIndex}/${totalChunks} ï¿½ï¿½ï¿½ï¿½Ð´ï¿½ï¿½Ê§ï¿½ï¿½: ${file.fileName}`, txError);
 
-          // ÖØÊÔÒ»´Î
+          // ï¿½ï¿½ï¿½ï¿½Ò»ï¿½ï¿½
           try {
             await prisma.taskDetail.createMany({
               data: strippedData,
@@ -1295,14 +1311,14 @@ export class ReviewService {
             dbWriteSuccess = true;
             anyChunkWritten = true;
           } catch (retryError) {
-            console.error(`[Review] ? ·ÖÆ¬ ${chunkIndex}/${totalChunks} ÖØÊÔÒ²Ê§°Ü: ${file.fileName}`, retryError);
+            console.error(`[Review] ? ï¿½ï¿½Æ¬ ${chunkIndex}/${totalChunks} ï¿½ï¿½ï¿½ï¿½Ò²Ê§ï¿½ï¿½: ${file.fileName}`, retryError);
 
-            // ´´½¨´íÎó¼ÇÂ¼£¨²»×èÈûÖ÷Á÷³Ì£©
-            this.createErrorDetail(taskId, file.id, file.fileName, `AI·ÖÆ¬${chunkIndex}±£´æÊ§°Ü(ÖØÊÔºó): ${retryError instanceof Error ? retryError.message : String(retryError)}`).catch(() => {});
+            // ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Â¼ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ì£ï¿½
+            this.createErrorDetail(taskId, file.id, file.fileName, `AIï¿½ï¿½Æ¬${chunkIndex}ï¿½ï¿½ï¿½ï¿½Ê§ï¿½ï¿½(ï¿½ï¿½ï¿½Ôºï¿½): ${retryError instanceof Error ? retryError.message : String(retryError)}`).catch(() => {});
           }
         }
 
-        // 3. ½öÔÚÊý¾Ý¿âÐ´Èë³É¹¦ºó²ÅÍÆËÍWebSocket£¨±ÜÃâÇ°¶ËÏÔÊ¾µ«DBÃ»ÓÐ£©
+        // 3. ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ý¿ï¿½Ð´ï¿½ï¿½É¹ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½WebSocketï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ç°ï¿½ï¿½ï¿½ï¿½Ê¾ï¿½ï¿½DBÃ»ï¿½Ð£ï¿½
         if (dbWriteSuccess) {
           WebSocketService.emitChunkResult(taskId, {
           fileId: file.id,
@@ -1315,20 +1331,20 @@ export class ReviewService {
         });
         } // end if (dbWriteSuccess)
 
-        // 4. ¸üÐÂÎÄ¼þ´íÎó¼ÆÊý£¨½öÔÚÐ´Èë³É¹¦Ê±£©
-        this.updateFileErrorCount(file.id).catch((e) => { console.warn(`[Review] ¸üÐÂ´íÎó¼ÆÊýÊ§°Ü:`, e); });
+        // 4. ï¿½ï¿½ï¿½ï¿½ï¿½Ä¼ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ð´ï¿½ï¿½É¹ï¿½Ê±ï¿½ï¿½
+        this.updateFileErrorCount(file.id).catch((e) => { console.warn(`[Review] ï¿½ï¿½ï¿½Â´ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ê§ï¿½ï¿½:`, e); });
       }
 
-      // 5. ËùÓÐ·ÖÆ¬Íê³Éºó¸üÐÂ´íÎó¼ÆÊý£¨°üº¬0ÎÊÌâµÄÇé¿ö£©
+      // 5. ï¿½ï¿½ï¿½Ð·ï¿½Æ¬ï¿½ï¿½Éºï¿½ï¿½ï¿½Â´ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½0ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
       if (chunkIndex === totalChunks - 1) {
-        this.updateFileErrorCount(file.id).catch((e) => { console.warn(`[Review] ×îÖÕ´íÎó¼ÆÊý¸üÐÂÊ§°Ü:`, e); });
+        this.updateFileErrorCount(file.id).catch((e) => { console.warn(`[Review] ï¿½ï¿½ï¿½Õ´ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ê§ï¿½ï¿½:`, e); });
       }
     };
 
-    // ===== ½×¶Î2£ºAI Éî¶ÈÉó²é ¡ª Í¨¹ý handler ·Ö·¢ =====
+    // ===== ï¿½×¶ï¿½2ï¿½ï¿½AI ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ Í¨ï¿½ï¿½ handler ï¿½Ö·ï¿½ =====
     const handler = REVIEW_HANDLERS[ctx.reviewMode];
     if (!handler) {
-      console.error(`[Review] Î´ÖªÉó²éÄ£Ê½: ${ctx.reviewMode}`);
+      console.error(`[Review] Î´Öªï¿½ï¿½ï¿½Ä£Ê½: ${ctx.reviewMode}`);
       return { aiIssues: [], usedEngine: 'none' };
     }
 
@@ -1338,7 +1354,7 @@ export class ReviewService {
     try {
       aiResult = await handler(ctx);
     } catch (e) {
-      console.error(`[Review] handler Ö´ÐÐÊ§°Ü: ${ctx.fileName}`, e);
+      console.error(`[Review] handler Ö´ï¿½ï¿½Ê§ï¿½ï¿½: ${ctx.fileName}`, e);
       throw e;
     }
 
@@ -1346,11 +1362,11 @@ export class ReviewService {
     }
     const slowResult = { aiIssues: aiResult.aiIssues || [], usedEngine: aiResult.usedEngine || 'unknown' };
 
-    // AI ½á¹ûÒÑÍ¨¹ý ctx.onChunkProgress ÔöÁ¿Ð´Èë£¨Ã¿¸ö·ÖÆ¬Éó²éÍê³ÉºóÁ¢¼´Èë¿â + ÍÆËÍ WebSocket£©
-    // ´Ë´¦½ö×ö¶µµ×£ºÊ¹ÓÃÄÚ´æ±ê¼Ç¼ì²é£¬ÈôÎÞ·ÖÆ¬³É¹¦Ð´ÈëÔòÒ»´ÎÐÔÐ´Èë£¨¼«¶ËÇé¿öÏÂ onChunkProgress È«²¿Ê§°ÜÊ±µÄ±£µ×£©
+    // AI ï¿½ï¿½ï¿½ï¿½ï¿½Í¨ï¿½ï¿½ ctx.onChunkProgress ï¿½ï¿½ï¿½ï¿½Ð´ï¿½ë£¨Ã¿ï¿½ï¿½ï¿½ï¿½Æ¬ï¿½ï¿½ï¿½ï¿½ï¿½Éºï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ + ï¿½ï¿½ï¿½ï¿½ WebSocketï¿½ï¿½
+    // ï¿½Ë´ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½×£ï¿½Ê¹ï¿½ï¿½ï¿½Ú´ï¿½ï¿½Ç¼ï¿½é£¬ï¿½ï¿½ï¿½Þ·ï¿½Æ¬ï¿½É¹ï¿½Ð´ï¿½ï¿½ï¿½ï¿½Ò»ï¿½ï¿½ï¿½ï¿½Ð´ï¿½ë£¨ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ onChunkProgress È«ï¿½ï¿½Ê§ï¿½ï¿½Ê±ï¿½Ä±ï¿½ï¿½×£ï¿½
     if (slowResult.aiIssues.length > 0 && !anyChunkWritten) {
       try {
-        console.warn(`[Review] ¶µµ×Ð´Èë: ${slowResult.aiIssues.length} Ìõ (${file.fileName})`);
+        console.warn(`[Review] ï¿½ï¿½ï¿½ï¿½Ð´ï¿½ï¿½: ${slowResult.aiIssues.length} ï¿½ï¿½ (${file.fileName})`);
         const aiData = slowResult.aiIssues.map((issue) => {
           const meta = issue.locateMeta
             || this.buildLocateMeta(ctx.extractedText, issue, { fileId: file.id });
@@ -1379,7 +1395,7 @@ export class ReviewService {
             diffRanges: issue.diffRanges || null,
             textPosition: this.buildLegacyTextPosition(meta, ctx.extractedText, issue.originalText),
             locateMeta: meta,
-            // ºÏÍ¬Éó²é×¨Êô×Ö¶Î
+            // ï¿½ï¿½Í¬ï¿½ï¿½ï¿½×¨ï¿½ï¿½ï¿½Ö¶ï¿½
             riskLevel: (issue as any).riskLevel || null,
             clauseType: (issue as any).clauseType || null,
             recommendation: (issue as any).recommendation || null,
@@ -1389,7 +1405,7 @@ export class ReviewService {
           data: aiData.map((item) => this.stripDbUnsupportedFields(item)) as any,
         });
       } catch (e) {
-        console.error(`[Review] ¶µµ×Ð´ÈëÊ§°Ü:`, e);
+        console.error(`[Review] ï¿½ï¿½ï¿½ï¿½Ð´ï¿½ï¿½Ê§ï¿½ï¿½:`, e);
       }
     }
 
@@ -1408,28 +1424,28 @@ export class ReviewService {
           taskId,
           file.id,
           file.fileName,
-          'AI Éó²éÎ´·¢ÏÖÃ÷È·ÎÊÌâ£»µ±Ç°ÎÄ¼þÎ´ÃüÖÐ¹æÔò¡¢±ê×¼ÒýÓÃ»ò AI ·çÏÕÏî¡£Çë½áºÏ¹æÔò¸²¸Ç·¶Î§ºÍ±ê×¼¿â¸²¸ÇÇé¿öÈË¹¤¸´ºË¡£',
+          'AI ï¿½ï¿½ï¿½Î´ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½È·ï¿½ï¿½ï¿½â£»ï¿½ï¿½Ç°ï¿½Ä¼ï¿½Î´ï¿½ï¿½ï¿½Ð¹ï¿½ï¿½ò¡¢±ï¿½×¼ï¿½ï¿½ï¿½Ã»ï¿½ AI ï¿½ï¿½ï¿½ï¿½ï¿½î¡£ï¿½ï¿½ï¿½Ï¹ï¿½ï¿½ò¸²¸Ç·ï¿½Î§ï¿½Í±ï¿½×¼ï¿½â¸²ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ë¹ï¿½ï¿½ï¿½ï¿½Ë¡ï¿½',
         );
       }
     }
     if (skippedNoText) {
       WebSocketService.emitTaskProgress(taskId, {
         type: 'file_skipped_no_text',
-        step: 'AI Éó²éÌø¹ý',
+        step: 'AI ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½',
         progress: fileProgress + Math.round(50 / totalFiles),
-        message: `ÎÄ¼þÎÞ¿ÉÓÃÎÄ±¾£¬ÒÑÌø¹ý AI Éó²é: ${file.fileName}`,
+        message: `ï¿½Ä¼ï¿½ï¿½Þ¿ï¿½ï¿½ï¿½ï¿½Ä±ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ AI ï¿½ï¿½ï¿½: ${file.fileName}`,
         fileName: file.fileName,
         phase: 'phase2',
         timestamp: Date.now(),
       });
     }
 
-    // ÍÆËÍÎÄ¼þ½×¶Î2Íê³É
+    // ï¿½ï¿½ï¿½ï¿½ï¿½Ä¼ï¿½ï¿½×¶ï¿½2ï¿½ï¿½ï¿½
     WebSocketService.emitTaskProgress(taskId, {
       type: 'slow_phase_complete',
-      step: 'AI Éó²éÍê³É',
+      step: 'AI ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½',
       progress: fileProgress + Math.round(50 / totalFiles),
-      message: `AI Éó²éÍê³É: ${slowResult.aiIssues.length} ¸öÎÊÌâ (engine: ${slowResult.usedEngine || 'none'})`,
+      message: `AI ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½: ${slowResult.aiIssues.length} ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ (engine: ${slowResult.usedEngine || 'none'})`,
       fileName: file.fileName,
       phase: 'phase2',
       aiCount: slowResult.aiIssues.length,
@@ -1442,7 +1458,7 @@ export class ReviewService {
   }
 
   /**
-   * ´´½¨´íÎóÏêÇé¼ÇÂ¼
+   * ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Â¼
    */
   private static async createErrorDetail(
     taskId: string,
@@ -1457,15 +1473,15 @@ export class ReviewService {
           taskId, fileId,
           issueType: 'VIOLATION', ruleCode: null, severity: 'error',
           originalText: fileName,
-          description: `Éó²é¹ý³ÌÖÐ·¢Éú´íÎó: ${errorMessage}`,
+          description: `ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ð·ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½: ${errorMessage}`,
         },
       });
       await this.updateFileErrorCount(fileId);
-    } catch (e) { /* ºöÂÔ */ }
+    } catch (e) { /* ï¿½ï¿½ï¿½ï¿½ */ }
   }
 
   /**
-   * ¸üÐÂÎÄ¼þµÄ´íÎó¼ÆÊý
+   * ï¿½ï¿½ï¿½ï¿½ï¿½Ä¼ï¿½ï¿½Ä´ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
    */
   private static async updateFileErrorCount(fileId: string): Promise<void> {
     const count = await prisma.taskDetail.count({
@@ -1480,10 +1496,10 @@ export class ReviewService {
     });
   }
 
-  // ==================== ÒÔÏÂÎªÒÅÁô·½·¨£¨±£Áô¼æÈÝÐÔ£© ====================
+  // ==================== ï¿½ï¿½ï¿½ï¿½Îªï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ô£ï¿½ ====================
 
   /**
-   * @deprecated Ê¹ÓÃ runFileFastPhase + runFileSlowPhase Ìæ´ú
+   * @deprecated Ê¹ï¿½ï¿½ runFileFastPhase + runFileSlowPhase ï¿½ï¿½ï¿½
    */
   static async processFile(
     taskId: string,
@@ -1508,7 +1524,7 @@ export class ReviewService {
       onChunkProgress: onProgress,
     };
 
-    // Ô¤ÌáÈ¡ÎÄ±¾£¨Èç¹ûÒÑÓÐ WASM Êý¾ÝÔòÌø¹ý£©
+    // Ô¤ï¿½ï¿½È¡ï¿½Ä±ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ WASM ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
     if (!ctx.extractedText || ctx.extractedText.trim().length === 0) {
       try {
         const parsed = await ParserService.parseFileWithResult(absolutePath, file.fileType);
@@ -1517,13 +1533,13 @@ export class ReviewService {
       } catch (e) { /* ignore */ }
     }
 
-    // ¼ÓÔØÅäÖÃ
+    // ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
     try {
       const cfg = await prisma.systemConfig.findUnique({ where: { key: 'pipeline_review_config' } });
       if (cfg?.value) ctx.pipelineConfig = cfg.value as any;
     } catch (e) { /* ignore */ }
 
-    // ¼ÓÔØ²ÎÕÕÎÄ¼þ
+    // ï¿½ï¿½ï¿½Ø²ï¿½ï¿½ï¿½ï¿½Ä¼ï¿½
     if (reviewMode === 'DOC_REVIEW') {
       const groups = await prisma.refFileGroup.findMany({ where: { taskId }, include: { refFiles: true } });
       if (groups.length > 0) {
@@ -1541,21 +1557,21 @@ export class ReviewService {
       }
     }
 
-    // Ð´ÈëÎÄ±¾³¤¶È
+    // Ð´ï¿½ï¿½ï¿½Ä±ï¿½ï¿½ï¿½ï¿½ï¿½
     await prisma.taskFile.update({
       where: { id: file.id },
       data: { textLength: ctx.extractedText?.length || 0, processedLength: 0 },
     }).catch(() => { /* ignore */ });
 
-    // Ê¹ÓÃ handler Ö´ÐÐ AI Éó²é
+    // Ê¹ï¿½ï¿½ handler Ö´ï¿½ï¿½ AI ï¿½ï¿½ï¿½
     try {
       const handler = REVIEW_HANDLERS[reviewMode as any];
-      if (!handler) throw new Error(`Î´ÖªÉó²éÄ£Ê½: ${reviewMode}`);
+      if (!handler) throw new Error(`Î´Öªï¿½ï¿½ï¿½Ä£Ê½: ${reviewMode}`);
       ctx.scene = ctx.scene || getModeScene(reviewMode as any);
       const aiResult = await handler(ctx);
       const result = { ruleIssues: [], aiIssues: aiResult.aiIssues || [], stdRefIssues: undefined };
 
-      // Ð´ AI ½á¹û
+      // Ð´ AI ï¿½ï¿½ï¿½
       if (result.aiIssues.length > 0) {
         await prisma.taskDetail.createMany({
           data: result.aiIssues.map((issue) => ({
@@ -1577,19 +1593,19 @@ export class ReviewService {
         });
       }
 
-      // ÎÞÎÄ±¾¾¯¸æ
+      // ï¿½ï¿½ï¿½Ä±ï¿½ï¿½ï¿½ï¿½ï¿½
       if (!ctx.extractedText && result.ruleIssues.length === 0 && result.aiIssues.length === 0) {
         await prisma.taskDetail.create({
           data: {
             taskId, fileId: file.id,
             issueType: 'VIOLATION', ruleCode: null, severity: 'warning',
             originalText: file.fileName,
-            description: 'ÎÄ¼þÄÚÈÝÎÞ·¨ÌáÈ¡¡£¿ÉÄÜÊÇÉ¨Ãè¼þ»òÍ¼Æ¬ÐÍ PDF£¬½¨ÒéÈË¹¤Éó²é¡£',
+            description: 'ï¿½Ä¼ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Þ·ï¿½ï¿½ï¿½È¡ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½É¨ï¿½ï¿½ï¿½ï¿½ï¿½Í¼Æ¬ï¿½ï¿½ PDFï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ë¹ï¿½ï¿½ï¿½é¡£',
           },
         });
       }
 
-      // DWG ´¦Àí£º±£´æ³ß´ç±ê×¢ºÍ±ê×¼ÒýÓÃ£¨º¬ cadHandleId£©
+      // DWG ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ß´ï¿½ï¿½×¢ï¿½Í±ï¿½×¼ï¿½ï¿½ï¿½Ã£ï¿½ï¿½ï¿½ cadHandleIdï¿½ï¿½
       if (file.fileType.toLowerCase() === 'dwg') {
         const parseResult = ctx.parseResult;
         if (parseResult && ctx.extractedText?.trim()) {
@@ -1603,7 +1619,7 @@ export class ReviewService {
                 ruleCode: null, severity: 'info' as const,
                 originalText: dim.text || dim.measurement || '',
                 suggestedText: null,
-                description: `Í¼²ã: ${dim.layer}, ÀàÐÍ: ${dim.entity_type}`,
+                description: `Í¼ï¿½ï¿½: ${dim.layer}, ï¿½ï¿½ï¿½ï¿½: ${dim.entity_type}`,
                 cadHandleId: dim.handle || null,
               });
             }
@@ -1618,7 +1634,7 @@ export class ReviewService {
                 severity: 'info' as const,
                 originalText: ref.fullMatch || ref.standardNo,
                 suggestedText: null,
-                description: `DWG ±ê×¼ÒýÓÃ: ${ref.standardNo}${ref.standardName ? ` (${ref.standardName})` : ''}`,
+                description: `DWG ï¿½ï¿½×¼ï¿½ï¿½ï¿½ï¿½: ${ref.standardNo}${ref.standardName ? ` (${ref.standardName})` : ''}`,
                 cadHandleId: ref.cadHandleId || null,
               });
             }
@@ -1632,7 +1648,7 @@ export class ReviewService {
 
       await this.updateFileErrorCount(file.id);
     } catch (error) {
-      console.error(`[Review] Handler Ö´ÐÐÊ§°Ü: ${file.fileName}`, error);
+      console.error(`[Review] Handler Ö´ï¿½ï¿½Ê§ï¿½ï¿½: ${file.fileName}`, error);
       await this.createErrorDetail(taskId, file.id, file.fileName, error);
     }
   }
