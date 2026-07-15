@@ -820,98 +820,108 @@ export class AiReviewService {
       }
     }
 
-    // ---- 分片处理 ----
-    const chunks = LlmService.splitText(text, chunkSize, true);
-    const totalChunks = chunks.length;
-    const allIssues: ReviewIssue[] = [];
-    let failedChunks = 0;
-    const errors: string[] = [];
+    // ---- 3. 解析条款 + 双链并行执行 ----
+    const { parseContractClauses, getDefaultLegalBasis } = await import('../contract-parser.service');
+    const clauses = parseContractClauses(text);
+    console.log(`[ContractReview] 解析到 ${clauses.length} 个条款`);
 
-    // 预计算待审分片的 Embedding（仅在需要 Embedding 检索参照文件时）
-    let chunkVectors: number[][] | null = null;
-    if (refChunks && refVectors) {
-      try {
-        const allChunkTexts = chunks.map(c => c.text);
-        chunkVectors = await EmbeddingService.embedTexts(allChunkTexts);
-      } catch (e: any) {
-        console.warn(`[ContractReview] 待审分片 Embedding 失败: ${e.message}`);
-      }
+    if (clauses.length === 0) {
+      return { issues: [], engine: 'none' };
     }
 
-    const CONCURRENT_LIMIT = await getChunkConcurrency();
-    const chunkResults = await parallelLimit(chunks, CONCURRENT_LIMIT, async (chunk) => {
-      try {
-        // 构建参照文本（如有）
-        let effectiveRefTexts = refTextsJoined;
-        if (refChunks && refVectors && chunkVectors) {
-          try {
-            const chunkVec = chunkVectors[chunk.chunkIndex];
-            const scored = refChunks.map((rc, i) => {
-              const rv = refVectors![i];
-              let dot = 0, na = 0, nb = 0;
-              for (let j = 0; j < rv.length; j++) {
-                dot += chunkVec[j] * rv[j];
-                na += chunkVec[j] * chunkVec[j];
-                nb += rv[j] * rv[j];
-              }
-              const sim = dot / (Math.sqrt(na) * Math.sqrt(nb) + 1e-10);
-              return { chunk: rc, sim };
-            });
-            scored.sort((a, b) => b.sim - a.sim);
-            const selected = new Map<number, string>();
-            for (const s of scored.slice(0, Math.min(5, scored.length))) {
-              const idx = refChunks.indexOf(s.chunk);
-              if (idx >= 0 && !selected.has(idx)) selected.set(idx, s.chunk);
+    const CONCURRENT_LIMIT = Math.min(clauses.length, 5);
+
+    // 风险分析链：逐条款识别风险
+    const riskTask = async () => {
+      const riskPrompt = systemPrompt + '\n\n你的任务是：**风险分析**。识别条款中对业主/承包商不利的风险点。';
+      const riskResults: ReviewIssue[] = [];
+
+      for (let i = 0; i < clauses.length; i += CONCURRENT_LIMIT) {
+        const batch = clauses.slice(i, i + CONCURRENT_LIMIT);
+        const batchResults = await Promise.all(
+          batch.map(async (clause) => {
+            const legalBasis = getDefaultLegalBasis(clause.clauseNo + clause.clauseTitle);
+            const userContent = `【条款】${clause.clauseNo} ${clause.clauseTitle}\n${clause.clauseContent}\n\n【法律依据】${legalBasis}`
+              + (refTextsJoined ? `\n\n【参照文件】\n${refTextsJoined}` : '')
+              + (ragContext ? `\n\n【知识库上下文】\n${ragContext}` : '')
+              + `\n\n请识别该条款中的风险点，输出 JSON 数组。`;
+            try {
+              const issues = await LlmService.reviewText(userContent, {
+                systemPrompt: riskPrompt,
+                skipUserTemplate: true,
+                maxTokens: llmMaxTokens,
+                timeout: llmTimeout,
+                documentId: ctx.fileId,
+              });
+              return issues.map(i => ({
+                ...i,
+                ruleCode: `CLS_RISK_${clause.clauseNo.replace(/[^\w]/g, '_')}`,
+                standardRef: `[${clause.clauseNo}] ${clause.clauseTitle}`,
+              }));
+            } catch (e) {
+              console.warn(`[ContractReview] 风险分析条款 ${clause.clauseNo} 失败:`, (e as Error).message);
+              return [];
             }
-            effectiveRefTexts = Array.from(selected.entries())
-              .sort(([a], [b]) => a - b)
-              .map(([, c]) => c)
-              .join('\n\n---\n\n');
-          } catch (e: any) {
-            console.warn(`[ContractReview] 分片${chunk.chunkIndex + 1} Embedding 检索失败: ${e.message}`);
-          }
-        }
-
-        // 构建 userContent
-        const userContent = userContentTpl
-          .replace(/\$\{refTexts\}/g, effectiveRefTexts)
-          .replace(/\$\{ragContext\}/g, ragContext)
-          .replace(/\$\{text\}/g, chunk.text)
-          .replace(/\$\{stance\}/g, stanceLabel);
-
-        const issues = await LlmService.reviewText(userContent, {
-          maxTokens: llmMaxTokens,
-          timeout: llmTimeout,
-          systemPrompt,
-          skipUserTemplate: true,
-          documentId: ctx.fileId,
-          positionInfo: {
-            chunkIndex: chunk.chunkIndex,
-            chunkStartIndex: chunk.startIndex,
-            totalChunks,
-          },
-        });
-
-        ctx.onChunkProgress?.(chunk.text.length, issues, chunk.chunkIndex, totalChunks, 'contract-review');
-        return { issues, failed: false };
-      } catch (e: any) {
-        console.warn(`[ContractReview] 分片 ${chunk.chunkIndex + 1}/${totalChunks} 审查失败:`, e.message);
-        return { issues: [], failed: true, error: e.message };
+          }),
+        );
+        for (const r of batchResults) riskResults.push(...r);
       }
+      return riskResults;
+    };
+
+    // 合规检查链：逐条款检查合规性
+    const complianceTask = async () => {
+      const compliancePrompt = systemPrompt + '\n\n你的任务是：**合规检查**。检查条款是否符合相关法律法规要求。';
+      const complianceResults: ReviewIssue[] = [];
+
+      for (let i = 0; i < clauses.length; i += CONCURRENT_LIMIT) {
+        const batch = clauses.slice(i, i + CONCURRENT_LIMIT);
+        const batchResults = await Promise.all(
+          batch.map(async (clause) => {
+            const legalBasis = getDefaultLegalBasis(clause.clauseNo + clause.clauseTitle);
+            const userContent = `【条款】${clause.clauseNo} ${clause.clauseTitle}\n${clause.clauseContent}\n\n【相关法规】${legalBasis}`
+              + (refTextsJoined ? `\n\n【参照文件】\n${refTextsJoined}` : '')
+              + (ragContext ? `\n\n【知识库上下文】\n${ragContext}` : '')
+              + `\n\n请检查该条款是否符合上述法规要求。如不符合，输出违规详情。`;
+            try {
+              const issues = await LlmService.reviewText(userContent, {
+                systemPrompt: compliancePrompt,
+                skipUserTemplate: true,
+                maxTokens: llmMaxTokens,
+                timeout: llmTimeout,
+                documentId: ctx.fileId,
+              });
+              return issues.map(i => ({
+                ...i,
+                ruleCode: `CLS_COMPLIANCE_${clause.clauseNo.replace(/[^\w]/g, '_')}`,
+                standardRef: `[${clause.clauseNo}] ${clause.clauseTitle}`,
+              }));
+            } catch (e) {
+              console.warn(`[ContractReview] 合规检查条款 ${clause.clauseNo} 失败:`, (e as Error).message);
+              return [];
+            }
+          }),
+        );
+        for (const r of batchResults) complianceResults.push(...r);
+      }
+      return complianceResults;
+    };
+
+    // 并行执行两条链
+    const [riskIssues, complianceIssues] = await Promise.all([riskTask(), complianceTask()]);
+
+    // ---- 4. 合并结果去重 ----
+    const allIssues = [...riskIssues, ...complianceIssues];
+    const seen = new Set<string>();
+    const deduped = allIssues.filter(issue => {
+      const key = (issue.issueType || '') + '::' + (issue.originalText || '').replace(/\s+/g, '');
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
     });
 
-    for (const r of chunkResults) {
-      allIssues.push(...r.issues);
-      if (r.failed) failedChunks++;
-      if (r.error) errors.push(r.error);
-    }
-
-    if (failedChunks === totalChunks && totalChunks > 0) {
-      throw new Error(`合同审查 ${totalChunks} 个分片全部失败: ${errors[0]}`);
-    }
-
-    // ---- 结果过滤 ----
-    const filtered = allIssues.filter(issue => {
+    // ---- 5. 过滤 + 计算合规评分 ----
+    const filtered = deduped.filter(issue => {
       const desc = (issue.description || '').trim();
       const orig = (issue.originalText || '').trim();
       const sug = (issue.suggestedText || '').trim();
@@ -923,7 +933,19 @@ export class AiReviewService {
       return true;
     });
 
-    return { issues: filtered, engine: 'contract-review' };
+    const { score } = calculateContractScore(filtered);
+
+    console.log(`[ContractReview] 完成：${riskIssues.length} 个风险点，${complianceIssues.length} 个合规问题，综合评分 ${score}/100`);
+
+    return {
+      issues: filtered,
+      engine: 'contract-review',
+      sources: [{
+        document_name: '合同审查报告',
+        content: `审查条款数: ${clauses.length} | 风险点: ${riskIssues.length} | 合规问题: ${complianceIssues.length} | 综合评分: ${score}/100`,
+        similarity: 1.0,
+      }],
+    };
   }
 
   // ==================== 内部辅助方法 ====================
@@ -1129,4 +1151,27 @@ export class AiReviewService {
 
     return { issues: deduped, engine: 'semantic-spec' };
   }
+}
+
+/**
+ * 计算合同合规评分
+ * 借鉴 ContractReviewSystem review.py:calculate_score
+ */
+function calculateContractScore(issues: ReviewIssue[]): {
+  riskSummary: { high: number; medium: number; low: number };
+  score: number;
+} {
+  const riskSummary = { high: 0, medium: 0, low: 0 };
+  for (const issue of issues) {
+    const desc = (issue.description || '').toLowerCase();
+    if (/高风险|严重|重大|high/i.test(desc)) riskSummary.high++;
+    else if (/中风险|一般|medium/i.test(desc)) riskSummary.medium++;
+    else if (issue.severity === 'error') riskSummary.high++;
+    else if (issue.severity === 'warning') riskSummary.medium++;
+    else riskSummary.low++;
+  }
+
+  const score = Math.max(0, 100 - riskSummary.high * 15 - riskSummary.medium * 8 - riskSummary.low * 3);
+
+  return { riskSummary, score };
 }

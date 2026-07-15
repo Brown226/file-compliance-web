@@ -14,7 +14,8 @@ export type ReviewModeType =
   | 'MULTIMODAL'
   | 'RULE_ONLY'
   | 'SELF_CHECK'
-  | 'CONTRACT_REVIEW';
+  | 'CONTRACT_REVIEW'
+  | 'STANDARD_CHECK';
 
 /** 审查模式 → prompt 场景名映射（唯一数据源，review-handlers / ai-review 共用） */
 export const MODE_SCENE_MAP: Record<ReviewModeType, string> = {
@@ -26,6 +27,7 @@ export const MODE_SCENE_MAP: Record<ReviewModeType, string> = {
   MULTIMODAL:     'multimodal',
   RULE_ONLY:      'library_review',
   SELF_CHECK:     'self_check',
+  STANDARD_CHECK: 'standard_check',
 };
 
 /** 根据审查模式获取 prompt 场景名 */

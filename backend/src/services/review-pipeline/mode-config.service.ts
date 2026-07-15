@@ -39,6 +39,7 @@ const DEFAULT_MODE_CONFIGS: Record<ReviewModeType, {
   MULTIMODAL:     { enabled: true, rules: false, standardRef: false, ai: true, aiStrategy: 'multimodal', crossFile: false },
   RULE_ONLY:    { enabled: true, rules: true,  standardRef: false, ai: false, aiStrategy: 'standard', crossFile: false },
   SELF_CHECK:     { enabled: true, rules: false, standardRef: false, ai: false, aiStrategy: 'standard', crossFile: false },
+  STANDARD_CHECK: { enabled: true, rules: false, standardRef: false, ai: true, aiStrategy: 'standard', crossFile: false },
 };
 
 /** 加载模式配置（合并默认配置 + DB 覆盖） */

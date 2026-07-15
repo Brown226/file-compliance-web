@@ -1,4 +1,4 @@
-﻿/**
+﻿﻿/**
  * 审查模式处理器 — 替代原先的 Pipeline 子类体系
  *
  * 每个审查模式对应一个独立的处理函数，自包含其专属 AI 审查逻辑。
@@ -12,6 +12,7 @@ import { AiReviewService } from './ai-review.service';
 import { TerminologyService } from '../terminology.service';
 import { StructuredConsistencyService } from '../structured-consistency.service';
 import { getEffectiveConfig } from './pipeline-config';
+import { StandardClauseCheckService } from '../standard-clause-check.service';
 
 /** 审查模式处理器签名 */
 export type ReviewHandler = (ctx: PipelineContext) => Promise<{
@@ -30,6 +31,7 @@ const MODE_META: Record<ReviewModeType, { displayName: string; description: stri
   MULTIMODAL:     { displayName: '结构化审查', description: '表格数据/数值/公式/图纸标注的结构化审查', needsRefFiles: false },
   RULE_ONLY:      { displayName: '仅规则审查', description: '仅执行预定义规则引擎检查，不调用 AI，速度最快', needsRefFiles: false },
   SELF_CHECK:     { displayName: '标准引用自检', description: '提取文档中的标准引用并与标准库机械匹配', needsRefFiles: false },
+  STANDARD_CHECK: { displayName: '逐条核对', description: '拿着标准条文清单逐条核对，只输出不符合项，不编造来源（借鉴 OpenSpec 审查方法论）', needsRefFiles: false },
 };
 
 /**
@@ -121,7 +123,41 @@ const handleLibraryReview: ReviewHandler = async (ctx) => {
   }
 
   const result = await AiReviewService.runLLMOnlyStrategy(text, ctx, scene, config);
-  return { aiIssues: result.issues, usedEngine: result.engine, sources: result.sources };
+  let mergedIssues = result.issues;
+
+  // 追加逐条核对作为补充（如果有标准条文）
+  // 基于标准条文逐条问 LLM"这条符合吗？"，覆盖自由发现可能遗漏的项
+  if (ctx.semanticItems && ctx.semanticItems.length > 0) {
+    try {
+      const clauses = ctx.semanticItems.map(item => ({
+        id: item.ruleCode,
+        code: item.ruleCode,
+        title: item.ruleName,
+        content: item.description || '',
+        category: item.category || '',
+      }));
+      const { results: clauseResults } = await StandardClauseCheckService.checkClauses(
+        clauses, text, { temperature: 0.1, timeout: config.llmTimeout || 60, concurrency: 3 },
+      );
+      const standardIssues: ReviewIssue[] = [];
+      for (const r of clauseResults) {
+        const issue = StandardClauseCheckService.toReviewIssue(r);
+        if (issue) standardIssues.push(issue);
+      }
+      // 基于 ruleCode 去重
+      const existingKeys = new Set(mergedIssues.map(i => i.ruleCode).filter(Boolean));
+      for (const issue of standardIssues) {
+        if (issue.ruleCode && !existingKeys.has(issue.ruleCode)) {
+          mergedIssues.push(issue);
+        }
+      }
+      console.log(`[Handler] LIBRARY_REVIEW: 逐条核对补充 ${standardIssues.length} 条（去重后新增 ${standardIssues.filter(i => i.ruleCode && !existingKeys.has(i.ruleCode)).length} 条）`);
+    } catch (e) {
+      console.warn('[Handler] LIBRARY_REVIEW: 逐条核对补充失败:', (e as Error).message);
+    }
+  }
+
+  return { aiIssues: mergedIssues, usedEngine: result.engine, sources: result.sources };
 };
 
 /**
@@ -208,6 +244,57 @@ const handleMultimodal: ReviewHandler = async (ctx) => {
   return { aiIssues: result.issues, usedEngine: result.engine, sources: result.sources };
 };
 
+/**
+ * STANDARD_CHECK — 标准逐条核对
+ *
+ * 拿着标准条文清单，逐条问 LLM "这条符合吗？"
+ * 只输出"不符合"的项，不编造来源。
+ * 借鉴 OpenSpec 审查模块的"条文逐条 Agent 核对"方法。
+ */
+const handleStandardCheck: ReviewHandler = async (ctx) => {
+  const text = ctx.extractedText || '';
+  if (!text.trim()) return { aiIssues: [], usedEngine: 'none' };
+
+  // 从 ctx.semanticItems 中提取标准条文
+  // 注意：semanticItems 的字段是 ruleCode/ruleName/description/category，不是 id/code/title/content
+  const clauses = (ctx.semanticItems || []).map(item => ({
+    id: item.ruleCode,
+    code: item.ruleCode,
+    title: item.ruleName,
+    content: item.description || '',
+    category: item.category || '',
+  }));
+
+  if (clauses.length === 0) {
+    console.log('[Handler] STANDARD_CHECK: 无标准条文，跳过');
+    return { aiIssues: [], usedEngine: 'none' };
+  }
+
+  console.log(`[Handler] STANDARD_CHECK: 开始逐条核对 ${clauses.length} 条条文`);
+
+  const config = getEffectiveConfig(ctx);
+  const { results, nonCompliant, unverified, auditorStats } = await StandardClauseCheckService.checkClausesWithAudit(
+    clauses,
+    text,
+    {
+      temperature: 0.1,
+      timeout: config.llmTimeout || 60,
+      concurrency: 3,
+    },
+  );
+
+  // 转换为 ReviewIssue
+  const issues: ReviewIssue[] = [];
+  for (const result of results) {
+    const issue = StandardClauseCheckService.toReviewIssue(result);
+    if (issue) issues.push(issue);
+  }
+
+  console.log(`[Handler] STANDARD_CHECK: 完成 - ${nonCompliant}条不符合, ${unverified}条不确定, 共${clauses.length}条`);
+
+  return { aiIssues: issues, usedEngine: 'standard-check' };
+};
+
 // ==================== 处理器映射表 ====================
 
 /** 审查模式 → 处理器函数 */
@@ -224,6 +311,7 @@ export const REVIEW_HANDLERS: Record<ReviewModeType, ReviewHandler> = {
     return { aiIssues: [], usedEngine: 'self_check' };
   },
   MULTIMODAL:     handleMultimodal,
+  STANDARD_CHECK: handleStandardCheck,
 };
 
 /** 获取模式显示名称 */
