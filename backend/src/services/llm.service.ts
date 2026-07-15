@@ -734,8 +734,20 @@ export class LlmService {
         chunkStartIndex: number;
         totalChunks: number;
       };
+      /** 可观测性：任务ID（用于 LlmCallLog 关联任务） */
+      taskId?: string;
+      /** 可观测性：审查模式 */
+      mode?: string;
     }
   ): Promise<ReviewIssue[]> {
+    // 可观测性埋点（P2）：记录本次 LLM 调用的耗时/Token/状态
+    const _callStart = Date.now();
+    let _callStatus: 'success' | 'failed' | 'cache' = 'failed';
+    let _callError: string | null = null;
+    let _usage: { promptTokens: number; completionTokens: number; totalTokens: number } = {
+      promptTokens: 0, completionTokens: 0, totalTokens: 0,
+    };
+
     // 从数据库获取 LLM 配置
     const config = await this.getLlmConfig();
     if (!config) {
@@ -800,6 +812,10 @@ export class LlmService {
     const cachedContent = CacheService.get<string>(llmCacheKey);
     if (cachedContent !== null) {
       console.log(`[LLM] reviewText 缓存命中 (${cachedContent.length}字)`);
+      LlmService.recordLlmCall({
+        taskId: options?.taskId, mode: options?.mode, model: config.modelName,
+        provider: config.provider, latencyMs: Date.now() - _callStart, status: 'cache',
+      });
       const issues = this.parseReviewResult(cachedContent);
       if (options?.positionInfo && issues.length > 0) {
         const { chunkIndex, chunkStartIndex, totalChunks } = options.positionInfo;
@@ -845,6 +861,21 @@ export class LlmService {
 
       const data = await response.json() as any;
       const content = data.choices?.[0]?.message?.content || '';
+
+      // 解析 token 用量（可观测性 P2）
+      if (data.usage) {
+        _usage = {
+          promptTokens: data.usage.prompt_tokens || 0,
+          completionTokens: data.usage.completion_tokens || 0,
+          totalTokens: data.usage.total_tokens || 0,
+        };
+      }
+      _callStatus = 'success';
+      LlmService.recordLlmCall({
+        taskId: options?.taskId, mode: options?.mode, model: config.modelName,
+        provider: config.provider, latencyMs: Date.now() - _callStart, status: 'success',
+        usage: _usage,
+      });
 
       // ★ 缓存 LLM 原始响应（不含位置信息，位置信息每次实时计算）
       CacheService.set(llmCacheKey, content, LLM_CACHE_TTL);
@@ -893,8 +924,50 @@ export class LlmService {
       }
 
       return issues;
+    } catch (e) {
+      _callError = (e as Error).message;
+      _callStatus = 'failed';
+      LlmService.recordLlmCall({
+        taskId: options?.taskId, mode: options?.mode, model: config.modelName,
+        provider: config.provider, latencyMs: Date.now() - _callStart, status: 'failed',
+        errorMsg: _callError,
+      });
+      throw e;
     } finally {
       clearTimeout(timeoutId);
+    }
+  }
+
+  /**
+   * 可观测性 P2：异步写入 LLM 调用日志（fire-and-forget，失败不影响主流程）
+   */
+  private static recordLlmCall(params: {
+    taskId?: string;
+    mode?: string;
+    model: string;
+    provider?: string;
+    latencyMs: number;
+    status: 'success' | 'failed' | 'cache';
+    usage?: { promptTokens: number; completionTokens: number; totalTokens: number };
+    errorMsg?: string | null;
+  }): void {
+    try {
+      prisma.llmCallLog.create({
+        data: {
+          taskId: params.taskId ?? null,
+          mode: params.mode ?? null,
+          model: params.model,
+          provider: params.provider ?? 'openai-compat',
+          promptTokens: params.usage?.promptTokens ?? 0,
+          completionTokens: params.usage?.completionTokens ?? 0,
+          totalTokens: params.usage?.totalTokens ?? 0,
+          latencyMs: params.latencyMs,
+          status: params.status,
+          errorMsg: params.errorMsg ?? null,
+        },
+      }).catch(e => console.warn('[LLM] 写入调用日志失败:', (e as Error).message));
+    } catch (e) {
+      console.warn('[LLM] 写入调用日志异常:', (e as Error).message);
     }
   }
 
@@ -911,6 +984,7 @@ export class LlmService {
     maxTokens: number;
     temperature: number;
     timeout: number;
+    provider?: string;
   } | null> {
     // 检查缓存
     if (this._llmConfigCache && Date.now() - this._llmConfigCache.timestamp < this.CONFIG_CACHE_TTL) {
@@ -932,6 +1006,7 @@ export class LlmService {
             maxTokens: typeof v.maxTokens === 'number' ? v.maxTokens : 8192,
             temperature: typeof v.temperature === 'number' ? v.temperature : 0.1,
             timeout: typeof v.timeout === 'number' ? v.timeout : 120,
+            provider: v.provider || 'openai-compat',
           };
         }
       }

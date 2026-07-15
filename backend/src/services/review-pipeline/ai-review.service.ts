@@ -139,6 +139,7 @@ export class AiReviewService {
             systemPrompt,
             skipUserTemplate: true,
             documentId: ctx.fileId,
+            taskId: ctx.taskId,
             positionInfo: {
               chunkIndex: chunk.chunkIndex,
               chunkStartIndex: chunk.startIndex,
@@ -156,6 +157,7 @@ export class AiReviewService {
             systemPrompt,
             skipUserTemplate: true,
             documentId: ctx.fileId,
+            taskId: ctx.taskId,
             positionInfo: {
               chunkIndex: chunk.chunkIndex,
               chunkStartIndex: chunk.startIndex,
@@ -272,6 +274,7 @@ export class AiReviewService {
             systemPrompt,
             skipUserTemplate: true,
             documentId: ctx.fileId,
+            taskId: ctx.taskId,
             positionInfo: {
               chunkIndex: chunk.chunkIndex,
               chunkStartIndex: chunk.startIndex,
@@ -359,6 +362,7 @@ export class AiReviewService {
             systemPrompt,
             skipUserTemplate: true,
             documentId: ctx.fileId,
+            taskId: ctx.taskId,
             positionInfo: {
               chunkIndex: chunk.chunkIndex,
               chunkStartIndex: chunk.startIndex,
@@ -606,6 +610,7 @@ export class AiReviewService {
             systemPrompt: finalSystemPrompt,
             skipUserTemplate: true,
             documentId: ctx.fileId,
+            taskId: ctx.taskId,
             positionInfo: {
               chunkIndex: chunk.chunkIndex,
               chunkStartIndex: chunk.startIndex,
@@ -852,6 +857,7 @@ export class AiReviewService {
                 maxTokens: llmMaxTokens,
                 timeout: llmTimeout,
                 documentId: ctx.fileId,
+            taskId: ctx.taskId,
               });
               return issues.map(i => ({
                 ...i,
@@ -890,6 +896,7 @@ export class AiReviewService {
                 maxTokens: llmMaxTokens,
                 timeout: llmTimeout,
                 documentId: ctx.fileId,
+            taskId: ctx.taskId,
               });
               return issues.map(i => ({
                 ...i,
@@ -1126,6 +1133,7 @@ export class AiReviewService {
           systemPrompt,
           skipUserTemplate: true,
           documentId: ctx.fileId,
+            taskId: ctx.taskId,
           positionInfo: {
             chunkIndex: chunk.chunkIndex,
             chunkStartIndex: chunk.startIndex,
