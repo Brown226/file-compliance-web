@@ -64,6 +64,7 @@ const navGroups = [
     desc: '管理大模型、向量模型和 OCR/解析相关配置。',
     items: [
       { path: '/admin/ai-engine', label: 'AI 引擎', icon: '🧠', badge: '模型', desc: '聊天模型、Embedding、Reranker、OCR 与解析能力配置。' },
+      { path: '/admin/ai-call-dashboard', label: 'AI 调用看板', icon: '📊', badge: '可观测', desc: '查看 LLM 调用次数、Token 消耗、响应耗时与错误率（可观测性 P2）。' },
     ],
   },
   {

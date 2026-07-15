@@ -159,6 +159,12 @@ const routes: Array<RouteRecordRaw> = [
         meta: { title: 'LLM Provider 配置', requiresAdminOrManager: true }
       },
       {
+        path: 'admin/ai-call-dashboard',
+        name: 'AdminAiCallDashboard',
+        component: () => import('../views/admin/AiCallDashboard.vue'),
+        meta: { title: 'AI 调用看板', requiresAdminOrManager: true }
+      },
+      {
         path: 'admin/basic',
         name: 'AdminBasic',
         component: () => import('../views/admin/BasicSettings.vue'),

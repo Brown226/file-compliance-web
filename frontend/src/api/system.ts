@@ -49,6 +49,35 @@ export function saveLlmProfilesApi(profiles: LlmProfile[]) {
   return request.put<{ message: string }>('/system-config/llm-profiles', { profiles })
 }
 
+// ==================== 可观测性 P2：AI 调用看板 ====================
+
+export interface AiCallModelStat {
+  model: string
+  calls: number
+  totalTokens: number
+  avgLatency: number
+  costEstimate: number
+}
+
+export interface AiCallDailyTrend {
+  date: string
+  tokens: number
+}
+
+export interface AiCallStats {
+  totalCalls: number
+  totalTokens: number
+  avgLatency: number
+  errorRate: number
+  modelStats: AiCallModelStat[]
+  dailyTrend: AiCallDailyTrend[]
+}
+
+// 获取 AI 调用统计（看板用）
+export function getAiCallStatsApi() {
+  return request.get<AiCallStats>('/system-config/ai-call-stats')
+}
+
 // ==================== 部门管理 ====================
 
 export function getDepartmentsTreeApi() {

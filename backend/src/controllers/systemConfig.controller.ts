@@ -351,6 +351,65 @@ export const saveLlmProfiles = async (req: AuthRequest, res: Response): Promise<
     success(res, null, 'LLM 配置保存成功');
   } catch (err: any) {
     console.error('Save LLM Profiles Error:', err);
+  }
+};
+
+/**
+ * 可观测性 P2：AI 调用看板统计数据
+ * GET /api/system/ai-call-stats
+ */
+export const getAiCallStats = async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const totalCalls = await prisma.llmCallLog.count();
+
+    const tokenAgg = await prisma.llmCallLog.aggregate({
+      _sum: { totalTokens: true },
+      _avg: { latencyMs: true },
+    });
+
+    const failedCalls = await prisma.llmCallLog.count({
+      where: { status: 'failed' },
+    });
+
+    const modelStats = await prisma.llmCallLog.groupBy({
+      by: ['model'],
+      _count: { _all: true },
+      _sum: { totalTokens: true, costEstimate: true },
+      _avg: { latencyMs: true },
+    });
+
+    const thirtyDaysAgo = new Date();
+    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+    const dailyTrend = await prisma.$queryRaw<Array<{ date: string; tokens: bigint }>>`
+      SELECT DATE(created_at) as date, COALESCE(SUM(total_tokens), 0)::bigint as tokens
+      FROM llm_call_log
+      WHERE created_at >= ${thirtyDaysAgo}
+      GROUP BY DATE(created_at)
+      ORDER BY date
+    `;
+
+    success(res, {
+      totalCalls,
+      totalTokens: Number(tokenAgg._sum.totalTokens || 0),
+      avgLatency: Math.round(Number(tokenAgg._avg.latencyMs || 0)),
+      errorRate: totalCalls > 0 ? Number(((failedCalls / totalCalls) * 100).toFixed(1)) : 0,
+      modelStats: modelStats.map(m => ({
+        model: m.model,
+        calls: m._count._all,
+        totalTokens: Number(m._sum.totalTokens || 0),
+        avgLatency: Math.round(Number(m._avg.latencyMs || 0)),
+        costEstimate: Number((m._sum.costEstimate || 0).toFixed(4)),
+      })),
+      dailyTrend: dailyTrend.map(d => ({
+        date: String(d.date),
+        tokens: Number(d.tokens || 0),
+      })),
+    });
+  } catch (err: any) {
+    console.error('[Observability] 获取 AI 调用统计失败:', err);
+    error(res, `获取统计失败: ${err.message || '未知错误'}`, 500);
+  }
+};
     error(res, `服务器内部错误: ${err.message || '未知错误'}`, 500);
   }
 };
