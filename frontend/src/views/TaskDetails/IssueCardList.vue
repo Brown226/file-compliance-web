@@ -36,6 +36,17 @@
         </el-button>
       </div>
       <div class="filter-actions">
+        <!-- 仅看实质问题（弱化 FLUENCE/提示级噪声，对应 docs/12 信噪比诊断） -->
+        <el-tooltip content="折叠修辞级/提示类噪声，只看错误与警告级实质问题" placement="top">
+          <el-switch
+            v-model="hideLowValue"
+            size="small"
+            inline-prompt
+            active-text="仅实质"
+            inactive-text="全部"
+            style="margin-right:4px"
+          />
+        </el-tooltip>
         <!-- 全部展开/折叠 -->
         <el-button
           size="small"
@@ -286,7 +297,7 @@
         <!-- 普通列表模式 -->
         <template v-else>
           <IssueCard
-            v-for="detail in filteredAndSearched"
+            v-for="detail in effectiveIssues"
             :key="detail.id"
             :detail="detail"
             :batch-mode="batchMode"
@@ -401,6 +412,27 @@ const dwgRuleTypeOptions = DWG_RULE_TYPE_OPTIONS
 
 const hasActiveAdvancedFilters = computed(() => !!(filterCategory.value || filterDwgLayers.value?.length || filterDwgEntityTypes.value?.length || filterDwgRuleTypes.value?.length))
 
+// ===== 信噪比治理：仅看实质问题（弱化 FLUENCE/提示级噪声，对应 docs/12 诊断） =====
+const hideLowValue = ref(true)
+
+const SEV_RANK: Record<string, number> = { error: 0, warning: 1, info: 2, prompt: 3 }
+
+// 对过滤后的问题做：严重度排序 + 可选的噪声弱化
+const effectiveIssues = computed(() => {
+  const list = filteredAndSearched.value
+  let out = list
+  if (hideLowValue.value) {
+    out = out.filter((it: IssueDetail) => {
+      // 弱化：FLUENCE 修辞类 + 提示(info/prompt)级，只留 error/warning 的实质问题
+      if (it.issueType === 'FLUENCE') return false
+      if (it.severity === 'info' || it.severity === 'prompt') return false
+      return true
+    })
+  }
+  // 严重度排序：error 置顶
+  return [...out].sort((a, b) => (SEV_RANK[a.severity] ?? 9) - (SEV_RANK[b.severity] ?? 9))
+})
+
 // ===== 分组功能 =====
 const groupMode = ref(false)
 const expandedGroups = reactive(new Set<string>())
@@ -416,7 +448,7 @@ const toggleExpandAll = () => {
 const groupedIssues = computed(() => {
   const groups = new Map<string, { key: string; label: string; count: number; severity: string; sampleDesc: string; items: IssueDetail[] }>()
 
-  for (const issue of filteredAndSearched.value) {
+  for (const issue of effectiveIssues.value) {
     const key = getGroupKey(issue)
     if (!groups.has(key)) {
       groups.set(key, {
@@ -439,14 +471,19 @@ const groupedIssues = computed(() => {
   const result = Array.from(groups.values())
   if (result.length <= 1) return []
 
-  // 自动展开所有组
+  // 默认仅展开含 error 的组（先让用户看到高价值问题，弱化警告噪声）
   if (result.length > 0 && expandedGroups.size === 0) {
     for (const g of result) {
-      expandedGroups.add(g.key)
+      if (g.severity === 'error') expandedGroups.add(g.key)
     }
   }
 
-  return result.sort((a, b) => b.count - a.count)
+  // 排序：error 组优先，其余按数量降序
+  const sevRank = (s: string) => s === 'error' ? 0 : s === 'warning' ? 1 : 2
+  return result.sort((a, b) => {
+    const r = sevRank(a.severity) - sevRank(b.severity)
+    return r !== 0 ? r : b.count - a.count
+  })
 })
 
 /** 提取分组键：截取描述的前14个字符作为分组依据 */
@@ -518,7 +555,7 @@ const issuesByRuleGroup = computed(() => {
     }
   >()
 
-  for (const issue of filteredAndSearched.value) {
+  for (const issue of effectiveIssues.value) {
     const prefix = extractRulePrefix(issue.ruleCode || '')
     const meta = prefixMap.get(prefix)
 

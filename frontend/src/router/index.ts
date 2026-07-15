@@ -153,6 +153,12 @@ const routes: Array<RouteRecordRaw> = [
         meta: { title: 'AI 引擎配置', requiresAdminOrManager: true }
       },
       {
+        path: 'admin/llm-profiles',
+        name: 'AdminLlmProfiles',
+        component: () => import('../views/admin/LlmProfiles.vue'),
+        meta: { title: 'LLM Provider 配置', requiresAdminOrManager: true }
+      },
+      {
         path: 'admin/basic',
         name: 'AdminBasic',
         component: () => import('../views/admin/BasicSettings.vue'),

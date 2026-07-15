@@ -324,6 +324,31 @@
                 </div>
               </div>
 
+              <!-- 合同审查评分卡片 -->
+              <div v-if="isContractReview && contractScoreData.score > 0" class="contract-score-card">
+                <div class="score-header">
+                  <div class="score-value" :class="contractScoreLevel">{{ contractScoreData.score }}</div>
+                  <div class="score-meta">
+                    <div class="score-label">综合评分 / 100</div>
+                    <div class="score-conclusion">{{ contractScoreConclusion }}</div>
+                  </div>
+                </div>
+                <div class="risk-summary">
+                  <div class="risk-item high">
+                    <span class="risk-count">{{ contractScoreData.high }}</span>
+                    <span class="risk-label">高风险</span>
+                  </div>
+                  <div class="risk-item medium">
+                    <span class="risk-count">{{ contractScoreData.medium }}</span>
+                    <span class="risk-label">中风险</span>
+                  </div>
+                  <div class="risk-item low">
+                    <span class="risk-count">{{ contractScoreData.low }}</span>
+                    <span class="risk-label">低风险</span>
+                  </div>
+                </div>
+              </div>
+
               <!-- AI 审查空结果警告 -->
               <div v-if="showAiWarning" class="ai-warning-banner">
                 <el-icon color="#E6A23C" :size="16"><WarningFilled /></el-icon>
@@ -654,6 +679,35 @@ const showAiWarning = computed(() => {
   const mode = (task.value as any)?.reviewMode
   if (!mode || mode === 'RULE_ONLY' || mode === 'SELF_CHECK') return false
   return (reviewSummary.value?.aiIssues ?? 0) === 0
+})
+
+// ===== 合同审查评分 =====
+const isContractReview = computed(() => (task.value as any)?.reviewMode === 'CONTRACT_REVIEW')
+
+const contractScoreData = computed(() => {
+  const high = issueDetails.value.filter((d: any) => {
+    const desc = (d.description || '').toLowerCase()
+    return /高风险|严重|重大|high/i.test(desc) || d.severity === 'error'
+  }).length
+  const medium = issueDetails.value.filter((d: any) => {
+    const desc = (d.description || '').toLowerCase()
+    return (/中风险|一般|medium/i.test(desc) || d.severity === 'warning') && !(/高风险|严重|重大|high/i.test(desc) || d.severity === 'error')
+  }).length
+  const low = issueDetails.value.length - high - medium
+  const score = Math.max(0, 100 - high * 15 - medium * 8 - low * 3)
+  return { score, high, medium, low: Math.max(0, low) }
+})
+
+const contractScoreLevel = computed(() => {
+  if (contractScoreData.value.score >= 80) return 'level-good'
+  if (contractScoreData.value.score >= 60) return 'level-warning'
+  return 'level-danger'
+})
+
+const contractScoreConclusion = computed(() => {
+  if (contractScoreData.value.score >= 80) return '合同整体风险较低'
+  if (contractScoreData.value.score >= 60) return '合同存在一定风险，建议重点关注中高风险项'
+  return '合同风险较高，建议逐条审查并修改'
 })
 
 // 默认左侧面板宽度：自检模式 40%（右侧表格需要更多空间），普通审查 55%
@@ -2248,6 +2302,65 @@ onUnmounted(() => {
   font-size: 13px;
   color: #90640b;
   line-height: 1.5;
+}
+
+/* ===== 合同审查评分卡片 ===== */
+.contract-score-card {
+  display: flex;
+  align-items: center;
+  gap: 24px;
+  padding: 16px 20px;
+  margin-top: 12px;
+  background: linear-gradient(135deg, #F0F9FF 0%, #E0F2FE 100%);
+  border: 1px solid #BAE6FD;
+  border-radius: 8px;
+}
+.score-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.score-value {
+  font-size: 42px;
+  font-weight: 800;
+  line-height: 1;
+}
+.score-value.level-good { color: #16A34A; }
+.score-value.level-warning { color: #D97706; }
+.score-value.level-danger { color: #DC2626; }
+.score-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.score-label {
+  font-size: 12px;
+  color: #6B7280;
+}
+.score-conclusion {
+  font-size: 13px;
+  font-weight: 600;
+  color: #374151;
+}
+.risk-summary {
+  display: flex;
+  gap: 20px;
+  margin-left: auto;
+}
+.risk-item {
+  text-align: center;
+}
+.risk-count {
+  font-size: 22px;
+  font-weight: 700;
+  display: block;
+}
+.risk-item.high .risk-count { color: #DC2626; }
+.risk-item.medium .risk-count { color: #D97706; }
+.risk-item.low .risk-count { color: #16A34A; }
+.risk-label {
+  font-size: 11px;
+  color: #6B7280;
 }
 
 /* 响应式 */

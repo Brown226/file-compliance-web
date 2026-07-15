@@ -6,6 +6,8 @@ import {
   saveSystemConfig,
   testLlmConnection,
   sendLlmTest,
+  getLlmProfiles,
+  saveLlmProfiles,
 } from '../controllers/systemConfig.controller';
 import { OcrService } from '../services/ocr.service';
 
@@ -29,6 +31,10 @@ router.post('/test-llm', requireRole('ADMIN'), testLlmConnection);
 
 // 发送 LLM 测试消息 - 仅管理员（必须在 /:key 之前注册）
 router.post('/test-llm-send', requireRole('ADMIN'), sendLlmTest);
+
+// LLM Profiles 管理 - 仅管理员（必须在 /:key 之前注册）
+router.get('/llm-profiles', getLlmProfiles);
+router.put('/llm-profiles', requireRole('ADMIN'), saveLlmProfiles);
 
 // 获取系统配置 - 所有认证用户可读取
 router.get('/:key', getSystemConfig);

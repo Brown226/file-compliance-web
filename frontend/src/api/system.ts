@@ -24,6 +24,31 @@ export function sendLlmTestApi(data: any) {
   return request.post<LlmTestResult>('/system-config/test-llm-send', data)
 }
 
+// ==================== LLM Profiles 管理 ====================
+
+export interface LlmProfile {
+  id: string
+  name: string
+  provider: string
+  apiBase: string
+  model: string
+  apiKey?: string
+  isActive: boolean
+  isEnabled: boolean
+  timeout: number
+  maxRetries: number
+}
+
+// 获取所有 LLM 配置（密钥脱敏）
+export function getLlmProfilesApi() {
+  return request.get<LlmProfile[]>('/system-config/llm-profiles')
+}
+
+// 保存所有 LLM 配置
+export function saveLlmProfilesApi(profiles: LlmProfile[]) {
+  return request.put<{ message: string }>('/system-config/llm-profiles', { profiles })
+}
+
 // ==================== 部门管理 ====================
 
 export function getDepartmentsTreeApi() {

@@ -34,6 +34,16 @@
           >
             {{ getSeverityLabel(detail.severity) }}
           </el-tag>
+          <!-- UNVERIFIED 标记：AI 推测无依据 -->
+          <el-tag
+            v-if="detail.plainLanguage?.includes('⚠️')"
+            type="warning"
+            size="small"
+            effect="dark"
+            round
+          >
+            ⚠️ AI 推测
+          </el-tag>
           <el-tag v-if="detail.isFalsePositive" type="info" size="small" effect="plain" round class="fp-tag">
             误报
           </el-tag>
