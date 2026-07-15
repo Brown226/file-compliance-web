@@ -119,6 +119,7 @@ model Task {
   details            TaskDetail[]
   taskStandards      TaskStandard[]
   refFileGroups      RefFileGroup[]
+  stats              Json?          @map("stats")  // 任务级统计：token 用量/成本/调用次数（可观测性 P2）
   createdAt          DateTime       @default(now())
   updatedAt          DateTime       @updatedAt
 
@@ -795,4 +796,26 @@ model UserChatSession {
   @@unique([userId, applicationId])
   @@index([userId])
   @@map("user_chat_sessions")
+}
+
+// LLM 调用日志 - 每次审查的模型调用记录（可观测性 P2）
+model LlmCallLog {
+  id               BigInt   @id @default(autoincrement()) @db.BigInt
+  taskId           String?  @map("task_id") @db.VarChar(50)
+  mode             String?  @db.VarChar(50)       // 审查模式
+  model            String   @db.VarChar(100)      // 模型名称
+  provider         String?  @db.VarChar(50)       // 供应商
+  promptTokens     Int      @default(0) @map("prompt_tokens")
+  completionTokens Int      @default(0) @map("completion_tokens")
+  totalTokens      Int      @default(0) @map("total_tokens")
+  latencyMs        Int      @default(0) @map("latency_ms")    // 耗时（毫秒）
+  status           String   @default("success") @db.VarChar(20)  // success/failed/cache
+  errorMsg         String?  @map("error_msg") @db.Text
+  costEstimate     Float?   @map("cost_estimate")  // 预估成本（元）
+  createdAt        DateTime @default(now()) @map("created_at") @db.Timestamp(6)
+
+  @@index([taskId], name: "idx_llm_log_task_id")
+  @@index([model], name: "idx_llm_log_model")
+  @@index([createdAt], name: "idx_llm_log_created_at")
+  @@map("llm_call_log")
 }
