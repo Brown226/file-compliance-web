@@ -815,6 +815,40 @@ export class ReviewService {
         status: newStatus,
       });
 
+      // ===== 可观测性 P2：任务级 LLM 调用汇总 =====
+      if (newStatus === 'COMPLETED') {
+        try {
+          const logs = await prisma.llmCallLog.findMany({
+            where: { taskId },
+            select: { totalTokens: true, costEstimate: true, latencyMs: true, status: true },
+          });
+          const totalTokens = logs.reduce((s, l) => s + (l.totalTokens || 0), 0);
+          const totalCost = logs.reduce((s, l) => s + (l.costEstimate || 0), 0);
+          const avgLatency = logs.length > 0
+            ? Math.round(logs.reduce((s, l) => s + (l.latencyMs || 0), 0) / logs.length)
+            : 0;
+          const failedCalls = logs.filter(l => l.status === 'failed').length;
+          await prisma.task.update({
+            where: { id: taskId },
+            data: {
+              stats: {
+                ...((task.stats as any) || {}),
+                llm: {
+                  callCount: logs.length,
+                  totalTokens,
+                  totalCost: Number(totalCost.toFixed(4)),
+                  avgLatencyMs: avgLatency,
+                  failedCalls,
+                },
+              },
+            },
+          });
+          console.log(`[Observability] 任务 ${taskId} LLM 汇总: ${logs.length} 次调用, ${totalTokens} tokens, ¥${totalCost.toFixed(4)}`);
+        } catch (e) {
+          console.warn('[Observability] 任务级 LLM 汇总失败（不影响主流程）:', (e as Error).message);
+        }
+      }
+
     } catch (error) {
       console.error(`[Review] �������쳣: ${taskId}`, error);
       try {
