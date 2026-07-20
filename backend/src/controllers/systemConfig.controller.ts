@@ -410,6 +410,3 @@ export const getAiCallStats = async (req: AuthRequest, res: Response): Promise<v
     error(res, `获取统计失败: ${err.message || '未知错误'}`, 500);
   }
 };
-    error(res, `服务器内部错误: ${err.message || '未知错误'}`, 500);
-  }
-};
