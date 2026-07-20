@@ -11,7 +11,7 @@
         <el-button type="primary" size="large" @click="$router.push('/review')">
           <el-icon><Plus /></el-icon> 新建审查
         </el-button>
-        <el-button size="large" @click="$router.push('/tasks')">
+        <el-button size="large" @click="$router.push('/review-center?tab=tasks')">
           <el-icon><Document /></el-icon> 查看任务记录
         </el-button>
       </div>
@@ -45,7 +45,7 @@
       <div class="recent-section">
         <div class="recent-header">
           <span class="recent-title">最近审查任务</span>
-          <el-button type="primary" link @click="$router.push('/tasks')">查看全部 ></el-button>
+          <el-button type="primary" link @click="$router.push('/review-center?tab=tasks')">查看全部 ></el-button>
         </div>
 
         <el-card shadow="never" class="recent-table-card">
@@ -90,7 +90,7 @@
         <div class="sidebar-card">
           <h3 class="sidebar-title">快捷入口</h3>
           <div class="sidebar-links">
-            <div class="sidebar-link-item" @click="$router.push('/admin/standards')">
+            <div class="sidebar-link-item" @click="$router.push('/knowledge')">
               <div class="link-icon standards-icon">
                 <el-icon :size="18"><Collection /></el-icon>
               </div>
@@ -99,7 +99,7 @@
                 <span class="link-desc">查看标准清单、白名单库和误报标记库</span>
               </div>
             </div>
-            <div v-if="userStore.isAdminOrManager()" class="sidebar-link-item" @click="$router.push('/admin/knowledge')">
+            <div v-if="userStore.isAdminOrManager()" class="sidebar-link-item" @click="$router.push('/knowledge?tab=maxkb')">
               <div class="link-icon knowledge-icon">
                 <el-icon :size="18"><FolderOpened /></el-icon>
               </div>
@@ -108,7 +108,7 @@
                 <span class="link-desc">MaxKB 知识库管理与标准规范</span>
               </div>
             </div>
-            <div class="sidebar-link-item" @click="$router.push('/admin/rule-libraries')">
+            <div class="sidebar-link-item" @click="$router.push('/knowledge?tab=rules')">
               <div class="link-icon rulelib-icon">
                 <el-icon :size="18"><Files /></el-icon>
               </div>
@@ -126,7 +126,7 @@
                 <span class="link-desc">查看审查规则配置</span>
               </div>
             </div>
-            <div class="sidebar-link-item" @click="$router.push('/ai-assistant')">
+            <div class="sidebar-link-item" @click="$router.push('/ai')">
               <div class="link-icon qna-icon">
                 <el-icon :size="18"><ChatLineSquare /></el-icon>
               </div>

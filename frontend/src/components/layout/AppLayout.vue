@@ -20,31 +20,21 @@
         active-text-color="#FFFFFF"
       >
         <!-- ===== 鐢ㄦ埛鍔熻兘锛堟墍鏈夎鑹插彲瑙侊級===== -->
-        <el-menu-item index="/workspace">
+        <el-menu-item index="/review-center">
           <el-icon><DataBoard /></el-icon>
-          <template #title><span>工作台</span></template>
+          <template #title><span>审查中心</span></template>
         </el-menu-item>
         <el-menu-item index="/review">
           <el-icon><DocumentAdd /></el-icon>
-          <template #title><span>智能审查</span></template>
+          <template #title><span>新建审查</span></template>
         </el-menu-item>
-        <el-menu-item index="/ai-assistant">
+        <el-menu-item index="/ai">
           <el-icon><ChatDotRound /></el-icon>
-          <template #title><span>AI 智能问答</span></template>
+          <template #title><span>AI 工作台</span></template>
         </el-menu-item>
-        <el-menu-item index="/polish">
-          <el-icon><Brush /></el-icon>
-          <template #title><span>AI 润色</span></template>
-        </el-menu-item>
-        <el-menu-item index="/tasks">
-          <el-icon><List /></el-icon>
-          <template #title><span>我的任务</span></template>
-        </el-menu-item>
-
-        <!-- 反馈意见（所有角色可见） -->
-        <el-menu-item index="/feedback">
-          <el-icon><ChatLineRound /></el-icon>
-          <template #title><span>反馈意见</span></template>
+        <el-menu-item index="/knowledge">
+          <el-icon><Collection /></el-icon>
+          <template #title><span>知识中心</span></template>
         </el-menu-item>
 
         <!-- 系统公告（仅管理员可见） -->
@@ -64,46 +54,11 @@
           </el-menu-item>
         </template>
 
-        <!-- ===== OpenSpec 高级功能 ===== -->
-        <div class="menu-divider" v-show="!sidebarCollapsed"></div>
-        <el-sub-menu index="/openspec-group">
-          <template #title>
-            <el-icon><MagicStick /></el-icon>
-            <span>OpenSpec</span>
-          </template>
-          <el-menu-item index="/openspec/create">
-            <el-icon><DocumentAdd /></el-icon>
-            <template #title><span>文档生成</span></template>
-          </el-menu-item>
-          <el-menu-item index="/openspec/memory">
-            <el-icon><Memo /></el-icon>
-            <template #title><span>长期记忆</span></template>
-          </el-menu-item>
-          <el-menu-item index="/openspec/review">
-            <el-icon><Search /></el-icon>
-            <template #title><span>智能审查</span></template>
-          </el-menu-item>
-          <el-menu-item index="/openspec/standards">
-            <el-icon><Reading /></el-icon>
-            <template #title><span>标准条文</span></template>
-          </el-menu-item>
-          <el-menu-item index="/openspec/clauses">
-            <el-icon><Collection /></el-icon>
-            <template #title><span>条文库</span></template>
-          </el-menu-item>
-          <el-menu-item index="/openspec/wizard">
-            <el-icon><Guide /></el-icon>
-            <template #title><span>文档向导</span></template>
-          </el-menu-item>
-          <el-menu-item index="/openspec/qa">
-            <el-icon><ChatLineSquare /></el-icon>
-            <template #title><span>项目问答</span></template>
-          </el-menu-item>
-          <el-menu-item index="/openspec/settings">
-            <el-icon><Setting /></el-icon>
-            <template #title><span>设置</span></template>
-          </el-menu-item>
-        </el-sub-menu>
+        <!-- 反馈意见（所有角色可见，置底低频入口） -->
+        <el-menu-item index="/feedback">
+          <el-icon><ChatLineRound /></el-icon>
+          <template #title><span>反馈意见</span></template>
+        </el-menu-item>
       </el-menu>
 
       <div class="collapse-btn" @click="sidebarCollapsed = !sidebarCollapsed">
@@ -339,7 +294,7 @@ const globalSearchRef = ref<InstanceType<typeof GlobalSearch> | null>(null)
 const showShortcutHelp = ref(false)
 
 const goWorkspace = () => {
-  router.push('/workspace')
+  router.push('/review-center')
 }
 
 // 系统公告

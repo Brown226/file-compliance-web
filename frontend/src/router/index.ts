@@ -20,16 +20,18 @@ const routes: Array<RouteRecordRaw> = [
   {
     path: '/',
     component: AppLayout,
-    redirect: '/workspace',
+    redirect: '/review-center',
     meta: { requiresAuth: true },
     children: [
-      // ===== 用户路由（所有角色可见）=====
+      // ===== 审查中心（主入口） =====
       {
-        path: 'workspace',
-        name: 'Workspace',
-        component: () => import('../views/Workspace.vue'),
-        meta: { title: '工作台' }
+        path: 'review-center',
+        name: 'ReviewCenter',
+        component: () => import('../views/ReviewCenter.vue'),
+        meta: { title: '审查中心' }
       },
+      { path: 'workspace', redirect: '/review-center' },
+      { path: 'tasks', redirect: '/review-center?tab=tasks' },
       {
         path: 'review',
         name: 'SmartReview',
@@ -47,23 +49,24 @@ const routes: Array<RouteRecordRaw> = [
         redirect: to => ({ path: `/review/${to.params.id}` })
       },
       {
-        path: 'ai-assistant',
-        name: 'AiAssistant',
-        component: () => import('../views/ai-assistant/AiAssistant.vue'),
-        meta: { title: 'AI 智能问答' }
+        path: 'ai',
+        name: 'AiWorkspace',
+        component: () => import('../views/AiWorkspace.vue'),
+        meta: { title: 'AI 工作台' }
       },
+      { path: 'ai-assistant', redirect: '/ai?tab=chat' },
+      { path: 'polish', redirect: '/ai?tab=polish' },
+      // ===== 知识中心 =====
       {
-        path: 'polish',
-        name: 'PolishTool',
-        component: () => import('../views/Tools/PolishTool.vue'),
-        meta: { title: 'AI 润色' }
+        path: 'knowledge',
+        name: 'KnowledgeCenter',
+        component: () => import('../views/KnowledgeCenter.vue'),
+        meta: { title: '知识中心' }
       },
-      {
-        path: 'tasks',
-        name: 'TaskHistory',
-        component: () => import('../views/TaskHistory.vue'),
-        meta: { title: '我的任务' }
-      },
+      { path: 'admin/standards', redirect: '/knowledge' },
+      { path: 'admin/knowledge', redirect: '/knowledge?tab=maxkb' },
+      { path: 'admin/rule-libraries', redirect: '/knowledge?tab=rules' },
+      { path: 'openspec/clauses', redirect: '/knowledge?tab=clauses' },
       {
         path: 'feedback',
         name: 'MyFeedbacks',
@@ -220,9 +223,7 @@ const routes: Array<RouteRecordRaw> = [
       },
       {
         path: 'openspec/memory',
-        name: 'OpenSpecMemory',
-        component: () => import('@/views/openspec/MemoryManagement.vue'),
-        meta: { title: '长期记忆', icon: 'Memo' }
+        redirect: '/ai?tab=memory'
       },
       {
         path: 'openspec/review',
@@ -257,15 +258,11 @@ const routes: Array<RouteRecordRaw> = [
       },
       {
         path: 'openspec/wizard',
-        name: 'OpenSpecWizard',
-        component: () => import('@/views/openspec/DocumentWizard.vue'),
-        meta: { title: '文档向导', icon: 'Guide' }
+        redirect: '/ai?tab=generate'
       },
       {
         path: 'openspec/qa',
-        name: 'OpenSpecQA',
-        component: () => import('@/views/openspec/ProjectQA.vue'),
-        meta: { title: '项目问答', icon: 'ChatLineSquare' }
+        redirect: '/ai?tab=qa'
       },
       {
         path: 'openspec/templates/:id',
@@ -299,11 +296,11 @@ router.beforeEach((to, _from, next) => {
   } else if (to.meta.allowViewer && !isAuthenticated) {
     next({ name: 'Login' })
   } else if (to.meta.requiresAdminOrManager && !userStore.isAdminOrManager()) {
-    next({ path: '/workspace' })
+    next({ path: '/review-center' })
   } else if (to.meta.requiresAdmin && !userStore.isAdmin()) {
-    next({ path: '/workspace' })
+    next({ path: '/review-center' })
   } else if (to.name === 'Login' && isAuthenticated) {
-    next({ path: '/workspace' })
+    next({ path: '/review-center' })
   } else {
     next()
   }
