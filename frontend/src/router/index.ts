@@ -160,9 +160,7 @@ const routes: Array<RouteRecordRaw> = [
       },
       {
         path: 'admin/llm-profiles',
-        name: 'AdminLlmProfiles',
-        component: () => import('../views/admin/LlmProfiles.vue'),
-        meta: { title: 'LLM Provider 配置', requiresAdminOrManager: true }
+        redirect: '/admin/ai-engine'
       },
       {
         path: 'admin/ai-call-dashboard',

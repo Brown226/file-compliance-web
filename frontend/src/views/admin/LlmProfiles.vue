@@ -1,7 +1,6 @@
 <template>
   <div class="llm-profiles">
     <div class="page-header">
-      <h2>LLM Provider 配置</h2>
       <el-button type="primary" @click="addProfile">+ 新增配置</el-button>
     </div>
 

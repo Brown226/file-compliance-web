@@ -851,6 +851,23 @@ export class AiReviewService {
     }
 
     const CONCURRENT_LIMIT = Math.min(clauses.length, 5);
+    const totalClauses = clauses.length;
+    let clausesProcessed = 0; // 共享进度计数器（两条链合计）
+    const totalSteps = totalClauses * 2; // 风险分析 + 合规检查各遍历一次
+
+    /** 报告合同审查进度 */
+    const reportProgress = async (batchIssues: ReviewIssue[], label: string) => {
+      clausesProcessed += 1;
+      if (ctx.onChunkProgress) {
+        await ctx.onChunkProgress(
+          text.length,
+          batchIssues,
+          clausesProcessed - 1,
+          totalSteps,
+          `contract-${label}`,
+        );
+      }
+    };
 
     // 风险分析链：逐条款识别风险
     const riskTask = async () => {
@@ -887,6 +904,8 @@ export class AiReviewService {
           }),
         );
         for (const r of batchResults) riskResults.push(...r);
+        // 报告进度（以批次为单位）
+        await reportProgress(batchResults.flat(), 'risk');
       }
       return riskResults;
     };
@@ -926,6 +945,8 @@ export class AiReviewService {
           }),
         );
         for (const r of batchResults) complianceResults.push(...r);
+        // 报告进度（以批次为单位）
+        await reportProgress(batchResults.flat(), 'compliance');
       }
       return complianceResults;
     };

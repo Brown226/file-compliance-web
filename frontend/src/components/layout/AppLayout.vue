@@ -32,6 +32,10 @@
           <el-icon><ChatDotRound /></el-icon>
           <template #title><span>AI 智能问答</span></template>
         </el-menu-item>
+        <el-menu-item index="/polish">
+          <el-icon><Brush /></el-icon>
+          <template #title><span>AI 润色</span></template>
+        </el-menu-item>
         <el-menu-item index="/tasks">
           <el-icon><List /></el-icon>
           <template #title><span>我的任务</span></template>
@@ -86,6 +90,18 @@
           <el-menu-item index="/openspec/clauses">
             <el-icon><Collection /></el-icon>
             <template #title><span>条文库</span></template>
+          </el-menu-item>
+          <el-menu-item index="/openspec/wizard">
+            <el-icon><Guide /></el-icon>
+            <template #title><span>文档向导</span></template>
+          </el-menu-item>
+          <el-menu-item index="/openspec/qa">
+            <el-icon><ChatLineSquare /></el-icon>
+            <template #title><span>项目问答</span></template>
+          </el-menu-item>
+          <el-menu-item index="/openspec/settings">
+            <el-icon><Setting /></el-icon>
+            <template #title><span>设置</span></template>
           </el-menu-item>
         </el-sub-menu>
       </el-menu>
@@ -281,7 +297,8 @@ import {
   Setting, FullScreen, ArrowDown, Lock, SwitchButton,
   Fold, Expand, Search, QuestionFilled, Edit,
   WarningFilled, ChatDotRound, ChatLineRound,
-  Bell, User, ArrowLeft,
+  Bell, User, ArrowLeft, Brush, Guide, ChatLineSquare,
+  MagicStick, Memo, Reading, Collection,
 } from '@element-plus/icons-vue'
 import { logoutApi, changePasswordApi, changeUsernameApi, loginApi } from '@/api/auth'
 import GlobalSearch from '@/components/GlobalSearch.vue'

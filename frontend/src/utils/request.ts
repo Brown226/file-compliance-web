@@ -57,6 +57,15 @@ request.interceptors.response.use(
         ElMessage.error(msg)
         return Promise.reject(new Error(msg))
       }
+    } else if (data && typeof data === 'object' && !(data instanceof Blob) && 'success' in data) {
+      // 兼容 { success: true, data: ... } 格式（如润色等新增接口）
+      if (data.success) {
+        response.data = data.data
+      } else {
+        const msg = data.message || '请求失败'
+        ElMessage.error(msg)
+        return Promise.reject(new Error(msg))
+      }
     }
     return response
   },
