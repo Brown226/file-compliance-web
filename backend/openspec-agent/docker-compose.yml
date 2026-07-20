@@ -1,0 +1,17 @@
+version: '3.8'
+services:
+  ai-agent:
+    image: ai-agent:latest
+    build:
+      context: .
+    container_name: ai-agent
+    ports:
+      - "5000:5000"
+    env_file:
+      - .env
+    restart: unless-stopped
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "50m"
+        max-file: "3"

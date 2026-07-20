@@ -490,6 +490,7 @@
               :is-docx-selected="isDocxFileSelected"
               :review-mode="(task as any)?.reviewMode"
               :enabled-prefixes="(task as any)?.reviewPlan?.evidence?.enabledPrefixes"
+              :original-text="proofreadOriginalText"
               @update:selected-file-id="(id) => { selectedFileId.value = id; if (id) switchToFileContext(id) }"
               @select-file-by-id="switchToFileContext"
               @copy-handle-id="handleCopyCadHandle"
@@ -497,6 +498,10 @@
               @open-fp-dialog="(detail) => handleFalsePositive(detail)"
               @batch-false-positive="handleBatchFalsePositiveFromIssueList"
               @batch-adopt="handleBatchAdoptFromIssueList"
+              @proofread-accept="handleProofreadAccept"
+              @proofread-ignore="handleProofreadIgnore"
+              @proofread-accept-all="handleProofreadAcceptAll"
+              @proofread-ignore-all="handleProofreadIgnoreAll"
             />
           </div>
 
@@ -683,6 +688,12 @@ const showAiWarning = computed(() => {
 
 // ===== 合同审查评分 =====
 const isContractReview = computed(() => (task.value as any)?.reviewMode === 'CONTRACT_REVIEW')
+
+/** 校对模式原文文本（暂无全文获取接口，预留） */
+const proofreadOriginalText = computed(() => {
+  // TODO: 从文件内容 API 获取全文文本后启用双栏高亮
+  return undefined as string | undefined
+})
 
 const contractScoreData = computed(() => {
   const high = issueDetails.value.filter((d: any) => {
@@ -1179,6 +1190,26 @@ const fetchData = async (silent = false) => {
 // pickLocateKeyword, collectLocateAnchors 已迁移到 useIssueHelpers composable =====
 
 // ===== IssueCardList 桥接事件处理 =====
+
+const handleProofreadAccept = (issueId: string) => {
+  console.log('[Proofread] 采纳:', issueId)
+  ElMessage.success('已采纳修改建议')
+}
+
+const handleProofreadIgnore = (issueId: string) => {
+  console.log('[Proofread] 忽略:', issueId)
+  ElMessage.info('已忽略该问题')
+}
+
+const handleProofreadAcceptAll = () => {
+  console.log('[Proofread] 全部采纳')
+  ElMessage.success('已全部采纳')
+}
+
+const handleProofreadIgnoreAll = () => {
+  console.log('[Proofread] 全部忽略')
+  ElMessage.info('已全部忽略')
+}
 
 const handleCopyCadHandle = (handleId: string) => {
   navigator.clipboard.writeText(handleId).then(() => {
@@ -2907,3 +2938,4 @@ onUnmounted(() => {
   overflow-y: auto !important;
 }
 </style>
+

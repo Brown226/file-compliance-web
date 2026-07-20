@@ -10,4 +10,5 @@ export const env = {
   redisUrl: process.env.REDIS_URL as string,
   jwtSecret: process.env.JWT_SECRET as string,
   jwtExpiresIn: process.env.JWT_EXPIRES_IN || '1d',
+  openspecAgentUrl: process.env.OPENSPEC_AGENT_URL || 'http://localhost:5000',
 };

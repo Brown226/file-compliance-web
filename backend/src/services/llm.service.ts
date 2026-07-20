@@ -9,6 +9,10 @@ import prisma from '../config/db';
 import { PromptTemplateService } from './prompt-template.service';
 import { PromptLoader } from './prompts';
 import { CacheService } from './cache.service';
+import { get_encoding, Tiktoken, TiktokenModel } from 'tiktoken';
+
+/** 默认编码使用 cl100k_base（GPT-4 / GPT-3.5-turbo 使用的编码） */
+const DEFAULT_ENCODING = 'cl100k_base';
 
 export interface SourceReference {
   content: string;        // MaxKB 检索到的知识库片段原文
@@ -699,6 +703,75 @@ export class LlmService {
     return { chunkIndex, charOffset: range.start, totalChunks };
   }
 
+  /**
+   * 精确计算文本的 token 数量
+   * 使用 tiktoken cl100k_base 编码（与 GPT-4 / GPT-3.5-turbo 一致）
+   */
+  static countTokens(text: string): number {
+    try {
+      const enc = get_encoding(DEFAULT_ENCODING);
+      const tokens = enc.encode(text);
+      enc.free();
+      return tokens.length;
+    } catch {
+      // 降级到字符估算（中英文混合近似值）
+      return Math.ceil(text.length / 2);
+    }
+  }
+
+  /**
+   * 按 token 数精确分割文本（基于段落保持完整）
+   * 比 splitText 的字符级分割更精确，适合需要精确控制 token 消耗的场景
+   */
+  static splitTextByTokens(text: string, maxTokens: number = 2000): string[] {
+    if (!text) return [];
+    const totalTokens = this.countTokens(text);
+    if (totalTokens <= maxTokens) return [text];
+
+    const paragraphs = text.split(/\n\s*\n/);
+    const chunks: string[] = [];
+    let currentChunk = '';
+
+    for (const para of paragraphs) {
+      const paraTokens = this.countTokens(para);
+      const chunkTokens = currentChunk ? this.countTokens(currentChunk) : 0;
+
+      if (paraTokens > maxTokens) {
+        // 超长段落：按句号分割
+        if (currentChunk) {
+          chunks.push(currentChunk);
+          currentChunk = '';
+        }
+        const sentences = para.split(/(?<=[。！？.!?])/);
+        let sentenceBuf = '';
+        for (const sent of sentences) {
+          const bufTokens = sentenceBuf ? this.countTokens(sentenceBuf) : 0;
+          const sentTokens = this.countTokens(sent);
+          if (bufTokens + sentTokens > maxTokens) {
+            if (sentenceBuf) {
+              chunks.push(sentenceBuf);
+              sentenceBuf = sent;
+            } else {
+              // 单句就超长：强制截断
+              chunks.push(sent);
+              sentenceBuf = '';
+            }
+          } else {
+            sentenceBuf += sent;
+          }
+        }
+        if (sentenceBuf) chunks.push(sentenceBuf);
+      } else if (chunkTokens + paraTokens > maxTokens) {
+        chunks.push(currentChunk);
+        currentChunk = para;
+      } else {
+        currentChunk = currentChunk ? `${currentChunk}\n\n${para}` : para;
+      }
+    }
+    if (currentChunk) chunks.push(currentChunk);
+    return chunks;
+  }
+
   private static getEffectiveChunkSize(): number {
     // 尝试从系统配置获取
     try {
@@ -972,10 +1045,49 @@ export class LlmService {
   }
 
   /**
+   * 智能 endpoint 探测 — 当配置的 endpoint 不可用时，自动尝试备选列表
+   * 一旦找到可用的 endpoint 就缓存到 _workingEndpointUrl
+   */
+  static async resolveEndpoint(failedUrl: string): Promise<string> {
+    // 若已有缓存的可用 endpoint，优先使用
+    if (this._workingEndpointUrl && this._workingEndpointUrl !== failedUrl) {
+      return this._workingEndpointUrl;
+    }
+
+    for (const altUrl of this.ALTERNATIVE_BASE_URLS) {
+      if (altUrl === failedUrl) continue;
+      try {
+        const probeRes = await fetch(`${altUrl}/models`, {
+          signal: AbortSignal.timeout(5000),
+        });
+        if (probeRes.ok) {
+          console.log(`[LLM] 发现可用 endpoint: ${altUrl}`);
+          this._workingEndpointUrl = altUrl;
+          return altUrl;
+        }
+      } catch {
+        // 继续尝试下一个
+      }
+    }
+    // 全部不可用 → 返回原地址，由调用方处理错误
+    console.warn('[LLM] 所有备选 endpoint 均不可用');
+    return failedUrl;
+  }
+
+  /**
    * 从数据库获取 LLM 配置（带缓存）
    */
   private static _llmConfigCache: { config: any; timestamp: number } | null = null;
   private static readonly CONFIG_CACHE_TTL = 5 * 60 * 1000; // 5分钟缓存
+  /** 已确认可用的 LLM endpoint（缓存，重启即失效） */
+  private static _workingEndpointUrl: string | null = null;
+  private static readonly ALTERNATIVE_BASE_URLS: string[] = [
+    'https://api.siliconflow.cn/v1',
+    'https://api.openai.com/v1',
+    'https://api.deepseek.com/v1',
+    'https://api.moonshot.cn/v1',
+    'http://localhost:11434/v1',
+  ];
 
   static async getLlmConfig(): Promise<{
     apiBaseUrl: string;

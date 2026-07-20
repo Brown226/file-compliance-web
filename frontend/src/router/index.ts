@@ -53,6 +53,12 @@ const routes: Array<RouteRecordRaw> = [
         meta: { title: 'AI 智能问答' }
       },
       {
+        path: 'polish',
+        name: 'PolishTool',
+        component: () => import('../views/Tools/PolishTool.vue'),
+        meta: { title: 'AI 润色' }
+      },
+      {
         path: 'tasks',
         name: 'TaskHistory',
         component: () => import('../views/TaskHistory.vue'),
@@ -195,6 +201,86 @@ const routes: Array<RouteRecordRaw> = [
       { path: 'pipeline-config', redirect: '/admin/rules' },
       { path: 'regex-tool', redirect: '/admin/rules' },
       { path: 'tasks/:id', redirect: to => ({ path: `/review/${to.params.id}` }) },
+
+      // ===== OpenSpec 高级功能（文档生成 + 长期记忆 + 智能审查）=====
+      {
+        path: 'openspec',
+        redirect: '/openspec/create',
+        meta: { title: 'OpenSpec', hidden: true }
+      },
+      {
+        path: 'openspec/create',
+        name: 'OpenSpecCreate',
+        component: () => import('@/views/openspec/CreateDocument.vue'),
+        meta: { title: '文档生成', icon: 'DocumentAdd' }
+      },
+      {
+        path: 'openspec/editor/:id?',
+        name: 'OpenSpecEditor',
+        component: () => import('@/views/openspec/Editor.vue'),
+        meta: { title: '文档编辑', hidden: true }
+      },
+      {
+        path: 'openspec/memory',
+        name: 'OpenSpecMemory',
+        component: () => import('@/views/openspec/MemoryManagement.vue'),
+        meta: { title: '长期记忆', icon: 'Memo' }
+      },
+      {
+        path: 'openspec/review',
+        name: 'OpenSpecReview',
+        component: () => import('@/views/openspec/ReviewList.vue'),
+        meta: { title: 'OpenSpec审查', icon: 'Search' }
+      },
+      {
+        path: 'openspec/review/:id',
+        name: 'OpenSpecReviewResult',
+        component: () => import('@/views/openspec/ReviewResult.vue'),
+        meta: { title: '审查结果', hidden: true }
+      },
+      {
+        path: 'openspec/standards',
+        name: 'OpenSpecStandards',
+        component: () => import('@/views/openspec/StandardReview.vue'),
+        meta: { title: '标准条文', icon: 'Reading' }
+      },
+      {
+        path: 'openspec/clauses',
+        name: 'OpenSpecClauses',
+        component: () => import('@/views/openspec/StandardClauses.vue'),
+        meta: { title: '条文库', icon: 'Collection' }
+      },
+      // ===== OpenSpec 扩展页面 =====
+      {
+        path: 'openspec/home',
+        name: 'OpenSpecHome',
+        component: () => import('@/views/openspec/Home.vue'),
+        meta: { title: 'OpenSpec 首页', icon: 'HomeFilled', hidden: true }
+      },
+      {
+        path: 'openspec/wizard',
+        name: 'OpenSpecWizard',
+        component: () => import('@/views/openspec/DocumentWizard.vue'),
+        meta: { title: '文档向导', icon: 'Guide' }
+      },
+      {
+        path: 'openspec/qa',
+        name: 'OpenSpecQA',
+        component: () => import('@/views/openspec/ProjectQA.vue'),
+        meta: { title: '项目问答', icon: 'ChatLineSquare' }
+      },
+      {
+        path: 'openspec/templates/:id',
+        name: 'OpenSpecTemplateDetail',
+        component: () => import('@/views/openspec/TemplateDetail.vue'),
+        meta: { title: '模板详情', hidden: true }
+      },
+      {
+        path: 'openspec/settings',
+        name: 'OpenSpecSettings',
+        component: () => import('@/views/openspec/Settings.vue'),
+        meta: { title: 'OpenSpec 设置', icon: 'Setting' }
+      },
     ]
   }
 ]

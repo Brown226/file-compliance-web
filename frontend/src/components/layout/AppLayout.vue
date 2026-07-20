@@ -59,6 +59,35 @@
             <template #title><span>管理后台</span></template>
           </el-menu-item>
         </template>
+
+        <!-- ===== OpenSpec 高级功能 ===== -->
+        <div class="menu-divider" v-show="!sidebarCollapsed"></div>
+        <el-sub-menu index="/openspec-group">
+          <template #title>
+            <el-icon><MagicStick /></el-icon>
+            <span>OpenSpec</span>
+          </template>
+          <el-menu-item index="/openspec/create">
+            <el-icon><DocumentAdd /></el-icon>
+            <template #title><span>文档生成</span></template>
+          </el-menu-item>
+          <el-menu-item index="/openspec/memory">
+            <el-icon><Memo /></el-icon>
+            <template #title><span>长期记忆</span></template>
+          </el-menu-item>
+          <el-menu-item index="/openspec/review">
+            <el-icon><Search /></el-icon>
+            <template #title><span>智能审查</span></template>
+          </el-menu-item>
+          <el-menu-item index="/openspec/standards">
+            <el-icon><Reading /></el-icon>
+            <template #title><span>标准条文</span></template>
+          </el-menu-item>
+          <el-menu-item index="/openspec/clauses">
+            <el-icon><Collection /></el-icon>
+            <template #title><span>条文库</span></template>
+          </el-menu-item>
+        </el-sub-menu>
       </el-menu>
 
       <div class="collapse-btn" @click="sidebarCollapsed = !sidebarCollapsed">

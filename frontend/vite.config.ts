@@ -30,6 +30,7 @@ export default defineConfig({
   resolve: {
     alias: {
       '@': resolve(__dirname, 'src'),
+      '@openspec': resolve(__dirname, 'src/openspec-src'),
     },
   },
   build: {

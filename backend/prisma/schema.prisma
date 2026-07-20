@@ -143,6 +143,7 @@ enum ReviewMode {
   RULE_ONLY       // 仅规则审查 — 只跑规则引擎，不调 AI
   SELF_CHECK        // 标准引用自检 — 机械匹配，独立于AI审查
   CONTRACT_REVIEW   // 合同风险审查 — 合同专用审查模式
+  STANDARD_CHECK    // 标准符合性检查 — 标准条文符合性验证
   RULE_PARSING      // 规则解析 — 从文档中异步解析候选规则
   CUSTOM_RULE       // 兼容历史数据
   FULL_REVIEW       // 兼容历史数据
@@ -818,4 +819,20 @@ model LlmCallLog {
   @@index([model], name: "idx_llm_log_model")
   @@index([createdAt], name: "idx_llm_log_created_at")
   @@map("llm_call_log")
+}
+
+// 长期用户记忆 - 跨会话持久化用户偏好
+// 嵌入由 OpenSpec Agent 生成并存储于 Agent 侧，Node 侧仅存文本与元数据
+model UserMemory {
+  id          BigInt    @id @default(autoincrement()) @db.BigInt
+  userId      String    @map("user_id") @db.VarChar(50)
+  content     String    @db.Text
+  chapterName String?   @map("chapter_name") @db.VarChar(200)
+  sourceType  String    @default("requirement") @map("source_type") @db.VarChar(50)
+  category    String    @default("other") @db.VarChar(50)
+  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamp(6)
+
+  @@index([userId], name: "idx_user_memory_user_id")
+  @@index([category], name: "idx_user_memory_category")
+  @@map("user_memory")
 }
