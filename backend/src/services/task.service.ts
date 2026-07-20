@@ -441,6 +441,14 @@ export class TaskService {
     });
   }
 
+  /** 根据 ID 列表批量获取任务（仅返回基础字段，用于权限检查） */
+  static async getTasksByIds(ids: string[]): Promise<{ id: string; creatorId: string }[]> {
+    return prisma.task.findMany({
+      where: { id: { in: ids } },
+      select: { id: true, creatorId: true },
+    });
+  }
+
   static async createRefFileGroup(data: {
     taskId: string;
     groupName?: string;

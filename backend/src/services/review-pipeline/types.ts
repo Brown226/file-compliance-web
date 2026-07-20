@@ -139,7 +139,7 @@ export interface PipelineContext {
     chunkIndex: number,
     totalChunks: number,
     engine: string,
-  ) => void;
+  ) => Promise<void>;
   /** 阶段1（规则+标准引用）完成后的回调，允许立即返回快速结果 */
   onFastResult?: (fastResult: { ruleIssues: RuleIssue[]; stdRefIssues: ReviewIssue[] }) => void;
   /** 是否启用文件内一致性检查 */
@@ -166,6 +166,8 @@ export interface PipelineContext {
   wordStructure?: WordStructure;
   /** DWG 图纸结构化数据 */
   dwgStructure?: DwgStructure;
+  /** 任务创建者 ID（用于记忆系统注入） */
+  userId?: string;
 }
 
 /** 审查处理结果 */

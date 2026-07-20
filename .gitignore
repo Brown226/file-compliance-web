@@ -213,6 +213,24 @@ images临时存放/
 # Root-level temp scripts
 scripts/
 
+# Temp fix scripts in services
+backend/src/services/_fix_dedup.js
+
+# TypeScript compilation output
+frontend-tsc.txt
+
+# Downloaded npm packages (offline install artifacts)
+frontend/*.tgz
+
+# Local working directories (planning docs, competition materials)
+平台V3.0升级/
+集团比赛报名/
+
+# AI tool workspaces
+.workbuddy/
+.codebuddy/
+.playwright-mcp/
+
 # Benchmark data (large generated files)
 backend/benchmarks/
 

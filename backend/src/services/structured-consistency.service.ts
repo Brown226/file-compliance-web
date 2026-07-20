@@ -157,7 +157,7 @@ export class StructuredConsistencyService {
       try {
         const summary = await this.extractFromChunk(chunk, chunks.length, ctx, config);
         summaries.push(summary);
-        ctx.onChunkProgress?.(
+        await ctx.onChunkProgress?.(
           chunk.text.length, [], chunk.chunkIndex, chunks.length, 'struct-extract',
         );
       } catch (e: any) {

@@ -32,7 +32,7 @@ export function getTaskByIdApi(id: string) {
 
 // 获取任务审查结果
 export function getTaskDetailsApi(id: string) {
-  return request.get<TaskDetail[]>(`/tasks/${id}/details`)
+  return request.get<{ details: TaskDetail[]; files: TaskFile[] }>(`/tasks/${id}/details`)
 }
 
 // 获取任务审查进度

@@ -123,41 +123,7 @@ const handleLibraryReview: ReviewHandler = async (ctx) => {
   }
 
   const result = await AiReviewService.runLLMOnlyStrategy(text, ctx, scene, config);
-  let mergedIssues = result.issues;
-
-  // 追加逐条核对作为补充（如果有标准条文）
-  // 基于标准条文逐条问 LLM"这条符合吗？"，覆盖自由发现可能遗漏的项
-  if (ctx.semanticItems && ctx.semanticItems.length > 0) {
-    try {
-      const clauses = ctx.semanticItems.map(item => ({
-        id: item.ruleCode,
-        code: item.ruleCode,
-        title: item.ruleName,
-        content: item.description || '',
-        category: item.category || '',
-      }));
-      const { results: clauseResults } = await StandardClauseCheckService.checkClauses(
-        clauses, text, { temperature: 0.1, timeout: config.llmTimeout || 60, concurrency: 3 },
-      );
-      const standardIssues: ReviewIssue[] = [];
-      for (const r of clauseResults) {
-        const issue = StandardClauseCheckService.toReviewIssue(r);
-        if (issue) standardIssues.push(issue);
-      }
-      // 基于 ruleCode 去重
-      const existingKeys = new Set(mergedIssues.map(i => i.ruleCode).filter(Boolean));
-      for (const issue of standardIssues) {
-        if (issue.ruleCode && !existingKeys.has(issue.ruleCode)) {
-          mergedIssues.push(issue);
-        }
-      }
-      console.log(`[Handler] LIBRARY_REVIEW: 逐条核对补充 ${standardIssues.length} 条（去重后新增 ${standardIssues.filter(i => i.ruleCode && !existingKeys.has(i.ruleCode)).length} 条）`);
-    } catch (e) {
-      console.warn('[Handler] LIBRARY_REVIEW: 逐条核对补充失败:', (e as Error).message);
-    }
-  }
-
-  return { aiIssues: mergedIssues, usedEngine: result.engine, sources: result.sources };
+  return { aiIssues: result.issues, usedEngine: result.engine, sources: result.sources };
 };
 
 /**

@@ -57,7 +57,7 @@ export class AiReviewService {
 
       // ���Ȼص���һ���Դ������� issues��RAG �ڲ��Ѵ������з�Ƭ��
       const enriched = StandardTraceabilityService.enrichWithStandardRef(result.issues);
-      ctx.onChunkProgress?.(text.length, enriched, 0, 1, 'rag-llm');
+      await ctx.onChunkProgress?.(text.length, enriched, 0, 1, 'rag-llm');
       return { issues: enriched, engine: 'rag-llm', sources: result.sourceReferences };
     } catch (e) {
       console.error('[Pipeline] �Խ� RAG ���ʧ��:', e);
@@ -166,7 +166,7 @@ export class AiReviewService {
           });
         }
         // ÿ�� chunk ��ɺ�ص�����
-        ctx.onChunkProgress?.(chunk.text.length, llmIssues, chunk.chunkIndex, totalChunks, knowledgeContext ? 'llm-with-knowledge' : 'llm-direct');
+        await ctx.onChunkProgress?.(chunk.text.length, llmIssues, chunk.chunkIndex, totalChunks, knowledgeContext ? 'llm-with-knowledge' : 'llm-direct');
         return llmIssues;
       } catch (e: any) {
         console.warn(`[Pipeline] LLM ����Ƭ ${chunk.chunkIndex + 1}/${totalChunks} ʧ��:`, e.message);
@@ -281,7 +281,7 @@ export class AiReviewService {
               totalChunks,
             },
           });
-          ctx.onChunkProgress?.(chunk.text.length, llmIssues, chunk.chunkIndex, totalChunks, 'llm-direct');
+          await ctx.onChunkProgress?.(chunk.text.length, llmIssues, chunk.chunkIndex, totalChunks, 'llm-direct');
           return llmIssues;
         } catch (e: any) {
           console.warn(`[Pipeline] LLM ����Ƭ ${chunk.chunkIndex + 1}/${totalChunks} ʧ��:`, e.message);
@@ -343,6 +343,22 @@ export class AiReviewService {
         systemPrompt = systemPrompt.replace(/\$\{stance\}/g, stanceLabel);
       }
 
+      // 注入长期记忆（如果用户有历史偏好）
+      if (ctx.userId) {
+        try {
+          const { MemoryService } = await import('../memory.service');
+          const memories = await MemoryService.recall(ctx.userId, text, 3);
+          if (memories.length > 0) {
+            const memoryContext = memories
+              .map(m => `- ${m.content}`)
+              .join('\n');
+            systemPrompt += `\n\n## 用户历史偏好\n以下信息来自该用户的历史审查行为，请参考：\n${memoryContext}`;
+          }
+        } catch {
+          // 记忆不可用时不阻塞审查
+        }
+      }
+
       const chunks = LlmService.splitText(text, chunkSize, true);
       const totalChunks = chunks.length;
       const CONCURRENT_LIMIT = await getChunkConcurrency();
@@ -369,7 +385,7 @@ export class AiReviewService {
               totalChunks,
             },
           });
-          ctx.onChunkProgress?.(chunk.text.length, llmIssues, chunk.chunkIndex, totalChunks, 'llm-only');
+          await ctx.onChunkProgress?.(chunk.text.length, llmIssues, chunk.chunkIndex, totalChunks, 'llm-only');
           return llmIssues;
         } catch (e: any) {
           console.warn(`[Pipeline] LLM ����Ƭ ${chunk.chunkIndex + 1}/${totalChunks} ʧ��:`, e.message);
@@ -618,7 +634,7 @@ export class AiReviewService {
             },
           });
 
-          ctx.onChunkProgress?.(chunk.text.length, issues, chunk.chunkIndex, totalChunks, 'llm-ref-compare');
+          await ctx.onChunkProgress?.(chunk.text.length, issues, chunk.chunkIndex, totalChunks, 'llm-ref-compare');
           return { issues, failed: false };
         } catch (e: any) {
           console.warn(`[AiReview] ��Ƭ ${chunk.chunkIndex + 1}/${totalChunks} �ȶ�ʧ��:`, e.message);
@@ -1149,10 +1165,12 @@ export class AiReviewService {
     for (const r of chunkResults) allIssues.push(...r);
 
     // ��ȥ�أ��� originalText ǰ 60 �ַ�ȥ��
+    // 分片去重：基于 issueType + 归一化全文 去重（与其他策略保持一致）
     const seen = new Set<string>();
     const deduped = allIssues.filter(issue => {
-      const key = (issue.originalText || '').slice(0, 60).trim();
-      if (!key || seen.has(key)) return false;
+      const normalized = (issue.originalText || '').replace(/\s+/g, '').trim();
+      const key = (issue.issueType || '') + '::' + normalized;
+      if (!normalized || seen.has(key)) return false;
       seen.add(key);
       return true;
     });

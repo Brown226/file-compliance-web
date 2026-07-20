@@ -3,7 +3,7 @@ import multer from 'multer';
 import path from 'path';
 import fs from 'fs';
 import { authenticate } from '../middlewares/auth.middleware';
-import { requireRole } from '../middlewares/rbac.middleware';
+import { requireRole, checkTaskAccess } from '../middlewares/rbac.middleware';
 import { success, error } from '../utils/response';
 import { getMaxUploadSizeMB } from '../utils/system-config';
 import { getUserUploadDir, getUploadPath } from '../config/upload';
@@ -130,27 +130,27 @@ router.put('/mode-capabilities', requireRole('ADMIN'), saveModeCapabilities);
 // 更新任务状态 - 仅管理员
 router.patch('/:id/status', requireRole('ADMIN'), updateTaskStatus);
 
-// 查询接口
+// 查询接口（需要任务访问权限校验）
 router.get('/', getTasks);
-router.get('/:id', getTaskById);
-router.get('/:id/details', getTaskDetails);
-router.get('/:id/progress', getTaskProgress);
-router.get('/:id/files/:fileId/content', getTaskFileContent);
-router.get('/:id/files/:fileId/raw', getTaskFileRaw);
-router.get('/:id/files/:fileId/convert-doc', convertDocToDocx);
-router.get('/:id/export', exportTaskReport);
-router.get('/:id/export-word', exportTaskReportWord);
-router.get('/:id/review-summary', getReviewSummary);
+router.get('/:id', checkTaskAccess, getTaskById);
+router.get('/:id/details', checkTaskAccess, getTaskDetails);
+router.get('/:id/progress', checkTaskAccess, getTaskProgress);
+router.get('/:id/files/:fileId/content', checkTaskAccess, getTaskFileContent);
+router.get('/:id/files/:fileId/raw', checkTaskAccess, getTaskFileRaw);
+router.get('/:id/files/:fileId/convert-doc', checkTaskAccess, convertDocToDocx);
+router.get('/:id/export', checkTaskAccess, exportTaskReport);
+router.get('/:id/export-word', checkTaskAccess, exportTaskReportWord);
+router.get('/:id/review-summary', checkTaskAccess, getReviewSummary);
 
 // 删除接口 - 批量删除和单个删除（注意顺序：精确匹配必须在参数匹配之前）
 router.delete('/', deleteTasks);
-router.delete('/:id', deleteTask);
+router.delete('/:id', checkTaskAccess, deleteTask);
 
 // 重新审核
-router.post('/:id/review', reReviewTask);
+router.post('/:id/review', checkTaskAccess, reReviewTask);
 
 // 上传参照文件（以文审文模式）
-router.post('/:id/ref-files', upload.array('files', 20), uploadRefFiles);
+router.post('/:id/ref-files', checkTaskAccess, upload.array('files', 20), uploadRefFiles);
 
 // 标记/取消标记误报
 router.patch('/details/:detailId/false-positive', toggleFalsePositive);

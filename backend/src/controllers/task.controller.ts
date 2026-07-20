@@ -196,6 +196,48 @@ export const deleteTasks = async (req: AuthRequest, res: Response): Promise<void
       return;
     }
 
+    // RBAC: 检查用户是否有权删除这些任务
+    const user = req.user;
+    if (!user) {
+      error(res, '未认证用户', 401);
+      return;
+    }
+
+    // 非管理员需要检查每个任务的所有权
+    if (user.role !== 'ADMIN') {
+      const tasks = await TaskService.getTasksByIds(ids);
+      const unauthorizedTasks = tasks.filter(t => t.creatorId !== user.id);
+      
+      // MANAGER 可以删除本部门及下属部门的任务
+      if (user.role === 'MANAGER' && user.departmentId) {
+        const { canAccessTask } = await import('../middlewares/rbac.middleware');
+        const accessibleTasks: string[] = [];
+        for (const task of unauthorizedTasks) {
+          const hasAccess = await canAccessTask(user, task.creatorId);
+          if (hasAccess) accessibleTasks.push(task.id);
+        }
+        // 过滤出用户有权删除的任务
+        const allowedIds = tasks
+          .filter(t => t.creatorId === user.id || accessibleTasks.includes(t.id))
+          .map(t => t.id);
+        
+        if (allowedIds.length === 0) {
+          error(res, '无权删除这些任务', 403);
+          return;
+        }
+        
+        const result = await TaskService.deleteTasks(allowedIds);
+        success(res, { count: result.count }, `成功删除 ${result.count} 个任务`);
+        return;
+      }
+      
+      // USER 只能删除自己的任务
+      if (unauthorizedTasks.length > 0) {
+        error(res, '只能删除自己创建的任务', 403);
+        return;
+      }
+    }
+
     const result = await TaskService.deleteTasks(ids);
     success(res, { count: result.count }, `成功删除 ${result.count} 个任务`);
   } catch (err) {
@@ -259,7 +301,7 @@ function mapFileForFrontend(f: any) {
   };
 }
 
-export const getTaskById = async (req: Request, res: Response): Promise<void> => {
+export const getTaskById = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const id = req.params.id as string;
     const task = await TaskService.getTaskById(id);
@@ -276,7 +318,7 @@ export const getTaskById = async (req: Request, res: Response): Promise<void> =>
   }
 };
 
-export const getTaskDetails = async (req: Request, res: Response): Promise<void> => {
+export const getTaskDetails = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const id = req.params.id as string;
     
@@ -298,7 +340,7 @@ export const getTaskDetails = async (req: Request, res: Response): Promise<void>
   }
 };
 
-export const getTaskProgress = async (req: Request, res: Response): Promise<void> => {
+export const getTaskProgress = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const id = req.params.id as string;
     const progress = await TaskService.getTaskProgress(id);
@@ -315,7 +357,7 @@ export const getTaskProgress = async (req: Request, res: Response): Promise<void
   }
 };
 
-export const getTaskFileContent = async (req: Request, res: Response): Promise<void> => {
+export const getTaskFileContent = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const taskId = req.params.id as string;
     const fileId = req.params.fileId as string;
@@ -333,7 +375,7 @@ export const getTaskFileContent = async (req: Request, res: Response): Promise<v
   }
 };
 
-export const getTaskFileRaw = async (req: Request, res: Response): Promise<void> => {
+export const getTaskFileRaw = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const taskId = req.params.id as string;
     const fileId = req.params.fileId as string;
@@ -368,7 +410,7 @@ export const getTaskFileRaw = async (req: Request, res: Response): Promise<void>
   }
 };
 
-export const convertDocToDocx = async (req: Request, res: Response): Promise<void> => {
+export const convertDocToDocx = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const taskId = req.params.id as string;
     const fileId = req.params.fileId as string;
@@ -443,15 +485,36 @@ export const updateTaskStatus = async (req: AuthRequest, res: Response): Promise
       return;
     }
 
-    const task = await TaskService.updateTaskStatus(id, status as TaskStatus);
-    success(res, task, '任务状态更新成功');
+    // 状态转换校验：防止非法状态跳转
+    const task = await TaskService.getTaskById(id);
+    if (!task) {
+      error(res, '未找到该任务', 404);
+      return;
+    }
+
+    const validTransitions: Record<string, string[]> = {
+      PENDING: ['PROCESSING', 'FAILED'],
+      PROCESSING: ['COMPLETED', 'FAILED'],
+      COMPLETED: [],  // 终态，不允许转换
+      FAILED: ['PENDING'],  // 失败后可以重新排队
+    };
+
+    const currentStatus = task.status;
+    const allowedNext = validTransitions[currentStatus] || [];
+    if (!allowedNext.includes(status)) {
+      error(res, `不允许从 ${currentStatus} 转换到 ${status}`, 400);
+      return;
+    }
+
+    const updatedTask = await TaskService.updateTaskStatus(id, status as TaskStatus);
+    success(res, updatedTask, '任务状态更新成功');
   } catch (err) {
     console.error('Update Task Status Error:', err);
     error(res, '服务器内部错误', 500);
   }
 };
 
-export const exportTaskReport = async (req: Request, res: Response): Promise<void> => {
+export const exportTaskReport = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const id = req.params.id as string;
     const buffer = await TaskService.exportTaskReport(id);
@@ -468,7 +531,7 @@ export const exportTaskReport = async (req: Request, res: Response): Promise<voi
   }
 };
 
-export const exportTaskReportWord = async (req: Request, res: Response): Promise<void> => {
+export const exportTaskReportWord = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const id = req.params.id as string;
     const task = await TaskService.getTaskById(id);
@@ -508,7 +571,7 @@ function buildWordHtml(task: any, details: any): string {
         <td>${severity}</td>
         <td>${issue.ruleCode || issue.code || '-'}</td>
         <td>${issue.description || issue.message || '-'}</td>
-        <td>${issue.suggestion || '-'}</td>
+        <td>${issue.suggestedText || issue.suggestion || '-'}</td>
       </tr>`;
   }).join('');
 
@@ -709,7 +772,7 @@ export const toggleFalsePositive = async (req: AuthRequest, res: Response): Prom
 };
 
 /** 获取任务审查摘要（聚合统计） */
-export const getReviewSummary = async (req: Request, res: Response): Promise<void> => {
+export const getReviewSummary = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const id = req.params.id as string;
     const summary = await TaskService.getReviewSummary(id);

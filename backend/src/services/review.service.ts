@@ -110,7 +110,7 @@ export class ReviewService {
       return { confidence: 'RULE_EXACT', confidenceSource: 'rule_engine' };
     }
     return {
-      confidence: issue.sourceReferences ? 'AI_INFERRED' : 'AI_INFERRED',
+      confidence: issue.sourceReferences ? 'AI_WITH_SOURCES' : 'AI_INFERRED',
       confidenceSource: issue.sourceReferences ? 'ai_with_sources' : 'ai_only',
     };
   }
@@ -270,12 +270,25 @@ export class ReviewService {
    * @param maxConcurrent ��󲢷���
    * @param checkIntervalMs ����������룩
    */
+  /**
+   * 等待用户配额可用（带超时保护）
+   * @param userId 用户ID
+   * @param maxConcurrent 最大并发数
+   * @param checkIntervalMs 检查间隔（毫秒）
+   * @param timeoutMs 超时时间（毫秒），默认 5 分钟
+   */
   private static async waitForUserQuota(
     userId: string,
     maxConcurrent: number,
-    checkIntervalMs: number = 1000
+    checkIntervalMs: number = 1000,
+    timeoutMs: number = 300000
   ): Promise<void> {
+    const startTime = Date.now();
     while (this.getUserProcessingCount(userId) >= maxConcurrent) {
+      if (Date.now() - startTime > timeoutMs) {
+        console.warn(`[ReviewService] 用户 ${userId} 等待配额超时（${timeoutMs}ms），强制继续`);
+        return;
+      }
       await new Promise(resolve => setTimeout(resolve, checkIntervalMs));
     }
   }
@@ -314,27 +327,34 @@ export class ReviewService {
     limit: number,
     fn: (item: T, index: number) => Promise<R>
   ): Promise<R[]> {
-    const results: R[] = [];
+    const results: R[] = new Array(items.length);
+    let nextIndex = 0;
 
-    // ���û�������Ʋ���
-    for (let i = 0; i < items.length; i++) {
-      // �ȴ����û�������
-      await this.waitForUserQuota(userId, limit);
+    // 工作函数：从队列中取任务执行
+    const worker = async (): Promise<void> => {
+      while (nextIndex < items.length) {
+        const currentIndex = nextIndex++;
+        const item = items[currentIndex];
+        
+        // 增加用户并发计数
+        this.incrementUserCount(userId);
+        
+        try {
+          results[currentIndex] = await fn(item, currentIndex);
+        } finally {
+          // 任务完成后减少计数
+          this.decrementUserCount(userId);
+        }
+      }
+    };
 
-      // �������񣨲��ȴ���ɣ�
-      const promise = fn(items[i], i).finally(() => {
-        // ������ɺ�ݼ�����
-        this.decrementUserCount(userId);
-      });
-
-      // ��������
-      this.incrementUserCount(userId);
-
-      // �ȴ����������
-      const result = await promise;
-      results.push(result);
+    // 启动 limit 个并发 worker
+    const workers: Promise<void>[] = [];
+    for (let i = 0; i < Math.min(limit, items.length); i++) {
+      workers.push(worker());
     }
 
+    await Promise.all(workers);
     return results;
   }
 
@@ -523,6 +543,7 @@ export class ReviewService {
           intraFileConsistency,
           reviewPoints,
           corePurposes,
+          userId: (task as any).creatorId,
         };
 
         // �� DWG ǰ�� WASM ���ݣ�ʹ�� DwgHandlerService ͳһ����
@@ -1541,7 +1562,7 @@ export class ReviewService {
     reviewMode: string = 'LIBRARY_REVIEW',
     maxkbKnowledgeId?: string,
     maxkbKnowledgeIds?: string[],
-    onProgress?: (chunkProgress: number) => void,
+    onProgress?: (chunkLength: number, issues: any[], chunkIndex: number, totalChunks: number, engine: string) => Promise<void>,
   ): Promise<void> {
     const absolutePath = resolveFilePath(file.filePath);
 
