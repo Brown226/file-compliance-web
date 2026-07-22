@@ -56,19 +56,33 @@ export const getTaskFilterByRole = async (user: any): Promise<any> => {
 
 /**
  * 递归获取所有下属部门ID
+ *
+ * 用 PostgreSQL 递归 CTE 一次查完整棵子树，替代原先按层递归的 N+1 查询。
+ * 部门树结构变化不频繁，结果加 30s 进程内缓存（只读、短 TTL，容许少量陈旧）。
  */
-async function getSubDepartmentIds(parentId: string): Promise<string[]> {
-  const children = await prisma.department.findMany({
-    where: { parentId },
-    select: { id: true },
-  });
+const SUBDEPT_CACHE_TTL_MS = 30_000;
+const subDeptCache = new Map<string, { ids: string[]; expireAt: number }>();
 
-  const ids: string[] = [];
-  for (const child of children) {
-    ids.push(child.id);
-    const subIds = await getSubDepartmentIds(child.id);
-    ids.push(...subIds);
+async function getSubDepartmentIds(parentId: string): Promise<string[]> {
+  const now = Date.now();
+  const cached = subDeptCache.get(parentId);
+  if (cached && cached.expireAt > now) {
+    return cached.ids;
   }
+
+  // 递归 CTE：一次查询取回整棵子树（不含 parentId 自身）
+  const rows = await prisma.$queryRaw<Array<{ id: string }>>`
+    WITH RECURSIVE subtree AS (
+      SELECT id FROM departments WHERE "parentId" = ${parentId}
+      UNION ALL
+      SELECT d.id FROM departments d
+      INNER JOIN subtree s ON d."parentId" = s.id
+    )
+    SELECT id FROM subtree
+  `;
+  const ids = rows.map((r) => r.id);
+
+  subDeptCache.set(parentId, { ids, expireAt: now + SUBDEPT_CACHE_TTL_MS });
   return ids;
 }
 
