@@ -80,7 +80,7 @@
             <span>管理后台</span>
           </div>
           <div class="breadcrumb">
-            <span class="breadcrumb-item">{{ route.meta.title || '绯荤粺' }}</span>
+            <span class="breadcrumb-item">{{ route.meta.title || '系统' }}</span>
           </div>
         </div>
         <div class="security-warning" v-if="!warningDismissed">

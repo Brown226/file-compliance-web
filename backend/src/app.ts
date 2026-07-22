@@ -2,6 +2,7 @@ import express, { Express, Request, Response } from 'express';
 import cors from 'cors';
 import morgan from 'morgan';
 import path from 'path';
+import { env } from './config/env';
 import { errorHandler } from './middlewares/error.middleware';
 import { auditLog } from './middlewares/audit.middleware';
 import { getUploadDir, onPathChange } from './config/upload';
@@ -45,7 +46,11 @@ const app: Express = express();
 // Middleware
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
-app.use(cors());
+// CORS：生产环境使用白名单（由 CORS_ALLOWED_ORIGINS 配置），开发环境默认放开
+app.use(cors({
+  origin: env.corsAllowedOrigins,
+  credentials: true,
+}));
 app.use(morgan('dev'));
 
 // 静态文件服务：提供上传文件的访问（支持运行时切换路径）

@@ -16,6 +16,7 @@ import prisma from '../config/db';
  */
 
 import { CacheService } from './cache.service';
+import { env } from '../config/env';
 
 interface MaxKBConfig {
   baseUrl: string;       // MaxKB 服务地址，如 http://localhost:8080
@@ -24,11 +25,13 @@ interface MaxKBConfig {
   password: string;      // 管理员密码
 }
 
+// 默认配置：凭证从环境变量读取，不在代码中硬编码明文密码。
+// 运行时可被 system_configs.maxkb_config 覆盖。
 const DEFAULT_CONFIG: MaxKBConfig = {
-  baseUrl: process.env.MAXKB_BASE_URL || 'http://localhost:8080',
+  baseUrl: env.maxkbBaseUrl,
   adminApiPrefix: '/admin/api',
-  username: 'admin',
-  password: 'Password01!',
+  username: env.maxkbUsername,
+  password: env.maxkbPassword,
 };
 
 // ==================== 类型定义 ====================

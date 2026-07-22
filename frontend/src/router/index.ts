@@ -141,7 +141,7 @@ const routes: Array<RouteRecordRaw> = [
         path: 'admin/system',
         name: 'AdminSystem',
         component: () => import('../views/SystemManagement.vue'),
-        meta: { title: '绯荤粺璁剧疆', requiresAdminOrManager: true }
+        meta: { title: '系统设置', requiresAdminOrManager: true }
       },
       {
         path: 'admin/users',

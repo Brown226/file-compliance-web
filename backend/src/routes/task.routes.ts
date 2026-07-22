@@ -4,6 +4,7 @@ import path from 'path';
 import fs from 'fs';
 import { authenticate } from '../middlewares/auth.middleware';
 import { requireRole, checkTaskAccess } from '../middlewares/rbac.middleware';
+import { uploadRateLimit } from '../middlewares/rate-limit.middleware';
 import { success, error } from '../utils/response';
 import { getMaxUploadSizeMB } from '../utils/system-config';
 import { getUserUploadDir, getUploadPath } from '../config/upload';
@@ -81,7 +82,7 @@ const upload = multer({
 router.use(authenticate);
 
 // 轻量级文件上传（仅用于预分析，不需要创建任务）— 动态读取上传大小限制
-router.post('/upload-only', async (req, res, next) => {
+router.post('/upload-only', uploadRateLimit, async (req, res, next) => {
   try {
     const dynUpload = await createDynamicUpload(50);
     dynUpload.array('files', 50)(req, res, next);
@@ -110,7 +111,7 @@ router.post('/upload-only', async (req, res, next) => {
 });
 
 // 创建任务 - 支持批量文件上传 + 参照文件 — 动态读取上传大小限制
-router.post('/', async (req, res, next) => {
+router.post('/', uploadRateLimit, async (req, res, next) => {
   try {
     const dynUpload = await createDynamicUpload(50);
     dynUpload.fields([
