@@ -138,8 +138,6 @@ export class ReviewService {
   }
 
   // �û����𲢷����ƣ�׷��ÿ���û����ڽ��е� AI ����ļ�����
-  private static userConcurrencyMap = new Map<string, number>();
-
   private static buildLocateMeta(
     extractedText: string,
     issue: {
@@ -258,68 +256,14 @@ export class ReviewService {
   }
 
   /**
-   * ��ȡ�û���ǰ���ڽ��е� AI ����ļ�����
-   */
-  static getUserProcessingCount(userId: string): number {
-    return this.userConcurrencyMap.get(userId) || 0;
-  }
-
-  /**
-   * �ȴ��û��������
-   * @param userId �û�ID
-   * @param maxConcurrent ��󲢷���
-   * @param checkIntervalMs ����������룩
-   */
-  /**
-   * 等待用户配额可用（带超时保护）
-   * @param userId 用户ID
-   * @param maxConcurrent 最大并发数
-   * @param checkIntervalMs 检查间隔（毫秒）
-   * @param timeoutMs 超时时间（毫秒），默认 5 分钟
-   */
-  private static async waitForUserQuota(
-    userId: string,
-    maxConcurrent: number,
-    checkIntervalMs: number = 1000,
-    timeoutMs: number = 300000
-  ): Promise<void> {
-    const startTime = Date.now();
-    while (this.getUserProcessingCount(userId) >= maxConcurrent) {
-      if (Date.now() - startTime > timeoutMs) {
-        console.warn(`[ReviewService] 用户 ${userId} 等待配额超时（${timeoutMs}ms），强制继续`);
-        return;
-      }
-      await new Promise(resolve => setTimeout(resolve, checkIntervalMs));
-    }
-  }
-
-  /**
-   * �����û���������
-   */
-  private static incrementUserCount(userId: string): void {
-    const current = this.userConcurrencyMap.get(userId) || 0;
-    this.userConcurrencyMap.set(userId, current + 1);
-  }
-
-  /**
-   * �ݼ��û���������
-   */
-  private static decrementUserCount(userId: string): void {
-    const current = this.userConcurrencyMap.get(userId) || 0;
-    if (current > 0) {
-      this.userConcurrencyMap.set(userId, current - 1);
-    }
-  }
-
-  /**
-   * �û����𲢷�����ִ��
-   * - ÿ���û�ͬʱ��ദ�� limit ���ļ�
-   * - ��ͬ�û�֮�以��Ӱ��
+   * 用户级并发执行（每任务内的 worker 池）
+   * - 同一任务内同时最多处理 limit 个文件（真正的并发闸门）
+   * - 每个任务整体在单个 Worker 进程内执行，故该限制天然多进程安全
    *
-   * @param userId �û�ID
-   * @param items ���������б�
-   * @param limit ���û���󲢷���
-   * @param fn ��������
+   * @param userId 用户ID（仅用于日志/语义）
+   * @param items 待处理项列表
+   * @param limit 单任务内最大并发文件数
+   * @param fn 处理函数
    */
   private static async runUserLevelConcurrency<T, R>(
     userId: string,
@@ -330,21 +274,12 @@ export class ReviewService {
     const results: R[] = new Array(items.length);
     let nextIndex = 0;
 
-    // 工作函数：从队列中取任务执行
+    // 工作函数：从队列中取任务执行（并发上限由 worker 数量控制）
     const worker = async (): Promise<void> => {
       while (nextIndex < items.length) {
         const currentIndex = nextIndex++;
         const item = items[currentIndex];
-        
-        // 增加用户并发计数
-        this.incrementUserCount(userId);
-        
-        try {
-          results[currentIndex] = await fn(item, currentIndex);
-        } finally {
-          // 任务完成后减少计数
-          this.decrementUserCount(userId);
-        }
+        results[currentIndex] = await fn(item, currentIndex);
       }
     };
 
