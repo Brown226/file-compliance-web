@@ -1,6 +1,5 @@
 # Dependencies
 node_modules/
-backend/doc-parser/.venv/
 
 # Temp / cache
 tmp/
@@ -130,8 +129,11 @@ nul
 # Docs directory (keep locally, not in repo)
 docs/
 
-# Python markitdown microservice (separate from Node.js backend)
-backend/doc-parser/
+# Python doc-parser microservice (只忽略运行时产物，源代码纳入版本控制)
+backend/doc-parser/.venv/
+backend/doc-parser/__pycache__/
+backend/doc-parser/*.pyc
+backend/doc-parser/test_*
 
 # Temp Dockerfiles
 backend/ocr-service/Dockerfile.quickfix
@@ -170,7 +172,6 @@ backend/check-db.js
 backend/db-push.txt
 backend/dev-start.txt
 backend/prisma-gen*.txt
-backend/doc-parser/test_*
 
 # Redundant SQL init files (docker-compose handles pgvector init)
 backend/prisma/enable-vector.sql
