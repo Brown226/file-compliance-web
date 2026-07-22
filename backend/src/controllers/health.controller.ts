@@ -5,6 +5,7 @@
 import { Request, Response } from 'express';
 import { MetricsService } from '../services/metrics.service';
 import { CacheService } from '../services/cache.service';
+import { OcrService } from '../services/ocr.service';
 import { success, error } from '../utils/response';
 
 export class HealthController {
@@ -115,5 +116,26 @@ export class HealthController {
       const message = err instanceof Error ? err.message : 'Unknown error';
       error(res, message, 500);
     }
+  }
+
+  /**
+   * OCR 服务健康检查
+   */
+  static async checkOcr(req: Request, res: Response) {
+    try {
+      const healthy = await OcrService.checkHealth();
+      res.json({ status: healthy ? 'ok' : 'degraded' });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Unknown error';
+      res.status(503).json({ status: 'degraded', error: message });
+    }
+  }
+
+  /**
+   * 队列健康检查
+   */
+  static async checkQueue(req: Request, res: Response) {
+    const status = (globalThis as any).__QUEUE_DEGRADED ? 'degraded' : 'healthy';
+    res.json({ status });
   }
 }

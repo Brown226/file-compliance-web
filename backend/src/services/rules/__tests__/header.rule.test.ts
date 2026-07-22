@@ -1,0 +1,107 @@
+/**
+ * 页眉规范规则测试 (HEADER)
+ * 测试文件: header.rule.ts → checkHeader
+ */
+import { describe, it, expect } from 'vitest';
+import { checkHeader } from '../header.rule';
+import { FileContext } from '../types';
+
+function ctx(pdfPages: string[], extractedText?: string): FileContext {
+  return {
+    fileName: 'test.pdf',
+    filePath: '/test/test.pdf',
+    fileType: 'pdf',
+    pdfPages,
+    extractedText,
+  };
+}
+
+describe('Header Rule (HEADER)', () => {
+
+  /* ===== 正例 ===== */
+
+  it('HEADER_001: should detect header name mismatch with cover name', () => {
+    const issues = checkHeader(ctx([
+      '封面页内容',
+      '不同的页眉内容不匹配',
+      '第三页内容',
+    ], '图册名称：施工图设计说明'));
+    expect(issues.some(i => i.ruleCode === 'HEADER_001')).toBe(true);
+  });
+
+  it('HEADER_002: should detect empty header', () => {
+    const issues = checkHeader(ctx([
+      '封面',
+      '   ',
+    ], '图册名称：施工图设计说明'));
+    expect(issues.some(i => i.ruleCode === 'HEADER_002')).toBe(true);
+  });
+
+  it('should return no issues when cover has no name', () => {
+    const issues = checkHeader(ctx([
+      '封面无名称',
+      'some header',
+    ], ''));
+    expect(issues.length).toBe(0);
+  });
+
+  it('should return empty when less than 2 pages', () => {
+    const issues = checkHeader(ctx(['only one page'], '图册名称：测试'));
+    expect(issues.length).toBe(0);
+  });
+
+  it('HEADER_001: should detect mismatch even on page 3 if page 2 matches', () => {
+    // Page 2 matches, page 3 doesn't — should report on first mismatch (page 3)
+    const issues = checkHeader(ctx([
+      '封面',
+      '施工图设计说明 header content',  // matches cover name
+      '完全不同不匹配的页眉',
+    ], '图册名称：施工图设计说明'));
+    expect(issues.some(i => i.ruleCode === 'HEADER_001')).toBe(true);
+  });
+
+  /* ===== 反例 ===== */
+
+  it('should pass when header matches cover name exactly', () => {
+    const issues = checkHeader(ctx([
+      '封面',
+      '施工图设计说明相关文本',
+    ], '图册名称：施工图设计说明'));
+    expect(issues.length).toBe(0);
+  });
+
+  it('should pass when header contains core name without suffix', () => {
+    const issues = checkHeader(ctx([
+      '封面',
+      '施工图设计 header content matches',
+    ], '图册名称：施工图设计说明'));
+    expect(issues.length).toBe(0);
+  });
+
+  it('should pass when header matches cover name (multi-page)', () => {
+    const issues = checkHeader(ctx([
+      '封面',
+      '施工图设计说明 page2',
+      '施工图设计说明 page3',
+      '施工图设计说明 page4',
+    ], '图册名称：施工图设计说明'));
+    expect(issues.length).toBe(0);
+  });
+
+  it('should pass when config.headerMustMatchCover is false', () => {
+    const issues = checkHeader(ctx([
+      '封面',
+      'unrelated header text',
+    ], '图册名称：施工图设计说明'), { headerMustMatchCover: false });
+    expect(issues.length).toBe(0);
+  });
+
+  it('should pass with core name partial match after stripping suffix', () => {
+    const issues = checkHeader(ctx([
+      '封面',
+      '这是关于施工图设计的一些内容',
+    ], '图册名称：施工图设计说明'));
+    expect(issues.length).toBe(0);
+  });
+
+});

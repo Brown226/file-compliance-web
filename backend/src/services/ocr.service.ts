@@ -77,15 +77,28 @@ export class OcrService {
   }
 
   /**
+   * 快速检测 OCR 服务是否可用（返回布尔值）
+   */
+  static async checkHealth(): Promise<boolean> {
+    try {
+      const result = await this.healthCheck();
+      return result.healthy;
+    } catch {
+      return false;
+    }
+  }
+
+  /**
    * 识别文件中的文字
    * 通过 doc-parser 的 /api/ocr/scan 端点，使用视觉大模型识别扫描件。
+   * 返回结构化结果，携带状态信息而非仅字符串。
    */
-  static async recognizeFile(filePath: string, fileType: string): Promise<string> {
+  static async recognizeFile(filePath: string, fileType: string): Promise<{ text: string; status: 'success' | 'unavailable' | 'failed'; reason?: string }> {
     const config = await this.getVisionConfig();
 
     if (!config.apiKey || !config.modelName) {
       console.warn('[OCR] 未配置视觉模型 (llm_vision_model)，跳过 OCR');
-      return '';
+      return { text: '', status: 'unavailable', reason: '未配置视觉模型(llm_vision_model)' };
     }
 
     const serviceUrl = await PythonParserService.getServiceUrl();
@@ -114,13 +127,18 @@ export class OcrService {
 
       if (!response.ok) {
         const errorText = await response.text();
-        throw new Error(`OCR API 错误 (${response.status}): ${errorText}`);
+        return { text: '', status: 'failed', reason: `OCR API 错误 (${response.status}): ${errorText}` };
       }
 
       const data = (await response.json()) as any;
       const text = data.data?.text || '';
       console.log(`[OCR] 识别完成: ${fileName}, ${text.length} 字符`);
-      return OcrService.postProcessOcrText(text);
+      return { text: OcrService.postProcessOcrText(text), status: 'success' };
+    } catch (e: any) {
+      if (e.name === 'AbortError') {
+        return { text: '', status: 'failed', reason: 'OCR 请求超时' };
+      }
+      return { text: '', status: 'failed', reason: e.message || 'OCR 网络请求失败' };
     } finally {
       clearTimeout(timeoutId);
     }

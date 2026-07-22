@@ -328,7 +328,7 @@ export const getTaskDetails = async (req: AuthRequest, res: Response): Promise<v
       return;
     }
 
-    const details = await TaskService.getTaskDetails(id);
+    const details = await TaskService.getTaskDetails(id, req.user?.role);
     const files = await TaskService.getTaskFiles(id);
     success(res, {
       details,
@@ -785,6 +785,39 @@ export const getReviewSummary = async (req: AuthRequest, res: Response): Promise
     success(res, summary);
   } catch (err) {
     console.error('Get Review Summary Error:', err);
+    error(res, '服务器内部错误', 500);
+  }
+};
+
+/** 人工复核 issue（MANAGER/ADMIN 角色可调用） */
+export const reviewIssue = async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const detailId = req.params.detailId as string;
+    const { reviewStatus } = req.body;
+    const userId = req.user?.id;
+
+    if (!userId) {
+      error(res, '未认证用户', 401);
+      return;
+    }
+
+    if (!reviewStatus || !['CONFIRMED', 'DISMISSED'].includes(reviewStatus)) {
+      error(res, '无效的复核状态，仅支持 CONFIRMED 或 DISMISSED', 400);
+      return;
+    }
+
+    const updated = await TaskService.reviewIssue(detailId, reviewStatus, userId);
+    success(res, updated, `已标记为${reviewStatus === 'CONFIRMED' ? '已确认' : '已驳回'}`);
+  } catch (err: any) {
+    console.error('Review Issue Error:', err);
+    if (err?.message === 'Detail not found') {
+      error(res, '未找到该审查结果', 404);
+      return;
+    }
+    if (err?.message === '该条目无需人工复核') {
+      error(res, err.message, 400);
+      return;
+    }
     error(res, '服务器内部错误', 500);
   }
 };

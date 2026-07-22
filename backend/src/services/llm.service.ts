@@ -82,6 +82,7 @@ export interface TextChunk {
   startIndex: number;  // 在原文中的起始位置
   endIndex: number;    // 在原文中的结束位置
   chunkIndex: number;  // 分片索引
+  overlapStart?: number; // overlap 部分的起始位置（非 overlap 内容仍从 startIndex 开始）
 }
 
 export class LlmService {
@@ -456,9 +457,10 @@ export class LlmService {
    * @param includePosition 是否包含位置信息
    * @returns 分片数组（纯文本）或分片信息数组（带位置）
    */
-  static splitText(text: string, maxChars: number, includePosition: true): TextChunk[];
-  static splitText(text: string, maxChars: number, includePosition?: false): string[];
-  static splitText(text: string, maxChars: number, includePosition?: boolean): string[] | TextChunk[] {
+  static splitText(text: string, maxChars: number, includePosition: true, overlapChars?: number): TextChunk[];
+  static splitText(text: string, maxChars: number, includePosition?: false, overlapChars?: number): string[];
+  static splitText(text: string, maxChars: number, includePosition?: boolean, overlapChars?: number): string[] | TextChunk[] {
+    const overlap = overlapChars ?? 300;
     if (text.length <= maxChars) {
       if (includePosition) {
         return [{ text, startIndex: 0, endIndex: text.length, chunkIndex: 0 }];
@@ -497,7 +499,17 @@ export class LlmService {
               chunkIndex: chunkInfos.length,
             });
           }
-          currentChunk = '';
+          // P0-3: 记录当前 chunk 末尾 overlap 字符作为下一个 chunk 的前缀
+          const nextOverlap = overlap > 0 && trimmed.length > overlap
+            ? trimmed.slice(-overlap)
+            : '';
+          currentChunk = nextOverlap;
+          if (nextOverlap) {
+            // overlap 前缀不计入 startIndex（非 overlap 内容仍从新的段落开始）
+            currentStartIndex = -1; // 标记后续需要重新设置
+          } else {
+            currentChunk = '';
+          }
         }
         // 如果单个段落超过 maxChars，按句子再分割
         if (para.length > maxChars) {
@@ -518,20 +530,43 @@ export class LlmService {
                     chunkIndex: chunkInfos.length,
                   });
                 }
-                sentenceStartIndex += sentenceChunk.length;
+                // P0-3: 保留当前 chunk 末尾 overlap 字符作为下一个 chunk 的前缀
+                const nextOverlap = overlap > 0 && trimmed.length > overlap
+                  ? trimmed.slice(-overlap)
+                  : '';
+                sentenceChunk = nextOverlap ? nextOverlap + sentence : sentence;
+                sentenceStartIndex = paraStart;
+              } else {
+                sentenceChunk = sentence;
+                sentenceStartIndex = paraStart;
               }
-              sentenceChunk = sentence;
             } else {
               sentenceChunk += sentence;
             }
           }
           if (sentenceChunk) {
-            currentChunk = sentenceChunk;
-            currentStartIndex = sentenceStartIndex;
+            // 如果有之前保存的 overlap 前缀，先拼接
+            if (currentChunk && currentChunk.length > 0 && sentenceChunk !== currentChunk) {
+              // 如果 currentChunk 已经是 overlap，直接将句子追加
+              currentChunk = sentenceChunk;
+            } else {
+              currentChunk = sentenceChunk;
+            }
+            if (currentStartIndex < 0) {
+              currentStartIndex = paraStart;
+            }
           }
         } else {
-          currentChunk = para;
-          currentStartIndex = paraStart;
+          if (!currentChunk) {
+            currentChunk = para;
+            currentStartIndex = paraStart;
+          } else {
+            // currentChunk 已包含 overlap 前缀
+            currentChunk += '\n' + para;
+            if (currentStartIndex < 0) {
+              currentStartIndex = paraStart;
+            }
+          }
         }
       } else {
         if (!currentChunk) {
@@ -723,10 +758,11 @@ export class LlmService {
    * 按 token 数精确分割文本（基于段落保持完整）
    * 比 splitText 的字符级分割更精确，适合需要精确控制 token 消耗的场景
    */
-  static splitTextByTokens(text: string, maxTokens: number = 2000): string[] {
+  static splitTextByTokens(text: string, maxTokens: number = 2000, overlapChars?: number): string[] {
     if (!text) return [];
     const totalTokens = this.countTokens(text);
     if (totalTokens <= maxTokens) return [text];
+    const overlap = overlapChars ?? 300;
 
     const paragraphs = text.split(/\n\s*\n/);
     const chunks: string[] = [];
@@ -740,17 +776,26 @@ export class LlmService {
         // 超长段落：按句号分割
         if (currentChunk) {
           chunks.push(currentChunk);
+          // P0-3: 保留 overlap 前缀
+          currentChunk = overlap > 0 && currentChunk.length > overlap
+            ? currentChunk.slice(-overlap)
+            : '';
+        } else {
           currentChunk = '';
         }
         const sentences = para.split(/(?<=[。！？.!?])/);
-        let sentenceBuf = '';
+        let sentenceBuf = currentChunk; // 可能包含 overlap 前缀
         for (const sent of sentences) {
           const bufTokens = sentenceBuf ? this.countTokens(sentenceBuf) : 0;
           const sentTokens = this.countTokens(sent);
           if (bufTokens + sentTokens > maxTokens) {
             if (sentenceBuf) {
               chunks.push(sentenceBuf);
-              sentenceBuf = sent;
+              // P0-3: 保留 overlap 前缀
+              const nextOverlap = overlap > 0 && sentenceBuf.length > overlap
+                ? sentenceBuf.slice(-overlap)
+                : '';
+              sentenceBuf = nextOverlap ? nextOverlap + sent : sent;
             } else {
               // 单句就超长：强制截断
               chunks.push(sent);
@@ -763,7 +808,10 @@ export class LlmService {
         if (sentenceBuf) chunks.push(sentenceBuf);
       } else if (chunkTokens + paraTokens > maxTokens) {
         chunks.push(currentChunk);
-        currentChunk = para;
+        // P0-3: 保留 overlap 前缀
+        currentChunk = overlap > 0 && currentChunk.length > overlap
+          ? currentChunk.slice(-overlap) + '\n\n' + para
+          : para;
       } else {
         currentChunk = currentChunk ? `${currentChunk}\n\n${para}` : para;
       }

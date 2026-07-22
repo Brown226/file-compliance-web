@@ -1,5 +1,16 @@
 import prisma from '../config/db'
 
+/**
+ * 文本归一化：去除空白符和标点，NFKC 标准化，转小写
+ * 用于误报库匹配时消除格式差异
+ */
+export function normalizeText(text: string): string {
+  return text.replace(/[\s\u3000\t\r\n]+/g, '')
+    .replace(/[，。！？、；：""''（）【】《》\-\–\—\.\,\!\?\;\:\'\"\(\)\[\]\{\}]/g, '')
+    .normalize('NFKC')
+    .toLowerCase();
+}
+
 export interface FpLibraryQuery {
   issueType?: string
   ruleCode?: string
@@ -142,6 +153,22 @@ class FalsePositiveLibraryService {
       where: { originalText: text },
     })
     return count > 0
+  }
+
+  /**
+   * 批量检查多个文本是否在误报库中
+   * 一次加载全量误报库到内存，归一化匹配，避免逐条查库
+   */
+  static async batchCheck(texts: string[]): Promise<Map<string, boolean>> {
+    const allFps = await prisma.falsePositiveLibrary.findMany({
+      select: { originalText: true },
+    });
+    const fpSet = new Set(allFps.map(fp => normalizeText(fp.originalText)));
+    const result = new Map<string, boolean>();
+    for (const text of texts) {
+      result.set(text, fpSet.has(normalizeText(text)));
+    }
+    return result;
   }
 }
 

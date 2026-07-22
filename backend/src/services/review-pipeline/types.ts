@@ -47,6 +47,8 @@ export interface PipelineReviewConfig {
   /** 模型上下文窗口大小（字符数）。用于派生分片大小和摘要容量。
    *  不设置则从 LLM 配置的 maxTokens 自动推导（maxTokens × 4）。 */
   contextWindow?: number;
+  /** 分片间 overlap 字符数（默认 300），用于跨分片上下文连贯性 */
+  chunkOverlap?: number;
 }
 
 /** Word 文档结构化数据 */
@@ -168,6 +170,10 @@ export interface PipelineContext {
   dwgStructure?: DwgStructure;
   /** 任务创建者 ID（用于记忆系统注入） */
   userId?: string;
+  /** 预加载的归一化误报原文集合（任务级预加载，内存归一化匹配） */
+  fpLibrarySet?: Set<string>;
+  /** OCR 降级原因（非空表示 OCR 服务不可用或失败，审查应生成告警） */
+  ocrDegradedReason?: string;
 }
 
 /** 审查处理结果 */

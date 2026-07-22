@@ -78,7 +78,7 @@ export class RAGService {
   ): Promise<RAGRetrievedChunk[]> {
 
     const topNumber = options?.topNumber ?? 5;
-    const similarity = options?.similarity ?? 0.3;
+    const similarity = options?.similarity ?? 0.55;
     const searchMode = options?.searchMode || 'blend';
 
     // 缓存键：基于查询内容的完整哈希（不再截断，提高缓存命中率）

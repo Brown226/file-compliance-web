@@ -32,6 +32,25 @@
 
     <!-- 主内容区：左右分栏 -->
     <div class="main-content">
+      <!-- OCR 降级告警横幅 -->
+      <div v-if="ocrDegradedFiles.length > 0" class="ocr-degraded-banner">
+        <el-alert
+          :title="`OCR 服务不可用：${ocrDegradedFiles.length} 个文件为扫描件但未能识别图片中的文字`"
+          type="warning"
+          show-icon
+          :closable="true"
+          @close="ocrDegradedFiles = []"
+        >
+          <template #default>
+            <div style="margin-top:4px; font-size:13px;">
+              <div v-for="f in ocrDegradedFiles" :key="f" style="margin-bottom:2px;">
+                ⚠️ {{ f }}
+              </div>
+              <p style="margin:4px 0 0; color:#856404;">请手动检查这些文件中可能的合规问题。</p>
+            </div>
+          </template>
+        </el-alert>
+      </div>
       <!-- 左侧：文件预览 -->
       <div class="left-panel" :style="leftPanelStyle" ref="leftPanel">
         <div class="panel-header">
@@ -749,6 +768,7 @@ const reviewFileProgress = reactive({
 })
 const totalLiveIssueCount = ref(0)
 const skippedNoTextFiles = ref<string[]>([])
+const ocrDegradedFiles = ref<string[]>([])
 const runtimeFileStatus = ref<Record<string, 'completed' | 'failed' | 'skipped'>>({})
 let unsubscribeWs: (() => void) | null = null
 const currentStep = ref(2)
@@ -991,6 +1011,12 @@ const handleWsMessage = (msg: WsMessage) => {
       if (msg.progressType === 'completed' || msg.progressType === 'failed') {
         finishReview()
       }
+      // P0-4: OCR 降级告警
+      if (msg.progressType === 'ocr_degraded' && msg.fileName) {
+        if (!ocrDegradedFiles.value.includes(msg.fileName)) {
+          ocrDegradedFiles.value.push(msg.fileName)
+        }
+      }
       break
 
     case 'chunk_result':
@@ -1122,6 +1148,15 @@ const fetchData = async (silent = false) => {
       const noResultCount = allDetails.value.filter(d => d.ruleCode === 'NO_RESULT').length
       const errorDetails = allDetails.value.filter(d => d.description?.includes('审查过程中发生错误') || d.description?.includes('保存失败'))
       const validResults = totalDetails - noResultCount - errorDetails.length
+
+      // P0-4: 检测 OCR 降级 issue
+      const ocrDegradedIssues = allDetails.value.filter((d: any) => d.ruleCode === 'OCR_DEGRADED')
+      for (const issue of ocrDegradedIssues) {
+        const fileName = issue.originalText || issue.file?.fileName || issue.taskFileId || '未知文件'
+        if (!ocrDegradedFiles.value.includes(fileName)) {
+          ocrDegradedFiles.value.push(fileName)
+        }
+      }
 
       console.log(`[TaskResultsView] 📊 结果校验: 总计=${totalDetails}, 有效=${validResults}, 无结果标记=${noResultCount}, 错误记录=${errorDetails.length}`)
 
@@ -1490,6 +1525,7 @@ onUnmounted(() => {
   padding: 12px;
   overflow: hidden;
   min-height: 0; /* 关键：允许flex子项收缩到小于内容高度 */
+  position: relative; /* OCR 降级告警横幅定位基准 */
 }
 
 /* 左侧面板 - 尺寸由 JS leftPanelStyle 动态控制 */
@@ -2928,6 +2964,18 @@ onUnmounted(() => {
   color: #78716C;
   font-size: 13px;
   line-height: 1.8;
+}
+
+/* OCR 降级告警横幅 */
+.ocr-degraded-banner {
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  right: 12px;
+  z-index: 100;
+}
+.ocr-degraded-banner :deep(.el-alert) {
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
 }
 </style>
 

@@ -75,6 +75,7 @@ export class AiReviewService {
     config: PipelineReviewConfig,
   ): Promise<{ issues: ReviewIssue[]; engine: string }> {
     const chunkSize = config.chunkSize || 4000;
+    const chunkOverlap = config.chunkOverlap ?? 300;
     const llmMaxTokens = config.llmMaxTokens || 4096;
     const llmTimeout = config.llmTimeout || 180;
 
@@ -106,7 +107,7 @@ export class AiReviewService {
 
     // ʹ������ LLM ������飨��λ����Ϣ��
     const issues: ReviewIssue[] = [];
-    const chunks = LlmService.splitText(text, chunkSize, true);
+    const chunks = LlmService.splitText(text, chunkSize, true, chunkOverlap);
     const totalChunks = chunks.length;
 
     // ������������ʾ�ʣ�ͳһʹ�� PromptLoader����������DB �� Registry �� ���ף�
@@ -240,6 +241,7 @@ export class AiReviewService {
     config: PipelineReviewConfig,
   ): Promise<{ issues: ReviewIssue[]; engine: string; sources?: SourceReference[] }> {
     const chunkSize = config.chunkSize || 4000;
+    const chunkOverlap = config.chunkOverlap ?? 300;
     const llmMaxTokens = config.llmMaxTokens || 4096;
     const llmTimeout = config.llmTimeout || 180;
     const issues: ReviewIssue[] = [];
@@ -262,7 +264,7 @@ export class AiReviewService {
         userTpl = userTpl.replace(/\$\{stance\}/g, stanceLabel);
       }
 
-      const chunks = LlmService.splitText(text, chunkSize, true);
+      const chunks = LlmService.splitText(text, chunkSize, true, chunkOverlap);
       const totalChunks = chunks.length;
       const CONCURRENT_LIMIT = await getChunkConcurrency();
       const chunkResults = await parallelLimit(chunks, CONCURRENT_LIMIT, async (chunk) => {
@@ -323,6 +325,7 @@ export class AiReviewService {
     config: PipelineReviewConfig,
   ): Promise<{ issues: ReviewIssue[]; engine: string; sources?: SourceReference[] }> {
     const chunkSize = config.chunkSize || 4000;
+    const chunkOverlap = config.chunkOverlap ?? 300;
     const llmMaxTokens = config.llmMaxTokens || 4096;
     const llmTimeout = config.llmTimeout || 180;
 
@@ -359,7 +362,7 @@ export class AiReviewService {
         }
       }
 
-      const chunks = LlmService.splitText(text, chunkSize, true);
+      const chunks = LlmService.splitText(text, chunkSize, true, chunkOverlap);
       const totalChunks = chunks.length;
       const CONCURRENT_LIMIT = await getChunkConcurrency();
       const chunkResults = await parallelLimit(chunks, CONCURRENT_LIMIT, async (chunk) => {
@@ -468,6 +471,7 @@ export class AiReviewService {
     const llmMaxTokens = config.llmMaxTokens || 4096;
     const llmTimeout = config.llmTimeout || 180;
     const chunkSize = config.chunkSize || 4000;
+    const chunkOverlap = config.chunkOverlap ?? 300;
 
     try {
       // ��̬����������ݿ��ÿռ䣺���ȴ� LLM ģ�����ö�ȡ�����Ĵ���
@@ -513,7 +517,7 @@ export class AiReviewService {
         refTextsJoined = rawRefTextsJoined.substring(0, Math.floor(maxRefChars));
       }
 
-      const chunks = LlmService.splitText(text, chunkSize, true);
+      const chunks = LlmService.splitText(text, chunkSize, true, chunkOverlap);
       const totalChunks = chunks.length;
       const allIssues: ReviewIssue[] = [];
       let failedChunks = 0;
@@ -1087,6 +1091,7 @@ export class AiReviewService {
     }
 
     const chunkSize = config.chunkSize || 4000;
+    const chunkOverlap = config.chunkOverlap ?? 300;
     const llmMaxTokens = config.llmMaxTokens || 4096;
     const llmTimeout = config.llmTimeout || 180;
 
@@ -1156,7 +1161,7 @@ export class AiReviewService {
       .replace(/\$\{ragContext\}/g, ragContextBlock);
 
     // �ı���Ƭֻ��һ�Σ����й�������
-    const chunks = LlmService.splitText(text, chunkSize, true);
+    const chunks = LlmService.splitText(text, chunkSize, true, chunkOverlap);
     const allIssues: ReviewIssue[] = [];
 
     // ��������������Ƭ

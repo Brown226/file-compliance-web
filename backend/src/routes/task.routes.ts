@@ -30,6 +30,7 @@ import {
   getModeCapabilities,
   saveModeCapabilities,
   getReviewSummary,
+  reviewIssue,
 } from '../controllers/task.controller';
 
 const router = Router();
@@ -156,5 +157,8 @@ router.post('/:id/ref-files', checkTaskAccess, upload.array('files', 20), upload
 // 标记/取消标记误报
 router.patch('/details/:detailId/false-positive', toggleFalsePositive);
 router.patch('/details/:detailId/adopt', toggleAdopt);
+
+// 人工复核（仅 MANAGER/ADMIN）
+router.patch('/:id/details/:detailId/review', requireRole('MANAGER'), reviewIssue);
 
 export default router;

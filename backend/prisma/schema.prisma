@@ -232,6 +232,9 @@ model TaskDetail {
 
   locateMeta       Json?    @map("locate_meta") // 新版定位元数据：absolute range + quote + context
 
+  // 人工复核状态
+  reviewStatus     String?  @default("CONFIRMED") // PENDING_REVIEW / CONFIRMED / DISMISSED
+
   // 合同审查专属字段
   riskLevel        String?  // 风险等级: HIGH / MEDIUM / LOW
   clauseType       String?  // 条款类型: payment / penalty / warranty / ip / change / claim / insurance / dispute / other

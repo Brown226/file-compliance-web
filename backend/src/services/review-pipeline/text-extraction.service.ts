@@ -66,15 +66,20 @@ export class TextExtractionService {
 
   /**
    * 对文件执行 OCR 识别
+   * 返回识别文本，同时通过 ctx.ocrDegradedReason 传递降级状态
    */
   private static async ocrForFile(ctx: PipelineContext): Promise<string> {
     try {
-      const ocrText = await OcrService.recognizeFile(ctx.filePath, ctx.fileType);
-      if (ocrText) {
-        console.log(`[Pipeline] OCR 识别成功: ${ctx.fileName}, ${ocrText.length} 字符`);
-        return ocrText;
+      const ocrResult = await OcrService.recognizeFile(ctx.filePath, ctx.fileType);
+      if (ocrResult.status === 'success' && ocrResult.text) {
+        console.log(`[Pipeline] OCR 识别成功: ${ctx.fileName}, ${ocrResult.text.length} 字符`);
+        return ocrResult.text;
       }
+      // OCR 降级或失败：记录原因到上下文，供后续生成告警 issue
+      ctx.ocrDegradedReason = ocrResult.reason || `OCR 状态: ${ocrResult.status}`;
+      console.warn(`[Pipeline] OCR 降级: ${ctx.fileName}, status=${ocrResult.status}, reason=${ocrResult.reason}`);
     } catch (e) {
+      ctx.ocrDegradedReason = (e as Error).message || 'OCR 处理异常';
       console.warn(`[Pipeline] OCR 处理失败: ${ctx.fileName}`, e);
     }
     return '';

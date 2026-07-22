@@ -487,8 +487,14 @@ export class TaskService {
     });
   }
 
-  static async getTaskDetails(taskId: string) {
-    return prisma.taskDetail.findMany({
+  /**
+   * 获取任务详情
+   * @param taskId 任务 ID
+   * @param userRole 可选用户角色，非 MANAGER 用户将过滤掉 PENDING_REVIEW 的条目
+   */
+  static async getTaskDetails(taskId: string, userRole?: string) {
+    const isManager = userRole === 'MANAGER' || userRole === 'ADMIN';
+    const details = await prisma.taskDetail.findMany({
       where: { taskId },
       include: {
         file: {
@@ -496,7 +502,9 @@ export class TaskService {
         }
       },
       orderBy: { createdAt: 'desc' }
-    }).then((details) => details.map((detail: any) => ({
+    });
+
+    let filteredDetails = details.map((detail: any) => ({
       ...detail,
       reviewSource: detail.reviewSource || (detail.ruleCode?.startsWith('STD_')
         ? 'STANDARD_REF'
@@ -517,7 +525,14 @@ export class TaskService {
           : detail.ruleCode
             ? 'rule_engine'
             : (detail.sourceReferences ? 'ai_with_sources' : 'ai_only')),
-    })));
+    }));
+
+    // 非 MANAGER/ADMIN 用户过滤掉 PENDING_REVIEW 的条目
+    if (!isManager) {
+      filteredDetails = filteredDetails.filter((d) => d.reviewStatus !== 'PENDING_REVIEW');
+    }
+
+    return filteredDetails;
   }
 
   /**
@@ -982,6 +997,35 @@ export class TaskService {
           },
     });
 
+    return updated;
+  }
+
+  /**
+   * 人工复核 issue（仅 MANAGER/ADMIN 可调用）
+   * @param detailId 审查详情 ID
+   * @param reviewStatus 目标复核状态: CONFIRMED / DISMISSED
+   * @param userId 操作人 ID
+   */
+  static async reviewIssue(detailId: string, reviewStatus: string, userId: string): Promise<TaskDetail> {
+    if (!['CONFIRMED', 'DISMISSED'].includes(reviewStatus)) {
+      throw new Error('无效的复核状态，仅支持 CONFIRMED 或 DISMISSED');
+    }
+
+    const detail = await prisma.taskDetail.findUnique({ where: { id: detailId } });
+    if (!detail) {
+      throw new Error('Detail not found');
+    }
+
+    if (detail.reviewStatus !== 'PENDING_REVIEW') {
+      throw new Error('该条目无需人工复核');
+    }
+
+    const updated = await prisma.taskDetail.update({
+      where: { id: detailId },
+      data: { reviewStatus },
+    });
+
+    console.log(`[TaskService] 人工复核完成: detailId=${detailId}, reviewStatus=${reviewStatus}, userId=${userId}`);
     return updated;
   }
 

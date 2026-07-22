@@ -60,7 +60,7 @@ export default defineConfig({
     proxy: {
       // 所有 API 请求代理到审查平台后端
       '/api': {
-        target: 'http://localhost:3000',
+        target: process.env.API_PROXY_TARGET || 'http://localhost:3000',
         changeOrigin: true,
         configure: (proxy, options) => {
           proxy.on('proxyRes', (proxyRes, req, res) => {
@@ -75,7 +75,7 @@ export default defineConfig({
       },
       // WebSocket 代理
       '/ws': {
-        target: 'ws://localhost:3000',
+        target: process.env.WS_PROXY_TARGET || 'ws://localhost:3000',
         ws: true,
         changeOrigin: true,
       },

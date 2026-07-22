@@ -21,6 +21,7 @@ export function getEffectiveConfig(ctx: PipelineContext): PipelineReviewConfig {
       maxConcurrentReviews: 3, // 默认值，实际运行时从 DB 读取
       logLevel: 'info',
       contextWindow: 131072, // 默认 128K 上下文（字符数，约 32K tokens）
+      chunkOverlap: 300,
     };
   }
   return {
@@ -32,6 +33,7 @@ export function getEffectiveConfig(ctx: PipelineContext): PipelineReviewConfig {
     maxConcurrentReviews: cfg.maxConcurrentReviews || 3,
     logLevel: cfg.logLevel || 'info',
     contextWindow: cfg.contextWindow || 131072,
+    chunkOverlap: cfg.chunkOverlap ?? 300,
   };
 }
 

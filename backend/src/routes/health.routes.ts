@@ -14,5 +14,7 @@ router.get('/metrics/histogram/:name', HealthController.getHistogram);
 router.get('/cache/stats', HealthController.getCacheStats);
 router.post('/cache/clear', HealthController.clearCache);
 router.post('/metrics/reset', HealthController.resetMetrics);
+router.get('/ocr', HealthController.checkOcr);
+router.get('/queue', HealthController.checkQueue);
 
 export default router;

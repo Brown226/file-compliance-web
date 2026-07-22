@@ -21,6 +21,7 @@ import { DwgHandlerService } from './dwg-handler.service';
 import { StandardRefCheckService } from './review-pipeline/standard-ref-check.service';
 import { getModeCapabilitiesConfig } from './review-pipeline/mode-config.service';
 import { getMaxConcurrentReviews } from '../utils/system-config';
+import { normalizeText } from './falsePositiveLibrary.service';
 
 /**
  * �����ŷ��� - ���׶η�����������
@@ -640,6 +641,22 @@ export class ReviewService {
           timestamp: Date.now(),
         });
 
+        // P0-1: 任务级预加载误报库到内存，供各文件上下文共享
+        try {
+          const allFps = await prisma.falsePositiveLibrary.findMany({ select: { originalText: true } });
+          const fpLibrarySet = new Set<string>();
+          for (const fp of allFps) {
+            fpLibrarySet.add(normalizeText(fp.originalText));
+          }
+          if (fpLibrarySet.size > 0) {
+            for (const { ctx } of eligibleForAI) {
+              (ctx as any).fpLibrarySet = fpLibrarySet;
+            }
+          }
+        } catch (e) {
+          console.warn('[Review] 预加载误报库失败，继续执行审查:', e);
+        }
+
         // �û����𲢷�ִ�н׶�2��ÿ���û����������������׶�1ʧ�ܵ��ļ���
         slowPhaseResults = await this.runUserLevelConcurrency(
           task.creatorId,
@@ -1237,6 +1254,17 @@ export class ReviewService {
 
       // 2. �÷�Ƭ������ʱ����д�� DB
       if (issues && issues.length > 0) {
+        // P0-1: 过滤误报库中的 issue，减少 LLM 幻觉风险
+        let filteredByFp = 0;
+        if (ctx.fpLibrarySet && ctx.fpLibrarySet.size > 0) {
+          const beforeCount = issues.length;
+          issues = issues.filter((issue: any) => !ctx.fpLibrarySet!.has(normalizeText(issue.originalText)));
+          filteredByFp = beforeCount - issues.length;
+          if (filteredByFp > 0) {
+            console.log(`[Review] 分片 ${chunkIndex} 过滤 ${filteredByFp} 条误报 (${file.fileName})`);
+          }
+        }
+
         const aiData = issues.map((issue) => {
           // ͳһ���� locateMeta��ֻ��һ�Σ����� textPosition �� locateMeta �ֶθ���һ�飩
           const meta = issue.locateMeta
@@ -1270,8 +1298,9 @@ export class ReviewService {
             diffRanges: issue.diffRanges || null,
             textPosition: this.buildLegacyTextPosition(meta, ctx.extractedText, issue.originalText),
             locateMeta: meta,
-            // ��ͬ���ר���ֶ�
+            // 人工复核状态：AI_INFERRED 纯推断结果或合同 HIGH 风险需要人工复核
             riskLevel: (issue as any).riskLevel || null,
+            reviewStatus: ((confidence) => { return (confidence === 'AI_INFERRED' || (issue as any).riskLevel === 'HIGH') ? 'PENDING_REVIEW' : 'CONFIRMED'; })(this.getConfidence(issue).confidence),
             clauseType: (issue as any).clauseType || null,
             recommendation: (issue as any).recommendation || null,
           };
@@ -1321,6 +1350,18 @@ export class ReviewService {
         });
         } // end if (dbWriteSuccess)
 
+        // P0-1: 推送误报过滤统计
+        if (filteredByFp > 0) {
+          WebSocketService.emitTaskProgress(taskId, {
+            type: 'fp_filtered',
+            step: 'AI 审查过滤',
+            message: `误报库自动过滤 ${filteredByFp} 条问题 (${file.fileName})`,
+            fileName: file.fileName,
+            phase: 'phase2',
+            timestamp: Date.now(),
+          });
+        }
+
         // 4. �����ļ��������������д��ɹ�ʱ��
         this.updateFileErrorCount(file.id).catch((e) => { console.warn(`[Review] ���´������ʧ��:`, e); });
       }
@@ -1352,10 +1393,48 @@ export class ReviewService {
     }
     const slowResult = { aiIssues: aiResult.aiIssues || [], usedEngine: aiResult.usedEngine || 'unknown' };
 
+    // P0-4: OCR 降级告警 — 生成告警 issue
+    if (ctx.ocrDegradedReason) {
+      const ocrIssue: any = {
+        issueType: 'COMPLETENESS',
+        ruleCode: 'OCR_DEGRADED',
+        severity: 'warning',
+        originalText: file.fileName || ctx.fileName || '',
+        description: ctx.ocrDegradedReason.includes('未配置')
+          ? 'OCR服务不可用（未配置视觉模型），扫描件内容未能提取，本次审查可能遗漏图片中的问题'
+          : 'OCR服务执行失败，扫描件内容未能提取，本次审查可能遗漏图片中的问题',
+        plainLanguage: `文件 "${file.fileName}" 为扫描件或图片，但 OCR 无法识别内容。请手动检查该文件中可能的合规问题。`,
+        suggestedText: null,
+      };
+      slowResult.aiIssues.push(ocrIssue);
+
+      // 推送 OCR 降级 WebSocket 事件
+      WebSocketService.emitTaskProgress(taskId, {
+        type: 'ocr_degraded',
+        step: 'OCR 降级告警',
+        message: `OCR 服务不可用: ${file.fileName}`,
+        fileName: file.fileName,
+        phase: 'phase2',
+        timestamp: Date.now(),
+      });
+    }
+
     // AI �����ͨ�� ctx.onChunkProgress ����д�루ÿ����Ƭ�����ɺ�������� + ���� WebSocket��
     // �˴��������ף�ʹ���ڴ��Ǽ�飬���޷�Ƭ�ɹ�д����һ����д�루��������� onChunkProgress ȫ��ʧ��ʱ�ı��ף�
     if (slowResult.aiIssues.length > 0 && !anyChunkWritten) {
       try {
+        // P0-1: 过滤误报库中的 issue（兜底路径）
+        if (ctx.fpLibrarySet && ctx.fpLibrarySet.size > 0) {
+          const beforeCount = slowResult.aiIssues.length;
+          slowResult.aiIssues = slowResult.aiIssues.filter(
+            (issue: any) => !ctx.fpLibrarySet!.has(normalizeText(issue.originalText))
+          );
+          const fallbackFiltered = beforeCount - slowResult.aiIssues.length;
+          if (fallbackFiltered > 0) {
+            console.log(`[Review] 兜底路径过滤 ${fallbackFiltered} 条误报 (${file.fileName})`);
+          }
+        }
+
         console.warn(`[Review] ����д��: ${slowResult.aiIssues.length} �� (${file.fileName})`);
         const aiData = slowResult.aiIssues.map((issue) => {
           const meta = issue.locateMeta

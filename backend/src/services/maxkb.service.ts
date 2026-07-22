@@ -526,7 +526,7 @@ export class MaxKBService {
     return this.adminRequest('POST', `/workspace/${workspaceId}/knowledge/${knowledgeId}/hit_test`, {
       query_text: query,
       top_number: topNumber,
-      similarity: 0.2,
+      similarity: 0.55,
       search_mode: 'embedding',
     });
   }
