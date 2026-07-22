@@ -1,7 +1,10 @@
 import WebSocket, { WebSocketServer } from 'ws';
 import { IncomingMessage, Server } from 'http';
+import { randomUUID } from 'crypto';
 import prisma from '../config/db';
 import { TokenPayload } from './token.service';
+import { TokenService } from './token.service';
+import { redisClient } from '../utils/redis';
 
 interface WsClient {
   ws: WebSocket;
@@ -23,6 +26,12 @@ export class WebSocketService {
   private static clients: Map<string, WsClient> = new Map();
   private static taskSubscribers: Map<string, Set<string>> = new Map();
 
+  // ===== 跨进程广播（Redis Pub/Sub）=====
+  // 支持 API/Worker 进程拆分：Worker 侧 emit 通过 Redis 发布，API 侧订阅后投递给本地 WS 客户端。
+  private static readonly WS_CHANNEL = 'ws:broadcast';
+  private static readonly instanceId = randomUUID();
+  private static subClient: ReturnType<typeof redisClient.getClient> | null = null;
+
   static initialize(server: Server) {
     this.wss = new WebSocketServer({ server, path: '/ws' });
 
@@ -38,14 +47,82 @@ export class WebSocketService {
       this.handleConnection(ws, token);
     });
 
+    this.initPubSub();
     console.log('[WebSocket] Server initialized on /ws');
+  }
+
+  /**
+   * 初始化 Redis 订阅：接收其他进程（如 Worker）发布的 WS 消息并投递给本地客户端。
+   * 使用独立订阅连接（ioredis 订阅模式下的连接不能再执行普通命令）。
+   */
+  private static initPubSub() {
+    if (this.subClient) return;
+    try {
+      this.subClient = redisClient.getClient().duplicate();
+      this.subClient.subscribe(this.WS_CHANNEL, (err) => {
+        if (err) console.error('[WebSocket] 订阅 Redis 频道失败:', err.message);
+        else console.log('[WebSocket] 已订阅跨进程广播频道:', this.WS_CHANNEL);
+      });
+      this.subClient.on('message', (_channel: string, message: string) => {
+        try {
+          const envelope = JSON.parse(message) as { origin: string; scope: 'task' | 'user'; target: string; payload: any };
+          // 跳过本进程发布的消息（本地已直接投递，避免重复发送）
+          if (envelope.origin === this.instanceId) return;
+          const payloadStr = JSON.stringify(envelope.payload);
+          if (envelope.scope === 'task') this.sendToLocalTaskSubscribers(envelope.target, payloadStr);
+          else if (envelope.scope === 'user') this.sendToLocalUser(envelope.target, payloadStr);
+        } catch { /* 忽略非法消息 */ }
+      });
+    } catch (e) {
+      console.warn('[WebSocket] Pub/Sub 初始化失败，退化为单进程投递:', (e as Error).message);
+    }
+  }
+
+  /** 发布消息到 Redis 广播频道（供其他进程投递） */
+  private static publish(scope: 'task' | 'user', target: string, payload: any) {
+    try {
+      redisClient.getClient().publish(
+        this.WS_CHANNEL,
+        JSON.stringify({ origin: this.instanceId, scope, target, payload }),
+      );
+    } catch (e) {
+      // 发布失败不影响本地投递
+    }
+  }
+
+  /** 向本进程内订阅了该任务的客户端投递 */
+  private static sendToLocalTaskSubscribers(taskId: string, payloadStr: string) {
+    const subscribers = this.taskSubscribers.get(taskId);
+    if (!subscribers || subscribers.size === 0) return;
+    subscribers.forEach(clientId => {
+      const client = this.clients.get(clientId);
+      if (client && client.ws.readyState === WebSocket.OPEN) {
+        try {
+          client.ws.send(payloadStr);
+        } catch (e) {
+          this.removeSubscriber(taskId, clientId);
+        }
+      }
+    });
+  }
+
+  /** 向本进程内指定用户的所有连接投递 */
+  private static sendToLocalUser(userId: string, payloadStr: string) {
+    this.clients.forEach((client) => {
+      if (client.userId === userId && client.ws.readyState === WebSocket.OPEN) {
+        try {
+          client.ws.send(payloadStr);
+        } catch (e) {
+          // ignore
+        }
+      }
+    });
   }
 
   private static async handleConnection(ws: WebSocket, token: string) {
     try {
-      const jwt = await import('jsonwebtoken');
-      const { env } = await import('../config/env');
-      const decoded = jwt.verify(token, env.jwtSecret) as TokenPayload;
+      // 统一使用 TokenService.verifyToken（静态导入，避免动态 import 的 interop 问题）
+      const decoded = TokenService.verifyToken(token);
       const userId = decoded.id;
 
       const client: WsClient = { ws, userId, tasks: new Set() };
@@ -153,26 +230,15 @@ export class WebSocketService {
     /** 引擎名称 */
     engine: string;
   }) {
-    const subscribers = this.taskSubscribers.get(taskId);
-    if (!subscribers || subscribers.size === 0) return;
-
-    const payload = JSON.stringify({
+    const payloadObj = {
       type: 'chunk_result',
       taskId,
       ...data,
       timestamp: Date.now(),
-    });
-
-    subscribers.forEach(clientId => {
-      const client = this.clients.get(clientId);
-      if (client && client.ws.readyState === WebSocket.OPEN) {
-        try {
-          client.ws.send(payload);
-        } catch (e) {
-          this.removeSubscriber(taskId, clientId);
-        }
-      }
-    });
+    };
+    // 本地投递 + 跨进程广播（Worker 进程无本地客户端时仅广播）
+    this.sendToLocalTaskSubscribers(taskId, JSON.stringify(payloadObj));
+    this.publish('task', taskId, payloadObj);
   }
 
   /**
@@ -194,10 +260,7 @@ export class WebSocketService {
     currentFileIssueCount?: number;
     timestamp?: number;
   }) {
-    const subscribers = this.taskSubscribers.get(taskId);
-    if (!subscribers || subscribers.size === 0) return;
-
-    const payload = JSON.stringify({
+    const payloadObj = {
       type: 'task_progress',
       taskId,
       progressType: data.type,
@@ -214,18 +277,9 @@ export class WebSocketService {
       usedEngine: data.usedEngine,
       currentFileIssueCount: data.currentFileIssueCount,
       timestamp: data.timestamp || Date.now(),
-    });
-
-    subscribers.forEach(clientId => {
-      const client = this.clients.get(clientId);
-      if (client && client.ws.readyState === WebSocket.OPEN) {
-        try {
-          client.ws.send(payload);
-        } catch (e) {
-          this.removeSubscriber(taskId, clientId);
-        }
-      }
-    });
+    };
+    this.sendToLocalTaskSubscribers(taskId, JSON.stringify(payloadObj));
+    this.publish('task', taskId, payloadObj);
   }
 
   /**
@@ -237,21 +291,15 @@ export class WebSocketService {
     message: string;
     [key: string]: any;
   }) {
-    this.clients.forEach((client, clientId) => {
-      if (client.userId === userId && client.ws.readyState === WebSocket.OPEN) {
-        try {
-          client.ws.send(JSON.stringify({
-            type: 'notification',
-            notificationType: data.type,
-            title: data.title,
-            message: data.message,
-            timestamp: Date.now(),
-          }));
-        } catch (e) {
-          // ignore
-        }
-      }
-    });
+    const payloadObj = {
+      type: 'notification',
+      notificationType: data.type,
+      title: data.title,
+      message: data.message,
+      timestamp: Date.now(),
+    };
+    this.sendToLocalUser(userId, JSON.stringify(payloadObj));
+    this.publish('user', userId, payloadObj);
   }
 
   private static removeSubscriber(taskId: string, clientId: string) {
