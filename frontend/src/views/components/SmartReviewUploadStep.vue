@@ -19,8 +19,8 @@
           multiple
           :auto-upload="false"
           :limit="10"
+          v-model:file-list="uploadFileList"
           :on-change="handleFileChange"
-          :on-remove="handleFileRemove"
           :on-exceed="handleExceed"
           accept=".dwg,.doc,.docx,.xls,.xlsx,.pdf,.ppt,.pptx,.jpg,.png,.jpeg,.txt"
           :show-file-list="false"
@@ -83,8 +83,8 @@
           multiple
           :auto-upload="false"
           :limit="5"
+          v-model:file-list="uploadRefFileList"
           :on-change="handleReferenceFileChange"
-          :on-remove="handleReferenceFileRemove"
           accept=".dwg,.doc,.docx,.xls,.xlsx,.pdf,.ppt,.pptx,.txt"
           :show-file-list="false"
         >
@@ -216,14 +216,27 @@ const totalFileSize = computed(() =>
   props.refFileList.reduce((sum, f) => sum + (f.size || 0), 0)
 )
 
-const handleFileChange = (file: UploadFile, newFileList: UploadFile[]) => {
-  emit('update:fileList', newFileList)
-  emit('fileChange', file, newFileList)
-}
+const uploadRef = ref()
+const referenceUploadRef = ref()
 
-const handleFileRemove = (file: UploadFile, newFileList: UploadFile[]) => {
-  emit('update:fileList', newFileList)
-  emit('fileRemove', file, newFileList)
+// ★ 修复：通过 v-model:file-list 双向绑定，确保 el-upload 内部状态与外部 prop 同步
+// 避免自定义 removeFile 后 el-upload 内部仍保留已删除文件，导致下次添加时幽灵重现
+const uploadFileList = computed({
+  get: () => props.fileList,
+  set: (val: UploadFile[]) => emit('update:fileList', val)
+})
+
+const uploadRefFileList = computed({
+  get: () => props.refFileList,
+  set: (val: UploadFile[]) => emit('update:refFileList', val)
+})
+
+const handleFileChange = (file: UploadFile) => {
+  // OPT-019: 文件大小预检提示
+  if ((file.size || 0) > 50 * 1024 * 1024) {
+    ElMessage.warning(`文件「${file.name}」超过 50MB，可能无法完整解析，建议拆分后上传`)
+  }
+  emit('fileChange', file, uploadFileList.value)
 }
 
 const handleExceed = (_files: File[], fileList: File[]) => {
@@ -232,16 +245,15 @@ const handleExceed = (_files: File[], fileList: File[]) => {
 
 const removeFile = (index: number) => {
   const newList = [...props.fileList]
+  const removed = newList[index]
   newList.splice(index, 1)
   emit('update:fileList', newList)
+  // 同步 el-upload 内部状态（v-model:file-list 会自动同步，此处触发 fileRemove 事件）
+  if (removed) emit('fileRemove', removed, newList)
 }
 
-const handleReferenceFileChange = (_file: UploadFile, newFileList: UploadFile[]) => {
-  emit('update:refFileList', newFileList)
-}
-
-const handleReferenceFileRemove = (_file: UploadFile, newFileList: UploadFile[]) => {
-  emit('update:refFileList', newFileList)
+const handleReferenceFileChange = (_file: UploadFile) => {
+  // v-model:file-list 已自动同步，无需额外 emit
 }
 
 const removeReferenceFile = (index: number) => {

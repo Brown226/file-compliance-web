@@ -15,6 +15,7 @@ import {
   getApplications,
   getMaxKBEmbedUrl,
   clearMaxKBEmbedSession,
+  getDocumentSegments,
 } from '../controllers/maxkb.controller';
 
 const router = Router();
@@ -54,5 +55,8 @@ router.post('/embed-session/clear', clearMaxKBEmbedSession);
 
 // 命中测试
 router.post('/hit-test', hitTest);
+
+// OPT-017: 分段质量审计
+router.get('/knowledge/:kbId/documents/:docId/segments', getDocumentSegments);
 
 export default router;

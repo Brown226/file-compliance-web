@@ -7,6 +7,11 @@ import { PipelineContext } from './types';
 import { ParserService } from '../parser.service';
 import { OcrService } from '../ocr.service';
 import { FileTypeService } from '../file-type.service';
+import fs from 'fs';
+import { resolveFilePath } from '../../config/upload';
+
+/** OPT-019: 文件大小上限（50MB） */
+const MAX_FILE_SIZE = 50 * 1024 * 1024;
 
 /** 图片类型列表（Python 解析服务不支持，需直接走 OCR） */
 const IMAGE_FILE_TYPES = new Set(['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'tiff']);
@@ -18,6 +23,18 @@ export class TextExtractionService {
    * 这是代码库中唯一的文件解析入口，不要直接调 ParserService.parseFile()
    */
   static async extractFileText(filePath: string, fileType: string, fileName?: string): Promise<string> {
+    // OPT-019: 文件大小预检，超过 50MB 拒绝处理
+    try {
+      const physicalPath = resolveFilePath(filePath);
+      if (fs.existsSync(physicalPath)) {
+        const stat = fs.statSync(physicalPath);
+        if (stat.size > MAX_FILE_SIZE) {
+          console.warn(`[Pipeline] 文件过大(${(stat.size / 1024 / 1024).toFixed(1)}MB > 50MB)，跳过解析: ${fileName}`);
+          return `[FILE_TOO_LARGE] 文件过大(${(stat.size / 1024 / 1024).toFixed(1)}MB)，超过 50MB 上限，请拆分后重新上传。`;
+        }
+      }
+    } catch { /* 文件不存在时跳过预检，后续流程会处理 */ }
+
     const ctx: Partial<PipelineContext> = {
       filePath,
       fileType,

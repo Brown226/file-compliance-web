@@ -5,6 +5,7 @@ import path from 'path';
 import { env } from './config/env';
 import { errorHandler } from './middlewares/error.middleware';
 import { auditLog } from './middlewares/audit.middleware';
+import { globalLimiter } from './middlewares/security.middleware';
 import { getUploadDir, onPathChange } from './config/upload';
 import authRoutes from './routes/auth.routes';
 import departmentRoutes from './routes/department.routes';
@@ -47,6 +48,9 @@ app.use(cors({
   credentials: true,
 }));
 app.use(morgan('dev'));
+
+// OPT-039: 全局 API 限流
+app.use('/api', globalLimiter);
 
 // 静态文件服务：提供上传文件的访问（支持运行时切换路径）
 let _staticMw = express.static(getUploadDir());

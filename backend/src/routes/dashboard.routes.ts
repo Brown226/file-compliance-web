@@ -13,4 +13,8 @@ router.use(auditLog);
 router.get('/stats', dashboardController.getStats);
 router.get('/trend', dashboardController.getTrend);
 
+// OPT-015: 审查质量指标
+router.get('/review-metrics', dashboardController.getReviewMetrics);
+router.post('/tasks/:taskId/details/:detailId/feedback', dashboardController.submitFeedback);
+
 export default router;

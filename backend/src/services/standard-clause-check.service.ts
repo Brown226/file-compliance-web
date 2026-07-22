@@ -84,7 +84,7 @@ export class StandardClauseCheckService {
       const rawResponse = await this.callLlmRaw(
         CLAUSE_CHECK_SYSTEM_PROMPT,
         userContent,
-        options?.temperature ?? 0.1,
+        options?.temperature ?? 0,
         options?.timeout ?? 60,
       );
       return this.parseRawResponse(rawResponse, clause);
@@ -325,7 +325,7 @@ export class StandardClauseCheckService {
     const contextSection = context ? `\n\n【相关参考信息】\n${context}` : '';
     const userContent = `## 标准条文\n${clause.code} ${clause.title}\n${clause.content}${contextSection}\n\n## 待审查文档\n${text}`;
     try {
-      const rawResponse = await this.callLlmRaw(CLAUSE_CHECK_SYSTEM_PROMPT, userContent, options?.temperature ?? 0.1, options?.timeout ?? 60);
+      const rawResponse = await this.callLlmRaw(CLAUSE_CHECK_SYSTEM_PROMPT, userContent, options?.temperature ?? 0, options?.timeout ?? 60);
       return this.parseRawResponse(rawResponse, clause);
     } catch (e) {
       return {
@@ -350,7 +350,7 @@ export class StandardClauseCheckService {
     const userContent = `## 审查结论\n条文：${result.clauseCode}\n结论：${result.status}\n描述：${result.description || '无'}\n\n## 文档原文\n${text}\n\n请复核：`;
     for (let loop = 0; loop < this.MAX_AUDIT_LOOPS; loop++) {
       try {
-        const rawResponse = await this.callLlmRaw(this.AUDITOR_SYSTEM_PROMPT, userContent, options?.temperature ?? 0.1, options?.timeout ?? 30);
+        const rawResponse = await this.callLlmRaw(this.AUDITOR_SYSTEM_PROMPT, userContent, options?.temperature ?? 0, options?.timeout ?? 30);
         const match = rawResponse.match(/"decision"\s*:\s*"(CONFIRMED|REJECTED|UNCERTAIN)"/);
         const reasonMatch = rawResponse.match(/"reason"\s*:\s*"([^"]+)"/);
         const decision = (match?.[1] as any) || 'UNCERTAIN';

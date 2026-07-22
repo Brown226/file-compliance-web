@@ -803,5 +803,64 @@ export class MaxKBService {
   }> {
     return this.testConnectionWithConfig();
   }
+
+  // ==================== OPT-017: 分段质量审计 ====================
+
+  /**
+   * 获取知识库文档的分段详情
+   * MaxKB API: GET /api/dataset/{datasetId}/document/{documentId}/paragraph
+   */
+  static async getDocumentSegments(kbId: string, documentId: string): Promise<Array<{
+    id: string;
+    content: string;
+    document_name?: string;
+    charCount: number;
+    status?: string;
+  }>> {
+    try {
+      const data = await this.adminRequest('GET', `/dataset/${kbId}/document/${documentId}/paragraph`);
+      const paragraphs = Array.isArray(data) ? data : (data?.records || data?.list || []);
+      return paragraphs.map((p: any) => ({
+        id: p.id || '',
+        content: p.content || p.text || '',
+        document_name: p.document_name || p.documentName || '',
+        charCount: (p.content || p.text || '').length,
+        status: p.status || 'active',
+      }));
+    } catch (e: any) {
+      console.error(`[MaxKB] 获取分段失败: kbId=${kbId}, docId=${documentId}`, e.message);
+      return [];
+    }
+  }
+
+  /**
+   * 计算分段质量指标
+   */
+  static calculateSegmentMetrics(segments: Array<{ content: string; charCount: number }>): {
+    totalSegments: number;
+    avgLength: number;
+    minLength: number;
+    maxLength: number;
+    shortSegmentCount: number;  // < 50 字符
+    longSegmentCount: number;   // > 2000 字符
+    totalChars: number;
+  } {
+    if (segments.length === 0) {
+      return { totalSegments: 0, avgLength: 0, minLength: 0, maxLength: 0, shortSegmentCount: 0, longSegmentCount: 0, totalChars: 0 };
+    }
+
+    const lengths = segments.map(s => s.charCount);
+    const totalChars = lengths.reduce((a, b) => a + b, 0);
+
+    return {
+      totalSegments: segments.length,
+      avgLength: Math.round(totalChars / segments.length),
+      minLength: Math.min(...lengths),
+      maxLength: Math.max(...lengths),
+      shortSegmentCount: lengths.filter(l => l < 50).length,
+      longSegmentCount: lengths.filter(l => l > 2000).length,
+      totalChars,
+    };
+  }
 }
 

@@ -13,6 +13,8 @@ import { ConcurrencyService } from './concurrency.service';
 import { withLock } from '../utils/redis-lock';
 import { RuleLibraryService } from './rule-library.service';
 import { TableExtractionService } from './table-extraction.service';
+import { validateSeverity } from './severity-rules';
+import { validateOriginalText } from './text-fidelity.service';
 import { FormulaOcrService } from './formula-ocr.service';
 import path from 'path';
 import { ReviewPlan } from '../types/review-plan';
@@ -682,6 +684,18 @@ export class ReviewService {
         } else {
           slowSuccessCount++;
           if (result.usedEngine) enginesUsed.add(result.usedEngine);
+          // OPT-027: RAG 降级时发送 WebSocket 告警事件
+          if ((result as any).degraded) {
+            WebSocketService.emitTaskProgress(taskId, {
+              type: 'rag_degraded',
+              step: 'AI审查降级',
+              progress: 80,
+              message: (result as any).degradedReason || 'RAG 不可用，已切换为 LLM 直审',
+              fileName: result.fileName,
+              phase: 'phase2',
+              timestamp: Date.now(),
+            });
+          }
           // ���ͽ׶�2����¼�
           WebSocketService.emitTaskProgress(taskId, {
             type: 'slow_phase_complete',
@@ -1266,6 +1280,13 @@ export class ReviewService {
         }
 
         const aiData = issues.map((issue) => {
+          // OPT-029: originalText fidelity check
+          if (issue.originalText && ctx.extractedText) {
+            const fidelity = validateOriginalText(issue.originalText, ctx.extractedText, { enableFuzzy: ctx.extractedText.length < 100000 });
+            if (fidelity.confidence === 'fuzzy' && fidelity.correctedText) {
+              issue.originalText = fidelity.correctedText;
+            }
+          }
           // ͳһ���� locateMeta��ֻ��һ�Σ����� textPosition �� locateMeta �ֶθ���һ�飩
           const meta = issue.locateMeta
             || this.buildLocateMeta(ctx.extractedText, issue, { fileId: file.id });
@@ -1284,7 +1305,7 @@ export class ReviewService {
             fileId: file.id,
             issueType: issue.issueType,
             ruleCode: issue.ruleCode || null,
-            severity: issue.severity || (['TYPO'].includes(issue.issueType) ? 'warning' : 'error'),
+            severity: validateSeverity(issue.issueType, issue.severity),
             reviewSource: 'AI',
             originalText: issue.originalText,
             suggestedText: issue.suggestedText || null,
@@ -1391,7 +1412,7 @@ export class ReviewService {
 
     if (aiResult.usedEngine === 'none' && aiResult.aiIssues.length === 0) {
     }
-    const slowResult = { aiIssues: aiResult.aiIssues || [], usedEngine: aiResult.usedEngine || 'unknown' };
+    const slowResult = { aiIssues: aiResult.aiIssues || [], usedEngine: aiResult.usedEngine || 'unknown', degraded: (aiResult as any).degraded || false, degradedReason: (aiResult as any).degradedReason || undefined };
 
     // P0-4: OCR 降级告警 — 生成告警 issue
     if (ctx.ocrDegradedReason) {
@@ -1437,6 +1458,13 @@ export class ReviewService {
 
         console.warn(`[Review] ����д��: ${slowResult.aiIssues.length} �� (${file.fileName})`);
         const aiData = slowResult.aiIssues.map((issue) => {
+          // OPT-029: originalText fidelity check (fallback path)
+          if (issue.originalText && ctx.extractedText) {
+            const fidelity = validateOriginalText(issue.originalText, ctx.extractedText, { enableFuzzy: ctx.extractedText.length < 100000 });
+            if (fidelity.confidence === 'fuzzy' && fidelity.correctedText) {
+              issue.originalText = fidelity.correctedText;
+            }
+          }
           const meta = issue.locateMeta
             || this.buildLocateMeta(ctx.extractedText, issue, { fileId: file.id });
           if (meta) this.enrichDwgHandle(issue, meta, ctx);
@@ -1450,7 +1478,7 @@ export class ReviewService {
             fileId: file.id,
             issueType: issue.issueType,
             ruleCode: issue.ruleCode || null,
-            severity: issue.severity || (['TYPO'].includes(issue.issueType) ? 'warning' : 'error'),
+            severity: validateSeverity(issue.issueType, issue.severity),
             reviewSource: 'AI',
             originalText: issue.originalText,
             suggestedText: issue.suggestedText || null,

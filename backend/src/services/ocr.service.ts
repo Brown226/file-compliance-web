@@ -93,7 +93,7 @@ export class OcrService {
    * 通过 doc-parser 的 /api/ocr/scan 端点，使用视觉大模型识别扫描件。
    * 返回结构化结果，携带状态信息而非仅字符串。
    */
-  static async recognizeFile(filePath: string, fileType: string): Promise<{ text: string; status: 'success' | 'unavailable' | 'failed'; reason?: string }> {
+  static async recognizeFile(filePath: string, fileType: string): Promise<{ text: string; status: 'success' | 'unavailable' | 'failed'; reason?: string; confidence?: number }> {
     const config = await this.getVisionConfig();
 
     if (!config.apiKey || !config.modelName) {
@@ -133,7 +133,10 @@ export class OcrService {
       const data = (await response.json()) as any;
       const text = data.data?.text || '';
       console.log(`[OCR] 识别完成: ${fileName}, ${text.length} 字符`);
-      return { text: OcrService.postProcessOcrText(text), status: 'success' };
+      const processed = OcrService.postProcessOcrText(text);
+      // OPT-028: 估算 OCR 置信度
+      const confidence = OcrService.estimateConfidence(processed);
+      return { text: processed, status: 'success', confidence };
     } catch (e: any) {
       if (e.name === 'AbortError') {
         return { text: '', status: 'failed', reason: 'OCR 请求超时' };
@@ -157,5 +160,36 @@ export class OcrService {
 
   static isOcrSupported(fileType: string): boolean {
     return FileTypeService.isOcrSupported(fileType);
+  }
+
+  /**
+   * OPT-028: 估算 OCR 文本置信度（0-1）
+   * 基于启发式规则：字符密度、乱码比例、有效字符占比
+   */
+  static estimateConfidence(text: string): number {
+    if (!text || text.length === 0) return 0;
+
+    const totalChars = text.length;
+
+    // 1. 有效字符比例（中文 + 英文 + 数字 + 常见标点）
+    const validChars = (text.match(/[\u4e00-\u9fff\u3000-\u303fa-zA-Z0-9\s，。、；：""''（）【】《》,.:;()'"\-+/]/g) || []).length;
+    const validRatio = validChars / totalChars;
+
+    // 2. 乱码/控制字符比例
+    const controlChars = (text.match(/[\x00-\x08\x0b\x0c\x0e-\x1f\ufffd]/g) || []).length;
+    const garbageRatio = controlChars / totalChars;
+
+    // 3. 字符密度（每行平均字符数，过低可能是识别碎片）
+    const lines = text.split('\n').filter(l => l.trim().length > 0);
+    const avgLineLength = lines.length > 0 ? totalChars / lines.length : 0;
+    const densityScore = Math.min(1, avgLineLength / 20); // 20字符/行为满分
+
+    // 综合评分
+    let confidence = validRatio * 0.5 + (1 - garbageRatio) * 0.3 + densityScore * 0.2;
+
+    // 文本过短惩罚
+    if (totalChars < 50) confidence *= 0.7;
+
+    return Math.round(Math.max(0, Math.min(1, confidence)) * 100) / 100;
   }
 }

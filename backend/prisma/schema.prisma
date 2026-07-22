@@ -123,6 +123,10 @@ model Task {
   createdAt          DateTime       @default(now())
   updatedAt          DateTime       @updatedAt
 
+  // OPT-038: 性能优化索引
+  @@index([creatorId, status], name: "idx_task_creator_status")
+  @@index([status, createdAt], name: "idx_task_status_created")
+  @@index([reviewMode], name: "idx_task_review_mode")
   @@map("tasks")
 }
 
@@ -241,6 +245,11 @@ model TaskDetail {
   recommendation   String?  @db.Text  // 修改建议
 
   @@unique([taskId, fileId, issueType, ruleCode, originalText])
+  // OPT-038: 性能优化索引
+  @@index([taskId, severity], name: "idx_task_detail_task_severity")
+  @@index([taskId, reviewSource], name: "idx_task_detail_task_source")
+  @@index([taskId, reviewStatus], name: "idx_task_detail_task_status")
+  @@index([fileId], name: "idx_task_detail_file_id")
   @@map("task_details")
 }
 
@@ -838,4 +847,20 @@ model UserMemory {
   @@index([userId], name: "idx_user_memory_user_id")
   @@index([category], name: "idx_user_memory_category")
   @@map("user_memory")
+}
+
+// OPT-015: 审查结果反馈（用于计算 precision/recall）
+model ReviewFeedback {
+  id           String   @id @default(uuid())
+  taskId       String   @map("task_id") @db.VarChar(50)
+  fileId       String?  @map("file_id") @db.VarChar(50)
+  detailId     String?  @map("detail_id") @db.VarChar(50)
+  feedbackType String   @map("feedback_type") @db.VarChar(20) // 'useful' | 'false_positive' | 'missed'
+  userId       String?  @map("user_id") @db.VarChar(50)
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamp(6)
+
+  @@index([taskId], name: "idx_review_feedback_task_id")
+  @@index([feedbackType], name: "idx_review_feedback_type")
+  @@index([createdAt], name: "idx_review_feedback_created_at")
+  @@map("review_feedback")
 }

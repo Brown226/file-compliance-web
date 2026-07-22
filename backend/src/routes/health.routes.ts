@@ -16,5 +16,7 @@ router.post('/cache/clear', HealthController.clearCache);
 router.post('/metrics/reset', HealthController.resetMetrics);
 router.get('/ocr', HealthController.checkOcr);
 router.get('/queue', HealthController.checkQueue);
+router.get('/maxkb', HealthController.checkMaxKB);
+router.get('/all', HealthController.checkAll); // OPT-037: 综合健康检查
 
 export default router;

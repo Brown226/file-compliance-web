@@ -51,6 +51,25 @@
           </template>
         </el-alert>
       </div>
+      <!-- OPT-027: RAG 降级告警横幅 -->
+      <div v-if="ragDegradedFiles.length > 0" class="ocr-degraded-banner">
+        <el-alert
+          :title="`知识库检索降级：${ragDegradedFiles.length} 个文件的审查未使用 RAG 检索`"
+          type="info"
+          show-icon
+          :closable="true"
+          @close="ragDegradedFiles = []"
+        >
+          <template #default>
+            <div style="margin-top:4px; font-size:13px;">
+              <div v-for="f in ragDegradedFiles" :key="f" style="margin-bottom:2px;">
+                ⚠️ {{ f }}
+              </div>
+              <p style="margin:4px 0 0; color:#0c5460;">RAG 不可用，已切换为 LLM 直审，结果可信度可能降低。</p>
+            </div>
+          </template>
+        </el-alert>
+      </div>
       <!-- 左侧：文件预览 -->
       <div class="left-panel" :style="leftPanelStyle" ref="leftPanel">
         <div class="panel-header">
@@ -769,6 +788,7 @@ const reviewFileProgress = reactive({
 const totalLiveIssueCount = ref(0)
 const skippedNoTextFiles = ref<string[]>([])
 const ocrDegradedFiles = ref<string[]>([])
+const ragDegradedFiles = ref<string[]>([]) // OPT-027: RAG 降级文件列表
 const runtimeFileStatus = ref<Record<string, 'completed' | 'failed' | 'skipped'>>({})
 let unsubscribeWs: (() => void) | null = null
 const currentStep = ref(2)
@@ -1015,6 +1035,12 @@ const handleWsMessage = (msg: WsMessage) => {
       if (msg.progressType === 'ocr_degraded' && msg.fileName) {
         if (!ocrDegradedFiles.value.includes(msg.fileName)) {
           ocrDegradedFiles.value.push(msg.fileName)
+        }
+      }
+      // OPT-027: RAG 降级告警
+      if (msg.progressType === 'rag_degraded' && msg.fileName) {
+        if (!ragDegradedFiles.value.includes(msg.fileName)) {
+          ragDegradedFiles.value.push(msg.fileName)
         }
       }
       break

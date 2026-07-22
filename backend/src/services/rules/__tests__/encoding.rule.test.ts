@@ -1,4 +1,78 @@
 /**
+ * OPT-002: encoding.rule 黄金测试集
+ */
+import { describe, it, expect } from 'vitest';
+import { checkEncodingConsistency } from '../encoding.rule';
+import { FileContext } from '../types';
+
+function makeCtx(fileName: string, pdfPages?: string[]): FileContext {
+  return {
+    fileName,
+    filePath: `/uploads/${fileName}`,
+    fileType: fileName.split('.').pop() || 'pdf',
+    extractedText: '测试内容',
+    pdfPages,
+  };
+}
+
+describe('checkEncodingConsistency', () => {
+  // ===== 正例：应检出 =====
+
+  it('CODE_004: 文件名像编码但格式不完全匹配', () => {
+    const issues = checkEncodingConsistency(makeCtx('AB01C02DE.pdf'));
+    expect(issues.some(i => i.ruleCode === 'CODE_004')).toBe(true);
+  });
+
+  it('CODE_005: PDF 无页眉内容', () => {
+    const issues = checkEncodingConsistency(makeCtx('AB01C02DE-FGH03(A).pdf', []));
+    expect(issues.some(i => i.ruleCode === 'CODE_005')).toBe(true);
+  });
+
+  it('CODE_002: 页眉使用内部编码而非外部编码', () => {
+    const issues = checkEncodingConsistency(makeCtx('AB01C02DE-FGH03(A).pdf', [
+      '第一页内容',
+      'AB12345678901234 某内部编码页眉',
+    ]));
+    expect(issues.some(i => i.ruleCode === 'CODE_002')).toBe(true);
+  });
+
+  it('CODE_001: 页眉编码与文件名不一致', () => {
+    const issues = checkEncodingConsistency(makeCtx('AB01C02DE-FGH03(A).pdf', [
+      '第一页',
+      '页眉：XY99Z88WW 完全不同的编码',
+    ]));
+    expect(issues.some(i => i.ruleCode === 'CODE_001')).toBe(true);
+  });
+
+  it('CODE_003: 页眉为空', () => {
+    const issues = checkEncodingConsistency(makeCtx('AB01C02DE-FGH03(A).pdf', [
+      '第一页',
+      '   ',
+    ]));
+    expect(issues.some(i => i.ruleCode === 'CODE_003')).toBe(true);
+  });
+
+  // ===== 反例：不应检出 =====
+
+  it('页眉包含正确外部编码不报错', () => {
+    const issues = checkEncodingConsistency(makeCtx('AB01C02DE-FGH03(A).pdf', [
+      '第一页',
+      '页眉：AB01C02DE-FGH03(A) 正确编码',
+    ]));
+    expect(issues.filter(i => ['CODE_001', 'CODE_002', 'CODE_003'].includes(i.ruleCode))).toHaveLength(0);
+  });
+
+  it('非编码格式文件名不检查编码一致性', () => {
+    const issues = checkEncodingConsistency(makeCtx('设计说明.pdf', ['页眉内容']));
+    expect(issues.filter(i => i.ruleCode.startsWith('CODE_00') && i.ruleCode !== 'CODE_004')).toHaveLength(0);
+  });
+
+  it('无 pdfPages 且文件名非编码格式时不报错', () => {
+    const issues = checkEncodingConsistency(makeCtx('report.pdf'));
+    expect(issues).toHaveLength(0);
+  });
+});
+/**
  * 编码一致性规则测试 (CODE / UNIT)
  * 测试文件: encoding.rule.ts → checkEncodingConsistency
  */

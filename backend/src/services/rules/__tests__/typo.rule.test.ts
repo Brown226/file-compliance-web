@@ -1,4 +1,106 @@
 /**
+ * OPT-002: typo.rule 黄金测试集
+ */
+import { describe, it, expect } from 'vitest';
+import { checkTypo } from '../typo.rule';
+import { FileContext } from '../types';
+
+function makeCtx(text: string): FileContext {
+  return {
+    fileName: 'test.docx',
+    filePath: '/uploads/test.docx',
+    fileType: 'docx',
+    extractedText: text,
+  };
+}
+
+describe('checkTypo', () => {
+  // ===== 正例：应检出 =====
+
+  it('检出"帐号"→"账号"', () => {
+    const issues = checkTypo(makeCtx('请输入帐号信息'));
+    expect(issues.length).toBeGreaterThanOrEqual(1);
+    expect(issues[0].originalText).toBe('帐号');
+    expect(issues[0].suggestedText).toBe('账号');
+    expect(issues[0].issueType).toBe('TYPO');
+    expect(issues[0].ruleCode).toBe('TYPO_001');
+  });
+
+  it('检出"按装"→"安装"', () => {
+    const issues = checkTypo(makeCtx('设备按装完成后进行调试'));
+    expect(issues.length).toBeGreaterThanOrEqual(1);
+    expect(issues[0].originalText).toBe('按装');
+    expect(issues[0].suggestedText).toBe('安装');
+  });
+
+  it('检出"布署"→"部署"', () => {
+    const issues = checkTypo(makeCtx('系统布署方案'));
+    expect(issues.length).toBeGreaterThanOrEqual(1);
+    expect(issues[0].originalText).toBe('布署');
+  });
+
+  it('检出"迫不急待"→"迫不及待"', () => {
+    const issues = checkTypo(makeCtx('用户迫不急待地使用新功能'));
+    expect(issues.length).toBeGreaterThanOrEqual(1);
+    expect(issues[0].originalText).toBe('迫不急待');
+  });
+
+  it('检出"座落"→"坐落"', () => {
+    const issues = checkTypo(makeCtx('本项目座落于深圳市南山区'));
+    expect(issues.length).toBeGreaterThanOrEqual(1);
+    expect(issues[0].originalText).toBe('座落');
+  });
+
+  it('同一错别字出现多次时最多报3个', () => {
+    const text = '帐号帐号帐号帐号帐号';
+    const issues = checkTypo(makeCtx(text));
+    const typoIssues = issues.filter(i => i.originalText === '帐号');
+    expect(typoIssues.length).toBeLessThanOrEqual(3);
+  });
+
+  // ===== 反例：不应检出 =====
+
+  it('正确文本不报错', () => {
+    const issues = checkTypo(makeCtx('请输入账号信息，完成安装部署。'));
+    expect(issues).toHaveLength(0);
+  });
+
+  it('空文本不报错', () => {
+    const issues = checkTypo(makeCtx(''));
+    expect(issues).toHaveLength(0);
+  });
+
+  it('无提取文本不报错', () => {
+    const ctx: FileContext = { fileName: 'a.docx', filePath: '/a', fileType: 'docx' };
+    const issues = checkTypo(ctx);
+    expect(issues).toHaveLength(0);
+  });
+
+  it('正确成语"川流不息"不误报', () => {
+    const issues = checkTypo(makeCtx('车辆川流不息'));
+    expect(issues).toHaveLength(0);
+  });
+
+  it('正确用词"迫不及待"不误报', () => {
+    const issues = checkTypo(makeCtx('迫不及待地开始'));
+    expect(issues).toHaveLength(0);
+  });
+
+  // ===== 配置测试 =====
+
+  it('maxIssues 限制生效', () => {
+    const text = '帐号 按装 布署 座落 刻服 密秘';
+    const issues = checkTypo(makeCtx(text), { maxIssues: 2 });
+    expect(issues.length).toBeLessThanOrEqual(2);
+  });
+
+  it('customTypoMap 扩展生效', () => {
+    const issues = checkTypo(makeCtx('自定义错词测试'), { customTypoMap: { '自定义错词': '自定义对词' } });
+    expect(issues.length).toBeGreaterThanOrEqual(1);
+    expect(issues[0].originalText).toBe('自定义错词');
+  });
+});
+/**
  * 错别字与术语规则测试 (TYPO)
  * 测试文件: typo.rule.ts → checkTypo
  *

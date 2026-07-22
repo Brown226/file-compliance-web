@@ -5,6 +5,7 @@
  */
 
 import { RuleIssue, FileContext } from './types';
+import { detectMixedPunctuation } from '../text-normalization.service';
 
 /**
  * 辅助方法: 提取封面区域文本（通常是文件的前 25 行或到第一个空行之前的区域）
@@ -57,6 +58,9 @@ export function checkFormatRules(ctx: FileContext, config?: any): RuleIssue[] {
 
   // FORMAT_008/009: Unicode 上标/下标检测
   issues.push(...checkSuperscript(text, config));
+
+  // OPT-014/OPT-034: FORMAT_006 半角/全角标点混用检测
+  issues.push(...checkFormatPunctuationConsistency(text, config));
 
   return issues;
 }
@@ -344,6 +348,32 @@ function checkSuperscript(text: string, _config?: any): RuleIssue[] {
 
     // 限制每行最多报告一个角标问题
     if (issues.length > 20) break;
+  }
+
+  return issues;
+}
+
+/**
+ * OPT-014/OPT-034: FORMAT_006 半角/全角标点混用检测
+ * 中文为主的文档中应统一使用全角标点，检测半角标点混入
+ */
+function checkFormatPunctuationConsistency(text: string, config?: any): RuleIssue[] {
+  const issues: RuleIssue[] = [];
+  if (!text || text.trim().length === 0) return issues;
+
+  const maxIssues = config?.maxPunctuationIssues ?? 5;
+  const mixed = detectMixedPunctuation(text);
+
+  for (let i = 0; i < Math.min(mixed.length, maxIssues); i++) {
+    const m = mixed[i];
+    issues.push({
+      issueType: 'FORMAT',
+      ruleCode: 'FORMAT_006',
+      severity: 'info',
+      originalText: m.context,
+      suggestedText: m.context.replace(m.char, m.expected),
+      description: `半角标点"${m.char}"应使用全角"${m.expected}"（中文文档应统一使用全角标点）`,
+    });
   }
 
   return issues;

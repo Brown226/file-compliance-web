@@ -10,6 +10,7 @@ import { PromptTemplateService } from './prompt-template.service';
 import { PromptLoader } from './prompts';
 import { CacheService } from './cache.service';
 import { get_encoding, Tiktoken, TiktokenModel } from 'tiktoken';
+import { validateSeverity } from './severity-rules';
 
 /** 默认编码使用 cl100k_base（GPT-4 / GPT-3.5-turbo 使用的编码） */
 const DEFAULT_ENCODING = 'cl100k_base';
@@ -83,6 +84,11 @@ export interface TextChunk {
   endIndex: number;    // 在原文中的结束位置
   chunkIndex: number;  // 分片索引
   overlapStart?: number; // overlap 部分的起始位置（非 overlap 内容仍从 startIndex 开始）
+  /** OPT-018: 章节级上下文 */
+  context?: {
+    sectionTitle?: string;   // 当前 chunk 所属章节标题
+    prevChunkTail?: string;  // 前一个 chunk 末尾 200 字符
+  };
 }
 
 export class LlmService {
@@ -185,7 +191,10 @@ export class LlmService {
 
             const isContractReview = !!item.riskLevel;
             const issueType = item.issueType || riskLevelToIssueType[item.riskLevel] || 'VIOLATION';
-            const severity = isContractReview ? (riskLevelToSeverity[item.riskLevel] || 'warning') : (item.severity || 'warning');
+            const finalIssueType = validTypes.includes(issueType) ? issueType : 'VIOLATION';
+            // OPT-022: severity 合理性校验，防止 LLM 将 info 级问题标为 error
+            const rawSeverity = isContractReview ? (riskLevelToSeverity[item.riskLevel] || 'warning') : item.severity;
+            const severity = validateSeverity(finalIssueType, rawSeverity);
 
             // 合同审查：将条款类型和风险等级信息融入描述
             let description = item.description ? String(item.description) : undefined;
@@ -196,7 +205,7 @@ export class LlmService {
             }
 
             return {
-              issueType: validTypes.includes(issueType) ? issueType : 'VIOLATION',
+              issueType: finalIssueType,
               severity,
               originalText: String(item.originalText || ''),
               suggestedText: item.suggestedText ? String(item.suggestedText) : undefined,
@@ -606,6 +615,87 @@ export class LlmService {
     return includePosition ? chunkInfos : chunks;
   }
 
+  /**
+   * OPT-018: 为分片注入章节级上下文（章节标题 + 前 chunk 末尾摘要）
+   * 在 splitText 产出 chunks 后调用，不修改 splitText 内部逻辑
+   */
+  static enrichChunksWithContext(chunks: TextChunk[], fullText?: string): TextChunk[] {
+    if (chunks.length === 0) return chunks;
+
+    // 章节标题检测模式
+    const SECTION_PATTERNS = [
+      /^#{1,4}\s+(.+)/,                    // Markdown: # 标题
+      /^(第[一二三四五六七八九十百千\d]+[章节篇部])\s*(.*)/,  // 第X章/节/篇
+      /^(\d+(?:\.\d+){0,3})\s+(.+)/,       // 数字编号: 1.1 标题 / 4.2.1 标题
+      /^([一二三四五六七八九十]+[、.])\s*(.+)/, // 中文编号: 一、标题
+      /^([\(（][一二三四五六七八九十\d]+[\)）])\s*(.+)/, // (一) 标题
+    ];
+
+    // 从 fullText 或 chunks 中检测章节标题
+    const sourceText = fullText || chunks.map(c => c.text).join('\n');
+    const lines = sourceText.split('\n');
+
+    // 建立位置→章节标题映射
+    const sectionMarkers: Array<{ pos: number; title: string }> = [];
+    let charPos = 0;
+    for (const line of lines) {
+      const trimmedLine = line.trim();
+      if (trimmedLine.length > 0 && trimmedLine.length <= 80) {
+        for (const pattern of SECTION_PATTERNS) {
+          const match = trimmedLine.match(pattern);
+          if (match) {
+            const title = trimmedLine.slice(0, 60); // 截断过长标题
+            sectionMarkers.push({ pos: charPos, title });
+            break;
+          }
+        }
+      }
+      charPos += line.length + 1;
+    }
+
+    // 为每个 chunk 分配章节标题和 prevChunkTail
+    for (let i = 0; i < chunks.length; i++) {
+      const chunk = chunks[i];
+
+      // 找到当前 chunk 所属的章节（最后一个 pos <= chunk.startIndex 的 marker）
+      let sectionTitle: string | undefined;
+      for (let j = sectionMarkers.length - 1; j >= 0; j--) {
+        if (sectionMarkers[j].pos <= chunk.startIndex) {
+          sectionTitle = sectionMarkers[j].title;
+          break;
+        }
+      }
+
+      // 前一个 chunk 末尾 200 字符
+      const prevChunkTail = i > 0
+        ? chunks[i - 1].text.slice(-200)
+        : undefined;
+
+      chunk.context = {
+        sectionTitle,
+        prevChunkTail,
+      };
+    }
+
+    return chunks;
+  }
+
+  /**
+   * OPT-018: 构建 chunk 的上下文前缀（注入到 prompt 中）
+   */
+  static buildChunkContextPrefix(chunk: TextChunk): string {
+    if (!chunk.context) return '';
+    const parts: string[] = [];
+    if (chunk.context.sectionTitle) {
+      parts.push(`当前章节：${chunk.context.sectionTitle}`);
+    }
+    if (chunk.context.prevChunkTail) {
+      parts.push(`前文摘要：...${chunk.context.prevChunkTail}`);
+    }
+    if (parts.length === 0) return '';
+    return `[文档上下文]\n${parts.join('\n')}\n[/文档上下文]\n\n`;
+  }
+
   static normalizeForLocate(text: string): string {
     return (text || '')
       .toLowerCase()
@@ -891,7 +981,8 @@ export class LlmService {
 
     const maxTokens = options?.maxTokens ?? config.maxTokens;
     const timeoutMs = (options?.timeout ?? config.timeout) * 1000;
-    const temperature = options?.temperature ?? config.temperature;
+    // OPT-026: 审查场景默认 temperature=0，最大化可复现性（调用方仍可显式覆盖）
+    const temperature = options?.temperature ?? 0;
 
     // 如果 skipUserTemplate 为 true，直接使用传入的 text 作为 userContent（调用方已自行组装）
     let userContent: string;
@@ -923,6 +1014,7 @@ export class LlmService {
       stream: false,
       max_tokens: maxTokens,
       temperature,
+      seed: 42, // OPT-026: 固定 seed 提升可复现性（OpenAI 兼容 API 支持）
     };
 
     // ★ LLM 响应缓存：基于文档ID+chunkIndex，避免相同文档片段重复调用 API

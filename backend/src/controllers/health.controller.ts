@@ -138,4 +138,58 @@ export class HealthController {
     const status = (globalThis as any).__QUEUE_DEGRADED ? 'degraded' : 'healthy';
     res.json({ status });
   }
+
+  /**
+   * OPT-037: MaxKB 健康检查
+   */
+  static async checkMaxKB(req: Request, res: Response) {
+    try {
+      const { MaxKBService } = await import('../services/maxkb.service');
+      const health = await MaxKBService.healthCheck();
+      res.json({ status: health.reachable ? 'ok' : 'unreachable', error: health.error });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Unknown error';
+      res.status(503).json({ status: 'unreachable', error: message });
+    }
+  }
+
+  /**
+   * OPT-037: 综合健康检查（聚合所有服务状态）
+   */
+  static async checkAll(req: Request, res: Response) {
+    const results: Record<string, { status: string; error?: string }> = {};
+
+    // Queue
+    results.queue = { status: (globalThis as any).__QUEUE_DEGRADED ? 'degraded' : 'healthy' };
+
+    // OCR
+    try {
+      const { OcrService } = await import('../services/ocr.service');
+      const ocrHealthy = await OcrService.checkHealth();
+      results.ocr = { status: ocrHealthy ? 'ok' : 'degraded' };
+    } catch (e: any) {
+      results.ocr = { status: 'degraded', error: e.message };
+    }
+
+    // MaxKB
+    try {
+      const { MaxKBService } = await import('../services/maxkb.service');
+      const health = await MaxKBService.healthCheck();
+      results.maxkb = { status: health.reachable ? 'ok' : 'unreachable', error: health.error };
+    } catch (e: any) {
+      results.maxkb = { status: 'unreachable', error: e.message };
+    }
+
+    // Database
+    try {
+      const { default: prisma } = await import('../config/db');
+      await prisma.$queryRaw`SELECT 1`;
+      results.database = { status: 'ok' };
+    } catch (e: any) {
+      results.database = { status: 'error', error: e.message };
+    }
+
+    const allOk = Object.values(results).every(r => r.status === 'ok' || r.status === 'healthy');
+    res.status(allOk ? 200 : 207).json({ status: allOk ? 'healthy' : 'partial', services: results });
+  }
 }

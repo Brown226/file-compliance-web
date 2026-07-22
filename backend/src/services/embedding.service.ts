@@ -6,6 +6,10 @@
  *
  * 支持动态维度：不同模型可返回不同维度的向量（如 bge-m3=1024, qwen3=4096）
  * 数据库使用 vector 类型（不指定维度），自动适配。
+ *
+ * ★ 活跃使用场景（非死代码，勿删）：
+ *   - ai-review.service.ts: runRefCompareStrategy / runContractReviewStrategy 中参照文件超长时的智能检索
+ *   - metrics.service.ts: embedding 健康检查 + rerankDocuments
  */
 
 import prisma from '../config/db';

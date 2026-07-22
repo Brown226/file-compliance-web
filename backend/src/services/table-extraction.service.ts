@@ -29,9 +29,11 @@ export class TableExtractionService {
    *
    * 识别策略：
    * 1. 连续行包含制表符 \t 或连续空格对齐
-   * 2. 按分隔符提取列
-   * 3. 第一行作为 header，后续行作为 data
-   * 4. 检测合并单元格（某行列数少于 header 列数）
+   * 2. 管道符 | 分隔的表格（Markdown/PDF 提取常见）
+   * 3. 边框线表格（+---+ 或 ┌───┐ 等）
+   * 4. 按分隔符提取列
+   * 5. 第一行作为 header，后续行作为 data
+   * 6. 检测合并单元格（某行列数少于 header 列数）
    */
   static extractTablesFromText(text: string): TableStructure[] {
     const tables: TableStructure[] = [];
@@ -40,39 +42,44 @@ export class TableExtractionService {
     const lines = text.split(/\r?\n/);
     const tableRanges: Array<{ startLine: number; endLine: number; separator: string }> = [];
 
-    // 1. 识别表格边界 — 找到连续的包含分隔符的行
+    // 1. 识别表格边界
     let i = 0;
     while (i < lines.length) {
       const line = lines[i].trim();
       if (!line) { i++; continue; }
 
-      // 判断是否为表格行：包含制表符或连续3+空格对齐
+      // 判断是否为表格行
       const tabCount = (line.match(/\t/g) || []).length;
       const multiSpaceColumns = line.split(/\s{3,}/).filter(s => s.trim()).length;
+      const pipeCount = (line.match(/\|/g) || []).length;
+      const isBorderLine = /^[+\u250c\u2514\u251c\u252c\u2534\u253c\u2500\u2502\u2550\u2551\u2554\u2557\u255a\u255d\u2560\u2563\u2566\u2569\u256c-]+$/.test(line);
 
-      if (tabCount >= 1 || multiSpaceColumns >= 2) {
-        const separator = tabCount >= 1 ? '\t' : 'multi-space';
+      if (tabCount >= 1 || multiSpaceColumns >= 2 || pipeCount >= 2 || isBorderLine) {
+        const separator = isBorderLine ? 'border' : pipeCount >= 2 ? '|' : tabCount >= 1 ? '\t' : 'multi-space';
         const startLine = i;
         let endLine = i;
 
-        // 扩展表格范围：连续的表格行
+        // 扩展表格范围
         while (endLine + 1 < lines.length) {
           const nextLine = lines[endLine + 1].trim();
           if (!nextLine) {
-            // 允许一个空行（可能是表格内的间隔）
             if (endLine + 2 < lines.length && lines[endLine + 2].trim()) {
-              const afterBlankTab = (lines[endLine + 2].match(/\t/g) || []).length;
-              const afterBlankSpace = lines[endLine + 2].trim().split(/\s{3,}/).filter(s => s.trim()).length;
-              if (afterBlankTab >= 1 || afterBlankSpace >= 2) {
+              const afterBlank = lines[endLine + 2].trim();
+              const afterTab = (afterBlank.match(/\t/g) || []).length;
+              const afterSpace = afterBlank.split(/\s{3,}/).filter(s => s.trim()).length;
+              const afterPipe = (afterBlank.match(/\|/g) || []).length;
+              if (afterTab >= 1 || afterSpace >= 2 || afterPipe >= 2) {
                 endLine += 2;
                 continue;
               }
             }
             break;
           }
-          const nextTabCount = (nextLine.match(/\t/g) || []).length;
-          const nextMultiSpace = nextLine.split(/\s{3,}/).filter(s => s.trim()).length;
-          if (nextTabCount >= 1 || nextMultiSpace >= 2) {
+          const nextTab = (nextLine.match(/\t/g) || []).length;
+          const nextSpace = nextLine.split(/\s{3,}/).filter(s => s.trim()).length;
+          const nextPipe = (nextLine.match(/\|/g) || []).length;
+          const nextBorder = /^[+\u250c\u2514\u251c\u252c\u2534\u253c\u2500\u2502\u2550\u2551\u2554\u2557\u255a\u255d\u2560\u2563\u2566\u2569\u256c-]+$/.test(nextLine);
+          if (nextTab >= 1 || nextSpace >= 2 || nextPipe >= 2 || nextBorder) {
             endLine++;
           } else {
             break;
@@ -94,6 +101,8 @@ export class TableExtractionService {
       const tableLines = lines.slice(range.startLine, range.endLine + 1);
       const table = this.parseTableLines(tableLines, range.separator);
       if (table.headers.length > 0) {
+        // OPT-023: 关联表格上下文（前方最近的章节标题）
+        table.pageIndex = range.startLine;
         tables.push(table);
       }
     }
@@ -317,16 +326,30 @@ export class TableExtractionService {
       const trimmed = line.trim();
       if (!trimmed) continue;
 
+      // OPT-023: 跳过边框线（+---+ 或 ┌───┐ 等）
+      if (separator === 'border' && /^[+\u250c\u2514\u251c\u252c\u2534\u253c\u2500\u2502\u2550\u2551\u2554\u2557\u255a\u255d\u2560\u2563\u2566\u2569\u256c-]+$/.test(trimmed)) {
+        continue;
+      }
+
       let cells: string[];
-      if (separator === '\t') {
+      if (separator === '|') {
+        // 管道符分隔：去掉首尾 | 后按 | 切分
+        cells = trimmed.replace(/^\|/, '').replace(/\|$/, '').split('|').map(c => c.trim());
+      } else if (separator === '\t') {
         cells = trimmed.split('\t');
+      } else if (separator === 'border') {
+        // 边框线表格：按 | 或 │ 切分
+        cells = trimmed.replace(/^[\u2502|]/, '').replace(/[\u2502|]$/, '').split(/[\u2502|]/).map(c => c.trim());
       } else {
-        // 多空格分隔：连续3+空格
+        // 多空格分隔
         cells = trimmed.split(/\s{3,}/).filter(s => s.trim());
       }
 
       // 清理每个单元格
       cells = cells.map(c => c.trim());
+      // 跳过 Markdown 分隔行（如 |---|---|）
+      if (cells.every(c => /^[-:]+$/.test(c))) continue;
+
       parsedRows.push(cells);
       if (cells.length > maxCols) maxCols = cells.length;
     }
@@ -381,5 +404,30 @@ export class TableExtractionService {
       rawText,
       structuredJson: JSON.stringify(structuredData, null, 2),
     };
+  }
+
+  /**
+   * OPT-023: 获取表格前方最近的章节标题（用于关联表格与上下文）
+   */
+  static getTableSectionContext(fullText: string, tableStartLine: number): string | undefined {
+    const lines = fullText.split(/\r?\n/);
+    const SECTION_PATTERNS = [
+      /^#{1,4}\s+(.+)/,
+      /^(第[一二三四五六七八九十百千\d]+[章节篇部])\s*(.*)/,
+      /^(\d+(?:\.\d+){0,3})\s+(.+)/,
+      /^([一二三四五六七八九十]+[、.])\s*(.*)/,
+    ];
+
+    // 从表格位置向前搜索最近的章节标题
+    for (let i = Math.min(tableStartLine - 1, lines.length - 1); i >= Math.max(0, tableStartLine - 30); i--) {
+      const line = lines[i].trim();
+      if (!line || line.length > 80) continue;
+      for (const pattern of SECTION_PATTERNS) {
+        if (pattern.test(line)) {
+          return line.slice(0, 60);
+        }
+      }
+    }
+    return undefined;
   }
 }

@@ -32,7 +32,7 @@ export class AiReviewService {
     ctx: PipelineContext,
     scene: string,
     config: PipelineReviewConfig,
-  ): Promise<{ issues: ReviewIssue[]; engine: string; sources?: SourceReference[] }> {
+  ): Promise<{ issues: ReviewIssue[]; engine: string; sources?: SourceReference[]; degraded?: boolean; degradedReason?: string }> {
     // ��ȡ֪ʶ�ӿ� ID
     const knowledgeIds = ctx.maxkbKnowledgeIds && ctx.maxkbKnowledgeIds.length > 0
       ? ctx.maxkbKnowledgeIds
@@ -57,12 +57,17 @@ export class AiReviewService {
 
       // ���Ȼص���һ���Դ������� issues��RAG �ڲ��Ѵ������з�Ƭ��
       const enriched = StandardTraceabilityService.enrichWithStandardRef(result.issues);
+      // OPT-016: source validation
+      const ragChunkTexts = (result.sourceReferences || []).map((s: any) => s.content || '');
+      const { validateSources } = await import('../source-validation.service');
+      const validated = validateSources(enriched, ragChunkTexts, text);
       await ctx.onChunkProgress?.(text.length, enriched, 0, 1, 'rag-llm');
-      return { issues: enriched, engine: 'rag-llm', sources: result.sourceReferences };
+      return { issues: validated.issues, engine: 'rag-llm', sources: result.sourceReferences };
     } catch (e) {
-      console.error('[Pipeline] �Խ� RAG ���ʧ��:', e);
-      // RAG ʧ��ʱ�������� LLM
-      return AiReviewService.fallbackToLLMWithKnowledge(text, ctx, config);
+      console.error('[Pipeline] RAG review failed, degrading to LLM:', e);
+      // OPT-027: RAG 失败时降级到纯 LLM，并标记 degraded
+      const fallback = await AiReviewService.fallbackToLLMWithKnowledge(text, ctx, config);
+      return { ...fallback, degraded: true, degradedReason: `RAG 不可用，已切换为 LLM 直审: ${(e as any).message || e}` };
     }
   }
 
@@ -108,6 +113,7 @@ export class AiReviewService {
     // ʹ������ LLM ������飨��λ����Ϣ��
     const issues: ReviewIssue[] = [];
     const chunks = LlmService.splitText(text, chunkSize, true, chunkOverlap);
+    LlmService.enrichChunksWithContext(chunks, text); // OPT-018: inject section context
     const totalChunks = chunks.length;
 
     // ������������ʾ�ʣ�ͳһʹ�� PromptLoader����������DB �� Registry �� ���ף�
@@ -131,7 +137,7 @@ export class AiReviewService {
           const userContent = await PromptLoader.loadUserPrompt(scene, 'with_context', {
             ragContext: knowledgeContext,
             standardContext: knowledgeContext,
-            text: chunk.text,
+            text: LlmService.buildChunkContextPrefix(chunk) + chunk.text,
           });
 
           llmIssues = await LlmService.reviewText(userContent, {
@@ -149,7 +155,7 @@ export class AiReviewService {
           });
         } else {
           const userContent = await PromptLoader.loadUserPrompt(scene, 'no_context', {
-            text: chunk.text,
+            text: LlmService.buildChunkContextPrefix(chunk) + chunk.text,
           });
 
           llmIssues = await LlmService.reviewText(userContent, {
@@ -265,6 +271,7 @@ export class AiReviewService {
       }
 
       const chunks = LlmService.splitText(text, chunkSize, true, chunkOverlap);
+    LlmService.enrichChunksWithContext(chunks, text); // OPT-018: inject section context
       const totalChunks = chunks.length;
       const CONCURRENT_LIMIT = await getChunkConcurrency();
       const chunkResults = await parallelLimit(chunks, CONCURRENT_LIMIT, async (chunk) => {
@@ -363,6 +370,7 @@ export class AiReviewService {
       }
 
       const chunks = LlmService.splitText(text, chunkSize, true, chunkOverlap);
+    LlmService.enrichChunksWithContext(chunks, text); // OPT-018: inject section context
       const totalChunks = chunks.length;
       const CONCURRENT_LIMIT = await getChunkConcurrency();
       const chunkResults = await parallelLimit(chunks, CONCURRENT_LIMIT, async (chunk) => {
@@ -474,7 +482,7 @@ export class AiReviewService {
     const chunkOverlap = config.chunkOverlap ?? 300;
 
     try {
-      // ��̬����������ݿ��ÿռ䣺���ȴ� LLM ģ�����ö�ȡ�����Ĵ���
+      // ��̬����������ݿ��ÿռ����ȴ� LLM ģ�����ö�ȡ�����Ĵ���
       let contextWindow = 131072; // Ĭ��ֵ���ַ�����
       try {
         const { default: prisma } = await import('../../config/db');
@@ -518,12 +526,13 @@ export class AiReviewService {
       }
 
       const chunks = LlmService.splitText(text, chunkSize, true, chunkOverlap);
+    LlmService.enrichChunksWithContext(chunks, text); // OPT-018: inject section context
       const totalChunks = chunks.length;
       const allIssues: ReviewIssue[] = [];
       let failedChunks = 0;
       const errors: string[] = [];
 
-      // ������������: ֻ�ڲ��չ���ʱԤ�ȹ���������������
+      // ������������: ֻ�ڲ��չ���ʱԤ�PropertyParams����
       let refChunks: string[] | null = null;
       let refVectors: number[][] | null = null;
       if (!useFullRefs) {
@@ -612,7 +621,7 @@ export class AiReviewService {
                 .sort(([a], [b]) => a - b)
                 .map(([, c]) => c);
 
-              effectiveRefTexts = '## �����ļ�����������������Ϊ�������������صĲ��ն��䣩\n\n'
+              effectiveRefTexts = '## �����ļ�����������������Ϊ�������������صĲ��ն���\n\n'
                 + ordered.join('\n\n---\n\n');
             } catch (e: any) {
               console.warn(`[AiReview] ��Ƭ${chunk.chunkIndex + 1} ��������ʧ��: ${e.message}��ʹ�ýضϲ���`);
@@ -667,8 +676,7 @@ export class AiReviewService {
         const sug = (issue.suggestedText || '').trim();
         // originalText �� suggestedText ��ȫ��ͬ �� ��Ч
         if (orig && sug && orig === sug) return false;
-        // description ����"������"/"һ�£�������"�� �� LLM ��ȷ��ʾû��������
-        if (/(?:������ļ�\s*)?һ��\s*[��,]?\s*������/.test(desc)) return false;
+        // description ����"������ļ�\s*һ��\s*[��,]?\s*������".test(desc)) return false;
         if (/����\s*��.*һ��\s*[��,]?\s*������/.test(desc)) return false;
                 if (/无(?:问题|争议|异议|条款)/.test(desc)) return false;
         // description �����Ұ�������"һ��"�ж����� �� ������ LLM ����˷������̶�������
@@ -1037,7 +1045,7 @@ export class AiReviewService {
 
     let prefix = '';
 
-    // ������Ϊ�����ο�����ǿ��ָ������뵽 prompt ǰ�潵�� recency bias
+    // ������Ϊ�����ο�����ǿ��ָ������뵽 prompt ǰ� recency bias
     if (!skipModes.includes(ctx.reviewMode || '') && hasReviewPoints) {
       prefix += `\n�������ο� �� ������������ο�����������鷶Χ����ȫ�����������⡿\n�ο�����${ctx.reviewPoints!.join('��')}\n`;
     }
@@ -1072,7 +1080,7 @@ export class AiReviewService {
    *
    * �Ż����ԣ�
    * 1. һ���Դ������й��򣬱�������� �� ��Ƭ����ϱ�ը
-   * 2. RAG ����ִֻ��һ�Σ�������湲��
+   * 2. RAG ����ִֻ��һ�Σ�������湲��
    * 3. �ı���Ƭֻ��һ�Σ����й�����
    *
    * @param text �����ı�
@@ -1118,7 +1126,7 @@ export class AiReviewService {
       return parts.join('\n');
     }).join('\n\n');
 
-    // RAG ����ִֻ��һ�Σ���������
+    // RAG ����ִֻ��һ�Σ���������
     let ragContext = '';
     if (categoryIds.length > 0) {
       try {
@@ -1162,6 +1170,7 @@ export class AiReviewService {
 
     // �ı���Ƭֻ��һ�Σ����й�������
     const chunks = LlmService.splitText(text, chunkSize, true, chunkOverlap);
+    LlmService.enrichChunksWithContext(chunks, text); // OPT-018: inject section context
     const allIssues: ReviewIssue[] = [];
 
     // ��������������Ƭ

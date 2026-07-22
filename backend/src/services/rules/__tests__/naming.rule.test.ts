@@ -1,3 +1,72 @@
+/**
+ * OPT-002: naming.rule 黄金测试集
+ */
+import { describe, it, expect } from 'vitest';
+import { checkNaming } from '../naming.rule';
+import { FileContext } from '../types';
+
+function makeCtx(fileName: string, fileType?: string): FileContext {
+  const ext = fileType || fileName.split('.').pop() || 'docx';
+  return { fileName, filePath: `/uploads/${fileName}`, fileType: ext, extractedText: '测试内容' };
+}
+
+describe('checkNaming', () => {
+  // ===== 正例：应检出 =====
+
+  it('NAME_001: 检出中文文件名', () => {
+    const issues = checkNaming(makeCtx('设计说明.docx'));
+    expect(issues.some(i => i.ruleCode === 'NAME_001')).toBe(true);
+  });
+
+  it('NAME_002: 检出含空格的文件名', () => {
+    const issues = checkNaming(makeCtx('design report.pdf'));
+    expect(issues.some(i => i.ruleCode === 'NAME_002')).toBe(true);
+  });
+
+  it('NAME_003: 检出含非法特殊字符的文件名', () => {
+    const issues = checkNaming(makeCtx('report@v2!.pdf'));
+    expect(issues.some(i => i.ruleCode === 'NAME_003')).toBe(true);
+  });
+
+  it('NAME_010: 检出不支持的文件类型', () => {
+    const issues = checkNaming(makeCtx('data.csv', 'csv'));
+    expect(issues.some(i => i.ruleCode === 'NAME_010')).toBe(true);
+  });
+
+  it('NAME_008: 检出图纸序号格式错误', () => {
+    const issues = checkNaming(makeCtx('AB01C02DE-FGH03-1(A).dwg'));
+    expect(issues.some(i => i.ruleCode === 'NAME_008')).toBe(true);
+  });
+
+  // ===== 反例：不应检出 =====
+
+  it('规范英文文件名不报错', () => {
+    const issues = checkNaming(makeCtx('AB01C02DE-FGH03(A).dwg'));
+    expect(issues.filter(i => i.ruleCode === 'NAME_001' || i.ruleCode === 'NAME_002' || i.ruleCode === 'NAME_003')).toHaveLength(0);
+  });
+
+  it('含连字符和括号的文件名合法', () => {
+    const issues = checkNaming(makeCtx('report-v2(A).pdf'));
+    expect(issues.filter(i => i.ruleCode === 'NAME_003')).toHaveLength(0);
+  });
+
+  it('纯数字文件名不报特殊字符错误', () => {
+    const issues = checkNaming(makeCtx('12345.docx'));
+    expect(issues.filter(i => i.ruleCode === 'NAME_003')).toHaveLength(0);
+  });
+
+  it('支持的文件类型不报 NAME_010', () => {
+    const issues = checkNaming(makeCtx('report.pdf'));
+    expect(issues.filter(i => i.ruleCode === 'NAME_010')).toHaveLength(0);
+  });
+
+  it('中文文件名不继续检查编码格式', () => {
+    const issues = checkNaming(makeCtx('中文名称.dwg'));
+    // 有 NAME_001 但不应有 NAME_008 等编码格式错误
+    expect(issues.some(i => i.ruleCode === 'NAME_001')).toBe(true);
+    expect(issues.filter(i => i.ruleCode === 'NAME_008')).toHaveLength(0);
+  });
+});
 import { describe, it, expect } from 'vitest';
 import { checkNaming } from '../naming.rule';
 

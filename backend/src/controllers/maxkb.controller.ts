@@ -225,3 +225,26 @@ export const maxkbWebhook = async (req: Request, res: Response) => {
     res.status(200).json({ received: true, error: err.message });
   }
 };
+
+/** OPT-017: 获取知识库文档分段审计 */
+export const getDocumentSegments = async (req: Request, res: Response) => {
+  try {
+    const kbId = req.params.kbId as string;
+    const docId = req.params.docId as string;
+    if (!kbId || !docId) {
+      error(res, '缺少 kbId 或 docId 参数', 400);
+      return;
+    }
+
+    const segments = await MaxKBService.getDocumentSegments(kbId, docId);
+    const metrics = MaxKBService.calculateSegmentMetrics(segments);
+
+    success(res, {
+      segments: segments.slice(0, 100), // 最多返回 100 条，避免过大
+      metrics,
+      total: segments.length,
+    });
+  } catch (err: any) {
+    error(res, `获取分段失败: ${err.message}`, 500);
+  }
+};
