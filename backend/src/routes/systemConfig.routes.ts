@@ -8,6 +8,7 @@ import {
   sendLlmTest,
   getLlmProfiles,
   saveLlmProfiles,
+  fetchProviderModels,
   getAiCallStats,
 } from '../controllers/systemConfig.controller';
 import { OcrService } from '../services/ocr.service';
@@ -36,6 +37,7 @@ router.post('/test-llm-send', requireRole('ADMIN'), sendLlmTest);
 // LLM Profiles 管理 - 仅管理员（必须在 /:key 之前注册）
 router.get('/llm-profiles', getLlmProfiles);
 router.put('/llm-profiles', requireRole('ADMIN'), saveLlmProfiles);
+router.post('/llm-profiles/fetch-models', requireRole('ADMIN'), fetchProviderModels);
 
 // 可观测性 P2：AI 调用看板统计 - 仅管理员（必须在 /:key 之前注册）
 router.get('/ai-call-stats', requireRole('ADMIN'), getAiCallStats);

@@ -188,154 +188,273 @@ onMounted(async () => {
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  background: #f8fafc;
 }
 
+/* === 顶部 Tab：毛玻璃 + 滑动指示器 === */
 .admin-tabs {
   display: flex;
-  gap: 4px;
-  padding: 12px 20px 0;
-  background: #fff;
-  border-bottom: 1px solid #f0f0f0;
+  gap: 2px;
+  padding: 14px 24px 0;
+  background: rgba(255,255,255,0.85);
+  backdrop-filter: blur(12px);
+  border-bottom: 1px solid rgba(0,0,0,0.06);
   flex-shrink: 0;
 }
 
 .admin-tab-item {
   display: flex;
   align-items: center;
-  gap: 6px;
-  padding: 10px 18px;
+  gap: 7px;
+  padding: 11px 22px;
   border: none;
   background: transparent;
-  color: #6b7280;
+  color: #64748b;
   font-size: 14px;
   font-weight: 500;
   cursor: pointer;
-  border-radius: 8px 8px 0 0;
-  transition: all 0.2s;
-  border-bottom: 2px solid transparent;
+  border-radius: 10px 10px 0 0;
+  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+  border-bottom: 2.5px solid transparent;
+  position: relative;
 }
 
-.admin-tab-item:hover { color: #111827; background: #f9fafb; }
-.admin-tab-item.active { color: #2563eb; border-bottom-color: #2563eb; background: #eff6ff; }
+.admin-tab-item:hover {
+  color: #1e293b;
+  background: rgba(37, 99, 235, 0.04);
+}
+
+.admin-tab-item.active {
+  color: #1d4ed8;
+  border-bottom-color: #2563eb;
+  background: linear-gradient(180deg, rgba(37,99,235,0.06) 0%, rgba(37,99,235,0.02) 100%);
+  font-weight: 600;
+}
 
 .tab-content {
   flex: 1;
   overflow: auto;
-  padding: 20px;
+  padding: 24px;
 }
 
-/* 系统健康 */
+/* === 系统健康 === */
 .health-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 16px;
-  margin-bottom: 20px;
+  gap: 20px;
+  margin-bottom: 24px;
 }
 
 .health-card {
   background: #fff;
-  border-radius: 12px;
-  padding: 20px;
-  box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+  border-radius: 16px;
+  padding: 24px;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.06), 0 4px 12px rgba(0,0,0,0.04);
+  border: 1px solid rgba(0,0,0,0.04);
+  transition: box-shadow 0.3s;
+}
+
+.health-card:hover {
+  box-shadow: 0 4px 16px rgba(0,0,0,0.1);
 }
 
 .health-card h3 {
   font-size: 15px;
   font-weight: 600;
-  color: #1f2937;
-  margin: 0 0 16px;
+  color: #1e293b;
+  margin: 0 0 18px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 
-.status-list { display: flex; flex-direction: column; gap: 12px; }
+.health-card h3::before {
+  content: '';
+  width: 3px;
+  height: 16px;
+  background: linear-gradient(180deg, #2563eb, #7c3aed);
+  border-radius: 2px;
+}
+
+.status-list { display: flex; flex-direction: column; gap: 14px; }
 
 .status-item {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 12px;
   font-size: 14px;
+  padding: 8px 12px;
+  border-radius: 8px;
+  background: #f8fafc;
+  transition: background 0.2s;
 }
+
+.status-item:hover { background: #f1f5f9; }
 
 .status-dot {
-  width: 8px;
-  height: 8px;
+  width: 9px;
+  height: 9px;
   border-radius: 50%;
+  flex-shrink: 0;
 }
 
-.status-dot.ok { background: #22c55e; box-shadow: 0 0 6px rgba(34,197,94,0.4); }
-.status-dot.error { background: #ef4444; box-shadow: 0 0 6px rgba(239,68,68,0.4); }
+.status-dot.ok {
+  background: #22c55e;
+  box-shadow: 0 0 8px rgba(34,197,94,0.5);
+  animation: pulse-green 2s infinite;
+}
 
-.status-name { flex: 1; color: #374151; }
-.status-val { font-size: 12px; color: #6b7280; }
+.status-dot.error {
+  background: #ef4444;
+  box-shadow: 0 0 8px rgba(239,68,68,0.5);
+  animation: pulse-red 1.5s infinite;
+}
+
+@keyframes pulse-green {
+  0%, 100% { box-shadow: 0 0 4px rgba(34,197,94,0.4); }
+  50% { box-shadow: 0 0 10px rgba(34,197,94,0.6); }
+}
+
+@keyframes pulse-red {
+  0%, 100% { box-shadow: 0 0 4px rgba(239,68,68,0.4); }
+  50% { box-shadow: 0 0 10px rgba(239,68,68,0.7); }
+}
+
+.status-name { flex: 1; color: #334155; font-weight: 500; }
+.status-val { font-size: 12px; color: #64748b; font-weight: 500; }
 
 .metrics-grid {
   display: grid;
   grid-template-columns: repeat(2, 1fr);
-  gap: 16px;
+  gap: 14px;
 }
 
-.metric { text-align: center; padding: 12px; background: #f9fafb; border-radius: 8px; }
-.metric-value { font-size: 24px; font-weight: 700; color: #1f2937; }
-.metric-label { font-size: 12px; color: #6b7280; margin-top: 4px; }
+.metric {
+  text-align: center;
+  padding: 18px 12px;
+  background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%);
+  border-radius: 12px;
+  border: 1px solid rgba(0,0,0,0.04);
+  transition: transform 0.2s, box-shadow 0.2s;
+}
 
-/* 快捷入口 */
+.metric:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(0,0,0,0.08);
+}
+
+.metric-value {
+  font-size: 28px;
+  font-weight: 800;
+  background: linear-gradient(135deg, #1e40af, #7c3aed);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.metric-label { font-size: 12px; color: #64748b; margin-top: 6px; font-weight: 500; }
+
+/* === 快捷入口 === */
 .quick-links {
   background: #fff;
-  border-radius: 12px;
-  padding: 20px;
-  box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+  border-radius: 16px;
+  padding: 24px;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.06), 0 4px 12px rgba(0,0,0,0.04);
+  border: 1px solid rgba(0,0,0,0.04);
 }
 
-.quick-links h3 { font-size: 15px; font-weight: 600; color: #1f2937; margin: 0 0 16px; }
+.quick-links h3 {
+  font-size: 15px;
+  font-weight: 600;
+  color: #1e293b;
+  margin: 0 0 18px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
 
-.links-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
+.quick-links h3::before {
+  content: '';
+  width: 3px;
+  height: 16px;
+  background: linear-gradient(180deg, #f59e0b, #ef4444);
+  border-radius: 2px;
+}
+
+.links-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; }
 
 .quick-link {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 8px;
-  padding: 16px;
-  border-radius: 10px;
-  background: #f9fafb;
+  gap: 10px;
+  padding: 20px 12px;
+  border-radius: 14px;
+  background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%);
+  border: 1px solid rgba(0,0,0,0.04);
   cursor: pointer;
-  transition: all 0.2s;
+  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
   font-size: 13px;
-  color: #374151;
+  font-weight: 500;
+  color: #475569;
 }
 
-.quick-link:hover { background: #eff6ff; color: #2563eb; transform: translateY(-2px); }
+.quick-link:hover {
+  background: linear-gradient(135deg, #eff6ff 0%, #e0e7ff 100%);
+  color: #1d4ed8;
+  transform: translateY(-3px);
+  box-shadow: 0 8px 20px rgba(37,99,235,0.15);
+  border-color: rgba(37,99,235,0.2);
+}
 
-/* 配置子导航 */
+/* === 配置子导航：胶囊分段控件 === */
 .config-nav {
-  display: flex;
-  gap: 8px;
-  margin-bottom: 16px;
-  flex-wrap: wrap;
+  display: inline-flex;
+  gap: 3px;
+  margin-bottom: 20px;
+  padding: 4px;
+  background: #f1f5f9;
+  border-radius: 12px;
+  border: 1px solid rgba(0,0,0,0.04);
 }
 
 .config-nav-item {
-  padding: 8px 16px;
-  border: 1px solid #e5e7eb;
-  border-radius: 8px;
-  background: #fff;
-  color: #374151;
+  padding: 9px 20px;
+  border: none;
+  border-radius: 9px;
+  background: transparent;
+  color: #64748b;
   font-size: 13px;
+  font-weight: 500;
   cursor: pointer;
-  transition: all 0.2s;
+  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+  position: relative;
 }
 
-.config-nav-item:hover { border-color: #93c5fd; color: #2563eb; }
-.config-nav-item.active { background: #2563eb; color: #fff; border-color: #2563eb; }
+.config-nav-item:hover {
+  color: #1e293b;
+  background: rgba(255,255,255,0.7);
+}
+
+.config-nav-item.active {
+  background: #fff;
+  color: #1d4ed8;
+  font-weight: 600;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.08), 0 1px 2px rgba(0,0,0,0.06);
+}
 
 .config-content {
   background: #fff;
-  border-radius: 12px;
-  box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+  border-radius: 16px;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.06), 0 4px 12px rgba(0,0,0,0.04);
+  border: 1px solid rgba(0,0,0,0.04);
   min-height: 400px;
+  overflow: hidden;
 }
 
 @media (max-width: 768px) {
   .health-grid { grid-template-columns: 1fr; }
   .links-grid { grid-template-columns: repeat(2, 1fr); }
+  .config-nav { flex-wrap: wrap; }
 }
 </style>

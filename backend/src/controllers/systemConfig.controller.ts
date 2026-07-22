@@ -3,6 +3,7 @@ import { AuthRequest } from '../middlewares/auth.middleware';
 import prisma from '../config/db';
 import { success, error } from '../utils/response';
 import { invalidateConfigCache } from '../utils/system-config';
+import axios from 'axios';
 
 /**
  * 获取系统配置
@@ -351,6 +352,44 @@ export const saveLlmProfiles = async (req: AuthRequest, res: Response): Promise<
     success(res, null, 'LLM 配置保存成功');
   } catch (err: any) {
     console.error('Save LLM Profiles Error:', err);
+  }
+};
+
+/**
+ * POST /api/system-config/llm-profiles/fetch-models
+ * 从 Provider 的 API 地址拉取可用模型列表
+ */
+export const fetchProviderModels = async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const { apiBase, apiKey } = req.body;
+    if (!apiBase) {
+      error(res, '缺少 apiBase 参数', 400);
+      return;
+    }
+
+    // 拼接 models 端点
+    const base = apiBase.replace(/\/+$/, '');
+    const modelsUrl = base.endsWith('/v1') ? `${base}/models` : `${base}/v1/models`;
+
+    const headers: Record<string, string> = {};
+    if (apiKey) {
+      headers['Authorization'] = `Bearer ${apiKey}`;
+    }
+
+    const response = await axios.get(modelsUrl, {
+      headers,
+      timeout: 10000,
+    });
+
+    const models: string[] = (response.data?.data || [])
+      .map((m: any) => m.id)
+      .filter(Boolean)
+      .sort();
+
+    res.json({ success: true, data: models });
+  } catch (err: any) {
+    const msg = err.response?.data?.error?.message || err.message || '拉取模型列表失败';
+    res.json({ success: false, message: msg });
   }
 };
 

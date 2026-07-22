@@ -48,7 +48,13 @@
           <el-input v-model="form.apiBase" placeholder="http://localhost:11434/v1" />
         </el-form-item>
         <el-form-item label="模型名" required>
-          <el-input v-model="form.model" placeholder="qwen2.5:7b" />
+          <div style="display:flex;gap:8px;width:100%">
+            <el-select v-model="form.model" filterable allow-create
+              placeholder="选择或输入模型名" style="flex:1">
+              <el-option v-for="m in fetchedModels" :key="m" :label="m" :value="m" />
+            </el-select>
+            <el-button @click="fetchModels" :loading="fetchingModels">获取模型</el-button>
+          </div>
         </el-form-item>
         <el-form-item label="API Key">
           <el-input v-model="form.apiKey" type="password" show-password placeholder="可选" />
@@ -74,7 +80,7 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { getLlmProfilesApi, saveLlmProfilesApi, testLlmConnectionApi, type LlmProfile } from '@/api/system'
+import { getLlmProfilesApi, saveLlmProfilesApi, testLlmConnectionApi, fetchProviderModelsApi, type LlmProfile } from '@/api/system'
 
 const profiles = ref<LlmProfile[]>([])
 const loading = ref(false)
@@ -82,6 +88,8 @@ const dialogVisible = ref(false)
 const isEditing = ref(false)
 const editingIndex = ref(-1)
 const form = ref<any>({})
+const fetchedModels = ref<string[]>([])
+const fetchingModels = ref(false)
 
 onMounted(async () => {
   loading.value = true
@@ -183,6 +191,28 @@ async function testConnection(row: LlmProfile) {
     }
   } catch {
     ElMessage.error('连接测试失败')
+  }
+}
+
+async function fetchModels() {
+  if (!form.value.apiBase) {
+    ElMessage.warning('请先填写 API 地址')
+    return
+  }
+  fetchingModels.value = true
+  try {
+    const res = await fetchProviderModelsApi({ apiBase: form.value.apiBase, apiKey: form.value.apiKey })
+    const data = (res as any).data || res
+    if (data.success && Array.isArray(data.data)) {
+      fetchedModels.value = data.data
+      ElMessage.success(`获取到 ${data.data.length} 个模型`)
+    } else {
+      ElMessage.error(data.message || '获取模型失败')
+    }
+  } catch (e: any) {
+    ElMessage.error(e.message || '获取模型失败')
+  } finally {
+    fetchingModels.value = false
   }
 }
 </script>

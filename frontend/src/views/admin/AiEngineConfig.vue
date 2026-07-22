@@ -1,56 +1,39 @@
 <template>
   <div class="ai-engine-config">
-    <section class="hero-panel">
-      <div class="hero-copy">
-        <p class="hero-tag">AI CONTROL CENTER</p>
-        <h2>AI 引擎配置</h2>
-        <p>
-          这个页面只管理模型、向量和 OCR 识别能力。提示词模板属于审查策略配置，保留在独立页面维护，避免在同一处重复配置。
-        </p>
+    <!-- 水平导航胶囊 -->
+    <nav class="engine-nav-horizontal">
+      <button
+        v-for="item in tabs"
+        :key="item.key"
+        class="engine-pill"
+        :class="{ active: activeTab === item.key }"
+        @click="activeTab = item.key"
+        :title="item.desc"
+      >
+        {{ item.label }}
+      </button>
+    </nav>
+
+    <!-- 内容区 -->
+    <section class="engine-panel">
+      <header class="panel-header">
+        <div>
+          <p class="panel-eyebrow">{{ currentTab?.short }}</p>
+          <h3>{{ currentTab?.label }}</h3>
+        </div>
+        <p class="panel-desc">{{ currentTab?.desc }}</p>
+      </header>
+
+      <div class="panel-body">
+        <ChatModelTab v-if="activeTab === 'chat'" />
+        <EmbeddingModelTab v-else-if="activeTab === 'embedding'" />
+        <RerankerModelTab v-else-if="activeTab === 'reranker'" />
+        <OcrStatusTab v-else-if="activeTab === 'ocr'" />
+        <VisionModelTab v-else-if="activeTab === 'vision'" />
+        <MaxKBConfigTab v-else-if="activeTab === 'maxkb'" />
+        <RAGFlowConfigTab v-else-if="activeTab === 'ragflow'" />
+        <LlmProfilesTab v-else-if="activeTab === 'profiles'" />
       </div>
-      <div class="hero-actions">
-        <el-button type="primary" @click="router.push('/admin/prompts')">前往提示词模板</el-button>
-        <el-button @click="router.push('/admin/system')">返回系统设置</el-button>
-      </div>
-    </section>
-
-    <section class="layout-shell">
-      <aside class="engine-nav">
-        <button
-          v-for="item in tabs"
-          :key="item.key"
-          class="engine-nav-item"
-          :class="{ active: activeTab === item.key }"
-          @click="activeTab = item.key"
-        >
-          <div class="nav-title">{{ item.label }}</div>
-          <div class="nav-desc">{{ item.desc }}</div>
-        </button>
-      </aside>
-
-      <main class="engine-main">
-        <section class="engine-panel">
-          <header class="panel-header">
-            <div>
-              <p class="panel-eyebrow">{{ currentTab?.short }}</p>
-              <h3>{{ currentTab?.label }}</h3>
-            </div>
-            <p class="panel-desc">{{ currentTab?.desc }}</p>
-          </header>
-
-          <div class="panel-body">
-            <ChatModelTab v-if="activeTab === 'chat'" />
-            <EmbeddingModelTab v-else-if="activeTab === 'embedding'" />
-            <RerankerModelTab v-else-if="activeTab === 'reranker'" />
-            <OcrStatusTab v-else-if="activeTab === 'ocr'" />
-            <VisionModelTab v-else-if="activeTab === 'vision'" />
-            <MaxKBConfigTab v-else-if="activeTab === 'maxkb'" />
-
-            <RAGFlowConfigTab v-else-if="activeTab === 'ragflow'" />
-            <LlmProfilesTab v-else-if="activeTab === 'profiles'" />
-          </div>
-        </section>
-      </main>
     </section>
   </div>
 </template>
@@ -88,108 +71,58 @@ const currentTab = computed(() => tabs.find(item => item.key === activeTab.value
 
 <style scoped>
 .ai-engine-config {
-  padding: 24px;
-  display: flex;
-  flex-direction: column;
-  gap: 20px;
-}
-
-.hero-panel {
-  display: flex;
-  justify-content: space-between;
-  gap: 24px;
-  padding: 24px 28px;
-  border-radius: 18px;
-  background: linear-gradient(135deg, #111827 0%, #1f2937 60%, #374151 100%);
-  color: #f9fafb;
-}
-
-.hero-tag {
-  margin: 0 0 10px;
-  font-size: 12px;
-  letter-spacing: 0.16em;
-  opacity: 0.7;
-}
-
-.hero-copy h2 {
-  margin: 0 0 10px;
-  font-size: 28px;
-  font-weight: 700;
-}
-
-.hero-copy p:last-child {
-  margin: 0;
-  max-width: 760px;
-  line-height: 1.7;
-  color: rgba(249, 250, 251, 0.82);
-}
-
-.hero-actions {
-  display: flex;
-  align-items: flex-start;
-  gap: 10px;
-  flex-shrink: 0;
-}
-
-.layout-shell {
-  display: grid;
-  grid-template-columns: 240px minmax(0, 1fr);
-  gap: 20px;
-  align-items: start;
-}
-
-.engine-nav {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-
-.engine-nav-item {
-  text-align: left;
-  padding: 14px 16px;
-  border-radius: 14px;
-  border: 1px solid #e5e7eb;
-  background: #fff;
-  cursor: pointer;
-  transition: all 0.18s ease;
-}
-
-.engine-nav-item:hover {
-  border-color: #94a3b8;
-  transform: translateY(-1px);
-}
-
-.engine-nav-item.active {
-  border-color: #2563eb;
-  background: linear-gradient(135deg, rgba(37, 99, 235, 0.08), rgba(37, 99, 235, 0.03));
-  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.08);
-}
-
-.nav-title {
-  font-size: 15px;
-  font-weight: 700;
-  color: #0f172a;
-  margin-bottom: 4px;
-}
-
-.nav-desc {
-  font-size: 12px;
-  line-height: 1.5;
-  color: #64748b;
-}
-
-.engine-main {
+  padding: 0;
   display: flex;
   flex-direction: column;
   gap: 16px;
-  min-width: 0;
 }
 
+/* === 水平导航胶囊 === */
+.engine-nav-horizontal {
+  display: flex;
+  gap: 6px;
+  padding: 12px 16px;
+  overflow-x: auto;
+  background: #f8fafc;
+  border-radius: 12px;
+  border: 1px solid rgba(0,0,0,0.04);
+  scrollbar-width: none;
+}
+
+.engine-nav-horizontal::-webkit-scrollbar { display: none; }
+
+.engine-pill {
+  padding: 8px 16px;
+  border: none;
+  border-radius: 20px;
+  background: transparent;
+  color: #64748b;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.engine-pill:hover {
+  color: #1e293b;
+  background: rgba(255,255,255,0.8);
+}
+
+.engine-pill.active {
+  background: #1e293b;
+  color: #fff;
+  font-weight: 600;
+  box-shadow: 0 2px 8px rgba(30,41,59,0.25);
+}
+
+/* === 内容面板 === */
 .engine-panel {
   background: #fff;
-  border: 1px solid #e5e7eb;
-  border-radius: 18px;
-  padding: 20px 22px;
+  border: 1px solid rgba(0,0,0,0.06);
+  border-radius: 16px;
+  padding: 24px;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.04);
 }
 
 .panel-header {
@@ -197,29 +130,31 @@ const currentTab = computed(() => tabs.find(item => item.key === activeTab.value
   justify-content: space-between;
   gap: 18px;
   align-items: flex-start;
-  margin-bottom: 18px;
-  padding-bottom: 14px;
-  border-bottom: 1px solid #eef2f7;
+  margin-bottom: 20px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid #f1f5f9;
 }
 
 .panel-eyebrow {
-  margin: 0 0 6px;
+  margin: 0 0 4px;
   font-size: 11px;
   letter-spacing: 0.14em;
-  color: #64748b;
+  color: #94a3b8;
+  font-weight: 600;
 }
 
 .panel-header h3 {
   margin: 0;
-  font-size: 22px;
+  font-size: 20px;
+  font-weight: 700;
   color: #0f172a;
 }
 
 .panel-desc {
   margin: 0;
-  max-width: 360px;
+  max-width: 320px;
   font-size: 13px;
-  line-height: 1.7;
+  line-height: 1.6;
   color: #64748b;
 }
 
@@ -227,33 +162,12 @@ const currentTab = computed(() => tabs.find(item => item.key === activeTab.value
   min-width: 0;
 }
 
-@media (max-width: 1100px) {
-  .layout-shell {
-    grid-template-columns: 1fr;
-  }
-
-  .engine-nav {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-  }
-
+@media (max-width: 768px) {
   .panel-header {
     flex-direction: column;
   }
-}
-
-@media (max-width: 768px) {
-  .ai-engine-config {
+  .engine-panel {
     padding: 16px;
-  }
-
-  .hero-panel {
-    flex-direction: column;
-    padding: 20px;
-  }
-
-  .hero-actions {
-    flex-wrap: wrap;
   }
 }
 </style>

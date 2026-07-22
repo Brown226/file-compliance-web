@@ -49,6 +49,11 @@ export function saveLlmProfilesApi(profiles: LlmProfile[]) {
   return request.put<{ message: string }>('/system-config/llm-profiles', { profiles })
 }
 
+// 从 Provider API 地址拉取可用模型列表
+export function fetchProviderModelsApi(data: { apiBase: string; apiKey?: string }) {
+  return request.post<string[]>('/system-config/llm-profiles/fetch-models', data)
+}
+
 // ==================== 可观测性 P2：AI 调用看板 ====================
 
 export interface AiCallModelStat {

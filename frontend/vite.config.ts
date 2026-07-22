@@ -80,9 +80,11 @@ export default defineConfig({
         changeOrigin: true,
       },
       // MaxKB 管理界面 iframe 嵌入代理（生产环境由 nginx 处理）
-      '/admin': {
+      // 注意：不能使用 /admin 前缀，会与前端路由 /admin 冲突
+      '/maxkb-proxy': {
         target: process.env.MAXKB_URL || 'http://localhost:8080',
         changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/maxkb-proxy/, ''),
       },
     },
   },

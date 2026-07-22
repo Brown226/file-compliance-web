@@ -3,6 +3,13 @@
     <section class="config-section">
       <div class="config-card">
         <el-form :model="config" label-width="120px" label-position="left">
+          <el-form-item label="Provider">
+            <el-select v-model="selectedProviderId" placeholder="从已配置的 Provider 导入" clearable
+              @change="applyProvider" style="width:100%">
+              <el-option v-for="p in providers" :key="p.id" :label="p.name" :value="p.id" />
+            </el-select>
+          </el-form-item>
+
           <el-form-item label="API 密钥">
             <el-input v-model="config.apiKey" type="password" placeholder="sk-..." show-password clearable />
           </el-form-item>
@@ -12,14 +19,13 @@
           </el-form-item>
 
           <el-form-item label="模型名称">
-            <el-select v-model="config.modelName" filterable allow-create default-first-option style="width: 100%">
-              <el-option label="Qwen/Qwen3-Embedding-8B (4096维)" value="Qwen/Qwen3-Embedding-8B" />
-              <el-option label="BAAI/bge-m3 (1024维)" value="BAAI/bge-m3" />
-              <el-option label="BAAI/bge-large-zh-v1.5 (1024维)" value="BAAI/bge-large-zh-v1.5" />
-              <el-option label="text-embedding-3-small (1536维)" value="text-embedding-3-small" />
-              <el-option label="text-embedding-3-large (3072维)" value="text-embedding-3-large" />
-            </el-select>
-            <div class="form-tip">推荐 Qwen3-Embedding-8B（4096维，中文表现最佳）或 BAAI/bge-m3（1024维，性价比高）。</div>
+            <div style="display:flex;gap:8px;width:100%">
+              <el-select v-model="config.modelName" filterable allow-create default-first-option style="flex:1">
+                <el-option v-for="m in availableModels" :key="m" :label="m" :value="m" />
+              </el-select>
+              <el-button @click="fetchModelsFromProvider" :loading="fetchingModels">获取模型</el-button>
+            </div>
+            <div class="form-tip">推荐 Qwen3-Embedding-8B（4096维）或 BAAI/bge-m3（1024维），或点击“获取模型”自动拉取。</div>
           </el-form-item>
 
           <el-form-item label="向量维度">
@@ -54,11 +60,15 @@
 import { computed, reactive, ref, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import { Check, Connection, CircleCheckFilled, CircleCloseFilled } from '@element-plus/icons-vue'
-import { getSystemConfigApi, saveSystemConfigApi, testLlmConnectionApi } from '@/api/system'
+import { getSystemConfigApi, saveSystemConfigApi, testLlmConnectionApi, getLlmProfilesApi, fetchProviderModelsApi, type LlmProfile } from '@/api/system'
 
 const saveLoading = ref(false)
 const testLoading = ref(false)
 const connectionTestResult = ref<{ success: boolean; message?: string; latency?: number } | null>(null)
+const providers = ref<LlmProfile[]>([])
+const selectedProviderId = ref('')
+const availableModels = ref<string[]>(['Qwen/Qwen3-Embedding-8B','BAAI/bge-m3','BAAI/bge-large-zh-v1.5','text-embedding-3-small','text-embedding-3-large'])
+const fetchingModels = ref(false)
 
 const config = reactive({
   apiKey: '',
@@ -132,7 +142,47 @@ const handleTest = async () => {
   }
 }
 
+// === Provider 导入与模型拉取 ===
+async function loadProviders() {
+  try {
+    const res = await getLlmProfilesApi()
+    const list = (res as any).data || res || []
+    providers.value = Array.isArray(list) ? list.filter((p: any) => p.isEnabled) : []
+  } catch { /* ignore */ }
+}
+
+function applyProvider(providerId: string) {
+  if (!providerId) return
+  const p = providers.value.find((item: any) => item.id === providerId)
+  if (!p) return
+  config.apiBaseUrl = p.apiBase || ''
+  if (p.apiKey && !p.apiKey.includes('****')) config.apiKey = p.apiKey
+  if (p.model) config.modelName = p.model
+  fetchModelsFromProvider()
+  ElMessage.success(`已导入 Provider「${p.name}」的配置`)
+}
+
+async function fetchModelsFromProvider() {
+  if (!config.apiBaseUrl) { ElMessage.warning('请先填写 API 基础 URL'); return }
+  fetchingModels.value = true
+  try {
+    const res = await fetchProviderModelsApi({ apiBase: config.apiBaseUrl, apiKey: config.apiKey })
+    const data = (res as any).data || res
+    if (data.success && Array.isArray(data.data)) {
+      availableModels.value = data.data
+      ElMessage.success(`获取到 ${data.data.length} 个模型`)
+    } else {
+      ElMessage.error(data.message || '获取模型失败')
+    }
+  } catch (e: any) {
+    ElMessage.error(e.message || '获取模型失败')
+  } finally {
+    fetchingModels.value = false
+  }
+}
+
 onMounted(async () => {
+  loadProviders()
   try {
     const { data } = await getSystemConfigApi('embedding_model')
     const configData = typeof data?.value === 'string' ? JSON.parse(data.value) : (data?.value || data)

@@ -3,6 +3,13 @@
     <section class="config-section">
       <div class="config-card">
         <el-form :model="chatModelConfig" label-width="120px" label-position="left">
+          <el-form-item label="Provider">
+            <el-select v-model="selectedProviderId" placeholder="从已配置的 Provider 导入" clearable
+              @change="applyProvider" style="width:100%">
+              <el-option v-for="p in providers" :key="p.id" :label="p.name" :value="p.id" />
+            </el-select>
+          </el-form-item>
+
           <el-form-item label="API 密钥" required>
             <el-input
               v-model="chatModelConfig.apiKey"
@@ -23,22 +30,25 @@
           </el-form-item>
 
           <el-form-item label="模型名称" required>
-            <el-select
-              v-model="chatModelConfig.modelName"
-              placeholder="输入模型名称"
-              filterable
-              allow-create
-              default-first-option
-              style="width: 100%"
-            >
-              <el-option
-                v-for="model in commonModels"
-                :key="model"
-                :label="model"
-                :value="model"
-              />
-            </el-select>
-            <div class="form-tip">支持自定义模型名称，便于对接不同供应商的兼容接口。</div>
+            <div style="display:flex;gap:8px;width:100%">
+              <el-select
+                v-model="chatModelConfig.modelName"
+                placeholder="输入模型名称"
+                filterable
+                allow-create
+                default-first-option
+                style="flex:1"
+              >
+                <el-option
+                  v-for="model in availableModels"
+                  :key="model"
+                  :label="model"
+                  :value="model"
+                />
+              </el-select>
+              <el-button @click="fetchModelsFromProvider" :loading="fetchingModels">获取模型</el-button>
+            </div>
+            <div class="form-tip">支持自定义模型名称，或点击“获取模型”自动拉取。</div>
           </el-form-item>
 
           <div class="param-row">
@@ -127,6 +137,9 @@ import {
   getSystemConfigApi,
   saveSystemConfigApi,
   testLlmConnectionApi,
+  getLlmProfilesApi,
+  fetchProviderModelsApi,
+  type LlmProfile,
 } from '@/api/system'
 
 interface ChatModelConfig {
@@ -146,6 +159,10 @@ const testLoading = ref(false)
 const connectionTestResult = ref<{ success: boolean; message?: string; latency?: number } | null>(null)
 
 const commonModels: string[] = []
+const availableModels = ref<string[]>([])
+const providers = ref<LlmProfile[]>([])
+const selectedProviderId = ref('')
+const fetchingModels = ref(false)
 
 const tempMarks = {
   0: '0',
@@ -256,7 +273,55 @@ const handleSaveChatConfig = async () => {
   }
 }
 
+// === Provider 导入与模型拉取 ===
+async function loadProviders() {
+  try {
+    const res = await getLlmProfilesApi()
+    const list = (res as any).data || res || []
+    providers.value = Array.isArray(list) ? list.filter((p: any) => p.isEnabled) : []
+  } catch { /* ignore */ }
+}
+
+function applyProvider(providerId: string) {
+  if (!providerId) return
+  const p = providers.value.find((item: any) => item.id === providerId)
+  if (!p) return
+  chatModelConfig.apiBaseUrl = p.apiBase || ''
+  if (p.apiKey && !p.apiKey.includes('****')) {
+    chatModelConfig.apiKey = p.apiKey
+  }
+  if (p.model) {
+    chatModelConfig.modelName = p.model
+  }
+  // 自动拉取该 Provider 的模型列表
+  fetchModelsFromProvider()
+  ElMessage.success(`已导入 Provider「${p.name}」的配置`)
+}
+
+async function fetchModelsFromProvider() {
+  if (!chatModelConfig.apiBaseUrl) {
+    ElMessage.warning('请先填写 API 基础 URL')
+    return
+  }
+  fetchingModels.value = true
+  try {
+    const res = await fetchProviderModelsApi({ apiBase: chatModelConfig.apiBaseUrl, apiKey: chatModelConfig.apiKey })
+    const data = (res as any).data || res
+    if (data.success && Array.isArray(data.data)) {
+      availableModels.value = data.data
+      ElMessage.success(`获取到 ${data.data.length} 个模型`)
+    } else {
+      ElMessage.error(data.message || '获取模型失败')
+    }
+  } catch (e: any) {
+    ElMessage.error(e.message || '获取模型失败')
+  } finally {
+    fetchingModels.value = false
+  }
+}
+
 onMounted(async () => {
+  loadProviders()
   try {
     const { data } = await getSystemConfigApi('llm_chat_model')
     let configData = data?.value || data
