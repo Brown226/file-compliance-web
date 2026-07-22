@@ -25,6 +25,11 @@ export const env = {
   jwtSecret: process.env.JWT_SECRET as string,
   jwtExpiresIn: process.env.JWT_EXPIRES_IN || '1d',
   openspecAgentUrl: process.env.OPENSPEC_AGENT_URL || 'http://localhost:5000',
+  // 进程角色：'all'（默认，单进程同时跑 API+Worker）/ 'api'（仅 HTTP+WS，不消费审查队列）/ 'worker'（仅消费队列+定时任务）
+  processRole: ((): 'all' | 'api' | 'worker' => {
+    const r = (process.env.PROCESS_ROLE || 'all').toLowerCase();
+    return r === 'api' || r === 'worker' ? r : 'all';
+  })(),
   // CORS 允许来源白名单（string[] 表示白名单，true 表示放开，[] 表示全部拒绝）
   corsAllowedOrigins: parseAllowedOrigins(),
   // MaxKB 凭证（从环境变量读取，不在代码中硬编码默认密码）

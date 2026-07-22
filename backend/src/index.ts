@@ -3,13 +3,22 @@ import { env } from './config/env';
 import { TerminologyService } from './services/terminology.service';
 import { PromptTemplateService } from './services/prompt-template.service';
 import { WebSocketService } from './services/websocket.service';
-import { closeQueue } from './services/queue.service';
+import { initQueueProcessors, closeQueue } from './services/queue.service';
+import { startScheduler } from './services/scheduler.service';
 import prisma from './config/db';
 import { setUploadDir, initUploadSubdirs, getUploadDir } from './config/upload';
+import type { Server } from 'http';
+
+// 进程角色：all（默认，单进程 API+Worker）/ api（仅 HTTP+WS）/ worker（仅队列+定时任务）
+const role = env.processRole;
+const runApi = role === 'all' || role === 'api';
+const runWorker = role === 'all' || role === 'worker';
 
 const startServer = async () => {
   try {
-    // 从数据库加载存储路径配置
+    console.log(`[Bootstrap] 进程角色: ${role} (API=${runApi}, Worker=${runWorker})`);
+
+    // 从数据库加载存储路径配置（API 与 Worker 均需要）
     const uploadPathCfg = await prisma.systemConfig.findUnique({ where: { key: 'upload_path' } });
     if (uploadPathCfg?.value && typeof uploadPathCfg.value === 'string') {
       setUploadDir(uploadPathCfg.value);
@@ -19,27 +28,45 @@ const startServer = async () => {
       initUploadSubdirs(getUploadDir());
     }
 
-    // 初始化术语白名单（从数据库加载到内存缓存）
+    // 初始化术语白名单（内存缓存，API 术语接口与 Worker 审查均需要）
     await TerminologyService.initialize();
 
-    // 初始化提示词模板（upsert 内置模板，不覆盖用户自定义内容）
+    // 初始化提示词模板（幂等 upsert，不覆盖用户自定义内容）
     await PromptTemplateService.seedBuiltinTemplates();
 
-    const server = app.listen(env.port, () => {
-      console.log(`Server is running in ${env.nodeEnv} mode on port ${env.port}`);
-    });
+    // ===== API 角色：启动 HTTP 服务 + WebSocket =====
+    let server: Server | undefined;
+    if (runApi) {
+      server = app.listen(env.port, () => {
+        console.log(`Server is running in ${env.nodeEnv} mode on port ${env.port}`);
+      });
+      WebSocketService.initialize(server);
+    } else {
+      console.log('[Bootstrap] worker 角色：跳过 HTTP/WebSocket 启动');
+    }
 
-    // 初始化 WebSocket 服务
-    WebSocketService.initialize(server);
+    // ===== Worker 角色：启动审查队列处理器 + 定时清理 =====
+    if (runWorker) {
+      await initQueueProcessors().catch((e) => console.error('[Queue] 初始化失败:', e));
+      startScheduler();
+      console.log('[Bootstrap] worker 已启动：审查队列处理器 + 定时清理');
+    } else {
+      console.log('[Bootstrap] api 角色：不消费审查队列（仅入队）');
+    }
 
     // 优雅关闭：处理 SIGTERM/SIGINT
     const shutdown = async (signal: string) => {
       console.log(`\n[${signal}] 收到关闭信号，正在优雅退出...`);
-      server.close(async () => {
+      const finalize = async () => {
         await closeQueue();
         console.log('[Shutdown] 服务已关闭');
         process.exit(0);
-      });
+      };
+      if (server) {
+        server.close(finalize);
+      } else {
+        await finalize();
+      }
       // 10秒后强制退出
       setTimeout(() => process.exit(1), 10000);
     };

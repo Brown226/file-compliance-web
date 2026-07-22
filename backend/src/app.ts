@@ -33,13 +33,8 @@ import generationRoutes from './routes/generation.routes';
 import polishRoutes from './routes/polish.routes';
 import templateRoutes from './routes/template.routes';
 
-// 定时清理孤立文件（每天凌晨2点执行）
-import './services/scheduler.service';
-
-// 异步任务队列（Bull/Redis）
-import { initQueueProcessors, closeQueue } from './services/queue.service';
-initQueueProcessors().catch(e => console.error('[Queue] 初始化失败:', e));
-
+// 注：定时清理（scheduler）与异步队列（queue）的初始化已移至 index.ts，
+// 按 PROCESS_ROLE 角色门控，避免 app.ts 被 import 时产生副作用（API/Worker 进程拆分）。
 
 const app: Express = express();
 

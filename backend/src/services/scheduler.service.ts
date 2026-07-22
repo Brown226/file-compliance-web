@@ -57,7 +57,6 @@ async function runCleanup() {
   }
 }
 
-// 启动定时任务
-scheduleCleanup();
-
-export { scheduleCleanup, runCleanup };
+// 启动定时任务（改为显式调用，不再 import 即自启动，便于按进程角色控制）
+// 调用方：index.ts 在 worker/all 角色下调用 startScheduler()
+export { scheduleCleanup, scheduleCleanup as startScheduler, runCleanup };
