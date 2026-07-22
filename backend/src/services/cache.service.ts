@@ -1,36 +1,35 @@
 /**
- * 缓存服务
+ * 缓存服务（Redis 后端）
  *
  * 支持功能：
- * - LRU 内存缓存
- * - TTL 过期
- * - 批量操作
- * - 命中率统计
+ * - Redis 持久化缓存（跨进程共享，重启不丢失）
+ * - TTL 过期（由 Redis 原生管理）
+ * - 命中率统计（进程内计数器，仅观测用途）
  *
  * 使用场景：
+ * - LLM 响应缓存（跨 API/Worker 进程复用，成本敏感）
  * - Embedding 查询缓存
  * - 检索结果缓存
- * - 配置缓存
+ *
+ * 设计说明：
+ * - value 级方法（get/set/has/delete/mget/mset/getOrSet）为 async（Redis I/O）
+ * - generateKey 为纯哈希，保持同步
+ * - Redis 异常时「失败安全」：get 视为未命中、set 静默失败，不影响主流程
+ * - 所有键统一 cache: 前缀，便于 clear 与隔离
  */
 
 import crypto from 'crypto';
+import { redisClient } from '../utils/redis';
 
 export interface CacheOptions {
   ttl?: number;
   maxSize?: number;
 }
 
-export interface CacheItem<T = any> {
-  value: T;
-  expireAt: number;
-  hits: number;
-  createdAt: number;
-}
+const CACHE_PREFIX = 'cache:';
 
 export class CacheService {
-  private static store = new Map<string, CacheItem>();
   private static defaultTTL = 300;
-  private static maxSize = 5000; // 从 1000 增至 5000，容纳 LLM 响应缓存
   private static stats = {
     hits: 0,
     misses: 0,
@@ -42,17 +41,14 @@ export class CacheService {
     if (options.ttl !== undefined) {
       this.defaultTTL = options.ttl;
     }
-    if (options.maxSize !== undefined) {
-      this.maxSize = options.maxSize;
-    }
   }
 
   static getStats() {
     const total = this.stats.hits + this.stats.misses;
     return {
       ...this.stats,
-      hitRate: total > 0 ? (this.stats.hits / total * 100).toFixed(2) + '%' : '0%',
-      size: this.store.size,
+      hitRate: total > 0 ? ((this.stats.hits / total) * 100).toFixed(2) + '%' : '0%',
+      backend: 'redis',
     };
   }
 
@@ -60,8 +56,25 @@ export class CacheService {
     this.stats = { hits: 0, misses: 0, sets: 0, evictions: 0 };
   }
 
-  static clear() {
-    this.store.clear();
+  /** 清空所有缓存键（SCAN + DEL，仅删 cache: 前缀，异步） */
+  static async clear(): Promise<void> {
+    try {
+      const client = redisClient.getClient();
+      const stream = client.scanStream({ match: `${CACHE_PREFIX}*`, count: 200 });
+      const batch: string[] = [];
+      await new Promise<void>((resolve, reject) => {
+        stream.on('data', (keys: string[]) => {
+          if (keys.length) batch.push(...keys);
+        });
+        stream.on('end', resolve);
+        stream.on('error', reject);
+      });
+      if (batch.length > 0) {
+        await client.del(...batch);
+      }
+    } catch (e) {
+      console.warn('[Cache] clear 失败:', (e as Error).message);
+    }
     this.resetStats();
   }
 
@@ -69,147 +82,87 @@ export class CacheService {
     return crypto.createHash('md5').update(parts.join('|')).digest('hex');
   }
 
-  static has(key: string): boolean {
-    const item = this.store.get(key);
-    if (!item) return false;
-
-    if (Date.now() > item.expireAt) {
-      this.store.delete(key);
+  static async has(key: string): Promise<boolean> {
+    try {
+      const exists = await redisClient.getClient().exists(CACHE_PREFIX + key);
+      return exists === 1;
+    } catch {
       return false;
     }
-
-    item.hits++;
-    return true;
   }
 
-  static get<T = any>(key: string): T | null {
-    const item = this.store.get(key);
-    if (!item) {
+  static async get<T = any>(key: string): Promise<T | null> {
+    try {
+      const raw = await redisClient.getClient().get(CACHE_PREFIX + key);
+      if (raw === null || raw === undefined) {
+        this.stats.misses++;
+        return null;
+      }
+      this.stats.hits++;
+      try {
+        return JSON.parse(raw) as T;
+      } catch {
+        return raw as unknown as T;
+      }
+    } catch {
+      // Redis 异常视为未命中，不影响主流程
       this.stats.misses++;
       return null;
     }
-
-    if (Date.now() > item.expireAt) {
-      this.store.delete(key);
-      this.stats.misses++;
-      return null;
-    }
-
-    item.hits++;
-    this.stats.hits++;
-    return item.value as T;
   }
 
-  static set<T = any>(key: string, value: T, ttl?: number): void {
-    if (this.store.size >= this.maxSize) {
-      this.evictLRU();
-    }
-
-    const expireAt = Date.now() + (ttl ?? this.defaultTTL) * 1000;
-
-    this.store.set(key, {
-      value,
-      expireAt,
-      hits: 0,
-      createdAt: Date.now(),
-    });
-
-    this.stats.sets++;
-  }
-
-  static delete(key: string): boolean {
-    return this.store.delete(key);
-  }
-
-  static mget<T = any>(keys: string[]): (T | null)[] {
-    return keys.map((key) => this.get<T>(key));
-  }
-
-  static mset(entries: Array<{ key: string; value: any; ttl?: number }>): void {
-    for (const entry of entries) {
-      this.set(entry.key, entry.value, entry.ttl);
+  static async set<T = any>(key: string, value: T, ttl?: number): Promise<void> {
+    try {
+      const payload = JSON.stringify(value);
+      const seconds = ttl ?? this.defaultTTL;
+      await redisClient.getClient().set(CACHE_PREFIX + key, payload, 'EX', seconds);
+      this.stats.sets++;
+    } catch (e) {
+      // 缓存写入失败不影响主流程
     }
   }
 
-  static mdel(keys: string[]): void {
-    for (const key of keys) {
-      this.store.delete(key);
+  static async delete(key: string): Promise<boolean> {
+    try {
+      const n = await redisClient.getClient().del(CACHE_PREFIX + key);
+      return n > 0;
+    } catch {
+      return false;
     }
   }
 
-  static getOrSet<T = any>(
+  static async mget<T = any>(keys: string[]): Promise<(T | null)[]> {
+    return Promise.all(keys.map((key) => this.get<T>(key)));
+  }
+
+  static async mset(entries: Array<{ key: string; value: any; ttl?: number }>): Promise<void> {
+    await Promise.all(entries.map((e) => this.set(e.key, e.value, e.ttl)));
+  }
+
+  static async mdel(keys: string[]): Promise<void> {
+    await Promise.all(keys.map((key) => this.delete(key)));
+  }
+
+  static async getOrSet<T = any>(
     key: string,
     factory: () => T | Promise<T>,
     ttl?: number
-  ): T | Promise<T> {
-    const cached = this.get<T>(key);
+  ): Promise<T> {
+    const cached = await this.get<T>(key);
     if (cached !== null) {
       return cached;
     }
-
-    const result = factory();
-    if (result instanceof Promise) {
-      return result.then((value) => {
-        this.set(key, value, ttl);
-        return value;
-      });
-    }
-
-    this.set(key, result, ttl);
-    return result;
+    const value = await factory();
+    await this.set(key, value, ttl);
+    return value;
   }
 
+  /** 保留兼容旧调用名，等价于 getOrSet */
   static async getOrSetAsync<T = any>(
     key: string,
     factory: () => Promise<T>,
     ttl?: number
   ): Promise<T> {
-    const cached = this.get<T>(key);
-    if (cached !== null) {
-      return cached;
-    }
-
-    const value = await factory();
-    this.set(key, value, ttl);
-    return value;
-  }
-
-  private static evictLRU(): void {
-    let oldestKey: string | null = null;
-    let oldestTime = Infinity;
-    let oldestHits = Infinity;
-
-    for (const [key, item] of this.store) {
-      if (item.createdAt < oldestTime || (item.createdAt === oldestTime && item.hits < oldestHits)) {
-        oldestTime = item.createdAt;
-        oldestHits = item.hits;
-        oldestKey = key;
-      }
-    }
-
-    if (oldestKey) {
-      this.store.delete(oldestKey);
-      this.stats.evictions++;
-    }
-  }
-
-  static cleanup(): void {
-    const now = Date.now();
-    let cleaned = 0;
-
-    for (const [key, item] of this.store) {
-      if (now > item.expireAt) {
-        this.store.delete(key);
-        cleaned++;
-      }
-    }
-
-    if (cleaned > 0) {
-      console.log(`[Cache] Cleaned up ${cleaned} expired entries`);
-    }
+    return this.getOrSet(key, factory, ttl);
   }
 }
-
-setInterval(() => {
-  CacheService.cleanup();
-}, 60000);

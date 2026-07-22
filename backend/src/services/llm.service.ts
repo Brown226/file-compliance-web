@@ -930,7 +930,7 @@ export class LlmService {
     const docId = options?.documentId || 'unknown';
     const llmCacheKey = CacheService.generateKey('llm:review', docId, String(chunkIdx), config.modelName, String(temperature));
     const LLM_CACHE_TTL = 24 * 3600; // 24 小时
-    const cachedContent = CacheService.get<string>(llmCacheKey);
+    const cachedContent = await CacheService.get<string>(llmCacheKey);
     if (cachedContent !== null) {
       console.log(`[LLM] reviewText 缓存命中 (${cachedContent.length}字)`);
       LlmService.recordLlmCall({
@@ -999,7 +999,7 @@ export class LlmService {
       });
 
       // ★ 缓存 LLM 原始响应（不含位置信息，位置信息每次实时计算）
-      CacheService.set(llmCacheKey, content, LLM_CACHE_TTL);
+      await CacheService.set(llmCacheKey, content, LLM_CACHE_TTL);
       console.log(`[LLM] reviewText 已缓存响应 (${content.length}字)`);
 
       const issues = this.parseReviewResult(content);
@@ -1271,7 +1271,7 @@ export class LlmService {
     // ★ LLM chat 响应缓存
     const chatCacheKey = CacheService.generateKey('llm:chat', config.modelName, String(temperature), systemPrompt, prompt);
     const CHAT_CACHE_TTL = 24 * 3600;
-    const cachedChat = CacheService.get<string>(chatCacheKey);
+    const cachedChat = await CacheService.get<string>(chatCacheKey);
     if (cachedChat !== null) {
       console.log(`[LLM] chat 缓存命中 (${cachedChat.length}字)`);
       return cachedChat;
@@ -1300,7 +1300,7 @@ export class LlmService {
       const result = data.choices?.[0]?.message?.content || '';
 
       // ★ 缓存 chat 响应
-      CacheService.set(chatCacheKey, result, CHAT_CACHE_TTL);
+      await CacheService.set(chatCacheKey, result, CHAT_CACHE_TTL);
 
       return result;
     } finally {

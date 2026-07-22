@@ -86,7 +86,7 @@ export class RAGService {
     const CACHE_TTL = 5 * 60 * 1000; // 5分钟缓存
 
     // 检查缓存
-    const cached = CacheService.get<RAGRetrievedChunk[]>(cacheKey);
+    const cached = await CacheService.get<RAGRetrievedChunk[]>(cacheKey);
     if (cached !== null) {
       console.log(`[RAG] 缓存命中: kb=${knowledgeId}, results=${cached.length}`);
       return cached;

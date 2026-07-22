@@ -75,7 +75,7 @@ export class RagflowProvider {
     const cacheKey = CacheService.generateKey('ragflow:retrieve', datasetId, String(topNumber), queryText);
     const CACHE_TTL = 5 * 60 * 1000;
 
-    const cached = CacheService.get<RAGRetrievedChunk[]>(cacheKey);
+    const cached = await CacheService.get<RAGRetrievedChunk[]>(cacheKey);
     if (cached !== null) {
       console.log(`[Ragflow] 缓存命中: dataset=${datasetId}, results=${cached.length}`);
       return cached;

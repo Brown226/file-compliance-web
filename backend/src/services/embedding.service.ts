@@ -127,7 +127,7 @@ export class EmbeddingService {
 
     // 缓存键现在包含 model + dimensions，修改配置后自动失效
     const cacheKey = this.computeCacheKey(texts, config.model, config.dimensions);
-    const cached = CacheService.get<EmbeddingResult>(cacheKey);
+    const cached = await CacheService.get<EmbeddingResult>(cacheKey);
     if (cached !== null) {
       console.log(`[Embedding] Cache hit for ${texts.length} texts`);
       return cached;

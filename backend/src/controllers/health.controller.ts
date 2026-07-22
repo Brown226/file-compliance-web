@@ -96,7 +96,7 @@ export class HealthController {
    */
   static async clearCache(req: Request, res: Response) {
     try {
-      CacheService.clear();
+      await CacheService.clear();
       success(res, { message: 'Cache cleared' });
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Unknown error';
