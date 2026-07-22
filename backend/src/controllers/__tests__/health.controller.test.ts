@@ -3,31 +3,31 @@ import { MetricsService } from '../../services/metrics.service';
 import { CacheService } from '../../services/cache.service';
 
 // Mock services
-jest.mock('../../services/metrics.service');
-jest.mock('../../services/cache.service');
+vi.mock('../../services/metrics.service');
+vi.mock('../../services/cache.service');
 
 // Mock response helpers
-jest.mock('../../utils/response', () => ({
-  success: jest.fn((res, data) => res.json({ success: true, data })),
-  error: jest.fn((res, message, status) => res.status(status).json({ success: false, message })),
+vi.mock('../../utils/response', () => ({
+  success: vi.fn((res, data) => res.json({ success: true, data })),
+  error: vi.fn((res, message, status) => res.status(status).json({ success: false, message })),
 }));
 
 const mockReq = () => ({} as any);
 const mockRes = () => {
   const res: any = {};
-  res.status = jest.fn().mockReturnValue(res);
-  res.json = jest.fn().mockReturnValue(res);
+  res.status = vi.fn().mockReturnValue(res);
+  res.json = vi.fn().mockReturnValue(res);
   return res;
 };
 
 describe('HealthController', () => {
   beforeEach(() => {
-    jest.clearAllMocks();
+    vi.clearAllMocks();
   });
 
   describe('getHealth', () => {
     it('should return healthy status', async () => {
-      (MetricsService.getHealthStatus as jest.Mock).mockResolvedValue({
+      (MetricsService.getHealthStatus as any).mockResolvedValue({
         status: 'healthy',
         uptime: 1000,
       });
@@ -47,7 +47,7 @@ describe('HealthController', () => {
     });
 
     it('should return 503 for unhealthy status', async () => {
-      (MetricsService.getHealthStatus as jest.Mock).mockResolvedValue({
+      (MetricsService.getHealthStatus as any).mockResolvedValue({
         status: 'unhealthy',
         error: 'DB down',
       });
@@ -61,7 +61,7 @@ describe('HealthController', () => {
     });
 
     it('should handle service errors', async () => {
-      (MetricsService.getHealthStatus as jest.Mock).mockRejectedValue(new Error('Service error'));
+      (MetricsService.getHealthStatus as any).mockRejectedValue(new Error('Service error'));
 
       const req = mockReq();
       const res = mockRes();
@@ -77,7 +77,7 @@ describe('HealthController', () => {
 
   describe('getMetrics', () => {
     it('should return metrics summary', async () => {
-      (MetricsService.getSummary as jest.Mock).mockReturnValue({ totalRequests: 100 });
+      (MetricsService.getSummary as any).mockReturnValue({ totalRequests: 100 });
 
       const req = mockReq();
       const res = mockRes();
@@ -90,7 +90,7 @@ describe('HealthController', () => {
 
   describe('getCounters', () => {
     it('should return counters', async () => {
-      (MetricsService.getCounters as jest.Mock).mockReturnValue({});
+      (MetricsService.getCounters as any).mockReturnValue({});
 
       const req = mockReq();
       const res = mockRes();
@@ -103,7 +103,7 @@ describe('HealthController', () => {
 
   describe('getHistogram', () => {
     it('should return histogram stats', async () => {
-      (MetricsService.getHistogramStats as jest.Mock).mockReturnValue({ min: 0, max: 100 });
+      (MetricsService.getHistogramStats as any).mockReturnValue({ min: 0, max: 100 });
 
       const req = { params: { name: 'response_time' } } as any;
       const res = mockRes();
@@ -114,7 +114,7 @@ describe('HealthController', () => {
     });
 
     it('should return 404 for missing histogram', async () => {
-      (MetricsService.getHistogramStats as jest.Mock).mockReturnValue(null);
+      (MetricsService.getHistogramStats as any).mockReturnValue(null);
 
       const req = { params: { name: 'nonexistent' } } as any;
       const res = mockRes();
@@ -127,7 +127,7 @@ describe('HealthController', () => {
 
   describe('getCacheStats', () => {
     it('should return cache stats', async () => {
-      (CacheService.getStats as jest.Mock).mockReturnValue({ hits: 10, misses: 2 });
+      (CacheService.getStats as any).mockReturnValue({ hits: 10, misses: 2 });
 
       const req = mockReq();
       const res = mockRes();
@@ -140,7 +140,7 @@ describe('HealthController', () => {
 
   describe('clearCache', () => {
     it('should clear cache', async () => {
-      (CacheService.clear as jest.Mock).mockReturnValue(undefined);
+      (CacheService.clear as any).mockReturnValue(undefined);
 
       const req = mockReq();
       const res = mockRes();

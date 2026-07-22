@@ -1,22 +1,25 @@
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { TokenService } from '../token.service';
 
 // Mock dependencies
-jest.mock('jsonwebtoken', () => ({
-  sign: jest.fn(() => 'mock-token'),
-  verify: jest.fn(() => ({ id: '1', username: 'test', role: 'user', departmentId: null })),
+vi.mock('jsonwebtoken', () => ({
+  default: {
+    sign: vi.fn(() => 'mock-token'),
+    verify: vi.fn(() => ({ id: '1', username: 'test', role: 'user', departmentId: null })),
+  },
 }));
 
-jest.mock('../../config/env', () => ({
+vi.mock('../../config/env', () => ({
   env: {
     jwtSecret: 'test-secret',
     jwtExpiresIn: '24h',
   },
 }));
 
-jest.mock('../../utils/redis', () => ({
+vi.mock('../../utils/redis', () => ({
   redisClient: {
-    set: jest.fn(),
-    get: jest.fn(),
+    set: vi.fn(),
+    get: vi.fn(),
   },
 }));
 
@@ -25,7 +28,7 @@ import { redisClient } from '../../utils/redis';
 
 describe('TokenService', () => {
   beforeEach(() => {
-    jest.clearAllMocks();
+    vi.clearAllMocks()
   });
 
   describe('generateToken', () => {
@@ -65,7 +68,7 @@ describe('TokenService', () => {
 
   describe('blacklistToken', () => {
     it('should add token to blacklist in Redis', async () => {
-      (redisClient.set as jest.Mock).mockResolvedValue('OK');
+      (redisClient.set as any).mockResolvedValue('OK');
 
       await TokenService.blacklistToken('test-token', 3600);
 
@@ -75,21 +78,21 @@ describe('TokenService', () => {
 
   describe('isTokenBlacklisted', () => {
     it('should return true for blacklisted token', async () => {
-      (redisClient.get as jest.Mock).mockResolvedValue('true');
+      (redisClient.get as any).mockResolvedValue('true');
 
       const result = await TokenService.isTokenBlacklisted('test-token');
       expect(result).toBe(true);
     });
 
     it('should return false for non-blacklisted token', async () => {
-      (redisClient.get as jest.Mock).mockResolvedValue(null);
+      (redisClient.get as any).mockResolvedValue(null);
 
       const result = await TokenService.isTokenBlacklisted('test-token');
       expect(result).toBe(false);
     });
 
     it('should return false for other values', async () => {
-      (redisClient.get as jest.Mock).mockResolvedValue('false');
+      (redisClient.get as any).mockResolvedValue('false');
 
       const result = await TokenService.isTokenBlacklisted('test-token');
       expect(result).toBe(false);

@@ -1,26 +1,26 @@
 import { DepartmentService } from '../department.service';
 
 // Mock prisma
-jest.mock('../../config/db', () => ({
+vi.mock('../../config/db', () => ({
   __esModule: true,
   default: {
     department: {
-      findMany: jest.fn(),
-      findUnique: jest.fn(),
-      findFirst: jest.fn(),
-      create: jest.fn(),
-      update: jest.fn(),
-      delete: jest.fn(),
-      count: jest.fn(),
+      findMany: vi.fn(),
+      findUnique: vi.fn(),
+      findFirst: vi.fn(),
+      create: vi.fn(),
+      update: vi.fn(),
+      delete: vi.fn(),
+      count: vi.fn(),
     },
     user: {
-      count: jest.fn(),
+      count: vi.fn(),
     },
   },
 }));
 
 // Mock AppError
-jest.mock('../../middlewares/error.middleware', () => ({
+vi.mock('../../middlewares/error.middleware', () => ({
   AppError: class AppError extends Error {
     constructor(public statusCode: number, message: string) {
       super(message);
@@ -38,7 +38,7 @@ describe('DepartmentService', () => {
 
   beforeEach(() => {
     service = new DepartmentService();
-    jest.clearAllMocks();
+    vi.clearAllMocks()
   });
 
   describe('getDepartmentsTree', () => {

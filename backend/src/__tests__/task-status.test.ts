@@ -3,19 +3,19 @@
  * 覆盖 updateTaskStatus 中的状态机校验逻辑
  */
 
-// Mock TaskService
-const mockTaskService = {
-  getTaskById: jest.fn(),
-  updateTaskStatus: jest.fn(),
-};
-jest.mock('../services/task.service', () => ({
+// Mock TaskService + response utils（用 vi.hoisted 以配合 vi.mock 的提升语义）
+const { mockTaskService, mockSuccess, mockError } = vi.hoisted(() => ({
+  mockTaskService: {
+    getTaskById: vi.fn(),
+    updateTaskStatus: vi.fn(),
+  },
+  mockSuccess: vi.fn(),
+  mockError: vi.fn(),
+}));
+vi.mock('../services/task.service', () => ({
   TaskService: mockTaskService,
 }));
-
-// Mock response utils
-const mockSuccess = jest.fn();
-const mockError = jest.fn();
-jest.mock('../utils/response', () => ({
+vi.mock('../utils/response', () => ({
   success: (...args: any[]) => mockSuccess(...args),
   error: (...args: any[]) => mockError(...args),
 }));
@@ -29,7 +29,7 @@ describe('updateTaskStatus 状态转换校验', () => {
   let mockRes: Partial<Response>;
 
   beforeEach(() => {
-    jest.clearAllMocks();
+    vi.clearAllMocks()
     mockReq = {
       params: { id: 'task-1' },
       body: {},

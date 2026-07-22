@@ -4,40 +4,42 @@
  */
 
 // 阻断所有外部依赖的导入链
-jest.mock('../../config/db', () => ({
+vi.mock('../../config/db', () => ({
   __esModule: true,
   default: {
-    user: { findUnique: jest.fn() },
-    task: { findUnique: jest.fn() },
-    department: { findMany: jest.fn() },
+    user: { findUnique: vi.fn() },
+    task: { findUnique: vi.fn() },
+    department: { findMany: vi.fn() },
+    $queryRaw: vi.fn(),
   },
 }));
 
-jest.mock('../../config/env', () => ({
+vi.mock('../../config/env', () => ({
   env: { redisUrl: 'redis://localhost:6379', jwtSecret: 'test', jwtExpiresIn: '1d' },
 }));
 
-jest.mock('../../utils/redis', () => ({
-  redisClient: { get: jest.fn(), set: jest.fn(), del: jest.fn(), on: jest.fn() },
+vi.mock('../../utils/redis', () => ({
+  redisClient: { get: vi.fn(), set: vi.fn(), del: vi.fn(), on: vi.fn() },
 }));
 
-jest.mock('../auth.middleware', () => ({
-  authenticate: jest.fn((req: any, res: any, next: any) => next()),
+vi.mock('../auth.middleware', () => ({
+  authenticate: vi.fn((req: any, res: any, next: any) => next()),
 }));
 
-jest.mock('../../services/token.service', () => ({
-  TokenService: { verifyToken: jest.fn() },
+vi.mock('../../services/token.service', () => ({
+  TokenService: { verifyToken: vi.fn() },
 }));
 
 import prisma from '../../config/db';
-import { canAccessTask, checkTaskAccess } from '../rbac.middleware';
+import { canAccessTask, checkTaskAccess, clearSubDeptCache } from '../rbac.middleware';
 import { Response } from 'express';
 
 const mockPrisma = prisma as any;
 
 describe('canAccessTask', () => {
   beforeEach(() => {
-    jest.clearAllMocks();
+    vi.clearAllMocks()
+    clearSubDeptCache();
   });
 
   it('ADMIN 可以访问任何任务', async () => {
@@ -60,7 +62,7 @@ describe('canAccessTask', () => {
 
   it('MANAGER 可以访问本部门成员创建的任务', async () => {
     const manager = { id: 'mgr-1', role: 'MANAGER', departmentId: 'dept-1' };
-    mockPrisma.department.findMany.mockResolvedValue([]);
+    mockPrisma.$queryRaw.mockResolvedValue([]);
     mockPrisma.user.findUnique.mockResolvedValue({ departmentId: 'dept-1' });
 
     const result = await canAccessTask(manager, 'user-in-dept');
@@ -69,7 +71,7 @@ describe('canAccessTask', () => {
 
   it('MANAGER 可以访问子部门成员创建的任务', async () => {
     const manager = { id: 'mgr-1', role: 'MANAGER', departmentId: 'dept-1' };
-    mockPrisma.department.findMany.mockResolvedValue([
+    mockPrisma.$queryRaw.mockResolvedValue([
       { id: 'dept-child-1' },
       { id: 'dept-child-2' },
     ]);
@@ -81,7 +83,7 @@ describe('canAccessTask', () => {
 
   it('MANAGER 不能访问其他部门创建的任务', async () => {
     const manager = { id: 'mgr-1', role: 'MANAGER', departmentId: 'dept-1' };
-    mockPrisma.department.findMany.mockResolvedValue([]);
+    mockPrisma.$queryRaw.mockResolvedValue([]);
     mockPrisma.user.findUnique.mockResolvedValue({ departmentId: 'dept-other' });
 
     const result = await canAccessTask(manager, 'user-other-dept');
@@ -98,19 +100,20 @@ describe('canAccessTask', () => {
 describe('checkTaskAccess 中间件', () => {
   let mockReq: any;
   let mockRes: any;
-  let mockNext: jest.Mock;
+  let mockNext: any;
 
   beforeEach(() => {
-    jest.clearAllMocks();
+    vi.clearAllMocks()
+    clearSubDeptCache();
     mockReq = {
       params: { id: 'task-1' },
       user: { id: 'user-1', role: 'USER', departmentId: 'dept-1' },
     };
     mockRes = {
-      status: jest.fn().mockReturnThis(),
-      json: jest.fn().mockReturnThis(),
+      status: vi.fn().mockReturnThis(),
+      json: vi.fn().mockReturnThis(),
     };
-    mockNext = jest.fn();
+    mockNext = vi.fn();
   });
 
   it('缺少 taskId 返回 400', async () => {

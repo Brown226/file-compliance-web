@@ -63,6 +63,11 @@ export const getTaskFilterByRole = async (user: any): Promise<any> => {
 const SUBDEPT_CACHE_TTL_MS = 30_000;
 const subDeptCache = new Map<string, { ids: string[]; expireAt: number }>();
 
+/** 清空子部门缓存（部门结构变更时调用，测试中也用于隔离用例） */
+export function clearSubDeptCache(): void {
+  subDeptCache.clear();
+}
+
 async function getSubDepartmentIds(parentId: string): Promise<string[]> {
   const now = Date.now();
   const cached = subDeptCache.get(parentId);
