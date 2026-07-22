@@ -32,10 +32,10 @@ describe('Internal Code Rule (INTERNAL_CODE)', () => {
 
   it('INTERNAL_CODE_001: should detect suspicious code with similar prefix', () => {
     const issues = checkInternalCodes(ctx(
-      'QS2516EED-JPK01.pdf',
-      '参考编码 QS2516EEC 的内容需要核对。'
+      'QS25A16ED-JPK01.pdf',
+      '参考编码 QS25A16FG 的内容需要核对。'
     ));
-    // QS2516 prefix matches, QS2516EED vs QS2516EEC
+    // QS25A1 前缀匹配，QS25A16ED vs QS25A16FG 后缀不同
     expect(issues.some(i => i.ruleCode === 'INTERNAL_CODE_001')).toBe(true);
   });
 

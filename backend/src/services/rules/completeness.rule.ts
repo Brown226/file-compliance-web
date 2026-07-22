@@ -100,7 +100,7 @@ function checkCablePathData(text: string): RuleIssue[] {
   }
 
   // 检查是否有路径节点序列 (LVYE1L613AB → LVYE1L613AA ...)
-  const hasPathSequence = /([A-Z]{2}\d[A-Z]\d{3}[A-Z]{2}\s*[-→→]\s*){2,}[A-Z]{2}\d[A-Z]\d{3}[A-Z]{2}/.test(text);
+  const hasPathSequence = /([A-Z]{4}\d[A-Z]\d{3}[A-Z]{2}\s*[-→→]\s*){2,}[A-Z]{4}\d[A-Z]\d{3}[A-Z]{2}/.test(text);
 
   if (missingPathFields.length >= 2 || (isCableFile && !hasPathSequence)) {
     const missingDesc = [...missingPathFields];

@@ -55,7 +55,7 @@ describe('Format Rule (FORMAT)', () => {
   });
 
   it('FORMAT_005: should suggest multi-level header for cable list', () => {
-    const issues = checkFormatRules(ctx('电缆清单\n专业：建筑\n工种：电气\n版次：A\n状态：CFC\n设计阶段：施工图设计\n工程号：PJ001\n子项号：S01\n名称\t规格\t长度\n电缆1\t3x95\t100m'));
+    const issues = checkFormatRules(ctx('电缆清单\n专业：建筑\n工种：电气\n版次：A\n状态：CFC\n设计阶段：施工图设计\n工程号：PJ001\n子项号：S01\n名称\t规格\t长度\t起点\t终点\n电缆1\t3x95\t100m\tA01\tB05\n电缆2\t3x70\t80m\tA02\tB06\n电缆3\t3x50\t60m\tA03\tB07'));
     expect(issues.some(i => i.ruleCode === 'FORMAT_005')).toBe(true);
   });
 

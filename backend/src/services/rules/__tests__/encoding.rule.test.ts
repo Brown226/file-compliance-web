@@ -27,7 +27,7 @@ describe('Encoding Consistency Rule (CODE)', () => {
   /* ===== CODE 正例 ===== */
 
   it('CODE_004: should detect when filename cannot extract valid external code', () => {
-    const issues = checkEncodingConsistency(ctx({ fileName: 'XX123-JPS02.pdf', pdfPages: ['page1'], extractedText: '' }));
+    const issues = checkEncodingConsistency(ctx({ fileName: 'FJ24A00AC-JPS0.pdf', pdfPages: ['page1'], extractedText: '' }));
     expect(issues.some(i => i.ruleCode === 'CODE_004')).toBe(true);
   });
 
@@ -127,8 +127,8 @@ describe('Encoding Consistency Rule (CODE)', () => {
 
   it('should detect UNIT_001 when unit numbers mismatch', () => {
     const issues = checkEncodingConsistency(ctx({
-      fileName: 'QS2516EED-JPK01-001(A).pdf',
-      pdfPages: ['cover', 'QS2516EED-JPK01 header'],
+      fileName: 'FJ24A00AC-JPS02-001(A).pdf',
+      pdfPages: ['cover', 'FJ24A00AC-JPS02-001(A) 页眉内容'],
       extractedText: '图册编号：QS2516EED-JPK01\nDOC.NO：ZGA25000001B25A44GN',
     }));
     // Album unit: 'E' (7th char), DOC.NO unit: 'A' (3rd char after first 2 letters)

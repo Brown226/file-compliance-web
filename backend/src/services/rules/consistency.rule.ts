@@ -72,15 +72,21 @@ function checkProjectNameConsistency(text: string, config?: any): RuleIssue | nu
  */
 
 // 核电工程编码特征：必须包含字母和数字的特定组合，排除标准编号、日期等
-const NUCLEAR_CODE_PATTERN = /\d[A-Z]{2}\d{2,3}[A-Z]{2}\d{2}[A-Z]{2}/g; // 如 1EAA360CR, ZG25401EA
+const NUCLEAR_CODE_PATTERN = /\d[A-Z]{2,4}\d{2,4}[A-Z]{2,3}/g; // 如 1EAA360CR, ZG25401EA
 const EXCLUDED_PREFIXES = /^(GB|ISO|IEC|NB|DL|HJ|EJ|JGJ|CJJ|HAF|CECS|TJ|DB|QX|GYJ|BJG)/i;
 
 function checkTocCodeConsistency(text: string): RuleIssue | null {
   // 提取目录区域的编码列表
-  const tocMatch = text.match(/(?:目\s*录|图纸\s*目\s*录|目\s*次)[\s\S]{0,3000}/);
-  if (!tocMatch) return null;
+  const headerMatch = text.match(/(?:图纸\s*目\s*录|目\s*录|目\s*次)/);
+  if (!headerMatch || headerMatch.index == null) return null;
 
-  const tocText = tocMatch[0];
+  const afterHeader = text.slice(headerMatch.index);
+  // 目录区在“正文/第N章”标记前结束；无该标记则取目录后前 1500 字符
+  const bodyMarkerMatch = afterHeader.slice(headerMatch[0].length).match(/正\s*文|第\s*[一二三四五六七八九十百\d]+\s*章/);
+  const tocEnd = (bodyMarkerMatch && bodyMarkerMatch.index != null)
+    ? headerMatch[0].length + bodyMarkerMatch.index
+    : Math.min(1500, afterHeader.length);
+  const tocText = afterHeader.slice(0, tocEnd);
 
   // 从目录中提取核电工程编码（更严格的模式）
   const tocCodes = new Set<string>();
@@ -98,7 +104,7 @@ function checkTocCodeConsistency(text: string): RuleIssue | null {
   if (tocCodes.size === 0) return null;
 
   // 从正文中提取出现的编码
-  const bodyText = text.replace(tocText, ''); // 排除目录区域本身
+  const bodyText = text.slice(0, headerMatch.index) + afterHeader.slice(tocEnd); // 排除目录区域本身
   const bodyCodes = new Set<string>();
   const idCodeInBody = bodyText.match(NUCLEAR_CODE_PATTERN);
   if (idCodeInBody) {
@@ -111,7 +117,8 @@ function checkTocCodeConsistency(text: string): RuleIssue | null {
   }
 
   // 如果目录中有编码但正文中没有对应编码，可能不一致
-  if (bodyCodes.size > 0) {
+  const bodyHasContent = bodyText.trim().length >= 10;
+  if (bodyHasContent) {
     const codesOnlyInToc = [...tocCodes].filter(c => !bodyCodes.has(c) &&
       !([...bodyCodes].some(bc => bc.startsWith(c.substring(0, 7)) || c.startsWith(bc.substring(0, 7))))
     );

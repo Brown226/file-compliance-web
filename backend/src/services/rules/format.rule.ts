@@ -19,7 +19,7 @@ export function extractCoverArea(text: string): string {
   for (let i = 0; i < lines.length; i++) {
     if (lines[i].trim().length === 0) {
       consecutiveEmptyLines++;
-      if (consecutiveEmptyLines >= 2 && i > 8) {
+      if (consecutiveEmptyLines >= 2 && i >= 2) {
         coverEndLine = i;
         break;
       }

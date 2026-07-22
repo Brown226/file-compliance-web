@@ -106,7 +106,7 @@ export function checkCoverAttributes(ctx: FileContext, config?: any): RuleIssue[
   }
 
   // ATTR_009: 图册名称检查
-  const nameMatch = text.match(/(?:图册|文件)\s*(?:名称)?[：:\s]*([^\n\r]{4,})/);
+  const nameMatch = text.match(/(?:图册|文件)\s*名称[：:\s]*([^\n\r]{2,})/);
   if (!nameMatch || nameMatch[1].trim().length < 2) {
     issues.push({
       issueType: 'COMPLETENESS', ruleCode: 'ATTR_009', severity: 'warning',

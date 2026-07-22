@@ -27,12 +27,17 @@ export function checkHeader(ctx: FileContext, config?: any): RuleIssue[] {
 
   if (!coverName) return issues; // 封面没有名称则跳过
 
-  // 提取名称核心关键词（去掉常见后缀以支持部分匹配，支持 config 覆盖后缀列表）
+  // 提取名称核心关键词（去掉一个尾部常见后缀以支持部分匹配，支持 config 覆盖后缀列表）
   const stripSuffixes: string[] = config?.stripSuffixes || ['施工图设计说明', '施工图设计', '设计说明', '设计'];
-  const coreName = stripSuffixes
-    .reduce((name, suffix) => name.replace(new RegExp(suffix, 'g'), ''), coverName)
-    .trim()
-    .replace(/\s+/g, '');
+  // 只剥离一个匹配的尾部后缀，且保证核心名非空（避免整名被剥空导致部分匹配失效）
+  let coreNameRaw = coverName;
+  for (const suffix of stripSuffixes) {
+    if (coverName.endsWith(suffix) && coverName.length > suffix.length) {
+      coreNameRaw = coverName.slice(0, coverName.length - suffix.length);
+      break;
+    }
+  }
+  const coreName = coreNameRaw.trim().replace(/\s+/g, '');
 
   // 最多检查页数（支持 config 覆盖）
   const maxCheckPages: number = config?.maxCheckPages ?? 5;
