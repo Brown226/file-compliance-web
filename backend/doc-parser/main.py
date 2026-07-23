@@ -221,34 +221,60 @@ def _parse_with_enhanced(content: bytes, ext: str, filename: str, vision_config:
         except Exception as e:
             logger.warning(f"PDF 增强解析失败: {e}")
 
-        # 扫描件 PDF 降级：文本提取为空时尝试视觉模型 OCR
-        if vision_config and vision_config.get('apiKey') and vision_config.get('modelName'):
+        # 扫描件 PDF 降级：文本提取为空时尝试 OCR
+        # 策略：RapidOCR（本地、快速）优先 → Vision LLM（内网 API）兜底
+        ocr_text = None
+        ocr_engine = None
+
+        # 第一优先：RapidOCR 本地识别
+        try:
+            from rapid_ocr import recognize_with_rapidocr, CONFIDENCE_THRESHOLD
+            ocr_result = recognize_with_rapidocr(content, 'pdf', filename)
+            if ocr_result and ocr_result['text']:
+                if ocr_result['confidence'] >= CONFIDENCE_THRESHOLD:
+                    ocr_text = ocr_result['text']
+                    ocr_engine = 'rapidocr'
+                    logger.info(f"RapidOCR 识别成功: {filename}, "
+                               f"{len(ocr_text)} 字符, 置信度 {ocr_result['confidence']:.3f}")
+                else:
+                    logger.info(f"RapidOCR 置信度不足 ({ocr_result['confidence']:.3f} < {CONFIDENCE_THRESHOLD}), "
+                               f"尝试 Vision LLM 兜底")
+        except Exception as e:
+            logger.warning(f"RapidOCR 识别失败: {filename} - {e}")
+
+        # 第二优先：Vision LLM 兜底（需配置有效）
+        if not ocr_text and vision_config and vision_config.get('apiKey') and vision_config.get('modelName'):
             try:
                 from vision_ocr import recognize_with_vision
-                ocr_text = recognize_with_vision(content, 'pdf', filename, vision_config)
-                if ocr_text:
+                vision_text = recognize_with_vision(content, 'pdf', filename, vision_config)
+                if vision_text:
+                    ocr_text = vision_text
+                    ocr_engine = 'vision-llm'
                     logger.info(f"视觉模型 OCR 识别成功: {filename}, {len(ocr_text)} 字符")
-                    return {
-                        'text': ocr_text,
-                        'pages': [ocr_text],
-                        'metadata': {
-                            'page_count': 1,
-                            'has_tables': False,
-                            'has_images': True,
-                            'parse_error': None,
-                            'ocr_engine': 'vision-llm',
-                        },
-                        'structure': {
-                            'paragraphs': [{'text': line, 'style': 'Normal', 'page': 0}
-                                           for line in ocr_text.split('\n') if line.strip()],
-                            'tables': [],
-                            'headers': [],
-                            'dimensions': [],
-                        },
-                        'markdown': ocr_text,
-                    }
             except Exception as e:
                 logger.error(f"视觉模型 OCR 失败: {filename} - {e}")
+
+        # 返回 OCR 结果
+        if ocr_text:
+            return {
+                'text': ocr_text,
+                'pages': [ocr_text],
+                'metadata': {
+                    'page_count': 1,
+                    'has_tables': False,
+                    'has_images': True,
+                    'parse_error': None,
+                    'ocr_engine': ocr_engine,
+                },
+                'structure': {
+                    'paragraphs': [{'text': line, 'style': 'Normal', 'page': 0}
+                                   for line in ocr_text.split('\n') if line.strip()],
+                    'tables': [],
+                    'headers': [],
+                    'dimensions': [],
+                },
+                'markdown': ocr_text,
+            }
 
     elif ext == ".docx":
         try:

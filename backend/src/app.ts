@@ -33,6 +33,7 @@ import maxkbRoutes from './routes/maxkb.routes';
 import generationRoutes from './routes/generation.routes';
 import polishRoutes from './routes/polish.routes';
 import templateRoutes from './routes/template.routes';
+import dwgVisionRoutes from './routes/dwg-vision.routes';
 
 // 注：定时清理（scheduler）与异步队列（queue）的初始化已移至 index.ts，
 // 按 PROCESS_ROLE 角色门控，避免 app.ts 被 import 时产生副作用（API/Worker 进程拆分）。
@@ -86,6 +87,7 @@ app.use('/api/maxkb', maxkbRoutes);
 app.use('/api/generation', generationRoutes);
 app.use('/api/polish', polishRoutes);
 app.use('/api/template', templateRoutes);
+app.use('/api/dwg', dwgVisionRoutes);
 app.use('/api', healthRoutes);
 app.get('/health', (req: Request, res: Response) => {
   res.status(200).json({ status: 'OK', message: 'Server is running' });

@@ -1,6 +1,6 @@
 """
-视觉模型 OCR — 用于扫描件 PDF 文字提取
-PDF → pdf2image 转图片 → 缩放 → JPEG 压缩 → 调视觉大模型 API → 返回文字
+视觉模型 OCR — 用于扫描件 PDF 文字提取（Vision LLM 兜底通道）
+PDF → PyMuPDF 渲染为图片 → 缩放 → JPEG 压缩 → 调视觉大模型 API → 返回文字
 """
 
 import base64
@@ -12,7 +12,6 @@ from typing import Any, Dict, List, Optional
 from urllib import error, request
 
 from PIL import Image
-from pdf2image import convert_from_bytes
 
 logger = logging.getLogger("doc-parser-service")
 
@@ -22,6 +21,26 @@ VISION_JPEG_QUALITY = 80     # JPEG 压缩质量
 OCR_DPI = 100                # PDF→图片 DPI（越低越快）
 MAX_PAGES = 100              # 最多处理页数
 DEFAULT_TIMEOUT_SEC = 300    # API 超时（秒）
+
+
+def _pdf_to_images(file_bytes: bytes, dpi: int = OCR_DPI, max_pages: int = MAX_PAGES) -> list:
+    """用 PyMuPDF 将 PDF 渲染为 PIL Image 列表（替代 pdf2image，无需 poppler）"""
+    import fitz  # PyMuPDF
+
+    doc = fitz.open(stream=file_bytes, filetype="pdf")
+    images = []
+    zoom = dpi / 72.0
+    matrix = fitz.Matrix(zoom, zoom)
+
+    for i, page in enumerate(doc):
+        if i >= max_pages:
+            break
+        pix = page.get_pixmap(matrix=matrix)
+        img = Image.frombytes("RGB", [pix.width, pix.height], pix.samples)
+        images.append(img)
+
+    doc.close()
+    return images
 
 
 def _resize_for_vision(image: Image.Image) -> Image.Image:
@@ -103,13 +122,13 @@ def recognize_with_vision(
 
     start_time = time.time()
 
-    # PDF → 图片
+    # PDF → 图片（使用 PyMuPDF 渲染，无需 poppler）
     is_pdf = file_type.lower() in ('pdf',) or file_name.lower().endswith('.pdf')
     if is_pdf:
         try:
-            images = list(convert_from_bytes(file_bytes, dpi=OCR_DPI, first_page=1, last_page=MAX_PAGES))
+            images = _pdf_to_images(file_bytes)
         except Exception as e:
-            logger.error(f'Vision OCR: pdf2image 转换失败: {e}')
+            logger.error(f'Vision OCR: PDF 渲染失败: {e}')
             return ''
     else:
         # 单张图片

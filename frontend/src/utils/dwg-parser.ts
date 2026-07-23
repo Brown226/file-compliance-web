@@ -511,3 +511,84 @@ export async function dwgFileToSvg(file: File): Promise<string> {
   const result = await dwgToSvg(file)
   return result.svg
 }
+
+// ==================== PNG 导出（用于 Vision LLM 分析） ====================
+
+/**
+ * 将 DWG 文件渲染为高清 PNG base64（用于视觉模型分析）
+ * 流程：DWG → SVG（WASM）→ Image → Canvas → PNG base64
+ * @param file DWG 文件
+ * @param scale 放大倍数（默认 2，确保清晰度）
+ * @returns PNG 图片的 base64 字符串（不含 data:image/png;base64, 前缀）
+ */
+export async function dwgToPng(file: File, scale: number = 2): Promise<string> {
+  // 1. 复用 dwgToSvg 获取 SVG 字符串
+  const { svg } = await dwgToSvg(file)
+
+  if (!svg || svg.trim().length === 0) {
+    throw new Error('DWG 转 SVG 失败，无法生成图片')
+  }
+
+  // 2. 解析 SVG 尺寸
+  const parser = new DOMParser()
+  const svgDoc = parser.parseFromString(svg, 'image/svg+xml')
+  const svgEl = svgDoc.documentElement
+
+  // 从 viewBox 或 width/height 获取尺寸
+  let width = 1200
+  let height = 900
+  const viewBox = svgEl.getAttribute('viewBox')
+  if (viewBox) {
+    const parts = viewBox.split(/[\s,]+/).map(Number)
+    if (parts.length === 4) {
+      width = parts[2]
+      height = parts[3]
+    }
+  } else {
+    const w = parseFloat(svgEl.getAttribute('width') || '')
+    const h = parseFloat(svgEl.getAttribute('height') || '')
+    if (w > 0 && h > 0) {
+      width = w
+      height = h
+    }
+  }
+
+  // 3. 创建 Image 对象加载 SVG
+  const svgBase64 = btoa(unescape(encodeURIComponent(svg)))
+  const svgDataUrl = `data:image/svg+xml;base64,${svgBase64}`
+
+  const img = await new Promise<HTMLImageElement>((resolve, reject) => {
+    const image = new Image()
+    image.onload = () => resolve(image)
+    image.onerror = () => reject(new Error('SVG 图片加载失败'))
+    image.src = svgDataUrl
+  })
+
+  // 4. 绘制到 Canvas（scale 倍放大）
+  const canvas = document.createElement('canvas')
+  canvas.width = Math.round(width * scale)
+  canvas.height = Math.round(height * scale)
+
+  const ctx = canvas.getContext('2d')
+  if (!ctx) {
+    throw new Error('Canvas 2D 上下文创建失败')
+  }
+
+  // 白色背景（图纸通常是白底）
+  ctx.fillStyle = '#ffffff'
+  ctx.fillRect(0, 0, canvas.width, canvas.height)
+  ctx.drawImage(img, 0, 0, canvas.width, canvas.height)
+
+  // 5. 导出 PNG base64（去掉 data:image/png;base64, 前缀）
+  const dataUrl = canvas.toDataURL('image/png')
+  const base64 = dataUrl.replace(/^data:image\/png;base64,/, '')
+
+  // 检查大小（超过 10MB 降低 scale 重试）
+  if (base64.length * 0.75 > 10 * 1024 * 1024 && scale > 1) {
+    console.warn(`[DWG PNG] 图片过大 (${(base64.length * 0.75 / 1024 / 1024).toFixed(1)}MB)，降低分辨率重试`)
+    return dwgToPng(file, 1)
+  }
+
+  console.log(`[DWG PNG] 导出成功: ${canvas.width}x${canvas.height}, ${(base64.length * 0.75 / 1024).toFixed(0)}KB`)
+  return base64
+}

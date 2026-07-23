@@ -1,0 +1,179 @@
+"""
+RapidOCR 本地 OCR 引擎 — 轻量、离线、纯 CPU
+用于扫描件 PDF / 图片的文字识别，无需外网 API。
+PDF 页面渲染使用 PyMuPDF（无需 pdf2image / poppler）。
+"""
+
+import io
+import logging
+import time
+from typing import Optional
+
+import numpy as np
+from PIL import Image
+
+logger = logging.getLogger("doc-parser-service")
+
+# 配置常量
+OCR_DPI = 150                # PDF→图片渲染 DPI（平衡质量与速度）
+MAX_PAGES = 100              # 最多处理页数
+CONFIDENCE_THRESHOLD = 0.7   # 平均置信度阈值，低于此值视为识别质量不足
+
+# 延迟初始化 RapidOCR 实例（避免启动时加载模型耗时）
+_ocr_engine = None
+
+
+def _get_engine():
+    """延迟初始化 RapidOCR 引擎（单例）"""
+    global _ocr_engine
+    if _ocr_engine is None:
+        try:
+            from rapidocr import RapidOCR
+            _ocr_engine = RapidOCR()
+            logger.info("RapidOCR 引擎初始化成功")
+        except ImportError as e:
+            logger.error(f"RapidOCR 未安装: {e}")
+            raise
+        except Exception as e:
+            logger.error(f"RapidOCR 初始化失败: {e}")
+            raise
+    return _ocr_engine
+
+
+def _pdf_to_images(file_bytes: bytes, dpi: int = OCR_DPI, max_pages: int = MAX_PAGES) -> list:
+    """
+    用 PyMuPDF 将 PDF 渲染为 PIL Image 列表。
+    替代 pdf2image（无需 poppler-utils 系统依赖）。
+    """
+    import fitz  # PyMuPDF
+
+    doc = fitz.open(stream=file_bytes, filetype="pdf")
+    images = []
+    zoom = dpi / 72.0
+    matrix = fitz.Matrix(zoom, zoom)
+
+    for i, page in enumerate(doc):
+        if i >= max_pages:
+            break
+        pix = page.get_pixmap(matrix=matrix)
+        img = Image.frombytes("RGB", [pix.width, pix.height], pix.samples)
+        images.append(img)
+
+    doc.close()
+    return images
+
+
+def _ocr_single_image(engine, image: Image.Image) -> tuple:
+    """
+    对单张图片执行 OCR。
+    返回 (识别文本, 平均置信度)
+    """
+    img_array = np.array(image)
+    result = engine(img_array)
+
+    # RapidOCR 3.x 返回 RapidOCROutput 对象或列表
+    texts = []
+    scores = []
+
+    if result is None:
+        return "", 0.0
+
+    # 兼容 RapidOCR 3.8+ 的 RapidOCROutput 对象
+    if hasattr(result, 'txts') and result.txts is not None:
+        texts = list(result.txts)
+        scores = [float(s) for s in result.scores] if result.scores else []
+    elif isinstance(result, (list, tuple)):
+        # 旧版格式: [[box, (text, score)], ...]
+        for item in result:
+            if isinstance(item, (list, tuple)) and len(item) >= 2:
+                text_score = item[1]
+                if isinstance(text_score, (list, tuple)) and len(text_score) >= 2:
+                    texts.append(str(text_score[0]))
+                    scores.append(float(text_score[1]))
+
+    full_text = "\n".join(texts)
+    avg_confidence = sum(scores) / len(scores) if scores else 0.0
+
+    return full_text, avg_confidence
+
+
+def recognize_with_rapidocr(
+    file_bytes: bytes,
+    file_type: str,
+    file_name: str,
+) -> Optional[dict]:
+    """
+    使用 RapidOCR 本地引擎识别文件中的文字。
+
+    Args:
+        file_bytes: 文件原始字节
+        file_type: 文件类型 (pdf/png/jpg 等)
+        file_name: 文件名（用于日志）
+
+    Returns:
+        成功: {'text': str, 'confidence': float, 'engine': 'rapidocr'}
+        失败: None
+    """
+    start_time = time.time()
+
+    try:
+        engine = _get_engine()
+    except Exception:
+        return None
+
+    # PDF → 图片列表
+    is_pdf = file_type.lower() in ('pdf',) or file_name.lower().endswith('.pdf')
+    if is_pdf:
+        try:
+            images = _pdf_to_images(file_bytes)
+        except Exception as e:
+            logger.error(f"RapidOCR: PDF 渲染失败: {file_name} - {e}")
+            return None
+    else:
+        # 单张图片
+        try:
+            images = [Image.open(io.BytesIO(file_bytes)).convert('RGB')]
+        except Exception as e:
+            logger.error(f"RapidOCR: 图片打开失败: {file_name} - {e}")
+            return None
+
+    if not images:
+        logger.warning(f"RapidOCR: 未提取到页面: {file_name}")
+        return None
+
+    total_pages = len(images)
+    logger.info(f"RapidOCR: 开始识别 {file_name}, {total_pages} 页, DPI={OCR_DPI}")
+
+    # 逐页识别
+    page_texts = []
+    all_scores = []
+
+    for index, image in enumerate(images, start=1):
+        try:
+            text, confidence = _ocr_single_image(engine, image)
+            if text.strip():
+                page_texts.append(text)
+                all_scores.append(confidence)
+                logger.info(f"RapidOCR: 页 {index}/{total_pages} 识别完成, "
+                           f"{len(text)} 字符, 置信度 {confidence:.3f}")
+            else:
+                logger.warning(f"RapidOCR: 页 {index}/{total_pages} 未识别到文字")
+        except Exception as e:
+            logger.error(f"RapidOCR: 页 {index}/{total_pages} 识别失败: {e}")
+
+    if not page_texts:
+        logger.warning(f"RapidOCR: 全部页面识别为空: {file_name}")
+        return None
+
+    full_text = "\n".join(page_texts).strip()
+    avg_confidence = sum(all_scores) / len(all_scores) if all_scores else 0.0
+    elapsed = time.time() - start_time
+
+    logger.info(f"RapidOCR 完成: {file_name}, {len(full_text)} 字符, "
+               f"平均置信度 {avg_confidence:.3f}, 耗时 {elapsed:.1f}s")
+
+    return {
+        'text': full_text,
+        'confidence': avg_confidence,
+        'engine': 'rapidocr',
+    }

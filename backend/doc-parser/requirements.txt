@@ -21,11 +21,13 @@ mammoth~=1.11.0
 # --- XLSX: openpyxl 原生解析 ---
 openpyxl~=3.1.5
 
-# --- PDF: PyMuPDF + pdfplumber 原生解析 ---
-PyMuPDF==1.25.5
-pdfplumber~=0.11.9
-pdf2image~=1.17.0
+# --- PDF: PyMuPDF 原生解析 + 内置表格提取 ---
+PyMuPDF>=1.26.0
 Pillow>=10.0.0
+
+# --- OCR: RapidOCR 本地识别（轻量、离线、纯 CPU） ---
+rapidocr>=3.9.0
+onnxruntime>=1.20.0
 
 # --- PPTX: python-pptx 原生解析 ---
 python-pptx~=1.0.2

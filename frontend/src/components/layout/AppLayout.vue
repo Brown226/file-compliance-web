@@ -32,6 +32,10 @@
           <el-icon><ChatDotRound /></el-icon>
           <template #title><span>AI 工作台</span></template>
         </el-menu-item>
+        <el-menu-item index="/dwg-vision">
+          <el-icon><View /></el-icon>
+          <template #title><span>图纸视觉分析</span></template>
+        </el-menu-item>
         <el-menu-item index="/knowledge">
           <el-icon><Collection /></el-icon>
           <template #title><span>知识中心</span></template>
@@ -253,7 +257,7 @@ import {
   Fold, Expand, Search, QuestionFilled, Edit,
   WarningFilled, ChatDotRound, ChatLineRound,
   Bell, User, ArrowLeft, Brush, Guide, ChatLineSquare,
-  MagicStick, Memo, Reading, Collection,
+  MagicStick, Memo, Reading, Collection, View,
 } from '@element-plus/icons-vue'
 import { logoutApi, changePasswordApi, changeUsernameApi, loginApi } from '@/api/auth'
 import GlobalSearch from '@/components/GlobalSearch.vue'

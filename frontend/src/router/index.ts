@@ -56,6 +56,12 @@ const routes: Array<RouteRecordRaw> = [
       },
       { path: 'ai-assistant', redirect: '/ai?tab=chat' },
       { path: 'polish', redirect: '/ai?tab=polish' },
+      {
+        path: 'dwg-vision',
+        name: 'DwgVisionAnalysis',
+        component: () => import('../views/Tools/DwgVisionAnalysis.vue'),
+        meta: { title: '图纸视觉分析' }
+      },
       // ===== 知识中心 =====
       {
         path: 'knowledge',

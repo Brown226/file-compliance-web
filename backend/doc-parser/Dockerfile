@@ -33,11 +33,11 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /app
 
-# 仅安装运行时系统库（libreoffice + poppler），不装 gcc/编译头文件
+# 仅安装运行时系统库（libreoffice 用于 .doc 转换），不装 gcc/编译头文件
+# 已移除 poppler-utils（PDF 转图片改用 PyMuPDF 内置渲染）
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
     libreoffice-writer \
-    poppler-utils \
     libxml2 \
     libxslt1.1 \
     && rm -rf /var/lib/apt/lists/*
@@ -52,6 +52,7 @@ COPY docx_enhanced.py .
 COPY xlsx_enhanced.py .
 COPY pptx_enhanced.py .
 COPY vision_ocr.py .
+COPY rapid_ocr.py .
 
 EXPOSE 8000
 
