@@ -1,16 +1,34 @@
 <template>
   <div class="dwg-vision-page">
-    <div class="page-header">
-      <h2>图纸视觉智能分析</h2>
-      <p class="subtitle">基于视觉大模型，对 CAD 图纸进行标题栏识别、图例符号识别、标注完整性检查和设计说明合规审查</p>
+    <!-- ===== 页面头部 ===== -->
+    <div class="page-hero">
+      <div class="hero-left">
+        <div class="hero-icon">
+          <el-icon :size="26"><PictureFilled /></el-icon>
+        </div>
+        <div class="hero-text">
+          <h2>图纸视觉智能分析</h2>
+          <p>基于视觉大模型，对 CAD 图纸进行标题栏识别、图例符号识别、标注完整性检查和设计说明合规审查</p>
+        </div>
+      </div>
+      <div class="hero-right">
+        <el-tag v-if="visionStatus" :type="visionStatus.configured ? 'success' : 'warning'" effect="dark" round size="large">
+          <el-icon style="margin-right:4px"><component :is="visionStatus.configured ? CircleCheck : WarningFilled" /></el-icon>
+          {{ visionStatus.configured ? `视觉模型就绪 · ${visionStatus.modelName}` : '视觉模型未配置' }}
+        </el-tag>
+      </div>
     </div>
 
     <div class="page-body">
-      <!-- 左侧：上传与控制 -->
+      <!-- ===== 左侧：上传与控制 ===== -->
       <div class="left-panel">
-        <el-card shadow="never">
+        <!-- 上传图纸 -->
+        <el-card shadow="never" class="panel-card">
           <template #header>
-            <span>上传图纸</span>
+            <div class="card-title">
+              <el-icon class="title-icon"><UploadFilled /></el-icon>
+              <span>上传图纸</span>
+            </div>
           </template>
 
           <el-upload
@@ -21,50 +39,87 @@
             :on-change="handleFileChange"
             :on-remove="handleFileRemove"
             drag
+            class="dwg-upload"
           >
-            <el-icon class="el-icon--upload"><Upload /></el-icon>
-            <div class="el-upload__text">拖拽 DWG 文件到此处，或 <em>点击选择</em></div>
-            <template #tip>
-              <div class="el-upload__tip">仅支持 .dwg 格式，文件大小不超过 50MB</div>
-            </template>
+            <div class="upload-inner">
+              <el-icon class="upload-icon"><UploadFilled /></el-icon>
+              <div class="upload-text">拖拽 DWG 文件到此处，或 <em>点击选择</em></div>
+              <div class="upload-hint">仅支持 .dwg 格式 · 不超过 50MB</div>
+            </div>
           </el-upload>
+
+          <!-- 已选文件信息 -->
+          <div v-if="dwgFile" class="file-info">
+            <el-icon class="file-icon"><Document /></el-icon>
+            <div class="file-meta">
+              <div class="file-name">{{ dwgFile.name }}</div>
+              <div class="file-size">{{ formatFileSize(dwgFile.size) }}</div>
+            </div>
+          </div>
 
           <!-- SVG 预览缩略图 -->
           <div v-if="previewSvg" class="svg-preview">
-            <div class="preview-label">图纸预览</div>
+            <div class="preview-label">
+              <el-icon><View /></el-icon>
+              <span>图纸预览</span>
+            </div>
             <div class="preview-canvas" v-html="previewSvg"></div>
           </div>
         </el-card>
 
-        <el-card shadow="never" class="options-card">
+        <!-- 分析选项 -->
+        <el-card shadow="never" class="panel-card">
           <template #header>
-            <span>分析选项</span>
+            <div class="card-title">
+              <el-icon class="title-icon"><SetUp /></el-icon>
+              <span>分析选项</span>
+              <el-tag size="small" type="info" class="count-tag">{{ selectedAnalyses.length }}/{{ analysisOptions.length }}</el-tag>
+            </div>
           </template>
 
-          <el-checkbox-group v-model="selectedAnalyses">
-            <el-checkbox label="titleBlock" value="titleBlock">标题栏/图签识别</el-checkbox>
-            <el-checkbox label="symbols" value="symbols">图例符号识别</el-checkbox>
-            <el-checkbox label="annotations" value="annotations">标注完整性检查</el-checkbox>
-            <el-checkbox label="compliance" value="compliance">设计说明合规审查</el-checkbox>
-          </el-checkbox-group>
+          <div class="option-grid">
+            <div
+              v-for="opt in analysisOptions"
+              :key="opt.key"
+              class="option-item"
+              :class="{ selected: selectedAnalyses.includes(opt.key) }"
+              @click="toggleAnalysis(opt.key)"
+            >
+              <div class="option-icon" :style="{ background: opt.bg, color: opt.color }">
+                <el-icon :size="18"><component :is="opt.icon" /></el-icon>
+              </div>
+              <div class="option-text">
+                <div class="option-label">{{ opt.label }}</div>
+                <div class="option-desc">{{ opt.desc }}</div>
+              </div>
+              <div class="option-check">
+                <el-icon v-if="selectedAnalyses.includes(opt.key)"><CircleCheckFilled /></el-icon>
+              </div>
+            </div>
+          </div>
 
           <!-- 合规审查参考条文 -->
-          <div v-if="selectedAnalyses.includes('compliance')" class="ref-section">
-            <el-input
-              v-model="refText"
-              type="textarea"
-              :rows="4"
-              placeholder="（可选）粘贴需要对照的标准条文/规范要求，用于合规性比对"
-            />
-          </div>
+          <transition name="el-zoom-in-top">
+            <div v-if="selectedAnalyses.includes('compliance')" class="ref-section">
+              <div class="ref-label">对照标准条文（可选）</div>
+              <el-input
+                v-model="refText"
+                type="textarea"
+                :rows="3"
+                placeholder="粘贴需要对照的标准条文 / 规范要求，用于合规性比对"
+              />
+            </div>
+          </transition>
 
           <el-button
             type="primary"
+            size="large"
             :loading="analyzing"
             :disabled="!dwgFile || selectedAnalyses.length === 0"
             class="analyze-btn"
             @click="startAnalysis"
           >
+            <el-icon v-if="!analyzing" style="margin-right:6px"><VideoPlay /></el-icon>
             {{ analyzing ? '分析中...' : '开始分析' }}
           </el-button>
 
@@ -74,33 +129,67 @@
             <span>正在调用视觉模型分析，请耐心等待（约 1-2 分钟）...</span>
           </div>
 
-          <!-- 视觉模型状态 -->
-          <div v-if="visionStatus && !visionStatus.configured" class="config-warning">
-            <el-alert type="warning" :closable="false" show-icon
-              title="视觉模型未配置"
-              description="请在 系统管理 → AI配置 中配置视觉模型后再使用此功能"
-            />
-          </div>
+          <!-- 视觉模型未配置警告 -->
+          <el-alert
+            v-if="visionStatus && !visionStatus.configured"
+            type="warning"
+            :closable="false"
+            show-icon
+            class="config-warning"
+            title="视觉模型未配置"
+            description="请在 系统管理 → AI配置 中配置视觉模型后再使用此功能"
+          />
         </el-card>
       </div>
 
-      <!-- 右侧：分析结果 -->
+      <!-- ===== 右侧：分析结果 ===== -->
       <div class="right-panel">
-        <el-card v-if="!result && !analyzing" shadow="never" class="empty-card">
-          <el-empty description="上传 DWG 图纸并点击「开始分析」查看结果" />
-        </el-card>
+        <!-- 空状态 -->
+        <div v-if="!result && !analyzing" class="empty-state">
+          <div class="empty-icon">
+            <el-icon :size="56"><PictureFilled /></el-icon>
+          </div>
+          <h3>暂无分析结果</h3>
+          <p>上传 DWG 图纸，选择分析项后点击「开始分析」</p>
+          <div class="empty-steps">
+            <div class="step"><span class="step-num">1</span>上传图纸</div>
+            <el-icon class="step-arrow"><Right /></el-icon>
+            <div class="step"><span class="step-num">2</span>选择分析项</div>
+            <el-icon class="step-arrow"><Right /></el-icon>
+            <div class="step"><span class="step-num">3</span>查看结果</div>
+          </div>
+        </div>
 
+        <!-- 分析中骨架 -->
+        <div v-else-if="analyzing" class="loading-state">
+          <div class="loading-spinner">
+            <el-icon :size="44" class="is-loading"><Loading /></el-icon>
+          </div>
+          <h3>视觉模型分析中</h3>
+          <p>正在渲染图纸并调用视觉大模型，请稍候...</p>
+          <el-progress :percentage="100" :indeterminate="true" :show-text="false" class="loading-bar" />
+        </div>
+
+        <!-- 结果 -->
         <el-card v-else shadow="never" class="result-card">
           <template #header>
             <div class="result-header">
-              <span>分析结果</span>
-              <el-tag v-if="result" size="small" type="info">耗时 {{ (result.duration_ms / 1000).toFixed(1) }}s</el-tag>
+              <div class="result-title">
+                <el-icon class="title-icon"><DataAnalysis /></el-icon>
+                <span>分析结果</span>
+              </div>
+              <div class="result-meta">
+                <el-tag size="small" type="info" effect="plain">
+                  <el-icon style="margin-right:3px"><Clock /></el-icon>
+                  耗时 {{ (result.duration_ms / 1000).toFixed(1) }}s
+                </el-tag>
+              </div>
             </div>
           </template>
 
           <!-- 错误提示 -->
           <el-alert
-            v-if="result && result.errors.length > 0"
+            v-if="result.errors.length > 0"
             type="error"
             :closable="false"
             class="error-alert"
@@ -111,29 +200,43 @@
             </ul>
           </el-alert>
 
-          <el-tabs v-model="activeTab" v-if="result">
+          <el-tabs v-model="activeTab" class="result-tabs">
             <!-- 标题栏 -->
-            <el-tab-pane label="标题栏" name="titleBlock" v-if="result.titleBlock">
-              <div class="title-block-grid">
-                <div class="tb-item"><span class="tb-label">图号</span><span class="tb-value">{{ result.titleBlock.drawingNo || '—' }}</span></div>
-                <div class="tb-item"><span class="tb-label">图名</span><span class="tb-value">{{ result.titleBlock.title || '—' }}</span></div>
-                <div class="tb-item"><span class="tb-label">版本</span><span class="tb-value">{{ result.titleBlock.revision || '—' }}</span></div>
-                <div class="tb-item"><span class="tb-label">比例</span><span class="tb-value">{{ result.titleBlock.scale || '—' }}</span></div>
-                <div class="tb-item"><span class="tb-label">设计</span><span class="tb-value">{{ result.titleBlock.designer || '—' }}</span></div>
-                <div class="tb-item"><span class="tb-label">校核</span><span class="tb-value">{{ result.titleBlock.checker || '—' }}</span></div>
-                <div class="tb-item"><span class="tb-label">审核</span><span class="tb-value">{{ result.titleBlock.reviewer || '—' }}</span></div>
-                <div class="tb-item"><span class="tb-label">批准</span><span class="tb-value">{{ result.titleBlock.approver || '—' }}</span></div>
-                <div class="tb-item"><span class="tb-label">日期</span><span class="tb-value">{{ result.titleBlock.date || '—' }}</span></div>
-                <div class="tb-item"><span class="tb-label">单位</span><span class="tb-value">{{ result.titleBlock.company || '—' }}</span></div>
+            <el-tab-pane name="titleBlock" v-if="result.titleBlock">
+              <template #label>
+                <span class="tab-label"><el-icon><Document /></el-icon>标题栏</span>
+              </template>
+              <div class="title-block-table">
+                <div class="tb-row">
+                  <div class="tb-cell"><span class="tb-label">图号</span><span class="tb-value strong">{{ result.titleBlock.drawingNo || '—' }}</span></div>
+                  <div class="tb-cell"><span class="tb-label">版本</span><span class="tb-value">{{ result.titleBlock.revision || '—' }}</span></div>
+                  <div class="tb-cell"><span class="tb-label">比例</span><span class="tb-value">{{ result.titleBlock.scale || '—' }}</span></div>
+                </div>
+                <div class="tb-row full">
+                  <div class="tb-cell"><span class="tb-label">图名</span><span class="tb-value strong">{{ result.titleBlock.title || '—' }}</span></div>
+                </div>
+                <div class="tb-row">
+                  <div class="tb-cell"><span class="tb-label">设计</span><span class="tb-value">{{ result.titleBlock.designer || '—' }}</span></div>
+                  <div class="tb-cell"><span class="tb-label">校核</span><span class="tb-value">{{ result.titleBlock.checker || '—' }}</span></div>
+                  <div class="tb-cell"><span class="tb-label">审核</span><span class="tb-value">{{ result.titleBlock.reviewer || '—' }}</span></div>
+                </div>
+                <div class="tb-row">
+                  <div class="tb-cell"><span class="tb-label">批准</span><span class="tb-value">{{ result.titleBlock.approver || '—' }}</span></div>
+                  <div class="tb-cell"><span class="tb-label">日期</span><span class="tb-value">{{ result.titleBlock.date || '—' }}</span></div>
+                  <div class="tb-cell"><span class="tb-label">单位</span><span class="tb-value">{{ result.titleBlock.company || '—' }}</span></div>
+                </div>
               </div>
             </el-tab-pane>
 
             <!-- 图例符号 -->
-            <el-tab-pane label="图例符号" name="symbols" v-if="result.symbols">
-              <div class="symbols-summary">{{ result.symbols.summary }}</div>
-              <el-table :data="result.symbols.symbols" stripe size="small" max-height="500">
+            <el-tab-pane name="symbols" v-if="result.symbols">
+              <template #label>
+                <span class="tab-label"><el-icon><Grid /></el-icon>图例符号</span>
+              </template>
+              <div class="summary-box">{{ result.symbols.summary }}</div>
+              <el-table :data="result.symbols.symbols" stripe size="small" max-height="460">
                 <el-table-column prop="tag" label="位号" width="120" />
-                <el-table-column prop="type" label="类型" width="100">
+                <el-table-column prop="type" label="类型" width="110">
                   <template #default="{ row }">
                     <el-tag size="small" :type="symbolTypeTag(row.type)">{{ symbolTypeLabel(row.type) }}</el-tag>
                   </template>
@@ -141,22 +244,32 @@
                 <el-table-column prop="description" label="描述" />
                 <el-table-column prop="position" label="位置" width="140" />
               </el-table>
-              <div class="total-count">共识别 {{ result.symbols.totalCount }} 个图例符号</div>
+              <div class="total-count">共识别 <b>{{ result.symbols.totalCount }}</b> 个图例符号</div>
             </el-tab-pane>
 
             <!-- 标注完整性 -->
-            <el-tab-pane label="标注检查" name="annotations" v-if="result.annotations">
-              <div class="score-section">
-                <span>完整性评分：</span>
+            <el-tab-pane name="annotations" v-if="result.annotations">
+              <template #label>
+                <span class="tab-label"><el-icon><EditPen /></el-icon>标注检查</span>
+              </template>
+              <div class="score-card">
                 <el-progress
+                  type="dashboard"
                   :percentage="result.annotations.completenessScore"
                   :color="scoreColor(result.annotations.completenessScore)"
-                  :stroke-width="18"
-                  style="width: 300px; display: inline-flex"
-                />
+                  :width="120"
+                >
+                  <template #default="{ percentage }">
+                    <span class="score-num">{{ percentage }}</span>
+                    <span class="score-unit">分</span>
+                  </template>
+                </el-progress>
+                <div class="score-info">
+                  <div class="score-title">标注完整性评分</div>
+                  <div class="score-desc">{{ result.annotations.summary }}</div>
+                </div>
               </div>
-              <div class="annotations-summary">{{ result.annotations.summary }}</div>
-              <el-table :data="result.annotations.missingItems" stripe size="small" max-height="400">
+              <el-table :data="result.annotations.missingItems" stripe size="small" max-height="380">
                 <el-table-column prop="item" label="问题" />
                 <el-table-column prop="location" label="位置" width="160" />
                 <el-table-column prop="severity" label="严重度" width="90">
@@ -168,25 +281,32 @@
             </el-tab-pane>
 
             <!-- 合规审查 -->
-            <el-tab-pane label="合规审查" name="compliance" v-if="result.compliance">
-              <div class="compliance-summary">{{ result.compliance.summary }}</div>
+            <el-tab-pane name="compliance" v-if="result.compliance">
+              <template #label>
+                <span class="tab-label"><el-icon><Stamp /></el-icon>合规审查</span>
+              </template>
+              <div class="summary-box">{{ result.compliance.summary }}</div>
 
-              <h4 v-if="result.compliance.designNotes.length">设计说明/技术要求</h4>
-              <ul class="design-notes" v-if="result.compliance.designNotes.length">
-                <li v-for="(note, i) in result.compliance.designNotes" :key="i">{{ note }}</li>
-              </ul>
+              <div v-if="result.compliance.designNotes.length" class="notes-section">
+                <div class="section-title"><el-icon><Memo /></el-icon>设计说明 / 技术要求</div>
+                <ul class="design-notes">
+                  <li v-for="(note, i) in result.compliance.designNotes" :key="i">{{ note }}</li>
+                </ul>
+              </div>
 
-              <h4 v-if="result.compliance.issues.length">合规问题</h4>
-              <el-table :data="result.compliance.issues" stripe size="small" max-height="400">
-                <el-table-column prop="note" label="原文" width="200" show-overflow-tooltip />
-                <el-table-column prop="violation" label="问题" />
-                <el-table-column prop="suggestion" label="建议" />
-                <el-table-column prop="severity" label="严重度" width="90">
-                  <template #default="{ row }">
-                    <el-tag size="small" :type="severityTag(row.severity)">{{ severityLabel(row.severity) }}</el-tag>
-                  </template>
-                </el-table-column>
-              </el-table>
+              <div v-if="result.compliance.issues.length" class="notes-section">
+                <div class="section-title"><el-icon><WarningFilled /></el-icon>合规问题</div>
+                <el-table :data="result.compliance.issues" stripe size="small" max-height="380">
+                  <el-table-column prop="note" label="原文" width="200" show-overflow-tooltip />
+                  <el-table-column prop="violation" label="问题" />
+                  <el-table-column prop="suggestion" label="建议" />
+                  <el-table-column prop="severity" label="严重度" width="90">
+                    <template #default="{ row }">
+                      <el-tag size="small" :type="severityTag(row.severity)">{{ severityLabel(row.severity) }}</el-tag>
+                    </template>
+                  </el-table-column>
+                </el-table>
+              </div>
             </el-tab-pane>
           </el-tabs>
         </el-card>
@@ -198,9 +318,21 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
-import { Upload, Loading } from '@element-plus/icons-vue'
+import {
+  UploadFilled, Loading, Document, View, SetUp, CircleCheckFilled, CircleCheck,
+  VideoPlay, PictureFilled, Right, DataAnalysis, Clock, Grid, EditPen, Stamp,
+  Memo, WarningFilled,
+} from '@element-plus/icons-vue'
 import { dwgToPng } from '@/utils/dwg-parser'
 import { analyzeDwgVision, getVisionStatus, type VisionAnalyzeResult, type VisionStatusResult } from '@/api/dwg-vision'
+
+// 分析选项配置
+const analysisOptions = [
+  { key: 'titleBlock', label: '标题栏识别', desc: '提取图号、图名、版本与审批信息', icon: Document, bg: '#eff6ff', color: '#2563eb' },
+  { key: 'symbols', label: '图例符号识别', desc: '识别阀门、泵、仪表等设备符号', icon: Grid, bg: '#f0fdf4', color: '#16a34a' },
+  { key: 'annotations', label: '标注完整性', desc: '检查尺寸标注与技术要求完整性', icon: EditPen, bg: '#fffbeb', color: '#d97706' },
+  { key: 'compliance', label: '合规审查', desc: '对照标准条文检查设计说明', icon: Stamp, bg: '#fef2f2', color: '#dc2626' },
+]
 
 // 状态
 const dwgFile = ref<File | null>(null)
@@ -223,6 +355,20 @@ onMounted(async () => {
   } catch { /* ignore */ }
 })
 
+// 切换分析项
+function toggleAnalysis(key: string) {
+  const idx = selectedAnalyses.value.indexOf(key)
+  if (idx >= 0) selectedAnalyses.value.splice(idx, 1)
+  else selectedAnalyses.value.push(key)
+}
+
+// 文件大小格式化
+function formatFileSize(bytes: number): string {
+  if (bytes < 1024) return bytes + ' B'
+  if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB'
+  return (bytes / 1024 / 1024).toFixed(2) + ' MB'
+}
+
 // 文件选择
 async function handleFileChange(uploadFile: any) {
   const file = uploadFile.raw as File
@@ -243,7 +389,6 @@ async function handleFileChange(uploadFile: any) {
   try {
     const { dwgToSvg } = await import('@/utils/dwg-parser')
     const svgResult = await dwgToSvg(file)
-    // 限制预览 SVG 大小
     if (svgResult.svg.length < 500000) {
       previewSvg.value = svgResult.svg
     } else {
@@ -329,29 +474,66 @@ function severityLabel(severity: string): string {
 }
 
 function scoreColor(score: number): string {
-  if (score >= 80) return '#67c23a'
-  if (score >= 60) return '#e6a23c'
-  return '#f56c6c'
+  if (score >= 80) return '#16a34a'
+  if (score >= 60) return '#d97706'
+  return '#dc2626'
 }
 </script>
 
 <style scoped>
 .dwg-vision-page {
   padding: 20px;
-  max-width: 1400px;
+  max-width: 1440px;
   margin: 0 auto;
 }
 
-.page-header h2 {
-  margin: 0 0 8px;
+/* ===== 页面头部 ===== */
+.page-hero {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  background: linear-gradient(135deg, #eff6ff 0%, #f5f3ff 60%, #fdf4ff 100%);
+  border: 1px solid #e0e7ff;
+  border-radius: 12px;
+  padding: 20px 24px;
+  margin-bottom: 20px;
 }
 
-.subtitle {
-  color: #909399;
-  font-size: 14px;
-  margin: 0 0 20px;
+.hero-left {
+  display: flex;
+  align-items: center;
+  gap: 16px;
 }
 
+.hero-icon {
+  width: 52px;
+  height: 52px;
+  border-radius: 14px;
+  background: linear-gradient(135deg, #2563eb, #7c3aed);
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  box-shadow: 0 4px 12px rgba(37, 99, 235, 0.3);
+}
+
+.hero-text h2 {
+  margin: 0 0 4px;
+  font-size: 20px;
+  font-weight: 600;
+  color: #111827;
+}
+
+.hero-text p {
+  margin: 0;
+  color: #6b7280;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+/* ===== 主体布局 ===== */
 .page-body {
   display: flex;
   gap: 20px;
@@ -359,7 +541,7 @@ function scoreColor(score: number): string {
 }
 
 .left-panel {
-  width: 380px;
+  width: 400px;
   flex-shrink: 0;
   display: flex;
   flex-direction: column;
@@ -371,19 +553,127 @@ function scoreColor(score: number): string {
   min-width: 0;
 }
 
+/* ===== 卡片通用 ===== */
+.panel-card {
+  border-radius: 12px;
+  border: 1px solid #e5e7eb;
+}
+
+.panel-card :deep(.el-card__header) {
+  padding: 14px 18px;
+  border-bottom: 1px solid #f3f4f6;
+}
+
+.panel-card :deep(.el-card__body) {
+  padding: 18px;
+}
+
+.card-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 15px;
+  font-weight: 600;
+  color: #111827;
+}
+
+.title-icon {
+  color: #2563eb;
+}
+
+.count-tag {
+  margin-left: auto;
+}
+
+/* ===== 上传区 ===== */
+.dwg-upload :deep(.el-upload-dragger) {
+  border-radius: 10px;
+  border: 1.5px dashed #d1d5db;
+  background: #fafafa;
+  padding: 24px 16px;
+  transition: all 0.25s;
+}
+
+.dwg-upload :deep(.el-upload-dragger:hover) {
+  border-color: #2563eb;
+  background: #eff6ff;
+}
+
+.upload-inner {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+}
+
+.upload-icon {
+  font-size: 40px;
+  color: #93c5fd;
+}
+
+.upload-text {
+  font-size: 14px;
+  color: #374151;
+}
+
+.upload-text em {
+  color: #2563eb;
+  font-style: normal;
+  font-weight: 500;
+}
+
+.upload-hint {
+  font-size: 12px;
+  color: #9ca3af;
+}
+
+/* 文件信息 */
+.file-info {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 14px;
+  padding: 10px 12px;
+  background: #f0f9ff;
+  border: 1px solid #bae6fd;
+  border-radius: 8px;
+}
+
+.file-icon {
+  font-size: 22px;
+  color: #0284c7;
+}
+
+.file-name {
+  font-size: 13px;
+  font-weight: 500;
+  color: #0c4a6e;
+  word-break: break-all;
+}
+
+.file-size {
+  font-size: 12px;
+  color: #7dd3fc;
+  color: #0369a1;
+}
+
+/* SVG 预览 */
 .svg-preview {
-  margin-top: 16px;
-  border: 1px solid #ebeef5;
-  border-radius: 4px;
+  margin-top: 14px;
+  border: 1px solid #e5e7eb;
+  border-radius: 10px;
   overflow: hidden;
 }
 
 .preview-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
   padding: 8px 12px;
   font-size: 12px;
-  color: #909399;
-  background: #fafafa;
-  border-bottom: 1px solid #ebeef5;
+  color: #6b7280;
+  background: #f9fafb;
+  border-bottom: 1px solid #f3f4f6;
 }
 
 .preview-canvas {
@@ -400,45 +690,231 @@ function scoreColor(score: number): string {
   max-height: 200px;
 }
 
-.options-card .el-checkbox-group {
+/* ===== 分析选项 ===== */
+.option-grid {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 10px;
 }
 
+.option-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px;
+  border: 1.5px solid #e5e7eb;
+  border-radius: 10px;
+  cursor: pointer;
+  transition: all 0.2s;
+  background: #fff;
+}
+
+.option-item:hover {
+  border-color: #93c5fd;
+  background: #f8fafc;
+}
+
+.option-item.selected {
+  border-color: #2563eb;
+  background: #eff6ff;
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.08);
+}
+
+.option-icon {
+  width: 38px;
+  height: 38px;
+  border-radius: 9px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.option-text {
+  flex: 1;
+  min-width: 0;
+}
+
+.option-label {
+  font-size: 14px;
+  font-weight: 600;
+  color: #111827;
+}
+
+.option-desc {
+  font-size: 12px;
+  color: #9ca3af;
+  margin-top: 2px;
+}
+
+.option-check {
+  color: #2563eb;
+  font-size: 20px;
+  flex-shrink: 0;
+  width: 20px;
+}
+
+/* 参考条文 */
 .ref-section {
-  margin-top: 12px;
+  margin-top: 14px;
 }
 
+.ref-label {
+  font-size: 13px;
+  font-weight: 500;
+  color: #374151;
+  margin-bottom: 6px;
+}
+
+/* 分析按钮 */
 .analyze-btn {
   width: 100%;
   margin-top: 16px;
+  height: 44px;
+  font-size: 15px;
+  font-weight: 600;
+  border-radius: 10px;
+  background: linear-gradient(135deg, #2563eb, #4f46e5);
+  border: none;
 }
 
+.analyze-btn:hover:not(:disabled) {
+  background: linear-gradient(135deg, #1d4ed8, #4338ca);
+}
+
+.analyze-btn:disabled {
+  background: #e5e7eb;
+}
+
+/* 进度提示 */
 .progress-hint {
   display: flex;
   align-items: center;
   gap: 8px;
   margin-top: 12px;
-  color: #409eff;
+  color: #2563eb;
   font-size: 13px;
 }
 
 .config-warning {
-  margin-top: 12px;
+  margin-top: 14px;
 }
 
-.empty-card {
-  min-height: 400px;
+/* ===== 右侧空状态 ===== */
+.empty-state {
+  border: 1.5px dashed #e5e7eb;
+  border-radius: 12px;
+  background: #fff;
+  padding: 70px 40px;
+  text-align: center;
+}
+
+.empty-icon {
+  color: #dbeafe;
+  margin-bottom: 16px;
+}
+
+.empty-state h3 {
+  margin: 0 0 6px;
+  font-size: 17px;
+  color: #374151;
+}
+
+.empty-state p {
+  margin: 0 0 24px;
+  color: #9ca3af;
+  font-size: 13px;
+}
+
+.empty-steps {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.step {
   display: flex;
   align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: #6b7280;
+  background: #f9fafb;
+  border: 1px solid #f3f4f6;
+  padding: 6px 14px;
+  border-radius: 20px;
+}
+
+.step-num {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: #2563eb;
+  color: #fff;
+  font-size: 12px;
+  display: inline-flex;
+  align-items: center;
   justify-content: center;
+}
+
+.step-arrow {
+  color: #d1d5db;
+}
+
+/* ===== 分析中 ===== */
+.loading-state {
+  border-radius: 12px;
+  background: #fff;
+  border: 1px solid #e5e7eb;
+  padding: 80px 40px;
+  text-align: center;
+}
+
+.loading-spinner {
+  color: #2563eb;
+  margin-bottom: 16px;
+}
+
+.loading-state h3 {
+  margin: 0 0 6px;
+  font-size: 17px;
+  color: #374151;
+}
+
+.loading-state p {
+  margin: 0 0 24px;
+  color: #9ca3af;
+  font-size: 13px;
+}
+
+.loading-bar {
+  max-width: 320px;
+  margin: 0 auto;
+}
+
+/* ===== 结果卡片 ===== */
+.result-card {
+  border-radius: 12px;
+  border: 1px solid #e5e7eb;
+}
+
+.result-card :deep(.el-card__header) {
+  padding: 14px 18px;
+  border-bottom: 1px solid #f3f4f6;
 }
 
 .result-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
+}
+
+.result-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 15px;
+  font-weight: 600;
+  color: #111827;
 }
 
 .error-alert {
@@ -450,74 +926,161 @@ function scoreColor(score: number): string {
   padding-left: 16px;
 }
 
-.title-block-grid {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 12px;
+/* Tab 标签 */
+.tab-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
 }
 
-.tb-item {
+.result-tabs :deep(.el-tabs__item) {
+  font-size: 14px;
+}
+
+/* ===== 标题栏（图签样式） ===== */
+.title-block-table {
+  border: 1.5px solid #cbd5e1;
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.tb-row {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+}
+
+.tb-row.full {
+  grid-template-columns: 1fr;
+}
+
+.tb-row + .tb-row {
+  border-top: 1px solid #e2e8f0;
+}
+
+.tb-cell {
   display: flex;
   flex-direction: column;
-  padding: 8px 12px;
-  background: #fafafa;
-  border-radius: 4px;
+  padding: 10px 14px;
+  background: #fff;
+}
+
+.tb-row .tb-cell + .tb-cell {
+  border-left: 1px solid #e2e8f0;
 }
 
 .tb-label {
-  font-size: 12px;
-  color: #909399;
-  margin-bottom: 4px;
+  font-size: 11px;
+  color: #94a3b8;
+  margin-bottom: 3px;
+  letter-spacing: 0.5px;
 }
 
 .tb-value {
   font-size: 14px;
-  font-weight: 500;
+  color: #334155;
 }
 
-.symbols-summary,
-.annotations-summary,
-.compliance-summary {
-  margin-bottom: 12px;
-  color: #606266;
-  font-size: 14px;
+.tb-value.strong {
+  font-weight: 600;
+  color: #0f172a;
+}
+
+/* ===== 摘要框 ===== */
+.summary-box {
+  background: #f8fafc;
+  border-left: 3px solid #2563eb;
+  border-radius: 0 8px 8px 0;
+  padding: 10px 14px;
+  margin-bottom: 16px;
+  color: #475569;
+  font-size: 13px;
+  line-height: 1.6;
 }
 
 .total-count {
   margin-top: 12px;
-  color: #909399;
+  color: #9ca3af;
   font-size: 13px;
 }
 
-.score-section {
+.total-count b {
+  color: #2563eb;
+}
+
+/* ===== 评分卡 ===== */
+.score-card {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 24px;
+  background: #f8fafc;
+  border: 1px solid #f1f5f9;
+  border-radius: 10px;
+  padding: 16px 20px;
   margin-bottom: 16px;
+}
+
+.score-num {
+  font-size: 28px;
+  font-weight: 700;
+  color: #0f172a;
+}
+
+.score-unit {
+  font-size: 13px;
+  color: #94a3b8;
+}
+
+.score-title {
+  font-size: 15px;
+  font-weight: 600;
+  color: #111827;
+  margin-bottom: 4px;
+}
+
+.score-desc {
+  font-size: 13px;
+  color: #6b7280;
+  line-height: 1.6;
+}
+
+/* ===== 合规审查 ===== */
+.notes-section {
+  margin-bottom: 16px;
+}
+
+.section-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 14px;
+  font-weight: 600;
+  color: #334155;
+  margin-bottom: 10px;
 }
 
 .design-notes {
   padding-left: 20px;
-  margin-bottom: 16px;
+  margin: 0;
 }
 
 .design-notes li {
-  margin-bottom: 4px;
+  margin-bottom: 5px;
   font-size: 13px;
-  color: #606266;
+  color: #475569;
+  line-height: 1.6;
 }
 
-h4 {
-  margin: 16px 0 8px;
-  font-size: 14px;
-}
-
-@media (max-width: 900px) {
+/* ===== 响应式 ===== */
+@media (max-width: 1000px) {
   .page-body {
     flex-direction: column;
   }
   .left-panel {
     width: 100%;
+  }
+  .page-hero {
+    flex-direction: column;
+    align-items: flex-start;
   }
 }
 </style>

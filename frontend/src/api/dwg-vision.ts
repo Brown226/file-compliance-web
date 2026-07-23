@@ -80,7 +80,7 @@ export function analyzeDwgVision(data: {
   refText?: string
 }) {
   return request.post<any, { code: number; data: VisionAnalyzeResult; message?: string }>(
-    '/api/dwg/vision-analyze',
+    '/dwg/vision-analyze',
     data,
     { timeout: 600000 } // 10 分钟超时（Vision 调用较慢）
   )
@@ -90,5 +90,5 @@ export function analyzeDwgVision(data: {
  * 检查视觉模型配置状态
  */
 export function getVisionStatus() {
-  return request.get<any, { code: number; data: VisionStatusResult }>('/api/dwg/vision-status')
+  return request.get<any, { code: number; data: VisionStatusResult }>('/dwg/vision-status')
 }

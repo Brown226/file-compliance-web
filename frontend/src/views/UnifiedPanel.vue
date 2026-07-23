@@ -19,12 +19,23 @@
       <div class="health-grid">
         <!-- 服务状态 -->
         <div class="health-card status-card">
-          <h3>服务状态</h3>
+          <div class="status-card-header">
+            <h3>服务状态</h3>
+            <div class="status-actions">
+              <span v-if="lastHealthCheck" class="last-check">{{ lastHealthCheck }}</span>
+              <el-tooltip content="重新检测" placement="top">
+                <el-button size="small" :icon="Refresh" circle :loading="healthLoading" @click="fetchHealth" />
+              </el-tooltip>
+            </div>
+          </div>
           <div class="status-list">
             <div class="status-item" v-for="s in serviceStatus" :key="s.name">
-              <span class="status-dot" :class="s.ok ? 'ok' : 'error'"></span>
+              <span class="status-dot" :class="dotClass(s)"></span>
               <span class="status-name">{{ s.name }}</span>
-              <span class="status-val">{{ s.ok ? '正常' : '异常' }}</span>
+              <el-tooltip v-if="s.error" :content="s.error" placement="top">
+                <span class="status-val" :class="s.ok === false ? 'val-error' : ''">{{ statusText(s) }}</span>
+              </el-tooltip>
+              <span v-else class="status-val" :class="s.ok === false ? 'val-error' : ''">{{ statusText(s) }}</span>
             </div>
           </div>
         </div>
@@ -109,8 +120,8 @@
 
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
-import { Monitor, Setting, Operation, Collection, ChatDotRound, DataBoard, Bell } from '@element-plus/icons-vue'
-import { getDashboardStatsApi } from '@/api/dashboard'
+import { Monitor, Setting, Operation, Collection, ChatDotRound, DataBoard, Bell, Refresh } from '@element-plus/icons-vue'
+import { getDashboardStatsApi, getSystemHealthApi } from '@/api/dashboard'
 import { useUserStore } from '@/stores/user'
 import DepartmentManagement from './admin/DepartmentManagement.vue'
 import ReviewRules from './ReviewRules.vue'
@@ -151,13 +162,60 @@ const systemItems = computed(() => {
   return items
 })
 
-// 系统健康数据
-const serviceStatus = ref([
-  { name: '后端 API', ok: true },
-  { name: 'PostgreSQL', ok: true },
-  { name: 'Redis', ok: true },
-  { name: '文档解析服务', ok: true },
+// 系统健康数据（实时探测，非写死）
+interface ServiceStatusItem {
+  name: string
+  ok: boolean | null  // null = 检测中/未知
+  error?: string
+}
+
+const serviceStatus = ref<ServiceStatusItem[]>([
+  { name: '后端 API', ok: null },
+  { name: 'PostgreSQL', ok: null },
+  { name: 'Redis', ok: null },
+  { name: 'OCR / 文档解析', ok: null },
+  { name: 'MaxKB 知识库', ok: null },
 ])
+const healthLoading = ref(false)
+const lastHealthCheck = ref('')
+
+// 拉取真实健康状态（后端 /api/all 实时探测各依赖服务）
+async function fetchHealth() {
+  healthLoading.value = true
+  try {
+    const res: any = await getSystemHealthApi()
+    const svc = res?.data?.services || res?.services || {}
+    // API 能正常响应即说明后端可用
+    serviceStatus.value[0].ok = true
+    serviceStatus.value[1].ok = svc.database?.status === 'ok'
+    serviceStatus.value[1].error = svc.database?.error
+    serviceStatus.value[2].ok = svc.queue?.status === 'healthy'
+    serviceStatus.value[3].ok = svc.ocr?.status === 'ok'
+    serviceStatus.value[3].error = svc.ocr?.error
+    serviceStatus.value[4].ok = svc.maxkb?.status === 'ok'
+    serviceStatus.value[4].error = svc.maxkb?.error
+    lastHealthCheck.value = new Date().toLocaleTimeString('zh-CN', { hour12: false })
+  } catch (e) {
+    // 请求失败说明后端 API 不可用，其余服务状态未知
+    serviceStatus.value[0].ok = false
+    for (let i = 1; i < serviceStatus.value.length; i++) {
+      serviceStatus.value[i].ok = null
+      serviceStatus.value[i].error = undefined
+    }
+  } finally {
+    healthLoading.value = false
+  }
+}
+
+function dotClass(s: ServiceStatusItem) {
+  if (s.ok === null) return 'checking'
+  return s.ok ? 'ok' : 'error'
+}
+
+function statusText(s: ServiceStatusItem) {
+  if (s.ok === null) return '检测中'
+  return s.ok ? '正常' : '异常'
+}
 
 const metrics = ref([
   { label: '员工总数', value: '-' },
@@ -167,6 +225,7 @@ const metrics = ref([
 ])
 
 onMounted(async () => {
+  fetchHealth()
   try {
     const { data } = await getDashboardStatsApi()
     if (data?.overview) {
@@ -276,6 +335,24 @@ onMounted(async () => {
   border-radius: 2px;
 }
 
+.status-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 4px;
+}
+
+.status-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.last-check {
+  font-size: 12px;
+  color: #94a3b8;
+}
+
 .status-list { display: flex; flex-direction: column; gap: 14px; }
 
 .status-item {
@@ -310,6 +387,16 @@ onMounted(async () => {
   animation: pulse-red 1.5s infinite;
 }
 
+.status-dot.checking {
+  background: #94a3b8;
+  animation: pulse-gray 1.2s infinite;
+}
+
+@keyframes pulse-gray {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.35; }
+}
+
 @keyframes pulse-green {
   0%, 100% { box-shadow: 0 0 4px rgba(34,197,94,0.4); }
   50% { box-shadow: 0 0 10px rgba(34,197,94,0.6); }
@@ -322,6 +409,7 @@ onMounted(async () => {
 
 .status-name { flex: 1; color: #334155; font-weight: 500; }
 .status-val { font-size: 12px; color: #64748b; font-weight: 500; }
+.status-val.val-error { color: #ef4444; cursor: help; }
 
 .metrics-grid {
   display: grid;
