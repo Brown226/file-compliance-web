@@ -126,6 +126,9 @@ analysis_*.json
 false_positive_analysis.json
 nul
 
+# 内网部署包（含凭证/二进制，不入库）
+newmax-intranet-deploy/
+
 # Docs directory (keep locally, not in repo)
 docs/
 
