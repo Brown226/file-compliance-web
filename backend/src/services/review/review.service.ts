@@ -932,6 +932,9 @@ export class ReviewService {
           layer_stats: ctx.parseResult.metadata.layer_stats,
         }
       : undefined;
+    // OPT-011: 提取封面结构化信息（PDF 图片封面页 OCR 识别结果）
+    const coverInfo = ctx.parseResult?.metadata?.cover_info || null;
+    if (coverInfo) ctx.coverInfo = coverInfo;
     await prisma.taskFile.update({
       where: { id: file.id },
       data: {
@@ -939,6 +942,7 @@ export class ReviewService {
         extractedText: ctx.extractedText || null,
         extractedMarkdown,
         ...(dwgMetadata ? { dwgMetadata } : {}),
+        ...(coverInfo ? { coverInfo: coverInfo as any } : {}),
       },
     }).catch((e) => { console.warn(`[Review] ������ȡ�ı�ʧ�� (${file.fileName}):`, e); });
 

@@ -498,7 +498,7 @@ export class TaskService {
       where: { taskId },
       include: {
         file: {
-          select: { id: true, fileName: true }
+          select: { id: true, fileName: true, coverInfo: true }
         }
       },
       orderBy: { createdAt: 'desc' }

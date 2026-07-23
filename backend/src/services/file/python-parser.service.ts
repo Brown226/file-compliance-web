@@ -2,6 +2,16 @@ import axios from 'axios';
 import prisma from '../../config/db';
 import { FileTypeService } from './file-type.service';
 
+/** OPT-011: 封面结构化信息（由 Python 侧 pdf_enhanced.py 提取） */
+export interface CoverInfo {
+  doc_no: string;        // 文档编号: NPC-QA-001, HAF-601
+  title: string;         // 文档标题（最长的中文行）
+  revision: string;      // 版本号: V1.0 / 第3版 / Rev.A
+  scale: string;         // 比例: 1:100
+  approval: Record<string, string>;  // 审批信息: { 设计: '张三', 校核: '李四', ... }
+  raw_lines?: string[];  // OCR 原始前 20 行（调试用）
+}
+
 export interface ParseResult {
   text: string;
   pages: string[];
@@ -27,6 +37,10 @@ export interface ParseResult {
     layer_stats?: Record<string, { text: number; dimension: number; other: number }>;
     parse_error?: string;
     hint?: string;
+    /** OPT-011: 封面结构化信息（图片封面页 OCR 提取） */
+    cover_info?: CoverInfo | null;
+    /** OCR 引擎名称（扫描件降级时存在） */
+    ocr_engine?: string;
   };
   structure: {
     paragraphs: Array<{

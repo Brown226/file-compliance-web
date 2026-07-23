@@ -167,7 +167,8 @@ model TaskFile {
   errorCount      Int           @default(0)
   extractedText      String?       @db.Text  // 解析后的纯文本（规则引擎用，缓存）
   extractedMarkdown  String?       @db.Text  // 解析后的 Markdown（LLM 审查+前端预览用，缓存）
-  dwgMetadata      Json?    @map("dwg_metadata")  // DWG 文件级元数据（图层列表、图元统计等）
+  dwgMetadata      Json?    @map("dwg_metadata")  // DWG 文件级元数据（图层、图元、标注等）
+  coverInfo        Json?    @map("cover_info")    // OPT-011: 封面结构化信息（doc_no/title/revision/scale/approval）
   documentKey      String?     @unique @map("document_key")  // OnlyOffice 文档密钥，用于缓存失效
   details         TaskDetail[]
   versions        FileVersion[]

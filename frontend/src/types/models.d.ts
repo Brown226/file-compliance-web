@@ -1,4 +1,4 @@
-﻿/**
+/**
  * 业务模型类型定义
  */
 
@@ -99,6 +99,24 @@ export interface TaskFile {
   taskId: string
   /** DWG 文件级元数据 */
   dwgMetadata?: DwgFileMetadata
+  /** OPT-011: 封面结构化信息（PDF 图片封面页 OCR 提取） */
+  coverInfo?: CoverInfo | null
+}
+
+/** OPT-011: 封面结构化信息 */
+export interface CoverInfo {
+  /** 文档编号: NPC-QA-001, HAF-601 */
+  doc_no: string
+  /** 文档标题（最长的中文行） */
+  title: string
+  /** 版本号: V1.0 / 第3版 / Rev.A */
+  revision: string
+  /** 比例: 1:100 */
+  scale: string
+  /** 审批信息: { 设计: '张三', 校核: '李四', ... } */
+  approval: Record<string, string>
+  /** OCR 原始前 20 行（调试用） */
+  raw_lines?: string[]
 }
 
 /** 任务详情/问题 */

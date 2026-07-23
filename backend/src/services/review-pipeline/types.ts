@@ -4,6 +4,7 @@
 
 import { RuleIssue, FileContext } from '../rules/types';
 import { ReviewIssue, SourceReference } from '../llm/llm.service';
+import { CoverInfo } from '../file/python-parser.service';
 
 /** 审查模式（与数据库 ReviewMode 枚举一致） */
 export type ReviewModeType =
@@ -168,6 +169,8 @@ export interface PipelineContext {
   wordStructure?: WordStructure;
   /** DWG 图纸结构化数据 */
   dwgStructure?: DwgStructure;
+  /** OPT-011: 封面结构化信息（从 parseResult.metadata.cover_info 提取） */
+  coverInfo?: CoverInfo;
   /** 任务创建者 ID（用于记忆系统注入） */
   userId?: string;
   /** 预加载的归一化误报原文集合（任务级预加载，内存归一化匹配） */

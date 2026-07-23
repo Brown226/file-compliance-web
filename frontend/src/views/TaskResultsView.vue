@@ -94,6 +94,53 @@
           <span v-else class="hint-text"><el-icon :size="14"><Document /></el-icon> 文件预览区 · 选中文本可进行专项审查</span>
         </div>
 
+        <!-- OPT-011: 封面结构化信息卡片（PDF 图片封面页 OCR 提取） -->
+        <div v-if="selectedFile?.coverInfo" class="cover-info-card">
+          <el-collapse>
+            <el-collapse-item name="cover">
+              <template #title>
+                <div class="cover-header">
+                  <el-icon><Document /></el-icon>
+                  <span class="cover-label">封面信息</span>
+                  <el-tag v-if="selectedFile.coverInfo.doc_no" size="small" type="primary" effect="plain">
+                    {{ selectedFile.coverInfo.doc_no }}
+                  </el-tag>
+                  <span v-if="selectedFile.coverInfo.title" class="cover-title-text" :title="selectedFile.coverInfo.title">
+                    {{ selectedFile.coverInfo.title }}
+                  </span>
+                </div>
+              </template>
+              <el-descriptions :column="2" border size="small">
+                <el-descriptions-item label="文档编号">
+                  {{ selectedFile.coverInfo.doc_no || '—' }}
+                </el-descriptions-item>
+                <el-descriptions-item label="版本号">
+                  {{ selectedFile.coverInfo.revision || '—' }}
+                </el-descriptions-item>
+                <el-descriptions-item label="文档标题" :span="2">
+                  {{ selectedFile.coverInfo.title || '—' }}
+                </el-descriptions-item>
+                <el-descriptions-item label="比例">
+                  {{ selectedFile.coverInfo.scale || '—' }}
+                </el-descriptions-item>
+                <el-descriptions-item label="审批信息">
+                  <template v-if="selectedFile.coverInfo.approval && Object.keys(selectedFile.coverInfo.approval).length > 0">
+                    <el-tag
+                      v-for="(name, role) in selectedFile.coverInfo.approval"
+                      :key="role"
+                      size="small"
+                      class="approval-tag"
+                    >
+                      {{ role }}：{{ name }}
+                    </el-tag>
+                  </template>
+                  <span v-else>—</span>
+                </el-descriptions-item>
+              </el-descriptions>
+            </el-collapse-item>
+          </el-collapse>
+        </div>
+
         <!-- 空状态提示（无文件时） -->
         <div v-if="files.length === 0" class="file-preview-empty-state">
           <el-empty description=" " :image-size="120">
@@ -2991,6 +3038,53 @@ onUnmounted(() => {
   color: #78716C;
   font-size: 13px;
   line-height: 1.8;
+}
+
+/* OPT-011: 封面信息卡片 */
+.cover-info-card {
+  border-bottom: 1px solid #ebeef5;
+  background: #fafbfc;
+}
+.cover-info-card :deep(.el-collapse) {
+  border: none;
+}
+.cover-info-card :deep(.el-collapse-item__header) {
+  height: 38px;
+  line-height: 38px;
+  padding: 0 12px;
+  border-bottom: none;
+  background: transparent;
+  font-size: 13px;
+}
+.cover-info-card :deep(.el-collapse-item__wrap) {
+  border-bottom: none;
+  background: transparent;
+}
+.cover-info-card :deep(.el-collapse-item__content) {
+  padding: 8px 12px 12px;
+}
+.cover-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  overflow: hidden;
+}
+.cover-label {
+  font-weight: 600;
+  color: #1f2937;
+  white-space: nowrap;
+}
+.cover-title-text {
+  color: #6b7280;
+  font-size: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 240px;
+}
+.approval-tag {
+  margin-right: 6px;
+  margin-bottom: 4px;
 }
 
 /* OCR 降级告警横幅 */
