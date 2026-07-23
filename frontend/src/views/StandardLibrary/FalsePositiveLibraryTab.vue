@@ -187,7 +187,7 @@ import {
   exportFpLibraryApi,
   type FpLibraryItem,
   type FpLibraryStats,
-} from '@/api/falsePositiveLibrary'
+} from '@/api/false-positive-library'
 
 const loading = ref(false)
 const exporting = ref(false)
