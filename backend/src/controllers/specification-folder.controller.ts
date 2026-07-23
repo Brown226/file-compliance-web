@@ -1,6 +1,6 @@
 import { Response } from 'express';
 import { AuthRequest } from '../middlewares/auth.middleware';
-import { SpecificationFolderService } from '../services/specification-folder.service';
+import { SpecificationFolderService } from '../services/standard/specification-folder.service';
 import { success, error } from '../utils/response';
 
 export const getTree = async (_req: AuthRequest, res: Response): Promise<void> => {

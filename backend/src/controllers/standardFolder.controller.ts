@@ -1,5 +1,5 @@
 import { Request, Response } from 'express';
-import { StandardFolderService } from '../services/standardFolder.service';
+import { StandardFolderService } from '../services/standard/standardFolder.service';
 import { success, error } from '../utils/response';
 
 export const getFolderTree = async (_req: Request, res: Response): Promise<void> => {

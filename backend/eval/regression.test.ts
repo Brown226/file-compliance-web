@@ -8,7 +8,7 @@
  * { "text": "待审文本", "expectedIssues": [{"issueType": "TYPO", "originalText": "..."}], "mode": "LIBRARY_REVIEW" }
  */
 import { describe, it, expect } from 'vitest';
-import { LlmService } from '../src/services/llm.service';
+import { LlmService } from '../src/services/llm/llm.service';
 
 describe('审查质量回归基座', () => {
 
@@ -96,7 +96,7 @@ describe('审查质量回归基座', () => {
 
   describe('文本归一化稳定性', () => {
     it('normalizeForSemanticCompare 消除格式差异', async () => {
-      const { normalizeForSemanticCompare, isSubstantiallySame } = await import('../src/services/text-normalization.service');
+      const { normalizeForSemanticCompare, isSubstantiallySame } = await import('../src/services/file/text-normalization.service');
 
       expect(normalizeForSemanticCompare('你好，世界！')).toBe(normalizeForSemanticCompare('你好,世界!'));
       expect(isSubstantiallySame('设备 安装 完成', '设备安装完成')).toBe(true);
@@ -106,7 +106,7 @@ describe('审查质量回归基座', () => {
 
   describe('originalText 忠实度校验稳定性', () => {
     it('精确匹配和模糊匹配正常', async () => {
-      const { validateOriginalText } = await import('../src/services/text-fidelity.service');
+      const { validateOriginalText } = await import('../src/services/knowledge/text-fidelity.service');
 
       const fullText = '本核电站位于深圳市大鹏新区，设计寿命为60年。';
 

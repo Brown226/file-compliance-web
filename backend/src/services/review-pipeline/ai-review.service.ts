@@ -6,17 +6,17 @@
  */
 
 import { PipelineContext, PipelineReviewConfig, getModeScene } from './types';
-import { ReviewIssue, SourceReference, LlmService } from '../llm.service';
-import { RAGService } from '../rag.service';
-import { MaxKBService } from '../maxkb.service';
+import { ReviewIssue, SourceReference, LlmService } from '../llm/llm.service';
+import { RAGService } from '../knowledge/rag.service';
+import { MaxKBService } from '../knowledge/maxkb.service';
 import { getChunkConcurrency } from '../../utils/system-config';
 
-import { PromptTemplateService } from '../prompt-template.service';
+import { PromptTemplateService } from '../llm/prompt-template.service';
 import { PromptLoader } from '../prompts';
-import { StandardTraceabilityService } from '../standard-traceability.service';
+import { StandardTraceabilityService } from '../standard/standard-traceability.service';
 import { parallelLimit } from '../../utils/parallel';
-import { EmbeddingService } from '../embedding.service';
-import { TerminologyService } from '../terminology.service';
+import { EmbeddingService } from '../knowledge/embedding.service';
+import { TerminologyService } from '../standard/terminology.service';
 
 export class AiReviewService {
   // ==================== AI ���ʵ�� ====================
@@ -59,7 +59,7 @@ export class AiReviewService {
       const enriched = StandardTraceabilityService.enrichWithStandardRef(result.issues);
       // OPT-016: source validation
       const ragChunkTexts = (result.sourceReferences || []).map((s: any) => s.content || '');
-      const { validateSources } = await import('../source-validation.service');
+      const { validateSources } = await import('../standard/source-validation.service');
       const validated = validateSources(enriched, ragChunkTexts, text);
       await ctx.onChunkProgress?.(text.length, enriched, 0, 1, 'rag-llm');
       return { issues: validated.issues, engine: 'rag-llm', sources: result.sourceReferences };
@@ -356,7 +356,7 @@ export class AiReviewService {
       // 注入长期记忆（如果用户有历史偏好）
       if (ctx.userId) {
         try {
-          const { MemoryService } = await import('../memory.service');
+          const { MemoryService } = await import('../system/memory.service');
           const memories = await MemoryService.recall(ctx.userId, text, 3);
           if (memories.length > 0) {
             const memoryContext = memories
@@ -537,7 +537,7 @@ export class AiReviewService {
       let refVectors: number[][] | null = null;
       if (!useFullRefs) {
         try {
-          const { EmbeddingService } = await import('../embedding.service');
+          const { EmbeddingService } = await import('../knowledge/embedding.service');
           // �������ı�������ֿ飨~1500 �ַ���
           refChunks = [];
           for (const refText of refTexts) {
@@ -759,7 +759,7 @@ export class AiReviewService {
 
     if (knowledgeIds.length > 0) {
       try {
-        const { MaxKBService } = await import('../maxkb.service');
+        const { MaxKBService } = await import('../knowledge/maxkb.service');
         const kbContexts: string[] = [];
         for (const kbId of knowledgeIds.slice(0, 3)) {
           const kbContext = await MaxKBService.getKnowledgeParagraphs(kbId, {
@@ -854,7 +854,7 @@ export class AiReviewService {
     }
 
     // ---- 3. 解析条款 + 双链并行执行 ----
-    const { parseContractClauses, getDefaultLegalBasis } = await import('../contract-parser.service');
+    const { parseContractClauses, getDefaultLegalBasis } = await import('../review/contract-parser.service');
     const clauses = parseContractClauses(text);
     console.log(`[ContractReview] 解析到 ${clauses.length} 个条款`);
 

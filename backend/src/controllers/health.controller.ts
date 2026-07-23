@@ -3,9 +3,9 @@
  */
 
 import { Request, Response } from 'express';
-import { MetricsService } from '../services/metrics.service';
-import { CacheService } from '../services/cache.service';
-import { OcrService } from '../services/ocr.service';
+import { MetricsService } from '../services/system/metrics.service';
+import { CacheService } from '../services/system/cache.service';
+import { OcrService } from '../services/file/ocr.service';
 import { success, error } from '../utils/response';
 
 export class HealthController {
@@ -144,7 +144,7 @@ export class HealthController {
    */
   static async checkMaxKB(req: Request, res: Response) {
     try {
-      const { MaxKBService } = await import('../services/maxkb.service');
+      const { MaxKBService } = await import('../services/knowledge/maxkb.service');
       const health = await MaxKBService.healthCheck();
       res.json({ status: health.reachable ? 'ok' : 'unreachable', error: health.error });
     } catch (err) {
@@ -164,7 +164,7 @@ export class HealthController {
 
     // OCR
     try {
-      const { OcrService } = await import('../services/ocr.service');
+      const { OcrService } = await import('../services/file/ocr.service');
       const ocrHealthy = await OcrService.checkHealth();
       results.ocr = { status: ocrHealthy ? 'ok' : 'degraded' };
     } catch (e: any) {
@@ -173,7 +173,7 @@ export class HealthController {
 
     // MaxKB
     try {
-      const { MaxKBService } = await import('../services/maxkb.service');
+      const { MaxKBService } = await import('../services/knowledge/maxkb.service');
       const health = await MaxKBService.healthCheck();
       results.maxkb = { status: health.reachable ? 'ok' : 'unreachable', error: health.error };
     } catch (e: any) {

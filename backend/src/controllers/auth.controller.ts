@@ -1,8 +1,8 @@
 import { Request, Response } from 'express';
 import bcrypt from 'bcryptjs';
 import prisma from '../config/db';
-import { TokenService } from '../services/token.service';
-import { MaxKBEmbedService } from '../services/maxkb-embed.service';
+import { TokenService } from '../services/auth/token.service';
+import { MaxKBEmbedService } from '../services/knowledge/maxkb-embed.service';
 import { AuthRequest } from '../middlewares/auth.middleware';
 import { success, error } from '../utils/response';
 import { validatePasswordComplexity } from '../utils/password-validator';

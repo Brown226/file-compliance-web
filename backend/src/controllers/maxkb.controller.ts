@@ -1,7 +1,7 @@
 import { Request, Response } from 'express';
-import { MaxKBService } from '../services/maxkb.service';
-import { MaxKBEmbedService } from '../services/maxkb-embed.service';
-import { RAGService } from '../services/rag.service';
+import { MaxKBService } from '../services/knowledge/maxkb.service';
+import { MaxKBEmbedService } from '../services/knowledge/maxkb-embed.service';
+import { RAGService } from '../services/knowledge/rag.service';
 import { success, error } from '../utils/response';
 
 /**

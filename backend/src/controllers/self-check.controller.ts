@@ -2,9 +2,9 @@ import { Request, Response } from 'express';
 import path from 'path';
 import fs from 'fs';
 import prisma from '../config/db';
-import { SelfCheckService, SelfCheckReport } from '../services/self-check.service';
-import { SelfCheckExportService } from '../services/self-check-export.service';
-import { WebSocketService } from '../services/websocket.service';
+import { SelfCheckService, SelfCheckReport } from '../services/review/self-check.service';
+import { SelfCheckExportService } from '../services/review/self-check-export.service';
+import { WebSocketService } from '../services/system/websocket.service';
 import { success, error } from '../utils/response';
 import { toWebPath } from '../config/upload';
 

@@ -4,9 +4,9 @@
  */
 
 import { PipelineContext } from './types';
-import { ParserService } from '../parser.service';
-import { OcrService } from '../ocr.service';
-import { FileTypeService } from '../file-type.service';
+import { ParserService } from '../file/parser.service';
+import { OcrService } from '../file/ocr.service';
+import { FileTypeService } from '../file/file-type.service';
 import fs from 'fs';
 import { resolveFilePath } from '../../config/upload';
 
@@ -121,7 +121,7 @@ export class TextExtractionService {
     if (normalizedFileType !== 'docx') return;
 
     try {
-      const { WordStructureService } = await import('../word-structure.service');
+      const { WordStructureService } = await import('../file/word-structure.service');
       const structure = await WordStructureService.extractStructure(ctx.filePath, ctx.parseResult);
       ctx.wordStructure = structure;
 

@@ -1,6 +1,6 @@
 import { Response } from 'express';
 import { AuthRequest } from '../middlewares/auth.middleware';
-import { AnnouncementService, CreateAnnouncementInput, UpdateAnnouncementInput, AnnouncementQueryParams } from '../services/announcement.service';
+import { AnnouncementService, CreateAnnouncementInput, UpdateAnnouncementInput, AnnouncementQueryParams } from '../services/system/announcement.service';
 import { AnnouncementStatus, AnnouncementUrgency } from '@prisma/client';
 import { success, error, paginated } from '../utils/response';
 

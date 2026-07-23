@@ -1,4 +1,4 @@
-﻿﻿/**
+/**
  * 审查模式处理器 — 替代原先的 Pipeline 子类体系
  *
  * 每个审查模式对应一个独立的处理函数，自包含其专属 AI 审查逻辑。
@@ -7,12 +7,12 @@
  */
 
 import { PipelineContext, ReviewModeType, getModeScene } from './types';
-import { ReviewIssue, SourceReference } from '../llm.service';
+import { ReviewIssue, SourceReference } from '../llm/llm.service';
 import { AiReviewService } from './ai-review.service';
-import { TerminologyService } from '../terminology.service';
-import { StructuredConsistencyService } from '../structured-consistency.service';
+import { TerminologyService } from '../standard/terminology.service';
+import { StructuredConsistencyService } from '../review/structured-consistency.service';
 import { getEffectiveConfig } from './pipeline-config';
-import { StandardClauseCheckService } from '../standard-clause-check.service';
+import { StandardClauseCheckService } from '../standard/standard-clause-check.service';
 
 /** 审查模式处理器签名 */
 export type ReviewHandler = (ctx: PipelineContext) => Promise<{

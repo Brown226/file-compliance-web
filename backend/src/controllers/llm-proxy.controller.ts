@@ -1,7 +1,7 @@
 import { Request, Response } from 'express';
 import { AuthRequest } from '../middlewares/auth.middleware';
 import { success, error } from '../utils/response';
-import { LlmProxyService } from '../services/llm-proxy.service';
+import { LlmProxyService } from '../services/llm/llm-proxy.service';
 
 export const proxyChatCompletions = async (req: AuthRequest, res: Response): Promise<void> => {
   try {

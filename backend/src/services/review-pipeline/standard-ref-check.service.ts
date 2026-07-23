@@ -6,10 +6,10 @@
  */
 
 import { PipelineContext } from './types';
-import { ReviewIssue } from '../llm.service';
-import { StandardExtractorService } from '../standard-extractor.service';
-import { StandardCheckService, StandardCheckItem } from '../standard-check.service';
-import { CharDiffService } from '../char-diff.service';
+import { ReviewIssue } from '../llm/llm.service';
+import { StandardExtractorService } from '../standard/standard-extractor.service';
+import { StandardCheckService, StandardCheckItem } from '../standard/standard-check.service';
+import { CharDiffService } from '../file/char-diff.service';
 import prisma from '../../config/db';
 
 export class StandardRefCheckService {

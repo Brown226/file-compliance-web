@@ -1,5 +1,5 @@
 import { Request, Response, NextFunction } from 'express';
-import { departmentService } from '../services/department.service';
+import { departmentService } from '../services/auth/department.service';
 import { success, error } from '../utils/response';
 
 export class DepartmentController {

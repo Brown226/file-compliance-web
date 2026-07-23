@@ -1,5 +1,5 @@
 import { Request, Response } from 'express';
-import { DwgVisionService } from '../services/dwg-vision.service';
+import { DwgVisionService } from '../services/file/dwg-vision.service';
 
 const VALID_ANALYSES = ['titleBlock', 'symbols', 'annotations', 'compliance'];
 

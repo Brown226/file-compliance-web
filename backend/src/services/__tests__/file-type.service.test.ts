@@ -1,5 +1,5 @@
-import { FileTypeService } from '../file-type.service';
-import { FileCategory } from '../file-type.constants';
+import { FileTypeService } from '../file/file-type.service';
+import { FileCategory } from '../file/file-type.constants';
 
 describe('FileTypeService', () => {
   describe('normalizeFileType', () => {

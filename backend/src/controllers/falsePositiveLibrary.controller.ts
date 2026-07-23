@@ -1,5 +1,5 @@
 import { Request, Response, NextFunction } from 'express'
-import FalsePositiveLibraryService from '../services/falsePositiveLibrary.service'
+import FalsePositiveLibraryService from '../services/review/falsePositiveLibrary.service'
 import ExcelJS from 'exceljs'
 
 class FalsePositiveLibraryController {

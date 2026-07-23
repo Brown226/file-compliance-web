@@ -12,7 +12,7 @@ const { mockTaskService, mockSuccess, mockError } = vi.hoisted(() => ({
   mockSuccess: vi.fn(),
   mockError: vi.fn(),
 }));
-vi.mock('../services/task.service', () => ({
+vi.mock('../services/system/task.service', () => ({
   TaskService: mockTaskService,
 }));
 vi.mock('../utils/response', () => ({

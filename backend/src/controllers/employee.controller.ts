@@ -1,5 +1,5 @@
 import { Request, Response, NextFunction } from 'express';
-import { employeeService } from '../services/employee.service';
+import { employeeService } from '../services/auth/employee.service';
 import { success, error } from '../utils/response';
 
 export class EmployeeController {

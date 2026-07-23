@@ -1,10 +1,10 @@
 import { HealthController } from '../health.controller';
-import { MetricsService } from '../../services/metrics.service';
-import { CacheService } from '../../services/cache.service';
+import { MetricsService } from '../../services/system/metrics.service';
+import { CacheService } from '../../services/system/cache.service';
 
 // Mock services
-vi.mock('../../services/metrics.service');
-vi.mock('../../services/cache.service');
+vi.mock('../../services/system/metrics.service');
+vi.mock('../../services/system/cache.service');
 
 // Mock response helpers
 vi.mock('../../utils/response', () => ({

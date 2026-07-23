@@ -1,6 +1,6 @@
 import { Request, Response } from 'express';
 import { AuthRequest } from '../middlewares/auth.middleware';
-import { FeedbackService, CreateFeedbackInput, UpdateFeedbackStatusInput } from '../services/feedback.service';
+import { FeedbackService, CreateFeedbackInput, UpdateFeedbackStatusInput } from '../services/review/feedback.service';
 import { FeedbackStatus, FeedbackCategory } from '@prisma/client';
 import { success, error, paginated } from '../utils/response';
 import path from 'path';

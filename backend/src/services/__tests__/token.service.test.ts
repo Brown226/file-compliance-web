@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { TokenService } from '../token.service';
+import { TokenService } from '../auth/token.service';
 
 // Mock dependencies
 vi.mock('jsonwebtoken', () => ({

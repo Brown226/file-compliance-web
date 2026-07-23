@@ -1,7 +1,7 @@
 import { Request, Response } from 'express';
 import path from 'path';
-import { StandardService } from '../services/standard.service';
-import { StandardExtractorService } from '../services/standard-extractor.service';
+import { StandardService } from '../services/standard/standard.service';
+import { StandardExtractorService } from '../services/standard/standard-extractor.service';
 import { success, error, paginated } from '../utils/response';
 
 export const createStandard = async (req: Request, res: Response): Promise<void> => {

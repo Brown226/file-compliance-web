@@ -1,5 +1,5 @@
 import { Request, Response, NextFunction } from 'express';
-import { AuditService } from '../services/audit.service';
+import { AuditService } from '../services/system/audit.service';
 import { AuthRequest } from './auth.middleware';
 
 const auditService = new AuditService();

@@ -26,7 +26,7 @@ vi.mock('../auth.middleware', () => ({
   authenticate: vi.fn((req: any, res: any, next: any) => next()),
 }));
 
-vi.mock('../../services/token.service', () => ({
+vi.mock('../../services/auth/token.service', () => ({
   TokenService: { verifyToken: vi.fn() },
 }));
 

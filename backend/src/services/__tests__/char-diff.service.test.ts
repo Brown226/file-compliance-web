@@ -1,4 +1,4 @@
-import { CharDiffService } from '../char-diff.service';
+import { CharDiffService } from '../file/char-diff.service';
 
 describe('CharDiffService', () => {
   describe('compare', () => {

@@ -3,7 +3,7 @@
  */
 
 import { RuleIssue, FileContext } from '../rules/types';
-import { ReviewIssue, SourceReference } from '../llm.service';
+import { ReviewIssue, SourceReference } from '../llm/llm.service';
 
 /** 审查模式（与数据库 ReviewMode 枚举一致） */
 export type ReviewModeType =
@@ -163,7 +163,7 @@ export interface PipelineContext {
   /** 审查场景名（供 prompt 加载用，从 ReviewMode 映射） */
   scene?: string;
   /** Python 解析服务的结构化结果（可能为 null） */
-  parseResult?: import('../python-parser.service').ParseResult | null;
+  parseResult?: import('../file/python-parser.service').ParseResult | null;
   /** Word 文档结构化数据 */
   wordStructure?: WordStructure;
   /** DWG 图纸结构化数据 */

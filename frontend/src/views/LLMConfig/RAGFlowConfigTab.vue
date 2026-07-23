@@ -46,6 +46,39 @@
             <div class="form-tip">低于该分数的段落将被过滤，默认 0.2（RAGFlow 推荐值）</div>
           </el-form-item>
         </el-form>
+      </div>
+    </div>
+
+    <!-- OPT-040: 双源协同策略 -->
+    <div class="config-section">
+      <div class="section-title">
+        <el-icon><Connection /></el-icon>
+        <span>双源协同策略</span>
+      </div>
+
+      <div class="config-card">
+        <el-form :model="form" label-width="130px" label-position="left">
+          <el-form-item label="优先级策略">
+            <el-radio-group v-model="form.priority">
+              <el-radio value="parallel">双源并重</el-radio>
+              <el-radio value="maxkb_first">MaxKB 优先</el-radio>
+              <el-radio value="ragflow_first">RAGFlow 优先</el-radio>
+            </el-radio-group>
+            <div class="form-tip">
+              双源并重：合并后按相似度统一排序；MaxKB/RAGFlow 优先：该源结果全保留，另一源仅填充
+            </div>
+          </el-form-item>
+
+          <el-form-item label="RAGFlow 权重">
+            <el-input-number v-model="form.ragflowWeight" :min="0.1" :max="2" :step="0.1" :precision="2" />
+            <div class="form-tip">RAGFlow 相似度分数乘以该权重后与 MaxKB 比较（MaxKB 始终 1.0），用于校正两源分数尺度差异</div>
+          </el-form-item>
+
+          <el-form-item label="结果去重">
+            <el-switch v-model="form.dedupEnabled" />
+            <div class="form-tip">按"文档名 + 内容前 100 字"指纹去重，保留相似度更高的那条</div>
+          </el-form-item>
+        </el-form>
 
         <div class="form-actions">
           <el-button @click="handleSave" :loading="saveLoading" type="primary">
@@ -74,7 +107,7 @@
 <script setup lang="ts">
 import { ref, reactive, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
-import { Check, Clock, Setting, Refresh } from '@element-plus/icons-vue'
+import { Check, Clock, Setting, Refresh, Connection } from '@element-plus/icons-vue'
 import { getSystemConfigApi, saveSystemConfigApi } from '@/api/system'
 
 const CONFIG_KEY = 'ragflow_config'
@@ -83,6 +116,10 @@ const form = reactive({
   baseUrl: '',
   apiKey: '',
   similarityThreshold: 0.2,
+  // OPT-040: 双源协同策略
+  priority: 'parallel' as 'parallel' | 'maxkb_first' | 'ragflow_first',
+  ragflowWeight: 1.0,
+  dedupEnabled: true,
 })
 
 const touched = ref(false)
@@ -99,6 +136,10 @@ const loadConfig = async () => {
       form.baseUrl = data.baseUrl || ''
       form.apiKey = data.apiKey || ''
       form.similarityThreshold = typeof data.similarityThreshold === 'number' ? data.similarityThreshold : 0.2
+      // OPT-040: 双源协同策略
+      form.priority = data.priority === 'maxkb_first' || data.priority === 'ragflow_first' ? data.priority : 'parallel'
+      form.ragflowWeight = typeof data.ragflowWeight === 'number' && data.ragflowWeight > 0 ? data.ragflowWeight : 1.0
+      form.dedupEnabled = typeof data.dedupEnabled === 'boolean' ? data.dedupEnabled : true
       touched.value = !!(form.baseUrl && form.apiKey)
     }
   } catch {
@@ -150,6 +191,9 @@ const handleSave = async () => {
       baseUrl: form.baseUrl.trim(),
       apiKey: form.apiKey.trim(),
       similarityThreshold: form.similarityThreshold,
+      priority: form.priority,
+      ragflowWeight: form.ragflowWeight,
+      dedupEnabled: form.dedupEnabled,
     })
     touched.value = true
     ElMessage.success('RAGFlow 配置已保存')

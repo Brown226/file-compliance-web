@@ -6,7 +6,7 @@
  */
 
 import { RuleIssue, FileContext } from './types';
-import { TerminologyService } from '../terminology.service';
+import { TerminologyService } from '../standard/terminology.service';
 
 // 常见错别字映射表（确定性检查）
 const TYPO_MAP: Record<string, string> = {

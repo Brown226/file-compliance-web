@@ -9,7 +9,7 @@
  *   const userContent = await PromptLoader.loadUserPrompt('library_review', 'with_context', { ragContext: '...', text: '...' });
  */
 
-import { PromptTemplateService } from '../prompt-template.service';
+import { PromptTemplateService } from '../llm/prompt-template.service';
 import { resolveModule, getPromptFallback } from './registry';
 
 /** 模板占位符数据 */

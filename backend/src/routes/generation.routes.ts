@@ -4,7 +4,7 @@
  */
 
 import { Router, Request, Response } from 'express';
-import { OpenSpecAgentService } from '../services/openspec-agent.service';
+import { OpenSpecAgentService } from '../services/llm/openspec-agent.service';
 import { authenticate } from '../middlewares/auth.middleware';
 
 const router = Router();

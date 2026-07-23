@@ -11,7 +11,7 @@ import {
   fetchProviderModels,
   getAiCallStats,
 } from '../controllers/systemConfig.controller';
-import { OcrService } from '../services/ocr.service';
+import { OcrService } from '../services/file/ocr.service';
 
 const router = Router();
 

@@ -1,7 +1,7 @@
 import { Router, Request, Response } from 'express';
 import { authenticate } from '../middlewares/auth.middleware';
 import { requireRole } from '../middlewares/rbac.middleware';
-import { TerminologyService } from '../services/terminology.service';
+import { TerminologyService } from '../services/standard/terminology.service';
 
 const router = Router();
 

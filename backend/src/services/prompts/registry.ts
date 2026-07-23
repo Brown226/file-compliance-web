@@ -12,7 +12,7 @@
  * 3. DB 模板的 defaultValue 和运行时 fallback 来自同一数据源
  */
 
-import { PromptTemplateData } from '../prompt-template.service';
+import { PromptTemplateData } from '../llm/prompt-template.service';
 
 // ============================================================
 // 审查场景到提示词模块的映射（与 base-pipeline.ts resolveScene 对齐）

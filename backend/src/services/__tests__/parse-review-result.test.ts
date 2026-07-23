@@ -11,7 +11,7 @@
  * - 空输出 / 畸形 JSON
  */
 import { describe, it, expect } from 'vitest';
-import { LlmService } from '../llm.service';
+import { LlmService } from '../llm/llm.service';
 
 describe('LlmService.parseReviewResult', () => {
   // ===== 正常路径 =====
@@ -204,7 +204,7 @@ describe('LlmService.parseReviewResult', () => {
  * 支持标准审查格式(issueType)和合同审查格式(riskLevel)。
  */
 import { describe, it, expect } from 'vitest';
-import { LlmService } from '../llm.service';
+import { LlmService } from '../llm/llm.service';
 
 describe('parseReviewResult', () => {
 

@@ -1,12 +1,12 @@
 import { Response } from 'express';
 import { AuthRequest } from '../middlewares/auth.middleware';
-import { RuleLibraryService } from '../services/rule-library.service';
+import { RuleLibraryService } from '../services/llm/rule-library.service';
 import { TextExtractionService } from '../services/review-pipeline/text-extraction.service';
 import { success, error } from '../utils/response';
 import path from 'path';
 import fs from 'fs';
 import { v4 as uuidv4 } from 'uuid';
-import { FileTypeService } from '../services/file-type.service';
+import { FileTypeService } from '../services/file/file-type.service';
 import { getUploadPath } from '../config/upload';
 
 function UPLOAD_DIR() { return getUploadPath('rule-libraries'); }

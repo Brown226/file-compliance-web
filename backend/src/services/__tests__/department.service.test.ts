@@ -1,4 +1,4 @@
-import { DepartmentService } from '../department.service';
+import { DepartmentService } from '../auth/department.service';
 
 // Mock prisma
 vi.mock('../../config/db', () => ({

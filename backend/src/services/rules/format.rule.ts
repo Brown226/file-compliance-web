@@ -5,7 +5,7 @@
  */
 
 import { RuleIssue, FileContext } from './types';
-import { detectMixedPunctuation } from '../text-normalization.service';
+import { detectMixedPunctuation } from '../file/text-normalization.service';
 
 /**
  * 辅助方法: 提取封面区域文本（通常是文件的前 25 行或到第一个空行之前的区域）

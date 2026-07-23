@@ -3,7 +3,7 @@
  */
 
 import { Router, Request, Response } from 'express';
-import { TemplateMatcherService } from '../services/template-matcher.service';
+import { TemplateMatcherService } from '../services/review/template-matcher.service';
 import { authenticate } from '../middlewares/auth.middleware';
 
 const router = Router();

@@ -1,10 +1,10 @@
 import app from './app';
 import { env } from './config/env';
-import { TerminologyService } from './services/terminology.service';
-import { PromptTemplateService } from './services/prompt-template.service';
-import { WebSocketService } from './services/websocket.service';
-import { initQueueProcessors, closeQueue } from './services/queue.service';
-import { startScheduler } from './services/scheduler.service';
+import { TerminologyService } from './services/standard/terminology.service';
+import { PromptTemplateService } from './services/llm/prompt-template.service';
+import { WebSocketService } from './services/system/websocket.service';
+import { initQueueProcessors, closeQueue } from './services/system/queue.service';
+import { startScheduler } from './services/system/scheduler.service';
 import prisma from './config/db';
 import { setUploadDir, initUploadSubdirs, getUploadDir } from './config/upload';
 import type { Server } from 'http';

@@ -3,7 +3,7 @@
  */
 
 import { Request, Response } from 'express';
-import { PromptTemplateService } from '../services/prompt-template.service';
+import { PromptTemplateService } from '../services/llm/prompt-template.service';
 
 export class PromptTemplateController {
 

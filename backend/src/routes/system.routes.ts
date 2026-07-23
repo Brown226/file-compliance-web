@@ -1,8 +1,8 @@
 import { Router, Request, Response } from 'express';
 import { authenticate } from '../middlewares/auth.middleware';
 import { requireRole } from '../middlewares/rbac.middleware';
-import FileCleanupService from '../services/file-cleanup.service';
-import { PythonParserService } from '../services/python-parser.service';
+import FileCleanupService from '../services/file/file-cleanup.service';
+import { PythonParserService } from '../services/file/python-parser.service';
 import { redisClient } from '../utils/redis';
 import prisma from '../config/db';
 import path from 'path';

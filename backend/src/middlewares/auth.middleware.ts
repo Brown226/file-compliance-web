@@ -1,5 +1,5 @@
 import { Request, Response, NextFunction } from 'express';
-import { TokenService } from '../services/token.service';
+import { TokenService } from '../services/auth/token.service';
 
 export interface AuthRequest extends Request {
   user?: any;

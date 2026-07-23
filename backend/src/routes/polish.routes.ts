@@ -3,7 +3,7 @@
  */
 
 import { Router, Request, Response } from 'express';
-import { PolishService } from '../services/polish.service';
+import { PolishService } from '../services/llm/polish.service';
 import { authenticate } from '../middlewares/auth.middleware';
 
 const router = Router();

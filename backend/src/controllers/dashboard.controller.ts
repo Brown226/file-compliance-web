@@ -1,6 +1,6 @@
 import { Request, Response, NextFunction } from 'express';
-import { DashboardService } from '../services/dashboard.service';
-import { ReviewMetricsService } from '../services/review-metrics.service';
+import { DashboardService } from '../services/system/dashboard.service';
+import { ReviewMetricsService } from '../services/review/review-metrics.service';
 import { success, error } from '../utils/response';
 
 const dashboardService = new DashboardService();
