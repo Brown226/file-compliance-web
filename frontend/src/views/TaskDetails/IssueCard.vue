@@ -272,12 +272,34 @@
         <span class="row-label">误报原因</span>
         <span class="fp-reason-text">{{ detail.fpReason }}</span>
       </div>
+
+      <!-- OPT-015: 审查结果反馈 -->
+      <div v-if="taskId && !detail.isFalsePositive" class="issue-row feedback-row">
+        <span class="row-label">质量反馈</span>
+        <div class="feedback-actions">
+          <template v-if="!feedbackSubmitted">
+            <el-button size="small" :loading="feedbackLoading === 'useful'" class="fb-btn fb-useful" @click="submitFeedback('useful')">
+              <el-icon><CircleCheck /></el-icon> 有用
+            </el-button>
+            <el-button size="small" :loading="feedbackLoading === 'false_positive'" class="fb-btn fb-fp" @click="submitFeedback('false_positive')">
+              <el-icon><WarningFilled /></el-icon> 误报
+            </el-button>
+            <el-button size="small" :loading="feedbackLoading === 'missed'" class="fb-btn fb-missed" @click="submitFeedback('missed')">
+              <el-icon><Warning /></el-icon> 漏报
+            </el-button>
+          </template>
+          <span v-else class="fb-done">
+            <el-icon><CircleCheckFilled /></el-icon> 已反馈：{{ feedbackLabel }}
+          </span>
+        </div>
+      </div>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, watch } from 'vue'
+import { ref, reactive, watch, computed } from 'vue'
+import { ElMessage } from 'element-plus'
 import type { IssueDetail } from './types/issue'
 import {
   CopyDocument,
@@ -285,10 +307,14 @@ import {
   ArrowDown,
   Reading,
   WarningFilled,
+  Warning,
+  CircleCheck,
+  CircleCheckFilled,
   Edit,
 } from '@element-plus/icons-vue'
 import DiffHighlight from './DiffHighlight.vue'
 import { useIssueHelpers } from './composables'
+import { submitReviewFeedbackApi, type FeedbackType } from '@/api/dashboard'
 
 const props = defineProps<{
   detail: IssueDetail
@@ -299,6 +325,7 @@ const props = defineProps<{
   selectedFileId?: string | null
   forceExpanded?: boolean
   reviewMode?: string
+  taskId?: string
 }>()
 
 const emit = defineEmits<{
@@ -361,6 +388,35 @@ const clauseTypeLabel = (type: string): string => {
     insurance: '保险条款', dispute: '争议解决', other: '其他',
   }
   return map[type] || type
+}
+
+// ===== OPT-015: 审查结果反馈 =====
+const feedbackLoading = ref<FeedbackType | null>(null)
+const feedbackSubmitted = ref(false)
+const feedbackLabel = computed(() => {
+  switch (feedbackLoading.value) {
+    case 'useful': return '有用'
+    case 'false_positive': return '误报'
+    case 'missed': return '漏报'
+    default: return ''
+  }
+})
+
+async function submitFeedback(type: FeedbackType) {
+  if (!props.taskId || !props.detail.id) return
+  feedbackLoading.value = type
+  try {
+    await submitReviewFeedbackApi(props.taskId, String(props.detail.id), {
+      feedbackType: type,
+      fileId: props.detail.fileId,
+    })
+    feedbackSubmitted.value = true
+    feedbackLoading.value = type // 保留用于显示 label
+    ElMessage.success('反馈已提交')
+  } catch (e: any) {
+    ElMessage.error(e?.message || '反馈提交失败')
+    feedbackLoading.value = null
+  }
 }
 </script>
 
@@ -770,5 +826,48 @@ const clauseTypeLabel = (type: string): string => {
 }
 .issue-card.batch-selected:hover {
   box-shadow: 0 0 0 2px rgba(64, 158, 255, 0.25), 0 6px 20px rgba(64, 158, 255, 0.15) !important;
+}
+
+/* ===== OPT-015: 质量反馈按钮 ===== */
+.feedback-row {
+  align-items: center;
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px dashed #E5E7EB;
+}
+.feedback-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.fb-btn {
+  border: none;
+  border-radius: 6px;
+  font-size: 12px;
+  padding: 4px 10px;
+}
+.fb-useful {
+  background: #D1FAE5;
+  color: #059669;
+}
+.fb-useful:hover { background: #A7F3D0; color: #047857; }
+.fb-fp {
+  background: #FEF3C7;
+  color: #D97706;
+}
+.fb-fp:hover { background: #FDE68A; color: #B45309; }
+.fb-missed {
+  background: #FEE2E2;
+  color: #DC2626;
+}
+.fb-missed:hover { background: #FECACA; color: #B91C1C; }
+.fb-done {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  color: #059669;
+  font-weight: 500;
 }
 </style>

@@ -52,6 +52,10 @@
         <!-- ===== admin panel (ADMIN/MANAGER only) ===== -->
         <template v-if="userStore.isAdminOrManager()">
           <div class="menu-divider" v-show="!sidebarCollapsed"></div>
+          <el-menu-item index="/accuracy-dashboard">
+            <el-icon><DataLine /></el-icon>
+            <template #title><span>审查质量看板</span></template>
+          </el-menu-item>
           <el-menu-item index="/admin">
             <el-icon><Setting /></el-icon>
             <template #title><span>管理后台</span></template>
@@ -257,7 +261,7 @@ import {
   Fold, Expand, Search, QuestionFilled, Edit,
   WarningFilled, ChatDotRound, ChatLineRound,
   Bell, User, ArrowLeft, Brush, Guide, ChatLineSquare,
-  MagicStick, Memo, Reading, Collection, View,
+  MagicStick, Memo, Reading, Collection, View, DataLine,
 } from '@element-plus/icons-vue'
 import { logoutApi, changePasswordApi, changeUsernameApi, loginApi } from '@/api/auth'
 import GlobalSearch from '@/components/GlobalSearch.vue'

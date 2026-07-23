@@ -529,6 +529,7 @@
               :review-mode="(task as any)?.reviewMode"
               :enabled-prefixes="(task as any)?.reviewPlan?.evidence?.enabledPrefixes"
               :original-text="proofreadOriginalText"
+              :task-id="taskId"
               @update:selected-file-id="(id) => { selectedFileId.value = id; if (id) switchToFileContext(id) }"
               @select-file-by-id="switchToFileContext"
               @copy-handle-id="handleCopyCadHandle"

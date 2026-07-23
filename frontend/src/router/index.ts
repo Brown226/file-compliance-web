@@ -100,6 +100,12 @@ const routes: Array<RouteRecordRaw> = [
 
       // ===== 管理员路由（ADMIN/MANAGER 可见）=====
       {
+        path: 'accuracy-dashboard',
+        name: 'AccuracyDashboard',
+        component: () => import('../views/AccuracyDashboard.vue'),
+        meta: { title: '审查质量看板', requiresAdminOrManager: true }
+      },
+      {
         path: 'admin',
         name: 'UnifiedPanel',
         component: () => import('../views/UnifiedPanel.vue'),

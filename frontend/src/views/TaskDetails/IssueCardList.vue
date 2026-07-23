@@ -261,6 +261,7 @@
                   :selected-file-id="selectedFileId"
                   :force-expanded="allExpanded"
                   :review-mode="reviewMode"
+                  :task-id="taskId"
                   @locate-text="(payload: any) => $emit('locateText', payload)"
                   @copy-handle-id="(handleId: string) => $emit('copyHandleId', handleId)"
                   @open-fp-dialog="(detail: IssueDetail) => $emit('openFpDialog', detail)"
@@ -369,6 +370,8 @@ const props = defineProps<{
   enabledPrefixes?: string[]
   /** 校对模式全文原文（TYPO_GRAMMAR 模式使用） */
   originalText?: string
+  /** OPT-015: 任务 ID（用于审查结果反馈） */
+  taskId?: string
 }>()
 
 const emit = defineEmits<{
