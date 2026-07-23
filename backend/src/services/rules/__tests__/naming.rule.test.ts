@@ -66,6 +66,33 @@ describe('checkNaming', () => {
     expect(issues.some(i => i.ruleCode === 'NAME_001')).toBe(true);
     expect(issues.filter(i => i.ruleCode === 'NAME_008')).toHaveLength(0);
   });
+
+  // ===== NAME_004 / 005 / 006 / 007 / 009 补充（OPT-002 覆盖缺口） =====
+
+  it('NAME_004: 项目编码格式错误应检出', () => {
+    const issues = checkNaming(makeCtx('AB1A00AC-JPS02-001(A).pdf'));
+    expect(issues.some(i => i.ruleCode === 'NAME_004')).toBe(true);
+  });
+
+  it('NAME_005: 系统编码格式错误应检出', () => {
+    const issues = checkNaming(makeCtx('AB01C02DE-JP-001(A).pdf'));
+    expect(issues.some(i => i.ruleCode === 'NAME_005')).toBe(true);
+  });
+
+  it('NAME_006: 项目与系统编码正确但整体格式不匹配应检出', () => {
+    const issues = checkNaming(makeCtx('AB01C02DE-FGH03-XYZ(A).pdf'));
+    expect(issues.some(i => i.ruleCode === 'NAME_006')).toBe(true);
+  });
+
+  it('NAME_007: 文档类文件命名格式不符合规范应检出', () => {
+    const issues = checkNaming(makeCtx('AB01C02DE-FGH03-XYZ.docx'));
+    expect(issues.some(i => i.ruleCode === 'NAME_007')).toBe(true);
+  });
+
+  it('NAME_009: 括号内版本号非单大写字母应检出', () => {
+    const issues = checkNaming(makeCtx('report(1).pdf'));
+    expect(issues.some(i => i.ruleCode === 'NAME_009')).toBe(true);
+  });
 });
 import { describe, it, expect } from 'vitest';
 import { checkNaming } from '../naming.rule';

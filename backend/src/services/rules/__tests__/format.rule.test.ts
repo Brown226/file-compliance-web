@@ -117,4 +117,31 @@ describe('Format Rule (FORMAT)', () => {
     expect(Array.isArray(issues)).toBe(true);
   });
 
+  /* ===== FORMAT_006 / 008 / 009 补充（OPT-002 覆盖缺口） ===== */
+
+  it('FORMAT_006: 中文文档混入半角逗号应检出', () => {
+    const issues = checkFormatRules(ctx('这是一段中文测试,包含半角逗号。'));
+    expect(issues.some(i => i.ruleCode === 'FORMAT_006')).toBe(true);
+  });
+
+  it('FORMAT_006: 中文文档全角标点不报半角混用', () => {
+    const issues = checkFormatRules(ctx('这是一段中文测试，包含全角标点。'));
+    expect(issues.some(i => i.ruleCode === 'FORMAT_006')).toBe(false);
+  });
+
+  it('FORMAT_008: 文本含 Unicode 上标字符应检出', () => {
+    const issues = checkFormatRules(ctx('公式 X² 加 Y³ 的计算结果'));
+    expect(issues.some(i => i.ruleCode === 'FORMAT_008')).toBe(true);
+  });
+
+  it('FORMAT_009: 文本含 Unicode 下标字符应检出', () => {
+    const issues = checkFormatRules(ctx('化学式 H₂O 的物理性质'));
+    expect(issues.some(i => i.ruleCode === 'FORMAT_009')).toBe(true);
+  });
+
+  it('FORMAT_008/009: 普通文本不含上下标不报', () => {
+    const issues = checkFormatRules(ctx('普通公式 X^2 加 Y^3 的计算结果'));
+    expect(issues.some(i => i.ruleCode === 'FORMAT_008' || i.ruleCode === 'FORMAT_009')).toBe(false);
+  });
+
 });

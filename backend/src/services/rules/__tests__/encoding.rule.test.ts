@@ -71,6 +71,45 @@ describe('checkEncodingConsistency', () => {
     const issues = checkEncodingConsistency(makeCtx('report.pdf'));
     expect(issues).toHaveLength(0);
   });
+
+  // ===== UNIT_002 / UNIT_003 补充（OPT-002 覆盖缺口） =====
+  // 触发 UNIT 检查需：合法外部编码文件名 + 非空 pdfPages（合法页眉避免 CODE_*）+ extractedText 含封面字段
+
+  it('UNIT_002: 有图册编号但格式不匹配应检出', () => {
+    const ctx: FileContext = {
+      fileName: 'AB01C02DE-FGH03(A).pdf',
+      filePath: '/uploads/AB01C02DE-FGH03(A).pdf',
+      fileType: 'pdf',
+      extractedText: '图册编号：INVALIDFORMAT',
+      pdfPages: ['第一页', 'AB01C02DE-FGH03(A) 正确页眉'],
+    };
+    const issues = checkEncodingConsistency(ctx);
+    expect(issues.some(i => i.ruleCode === 'UNIT_002')).toBe(true);
+  });
+
+  it('UNIT_003: 有 DOC.NO 但格式不匹配应检出', () => {
+    const ctx: FileContext = {
+      fileName: 'AB01C02DE-FGH03(A).pdf',
+      filePath: '/uploads/AB01C02DE-FGH03(A).pdf',
+      fileType: 'pdf',
+      extractedText: '图册编号：AB0100CDE-FGH03\nDOC.NO: INVALIDFORMAT',
+      pdfPages: ['第一页', 'AB01C02DE-FGH03(A) 正确页眉'],
+    };
+    const issues = checkEncodingConsistency(ctx);
+    expect(issues.some(i => i.ruleCode === 'UNIT_003')).toBe(true);
+  });
+
+  it('UNIT_002/003: 合法图册编号与 DOC.NO 不报格式不匹配', () => {
+    const ctx: FileContext = {
+      fileName: 'AB01C02DE-FGH03(A).pdf',
+      filePath: '/uploads/AB01C02DE-FGH03(A).pdf',
+      fileType: 'pdf',
+      extractedText: '图册编号：AB0100CDE-FGH03\nDOC.NO: ABC123456',
+      pdfPages: ['第一页', 'AB01C02DE-FGH03(A) 正确页眉'],
+    };
+    const issues = checkEncodingConsistency(ctx);
+    expect(issues.some(i => i.ruleCode === 'UNIT_002' || i.ruleCode === 'UNIT_003')).toBe(false);
+  });
 });
 /**
  * 编码一致性规则测试 (CODE / UNIT)
