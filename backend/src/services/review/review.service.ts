@@ -7,6 +7,7 @@ import { TextExtractionService } from '../review-pipeline/text-extraction.servic
 import { RuleEngineService } from '../llm/rule-engine.service';
 import { CrossFileConsistencyService } from './cross-file-consistency.service';
 import { IntraFileConsistencyService } from './intra-file-consistency.service';
+import { SectionAggregationService } from './section-aggregation.service';
 import { WebSocketService } from '../system/websocket.service';
 import { resolveFilePath } from '../../config/upload';
 import { ConcurrencyService } from '../system/concurrency.service';
@@ -759,6 +760,27 @@ export class ReviewService {
           });
         } catch (error) {
           console.error(`[Review] ���ļ�һ���Լ��ʧ��: ${taskId}`, error);
+        }
+
+        // OPT-024: 章节级语义聚合（LLM 提取系统描述 + 语义比对）
+        try {
+          WebSocketService.emitTaskProgress(taskId, {
+            type: 'semantic_aggregation',
+            step: '语义聚合检查',
+            progress: 97,
+            message: '正在执行章节级语义聚合...',
+            timestamp: Date.now(),
+          });
+          const semanticIssueCount = await SectionAggregationService.check(taskId, task.files);
+          WebSocketService.emitTaskProgress(taskId, {
+            type: 'semantic_aggregation_done',
+            step: '语义聚合完成',
+            progress: 98,
+            message: `发现 ${semanticIssueCount} 个语义不一致`,
+            timestamp: Date.now(),
+          });
+        } catch (error) {
+          console.error(`[Review] 章节级语义聚合失败: ${taskId}`, error);
         }
       }
 
