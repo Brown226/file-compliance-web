@@ -1,146 +1,166 @@
 <template>
   <div class="platform-tab" v-loading="loading">
-    <!-- 区块 1：在线用户 -->
-    <el-card shadow="hover" class="section-card">
-      <template #header>
-        <div class="card-header">
-          <span class="header-title">
-            <el-icon><User /></el-icon>
-            实时在线用户
-          </span>
-          <el-tag type="success" effect="plain">当前在线 {{ onlineData?.onlineCount ?? 0 }} 人</el-tag>
-          <el-tag type="primary" effect="plain">今日登录 {{ onlineData?.todayLoginCount ?? 0 }} 人</el-tag>
-          <el-button link size="small" :loading="loadingOnline" @click="loadOnlineUsers">刷新</el-button>
-        </div>
-      </template>
-      <div v-if="onlineData && onlineData.users.length > 0" class="online-users-list">
-        <div v-for="u in onlineData.users" :key="u.id" class="online-user-item">
-          <el-avatar :size="32" class="user-avatar">{{ u.name.charAt(0) }}</el-avatar>
-          <div class="user-info">
-            <span class="user-name">{{ u.name }}</span>
-            <span class="user-meta">@{{ u.username }} · {{ getRoleLabel(u.role) }}</span>
-          </div>
-          <el-tag v-if="u.departmentName" size="small" type="info" effect="plain">{{ u.departmentName }}</el-tag>
-          <span v-if="u.lastLoginAt" class="user-last-login">
-            {{ formatRelativeTime(u.lastLoginAt) }}
-          </span>
-          <span class="online-dot"></span>
+    <!-- 在线用户轨道 -->
+    <div class="rail-panel">
+      <div class="rail-header">
+        <span class="rail-title">
+          <span class="online-pulse"></span>
+          实时在线用户
+        </span>
+        <div class="rail-meta">
+          <span>当前在线 <strong>{{ onlineData?.onlineCount ?? 0 }}</strong> 人</span>
+          <span>今日登录 <strong>{{ onlineData?.todayLoginCount ?? 0 }}</strong> 人</span>
+          <button class="icon-refresh" :class="{ spinning: loadingOnline }" @click="loadOnlineUsers" title="刷新">
+            <el-icon><Refresh /></el-icon>
+          </button>
         </div>
       </div>
-      <el-empty v-else description="暂无在线用户" :image-size="80" />
-    </el-card>
+      <div class="users-rail">
+        <div v-if="onlineData && onlineData.users.length > 0" class="users-track">
+          <div v-for="u in onlineData.users" :key="u.id" class="user-chip">
+            <el-avatar :size="32" class="user-avatar">{{ u.name.charAt(0) }}</el-avatar>
+            <div class="user-chip-info">
+              <span class="user-name">{{ u.name }}</span>
+              <span class="user-meta">{{ getRoleLabel(u.role) }}</span>
+            </div>
+            <span class="online-dot"></span>
+          </div>
+        </div>
+        <div v-else class="rail-empty">暂无在线用户</div>
+      </div>
+    </div>
 
-    <!-- 区块 2：活跃度趋势 -->
-    <el-card shadow="hover" class="section-card">
-      <template #header>
-        <div class="card-header">
-          <span class="header-title">
-            <el-icon><TrendCharts /></el-icon>
-            平台活跃度趋势
-          </span>
-          <el-button-group>
-            <el-button
+    <!-- 活跃度 + LLM 两列 -->
+    <div class="metrics-grid">
+      <!-- 活跃度 -->
+      <div class="metric-panel">
+        <div class="panel-header">
+          <span class="panel-title">平台活跃度趋势</span>
+          <div class="control-group">
+            <button
               v-for="d in [7, 30, 90]"
               :key="d"
-              :type="activityDays === d ? 'primary' : 'default'"
-              size="small"
+              class="ctrl-btn"
+              :class="{ active: activityDays === d }"
               @click="changeActivityDays(d)"
-            >{{ d }}天</el-button>
-          </el-button-group>
+            >{{ d }}天</button>
+          </div>
         </div>
-      </template>
-      <div class="activity-metrics" v-if="activityData">
-        <div class="metric-pill">
-          <div class="metric-value">{{ activityData.metrics.dau }}</div>
-          <div class="metric-label">今日活跃 DAU</div>
+        <div v-if="activityData" class="mini-metrics">
+          <div class="mini-metric">
+            <div class="mini-value">{{ activityData.metrics.dau }}</div>
+            <div class="mini-label">今日活跃 DAU</div>
+          </div>
+          <div class="mini-metric">
+            <div class="mini-value">{{ activityData.metrics.wau }}</div>
+            <div class="mini-label">周活跃 WAU</div>
+          </div>
+          <div class="mini-metric">
+            <div class="mini-value">{{ activityData.metrics.avgDau }}</div>
+            <div class="mini-label">区间日均 DAU</div>
+          </div>
+          <div class="mini-metric">
+            <div class="mini-value">{{ activityData.metrics.totalTasks }}</div>
+            <div class="mini-label">区间任务总数</div>
+          </div>
+          <div class="mini-metric">
+            <div class="mini-value">{{ activityData.metrics.avgTasksPerUser }}</div>
+            <div class="mini-label">人均任务数</div>
+          </div>
         </div>
-        <div class="metric-pill">
-          <div class="metric-value">{{ activityData.metrics.wau }}</div>
-          <div class="metric-label">周活跃 WAU</div>
-        </div>
-        <div class="metric-pill">
-          <div class="metric-value">{{ activityData.metrics.avgDau }}</div>
-          <div class="metric-label">区间日均 DAU</div>
-        </div>
-        <div class="metric-pill">
-          <div class="metric-value">{{ activityData.metrics.totalTasks }}</div>
-          <div class="metric-label">区间任务总数</div>
-        </div>
-        <div class="metric-pill">
-          <div class="metric-value">{{ activityData.metrics.avgTasksPerUser }}</div>
-          <div class="metric-label">人均任务数</div>
+        <div ref="activityChartRef" class="chart-box"></div>
+        <div v-if="!loadingActivity && activityData?.trend.length === 0" class="empty-state">
+          <div class="empty-line"></div>
+          <p>暂无活跃度数据</p>
         </div>
       </div>
-      <div ref="activityChartRef" class="chart-box"></div>
-      <div v-if="!loadingActivity && activityData?.trend.length === 0" class="empty-hint">暂无活跃度数据</div>
-    </el-card>
 
-    <!-- 区块 3 & 4：LLM 用量 + 部门统计 并排 -->
-    <el-row :gutter="20">
-      <el-col :span="14">
-        <el-card shadow="hover" class="section-card">
-          <template #header>
-            <div class="card-header">
-              <span class="header-title">
-                <el-icon><Cpu /></el-icon>
-                LLM Token 使用量
-              </span>
-              <el-button-group>
-                <el-button
-                  v-for="d in [7, 30, 90]"
-                  :key="d"
-                  :type="llmDays === d ? 'primary' : 'default'"
-                  size="small"
-                  @click="changeLlmDays(d)"
-                >{{ d }}天</el-button>
-              </el-button-group>
+      <!-- LLM Token -->
+      <div class="metric-panel">
+        <div class="panel-header">
+          <span class="panel-title">LLM Token 使用量</span>
+          <div class="control-group">
+            <button
+              v-for="d in [7, 30, 90]"
+              :key="d"
+              class="ctrl-btn"
+              :class="{ active: llmDays === d }"
+              @click="changeLlmDays(d)"
+            >{{ d }}天</button>
+          </div>
+        </div>
+        <div v-if="llmData" class="mini-metrics">
+          <div class="mini-metric">
+            <div class="mini-value">{{ formatTokenCount(llmData.summary.totalTokens) }}</div>
+            <div class="mini-label">总 Token 用量</div>
+          </div>
+          <div class="mini-metric">
+            <div class="mini-value">{{ llmData.summary.totalCalls }}</div>
+            <div class="mini-label">调用次数</div>
+          </div>
+          <div class="mini-metric">
+            <div class="mini-value">{{ llmData.summary.successRate }}%</div>
+            <div class="mini-label">成功率</div>
+          </div>
+          <div class="mini-metric">
+            <div class="mini-value">{{ formatTokenCount(llmData.summary.avgLatencyMs) }}<span class="mini-unit">ms</span></div>
+            <div class="mini-label">平均延迟</div>
+          </div>
+        </div>
+        <div ref="llmChartRef" class="chart-box" style="height: 260px;"></div>
+        <div v-if="!loadingLlm && llmData?.byDay.length === 0" class="empty-state">
+          <div class="empty-line"></div>
+          <p>暂无 LLM 调用数据</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- 部门使用排名 -->
+    <div class="dept-panel">
+      <div class="panel-header">
+        <span class="panel-title">各部门使用程度</span>
+        <button class="icon-refresh" :class="{ spinning: loadingDept }" @click="loadDepartmentStats" title="刷新">
+          <el-icon><Refresh /></el-icon>
+        </button>
+      </div>
+      <div v-if="deptData && deptData.departments.length > 0" class="dept-ranking">
+        <div
+          v-for="(dept, idx) in deptData.departments"
+          :key="dept.name"
+          class="dept-row"
+        >
+          <span class="dept-rank">{{ idx + 1 }}</span>
+          <span class="dept-name">{{ dept.name }}</span>
+          <div class="dept-bars">
+            <div class="dept-bar-group">
+              <span class="bar-label">任务</span>
+              <div class="dept-bar-wrap">
+                <div class="dept-bar task" :style="{ width: `${(dept.taskCount / maxDeptTaskCount) * 100}%` }"></div>
+              </div>
+              <span class="bar-value">{{ dept.taskCount }}</span>
             </div>
-          </template>
-          <div class="llm-summary" v-if="llmData">
-            <div class="metric-pill">
-              <div class="metric-value">{{ formatTokenCount(llmData.summary.totalTokens) }}</div>
-              <div class="metric-label">总 Token 用量</div>
-            </div>
-            <div class="metric-pill">
-              <div class="metric-value">{{ llmData.summary.totalCalls }}</div>
-              <div class="metric-label">调用次数</div>
-            </div>
-            <div class="metric-pill">
-              <div class="metric-value">{{ llmData.summary.successRate }}%</div>
-              <div class="metric-label">成功率</div>
-            </div>
-            <div class="metric-pill">
-              <div class="metric-value">{{ llmData.summary.avgLatencyMs }}ms</div>
-              <div class="metric-label">平均延迟</div>
+            <div class="dept-bar-group">
+              <span class="bar-label">用户</span>
+              <div class="dept-bar-wrap">
+                <div class="dept-bar user" :style="{ width: `${(dept.userCount / maxDeptUserCount) * 100}%` }"></div>
+              </div>
+              <span class="bar-value">{{ dept.userCount }}</span>
             </div>
           </div>
-          <div ref="llmChartRef" class="chart-box" style="height: 280px;"></div>
-          <div v-if="!loadingLlm && llmData?.byDay.length === 0" class="empty-hint">暂无 LLM 调用数据</div>
-        </el-card>
-      </el-col>
-      <el-col :span="10">
-        <el-card shadow="hover" class="section-card">
-          <template #header>
-            <div class="card-header">
-              <span class="header-title">
-                <el-icon><OfficeBuilding /></el-icon>
-                各部门使用程度
-              </span>
-              <el-button link size="small" :loading="loadingDept" @click="loadDepartmentStats">刷新</el-button>
-            </div>
-          </template>
-          <div ref="deptChartRef" class="chart-box" style="height: 280px;"></div>
-          <div v-if="!loadingDept && deptData?.departments.length === 0" class="empty-hint">暂无部门数据</div>
-        </el-card>
-      </el-col>
-    </el-row>
+        </div>
+      </div>
+      <div v-else class="empty-state">
+        <div class="empty-line"></div>
+        <p>暂无部门数据</p>
+      </div>
+    </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, onBeforeUnmount, nextTick } from 'vue'
+import { ref, onMounted, onBeforeUnmount, nextTick, computed } from 'vue'
 import * as echarts from 'echarts'
-import { User, TrendCharts, Cpu, OfficeBuilding } from '@element-plus/icons-vue'
+import { Refresh } from '@element-plus/icons-vue'
 import {
   getOnlineUsersApi,
   getActivityApi,
@@ -152,10 +172,9 @@ import {
   type DepartmentStatsResult,
 } from '@/api/dashboard-extended'
 
-// ===== 通用 loading =====
 const loading = ref(false)
 
-// ===== 区块 1：在线用户 =====
+// 在线用户
 const loadingOnline = ref(false)
 const onlineData = ref<OnlineUsersResult | null>(null)
 
@@ -171,10 +190,9 @@ async function loadOnlineUsers() {
   }
 }
 
-// 在线用户列表 30 秒自动刷新
 let onlineRefreshTimer: number | null = null
 
-// ===== 区块 2：活跃度趋势 =====
+// 活跃度
 const loadingActivity = ref(false)
 const activityDays = ref(30)
 const activityData = ref<ActivityResult | null>(null)
@@ -205,37 +223,52 @@ function renderActivityChart() {
   if (!activityChartRef.value || !activityData.value) return
   if (!activityChart) activityChart = echarts.init(activityChartRef.value)
   const trend = activityData.value.trend
+
+  if (trend.length === 0) {
+    activityChart.clear()
+    return
+  }
+
   activityChart.setOption({
     tooltip: { trigger: 'axis' },
-    legend: { data: ['活跃用户', '任务提交数'], top: 0 },
-    grid: { left: '3%', right: '4%', bottom: '3%', containLabel: true },
-    xAxis: { type: 'category', data: trend.map(t => t.date), axisLabel: { rotate: 30, fontSize: 11 } },
+    legend: { data: ['活跃用户', '任务提交数'], top: 0, right: 0, textStyle: { color: '#64748b' } },
+    grid: { left: '2%', right: '3%', bottom: '4%', top: '14%', containLabel: true },
+    xAxis: {
+      type: 'category',
+      data: trend.map((t) => t.date),
+      axisLine: { lineStyle: { color: '#e2e8f0' } },
+      axisLabel: { color: '#64748b', fontSize: 11 },
+      axisTick: { show: false },
+    },
     yAxis: [
-      { type: 'value', name: '活跃用户', position: 'left' },
-      { type: 'value', name: '任务数', position: 'right' },
+      { type: 'value', name: '活跃用户', position: 'left', splitLine: { lineStyle: { color: '#f1f5f9' } }, axisLabel: { color: '#64748b' } },
+      { type: 'value', name: '任务数', position: 'right', splitLine: { show: false }, axisLabel: { color: '#64748b' } },
     ],
     series: [
       {
         name: '活跃用户',
         type: 'line',
         smooth: true,
-        data: trend.map(t => t.activeUsers),
-        itemStyle: { color: '#3B82F6' },
-        areaStyle: { color: 'rgba(59,130,246,0.15)' },
+        symbol: 'circle',
+        symbolSize: 5,
+        data: trend.map((t) => t.activeUsers),
+        itemStyle: { color: '#2563eb' },
+        lineStyle: { width: 2 },
+        areaStyle: { color: 'rgba(37,99,235,0.12)' },
       },
       {
         name: '任务提交数',
         type: 'bar',
         yAxisIndex: 1,
-        data: trend.map(t => t.taskCount),
-        itemStyle: { color: '#10B981', borderRadius: [4, 4, 0, 0] },
-        barMaxWidth: 20,
+        data: trend.map((t) => t.taskCount),
+        itemStyle: { color: '#94a3b8', borderRadius: [4, 4, 0, 0] },
+        barMaxWidth: 18,
       },
     ],
-  })
+  }, true)
 }
 
-// ===== 区块 3：LLM Token 用量 =====
+// LLM
 const loadingLlm = ref(false)
 const llmDays = ref(30)
 const llmData = ref<LlmUsageResult | null>(null)
@@ -266,44 +299,69 @@ function renderLlmChart() {
   if (!llmChartRef.value || !llmData.value) return
   if (!llmChart) llmChart = echarts.init(llmChartRef.value)
   const byDay = llmData.value.byDay
+
+  if (byDay.length === 0) {
+    llmChart.clear()
+    return
+  }
+
   llmChart.setOption({
     tooltip: { trigger: 'axis' },
-    legend: { data: ['输入 Tokens', '输出 Tokens'], top: 0 },
-    grid: { left: '3%', right: '4%', bottom: '3%', containLabel: true },
-    xAxis: { type: 'category', data: byDay.map(d => d.date), axisLabel: { rotate: 30, fontSize: 11 } },
-    yAxis: { type: 'value', name: 'Token 数', axisLabel: { formatter: (v: number) => formatTokenCount(v) } },
+    legend: { data: ['输入 Tokens', '输出 Tokens'], top: 0, right: 0, textStyle: { color: '#64748b' } },
+    grid: { left: '2%', right: '3%', bottom: '4%', top: '14%', containLabel: true },
+    xAxis: {
+      type: 'category',
+      data: byDay.map((d) => d.date),
+      axisLine: { lineStyle: { color: '#e2e8f0' } },
+      axisLabel: { color: '#64748b', fontSize: 11 },
+      axisTick: { show: false },
+    },
+    yAxis: {
+      type: 'value',
+      name: 'Token 数',
+      splitLine: { lineStyle: { color: '#f1f5f9' } },
+      axisLabel: { color: '#64748b', formatter: (v: number) => formatTokenCount(v) },
+    },
     series: [
       {
         name: '输入 Tokens',
         type: 'bar',
         stack: 'tokens',
-        data: byDay.map(d => d.promptTokens),
-        itemStyle: { color: '#3B82F6' },
+        data: byDay.map((d) => d.promptTokens),
+        itemStyle: { color: '#2563eb' },
+        barMaxWidth: 20,
       },
       {
         name: '输出 Tokens',
         type: 'bar',
         stack: 'tokens',
-        data: byDay.map(d => d.completionTokens),
-        itemStyle: { color: '#10B981' },
+        data: byDay.map((d) => d.completionTokens),
+        itemStyle: { color: '#94a3b8' },
+        barMaxWidth: 20,
       },
     ],
-  })
+  }, true)
 }
 
-// ===== 区块 4：部门使用度 =====
+// 部门
 const loadingDept = ref(false)
 const deptData = ref<DepartmentStatsResult | null>(null)
-const deptChartRef = ref<HTMLElement | null>(null)
-let deptChart: echarts.ECharts | null = null
+
+const maxDeptTaskCount = computed(() => {
+  if (!deptData.value || deptData.value.departments.length === 0) return 1
+  return Math.max(...deptData.value.departments.map((d) => d.taskCount))
+})
+
+const maxDeptUserCount = computed(() => {
+  if (!deptData.value || deptData.value.departments.length === 0) return 1
+  return Math.max(...deptData.value.departments.map((d) => d.userCount))
+})
 
 async function loadDepartmentStats() {
   loadingDept.value = true
   try {
     const res: any = await getDepartmentStatsApi()
     deptData.value = res?.data ?? res
-    await nextTick()
-    renderDeptChart()
   } catch (e) {
     console.error('[PlatformTab] loadDepartmentStats failed', e)
   } finally {
@@ -311,56 +369,10 @@ async function loadDepartmentStats() {
   }
 }
 
-function renderDeptChart() {
-  if (!deptChartRef.value || !deptData.value) return
-  if (!deptChart) deptChart = echarts.init(deptChartRef.value)
-  const depts = deptData.value.departments.slice(0, 10) // Top 10
-  deptChart.setOption({
-    tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' } },
-    legend: { data: ['任务数', '用户数'], top: 0 },
-    grid: { left: '3%', right: '4%', bottom: '3%', containLabel: true },
-    xAxis: { type: 'value' },
-    yAxis: {
-      type: 'category',
-      data: depts.map(d => d.name),
-      inverse: true,
-      axisLabel: { fontSize: 11 },
-    },
-    series: [
-      {
-        name: '任务数',
-        type: 'bar',
-        data: depts.map(d => d.taskCount),
-        itemStyle: { color: '#3B82F6', borderRadius: [0, 4, 4, 0] },
-        barMaxWidth: 18,
-      },
-      {
-        name: '用户数',
-        type: 'bar',
-        data: depts.map(d => d.userCount),
-        itemStyle: { color: '#F59E0B', borderRadius: [0, 4, 4, 0] },
-        barMaxWidth: 18,
-      },
-    ],
-  })
-}
-
-// ===== 工具函数 =====
+// 工具函数
 function getRoleLabel(role: string): string {
   const m: Record<string, string> = { ADMIN: '管理员', MANAGER: '部门经理', USER: '普通用户' }
   return m[role] || role
-}
-
-function formatRelativeTime(isoStr: string): string {
-  const d = new Date(isoStr)
-  const now = new Date()
-  const diff = now.getTime() - d.getTime()
-  const minutes = Math.floor(diff / 60000)
-  if (minutes < 1) return '刚刚'
-  if (minutes < 60) return `${minutes} 分钟前`
-  const hours = Math.floor(minutes / 60)
-  if (hours < 24) return `${hours} 小时前`
-  return `${Math.floor(hours / 24)} 天前`
 }
 
 function formatTokenCount(n: number): string {
@@ -372,10 +384,8 @@ function formatTokenCount(n: number): string {
 function handleResize() {
   activityChart?.resize()
   llmChart?.resize()
-  deptChart?.resize()
 }
 
-// ===== 生命周期 =====
 onMounted(async () => {
   loading.value = true
   try {
@@ -383,7 +393,6 @@ onMounted(async () => {
   } finally {
     loading.value = false
   }
-  // 在线用户列表 30 秒自动刷新
   onlineRefreshTimer = window.setInterval(loadOnlineUsers, 30000)
   window.addEventListener('resize', handleResize)
 })
@@ -396,10 +405,8 @@ onBeforeUnmount(() => {
   window.removeEventListener('resize', handleResize)
   activityChart?.dispose()
   llmChart?.dispose()
-  deptChart?.dispose()
   activityChart = null
   llmChart = null
-  deptChart = null
 })
 </script>
 
@@ -407,118 +414,351 @@ onBeforeUnmount(() => {
 .platform-tab {
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 20px;
 }
 
-.section-card {
+/* 通用面板 */
+.rail-panel,
+.metric-panel,
+.dept-panel {
+  background: #fff;
+  border: 1px solid #e2e8f0;
   border-radius: 10px;
+  padding: 18px;
 }
 
-.card-header {
+.panel-header {
   display: flex;
+  justify-content: space-between;
   align-items: center;
-  gap: 12px;
-  font-size: 14px;
+  margin-bottom: 16px;
+}
+
+.panel-title {
+  font-size: 15px;
   font-weight: 600;
-  color: #374151;
-}
-.header-title {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  margin-right: auto;
+  color: #0f172a;
 }
 
-/* 在线用户列表 */
-.online-users-list {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  max-height: 320px;
-  overflow-y: auto;
+.control-group {
+  display: inline-flex;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 6px;
+  padding: 2px;
 }
-.online-user-item {
+
+.ctrl-btn {
+  padding: 5px 12px;
+  font-size: 13px;
+  color: #64748b;
+  background: transparent;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.ctrl-btn:hover {
+  color: #0f172a;
+}
+
+.ctrl-btn.active {
+  color: #2563eb;
+  background: #eff6ff;
+  font-weight: 500;
+}
+
+.icon-refresh {
+  width: 30px;
+  height: 30px;
   display: flex;
   align-items: center;
+  justify-content: center;
+  color: #64748b;
+  background: transparent;
+  border: 1px solid #e2e8f0;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.icon-refresh:hover {
+  color: #2563eb;
+  border-color: #bfdbfe;
+}
+
+.icon-refresh.spinning :deep(.el-icon) {
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+/* 在线用户轨道 */
+.rail-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12px;
+}
+
+.rail-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 15px;
+  font-weight: 600;
+  color: #0f172a;
+}
+
+.online-pulse {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #22c55e;
+  box-shadow: 0 0 0 0 rgba(34, 197, 94, 0.4);
+  animation: pulse 2s infinite;
+}
+
+@keyframes pulse {
+  0% { box-shadow: 0 0 0 0 rgba(34, 197, 94, 0.4); }
+  70% { box-shadow: 0 0 0 8px rgba(34, 197, 94, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(34, 197, 94, 0); }
+}
+
+.rail-meta {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  font-size: 13px;
+  color: #64748b;
+}
+
+.rail-meta strong {
+  color: #0f172a;
+  font-weight: 600;
+}
+
+.users-rail {
+  min-height: 60px;
+}
+
+.users-track {
+  display: flex;
+  flex-wrap: wrap;
   gap: 10px;
-  padding: 8px 10px;
-  border-radius: 8px;
-  background: #F9FAFB;
-  transition: background 0.2s;
 }
-.online-user-item:hover {
-  background: #F3F4F6;
+
+.user-chip {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px 6px 6px;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 999px;
+  transition: all 0.2s ease;
 }
+
+.user-chip:hover {
+  border-color: #bfdbfe;
+  background: #eff6ff;
+}
+
 .user-avatar {
-  background: #3B82F6;
+  background: #2563eb;
   color: white;
   font-weight: 600;
   flex-shrink: 0;
 }
-.user-info {
+
+.user-chip-info {
   display: flex;
   flex-direction: column;
-  flex: 1;
-  min-width: 0;
+  line-height: 1.2;
 }
+
 .user-name {
   font-size: 13px;
   font-weight: 600;
-  color: #111827;
+  color: #0f172a;
 }
+
 .user-meta {
   font-size: 11px;
-  color: #6B7280;
+  color: #64748b;
 }
-.user-last-login {
-  font-size: 11px;
-  color: #9CA3AF;
-}
+
 .online-dot {
-  width: 8px;
-  height: 8px;
+  width: 7px;
+  height: 7px;
   border-radius: 50%;
-  background: #10B981;
-  box-shadow: 0 0 6px rgba(16, 185, 129, 0.5);
+  background: #22c55e;
   flex-shrink: 0;
 }
 
-/* 指标药丸 */
-.activity-metrics,
-.llm-summary {
-  display: flex;
-  gap: 12px;
-  margin-bottom: 12px;
-  flex-wrap: wrap;
-}
-.metric-pill {
-  flex: 1;
-  min-width: 100px;
-  background: #F9FAFB;
-  border-radius: 8px;
-  padding: 10px 12px;
+.rail-empty {
+  color: #94a3b8;
+  font-size: 13px;
+  padding: 18px 0;
   text-align: center;
 }
-.metric-value {
-  font-size: 20px;
+
+/* 指标网格 */
+.metrics-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 20px;
+}
+
+.mini-metrics {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 10px;
+  margin-bottom: 14px;
+}
+
+.metric-panel:nth-child(2) .mini-metrics {
+  grid-template-columns: repeat(4, 1fr);
+}
+
+.mini-metric {
+  padding: 10px;
+  background: #f8fafc;
+  border-radius: 8px;
+  text-align: center;
+}
+
+.mini-value {
+  font-size: 18px;
   font-weight: 700;
-  color: #111827;
+  color: #0f172a;
   line-height: 1.2;
 }
-.metric-label {
+
+.mini-unit {
   font-size: 11px;
-  color: #6B7280;
-  margin-top: 2px;
+  font-weight: 500;
+  color: #94a3b8;
+  margin-left: 2px;
+}
+
+.mini-label {
+  font-size: 11px;
+  color: #64748b;
+  margin-top: 4px;
 }
 
 .chart-box {
-  height: 340px;
+  height: 240px;
   width: 100%;
 }
-.empty-hint {
+
+/* 部门排名 */
+.dept-ranking {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 14px 40px;
+}
+
+.dept-row {
+  display: grid;
+  grid-template-columns: 20px 120px 1fr;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 0;
+  border-bottom: 1px solid #f1f5f9;
+}
+
+.dept-rank {
+  font-size: 12px;
+  font-weight: 700;
+  color: #94a3b8;
   text-align: center;
-  color: #9CA3AF;
+}
+
+.dept-name {
   font-size: 13px;
-  padding: 40px 0;
+  font-weight: 500;
+  color: #334155;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dept-bars {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.dept-bar-group {
+  display: grid;
+  grid-template-columns: 28px 1fr 36px;
+  align-items: center;
+  gap: 8px;
+}
+
+.bar-label {
+  font-size: 11px;
+  color: #94a3b8;
+}
+
+.dept-bar-wrap {
+  height: 6px;
+  background: #f1f5f9;
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.dept-bar {
+  height: 100%;
+  border-radius: 3px;
+  transition: width 0.6s ease;
+}
+
+.dept-bar.task { background: #2563eb; }
+.dept-bar.user { background: #94a3b8; }
+
+.bar-value {
+  font-size: 12px;
+  font-weight: 600;
+  color: #0f172a;
+  text-align: right;
+}
+
+/* 空状态 */
+.empty-state {
+  height: 200px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  color: #94a3b8;
+  font-size: 13px;
+}
+
+.empty-line {
+  width: 120px;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, #cbd5e1, transparent);
+}
+
+/* 响应式 */
+@media (max-width: 1200px) {
+  .metrics-grid { grid-template-columns: 1fr; }
+  .mini-metrics { grid-template-columns: repeat(3, 1fr); }
+  .metric-panel:nth-child(2) .mini-metrics { grid-template-columns: repeat(2, 1fr); }
+  .dept-ranking { grid-template-columns: 1fr; }
+}
+
+@media (max-width: 768px) {
+  .rail-meta { display: none; }
+  .mini-metrics { grid-template-columns: repeat(2, 1fr); }
+  .dept-row { grid-template-columns: 20px 80px 1fr; }
 }
 </style>

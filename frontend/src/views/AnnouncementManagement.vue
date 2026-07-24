@@ -1,110 +1,111 @@
 <template>
   <div class="announcement-management">
-    <!-- 顶部工具栏 -->
-    <div class="announcement-toolbar">
-      <el-button type="primary" @click="handleCreate">
+    <!-- 页面标题栏 -->
+    <div class="page-header">
+      <div class="header-title">
+        <h1>系统公告</h1>
+        <span class="header-sub">发布后将自动在用户登录时弹窗展示</span>
+      </div>
+      <el-button type="primary" size="default" @click="handleCreate">
         <el-icon><Plus /></el-icon> 新建公告
       </el-button>
-      <div class="toolbar-info">
-        <el-icon><InfoFilled /></el-icon>
-        公告发布后将在用户登录时自动弹窗展示
-      </div>
     </div>
 
-    <!-- 状态筛选 Tabs -->
-    <el-tabs v-model="statusFilter" @tab-click="loadAnnouncements">
-      <el-tab-pane label="全部" name="ALL" />
-      <el-tab-pane label="草稿" name="DRAFT" />
-      <el-tab-pane label="已发布" name="PUBLISHED" />
-      <el-tab-pane label="已撤回" name="WITHDRAWN" />
-    </el-tabs>
+    <!-- 状态筛选 -->
+    <div class="filter-bar">
+      <div class="filter-pills">
+        <button
+          v-for="tab in statusTabs"
+          :key="tab.name"
+          class="filter-pill"
+          :class="{ active: statusFilter === tab.name }"
+          @click="handleStatusChange(tab.name)"
+        >
+          {{ tab.label }}
+        </button>
+      </div>
+      <div class="list-meta">共 {{ total }} 条公告</div>
+    </div>
 
     <!-- 公告列表 -->
-    <el-table
-      v-loading="loading"
-      :data="announcements"
-      style="width: 100%"
-      row-key="id"
-    >
-      <el-table-column prop="title" label="标题" min-width="200" show-overflow-tooltip />
+    <div class="table-card" v-loading="loading">
+      <el-table
+        :data="announcements"
+        style="width: 100%"
+        row-key="id"
+        :header-cell-style="{ background: '#f8fafc', color: '#475569', fontWeight: 600 }"
+      >
+        <el-table-column prop="title" label="标题" min-width="220" show-overflow-tooltip />
 
-      <el-table-column label="紧急程度" width="100" align="center">
-        <template #default="{ row }">
-          <el-tag :type="urgencyTagType(row.urgency)" effect="light" size="small">
-            {{ urgencyLabel(row.urgency) }}
-          </el-tag>
-        </template>
-      </el-table-column>
+        <el-table-column label="紧急程度" width="110" align="center">
+          <template #default="{ row }">
+            <span class="badge" :class="`urgency-${row.urgency.toLowerCase()}`">
+              {{ urgencyLabel(row.urgency) }}
+            </span>
+          </template>
+        </el-table-column>
 
-      <el-table-column label="状态" width="100" align="center">
-        <template #default="{ row }">
-          <el-tag :type="statusTagType(row.status)" effect="light" size="small">
-            {{ statusLabel(row.status) }}
-          </el-tag>
-        </template>
-      </el-table-column>
+        <el-table-column label="状态" width="100" align="center">
+          <template #default="{ row }">
+            <span class="badge" :class="`status-${row.status.toLowerCase()}`">
+              {{ statusLabel(row.status) }}
+            </span>
+          </template>
+        </el-table-column>
 
-      <el-table-column label="发布时间" width="160" align="center">
-        <template #default="{ row }">
-          {{ row.publishAt ? formatDate(row.publishAt) : '-' }}
-        </template>
-      </el-table-column>
+        <el-table-column label="发布时间" width="170" align="center">
+          <template #default="{ row }">
+            {{ row.publishAt ? formatDate(row.publishAt) : '-' }}
+          </template>
+        </el-table-column>
 
-      <el-table-column label="创建人" width="120" align="center">
-        <template #default="{ row }">
-          {{ row.creator?.name || row.creator?.username || '-' }}
-        </template>
-      </el-table-column>
+        <el-table-column label="创建人" width="130" align="center">
+          <template #default="{ row }">
+            {{ row.creator?.name || row.creator?.username || '-' }}
+          </template>
+        </el-table-column>
 
-      <el-table-column label="操作" width="220" align="center" fixed="right">
-        <template #default="{ row }">
-          <el-button
-            v-if="row.status === 'DRAFT'"
-            size="small"
-            type="primary"
-            link
-            @click="handleEdit(row)"
-          >
-            编辑
-          </el-button>
-          <el-button
-            v-if="row.status === 'DRAFT'"
-            size="small"
-            type="success"
-            link
-            @click="handlePublish(row)"
-          >
-            发布
-          </el-button>
-          <el-button
-            v-if="row.status === 'PUBLISHED'"
-            size="small"
-            link
-            @click="handleView(row)"
-          >
-            查看
-          </el-button>
-          <el-button
-            v-if="row.status === 'PUBLISHED'"
-            size="small"
-            type="warning"
-            link
-            @click="handleWithdraw(row)"
-          >
-            撤回
-          </el-button>
-          <el-button
-            v-if="row.status === 'DRAFT' || row.status === 'WITHDRAWN'"
-            size="small"
-            type="danger"
-            link
-            @click="handleDelete(row)"
-          >
-            删除
-          </el-button>
-        </template>
-      </el-table-column>
-    </el-table>
+        <el-table-column label="操作" width="200" align="center" fixed="right">
+          <template #default="{ row }">
+            <div class="action-group">
+              <button
+                v-if="row.status === 'DRAFT'"
+                class="action-btn primary"
+                @click="handleEdit(row)"
+              >编辑</button>
+              <button
+                v-if="row.status === 'DRAFT'"
+                class="action-btn success"
+                @click="handlePublish(row)"
+              >发布</button>
+              <button
+                v-if="row.status === 'PUBLISHED'"
+                class="action-btn"
+                @click="handleView(row)"
+              >查看</button>
+              <button
+                v-if="row.status === 'PUBLISHED'"
+                class="action-btn warning"
+                @click="handleWithdraw(row)"
+              >撤回</button>
+              <button
+                v-if="row.status === 'DRAFT' || row.status === 'WITHDRAWN'"
+                class="action-btn danger"
+                @click="handleDelete(row)"
+              >删除</button>
+            </div>
+          </template>
+        </el-table-column>
+      </el-table>
+
+      <div v-if="announcements.length === 0 && !loading" class="empty-state">
+        <div class="empty-icon">
+          <el-icon :size="40"><InfoFilled /></el-icon>
+        </div>
+        <p>暂无公告</p>
+        <span>点击右上角「新建公告」发布第一条公告</span>
+      </div>
+    </div>
 
     <!-- 分页 -->
     <div class="pagination-wrap">
@@ -119,50 +120,67 @@
       />
     </div>
 
-    <!-- 创建/编辑对话框 -->
+    <!-- 创建/编辑/查看对话框 -->
     <el-dialog
       v-model="dialogVisible"
-      :title="dialogType === 'create' ? '新建公告' : (dialogType === 'edit' ? '编辑公告' : '查看公告')"
-      width="800px"
+      :title="dialogTitle"
+      width="820px"
       destroy-on-close
+      class="announcement-dialog"
     >
       <el-form
         ref="formRef"
         :model="form"
         :rules="rules"
-        label-width="80px"
+        label-width="76px"
+        label-position="left"
         :disabled="dialogType === 'view'"
       >
-        <el-form-item label="标题" prop="title">
-          <el-input v-model="form.title" placeholder="请输入公告标题" maxlength="200" show-word-limit />
-        </el-form-item>
+        <div class="dialog-section">
+          <div class="section-title">基础信息</div>
+          <div class="form-grid">
+            <el-form-item label="标题" prop="title" class="full-width">
+              <el-input v-model="form.title" placeholder="请输入公告标题" maxlength="200" show-word-limit />
+            </el-form-item>
+            <el-form-item label="紧急程度" prop="urgency">
+              <el-select v-model="form.urgency" placeholder="请选择紧急程度" style="width: 100%">
+                <el-option label="普通" value="NORMAL" />
+                <el-option label="重要" value="IMPORTANT" />
+                <el-option label="紧急" value="URGENT" />
+              </el-select>
+            </el-form-item>
+          </div>
+        </div>
 
-        <el-form-item label="紧急程度" prop="urgency">
-          <el-select v-model="form.urgency" placeholder="请选择紧急程度" style="width: 200px">
-            <el-option label="普通" value="NORMAL" />
-            <el-option label="重要" value="IMPORTANT" />
-            <el-option label="紧急" value="URGENT" />
-          </el-select>
-        </el-form-item>
+        <div class="dialog-section">
+          <div class="section-title">
+            <span>公告内容</span>
+            <span v-if="dialogType !== 'view'" class="section-tip">支持 Markdown 格式</span>
+          </div>
 
-        <el-form-item label="内容" prop="content">
           <div class="markdown-editor-wrap">
-            <!-- Markdown 工具栏 -->
             <div class="md-toolbar" v-if="dialogType !== 'view'">
-              <el-button size="small" text @click="insertMd('**', '**')" title="粗体"><strong>B</strong></el-button>
-              <el-button size="small" text @click="insertMd('*', '*')" title="斜体"><em>I</em></el-button>
-              <el-button size="small" text @click="insertMd('## ', '')" title="标题">H2</el-button>
-              <el-divider direction="vertical" />
-              <el-button size="small" text @click="insertMd('- ', '')" title="列表">列表</el-button>
-              <el-button size="small" text @click="insertMd('[', '](url)')" title="链接">链接</el-button>
-              <el-button size="small" text @click="insertMd('`', '`')" title="代码">代码</el-button>
-              <el-divider direction="vertical" />
-              <el-button size="small" text @click="activeTab = 'preview'" :type="activeTab === 'preview' ? 'primary' : ''">
+              <div class="toolbar-group">
+                <button class="md-tool" @click="insertMd('**', '**')" title="粗体"><strong>B</strong></button>
+                <button class="md-tool" @click="insertMd('*', '*')" title="斜体"><em>I</em></button>
+                <button class="md-tool" @click="insertMd('## ', '')" title="标题">H2</button>
+              </div>
+              <div class="toolbar-divider"></div>
+              <div class="toolbar-group">
+                <button class="md-tool" @click="insertMd('- ', '')" title="列表">列表</button>
+                <button class="md-tool" @click="insertMd('[', '](url)')" title="链接">链接</button>
+                <button class="md-tool" @click="insertMd('`', '`')" title="代码">代码</button>
+              </div>
+              <div class="toolbar-divider"></div>
+              <button
+                class="md-tool preview-toggle"
+                :class="{ active: activeTab === 'preview' }"
+                @click="activeTab = 'preview'"
+              >
                 预览
-              </el-button>
+              </button>
             </div>
 
-            <!-- 编辑/预览 Tab -->
             <el-tabs v-model="activeTab" type="card" class="md-tabs">
               <el-tab-pane label="编辑" name="edit">
                 <el-input
@@ -178,27 +196,28 @@
               </el-tab-pane>
             </el-tabs>
           </div>
-        </el-form-item>
+        </div>
       </el-form>
 
       <template #footer>
-        <el-button @click="dialogVisible = false">取消</el-button>
-        <el-button
-          v-if="dialogType !== 'view'"
-          type="info"
-          @click="handleSaveDraft"
-          :loading="submitting"
-        >
-          保存草稿
-        </el-button>
-        <el-button
-          v-if="dialogType !== 'view'"
-          type="primary"
-          @click="handlePublishDirect"
-          :loading="submitting"
-        >
-          保存并发布
-        </el-button>
+        <div class="dialog-footer">
+          <el-button @click="dialogVisible = false">取消</el-button>
+          <el-button
+            v-if="dialogType !== 'view'"
+            @click="handleSaveDraft"
+            :loading="submitting"
+          >
+            保存草稿
+          </el-button>
+          <el-button
+            v-if="dialogType !== 'view'"
+            type="primary"
+            @click="handlePublishDirect"
+            :loading="submitting"
+          >
+            保存并发布
+          </el-button>
+        </div>
       </template>
     </el-dialog>
   </div>
@@ -230,6 +249,13 @@ const page = ref(1)
 const limit = ref(10)
 const total = ref(0)
 
+const statusTabs = [
+  { name: 'ALL', label: '全部' },
+  { name: 'DRAFT', label: '草稿' },
+  { name: 'PUBLISHED', label: '已发布' },
+  { name: 'WITHDRAWN', label: '已撤回' },
+]
+
 // 对话框状态
 const dialogVisible = ref(false)
 const dialogType = ref<'create' | 'edit' | 'view'>('create')
@@ -243,6 +269,12 @@ const form = reactive({
   title: '',
   content: '',
   urgency: 'NORMAL',
+})
+
+const dialogTitle = computed(() => {
+  if (dialogType.value === 'create') return '新建公告'
+  if (dialogType.value === 'edit') return '编辑公告'
+  return '查看公告'
 })
 
 // 表单验证规则
@@ -264,9 +296,6 @@ const renderedContent = computed(() => {
   return renderMarkdown(form.content)
 })
 
-/**
- * 加载公告列表
- */
 async function loadAnnouncements() {
   loading.value = true
   try {
@@ -289,9 +318,13 @@ async function loadAnnouncements() {
   }
 }
 
-/**
- * 新建公告
- */
+function handleStatusChange(status: string) {
+  if (statusFilter.value === status) return
+  statusFilter.value = status
+  page.value = 1
+  loadAnnouncements()
+}
+
 function handleCreate() {
   dialogType.value = 'create'
   resetForm()
@@ -299,9 +332,6 @@ function handleCreate() {
   activeTab.value = 'edit'
 }
 
-/**
- * 编辑公告
- */
 function handleEdit(row: SystemAnnouncement) {
   dialogType.value = 'edit'
   resetForm()
@@ -313,9 +343,6 @@ function handleEdit(row: SystemAnnouncement) {
   activeTab.value = 'edit'
 }
 
-/**
- * 查看公告
- */
 function handleView(row: SystemAnnouncement) {
   dialogType.value = 'view'
   resetForm()
@@ -327,9 +354,6 @@ function handleView(row: SystemAnnouncement) {
   activeTab.value = 'preview'
 }
 
-/**
- * 发布公告
- */
 async function handlePublish(row: SystemAnnouncement) {
   try {
     await ElMessageBox.confirm('确定要发布此公告吗？发布后用户将看到弹窗。', '确认发布', {
@@ -349,9 +373,6 @@ async function handlePublish(row: SystemAnnouncement) {
   }
 }
 
-/**
- * 撤回公告
- */
 async function handleWithdraw(row: SystemAnnouncement) {
   try {
     await ElMessageBox.confirm('确定要撤回此公告吗？撤回后用户将不再看到此公告。', '确认撤回', {
@@ -371,9 +392,6 @@ async function handleWithdraw(row: SystemAnnouncement) {
   }
 }
 
-/**
- * 删除公告
- */
 async function handleDelete(row: SystemAnnouncement) {
   try {
     await ElMessageBox.confirm('确定要删除此公告吗？此操作不可恢复。', '确认删除', {
@@ -393,9 +411,6 @@ async function handleDelete(row: SystemAnnouncement) {
   }
 }
 
-/**
- * 保存草稿
- */
 async function handleSaveDraft() {
   if (!formRef.value) return
 
@@ -430,9 +445,6 @@ async function handleSaveDraft() {
   }
 }
 
-/**
- * 保存并直接发布
- */
 async function handlePublishDirect() {
   if (!formRef.value) return
 
@@ -459,7 +471,6 @@ async function handlePublishDirect() {
       ElMessage.success('公告更新成功')
     }
 
-    // 发布
     await publishAnnouncementApi(announcementId)
     ElMessage.success('公告已发布')
 
@@ -474,9 +485,6 @@ async function handlePublishDirect() {
   }
 }
 
-/**
- * 插入 Markdown 语法
- */
 function insertMd(before: string, after: string) {
   const textarea = document.querySelector('.md-tabs .el-textarea__inner') as HTMLTextAreaElement
   if (!textarea) return
@@ -488,16 +496,12 @@ function insertMd(before: string, after: string) {
 
   form.content = text.substring(0, start) + before + selectedText + after + text.substring(end)
 
-  // 设置光标位置
   setTimeout(() => {
     textarea.focus()
     textarea.setSelectionRange(start + before.length, start + before.length + selectedText.length)
   }, 0)
 }
 
-/**
- * 重置表单
- */
 function resetForm() {
   form.id = ''
   form.title = ''
@@ -508,9 +512,6 @@ function resetForm() {
   }
 }
 
-/**
- * 紧急程度对应的 Tag 类型
- */
 function urgencyTagType(urgency: string): 'success' | 'warning' | 'danger' | 'info' {
   switch (urgency) {
     case 'URGENT': return 'danger'
@@ -519,9 +520,6 @@ function urgencyTagType(urgency: string): 'success' | 'warning' | 'danger' | 'in
   }
 }
 
-/**
- * 紧急程度对应的中文标签
- */
 function urgencyLabel(urgency: string): string {
   switch (urgency) {
     case 'URGENT': return '紧急'
@@ -530,9 +528,6 @@ function urgencyLabel(urgency: string): string {
   }
 }
 
-/**
- * 状态对应的 Tag 类型
- */
 function statusTagType(status: string): 'success' | 'warning' | 'danger' | 'info' {
   switch (status) {
     case 'PUBLISHED': return 'success'
@@ -542,9 +537,6 @@ function statusTagType(status: string): 'success' | 'warning' | 'danger' | 'info
   }
 }
 
-/**
- * 状态对应的中文标签
- */
 function statusLabel(status: string): string {
   switch (status) {
     case 'PUBLISHED': return '已发布'
@@ -554,9 +546,6 @@ function statusLabel(status: string): string {
   }
 }
 
-/**
- * 格式化日期
- */
 function formatDate(dateStr: string): string {
   const date = new Date(dateStr)
   return date.toLocaleString('zh-CN', {
@@ -575,49 +564,268 @@ onMounted(() => {
 
 <style scoped>
 .announcement-management {
-  padding: 20px;
+  padding: 20px 24px 32px;
+  background: #f8fafc;
+  min-height: calc(100vh - 60px);
 }
 
-.announcement-toolbar {
+/* 页面标题栏 */
+.page-header {
   display: flex;
+  justify-content: space-between;
   align-items: center;
-  gap: 16px;
-  margin-bottom: 16px;
+  margin-bottom: 20px;
 }
 
-.toolbar-info {
-  display: flex;
-  align-items: center;
-  gap: 6px;
+.header-title h1 {
+  margin: 0;
+  font-size: 22px;
+  font-weight: 600;
+  color: #0f172a;
+  letter-spacing: -0.3px;
+}
+
+.header-sub {
   font-size: 13px;
-  color: #909399;
+  color: #64748b;
+  margin-top: 4px;
+  display: block;
 }
 
+/* 筛选栏 */
+.filter-bar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 14px;
+}
+
+.filter-pills {
+  display: flex;
+  gap: 8px;
+}
+
+.filter-pill {
+  padding: 6px 16px;
+  font-size: 13px;
+  color: #64748b;
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: 999px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.filter-pill:hover {
+  color: #0f172a;
+  border-color: #cbd5e1;
+}
+
+.filter-pill.active {
+  color: #fff;
+  background: #2563eb;
+  border-color: #2563eb;
+  font-weight: 500;
+}
+
+.list-meta {
+  font-size: 13px;
+  color: #94a3b8;
+}
+
+/* 表格卡片 */
+.table-card {
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  overflow: hidden;
+}
+
+.table-card :deep(.el-table__header th) {
+  font-weight: 600;
+  border-bottom: 1px solid #e2e8f0 !important;
+}
+
+.table-card :deep(.el-table__row td) {
+  border-bottom: 1px solid #f1f5f9 !important;
+}
+
+.table-card :deep(.el-table__row:last-child td) {
+  border-bottom: none !important;
+}
+
+/* 状态徽章 */
+.badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.urgency-normal { background: #f1f5f9; color: #475569; }
+.urgency-important { background: #fff7ed; color: #c2410c; }
+.urgency-urgent { background: #fef2f2; color: #b91c1c; }
+
+.status-draft { background: #f1f5f9; color: #475569; }
+.status-published { background: #f0fdf4; color: #15803d; }
+.status-withdrawn { background: #fffbeb; color: #a16207; }
+
+/* 操作按钮组 */
+.action-group {
+  display: flex;
+  justify-content: center;
+  gap: 10px;
+}
+
+.action-btn {
+  padding: 0;
+  font-size: 13px;
+  color: #2563eb;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  transition: color 0.15s ease;
+}
+
+.action-btn:hover { color: #1d4ed8; }
+.action-btn.success { color: #16a34a; }
+.action-btn.success:hover { color: #15803d; }
+.action-btn.warning { color: #ca8a04; }
+.action-btn.warning:hover { color: #a16207; }
+.action-btn.danger { color: #dc2626; }
+.action-btn.danger:hover { color: #b91c1c; }
+
+/* 空状态 */
+.empty-state {
+  padding: 60px 0;
+  text-align: center;
+  color: #94a3b8;
+}
+
+.empty-icon {
+  margin-bottom: 12px;
+  color: #cbd5e1;
+}
+
+.empty-state p {
+  margin: 0 0 4px;
+  font-size: 15px;
+  color: #64748b;
+}
+
+.empty-state span {
+  font-size: 12px;
+}
+
+/* 分页 */
 .pagination-wrap {
   margin-top: 20px;
   display: flex;
   justify-content: center;
 }
 
+/* 对话框 */
+.announcement-dialog :deep(.el-dialog__body) {
+  padding: 0 24px;
+}
+
+.announcement-dialog :deep(.el-dialog__footer) {
+  padding: 16px 24px 24px;
+  border-top: 1px solid #f1f5f9;
+}
+
+.dialog-section {
+  margin-bottom: 20px;
+}
+
+.dialog-section:last-child {
+  margin-bottom: 0;
+}
+
+.section-title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 14px;
+  font-weight: 600;
+  color: #0f172a;
+  margin-bottom: 14px;
+}
+
+.section-tip {
+  font-size: 12px;
+  font-weight: 400;
+  color: #94a3b8;
+}
+
+.form-grid {
+  display: grid;
+  grid-template-columns: 1fr 240px;
+  gap: 16px;
+}
+
+.form-grid .full-width {
+  grid-column: 1 / -1;
+}
+
+.dialog-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
 /* Markdown 编辑器 */
 .markdown-editor-wrap {
-  border: 1px solid #dcdfe6;
-  border-radius: 4px;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
   overflow: hidden;
 }
 
 .md-toolbar {
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: 10px;
   padding: 8px 12px;
-  background: #f5f7fa;
-  border-bottom: 1px solid #dcdfe6;
+  background: #f8fafc;
+  border-bottom: 1px solid #e2e8f0;
 }
 
-.md-toolbar .el-divider--vertical {
+.toolbar-group {
+  display: flex;
+  gap: 4px;
+}
+
+.toolbar-divider {
+  width: 1px;
   height: 20px;
-  margin: 0 4px;
+  background: #e2e8f0;
+}
+
+.md-tool {
+  min-width: 28px;
+  height: 28px;
+  padding: 0 8px;
+  font-size: 13px;
+  color: #475569;
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.md-tool:hover {
+  color: #2563eb;
+  border-color: #bfdbfe;
+  background: #eff6ff;
+}
+
+.md-tool.preview-toggle.active {
+  color: #2563eb;
+  background: #eff6ff;
+  border-color: #bfdbfe;
 }
 
 .md-tabs {
@@ -645,38 +853,48 @@ onMounted(() => {
 .markdown-preview :deep(h3) {
   margin-top: 16px;
   margin-bottom: 8px;
+  color: #0f172a;
 }
 
 .markdown-preview :deep(p) {
   margin-bottom: 12px;
   line-height: 1.6;
+  color: #334155;
 }
 
 .markdown-preview :deep(ul),
 .markdown-preview :deep(ol) {
   padding-left: 24px;
   margin-bottom: 12px;
+  color: #334155;
 }
 
 .markdown-preview :deep(blockquote) {
   margin: 12px 0;
   padding: 8px 16px;
-  border-left: 4px solid #409eff;
-  background: #f5f7fa;
-  color: #606266;
+  border-left: 4px solid #2563eb;
+  background: #f8fafc;
+  color: #475569;
 }
 
 .markdown-preview :deep(code) {
-  background: #f5f7fa;
+  background: #f1f5f9;
   padding: 2px 6px;
   border-radius: 4px;
   font-size: 0.9em;
+  color: #0f172a;
 }
 
 .markdown-preview :deep(pre) {
-  background: #f5f7fa;
+  background: #f1f5f9;
   padding: 12px;
   border-radius: 6px;
   overflow-x: auto;
+}
+
+/* 响应式 */
+@media (max-width: 768px) {
+  .form-grid { grid-template-columns: 1fr; }
+  .filter-bar { flex-direction: column; align-items: flex-start; gap: 10px; }
 }
 </style>

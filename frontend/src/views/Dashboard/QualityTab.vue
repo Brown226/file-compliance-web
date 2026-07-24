@@ -1,120 +1,97 @@
 <template>
   <div class="quality-tab">
     <!-- Header -->
-    <div class="header">
-      <div class="header-left">
-        <h2>审查质量看板</h2>
-        <span class="header-sub">precision / recall / 误报分布</span>
+    <div class="page-header">
+      <div class="header-title">
+        <h1>审查质量</h1>
+        <span class="header-sub">精确率 / 召回率 / 误报分布</span>
       </div>
-      <div class="header-right">
-        <el-button-group class="granularity-group">
-          <el-button
+      <div class="header-controls">
+        <div class="control-group">
+          <button
             v-for="g in (['daily', 'weekly'] as const)"
             :key="g"
-            :type="granularity === g ? 'primary' : 'default'"
-            size="small"
+            class="ctrl-btn"
+            :class="{ active: granularity === g }"
             @click="handleGranularityChange(g)"
-          >{{ g === 'daily' ? '按天' : '按周' }}</el-button>
-        </el-button-group>
-        <el-button-group class="time-range-group">
-          <el-button
+          >{{ g === 'daily' ? '按天' : '按周' }}</button>
+        </div>
+        <div class="control-group">
+          <button
             v-for="d in [7, 30, 90]"
             :key="d"
-            :type="days === d ? 'primary' : 'default'"
-            size="small"
+            class="ctrl-btn"
+            :class="{ active: days === d }"
             @click="handleDaysChange(d)"
-          >{{ d }}天</el-button>
-        </el-button-group>
-        <el-button link :loading="loading" @click="loadData">刷新</el-button>
+          >{{ d }}天</button>
+        </div>
+        <button class="icon-refresh" :class="{ spinning: loading }" @click="loadData" title="刷新">
+          <el-icon><Refresh /></el-icon>
+        </button>
       </div>
     </div>
 
-    <!-- KPI 卡片 -->
-    <div class="kpi-grid" v-loading="loading">
-      <div class="kpi-card kpi-precision">
-        <div class="kpi-body">
-          <div class="kpi-info">
-            <div class="kpi-label">精确率 Precision</div>
-            <div class="kpi-value value-precision">
-              {{ metrics ? (metrics.precision.precision * 100).toFixed(1) : '—' }}<span class="unit">%</span>
-            </div>
-            <div class="kpi-hint">useful / (useful + false_positive)</div>
-          </div>
-          <div class="kpi-icon-wrap"><div class="kpi-icon-inner precision-icon-bg"><el-icon :size="22"><Aim /></el-icon></div></div>
+    <!-- KPI 数据墙 -->
+    <div class="kpi-wall" v-loading="loading">
+      <div
+        v-for="item in kpiItems"
+        :key="item.key"
+        class="kpi-cell"
+        :class="`kpi-${item.key }`"
+      >
+        <div class="kpi-label">{{ item.label }}</div>
+        <div class="kpi-value">
+          {{ item.value }}<span v-if="item.unit" class="unit">{{ item.unit }}</span>
         </div>
-      </div>
-      <div class="kpi-card kpi-useful">
-        <div class="kpi-body">
-          <div class="kpi-info">
-            <div class="kpi-label">有用标记</div>
-            <div class="kpi-value value-useful">{{ metrics?.precision.usefulCount ?? '—' }}</div>
-            <div class="kpi-hint">用户认可的问题数</div>
-          </div>
-          <div class="kpi-icon-wrap"><div class="kpi-icon-inner useful-icon-bg"><el-icon :size="22"><CircleCheck /></el-icon></div></div>
-        </div>
-      </div>
-      <div class="kpi-card kpi-fp">
-        <div class="kpi-body">
-          <div class="kpi-info">
-            <div class="kpi-label">误报标记</div>
-            <div class="kpi-value value-fp">{{ metrics?.precision.falsePositiveCount ?? '—' }}</div>
-            <div class="kpi-hint">用户标记为误报</div>
-          </div>
-          <div class="kpi-icon-wrap"><div class="kpi-icon-inner fp-icon-bg"><el-icon :size="22"><WarningFilled /></el-icon></div></div>
-        </div>
-      </div>
-      <div class="kpi-card kpi-missed">
-        <div class="kpi-body">
-          <div class="kpi-info">
-            <div class="kpi-label">漏报标记</div>
-            <div class="kpi-value value-missed">{{ metrics?.precision.missedCount ?? '—' }}</div>
-            <div class="kpi-hint">用户发现的遗漏</div>
-          </div>
-          <div class="kpi-icon-wrap"><div class="kpi-icon-inner missed-icon-bg"><el-icon :size="22"><Warning /></el-icon></div></div>
-        </div>
-      </div>
-      <div class="kpi-card kpi-rate">
-        <div class="kpi-body">
-          <div class="kpi-info">
-            <div class="kpi-label">反馈率</div>
-            <div class="kpi-value value-rate">
-              {{ metrics ? (metrics.precision.feedbackRate * 100).toFixed(1) : '—' }}<span class="unit">%</span>
-            </div>
-            <div class="kpi-hint">反馈数 / 总问题数 ({{ metrics?.precision.totalIssues ?? '—' }})</div>
-          </div>
-          <div class="kpi-icon-wrap"><div class="kpi-icon-inner rate-icon-bg"><el-icon :size="22"><DataAnalysis /></el-icon></div></div>
-        </div>
+        <div class="kpi-hint">{{ item.hint }}</div>
       </div>
     </div>
 
     <!-- 图表区 -->
-    <el-row :gutter="20" class="chart-row">
-      <el-col :span="16">
-        <el-card shadow="hover" class="chart-card">
-          <template #header>
-            <div class="card-header">精确率趋势（{{ granularity === 'daily' ? '按天' : '按周' }}，近 {{ days }} 天）</div>
-          </template>
-          <div ref="trendChartRef" class="chart-box" v-loading="loading"></div>
-          <div v-if="!loading && metrics?.trend.length === 0" class="empty-hint">暂无反馈数据</div>
-        </el-card>
-      </el-col>
-      <el-col :span="8">
-        <el-card shadow="hover" class="chart-card">
-          <template #header>
-            <div class="card-header">Top 误报规则分布</div>
-          </template>
-          <div ref="topRulesChartRef" class="chart-box" v-loading="loading"></div>
-          <div v-if="!loading && metrics?.topFalsePositiveRules.length === 0" class="empty-hint">暂无误报数据</div>
-        </el-card>
-      </el-col>
-    </el-row>
+    <div class="chart-grid">
+      <div class="chart-panel trend-panel">
+        <div class="panel-header">
+          <span class="panel-title">精确率趋势</span>
+          <span class="panel-meta">{{ granularity === 'daily' ? '按天' : '按周' }} · 近 {{ days }} 天</span>
+        </div>
+        <div ref="trendChartRef" class="chart-box"></div>
+        <div v-if="!loading && metrics?.trend.length === 0" class="empty-state">
+          <div class="empty-line"></div>
+          <p>暂无反馈数据</p>
+        </div>
+      </div>
+
+      <div class="chart-panel rules-panel">
+        <div class="panel-header">
+          <span class="panel-title">Top 误报规则</span>
+        </div>
+        <div v-if="!loading && metrics && metrics.topFalsePositiveRules.length > 0" class="rules-ranking">
+          <div
+            v-for="(rule, idx) in metrics.topFalsePositiveRules"
+            :key="rule.issueType"
+            class="rule-row"
+          >
+            <span class="rule-rank">{{ idx + 1 }}</span>
+            <span class="rule-name">{{ getIssueTypeLabelSafe(rule.issueType) }}</span>
+            <div class="rule-bar-wrap">
+              <div class="rule-bar" :style="{ width: `${(rule.count / maxRuleCount) * 100}%` }"></div>
+            </div>
+            <span class="rule-count">{{ rule.count }}</span>
+          </div>
+        </div>
+        <div v-else class="empty-state">
+          <div class="empty-line"></div>
+          <p>暂无误报数据</p>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, onBeforeUnmount, nextTick, watch } from 'vue'
+import { ref, onMounted, onBeforeUnmount, nextTick, watch, computed } from 'vue'
 import * as echarts from 'echarts'
-import { Aim, CircleCheck, WarningFilled, Warning, DataAnalysis } from '@element-plus/icons-vue'
+import { Refresh } from '@element-plus/icons-vue'
 import { getReviewMetricsApi, type ReviewMetricsResult } from '@/api/dashboard'
 import { useIssueHelpers } from '@/views/TaskDetails/composables'
 
@@ -126,9 +103,53 @@ const days = ref(30)
 const metrics = ref<ReviewMetricsResult | null>(null)
 
 const trendChartRef = ref<HTMLElement | null>(null)
-const topRulesChartRef = ref<HTMLElement | null>(null)
 let trendChart: echarts.ECharts | null = null
-let topRulesChart: echarts.ECharts | null = null
+
+const kpiItems = computed(() => {
+  const m = metrics.value
+  return [
+    {
+      key: 'precision',
+      label: '精确率',
+      value: m ? (m.precision.precision * 100).toFixed(1) : '—',
+      unit: '%',
+      hint: '有用标记 / (有用标记 + 误报标记)',
+    },
+    {
+      key: 'useful',
+      label: '有用标记',
+      value: m?.precision.usefulCount ?? '—',
+      unit: '',
+      hint: '用户认可的问题数',
+    },
+    {
+      key: 'fp',
+      label: '误报标记',
+      value: m?.precision.falsePositiveCount ?? '—',
+      unit: '',
+      hint: '用户标记为误报',
+    },
+    {
+      key: 'missed',
+      label: '漏报标记',
+      value: m?.precision.missedCount ?? '—',
+      unit: '',
+      hint: '用户发现的遗漏',
+    },
+    {
+      key: 'rate',
+      label: '反馈率',
+      value: m ? (m.precision.feedbackRate * 100).toFixed(1) : '—',
+      unit: '%',
+      hint: `反馈数 / 总问题数 (${m?.precision.totalIssues ?? '—'})`,
+    },
+  ]
+})
+
+const maxRuleCount = computed(() => {
+  if (!metrics.value || metrics.value.topFalsePositiveRules.length === 0) return 1
+  return Math.max(...metrics.value.topFalsePositiveRules.map((r) => r.count))
+})
 
 async function loadData() {
   loading.value = true
@@ -136,7 +157,7 @@ async function loadData() {
     const res: any = await getReviewMetricsApi({ granularity: granularity.value, days: days.value })
     metrics.value = res?.data ?? res
     await nextTick()
-    renderCharts()
+    renderTrendChart()
   } catch (e) {
     console.error('[QualityTab] load failed', e)
   } finally {
@@ -148,63 +169,54 @@ function renderTrendChart() {
   if (!trendChartRef.value || !metrics.value) return
   if (!trendChart) trendChart = echarts.init(trendChartRef.value)
   const trend = metrics.value.trend
+
+  if (trend.length === 0) {
+    trendChart.clear()
+    return
+  }
+
   trendChart.setOption({
-    tooltip: { trigger: 'axis', formatter: (p: any) => {
-      const point = trend[p[0].dataIndex]
-      if (!point) return ''
-      const pct = (point.precision * 100).toFixed(1)
-      return `${point.date}<br/>精确率: ${pct}%<br/>反馈数: ${point.feedbackCount}`
-    }},
-    grid: { left: '3%', right: '4%', bottom: '3%', containLabel: true },
-    xAxis: { type: 'category', data: trend.map(t => t.date), axisLabel: { rotate: 30, fontSize: 11 } },
-    yAxis: [
-      { type: 'value', name: '精确率', min: 0, max: 1, axisLabel: { formatter: (v: number) => (v * 100).toFixed(0) + '%' } },
-    ],
+    tooltip: {
+      trigger: 'axis',
+      formatter: (p: any) => {
+        const point = trend[p[0].dataIndex]
+        if (!point) return ''
+        const pct = (point.precision * 100).toFixed(1)
+        return `${point.date}<br/>精确率: ${pct}%<br/>反馈数: ${point.feedbackCount}`
+      },
+    },
+    grid: { left: '2%', right: '3%', bottom: '4%', top: '10%', containLabel: true },
+    xAxis: {
+      type: 'category',
+      data: trend.map((t) => t.date),
+      axisLine: { lineStyle: { color: '#e2e8f0' } },
+      axisLabel: { color: '#64748b', fontSize: 11 },
+      axisTick: { show: false },
+    },
+    yAxis: {
+      type: 'value',
+      min: 0,
+      max: 1,
+      splitLine: { lineStyle: { color: '#f1f5f9' } },
+      axisLabel: { color: '#64748b', formatter: (v: number) => (v * 100).toFixed(0) + '%' },
+    },
     series: [{
       name: '精确率',
       type: 'line',
       smooth: true,
-      data: trend.map(t => t.precision),
-      itemStyle: { color: '#3B82F6' },
-      areaStyle: { color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
-        { offset: 0, color: 'rgba(59,130,246,0.25)' },
-        { offset: 1, color: 'rgba(59,130,246,0.02)' },
-      ]) },
-      lineStyle: { width: 2 },
-    }],
-  })
-}
-
-function renderTopRulesChart() {
-  if (!topRulesChartRef.value || !metrics.value) return
-  if (!topRulesChart) topRulesChart = echarts.init(topRulesChartRef.value)
-  const rules = metrics.value.topFalsePositiveRules
-  topRulesChart.setOption({
-    tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' }, formatter: (p: any) => {
-      const label = getIssueTypeLabelSafe(p[0].name)
-      return `${label}<br/>误报数: ${p[0].value}`
-    }},
-    grid: { left: '3%', right: '8%', bottom: '3%', top: '5%', containLabel: true },
-    xAxis: { type: 'value', axisLabel: { fontSize: 11 } },
-    yAxis: {
-      type: 'category',
-      data: rules.map(r => r.issueType),
-      axisLabel: { formatter: (v: string) => getIssueTypeLabelSafe(v), fontSize: 11 },
-      inverse: true,
-    },
-    series: [{
-      type: 'bar',
-      data: rules.map(r => r.count),
-      itemStyle: {
-        color: new echarts.graphic.LinearGradient(0, 0, 1, 0, [
-          { offset: 0, color: '#F59E0B' },
-          { offset: 1, color: '#EF4444' },
+      symbol: 'circle',
+      symbolSize: 6,
+      data: trend.map((t) => t.precision),
+      itemStyle: { color: '#2563eb' },
+      lineStyle: { width: 2.5 },
+      areaStyle: {
+        color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
+          { offset: 0, color: 'rgba(37,99,235,0.18)' },
+          { offset: 1, color: 'rgba(37,99,235,0.02)' },
         ]),
-        borderRadius: [0, 4, 4, 0],
       },
-      barMaxWidth: 22,
     }],
-  })
+  }, true)
 }
 
 function getIssueTypeLabelSafe(type: string): string {
@@ -215,14 +227,8 @@ function getIssueTypeLabelSafe(type: string): string {
   }
 }
 
-function renderCharts() {
-  renderTrendChart()
-  renderTopRulesChart()
-}
-
 function handleResize() {
   trendChart?.resize()
-  topRulesChart?.resize()
 }
 
 function handleGranularityChange(g: 'daily' | 'weekly') {
@@ -237,7 +243,7 @@ function handleDaysChange(d: number) {
   loadData()
 }
 
-watch(() => metrics.value, () => nextTick(renderCharts), { deep: true })
+watch(() => metrics.value, () => nextTick(renderTrendChart), { deep: true })
 
 onMounted(() => {
   loadData()
@@ -247,85 +253,280 @@ onMounted(() => {
 onBeforeUnmount(() => {
   window.removeEventListener('resize', handleResize)
   trendChart?.dispose()
-  topRulesChart?.dispose()
   trendChart = null
-  topRulesChart = null
 })
 </script>
 
 <style scoped>
 .quality-tab {
-  /* 直接使用父容器布局，无额外 padding */
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
 }
 
 /* Header */
-.header {
+.page-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  flex-wrap: wrap;
+  gap: 16px;
+}
+
+.header-title h1 {
+  margin: 0;
+  font-size: 22px;
+  font-weight: 600;
+  color: #0f172a;
+  letter-spacing: -0.3px;
+}
+
+.header-sub {
+  font-size: 12px;
+  color: #94a3b8;
+  margin-left: 8px;
+  font-weight: 400;
+}
+
+.header-controls {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.control-group {
+  display: inline-flex;
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: 6px;
+  padding: 2px;
+}
+
+.ctrl-btn {
+  padding: 5px 12px;
+  font-size: 13px;
+  color: #64748b;
+  background: transparent;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.ctrl-btn:hover {
+  color: #0f172a;
+}
+
+.ctrl-btn.active {
+  color: #2563eb;
+  background: #eff6ff;
+  font-weight: 500;
+}
+
+.icon-refresh {
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #64748b;
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.icon-refresh:hover {
+  color: #2563eb;
+  border-color: #bfdbfe;
+}
+
+.icon-refresh.spinning :deep(.el-icon) {
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+/* KPI 数据墙 */
+.kpi-wall {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  overflow: hidden;
+}
+
+.kpi-cell {
+  padding: 22px 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  position: relative;
+}
+
+.kpi-cell:not(:last-child)::after {
+  content: '';
+  position: absolute;
+  right: 0;
+  top: 18%;
+  bottom: 18%;
+  width: 1px;
+  background: #f1f5f9;
+}
+
+.kpi-label {
+  font-size: 12px;
+  color: #64748b;
+  font-weight: 500;
+}
+
+.kpi-value {
+  font-size: 30px;
+  font-weight: 700;
+  color: #0f172a;
+  line-height: 1.1;
+  letter-spacing: -0.5px;
+}
+
+.kpi-value .unit {
+  font-size: 14px;
+  font-weight: 600;
+  margin-left: 3px;
+  color: #94a3b8;
+}
+
+.kpi-hint {
+  font-size: 11px;
+  color: #94a3b8;
+  margin-top: 2px;
+}
+
+.kpi-precision .kpi-value { color: #2563eb; }
+
+/* 图表区 */
+.chart-grid {
+  display: grid;
+  grid-template-columns: 2fr 1fr;
+  gap: 20px;
+}
+
+.chart-panel {
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  padding: 18px;
+  display: flex;
+  flex-direction: column;
+  min-height: 420px;
+}
+
+.panel-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
   margin-bottom: 16px;
-  flex-wrap: wrap;
-  gap: 12px;
 }
-.header-left h2 { margin: 0; font-size: 20px; color: #111827; }
-.header-sub { font-size: 12px; color: #6B7280; margin-left: 8px; }
-.header-right { display: flex; align-items: center; gap: 12px; }
 
-/* KPI 卡片 */
-.kpi-grid {
-  display: grid;
-  grid-template-columns: repeat(5, 1fr);
-  gap: 14px;
-  margin-bottom: 16px;
+.panel-title {
+  font-size: 15px;
+  font-weight: 600;
+  color: #0f172a;
 }
-.kpi-card {
-  background: #fff;
-  border-radius: 10px;
-  padding: 16px;
-  box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+
+.panel-meta {
+  font-size: 12px;
+  color: #94a3b8;
+}
+
+.chart-box {
+  flex: 1;
+  min-height: 0;
+  width: 100%;
+}
+
+/* 误报规则排名 */
+.rules-ranking {
+  flex: 1;
   display: flex;
-  align-items: center;
+  flex-direction: column;
+  gap: 12px;
+  padding-top: 8px;
 }
-.kpi-body { display: flex; justify-content: space-between; align-items: center; width: 100%; gap: 10px; }
-.kpi-label { font-size: 13px; color: #6B7280; margin-bottom: 4px; }
-.kpi-value { font-size: 26px; font-weight: 700; color: #111827; line-height: 1.2; }
-.kpi-value .unit { font-size: 14px; font-weight: 600; margin-left: 2px; }
-.kpi-hint { font-size: 11px; color: #9CA3AF; margin-top: 4px; }
-.value-precision { color: #3B82F6; }
-.value-useful { color: #10B981; }
-.value-fp { color: #F59E0B; }
-.value-missed { color: #EF4444; }
-.value-rate { color: #8B5CF6; }
-.kpi-icon-wrap { flex-shrink: 0; }
-.kpi-icon-inner {
-  width: 42px; height: 42px;
-  border-radius: 10px;
-  display: flex; align-items: center; justify-content: center;
-}
-.precision-icon-bg { background: #DBEAFE; color: #2563EB; }
-.useful-icon-bg { background: #D1FAE5; color: #059669; }
-.fp-icon-bg { background: #FEF3C7; color: #D97706; }
-.missed-icon-bg { background: #FEE2E2; color: #DC2626; }
-.rate-icon-bg { background: #EDE9FE; color: #7C3AED; }
 
-/* 图表 */
-.chart-row { margin-bottom: 16px; }
-.chart-card { border-radius: 10px; }
-.card-header { font-size: 14px; font-weight: 600; color: #374151; }
-.chart-box { height: 340px; width: 100%; }
-.empty-hint {
-  text-align: center;
-  color: #9CA3AF;
+.rule-row {
+  display: grid;
+  grid-template-columns: 22px 1fr 80px 36px;
+  align-items: center;
+  gap: 10px;
   font-size: 13px;
-  padding: 40px 0;
+}
+
+.rule-rank {
+  font-size: 12px;
+  font-weight: 600;
+  color: #94a3b8;
+  text-align: center;
+}
+
+.rule-name {
+  color: #334155;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rule-bar-wrap {
+  height: 6px;
+  background: #f1f5f9;
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.rule-bar {
+  height: 100%;
+  background: #2563eb;
+  border-radius: 3px;
+  transition: width 0.6s ease;
+}
+
+.rule-count {
+  text-align: right;
+  font-weight: 600;
+  color: #0f172a;
+}
+
+/* 空状态 */
+.empty-state {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  color: #94a3b8;
+  font-size: 13px;
+}
+
+.empty-line {
+  width: 120px;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, #cbd5e1, transparent);
 }
 
 /* 响应式 */
 @media (max-width: 1200px) {
-  .kpi-grid { grid-template-columns: repeat(3, 1fr); }
+  .kpi-wall { grid-template-columns: repeat(3, 1fr); }
+  .kpi-cell:nth-child(3)::after { display: none; }
+  .chart-grid { grid-template-columns: 1fr; }
 }
+
 @media (max-width: 768px) {
-  .kpi-grid { grid-template-columns: repeat(2, 1fr); }
-  .chart-row .el-col { span: 24; }
+  .kpi-wall { grid-template-columns: repeat(2, 1fr); }
+  .kpi-cell::after { display: none; }
 }
 </style>
