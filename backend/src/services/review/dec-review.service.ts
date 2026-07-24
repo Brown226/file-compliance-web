@@ -27,6 +27,7 @@ import { TextStyleCheckService } from './text-style-check.service';
 import { StandardClauseCheckService } from '../standard/standard-clause-check.service';
 import { SmartJudgeService } from './cross-review/smart-judge.service';
 import { TextCrossCheckService } from './cross-review/text-cross-check.service';
+import { runAllRules } from '../rules';
 
 export interface DecReviewResult {
   issues: ReviewIssue[];
@@ -113,7 +114,7 @@ export class DecReviewService {
     console.log(`[DecReview] 第二层交叉复核后: ${allComplianceIssues.length} 条`);
 
     // ===== 第三层：规则兜底 =====
-    const ruleIssues = await this.runRuleFallback(text, ctx);
+    const ruleIssues = await this.runRuleFallback(text, ctx, allComplianceIssues);
     console.log(`[DecReview] 第三层规则兜底: ${ruleIssues.length} 条`);
 
     return {
@@ -182,13 +183,53 @@ export class DecReviewService {
   }
 
   /**
-   * 第三层：规则兜底（从 rules/index.ts 抽取的 runRules）
+   * 第三层：规则兜底 — 独立于大模型的工程规则，约束幻觉
    *
-   * TODO: 阶段 2.5 实现——抽取 runRules 可复用函数
-   * 当前返回空数组，不影响主流程。规则兜底的完整实现需要适配 rules/index.ts 的
-   * runAllRules(ctx: FileContext) 签名（与 PipelineContext 不同）。
+   * 执行 rules/index.ts 的 runAllRules，将 RuleIssue 转为 ReviewIssue，
+   * 并过滤掉 AI 已发现的问题（originalText 去重）。
    */
-  private static async runRuleFallback(_text: string, _ctx: PipelineContext): Promise<ReviewIssue[]> {
-    return [];
+  private static async runRuleFallback(
+    text: string,
+    ctx: PipelineContext,
+    existingIssues: ReviewIssue[],
+  ): Promise<ReviewIssue[]> {
+    try {
+      // 构建规则引擎需要的 FileContext
+      const ruleIssues = await runAllRules({
+        fileName: ctx.fileName,
+        filePath: ctx.filePath,
+        fileType: ctx.fileType,
+        extractedText: text || ctx.extractedText,
+        pdfPages: ctx.pdfPages,
+        reviewMode: ctx.reviewMode,
+        parseResult: ctx.parseResult ?? null,
+      });
+
+      // RuleIssue → ReviewIssue 转换
+      const reviewIssues: ReviewIssue[] = ruleIssues.map(ri => ({
+        issueType: ri.issueType,
+        originalText: ri.originalText,
+        suggestedText: ri.suggestedText,
+        description: ri.description,
+        ruleCode: ri.ruleCode,
+        severity: ri.severity,
+        cadHandleId: ri.cadHandleId,
+      }));
+
+      // 去重：过滤掉 AI 已发现的问题（originalText 相同）
+      const existingTexts = new Set(
+        existingIssues.map(i => (i.originalText || '').trim()).filter(Boolean),
+      );
+      const newIssues = reviewIssues.filter(i => {
+        const t = (i.originalText || '').trim();
+        return !t || !existingTexts.has(t);
+      });
+
+      console.log(`[DecReview] 规则兜底: 规则检出 ${ruleIssues.length} 条，去重后新增 ${newIssues.length} 条`);
+      return newIssues;
+    } catch (e) {
+      console.error('[DecReview] 规则兜底执行失败，返回空:', e);
+      return [];
+    }
   }
 }
