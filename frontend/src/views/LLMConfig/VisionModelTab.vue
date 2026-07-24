@@ -6,7 +6,7 @@
       </div>
 
       <div v-if="visionProviders.length === 0 && providers.length > 0" class="legacy-hint">
-        没有支持视觉能力的 Provider。请先在 Provider 配置中勾选 image 模态（如 Qwen-VL、GLM-4V、GPT-4o）。
+        没有符合视觉用途的 Provider。请先在 Provider 配置中将用途设为「视觉」或「通用」，并勾选 image 模态（如 Qwen-VL、GLM-4V、GPT-4o）。
       </div>
 
       <el-form :model="config" label-width="84px" label-position="left">
@@ -87,9 +87,13 @@ const config = reactive<VisionModelConfig>({
 
 const originalConfig = ref('')
 
-// 硬过滤：只展示支持 image 输入的 Provider
+// 视觉 Tab：只展示用途为 vision/all 且支持 image 输入的 Provider
 const visionProviders = computed(() =>
-  providers.value.filter((p) => p.capabilities?.inputModalities?.includes('image'))
+  providers.value.filter(
+    (p) =>
+      ['vision', 'all'].includes(p.usage || 'chat') &&
+      p.capabilities?.inputModalities?.includes('image')
+  )
 )
 
 const normalizedConfig = computed(() => JSON.stringify(config))
