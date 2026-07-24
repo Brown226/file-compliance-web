@@ -35,8 +35,11 @@ class JwtAuthMiddleware(BaseHTTPMiddleware):
         token = auth_header[7:]
         try:
             payload = jwt.decode(token, JWT_SECRET, algorithms=['HS256'])
-            request.state.user_id = payload.get('sub')
-            request.state.email = payload.get('email')
+            # 兼容两种 JWT payload：
+            # - 原生 OpenSpec: { sub: user_id }
+            # - 审查平台 Node.js: { id: user_id, username, role, departmentId }
+            request.state.user_id = payload.get('sub') or payload.get('id')
+            request.state.email = payload.get('email') or payload.get('username')
         except jwt.ExpiredSignatureError:
             return JSONResponse(
                 status_code=401,

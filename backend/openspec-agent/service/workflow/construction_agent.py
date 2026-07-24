@@ -101,10 +101,15 @@ def get_checkpointer():
     #     return None
 
 # 初始化 LLM (使用 Dashscope/Tongyi)
-llm = ChatTongyi(
-    model="qwen-max",
-    temperature=0.1,
-)
+# 使用 try-except 包裹，允许在缺少 DASHSCOPE_API_KEY 时启动服务（相关功能在调用时才报错）
+try:
+    llm = ChatTongyi(
+        model="qwen-max",
+        temperature=0.1,
+    )
+except Exception as e:
+    logger.warning(f"ChatTongyi 初始化失败（可能缺少 DASHSCOPE_API_KEY）: {e}")
+    llm = None
 
 # =============================================================================
 # 2. 状态定义 (State)
@@ -315,7 +320,7 @@ def router_node(state: AgentState):
 
 # --- General Agent Branch ---
 general_tools = [DuckDuckGoSearchRun(), retrieve_case, retrieve_standard]
-general_llm = llm.bind_tools(general_tools)
+general_llm = llm.bind_tools(general_tools) if llm else None
 
 def general_agent_node(state: AgentState, config: RunnableConfig):
     """
@@ -365,7 +370,7 @@ def general_agent_node(state: AgentState, config: RunnableConfig):
 
 # 1. Researcher (信息收集)
 researcher_tools = [retrieve_case, retrieve_standard]
-researcher_llm = llm.bind_tools(researcher_tools)
+researcher_llm = llm.bind_tools(researcher_tools) if llm else None
 
 def researcher_node(state: AgentState, config: RunnableConfig):
     """
@@ -717,7 +722,7 @@ def generate_node(state: AgentState, config: RunnableConfig):
 # 3. Auditor (校验)
 # 增加案例库检索，支持交叉验证
 auditor_tools = [retrieve_standard, retrieve_case]
-auditor_llm = llm.bind_tools(auditor_tools)
+auditor_llm = llm.bind_tools(auditor_tools) if llm else None
 
 
 def filter_messages_for_auditor(messages: List[BaseMessage]) -> List[BaseMessage]:

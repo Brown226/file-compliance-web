@@ -162,32 +162,26 @@ import ProjectList from '@openspec/components/ProjectList.vue'
 import MarkdownRenderer from '@openspec/components/MarkdownRenderer.vue'
 import type { ProjectItem } from '@openspec/data/mockData'
 import { useQAChat } from '@openspec/composables/useQAChat'
-import {
-  listChatAssistants,
-  createChatAssistant,
-  deleteChatAssistants,
-  listChatSessions,
-  createChatSession,
-} from '@openspec/service/qa'
 
-// ===== 问答交互（对接 RAGFlow） =====
+// ===== 问答交互（对接 Agent /agent/workflow/chat/stream） =====
 
 const { chatMessages, isGenerating, askQuestion, stopGeneration, clearMessages } = useQAChat()
 
 const newQuestion = ref('')
-const currentSessionId = ref<string>('')
 
 const addQuestion = () => {
   const q = newQuestion.value.trim()
   if (!q) return
   currentQuery.value = q
-  askQuestion(q, currentSessionId.value, selectedProjectId.value)
+  // 传 projectId 作为会话隔离，agent 用 documentId 作 LangGraph thread_id
+  askQuestion(q, selectedProjectId.value, currentSessionId.value || selectedProjectId.value)
   newQuestion.value = ''
 }
 
 // ===== 会话操作 =====
 
 const currentSessionName = ref('选择会话开始对话')
+const currentSessionId = ref<string>('')
 
 const refreshSession = () => {
   clearMessages()
@@ -250,43 +244,60 @@ const handleTabChange = () => {
   activeKnowledgeId.value = 0
 }
 
-// ===== 左侧项目列表（对接 Chat Assistant API） =====
-
+// ===== 左侧项目列表（本地持久化，不走后端） =====
+//
+// 原版调 /agent/rag/ragflow/chat_assistant/* 系列接口，这些接口在
+// Python Agent 中不存在（仅在参考项目远端 cm.aizzyun.com 可用）。
+// 现改为 localStorage 持久化项目/会话列表，问答走 workflow/chat/stream。
+//
 const projects = ref<ProjectItem[]>([])
 const selectedProjectId = ref<string>('')
 const projectLoading = ref(false)
+
+const STORAGE_KEY = 'openspec-qa-projects'
 const ELECTRIC_QA_PREFIX = 'elec_qa_'
 
-// 加载项目列表
-async function loadProjects() {
-  projectLoading.value = true
+function loadProjectsFromStorage() {
   try {
-    const list = await listChatAssistants()
-    projects.value = list
-      .filter((item: any) => (item.name || '').startsWith(ELECTRIC_QA_PREFIX))
-      .map((item: any) => ({
-        id: item.id,
-        name: (item.name || '未命名对话').replace(new RegExp(`^${ELECTRIC_QA_PREFIX}`), ''),
-        lastUpdated: item.update_date
-          ? new Date(item.update_date).toLocaleString('zh-CN')
-          : item.create_date
-            ? new Date(item.create_date).toLocaleString('zh-CN')
-            : '',
-        isActive: false,
-        sessionList: [],
-      }))
-    // 自动选中第一个
-    if (projects.value.length > 0 && !selectedProjectId.value) {
-      handleSelectProject(projects.value[0].id)
+    const raw = localStorage.getItem(STORAGE_KEY)
+    if (raw) {
+      const parsed = JSON.parse(raw)
+      if (Array.isArray(parsed)) {
+        projects.value = parsed
+        // 自动选中第一个
+        if (projects.value.length > 0 && !selectedProjectId.value) {
+          handleSelectProject(projects.value[0].id)
+        }
+        return
+      }
     }
-  } catch (e: any) {
-    ElMessage.error(e.message || '加载项目列表失败')
-  } finally {
-    projectLoading.value = false
+  } catch {
+    // 解析失败忽略
+  }
+  // 首次访问，创建一个默认项目
+  if (projects.value.length === 0) {
+    const defaultProject: ProjectItem = {
+      id: `qa_${Date.now()}`,
+      name: '默认问答项目',
+      lastUpdated: new Date().toLocaleString('zh-CN'),
+      isActive: true,
+      sessionList: [],
+    }
+    projects.value = [defaultProject]
+    saveProjectsToStorage()
+    handleSelectProject(defaultProject.id)
   }
 }
 
-// 选中项目 → 加载 session 列表
+function saveProjectsToStorage() {
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(projects.value))
+  } catch {
+    // 存储失败忽略
+  }
+}
+
+// 选中项目 → 切换会话上下文
 async function handleSelectProject(projectId: string) {
   selectedProjectId.value = projectId
   projects.value.forEach(p => p.isActive = p.id === projectId)
@@ -294,46 +305,30 @@ async function handleSelectProject(projectId: string) {
   clearMessages()
   currentSessionId.value = ''
   currentSessionName.value = '选择会话开始对话'
-  // 加载该项目的 session 列表
-  await loadSessions(projectId)
-}
-
-// 加载 session 列表
-async function loadSessions(projectId: string) {
-  try {
-    const sessions = await listChatSessions(projectId)
-    const project = projects.value.find(p => p.id === projectId)
-    if (project) {
-      project.sessionList = sessions.map((s: any) => ({
-        id: s.id,
-        name: s.name || '未命名会话',
-      }))
-    }
-  } catch (e: any) {
-    ElMessage.error(e.message || '加载会话列表失败')
-  }
-}
-
-// 选中 session → 切换 sessionId
-function handleSelectSession(_projectId: string, session: any) {
-  currentSessionId.value = session.id
-  currentSessionName.value = session.name || '未命名会话'
-  clearMessages()
+  saveProjectsToStorage()
 }
 
 // 新建项目
 async function createProject() {
   try {
-    const { value: name } = await ElMessageBox.prompt('请输入对话名称', '新建对话', {
+    const { value: name } = await ElMessageBox.prompt('请输入项目名称', '新建项目', {
       confirmButtonText: '创建',
       cancelButtonText: '取消',
       inputPattern: /\S+/,
       inputErrorMessage: '名称不能为空',
     })
     if (!name) return
-    await createChatAssistant(`${ELECTRIC_QA_PREFIX}${name}`)
+    const newProject: ProjectItem = {
+      id: `qa_${Date.now()}`,
+      name,
+      lastUpdated: new Date().toLocaleString('zh-CN'),
+      isActive: false,
+      sessionList: [],
+    }
+    projects.value.push(newProject)
+    saveProjectsToStorage()
     ElMessage.success('创建成功')
-    await loadProjects()
+    handleSelectProject(newProject.id)
   } catch {
     // 用户取消
   }
@@ -344,44 +339,70 @@ async function handleDeleteProject(projectId: string) {
   const project = projects.value.find(p => p.id === projectId)
   try {
     await ElMessageBox.confirm(
-      `确定删除「${project?.name || '该对话'}」？删除后不可恢复。`,
-      '删除对话',
+      `确定删除「${project?.name || '该项目'}」？删除后不可恢复。`,
+      '删除项目',
       { confirmButtonText: '删除', cancelButtonText: '取消', type: 'warning' }
     )
-    await deleteChatAssistants([projectId])
-    ElMessage.success('删除成功')
+    const idx = projects.value.findIndex(p => p.id === projectId)
+    if (idx >= 0) projects.value.splice(idx, 1)
+    saveProjectsToStorage()
     if (selectedProjectId.value === projectId) {
       selectedProjectId.value = ''
       currentSessionId.value = ''
       currentSessionName.value = '选择会话开始对话'
       clearMessages()
+      // 自动选中第一个
+      if (projects.value.length > 0) {
+        handleSelectProject(projects.value[0].id)
+      }
     }
-    await loadProjects()
+    ElMessage.success('删除成功')
   } catch {
     // 用户取消
   }
 }
 
-// 新建 session
+// 新建 session（本地）
 async function handleCreateSession(projectId: string) {
+  const project = projects.value.find(p => p.id === projectId)
+  if (!project) return
   try {
-    const result = await createChatSession(projectId)
-    ElMessage.success('会话创建成功')
-    await loadSessions(projectId)
-    // 自动切换到新 session
-    if (result?.id) {
-      currentSessionId.value = result.id
-      currentSessionName.value = result.name || '新会话'
-      clearMessages()
+    const { value: name } = await ElMessageBox.prompt('请输入会话名称', '新建会话', {
+      confirmButtonText: '创建',
+      cancelButtonText: '取消',
+      inputPattern: /\S+/,
+      inputErrorMessage: '名称不能为空',
+    })
+    if (!name) return
+    const newSession = {
+      id: `sess_${Date.now()}`,
+      name,
     }
-  } catch (e: any) {
-    ElMessage.error(e.message || '创建会话失败')
+    if (!project.sessionList) project.sessionList = []
+    project.sessionList.push(newSession)
+    saveProjectsToStorage()
+    // 自动切换到新 session
+    currentSessionId.value = newSession.id
+    currentSessionName.value = newSession.name
+    clearMessages()
+    ElMessage.success('会话创建成功')
+  } catch {
+    // 用户取消
   }
 }
 
-// 页面加载时获取项目列表
+// 选中 session
+function handleSelectSession(_projectId: string, session: any) {
+  currentSessionId.value = session.id
+  currentSessionName.value = session.name || '未命名会话'
+  clearMessages()
+}
+
+// 页面加载时加载项目列表
 onMounted(() => {
-  loadProjects()
+  projectLoading.value = true
+  loadProjectsFromStorage()
+  projectLoading.value = false
 })
 </script>
 

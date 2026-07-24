@@ -109,16 +109,37 @@ export const authStorage = {
 /**
  * 从 URL 参数或 localStorage 获取 Authorization
  * RAGFlow 登录成功后会通过 URL 参数传递 auth token
+ *
+ * 兼容审查平台 Pinia 持久化存储：优先从 openspec 自有 storage 取，
+ * 若没有则尝试从 Pinia persist 的 user store 中读取 token。
  */
 export function getAuthorization(): string {
   const urlParams = new URLSearchParams(window.location.search);
   const authFromUrl = urlParams.get('auth');
-  
+
   if (authFromUrl) {
     return `Bearer ${authFromUrl}`;
   }
-  
-  return authStorage.getAuthorization() || '';
+
+  // 1. openspec 自有 storage
+  const ownAuth = authStorage.getAuthorization();
+  if (ownAuth) return ownAuth;
+
+  // 2. 审查平台 Pinia persist（key 形如 "user" → { token, userInfo }）
+  try {
+    const piniaRaw = localStorage.getItem('user');
+    if (piniaRaw) {
+      const parsed = JSON.parse(piniaRaw);
+      const tok = parsed?.token;
+      if (tok) {
+        return tok.startsWith('Bearer ') ? tok : `Bearer ${tok}`;
+      }
+    }
+  } catch {
+    // 忽略解析错误
+  }
+
+  return '';
 }
 
 /**

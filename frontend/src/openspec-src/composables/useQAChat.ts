@@ -1,7 +1,7 @@
 import { ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import {
-  chatWithAssistant,
+  chatWithWorkflowStream,
   type DocReference,
   type ChunkReference,
 } from '@openspec/service/qa'
@@ -22,7 +22,18 @@ export function useQAChat() {
   const isGenerating = ref(false)
   const currentAbortController = ref<AbortController | null>(null)
 
-  async function askQuestion(question: string, sessionId: string, chatId: string) {
+  /**
+   * 发送问题到 Agent /agent/workflow/chat/stream
+   *
+   * @param question 用户问题
+   * @param projectId 项目 ID（用作会话隔离）
+   * @param documentId 文档 ID（agent 用作 LangGraph thread_id）
+   */
+  async function askQuestion(
+    question: string,
+    projectId?: string,
+    documentId?: string,
+  ) {
     const q = question.trim()
     if (!q || isGenerating.value) return
 
@@ -52,30 +63,40 @@ export function useQAChat() {
     const allChunkRefs: ChunkReference[] = []
 
     try {
-      await chatWithAssistant(
-        q,
-        sessionId,
-        chatId,
-        // onChunk
-        (chunk) => {
-          aiMessage.content += chunk.content
-          if (chunk.thoughts) {
-            aiMessage.thoughts = (aiMessage.thoughts || '') + chunk.thoughts
-          }
-          if (chunk.doc_reference.length > 0) {
-            allDocRefs.push(...chunk.doc_reference)
-          }
-          if (chunk.chunk_reference.length > 0) {
-            allChunkRefs.push(...chunk.chunk_reference)
-          }
+      await chatWithWorkflowStream(
+        {
+          message: q,
+          projectId,
+          documentId: documentId || projectId, // 默认用 projectId 作 thread_id
         },
-        // onComplete
-        () => {
-          aiMessage.loading = false
-          aiMessage.docReferences = allDocRefs
-          aiMessage.chunkReferences = allChunkRefs
-          isGenerating.value = false
-          currentAbortController.value = null
+        {
+          // onChunk
+          onChunk: (chunk) => {
+            if (chunk.content) {
+              aiMessage.content += chunk.content
+            }
+            if (chunk.thoughts) {
+              aiMessage.thoughts = (aiMessage.thoughts || '') + chunk.thoughts
+            }
+            if (chunk.docReferences?.length) {
+              allDocRefs.push(...chunk.docReferences)
+            }
+            if (chunk.chunkReferences?.length) {
+              allChunkRefs.push(...chunk.chunkReferences)
+            }
+          },
+          // onComplete
+          onComplete: () => {
+            aiMessage.loading = false
+            aiMessage.docReferences = allDocRefs
+            aiMessage.chunkReferences = allChunkRefs
+            isGenerating.value = false
+            currentAbortController.value = null
+          },
+          // onError
+          onError: (err) => {
+            aiMessage.error = err.message
+          },
         },
         abortController.signal,
       )

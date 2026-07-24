@@ -86,6 +86,23 @@ export default defineConfig({
         changeOrigin: true,
         rewrite: (path) => path.replace(/^\/maxkb-proxy/, ''),
       },
+      // OpenSpec Agent 代理（Python FastAPI :5000）
+      // 用于长期记忆(/agent/memory/*)、文档生成(/agent/rag/*)、
+      // 项目问答(/agent/workflow/chat/stream)等接口
+      '/agent': {
+        target: process.env.AGENT_PROXY_TARGET || 'http://localhost:5000',
+        changeOrigin: true,
+        configure: (proxy) => {
+          // SSE 流式响应：禁用缓冲，保持长连接
+          proxy.on('proxyRes', (proxyRes) => {
+            if (proxyRes.headers['content-type']?.includes('text/event-stream')) {
+              proxyRes.headers['cache-control'] = 'no-cache'
+              proxyRes.headers['connection'] = 'keep-alive'
+              proxyRes.headers['x-accel-buffering'] = 'no'
+            }
+          })
+        },
+      },
     },
   },
   // 开发时跳过类型检查（加速构建）

@@ -47,11 +47,16 @@ MIN_CONTENT_THRESHOLD = int(os.getenv('MIN_CONTENT_THRESHOLD', '1000'))
 logger.info("Initializing Batch Construction Agent...")
 
 # 初始化 LLM (不使用 streaming)
-llm = ChatTongyi(
-    model="qwen-max",
-    temperature=0.1,
-    streaming=False,
-)
+# 使用 try-except 包裹，允许在缺少 DASHSCOPE_API_KEY 时启动服务（相关功能在调用时才报错）
+try:
+    llm = ChatTongyi(
+        model="qwen-max",
+        temperature=0.1,
+        streaming=False,
+    )
+except Exception as e:
+    logger.warning(f"ChatTongyi 初始化失败（可能缺少 DASHSCOPE_API_KEY）: {e}")
+    llm = None
 
 # =============================================================================
 # 2. 状态定义 (State)
@@ -123,7 +128,7 @@ def evaluate_retrieval_quality(state: BatchAgentState) -> dict:
 
 # Researcher 节点（简化版，无流式输出）
 researcher_tools = [retrieve_case, retrieve_standard]
-researcher_llm = llm.bind_tools(researcher_tools)
+researcher_llm = llm.bind_tools(researcher_tools) if llm else None
 
 def researcher_node(state: BatchAgentState):
     """
