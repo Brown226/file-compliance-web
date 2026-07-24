@@ -647,3 +647,28 @@ export interface UserAnnouncementRead {
   confirmed: boolean
 }
 
+/** DEC 审点（StandardCheckpoint） */
+export interface StandardCheckpoint {
+  id: string
+  standardId: string
+  clauseHash?: string | null
+  clauseCode?: string | null
+  clauseText: string
+  mandatory: 'mandatory' | 'guidance'
+  auditDimension: 'compliance' | 'fact' | 'text'
+  checkPrompt?: string | null
+  source: 'clause_split' | 'manual'
+  createdAt: string
+  updatedAt: string
+}
+
+/** 审点统计 */
+export interface CheckpointStats {
+  total: number
+  mandatory: number
+  guidance: number
+  compliance: number
+  fact: number
+  text: number
+}
+

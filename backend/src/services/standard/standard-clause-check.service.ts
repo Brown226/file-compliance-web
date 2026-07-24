@@ -10,8 +10,7 @@
  * 注意：本文件与 standard-check.service.ts（标准比对服务）是不同的服务。
  */
 
-import prisma from '../../config/db';
-import { ReviewIssue } from '../llm/llm.service';
+import { LlmService, ReviewIssue } from '../llm/llm.service';
 
 export interface StandardClause {
   id: string;
@@ -170,6 +169,9 @@ export class StandardClauseCheckService {
 
   /**
    * 直接调用 LLM chat/completions API，返回原始文本
+   *
+   * 复用 LlmService.getLlmConfig() 解析 providerId 引用（阶段 4 改造后，
+   * llm_chat_model 不再直接存 apiBaseUrl/apiKey，而是引用 LlmProfile）。
    */
   private static async callLlmRaw(
     systemPrompt: string,
@@ -177,24 +179,12 @@ export class StandardClauseCheckService {
     temperature: number,
     timeoutSec: number,
   ): Promise<string> {
-    const llmConfig = await prisma.systemConfig.findUnique({ where: { key: 'llm_chat_model' } });
-    let baseUrl = process.env.LLM_API_BASE_URL || '';
-    let model = process.env.LLM_MODEL_NAME || '';
-    let apiKey = process.env.LLM_API_KEY || '';
-    if (llmConfig?.value) {
-      try {
-        // Prisma Json 类型需要转字符串再解析
-        const configStr = typeof llmConfig.value === 'string'
-          ? llmConfig.value
-          : JSON.stringify(llmConfig.value);
-        const parsed = JSON.parse(configStr);
-        baseUrl = parsed.apiBaseUrl || baseUrl;
-        model = parsed.modelName || model;
-        apiKey = parsed.apiKey || apiKey;
-      } catch { /* 配置解析失败，使用环境变量 fallback */ }
+    const config = await LlmService.getLlmConfig();
+    if (!config) {
+      throw new Error('LLM 未配置，请在系统配置中设置 LLM API');
     }
 
-    const url = `${baseUrl.replace(/\/+$/, '')}/chat/completions`;
+    const url = `${config.apiBaseUrl.replace(/\/+$/, '')}/chat/completions`;
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), timeoutSec * 1000);
 
@@ -202,10 +192,10 @@ export class StandardClauseCheckService {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        ...(apiKey ? { 'Authorization': `Bearer ${apiKey}` } : {}),
+        ...(config.apiKey ? { 'Authorization': `Bearer ${config.apiKey}` } : {}),
       },
       body: JSON.stringify({
-        model,
+        model: config.modelName,
         messages: [
           { role: 'system', content: systemPrompt },
           { role: 'user', content: userContent },

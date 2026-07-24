@@ -1,4 +1,4 @@
-﻿import { computed, watch } from 'vue'
+import { computed, watch } from 'vue'
 import type { ReviewPlan, ReviewObjective, ReviewEvidenceSource } from '../types/smart-review'
 import type { EntryModule } from '../types/smart-review'
 import {
@@ -171,6 +171,16 @@ export function useReviewPlan(state: ReturnType<typeof useSmartReviewState>) {
         draft.enhancements.crossFileConsistency = false
         draft.execution.profile = 'AI_ONLY'
         draft.contractStance = 'owner'
+        break
+
+      case 'DEC_REVIEW':
+        // DEC 规范审查：基于标准库审点的双分支审核（完整性 + 遵从性）
+        draft.objective = 'COMPLIANCE'
+        draft.evidence.sources = ['STANDARD']
+        draft.evidence.ruleLibraryId = null
+        draft.enhancements.intraFileConsistency = true
+        draft.enhancements.crossFileConsistency = false
+        draft.execution.profile = 'AI_ONLY'
         break
     }
   }

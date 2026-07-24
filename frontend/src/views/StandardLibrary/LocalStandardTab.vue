@@ -164,8 +164,11 @@
           </template>
         </el-table-column>
         <!-- 操作列：仅 ADMIN/MANAGER 可见 -->
-        <el-table-column v-if="canManage" label="操作" width="120" fixed="right">
+        <el-table-column v-if="canManage" label="操作" width="200" fixed="right">
           <template #default="{ row }">
+            <el-button type="primary" link size="small" @click="goToCheckpoints(row)">
+              <el-icon><Tickets /></el-icon> 审点
+            </el-button>
             <el-button type="primary" link size="small" @click="handleEdit(row)">
               <el-icon><Edit /></el-icon> 编辑
             </el-button>
@@ -265,10 +268,11 @@
 
 <script setup lang="ts">
 import { ref, reactive, computed, onMounted, onUnmounted } from 'vue'
+import { useRouter } from 'vue-router'
 import {
   Document, Download, Upload, Search,
   Edit, Delete, CircleCheck, CloseBold,
-  Reading, Check,
+  Reading, Check, Tickets,
 } from '@element-plus/icons-vue'
 import { useEnterToConfirm } from '@/composables/useEnterToConfirm'
 import { ElMessage, ElMessageBox, type FormInstance, type TableInstance } from 'element-plus'
@@ -285,7 +289,13 @@ import type { Standard } from '@/types/models'
 import NormativeImportDialog from './NormativeImportDialog.vue'
 
 const userStore = useUserStore()
+const router = useRouter()
 const canManage = computed(() => userStore.isAdminOrManager())
+
+// ==================== 跳转 DEC 审点管理 ====================
+const goToCheckpoints = (row: Standard) => {
+  router.push(`/admin/standards/${row.id}/checkpoints`)
+}
 
 // ==================== 导入弹窗相关 ====================
 const importDialogVisible = ref(false)

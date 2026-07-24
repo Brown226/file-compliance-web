@@ -21,6 +21,7 @@ export class TaskService {
       MULTIMODAL: 'MULTIMODAL',
       DOC_REVIEW: 'DOC_REVIEW',
       CONTRACT: 'CONTRACT_REVIEW',  // 合同风险审查
+      DEC_REVIEW: 'DEC_REVIEW',     // DEC 规范审查（双分支：完整性+遵从性）
     }
     return map[entryModule] || 'LIBRARY_REVIEW'
   }
@@ -153,7 +154,7 @@ export class TaskService {
       }
     }
     // 优先使用前端直接传的 reviewMode（如 SELF_CHECK），否则从 entryModule 或 reviewPlan 推导
-    const validReviewModes = ['LIBRARY_REVIEW', 'DOC_REVIEW', 'CONSISTENCY', 'TYPO_GRAMMAR', 'MULTIMODAL', 'RULE_ONLY', 'SELF_CHECK', 'CONTRACT_REVIEW'];
+    const validReviewModes = ['LIBRARY_REVIEW', 'DOC_REVIEW', 'CONSISTENCY', 'TYPO_GRAMMAR', 'MULTIMODAL', 'RULE_ONLY', 'SELF_CHECK', 'CONTRACT_REVIEW', 'DEC_REVIEW'];
     const resolvedReviewMode = (reviewMode && validReviewModes.includes(reviewMode))
       ? reviewMode
       : entryModule

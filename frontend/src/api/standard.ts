@@ -1,5 +1,5 @@
 import request from '@/utils/request'
-import type { Standard, StandardCheckResult, StandardRefExtractResult, TempLibraryEntry } from '@/types/models'
+import type { Standard, StandardCheckResult, StandardRefExtractResult, TempLibraryEntry, StandardCheckpoint, CheckpointStats } from '@/types/models'
 import type { PaginatedResponse } from '@/types/api'
 
 // ==================== 标准库清单管理 ====================
@@ -230,4 +230,38 @@ export function previewNormativeExcelApi(file: File) {
  */
 export function downloadNormativeTemplateApi() {
   return request.get<Blob>('/standards/import/normative-template', { responseType: 'blob' })
+}
+
+// ==================== DEC 审点管理 ====================
+// 路径前缀：/api/checkpoint
+// 查询类所有登录用户可用；写操作（生成/编辑/删除）需 MANAGER 及以上。
+
+/** 获取标准的审点列表 + 统计 */
+export function getCheckpointsApi(standardId: string) {
+  return request.get<{ checkpoints: StandardCheckpoint[]; stats: CheckpointStats }>(
+    `/checkpoint/standards/${standardId}/checkpoints`
+  )
+}
+
+/** 触发离线加工（切分 + LLM 加工 + 落库，幂等） */
+export function generateCheckpointsApi(standardId: string, options?: { concurrency?: number }) {
+  return request.post<{ total: number; extracted: number; skipped: number; failed: number }>(
+    `/checkpoint/standards/${standardId}/checkpoints/generate`,
+    options || {}
+  )
+}
+
+/** 人工修正审点 */
+export function updateCheckpointApi(id: string, data: {
+  clauseCode?: string
+  mandatory?: 'mandatory' | 'guidance'
+  auditDimension?: 'compliance' | 'fact' | 'text'
+  checkPrompt?: string
+}) {
+  return request.patch<StandardCheckpoint>(`/checkpoint/checkpoints/${id}`, data)
+}
+
+/** 删除审点 */
+export function deleteCheckpointApi(id: string) {
+  return request.delete<{ message: string }>(`/checkpoint/checkpoints/${id}`)
 }

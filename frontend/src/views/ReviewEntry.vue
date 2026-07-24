@@ -75,7 +75,7 @@ import {
 import SmartReviewLegacy from './SmartReview.vue'
 import SelfCheck from './SelfCheck/index.vue'
 
-type ModuleId = 'LIBRARY' | 'CONSISTENCY' | 'PROOFREAD' | 'RULE_ONLY' | 'MULTIMODAL' | 'DOC_REVIEW' | 'SELF_CHECK' | 'CONTRACT'
+type ModuleId = 'LIBRARY' | 'CONSISTENCY' | 'PROOFREAD' | 'RULE_ONLY' | 'MULTIMODAL' | 'DOC_REVIEW' | 'SELF_CHECK' | 'CONTRACT' | 'DEC_REVIEW'
 
 const selectedModule = ref<ModuleId | ''>('')
 
@@ -93,6 +93,7 @@ const commonModules: ModuleItem[] = [
   { id: 'DOC_REVIEW', title: '以文审文', desc: '上传参照文件，AI 逐项比对差异', scenario: '合同 vs 模板、新旧版变更比对', icon: Fold, color: '#7c3aed' },
   { id: 'CONTRACT', title: '合同风险审查', desc: '审查核电工程合同，识别对业主不利的风险条款', scenario: '合同条款完整性、风险条款识别', icon: Stamp, color: '#f56c6c' },
   { id: 'CONSISTENCY', title: '一致性审查', desc: '多文件间数据与参数自洽性核对', scenario: '总图分图参数核对、跨表校验', icon: Link, color: '#0891b2' },
+  { id: 'DEC_REVIEW', title: 'DEC规范审查', desc: '规范审点工程化 + 双分支并行审核（完整性+遵从性）', scenario: '规范 vs 设计方案的符合性审查', icon: Aim, color: '#0d9488' },
 ]
 
 const specialModules: ModuleItem[] = [

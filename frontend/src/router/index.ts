@@ -118,6 +118,12 @@ const routes: Array<RouteRecordRaw> = [
         meta: { title: '标准库清单管理', allowViewer: true }
       },
       {
+        path: 'admin/standards/:id/checkpoints',
+        name: 'StandardCheckpoints',
+        component: () => import('../views/StandardLibrary/CheckpointManager.vue'),
+        meta: { title: 'DEC 审点管理', allowViewer: true, hidden: true }
+      },
+      {
         path: 'admin/knowledge',
         name: 'AdminKnowledge',
         component: () => import('../views/StandardLibrary/MaxKBTab.vue'),

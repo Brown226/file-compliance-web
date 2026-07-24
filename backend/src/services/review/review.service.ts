@@ -58,7 +58,12 @@ export class ReviewService {
     };
   } {
     const plan = TaskService.normalizeReviewPlan(task?.reviewPlan);
-    const reviewMode = TaskService.resolvePipelineSelector(plan);
+    // DEC_REVIEW 等特殊模式由前端 entryModule 直接指定并已落库 task.reviewMode，
+    // 其 reviewPlan.objective 仍是 COMPLIANCE（与 LIBRARY_REVIEW 相同），
+    // resolvePipelineSelector 无法区分，故优先用 task.reviewMode 兜底。
+    const reviewMode = (task?.reviewMode && ['DEC_REVIEW'].includes(task.reviewMode))
+      ? task.reviewMode
+      : TaskService.resolvePipelineSelector(plan);
     // ֧��ͬʱѡ��֪ʶ��(STANDARD)����������(RULE_LIBRARY)
     const ruleSource: ('STANDARD' | 'RULE_LIBRARY')[] = [];
     if (plan.evidence.sources.includes('STANDARD')) ruleSource.push('STANDARD');

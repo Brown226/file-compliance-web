@@ -326,14 +326,14 @@
               :get-issue-type-label="getIssueTypeLabel"
               :truncate-text="truncateText"
               @navigate="navigateToIssue"
-              @view-all="activeTab = 'suggestions'"
+              @view-all="activeTab = defaultIssueTabKey"
             />
           </div>
 
-          <!-- Tab 2: 问题清单（使用重构后的 IssueCardList 组件）-->
-          <div v-if="activeTab === 'suggestions'" class="tab-pane" style="height:100%; display:flex; flex-direction:column;">
+          <!-- Tab 2: 问题清单（DEC_REVIEW 时拆为完整性+遵从性双清单，共用此内容区）-->
+          <div v-if="showIssueListTab" class="tab-pane" style="height:100%; display:flex; flex-direction:column;">
             <!-- 审查通过空状态 -->
-            <div v-if="!loading && task?.status === 'COMPLETED' && issueDetails.length === 0" class="empty-state-pass">
+            <div v-if="!loading && task?.status === 'COMPLETED' && currentTabIssues.length === 0" class="empty-state-pass">
               <div class="pass-icon-wrapper">
                 <el-icon :size="56" color="#67C23A"><CircleCheckFilled /></el-icon>
               </div>
@@ -357,7 +357,7 @@
             <IssueCardList
               v-else
               ref="issueListRef"
-              :details="issueDetails"
+              :details="currentTabIssues"
               :loading="loading"
               :selected-file-id="selectedFileId"
               :is-docx-selected="isDocxFileSelected"
@@ -716,18 +716,33 @@ watch(() => selectedFileId.value, (fileId) => {
   }
 })
 
-// ===== Tab 配置 =====
-const tabs = [
-  { key: 'overview', label: '审查摘要', icon: 'DataAnalysis' },
-  { key: 'suggestions', label: '问题清单', icon: 'WarningFilled' },
-  { key: 'knowledge', label: '标准引用', icon: 'Reading' },
-]
+// ===== Tab 配置（DEC_REVIEW 模式下显示完整性+遵从性双清单）=====
+const isDecReviewMode = computed(() => (task.value as any)?.reviewMode === 'DEC_REVIEW')
+
+const tabs = computed(() => {
+  const result: Array<{ key: string; label: string; icon: string }> = [
+    { key: 'overview', label: '审查摘要', icon: 'DataAnalysis' },
+  ]
+  if (isDecReviewMode.value) {
+    result.push(
+      { key: 'completeness', label: '完整性审查', icon: 'CircleCheck' },
+      { key: 'compliance', label: '遵从性审查', icon: 'WarningFilled' },
+    )
+  } else {
+    result.push({ key: 'suggestions', label: '问题清单', icon: 'WarningFilled' })
+  }
+  result.push({ key: 'knowledge', label: '标准引用', icon: 'Reading' })
+  return result
+})
 
 // ===== Tab Badge / getTabBadge 已迁移到 useReviewStats composable =====
 
+// 默认问题 Tab key（DEC_REVIEW 时跳遵从性，其他跳问题清单）
+const defaultIssueTabKey = computed(() => isDecReviewMode.value ? 'compliance' : 'suggestions')
+
 // 从审查摘要跳转到问题明细
 const navigateToIssue = (issue: TaskDetail) => {
-  activeTab.value = 'suggestions'
+  activeTab.value = defaultIssueTabKey.value
 
   nextTick(() => {
     issueListRef.value?.scrollToIssue?.(issue.id)
@@ -738,7 +753,7 @@ const navigateToIssue = (issue: TaskDetail) => {
   }
 
   router.replace({
-    query: { ...route.query, tab: 'suggestions', issueId: issue.id }
+    query: { ...route.query, tab: defaultIssueTabKey.value, issueId: issue.id }
   })
 }
 
@@ -759,6 +774,30 @@ const {
   totalIssuesExclSummary, errorIssues, warningIssues, infoIssues, standardRefIssues,
   fileStatusSummary, tabBadges, getTabBadge,
 } = useReviewStats(task, allDetails, files, filterFileId, runtimeFileStatus)
+
+// ===== DEC_REVIEW 双清单过滤（依赖 issueDetails，须在 useReviewStats 之后）=====
+const completenessIssues = computed(() =>
+  isDecReviewMode.value
+    ? issueDetails.value.filter((d: any) => d.reviewSource === 'COMPLETENESS')
+    : []
+)
+
+const complianceIssues = computed(() =>
+  isDecReviewMode.value
+    ? issueDetails.value.filter((d: any) => ['COMPLIANCE', 'RULE_FALLBACK'].includes(d.reviewSource || ''))
+    : []
+)
+
+// 当前 Tab 对应的 issues（suggestions/completeness/compliance 共用一个内容区）
+const currentTabIssues = computed(() => {
+  if (activeTab.value === 'completeness') return completenessIssues.value
+  if (activeTab.value === 'compliance') return complianceIssues.value
+  return issueDetails.value
+})
+
+const showIssueListTab = computed(() =>
+  ['suggestions', 'completeness', 'compliance'].includes(activeTab.value)
+)
 
 // ===== 工具函数（使用 Composable）=====
 const {
