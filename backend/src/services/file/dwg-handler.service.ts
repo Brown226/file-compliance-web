@@ -139,7 +139,7 @@ export class DwgHandlerService {
         paragraphs: textEntities.map((e: any) => ({
           text: e.text,
           style: e.layer,
-          page: null,
+          page: null as number | null,
           handle: e.handle,
           entityType: e.entityType, // 传递 entityType 以正确区分 TEXT/MTEXT
         })),

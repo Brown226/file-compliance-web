@@ -187,7 +187,6 @@ export class ConcurrencyService {
 
     try {
       const item = JSON.parse(items[0]);
-      const position = 1;
       WebSocketService.emitTaskProgress(item.taskId, {
         type: 'queue_ready',
         step: '排队结束',

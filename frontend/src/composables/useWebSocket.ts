@@ -37,6 +37,7 @@ export interface WsTaskProgress {
 class WebSocketManager {
   private ws: WebSocket | null = null
   private reconnectTimer: number | null = null
+  private heartbeatTimer: number | null = null
   private listeners: Map<string, Set<(msg: WsMessage) => void>> = new Map()
   private globalListeners: Set<(msg: WsMessage) => void> = new Set()
   private subscribedTasks: Set<string> = new Set()
@@ -44,6 +45,8 @@ class WebSocketManager {
   private reconnectAttempts = 0
   private maxReconnectAttempts = 10
   private reconnectDelay = 3000
+  // 心跳间隔 25 秒，后端 session TTL 60 秒，留 35 秒冗余
+  private heartbeatInterval = 25000
 
   connect() {
     if (this.ws && this.ws.readyState === WebSocket.OPEN) return
@@ -73,6 +76,7 @@ class WebSocketManager {
       this.reconnectAttempts = 0 // 连接成功，重置计数
       console.log('[WS] Connected')
       this.resubscribeTasks()
+      this.startHeartbeat()
     }
 
     this.ws.onmessage = (event) => {
@@ -102,13 +106,14 @@ class WebSocketManager {
     this.ws.onclose = (event) => {
       this.connected.value = false
       this.reconnectAttempts++
-      
+      this.stopHeartbeat()
+
       if (event.code === 1008) {
         // 认证失败，不重连
         console.warn('[WS] 认证失败，请重新登录')
         return
       }
-      
+
       const delay = Math.min(this.reconnectDelay * Math.pow(1.5, this.reconnectAttempts - 1), 30000)
       console.log(`[WS] Disconnected, reconnecting in ${Math.round(delay / 1000)}s... (attempt ${this.reconnectAttempts}/${this.maxReconnectAttempts})`)
       this.reconnectTimer = window.setTimeout(() => this.connect(), delay)
@@ -119,11 +124,35 @@ class WebSocketManager {
     }
   }
 
+  /** 启动心跳：每 25 秒发送一次 heartbeat 消息，续期后端 presence session */
+  private startHeartbeat() {
+    this.stopHeartbeat()
+    this.heartbeatTimer = window.setInterval(() => {
+      if (this.ws?.readyState === WebSocket.OPEN) {
+        try {
+          this.ws.send(JSON.stringify({ type: 'heartbeat' }))
+        } catch (e) {
+          // ignore
+        }
+      } else {
+        this.stopHeartbeat()
+      }
+    }, this.heartbeatInterval)
+  }
+
+  private stopHeartbeat() {
+    if (this.heartbeatTimer) {
+      clearInterval(this.heartbeatTimer)
+      this.heartbeatTimer = null
+    }
+  }
+
   disconnect() {
     if (this.reconnectTimer) {
       clearTimeout(this.reconnectTimer)
       this.reconnectTimer = null
     }
+    this.stopHeartbeat()
     if (this.ws) {
       this.ws.close()
       this.ws = null

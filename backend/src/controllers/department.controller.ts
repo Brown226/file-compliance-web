@@ -6,7 +6,7 @@ export class DepartmentController {
   /**
    * 获取部门树
    */
-  async getDepartmentsTree(req: Request, res: Response, next: NextFunction) {
+  async getDepartmentsTree(_req: Request, res: Response, next: NextFunction) {
     try {
       const tree = await departmentService.getDepartmentsTree();
       success(res, tree);

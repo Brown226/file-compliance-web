@@ -28,6 +28,10 @@
           <el-icon><DocumentAdd /></el-icon>
           <template #title><span>新建审查</span></template>
         </el-menu-item>
+        <el-menu-item index="/knowledge">
+          <el-icon><Collection /></el-icon>
+          <template #title><span>知识中心</span></template>
+        </el-menu-item>
         <el-menu-item index="/ai">
           <el-icon><ChatDotRound /></el-icon>
           <template #title><span>AI 工作台</span></template>
@@ -36,22 +40,20 @@
           <el-icon><View /></el-icon>
           <template #title><span>图纸视觉分析</span></template>
         </el-menu-item>
-        <el-menu-item index="/knowledge">
-          <el-icon><Collection /></el-icon>
-          <template #title><span>知识中心</span></template>
+        <!-- 反馈意见（所有角色可见，用户区低频入口） -->
+        <el-menu-item index="/feedback">
+          <el-icon><ChatLineRound /></el-icon>
+          <template #title><span>反馈意见</span></template>
         </el-menu-item>
-
-        <!-- 系统公告（仅管理员可见） -->
-        <template v-if="userStore.isAdmin()">
-          <el-menu-item index="/announcements">
-            <el-icon><Bell /></el-icon>
-            <template #title><span>系统公告</span></template>
-          </el-menu-item>
-        </template>
 
         <!-- ===== admin panel (ADMIN/MANAGER only) ===== -->
         <template v-if="userStore.isAdminOrManager()">
           <div class="menu-divider" v-show="!sidebarCollapsed"></div>
+          <!-- 系统公告（仅管理员可见） -->
+          <el-menu-item v-if="userStore.isAdmin()" index="/announcements">
+            <el-icon><Bell /></el-icon>
+            <template #title><span>系统公告</span></template>
+          </el-menu-item>
           <el-menu-item index="/accuracy-dashboard">
             <el-icon><DataLine /></el-icon>
             <template #title><span>审查质量看板</span></template>
@@ -61,12 +63,6 @@
             <template #title><span>管理后台</span></template>
           </el-menu-item>
         </template>
-
-        <!-- 反馈意见（所有角色可见，置底低频入口） -->
-        <el-menu-item index="/feedback">
-          <el-icon><ChatLineRound /></el-icon>
-          <template #title><span>反馈意见</span></template>
-        </el-menu-item>
       </el-menu>
 
       <div class="collapse-btn" @click="sidebarCollapsed = !sidebarCollapsed">

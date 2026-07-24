@@ -176,7 +176,7 @@ function checkLayerNaming(ctx: FileContext, config?: any): RuleIssue[] {
  * DWG_DIM_001: 尺寸标注检查
  * 检查是否有图层包含文本但没有尺寸标注（可能遗漏标注）
  */
-function checkDimensions(ctx: FileContext, config?: any): RuleIssue[] {
+function checkDimensions(ctx: FileContext, _config?: any): RuleIssue[] {
   const issues: RuleIssue[] = [];
   const dwg = getDwgData(ctx);
   if (!dwg?.metadata?.layer_stats) return issues;
@@ -223,7 +223,7 @@ function checkDimensions(ctx: FileContext, config?: any): RuleIssue[] {
  * DWG_STDREF_001: 标准规范引用检查
  * 检查图纸中是否引用了相关标准
  */
-function checkStandardRefs(ctx: FileContext, config?: any): RuleIssue[] {
+function checkStandardRefs(ctx: FileContext, _config?: any): RuleIssue[] {
   const issues: RuleIssue[] = [];
   const dwg = getDwgData(ctx);
   if (!dwg) return issues;

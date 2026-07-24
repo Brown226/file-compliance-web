@@ -82,7 +82,7 @@ function structuralRepair(text: string): string {
   let s = text;
 
   // 修复未转义的换行符（在字符串值中）
-  s = s.replace(/"([^"]*?)(\n)([^"]*?)"/g, (match, before, nl, after) => {
+  s = s.replace(/"([^"]*?)(\n)([^"]*?)"/g, (_match, before, _nl, after) => {
     return `"${before}\\n${after}"`;
   });
 

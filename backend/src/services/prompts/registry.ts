@@ -976,6 +976,51 @@ Please give a short succinct context to situate this chunk within the overall do
     isBuiltin: true,
     enabled: true,
   },
+
+  // ==========================================
+  // 审点工程化（checkpoint_extract）— 审点抽取
+  // 占位符 ${clauseContent} 与 checkpoint-extractor.service.ts 对齐
+  // ==========================================
+  {
+    key: 'checkpoint_extract_system',
+    module: 'checkpoint_extract',
+    role: 'system',
+    variant: 'default',
+    name: '审点抽取-系统提示词',
+    description: '把规范条文 chunk 转成机器可执行审点的系统提示词',
+    content: '你是规范审点工程化专家。把给定的规范条文转成机器可执行的审点。\n\n## 审点字段要求\n- clauseCode: 条文编号（如 "5.2.3"），无则 null\n- mandatory: "mandatory"（强制要求）或 "guidance"（指导建议）\n- auditDimension: "compliance"（合规性）/ "fact"（事实维度）/ "text"（文本表述）\n- checkPrompt: 判定 prompt，用于后续 LLM 判定设计内容是否符合该审点\n\n## 输出格式\n严格输出 JSON：\n{"clauseCode": "5.2.3", "mandatory": "mandatory", "auditDimension": "compliance", "checkPrompt": "检查设计文件是否..."}',
+    placeholders: JSON.stringify([]),
+    isBuiltin: true,
+    enabled: true,
+  },
+  {
+    key: 'checkpoint_extract_user',
+    module: 'checkpoint_extract',
+    role: 'user',
+    variant: 'default',
+    name: '审点抽取-用户提示词',
+    description: '输入条文 chunk，输出审点 JSON',
+    content: '## 规范条文\n\n${clauseContent}\n\n请把以上条文转成审点，输出 JSON。',
+    placeholders: JSON.stringify(['${clauseContent}']),
+    isBuiltin: true,
+    enabled: true,
+  },
+
+  // ==========================================
+  // 审点绑定（checkpoint_bind）— 设计 chunk ↔ 审点关联
+  // ==========================================
+  {
+    key: 'checkpoint_bind_system',
+    module: 'checkpoint_bind',
+    role: 'system',
+    variant: 'default',
+    name: '审点绑定-系统提示词',
+    description: '判定设计内容需要遵守哪些审点',
+    content: '你是审点关联判定专家。判断给定设计内容需要遵守哪些审点。只选出相关度高的审点，避免误选。',
+    placeholders: JSON.stringify([]),
+    isBuiltin: true,
+    enabled: true,
+  },
 ];
 
 // ============================================================

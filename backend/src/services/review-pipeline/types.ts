@@ -2,7 +2,7 @@
  * 审查流水线公共类型定义
  */
 
-import { RuleIssue, FileContext } from '../rules/types';
+import { RuleIssue } from '../rules/types';
 import { ReviewIssue, SourceReference } from '../llm/llm.service';
 import { CoverInfo } from '../file/python-parser.service';
 
@@ -16,7 +16,8 @@ export type ReviewModeType =
   | 'RULE_ONLY'
   | 'SELF_CHECK'
   | 'CONTRACT_REVIEW'
-  | 'STANDARD_CHECK';
+  | 'STANDARD_CHECK'
+  | 'DEC_REVIEW';
 
 /** 审查模式 → prompt 场景名映射（唯一数据源，review-handlers / ai-review 共用） */
 export const MODE_SCENE_MAP: Record<ReviewModeType, string> = {
@@ -29,6 +30,7 @@ export const MODE_SCENE_MAP: Record<ReviewModeType, string> = {
   RULE_ONLY:      'library_review',
   SELF_CHECK:     'self_check',
   STANDARD_CHECK: 'standard_check',
+  DEC_REVIEW:     'dec_review',
 };
 
 /** 根据审查模式获取 prompt 场景名 */
@@ -177,6 +179,22 @@ export interface PipelineContext {
   fpLibrarySet?: Set<string>;
   /** OCR 降级原因（非空表示 OCR 服务不可用或失败，审查应生成告警） */
   ocrDegradedReason?: string;
+  /** DEC_REVIEW 专用：预加载的审点库（StandardCheckpoint 记录） */
+  checkpoints?: Array<{
+    id: string;
+    clauseCode: string | null;
+    clauseText: string;
+    mandatory: string;
+    auditDimension: string;
+    checkPrompt: string | null;
+  }>;
+  /** DEC_REVIEW 专用：设计文档章节感知切块结果 */
+  designChunks?: Array<{
+    chunkIndex: number;
+    text: string;
+    sectionPath: string;
+  }>;
+
 }
 
 /** 审查处理结果 */

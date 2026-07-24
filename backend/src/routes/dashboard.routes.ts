@@ -17,4 +17,10 @@ router.get('/trend', dashboardController.getTrend);
 router.get('/review-metrics', dashboardController.getReviewMetrics);
 router.post('/tasks/:taskId/details/:detailId/feedback', dashboardController.submitFeedback);
 
+// 平台运营看板扩展
+router.get('/online-users', dashboardController.getOnlineUsers);
+router.get('/activity', dashboardController.getActivity);
+router.get('/llm-usage', dashboardController.getLlmUsage);
+router.get('/department-stats', dashboardController.getDepartmentStats);
+
 export default router;

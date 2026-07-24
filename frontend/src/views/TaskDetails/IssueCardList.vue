@@ -148,70 +148,23 @@
     </div>
 
     <!-- 批量操作工具栏（选中即显示，无需进入/退出模式） -->
-    <div class="batch-toolbar" v-if="selectedIssueIds.length > 0">
-      <div class="batch-info">
-        <el-checkbox
-          :model-value="isAllSelected"
-          :indeterminate="isIndeterminate"
-          @change="toggleSelectAll"
-          class="select-all-checkbox"
-        >
-          全选
-        </el-checkbox>
-        <span class="selected-count">
-          已选 <strong>{{ selectedIssueIds.length }}</strong> / {{ filteredAndSearched.length }} 项
-        </span>
-      </div>
-
-      <div class="batch-actions">
-        <!-- 批量确认建议 -->
-        <el-button-group v-if="selectedIssueIds.length > 0 && isDocxSelected">
-          <el-button
-            type="success"
-            size="small"
-            @click="handleBatchAdopt"
-            :disabled="!hasAdoptableItems"
-            :loading="batchLoading"
-          >
-            <el-icon><Check /></el-icon>
-            批量采纳 ({{ adoptableCount }})
-          </el-button>
-        </el-button-group>
-
-        <!-- 批量标记误报 -->
-        <el-button-group v-if="selectedIssueIds.length > 0">
-          <el-button
-            type="warning"
-            size="small"
-            @click="handleBatchFalsePositive"
-            :disabled="!hasFpMarkableItems"
-            :loading="batchLoading"
-          >
-            <el-icon><WarningFilled /></el-icon>
-            标记误报 ({{ fpMarkableCount }})
-          </el-button>
-        </el-button-group>
-
-        <!-- 取消选择 -->
-        <el-button
-          size="small"
-          @click="clearSelection"
-          :disabled="selectedIssueIds.length === 0"
-        >
-          取消选择
-        </el-button>
-
-        <!-- 退出批量模式 -->
-        <el-button
-          link
-          type="info"
-          size="small"
-          @click="exitBatchMode"
-        >
-          退出批量操作
-        </el-button>
-      </div>
-    </div>
+    <BatchToolbar
+      :selected-count="selectedIssueIds.length"
+      :filtered-count="filteredAndSearched.length"
+      :is-all-selected="isAllSelected"
+      :is-indeterminate="isIndeterminate"
+      :is-docx-selected="!!isDocxSelected"
+      :has-adoptable-items="hasAdoptableItems"
+      :adoptable-count="adoptableCount"
+      :has-fp-markable-items="hasFpMarkableItems"
+      :fp-markable-count="fpMarkableCount"
+      :batch-loading="batchLoading"
+      @toggle-select-all="toggleSelectAll"
+      @batch-adopt="handleBatchAdopt"
+      @batch-false-positive="handleBatchFalsePositive"
+      @clear-selection="clearSelection"
+      @exit-batch-mode="exitBatchMode"
+    />
 
     <div class="error-content" :class="{ 'batch-mode-active': batchMode }" ref="errorContentRef" v-loading="loading">
       <template v-if="filteredAndSearched.length > 0">
@@ -342,9 +295,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import {
   Search,
   RefreshRight,
-  Check,
   Operation,
-  WarningFilled,
   Collection,
   ArrowRight,
   ArrowDown,
@@ -353,6 +304,7 @@ import {
   Fold,
 } from '@element-plus/icons-vue'
 import IssueCard from './IssueCard.vue'
+import BatchToolbar from './BatchToolbar.vue'
 import ProofreadView from './ProofreadView.vue'
 import { useIssueFilter, useBatchSelection } from './composables'
 import { ALL_CATEGORIES, DWG_RULE_TYPE_OPTIONS } from './constants/issue-config'
@@ -853,66 +805,7 @@ defineExpose({
 .filter-group { display: flex; align-items: center; gap: 8px; }
 .filter-advanced { padding-top: 8px; border-top: 1px solid #F0F0F0; margin-top: 8px; }
 
-/* ===== 批量操作工具栏 ===== */
-.batch-toolbar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 10px 14px;
-  background: linear-gradient(135deg, #ECF5FF 0%, #F0F9FF 100%);
-  border-bottom: 2px solid #409EFF;
-  flex-shrink: 0;
-  position: sticky;
-  top: 48px; /* 筛选工具栏高度 */
-  z-index: 9;
-  animation: slideDown 0.3s ease;
-}
-
-@keyframes slideDown {
-  from {
-    opacity: 0;
-    transform: translateY(-10px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-
-.batch-info {
-  display: flex;
-  align-items: center;
-  gap: 16px;
-}
-
-.select-all-checkbox {
-  font-weight: 600;
-  color: #303133;
-}
-
-.selected-count {
-  font-size: 13px;
-  color: #606266;
-}
-
-.selected-count strong {
-  color: #409EFF;
-  font-weight: 700;
-  font-size: 15px;
-  margin: 0 2px;
-}
-
-.batch-actions {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-
-.batch-actions .el-button-group {
-  box-shadow: 0 2px 6px rgba(64, 158, 255, 0.12);
-  border-radius: 6px;
-  overflow: hidden;
-}
+/* ===== 批量操作工具栏样式已迁移至 BatchToolbar.vue ===== */
 
 /* 进入批量模式按钮栏 */
 .enter-batch-bar {

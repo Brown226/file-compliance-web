@@ -2,7 +2,6 @@
  * 定时任务服务
  * 功能：每天凌晨2点自动清理孤立文件（天数从基础设置读取）
  */
-import * as path from 'path';
 import prisma from '../../config/db';
 import FileCleanupService from '../file/file-cleanup.service';
 import { getUploadPath } from '../../config/upload';

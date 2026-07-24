@@ -150,6 +150,7 @@ const COMPLIANCE_USER_PROMPT_TEMPLATE = `请审查这张工程图纸中的设计
 export class DwgVisionService {
   /**
    * 获取视觉模型配置
+   * 支持新结构（providerId 引用 LlmProfile）和旧结构（apiKey/apiBaseUrl/modelName 副本）
    */
   private static async getVisionConfig(): Promise<VisionConfig> {
     const keys = ['llm_vision_model', 'llm_ocr_model'];
@@ -157,6 +158,31 @@ export class DwgVisionService {
       const config = await prisma.systemConfig.findUnique({ where: { key } });
       if (config?.value && typeof config.value === 'object') {
         const v = config.value as any;
+
+        // 新结构：providerId 引用 LlmProfile
+        if (v.providerId) {
+          const profilesCfg = await prisma.systemConfig.findUnique({
+            where: { key: 'llm_profiles' },
+          });
+          if (profilesCfg?.value) {
+            const profilesRaw =
+              typeof profilesCfg.value === 'string'
+                ? JSON.parse(profilesCfg.value)
+                : profilesCfg.value;
+            const profiles = Array.isArray(profilesRaw) ? profilesRaw : [];
+            const profile = profiles.find((p: any) => p.id === v.providerId);
+            if (profile && profile.apiKey && profile.model) {
+              return {
+                apiBaseUrl: profile.apiBase || '',
+                apiKey: profile.apiKey,
+                modelName: profile.model,
+                timeout: (v.timeout || profile.timeout || 120) * 1000,
+              };
+            }
+          }
+        }
+
+        // 兜底：旧结构
         if (v.apiKey && v.modelName) {
           return {
             apiBaseUrl: v.apiBaseUrl || '',

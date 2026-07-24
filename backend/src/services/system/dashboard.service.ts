@@ -19,7 +19,7 @@ export class DashboardService {
     };
 
     tasksCount.forEach((item) => {
-      taskStats[item.status] = item._count.id;
+      taskStats[item.status as keyof typeof taskStats] = item._count.id;
       taskStats.TOTAL += item._count.id;
     });
 

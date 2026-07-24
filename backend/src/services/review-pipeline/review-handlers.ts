@@ -13,6 +13,7 @@ import { TerminologyService } from '../standard/terminology.service';
 import { StructuredConsistencyService } from '../review/structured-consistency.service';
 import { getEffectiveConfig } from './pipeline-config';
 import { StandardClauseCheckService } from '../standard/standard-clause-check.service';
+import { DecReviewService } from '../review/dec-review.service';
 
 /** 审查模式处理器签名 */
 export type ReviewHandler = (ctx: PipelineContext) => Promise<{
@@ -32,6 +33,7 @@ const MODE_META: Record<ReviewModeType, { displayName: string; description: stri
   RULE_ONLY:      { displayName: '仅规则审查', description: '仅执行预定义规则引擎检查，不调用 AI，速度最快', needsRefFiles: false },
   SELF_CHECK:     { displayName: '标准引用自检', description: '提取文档中的标准引用并与标准库机械匹配', needsRefFiles: false },
   STANDARD_CHECK: { displayName: '逐条核对', description: '拿着标准条文清单逐条核对，只输出不符合项，不编造来源（借鉴 OpenSpec 审查方法论）', needsRefFiles: false },
+  DEC_REVIEW:     { displayName: 'DEC规范审查', description: '审点工程化 + 双分支并行审核（完整性/遵从性）+ 多层交叉复核 + 规则兜底', needsRefFiles: false },
 };
 
 /**
@@ -102,7 +104,7 @@ const handleLibraryReview: ReviewHandler = async (ctx) => {
     ]);
     const mergedIssues = [...ragResult.issues];
     // 基于 issueType + 归一化全文 去重，避免"前60字相同"误删不同问题
-    const norm = (i) => ((i.issueType || '') + '::' + (i.originalText || '').replace(/\s+/g, '').trim());
+    const norm = (i: any) => ((i.issueType || '') + '::' + (i.originalText || '').replace(/\s+/g, '').trim());
     const ragKeys = new Set(ragResult.issues.map(norm));
     for (const issue of specResult.issues) {
       const key = norm(issue);
@@ -239,7 +241,7 @@ const handleStandardCheck: ReviewHandler = async (ctx) => {
   console.log(`[Handler] STANDARD_CHECK: 开始逐条核对 ${clauses.length} 条条文`);
 
   const config = getEffectiveConfig(ctx);
-  const { results, nonCompliant, unverified, auditorStats } = await StandardClauseCheckService.checkClausesWithAudit(
+  const { results, nonCompliant, unverified } = await StandardClauseCheckService.checkClausesWithAudit(
     clauses,
     text,
     {
@@ -261,6 +263,30 @@ const handleStandardCheck: ReviewHandler = async (ctx) => {
   return { aiIssues: issues, usedEngine: 'standard-check' };
 };
 
+/**
+ * DEC_REVIEW — DEC 规范审查（审点工程化 + 双分支并行 + 多层交叉复核）
+ *
+ * 与 STANDARD_CHECK 的核心区别：
+ * - 审点工程化：规范条文经 LLM 加工成结构化审点（mandatory/auditDimension/checkPrompt），存 StandardCheckpoint
+ * - 双分支并行：完整性审核（骨架级）+ 遵从性审核（内容级）同时运行
+ * - 多层容错：遵从性分支内部 3 分支并行 → 3 层交叉复核 → 规则兜底
+ * - 依赖 ctx.checkpoints（阶段0 预加载）和 ctx.designChunks（章节感知切块）
+ *
+ * 若 ctx.checkpoints 未预加载（空），双分支会跑空并记录日志，不抛错。
+ */
+const handleDecReview: ReviewHandler = async (ctx) => {
+  const text = ctx.extractedText || '';
+  if (!text.trim()) return { aiIssues: [], usedEngine: 'none' };
+
+  if (!ctx.checkpoints || ctx.checkpoints.length === 0) {
+    console.warn('[Handler] DEC_REVIEW: ctx.checkpoints 为空，请确认阶段0 已预加载审点库（StandardCheckpoint）');
+  }
+
+  const config = getEffectiveConfig(ctx);
+  const result = await DecReviewService.runDecStrategy(text, ctx, config);
+  return { aiIssues: result.issues, usedEngine: result.engine, sources: result.sources };
+};
+
 // ==================== 处理器映射表 ====================
 
 /** 审查模式 → 处理器函数 */
@@ -278,6 +304,7 @@ export const REVIEW_HANDLERS: Record<ReviewModeType, ReviewHandler> = {
   },
   MULTIMODAL:     handleMultimodal,
   STANDARD_CHECK: handleStandardCheck,
+  DEC_REVIEW:     handleDecReview,
 };
 
 /** 获取模式显示名称 */

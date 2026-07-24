@@ -283,10 +283,8 @@ export class MaxKBService {
    * 通过 nginx 代理走同源，避免跨域 iframe 问题
    */
   static async getApplicationChatUrl(applicationId: string): Promise<string> {
-    const config = await this.getConfig();
     const workspaceId = await this.getDefaultWorkspaceId();
     // 使用项目前端地址（nginx 会代理 /chat/ 到 MaxKB）
-    const publicBaseUrl = process.env.MAXKB_PUBLIC_URL || config.baseUrl;
     let accessToken = '';
     try {
       const tokenData: any = await this.adminRequest(

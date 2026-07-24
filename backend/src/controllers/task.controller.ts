@@ -99,7 +99,7 @@ export const createTask = async (req: AuthRequest, res: Response): Promise<void>
     // 处理前端随任务一起上传的参照文件（以文审文模式）
     if (refFiles && refFiles.length > 0) {
       try {
-        const group = await TaskService.createRefFileGroup({
+        await TaskService.createRefFileGroup({
           taskId: task.id,
           groupName: '默认参照组',
           files: refFiles,

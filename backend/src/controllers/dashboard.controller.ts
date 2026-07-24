@@ -1,6 +1,7 @@
 import { Request, Response, NextFunction } from 'express';
 import { DashboardService } from '../services/system/dashboard.service';
 import { ReviewMetricsService } from '../services/review/review-metrics.service';
+import { dashboardExtendedService } from '../services/system/dashboard-extended.service';
 import { success, error } from '../utils/response';
 
 const dashboardService = new DashboardService();
@@ -75,6 +76,48 @@ export class DashboardController {
       });
 
       success(res, feedback, '反馈已提交');
+    } catch (err) {
+      next(err);
+    }
+  }
+
+  /** 平台运营：在线用户 */
+  async getOnlineUsers(_req: Request, res: Response, next: NextFunction) {
+    try {
+      const data = await dashboardExtendedService.getOnlineUsers();
+      success(res, data);
+    } catch (err) {
+      next(err);
+    }
+  }
+
+  /** 平台运营：活跃度趋势（DAU/WAU + 任务趋势） */
+  async getActivity(req: Request, res: Response, next: NextFunction) {
+    try {
+      const days = parseInt(req.query.days as string) || 30;
+      const data = await dashboardExtendedService.getActivity(days);
+      success(res, data);
+    } catch (err) {
+      next(err);
+    }
+  }
+
+  /** 平台运营：LLM Token 用量 */
+  async getLlmUsage(req: Request, res: Response, next: NextFunction) {
+    try {
+      const days = parseInt(req.query.days as string) || 30;
+      const data = await dashboardExtendedService.getLlmUsage(days);
+      success(res, data);
+    } catch (err) {
+      next(err);
+    }
+  }
+
+  /** 平台运营：部门使用度 */
+  async getDepartmentStats(_req: Request, res: Response, next: NextFunction) {
+    try {
+      const data = await dashboardExtendedService.getDepartmentStats();
+      success(res, data);
     } catch (err) {
       next(err);
     }

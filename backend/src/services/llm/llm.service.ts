@@ -9,7 +9,7 @@ import prisma from '../../config/db';
 import { PromptTemplateService } from './prompt-template.service';
 import { PromptLoader } from '../prompts';
 import { CacheService } from '../system/cache.service';
-import { get_encoding, Tiktoken, TiktokenModel } from 'tiktoken';
+import { get_encoding } from 'tiktoken';
 import { validateSeverity } from '../review/severity-rules';
 
 /** 默认编码使用 cl100k_base（GPT-4 / GPT-3.5-turbo 使用的编码） */
@@ -953,7 +953,6 @@ export class LlmService {
   ): Promise<ReviewIssue[]> {
     // 可观测性埋点（P2）：记录本次 LLM 调用的耗时/Token/状态
     const _callStart = Date.now();
-    let _callStatus: 'success' | 'failed' | 'cache' = 'failed';
     let _callError: string | null = null;
     let _usage: { promptTokens: number; completionTokens: number; totalTokens: number } = {
       promptTokens: 0, completionTokens: 0, totalTokens: 0,
@@ -1005,6 +1004,9 @@ export class LlmService {
       userContent = tpl.replace(/\$\{text\}/g, text);
     }
 
+    // 阶段 3：构建 promptFull 用于推理回放（system + user 全文，截断保护 60KB）
+    const promptFull = this.truncateForLog(`[system]\n${systemPrompt}\n\n[user]\n${userContent}`);
+
     const body = {
       model: config.modelName,
       messages: [
@@ -1028,6 +1030,8 @@ export class LlmService {
       LlmService.recordLlmCall({
         taskId: options?.taskId, mode: options?.mode, model: config.modelName,
         provider: config.provider, latencyMs: Date.now() - _callStart, status: 'cache',
+        promptFull,
+        completionFull: this.truncateForLog(cachedContent),
       });
       const issues = this.parseReviewResult(cachedContent);
       if (options?.positionInfo && issues.length > 0) {
@@ -1083,11 +1087,12 @@ export class LlmService {
           totalTokens: data.usage.total_tokens || 0,
         };
       }
-      _callStatus = 'success';
       LlmService.recordLlmCall({
         taskId: options?.taskId, mode: options?.mode, model: config.modelName,
         provider: config.provider, latencyMs: Date.now() - _callStart, status: 'success',
         usage: _usage,
+        promptFull,
+        completionFull: this.truncateForLog(content),
       });
 
       // ★ 缓存 LLM 原始响应（不含位置信息，位置信息每次实时计算）
@@ -1139,11 +1144,11 @@ export class LlmService {
       return issues;
     } catch (e) {
       _callError = (e as Error).message;
-      _callStatus = 'failed';
       LlmService.recordLlmCall({
         taskId: options?.taskId, mode: options?.mode, model: config.modelName,
         provider: config.provider, latencyMs: Date.now() - _callStart, status: 'failed',
         errorMsg: _callError,
+        promptFull,
       });
       throw e;
     } finally {
@@ -1153,6 +1158,9 @@ export class LlmService {
 
   /**
    * 可观测性 P2：异步写入 LLM 调用日志（fire-and-forget，失败不影响主流程）
+   *
+   * 阶段 3：中间产物全留存 — promptFull/completionFull/ragChunks 记录 LLM 推理全过程，
+   * 供前端推理回放抽屉展示。promptFull 超 60KB 截断（MySQL TEXT 64KB 限制留余量）。
    */
   private static recordLlmCall(params: {
     taskId?: string;
@@ -1163,6 +1171,9 @@ export class LlmService {
     status: 'success' | 'failed' | 'cache';
     usage?: { promptTokens: number; completionTokens: number; totalTokens: number };
     errorMsg?: string | null;
+    promptFull?: string;
+    completionFull?: string;
+    ragChunks?: any;
   }): void {
     try {
       prisma.llmCallLog.create({
@@ -1177,11 +1188,22 @@ export class LlmService {
           latencyMs: params.latencyMs,
           status: params.status,
           errorMsg: params.errorMsg ?? null,
+          promptFull: params.promptFull ?? null,
+          completionFull: params.completionFull ?? null,
+          ragChunks: params.ragChunks ?? null,
         },
       }).catch(e => console.warn('[LLM] 写入调用日志失败:', (e as Error).message));
     } catch (e) {
       console.warn('[LLM] 写入调用日志异常:', (e as Error).message);
     }
+  }
+
+  /**
+   * 截断超长文本用于 LlmCallLog 存储（MySQL TEXT 64KB 限制）
+   */
+  private static truncateForLog(text: string, maxLen: number = 60000): string {
+    if (text.length <= maxLen) return text;
+    return text.substring(0, maxLen) + `\n...[截断，原始长度 ${text.length} 字符]`;
   }
 
   /**
@@ -1250,7 +1272,35 @@ export class LlmService {
       let result = null;
       if (config?.value && typeof config.value === 'object') {
         const v = config.value as any;
-        if (v.apiKey && v.modelName) {
+
+        // 新结构：providerId 引用 LlmProfile
+        if (v.providerId) {
+          const profilesCfg = await prisma.systemConfig.findUnique({
+            where: { key: 'llm_profiles' },
+          });
+          if (profilesCfg?.value) {
+            const profilesRaw =
+              typeof profilesCfg.value === 'string'
+                ? JSON.parse(profilesCfg.value)
+                : profilesCfg.value;
+            const profiles = Array.isArray(profilesRaw) ? profilesRaw : [];
+            const profile = profiles.find((p: any) => p.id === v.providerId);
+            if (profile && profile.apiKey && profile.model) {
+              result = {
+                apiBaseUrl: profile.apiBase || 'https://api.siliconflow.cn/v1',
+                apiKey: profile.apiKey,
+                modelName: profile.model,
+                maxTokens: typeof v.maxTokens === 'number' ? v.maxTokens : 8192,
+                temperature: typeof v.temperature === 'number' ? v.temperature : 0.1,
+                timeout: typeof v.timeout === 'number' ? v.timeout : (profile.timeout || 120),
+                provider: profile.provider || 'openai-compat',
+              };
+            }
+          }
+        }
+
+        // 兜底：旧结构（未迁移或迁移失败）
+        if (!result && v.apiKey && v.modelName) {
           result = {
             apiBaseUrl: v.apiBaseUrl || 'https://api.siliconflow.cn/v1',
             apiKey: v.apiKey,
@@ -1360,17 +1410,30 @@ export class LlmService {
       temperature,
     };
 
+    // 阶段 3：构建 promptFull 用于推理回放
+    const promptFull = this.truncateForLog(`[system]\n${systemPrompt}\n\n[user]\n${prompt}`);
+
     // ★ LLM chat 响应缓存
     const chatCacheKey = CacheService.generateKey('llm:chat', config.modelName, String(temperature), systemPrompt, prompt);
     const CHAT_CACHE_TTL = 24 * 3600;
     const cachedChat = await CacheService.get<string>(chatCacheKey);
     if (cachedChat !== null) {
       console.log(`[LLM] chat 缓存命中 (${cachedChat.length}字)`);
+      // 记录缓存命中（token=0，不消耗实际额度）
+      LlmService.recordLlmCall({
+        model: config.modelName,
+        provider: config.provider,
+        latencyMs: 0,
+        status: 'cache',
+        promptFull,
+        completionFull: this.truncateForLog(cachedChat),
+      });
       return cachedChat;
     }
 
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+    const _callStart = Date.now();
 
     try {
       const response = await fetch(`${config.apiBaseUrl}/chat/completions`, {
@@ -1391,10 +1454,37 @@ export class LlmService {
       const data = await response.json() as any;
       const result = data.choices?.[0]?.message?.content || '';
 
+      // 解析 token 用量并记录调用日志
+      const _usage = data.usage ? {
+        promptTokens: data.usage.prompt_tokens || 0,
+        completionTokens: data.usage.completion_tokens || 0,
+        totalTokens: data.usage.total_tokens || 0,
+      } : undefined;
+      LlmService.recordLlmCall({
+        model: config.modelName,
+        provider: config.provider,
+        latencyMs: Date.now() - _callStart,
+        status: 'success',
+        usage: _usage,
+        promptFull,
+        completionFull: this.truncateForLog(result),
+      });
+
       // ★ 缓存 chat 响应
       await CacheService.set(chatCacheKey, result, CHAT_CACHE_TTL);
 
       return result;
+    } catch (e: any) {
+      // 失败也记录调用日志
+      LlmService.recordLlmCall({
+        model: config.modelName,
+        provider: config.provider,
+        latencyMs: Date.now() - _callStart,
+        status: 'failed',
+        errorMsg: (e as Error)?.message?.slice(0, 500) ?? null,
+        promptFull,
+      });
+      throw e;
     } finally {
       clearTimeout(timeoutId);
     }

@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import multer from 'multer';
-import path from 'path';
-import fs from 'fs';
+
+
 import { authenticate } from '../middlewares/auth.middleware';
 import { requireRole } from '../middlewares/rbac.middleware';
 import { getUploadPath } from '../config/upload';
@@ -22,14 +22,14 @@ const router = Router();
 
 // 配置反馈文件上传
 const storage = multer.diskStorage({
-  destination: (req, file, cb) => cb(null, getUploadPath('feedback')),
-  filename: (req, file, cb) => {
+  destination: (_req, _file, cb) => cb(null, getUploadPath('feedback')),
+  filename: (_req, _file, cb) => {
     const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
     // 处理中文文件名编码
-    let originalName = file.originalname;
+    let originalName = _file.originalname;
     try {
-      const decoded = decodeURIComponent(file.originalname);
-      if (decoded !== file.originalname) {
+      const decoded = decodeURIComponent(_file.originalname);
+      if (decoded !== _file.originalname) {
         originalName = decoded;
       }
     } catch (e) {
@@ -55,7 +55,7 @@ const upload = multer({
     fileSize: 10 * 1024 * 1024, // 10MB 单文件限制
     files: 10, // 最多10个文件
   },
-  fileFilter: (req, file, cb) => {
+  fileFilter: (_req, file, cb) => {
     const allowedTypes = [
       'image/jpeg',
       'image/png',

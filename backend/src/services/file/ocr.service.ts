@@ -25,6 +25,7 @@ const DEFAULT_OCR_CONFIG: OcrConfig = {
 export class OcrService {
   /**
    * 获取视觉模型兜底配置（优先从 llm_vision_model 读取，兼容旧 llm_ocr_model）
+   * 支持新结构（providerId 引用 LlmProfile）和旧结构（apiKey/apiBaseUrl/modelName 副本）
    */
   static async getVisionConfig(): Promise<OcrConfig> {
     try {
@@ -33,7 +34,31 @@ export class OcrService {
         const config = await prisma.systemConfig.findUnique({ where: { key } });
         if (config?.value && typeof config.value === 'object') {
           const v = config.value as any;
-          // 需要有 API key 和 modelName 才视为有效配置
+
+          // 新结构：providerId 引用 LlmProfile
+          if (v.providerId) {
+            const profilesCfg = await prisma.systemConfig.findUnique({
+              where: { key: 'llm_profiles' },
+            });
+            if (profilesCfg?.value) {
+              const profilesRaw =
+                typeof profilesCfg.value === 'string'
+                  ? JSON.parse(profilesCfg.value)
+                  : profilesCfg.value;
+              const profiles = Array.isArray(profilesRaw) ? profilesRaw : [];
+              const profile = profiles.find((p: any) => p.id === v.providerId);
+              if (profile && profile.apiKey && profile.model) {
+                return {
+                  apiBaseUrl: profile.apiBase || DEFAULT_OCR_CONFIG.apiBaseUrl,
+                  apiKey: profile.apiKey,
+                  modelName: profile.model,
+                  timeout: (v.timeout || profile.timeout || 300) * 1000,
+                };
+              }
+            }
+          }
+
+          // 兜底：旧结构
           if (v.apiKey && v.modelName) {
             return {
               apiBaseUrl: v.apiBaseUrl || DEFAULT_OCR_CONFIG.apiBaseUrl,
@@ -93,7 +118,7 @@ export class OcrService {
    * 通过 doc-parser 的 /api/ocr/scan 端点，使用视觉大模型识别扫描件。
    * 返回结构化结果，携带状态信息而非仅字符串。
    */
-  static async recognizeFile(filePath: string, fileType: string): Promise<{ text: string; status: 'success' | 'unavailable' | 'failed'; reason?: string; confidence?: number }> {
+  static async recognizeFile(filePath: string, _fileType: string): Promise<{ text: string; status: 'success' | 'unavailable' | 'failed'; reason?: string; confidence?: number }> {
     const config = await this.getVisionConfig();
 
     if (!config.apiKey || !config.modelName) {

@@ -2,7 +2,6 @@ import { Request, Response } from 'express';
 import bcrypt from 'bcryptjs';
 import prisma from '../config/db';
 import { TokenService } from '../services/auth/token.service';
-import { MaxKBEmbedService } from '../services/knowledge/maxkb-embed.service';
 import { AuthRequest } from '../middlewares/auth.middleware';
 import { success, error } from '../utils/response';
 import { validatePasswordComplexity } from '../utils/password-validator';
@@ -47,6 +46,12 @@ export const login = async (req: Request, res: Response): Promise<void> => {
         }).catch((e: any) => console.warn('[Auth] 自动标记强制改密失败:', e.message));
       }
     }
+
+    // 更新最近登录时间（看板在线/活跃度统计用），异步执行不阻塞登录
+    prisma.user.update({
+      where: { id: user.id },
+      data: { lastLoginAt: new Date() },
+    }).catch((e: any) => console.warn('[Auth] 更新 lastLoginAt 失败:', e.message));
 
     // 生成 Token
     const payload = {

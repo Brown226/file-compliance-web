@@ -335,6 +335,65 @@ export class StandardService {
   }
 
   /**
+   * 生成空白标准导入模板
+   * 输出带列头说明和数据格式提示的 xlsx，供用户填写标准数据后通过 import-standards 脚本导入
+   */
+  static async generateTemplate(): Promise<Buffer> {
+    const workbook = new ExcelJS.Workbook();
+    const ws = workbook.addWorksheet('标准导入模板');
+
+    ws.columns = [
+      { header: '标准编号', key: 'standardNo', width: 30 },
+      { header: '标准名称', key: 'standardName', width: 45 },
+      { header: '版本', key: 'version', width: 15 },
+      { header: '所属文件夹', key: 'folderName', width: 25 },
+      { header: '状态', key: 'standardStatus', width: 15 },
+      { header: '发布日期', key: 'publishDate', width: 18 },
+      { header: '实施日期', key: 'implementDate', width: 18 },
+      { header: '废止日期', key: 'abolishDate', width: 18 },
+      { header: '全文内容', key: 'content', width: 60 },
+    ];
+
+    // 样式：标题行
+    const headerRow = ws.getRow(1);
+    headerRow.font = { bold: true, color: { argb: 'FFFFFFFF' } };
+    headerRow.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF4472C4' } };
+    headerRow.alignment = { horizontal: 'center', vertical: 'middle' };
+
+    // 样式：数据行
+    for (let c = 1; c <= ws.columns.length; c++) {
+      ws.getColumn(c).alignment = { vertical: 'middle', wrapText: true };
+    }
+
+    // 示例行
+    const exampleRow = ws.addRow({
+      standardNo: 'HAF 601',
+      standardName: '民用核安全设备设计制造安装和无损检验监督管理规定（HAF601）',
+      version: 'v1.0',
+      folderName: '核安全法规',
+      standardStatus: '现行',
+      publishDate: '2020-01-01',
+      implementDate: '2020-03-01',
+      abolishDate: '',
+      content: '',
+    });
+    exampleRow.font = { italic: true, color: { argb: 'FF808080' } };
+
+    // 状态列数据验证（下拉选择）
+    (ws as any).dataValidations.add(ws.getCell('E2').address, {
+      type: 'list',
+      formulae: ['"现行,即将实施,已废止"'],
+      showErrorMessage: true,
+      error: '请选择有效的状态值：现行、即将实施、已废止',
+    });
+
+    // 冻结首行
+    ws.views = [{ state: 'frozen', ySplit: 1 }];
+
+    return (await workbook.xlsx.writeBuffer()) as unknown as Buffer;
+  }
+
+  /**
    * 从 Excel 导入标准库
    */
   static async importFromExcel(filePath: string, defaultFolderId?: string): Promise<{ imported: number; skipped: number }> {
@@ -475,28 +534,6 @@ export class StandardService {
    */
   static extractStandardRefs(text: string, docType?: string) {
     return StandardExtractorService.extractFromText(text, docType);
-  }
-
-  /** 生成导入模板 */
-  static async generateTemplate(): Promise<Buffer> {
-    const workbook = new ExcelJS.Workbook();
-    const worksheet = workbook.addWorksheet('标准规范导入模板');
-
-    worksheet.columns = [
-      { header: '标准号', key: 'title', width: 25 },
-      { header: '标准编号', key: 'standardNo', width: 25 },
-      { header: '标准名称', key: 'standardName', width: 30 },
-      { header: '所属文件夹', key: 'folderName', width: 20 },
-      { header: '版本', key: 'version', width: 15 },
-    ];
-
-    worksheet.getRow(1).font = { bold: true };
-    worksheet.getRow(1).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFE8F0FE' } };
-    worksheet.addRow({ title: 'GB/T 50xxx-2024', standardNo: 'GB/T 50xxx-2024', standardName: '房屋建筑制图统一标准', folderName: '国家标准', version: 'v1.0' });
-    worksheet.addRow([]);
-    worksheet.addRow({ title: '说明：所属文件夹填写文件夹名称（需已存在），全文内容请在 MaxKB 知识库中管理' });
-
-    return (await workbook.xlsx.writeBuffer()) as unknown as Buffer;
   }
 
   // ===== 临时标准库（已持久化到 DB） =====
@@ -982,7 +1019,7 @@ export class StandardService {
                 id: existing.id,
                 data: {
                   title: standardName || existing.title,
-                  standardName: standardName || existing.standardName,
+                  standardName: standardName || existing.standardName || '',
                   standardIdent: standardIdent || existing.standardIdent,
                   standardStatus: mappedStatus,
                   publishDate,

@@ -1,128 +1,125 @@
 <template>
   <div class="storage-management">
-    <div class="page-header">
-      <div class="header-left">
-        <h2>存储管理</h2>
-      </div>
+    <div class="page-intro">
+      <h3>存储管理</h3>
+      <p>查看系统上传文件存储路径、空间占用统计，并清理不再被引用的孤立文件。</p>
     </div>
 
-    <div class="storage-panel">
-      <el-card shadow="never" class="path-card">
-        <template #header>
-          <div class="card-header">
-            <span><el-icon><FolderOpened /></el-icon> 存储路径配置</span>
+    <div class="storage-grid">
+      <!-- 路径配置 -->
+      <section class="settings-card path-card">
+        <div class="card-header">
+          <div class="header-title">
+            <el-icon><FolderOpened /></el-icon>
+            <span>存储路径配置</span>
           </div>
-        </template>
-        <div class="path-config">
+          <el-button type="primary" size="small" @click="showEditDialog = true" :loading="pathLoading">
+            <el-icon><Edit /></el-icon>
+            修改路径
+          </el-button>
+        </div>
+        <div class="card-body">
           <div class="path-row">
-            <span class="path-label">当前路径：</span>
+            <span class="path-label">当前路径</span>
             <el-tooltip :content="pathConfig.effective" placement="top">
               <span class="path-value">{{ pathConfig.effective }}</span>
             </el-tooltip>
           </div>
-          <div class="path-actions">
-            <el-button type="primary" size="small" @click="showEditDialog = true" :loading="pathLoading">
-              <el-icon><Edit /></el-icon> 修改路径
-            </el-button>
-          </div>
         </div>
-      </el-card>
+      </section>
 
-      <el-card shadow="never">
-        <template #header>
-          <div class="card-header">
-            <span><el-icon><Files /></el-icon> 存储空间统计</span>
-            <el-button type="primary" @click="fetchStorageStats" :loading="storageLoading">
-              <el-icon><RefreshRight /></el-icon> 刷新
-            </el-button>
+      <!-- 总览 -->
+      <section class="settings-card stats-card">
+        <div class="card-header">
+          <div class="header-title">
+            <el-icon><Files /></el-icon>
+            <span>存储空间统计</span>
           </div>
-        </template>
-
-        <div class="storage-overview" v-loading="storageLoading">
-          <div class="storage-total">
-            <div class="total-main">
-              <span class="total-icon"><el-icon><Folder /></el-icon></span>
-              <div class="total-info">
-                <span class="total-value">{{ storageStats.totalSizeMB || '0' }}</span>
+          <el-button size="small" @click="fetchStorageStats" :loading="storageLoading">
+            <el-icon><RefreshRight /></el-icon>
+            刷新
+          </el-button>
+        </div>
+        <div class="card-body">
+          <div class="overview" v-loading="storageLoading">
+            <div class="total-block">
+              <div class="total-value">
+                <span>{{ storageStats.totalSizeMB || '0' }}</span>
                 <span class="total-unit">MB</span>
               </div>
+              <div class="total-label">总占用空间</div>
             </div>
-            <div class="total-label">总占用空间</div>
+
+            <div class="progress-block">
+              <div class="progress-track">
+                <div class="progress-used" :style="{ width: storageStats.referencedPercent || '0%' }"></div>
+                <div class="progress-orphaned" :style="{ width: storageStats.orphanedPercent || '0%' }"></div>
+              </div>
+              <div class="progress-legend">
+                <div class="legend-item">
+                  <span class="legend-dot used"></span>
+                  <span class="legend-label">有效文件</span>
+                  <span class="legend-value">{{ storageStats.referencedSizeMB || '0' }} MB</span>
+                </div>
+                <div class="legend-item">
+                  <span class="legend-dot orphaned"></span>
+                  <span class="legend-label">孤立文件</span>
+                  <span class="legend-value">{{ storageStats.orphanedSizeMB || '0' }} MB</span>
+                </div>
+              </div>
+            </div>
           </div>
 
-          <div class="storage-progress">
-            <div class="progress-bar">
-              <div class="progress-used" :style="{ width: storageStats.referencedPercent || '0%' }"></div>
-              <div class="progress-orphaned" :style="{ width: storageStats.orphanedPercent || '0%' }"></div>
+          <div class="stat-detail-grid" v-loading="storageLoading">
+            <div class="detail-card referenced">
+              <div class="detail-icon"><el-icon><Document /></el-icon></div>
+              <div class="detail-info">
+                <div class="detail-value">{{ storageStats.referencedSizeMB || '0' }} <span class="detail-unit">MB</span></div>
+                <div class="detail-label">有效文件</div>
+                <div class="detail-count">{{ storageStats.referencedFiles || 0 }} 个</div>
+              </div>
             </div>
-            <div class="progress-legend">
-              <span class="legend-item referenced">
-                <span class="legend-dot"></span>
-                有效文件 {{ storageStats.referencedSizeMB || '0' }} MB
-              </span>
-              <span class="legend-item orphaned">
-                <span class="legend-dot"></span>
-                孤立文件 {{ storageStats.orphanedSizeMB || '0' }} MB
-              </span>
+
+            <div class="detail-card orphaned" :class="{ 'has-orphaned': storageStats.orphanedFiles > 0 }">
+              <div class="detail-icon"><el-icon><Delete /></el-icon></div>
+              <div class="detail-info">
+                <div class="detail-value">{{ storageStats.orphanedSizeMB || '0' }} <span class="detail-unit">MB</span></div>
+                <div class="detail-label">孤立文件</div>
+                <div class="detail-count">{{ storageStats.orphanedFiles || 0 }} 个</div>
+              </div>
             </div>
+          </div>
+
+          <!-- 清理区 -->
+          <div v-if="storageStats.orphanedFiles > 0" class="cleanup-box">
+            <div class="cleanup-info">
+              <span class="cleanup-title">检测到 {{ storageStats.orphanedFiles }} 个孤立文件</span>
+              <span class="cleanup-desc">占用 {{ storageStats.orphanedSizeMB }} MB 空间，可安全清理以释放磁盘。</span>
+            </div>
+            <div class="cleanup-actions">
+              <el-select v-model="cleanupDays" style="width: 120px">
+                <el-option :value="1" label="1天前" />
+                <el-option :value="3" label="3天前" />
+                <el-option :value="7" label="7天前" />
+                <el-option :value="30" label="30天前" />
+              </el-select>
+              <el-button type="danger" @click="handleCleanup" :loading="cleanupLoading">
+                <el-icon><Delete /></el-icon>
+                清理孤立文件
+              </el-button>
+            </div>
+          </div>
+
+          <div v-else-if="!storageLoading" class="no-orphaned">
+            <el-icon :size="32"><CircleCheckFilled /></el-icon>
+            <span>存储空间使用正常，暂无孤立文件</span>
           </div>
         </div>
-
-        <div class="storage-stats" v-loading="storageLoading">
-          <div class="stat-card referenced">
-            <div class="stat-icon referenced-icon"><el-icon><Document /></el-icon></div>
-            <div class="stat-info">
-              <div class="stat-value">{{ storageStats.referencedSizeMB || '0' }} MB</div>
-              <div class="stat-label">有效文件</div>
-              <div class="stat-count">{{ storageStats.referencedFiles || 0 }} 个文件</div>
-            </div>
-          </div>
-
-          <div class="stat-card orphaned" :class="{ 'has-orphaned': storageStats.orphanedFiles > 0 }">
-            <div class="stat-icon orphaned-icon"><el-icon><Delete /></el-icon></div>
-            <div class="stat-info">
-              <div class="stat-value">{{ storageStats.orphanedSizeMB || '0' }} MB</div>
-              <div class="stat-label">孤立文件</div>
-              <div class="stat-count">{{ storageStats.orphanedFiles || 0 }} 个文件</div>
-            </div>
-          </div>
-        </div>
-
-        <div v-if="storageStats.orphanedFiles > 0" class="cleanup-section">
-          <el-alert type="warning" :closable="false" show-icon>
-            <template #title>
-              检测到 <strong>{{ storageStats.orphanedFiles }} 个孤立文件</strong>，占用 <strong>{{ storageStats.orphanedSizeMB }} MB</strong> 空间
-            </template>
-          </el-alert>
-
-          <div class="cleanup-actions">
-            <el-form inline>
-              <el-form-item label="保留期限">
-                <el-select v-model="cleanupDays" style="width: 120px">
-                  <el-option :value="1" label="1天前" />
-                  <el-option :value="3" label="3天前" />
-                  <el-option :value="7" label="7天前" />
-                  <el-option :value="30" label="30天前" />
-                </el-select>
-              </el-form-item>
-              <el-form-item>
-                <el-button type="danger" @click="handleCleanup" :loading="cleanupLoading">
-                  <el-icon><Delete /></el-icon> 清理孤立文件
-                </el-button>
-              </el-form-item>
-            </el-form>
-          </div>
-        </div>
-
-        <div v-else-if="!storageLoading" class="no-orphaned">
-          <el-icon color="#67c23a" :size="32"><CircleCheckFilled /></el-icon>
-          <span>存储空间使用正常，暂无孤立文件</span>
-        </div>
-      </el-card>
+      </section>
     </div>
 
     <el-dialog v-model="showEditDialog" title="修改存储路径" width="520px" :close-on-click-modal="false">
-      <el-form ref="formRef" :model="form" :rules="formRules" label-width="100px">
+      <el-form ref="formRef" :model="form" :rules="formRules" label-width="90px">
         <el-form-item label="存储路径" prop="path">
           <el-input v-model="form.path" placeholder="请输入绝对路径，如 /data/uploads" />
         </el-form-item>
@@ -144,7 +141,7 @@
 import { ref, reactive, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
-  RefreshRight, Files, Folder, FolderOpened, Document, Delete,
+  RefreshRight, Files, FolderOpened, Document, Delete,
   CircleCheckFilled, Edit
 } from '@element-plus/icons-vue'
 import {
@@ -264,51 +261,317 @@ onMounted(() => {
 
 <style scoped>
 .storage-management {
-  padding: 20px;
-  height: calc(100vh - 80px);
-  overflow-y: auto;
+  padding: 20px 24px 32px;
+  max-width: 900px;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
 }
-.page-header { margin-bottom: 20px; }
-.page-header h2 { font-size: 20px; font-weight: 600; color: var(--corp-text-primary); margin: 0; }
-.storage-panel { max-width: 900px; display: flex; flex-direction: column; gap: 16px; }
-.path-card { margin-bottom: 0; }
-.path-config { display: flex; flex-direction: column; gap: 8px; }
-.path-row { display: flex; align-items: center; gap: 8px; }
-.path-label { font-size: 14px; color: var(--el-text-color-secondary); white-space: nowrap; }
-.path-value { font-size: 14px; font-weight: 500; color: var(--corp-text-primary); max-width: 480px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; cursor: default; }
-.path-actions { display: flex; align-items: center; gap: 12px; }
-.storage-overview {
-  display: flex; align-items: center; gap: 32px; padding: 24px; margin-bottom: 20px;
-  background: linear-gradient(135deg, rgba(64,158,255,0.06), rgba(64,158,255,0.02));
-  border: 1px solid rgba(64,158,255,0.1); border-radius: 12px;
+
+.page-intro {
+  padding: 4px 0 4px 12px;
+  border-left: 3px solid #2563eb;
 }
-.storage-total { text-align: center; min-width: 120px; }
-.total-main { display: flex; align-items: baseline; justify-content: center; gap: 4px; }
-.total-icon { font-size: 20px; color: #409eff; margin-right: 4px; }
-.total-value { font-size: 36px; font-weight: 700; color: var(--corp-primary, #2563eb); line-height: 1; }
-.total-unit { font-size: 16px; font-weight: 500; color: var(--el-text-color-secondary); }
-.total-label { font-size: 13px; color: var(--el-text-color-secondary); margin-top: 4px; }
-.storage-progress { flex: 1; }
-.progress-bar { height: 12px; background: var(--el-fill-color-light); border-radius: 6px; overflow: hidden; display: flex; }
-.progress-used { background: linear-gradient(90deg, #67c23a, #85ce61); transition: width 0.3s ease; }
-.progress-orphaned { background: linear-gradient(90deg, #e6a23c, #f5c76a); transition: width 0.3s ease; }
-.progress-legend { display: flex; gap: 24px; margin-top: 8px; font-size: 12px; }
-.legend-item { display: flex; align-items: center; gap: 6px; color: var(--el-text-color-secondary); }
-.legend-dot { width: 8px; height: 8px; border-radius: 50%; }
-.legend-item.referenced .legend-dot { background: #67c23a; }
-.legend-item.orphaned .legend-dot { background: #e6a23c; }
-.storage-stats { display: flex; gap: 16px; margin-bottom: 16px; }
-.stat-card { flex: 1; display: flex; align-items: center; gap: 14px; padding: 16px; border-radius: 10px; background: var(--el-fill-color-light); border: 1px solid var(--el-border-color-lighter); }
-.stat-icon { width: 42px; height: 42px; border-radius: 10px; display: flex; align-items: center; justify-content: center; font-size: 20px; }
-.referenced-icon { background: rgba(103,194,58,0.1); color: #67c23a; }
-.orphaned-icon { background: rgba(230,162,60,0.1); color: #e6a23c; }
-.stat-card.has-orphaned { border-color: rgba(230,162,60,0.3); background: rgba(230,162,60,0.04); }
-.stat-info { flex: 1; }
-.stat-value { font-size: 20px; font-weight: 700; color: var(--corp-text-primary); line-height: 1.2; }
-.stat-label { font-size: 12px; color: var(--el-text-color-secondary); margin-top: 2px; }
-.stat-count { font-size: 11px; color: var(--el-text-color-secondary); margin-top: 2px; }
-.cleanup-section { margin-top: 16px; }
-.cleanup-actions { margin-top: 16px; display: flex; align-items: center; gap: 16px; }
-.no-orphaned { display: flex; align-items: center; justify-content: center; gap: 10px; padding: 24px; color: var(--el-text-color-secondary); font-size: 14px; }
-.card-header { display: flex; justify-content: space-between; align-items: center; font-weight: 600; color: var(--corp-text-primary); }
+
+.page-intro h3 {
+  margin: 0 0 4px;
+  font-size: 16px;
+  font-weight: 600;
+  color: #0f172a;
+}
+
+.page-intro p {
+  margin: 0;
+  font-size: 12.5px;
+  color: #64748b;
+  line-height: 1.5;
+}
+
+/* 通用卡片 */
+.settings-card {
+  background: #fff;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.03);
+  overflow: hidden;
+}
+
+.card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 14px 20px;
+  border-bottom: 1px solid #f1f5f9;
+  background: #fafbfc;
+}
+
+.header-title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 14px;
+  font-weight: 600;
+  color: #0f172a;
+}
+
+.header-title :deep(.el-icon) {
+  color: #64748b;
+}
+
+.card-body {
+  padding: 18px 20px;
+}
+
+/* 路径卡片 */
+.path-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.path-label {
+  font-size: 12px;
+  color: #94a3b8;
+  white-space: nowrap;
+  padding-top: 2px;
+}
+
+.path-value {
+  font-size: 13px;
+  font-weight: 500;
+  color: #0f172a;
+  word-break: break-all;
+  line-height: 1.5;
+}
+
+/* 总览 */
+.overview {
+  display: flex;
+  align-items: center;
+  gap: 28px;
+  padding-bottom: 20px;
+  border-bottom: 1px solid #f1f5f9;
+  margin-bottom: 18px;
+}
+
+.total-block {
+  min-width: 110px;
+  text-align: center;
+}
+
+.total-value {
+  font-size: 32px;
+  font-weight: 700;
+  color: #0f172a;
+  line-height: 1;
+}
+
+.total-unit {
+  font-size: 14px;
+  font-weight: 500;
+  color: #64748b;
+  margin-left: 4px;
+}
+
+.total-label {
+  font-size: 12px;
+  color: #64748b;
+  margin-top: 6px;
+}
+
+.progress-block {
+  flex: 1;
+}
+
+.progress-track {
+  height: 10px;
+  background: #f1f5f9;
+  border-radius: 5px;
+  overflow: hidden;
+  display: flex;
+}
+
+.progress-used {
+  background: #2563eb;
+  transition: width 0.3s ease;
+}
+
+.progress-orphaned {
+  background: #94a3b8;
+  transition: width 0.3s ease;
+}
+
+.progress-legend {
+  display: flex;
+  gap: 24px;
+  margin-top: 10px;
+}
+
+.legend-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+}
+
+.legend-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+
+.legend-dot.used { background: #2563eb; }
+.legend-dot.orphaned { background: #94a3b8; }
+
+.legend-label {
+  color: #64748b;
+}
+
+.legend-value {
+  color: #0f172a;
+  font-weight: 500;
+}
+
+/* 详情卡片 */
+.stat-detail-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 16px;
+  margin-bottom: 18px;
+}
+
+.detail-card {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 16px;
+  border-radius: 6px;
+  border: 1px solid #e5e7eb;
+  background: #fafbfc;
+}
+
+.detail-icon {
+  width: 40px;
+  height: 40px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 18px;
+  background: #fff;
+  color: #64748b;
+  border: 1px solid #e5e7eb;
+}
+
+.detail-info {
+  flex: 1;
+}
+
+.detail-value {
+  font-size: 18px;
+  font-weight: 700;
+  color: #0f172a;
+  line-height: 1.2;
+}
+
+.detail-unit {
+  font-size: 12px;
+  font-weight: 500;
+  color: #64748b;
+  margin-left: 2px;
+}
+
+.detail-label {
+  font-size: 12px;
+  color: #64748b;
+  margin-top: 2px;
+}
+
+.detail-count {
+  font-size: 11px;
+  color: #94a3b8;
+  margin-top: 2px;
+}
+
+.detail-card.has-orphaned {
+  border-color: #fecaca;
+  background: #fef2f2;
+}
+
+.detail-card.has-orphaned .detail-icon {
+  color: #b91c1c;
+  border-color: #fecaca;
+}
+
+/* 清理区 */
+.cleanup-box {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 14px 16px;
+  background: #fffbeb;
+  border: 1px solid #fde68a;
+  border-radius: 6px;
+  flex-wrap: wrap;
+}
+
+.cleanup-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.cleanup-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: #b45309;
+}
+
+.cleanup-desc {
+  font-size: 12px;
+  color: #d97706;
+}
+
+.cleanup-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+/* 正常状态 */
+.no-orphaned {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 24px;
+  color: #15803d;
+  font-size: 14px;
+  background: #f0fdf4;
+  border: 1px solid #bbf7d0;
+  border-radius: 6px;
+}
+
+.no-orphaned :deep(.el-icon) {
+  color: #22c55e;
+}
+
+@media (max-width: 720px) {
+  .overview {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .stat-detail-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .cleanup-box {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+}
 </style>

@@ -7,8 +7,7 @@
  */
 
 import ExcelJS from 'exceljs';
-import { SelfCheckReport, SelfCheckItem, SelfCheckService } from './self-check.service';
-import { CharDiffService } from '../file/char-diff.service';
+import { SelfCheckReport, SelfCheckService } from './self-check.service';
 
 export class SelfCheckExportService {
   /**

@@ -103,7 +103,7 @@ export class StandardExtractorService {
    * @param docType 文档类型
    * @returns 提取到的标准引用列表（已去重）
    */
-  static extractFromText(text: string, docType: string = ''): ExtractedStandard[] {
+  static extractFromText(text: string, _docType: string = ''): ExtractedStandard[] {
     if (!text) return [];
 
     // OCR 字符纠正（在正则匹配前修复混淆字符）

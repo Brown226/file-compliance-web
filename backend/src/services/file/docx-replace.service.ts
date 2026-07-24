@@ -1,6 +1,5 @@
 import AdmZip from 'adm-zip';
 import path from 'path';
-import fs from 'fs';
 
 /**
  * DOCX 文本替换服务
@@ -176,7 +175,7 @@ export class DocxReplaceService {
   /**
    * 查找在原始文本中对应 normalize 后位置的实际范围
    */
-  private static findActualRange(fullText: string, normalizedFull: string, normalizedStart: number, normalizedLength: number): { start: number; end: number } | null {
+  private static findActualRange(fullText: string, _normalizedFull: string, normalizedStart: number, normalizedLength: number): { start: number; end: number } | null {
     // 简单映射：统计 normalize 前的字符偏移
     let normPos = 0;
     let actualStart: number | null = null;

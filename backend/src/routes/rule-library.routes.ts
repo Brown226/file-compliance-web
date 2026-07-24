@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { authenticate } from '../middlewares/auth.middleware';
 import { requireRole } from '../middlewares/rbac.middleware';
 import multer from 'multer';
-import path from 'path';
+
 import { getUploadPath } from '../config/upload';
 import {
   listLibraries,

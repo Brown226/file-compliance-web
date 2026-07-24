@@ -112,7 +112,7 @@ export class SectionAggregationService {
         severity: 'warning' as const,
         reviewSource: 'AI_REVIEW' as const,
         originalText: entry.context || `${inc.systemName}.${inc.paramName}=${entry.value}`,
-        suggestedText: null,
+        suggestedText: null as string | null,
         description: `[语义] 系统"${inc.systemName}"的参数"${inc.paramName}"在不同文件中描述不一致: ${valuesDesc}。判定理由: ${inc.reason}`,
       }));
     });

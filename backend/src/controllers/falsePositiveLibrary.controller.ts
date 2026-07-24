@@ -107,7 +107,7 @@ class FalsePositiveLibraryController {
   /**
    * 获取统计信息
    */
-  static async stats(req: Request, res: Response, next: NextFunction) {
+  static async stats(_req: Request, res: Response, next: NextFunction) {
     try {
       const prisma = require('../config/db').default
       const [total, byType, recentCount] = await Promise.all([

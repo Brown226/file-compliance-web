@@ -244,7 +244,7 @@ function checkFormatReferenceList(text: string): RuleIssue[] {
     { pattern: /(?<![•●■◆\-·])\d+[、.．]\s*[《\[]/g, desc: '引用文件使用了阿拉伯数字手动编号，建议统一使用项目符号' },
   ];
 
-  let hasIssue = false;
+
   for (const np of nonStandardPatterns) {
     if (np.pattern.test(refArea)) {
       const example = np.pattern.exec(refArea)?.[0]?.slice(0, 40);
@@ -254,7 +254,6 @@ function checkFormatReferenceList(text: string): RuleIssue[] {
         originalText: example || '(非标准引用编号)',
         description: `引用文件列表格式不规范: ${np.desc}。应使用标准项目符号(●/■/◆/-)统一格式编排。`,
       });
-      hasIssue = true;
     }
   }
 

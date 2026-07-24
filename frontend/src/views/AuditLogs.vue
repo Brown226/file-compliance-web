@@ -1,11 +1,12 @@
 <template>
   <div class="audit-logs">
-    <div class="header">
-      <h2>系统操作审计日志</h2>
+    <div class="page-intro">
+      <h3>系统操作审计日志</h3>
+      <p>记录所有管理员和用户对系统配置的变更操作，支持按时间和操作类型筛选导出。</p>
     </div>
 
     <!-- 过滤栏 -->
-    <div class="filter-bar">
+    <section class="filter-card">
       <el-form :inline="true" :model="filters" class="filter-form">
         <el-form-item label="操作时间">
           <el-date-picker
@@ -16,17 +17,10 @@
             end-placeholder="结束日期"
             value-format="YYYY-MM-DD"
             @change="fetchLogs"
-            style="width: 340px"
           />
         </el-form-item>
         <el-form-item label="操作类型">
-          <el-select
-            v-model="filters.action"
-            placeholder="请选择操作类型"
-            clearable
-            @change="fetchLogs"
-            style="width: 180px"
-          >
+          <el-select v-model="filters.action" placeholder="全部" clearable @change="fetchLogs">
             <el-option label="全部" value="" />
             <el-option label="POST (创建)" value="POST" />
             <el-option label="PUT (修改)" value="PUT" />
@@ -34,60 +28,63 @@
             <el-option label="DELETE (删除)" value="DELETE" />
           </el-select>
         </el-form-item>
-        <el-form-item class="action-buttons">
+        <div class="filter-actions">
           <el-button type="primary" @click="fetchLogs" :icon="Search">查询</el-button>
           <el-button @click="resetFilter" :icon="Refresh">重置</el-button>
-        </el-form-item>
-        <el-form-item class="export-button">
-          <el-button type="success" plain @click="handleExportCsv" :loading="exporting" :icon="Download">
-            导出CSV
-          </el-button>
-        </el-form-item>
+          <el-button @click="handleExportCsv" :loading="exporting" :icon="Download">导出 CSV</el-button>
+        </div>
       </el-form>
-    </div>
+    </section>
 
     <!-- 数据表格 -->
-    <el-table :data="tableData" style="width: 100%" v-loading="loading" border stripe>
-      <el-table-column prop="user" label="操作人" width="120">
-        <template #default="{ row }">
-          {{ row.user?.name || row.user?.username || '-' }}
-        </template>
-      </el-table-column>
-      <el-table-column prop="action" label="操作类型" width="120">
-        <template #default="{ row }">
-          <el-tag :type="getActionTypeStyle(row.action)" size="small">
-            {{ row.action }}
-          </el-tag>
-        </template>
-      </el-table-column>
-      <el-table-column prop="resource" label="操作资源" min-width="200" show-overflow-tooltip />
-      <el-table-column prop="ipAddress" label="IP地址" width="150" />
-      <el-table-column prop="createdAt" label="操作时间" width="180">
-        <template #default="{ row }">
-          {{ formatTime(row.createdAt) }}
-        </template>
-      </el-table-column>
-      <el-table-column prop="details" label="操作详情" min-width="250" show-overflow-tooltip>
-        <template #default="{ row }">
-          <el-tooltip :content="formatDetails(row.details)" placement="top" :disabled="!row.details">
-            <span>{{ formatDetails(row.details) }}</span>
-          </el-tooltip>
-        </template>
-      </el-table-column>
-    </el-table>
+    <section class="table-card">
+      <div class="table-summary">
+        <span class="summary-label">共</span>
+        <span class="summary-value">{{ total }}</span>
+        <span class="summary-label">条记录</span>
+      </div>
+      <el-table :data="tableData" v-loading="loading" stripe class="audit-table">
+        <el-table-column prop="user" label="操作人" width="120">
+          <template #default="{ row }">
+            <div class="user-cell">
+              <span class="user-name">{{ row.user?.name || row.user?.username || '-' }}</span>
+            </div>
+          </template>
+        </el-table-column>
+        <el-table-column label="操作类型" width="100">
+          <template #default="{ row }">
+            <span class="action-badge" :class="getActionClass(row.action)">
+              {{ row.action }}
+            </span>
+          </template>
+        </el-table-column>
+        <el-table-column prop="resource" label="操作资源" min-width="220" show-overflow-tooltip />
+        <el-table-column prop="ipAddress" label="IP 地址" width="140" />
+        <el-table-column label="操作时间" width="170">
+          <template #default="{ row }">
+            <span class="time-cell">{{ formatTime(row.createdAt) }}</span>
+          </template>
+        </el-table-column>
+        <el-table-column label="操作详情" min-width="260" show-overflow-tooltip>
+          <template #default="{ row }">
+            <span class="details-cell">{{ formatDetails(row.details) }}</span>
+          </template>
+        </el-table-column>
+      </el-table>
 
-    <!-- 分页 -->
-    <div class="pagination-container">
-      <el-pagination
-        v-model:current-page="currentPage"
-        v-model:page-size="pageSize"
-        :page-sizes="[10, 20, 50, 100]"
-        layout="total, sizes, prev, pager, next, jumper"
-        :total="total"
-        @size-change="handleSizeChange"
-        @current-change="handleCurrentChange"
-      />
-    </div>
+      <!-- 分页 -->
+      <div class="pagination-container">
+        <el-pagination
+          v-model:current-page="currentPage"
+          v-model:page-size="pageSize"
+          :page-sizes="[10, 20, 50, 100]"
+          layout="total, sizes, prev, pager, next, jumper"
+          :total="total"
+          @size-change="handleSizeChange"
+          @current-change="handleCurrentChange"
+        />
+      </div>
+    </section>
   </div>
 </template>
 
@@ -112,13 +109,14 @@ const filters = reactive({
   action: ''
 })
 
-const getActionTypeStyle = (type: string) => {
-  const map: Record<string, 'success' | 'warning' | 'danger' | 'info'> = {
-    POST: 'success',
-    PUT: 'warning',
-    DELETE: 'danger',
+const getActionClass = (type: string) => {
+  const map: Record<string, string> = {
+    POST: 'create',
+    PUT: 'update',
+    PATCH: 'patch',
+    DELETE: 'delete'
   }
-  return map[type] || 'info'
+  return map[type] || 'default'
 }
 
 const formatDetails = (details: any) => {
@@ -147,7 +145,6 @@ const fetchLogs = async () => {
       limit: pageSize.value,
       action: filters.action || undefined,
     })
-    // 适配审查平台后端返回格式
     tableData.value = (data?.items || []).map((log: any) => ({
       user: { name: log.user?.name || log.user?.username || '-', username: log.user?.username || '-' },
       action: log.action || '-',
@@ -158,7 +155,6 @@ const fetchLogs = async () => {
     }))
     total.value = data?.total || 0
   } catch (e) {
-    // 如果 MaxKB 没有 /system/log 端点，显示空数据
     tableData.value = []
     total.value = 0
   } finally {
@@ -200,7 +196,6 @@ const handleExportCsv = async () => {
     window.URL.revokeObjectURL(url)
     ElMessage.success('导出成功')
   } catch (e: any) {
-    // 如果后端接口不可用，前端手动导出当前页数据
     try {
       const headers = ['操作人', '操作类型', '操作资源', 'IP地址', '操作时间', '操作详情']
       const rows = tableData.value.map((row: any) => [
@@ -236,55 +231,167 @@ onMounted(() => {
 
 <style scoped>
 .audit-logs {
-  padding: 0;
-  background-color: transparent;
-  border-radius: 0;
-  box-shadow: none;
+  padding: 20px 24px 32px;
+  max-width: 1200px;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
 }
 
-.header {
-  margin-bottom: 24px;
+.page-intro {
+  padding: 4px 0 4px 12px;
+  border-left: 3px solid #2563eb;
 }
 
-.header h2 {
-  margin: 0;
-  font-size: 20px;
-  color: var(--corp-text-primary);
+.page-intro h3 {
+  margin: 0 0 4px;
+  font-size: 16px;
   font-weight: 600;
+  color: #0f172a;
 }
 
-.filter-bar {
-  margin-bottom: 20px;
-  padding: 16px;
-  background-color: var(--corp-bg-panel);
-  border: 1px solid var(--corp-border-light);
+.page-intro p {
+  margin: 0;
+  font-size: 12.5px;
+  color: #64748b;
+  line-height: 1.5;
+}
+
+/* 过滤卡片 */
+.filter-card {
+  background: #fff;
+  border: 1px solid #e5e7eb;
   border-radius: 8px;
-  box-shadow: 0 2px 12px 0 rgba(0, 0, 0, 0.05);
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.03);
+  padding: 16px 20px;
 }
 
 .filter-form {
   display: flex;
-  flex-wrap: nowrap;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 12px;
+  gap: 12px 16px;
 }
 
-.filter-form .action-buttons {
+.filter-form :deep(.el-form-item) {
+  margin: 0;
+}
+
+.filter-actions {
+  display: flex;
+  gap: 10px;
   margin-left: auto;
 }
 
-.filter-form .export-button {
-  margin-right: 0;
+/* 表格卡片 */
+.table-card {
+  background: #fff;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.03);
+  overflow: hidden;
 }
 
-::deep(.el-form--inline .el-form-item) {
-  margin-bottom: 0;
-  margin-right: 0;
+.table-summary {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 12px 20px;
+  border-bottom: 1px solid #f1f5f9;
+  background: #fafbfc;
 }
 
+.summary-label {
+  font-size: 12px;
+  color: #64748b;
+}
+
+.summary-value {
+  font-size: 14px;
+  font-weight: 600;
+  color: #0f172a;
+}
+
+.audit-table {
+  --el-table-header-bg-color: #fafbfc;
+}
+
+.user-cell {
+  display: flex;
+  align-items: center;
+}
+
+.user-name {
+  font-weight: 500;
+  color: #0f172a;
+}
+
+.action-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 48px;
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: 500;
+  border: 1px solid transparent;
+}
+
+.action-badge.create {
+  background: #f0fdf4;
+  color: #15803d;
+  border-color: #bbf7d0;
+}
+
+.action-badge.update {
+  background: #fffbeb;
+  color: #b45309;
+  border-color: #fde68a;
+}
+
+.action-badge.patch {
+  background: #eff6ff;
+  color: #2563eb;
+  border-color: #bfdbfe;
+}
+
+.action-badge.delete {
+  background: #fef2f2;
+  color: #b91c1c;
+  border-color: #fecaca;
+}
+
+.action-badge.default {
+  background: #f1f5f9;
+  color: #64748b;
+  border-color: #e2e8f0;
+}
+
+.time-cell {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 12.5px;
+  color: #475569;
+}
+
+.details-cell {
+  color: #475569;
+  font-size: 13px;
+}
+
+/* 分页 */
 .pagination-container {
-  margin-top: 24px;
+  padding: 12px 20px;
+  border-top: 1px solid #f1f5f9;
   display: flex;
   justify-content: flex-end;
+}
+
+@media (max-width: 860px) {
+  .filter-actions {
+    width: 100%;
+    margin-left: 0;
+  }
 }
 </style>

@@ -1,6 +1,6 @@
-import { Request, Response } from 'express';
+import { Response } from 'express';
 import { AuthRequest } from '../middlewares/auth.middleware';
-import { FeedbackService, CreateFeedbackInput, UpdateFeedbackStatusInput } from '../services/review/feedback.service';
+import { FeedbackService } from '../services/review/feedback.service';
 import { FeedbackStatus, FeedbackCategory } from '@prisma/client';
 import { success, error, paginated } from '../utils/response';
 import path from 'path';
@@ -355,7 +355,7 @@ export const batchDelete = async (req: AuthRequest, res: Response): Promise<void
 /**
  * 获取反馈统计信息（管理员）
  */
-export const getFeedbackStats = async (req: AuthRequest, res: Response): Promise<void> => {
+export const getFeedbackStats = async (_req: AuthRequest, res: Response): Promise<void> => {
   try {
     const stats = await FeedbackService.getFeedbackStats();
     success(res, stats);

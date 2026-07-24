@@ -7,10 +7,7 @@
 
 import prisma from '../../config/db';
 import { TextExtractionService } from '../review-pipeline/text-extraction.service';
-import { LlmService } from '../llm/llm.service';
-import { WebSocketService } from '../system/websocket.service';
 import { resolveFilePath } from '../../config/upload';
-import path from 'path';
 
 /** 参数抽取结果 */
 interface ParamEntry {
@@ -96,7 +93,7 @@ export class CrossFileConsistencyService {
         ruleCode: 'CROSS_CONSIST_001',
         severity: 'error' as const,
         originalText: entry.context || inc.paramName,
-        suggestedText: null,
+        suggestedText: null as string | null,
         description: `参数 "${inc.paramName}" 在不同文件中取值不一致: ${valuesDesc}`,
       }));
     });

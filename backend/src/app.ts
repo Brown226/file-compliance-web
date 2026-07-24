@@ -1,7 +1,6 @@
 import express, { Express, Request, Response } from 'express';
 import cors from 'cors';
 import morgan from 'morgan';
-import path from 'path';
 import { env } from './config/env';
 import { errorHandler } from './middlewares/error.middleware';
 import { auditLog } from './middlewares/audit.middleware';
@@ -34,6 +33,7 @@ import generationRoutes from './routes/generation.routes';
 import polishRoutes from './routes/polish.routes';
 import templateRoutes from './routes/template.routes';
 import dwgVisionRoutes from './routes/dwg-vision.routes';
+import checkpointRoutes from './routes/checkpoint.routes';
 
 // 注：定时清理（scheduler）与异步队列（queue）的初始化已移至 index.ts，
 // 按 PROCESS_ROLE 角色门控，避免 app.ts 被 import 时产生副作用（API/Worker 进程拆分）。
@@ -88,8 +88,9 @@ app.use('/api/generation', generationRoutes);
 app.use('/api/polish', polishRoutes);
 app.use('/api/template', templateRoutes);
 app.use('/api/dwg', dwgVisionRoutes);
+app.use('/api/checkpoint', checkpointRoutes);
 app.use('/api', healthRoutes);
-app.get('/health', (req: Request, res: Response) => {
+app.get('/health', (_req: Request, res: Response) => {
   res.status(200).json({ status: 'OK', message: 'Server is running' });
 });
 

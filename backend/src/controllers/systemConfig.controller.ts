@@ -1,4 +1,4 @@
-import { Request, Response } from 'express';
+import { Response } from 'express';
 import { AuthRequest } from '../middlewares/auth.middleware';
 import prisma from '../config/db';
 import { success, error } from '../utils/response';
@@ -96,21 +96,51 @@ export const saveSystemConfig = async (req: AuthRequest, res: Response): Promise
 /**
  * 测试 LLM 连接 - 真实 API 调用
  * 支持 chat（/chat/completions）、embedding（/embeddings）、rerank（/rerank）三种端点
+ *
+ * 凭证来源优先级：
+ *   1. providerId（推荐）：从 LlmProfile 解析凭证（脱敏 key 无法直接传，必须走此路径）
+ *   2. apiKey/apiBaseUrl/modelName 直传（用于 Provider Tab 编辑态测试）
  */
 export const testLlmConnection = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
-    const { serviceType, apiKey, apiBaseUrl, modelName, modelType = 'chat', topK } = req.body;
+    const { serviceType, modelType = 'chat', topK, providerId } = req.body;
 
-    if (!serviceType || !apiKey || !modelName) {
-      error(res, '请填写完整的 LLM 配置参数', 400);
+    // 凭证解析：providerId 优先，否则用直传字段
+    let apiKey: string | undefined = req.body.apiKey;
+    let apiBaseUrl: string | undefined = req.body.apiBaseUrl;
+    let modelName: string | undefined = req.body.modelName;
+    let resolvedServiceType: string | undefined = serviceType;
+
+    if (providerId) {
+      const profilesCfg = await prisma.systemConfig.findUnique({
+        where: { key: 'llm_profiles' },
+      });
+      if (profilesCfg?.value) {
+        const raw = typeof profilesCfg.value === 'string' ? JSON.parse(profilesCfg.value) : profilesCfg.value;
+        const profiles = Array.isArray(raw) ? raw : [];
+        const profile = profiles.find((p: any) => p.id === providerId);
+        if (profile) {
+          apiKey = profile.apiKey;
+          apiBaseUrl = profile.apiBase;
+          modelName = profile.model;
+          resolvedServiceType = resolvedServiceType || profile.provider;
+        } else {
+          error(res, `未找到 Provider: ${providerId}`, 400);
+          return;
+        }
+      }
+    }
+
+    if (!apiKey || !modelName) {
+      error(res, '请填写完整的 LLM 配置参数（或选择有效的 Provider）', 400);
       return;
     }
 
     // 确定实际的 API 地址
     let baseUrl = apiBaseUrl;
-    if (serviceType === 'volcengine') {
+    if (resolvedServiceType === 'volcengine') {
       baseUrl = baseUrl || 'https://ark.cn-beijing.volces.com/api/v3';
-    } else if (serviceType === 'siliconflow') {
+    } else if (resolvedServiceType === 'siliconflow') {
       baseUrl = baseUrl || 'https://api.siliconflow.cn/v1';
     }
 
@@ -187,7 +217,7 @@ export const testLlmConnection = async (req: AuthRequest, res: Response): Promis
 
       success(res, {
         success: true,
-        message: `${serviceType} 连接测试成功`,
+        message: `${resolvedServiceType || 'LLM'} 连接测试成功`,
         model: modelName,
         baseUrl,
         usage: data.usage || null,
@@ -295,7 +325,7 @@ function maskApiKey(key: string): string {
  * GET /api/system-config/llm-profiles
  * 获取所有 LLM 配置（密钥脱敏）
  */
-export const getLlmProfiles = async (req: AuthRequest, res: Response): Promise<void> => {
+export const getLlmProfiles = async (_req: AuthRequest, res: Response): Promise<void> => {
   try {
     const config = await prisma.systemConfig.findUnique({
       where: { key: 'llm_profiles' },
@@ -358,6 +388,7 @@ export const saveLlmProfiles = async (req: AuthRequest, res: Response): Promise<
 /**
  * POST /api/system-config/llm-profiles/fetch-models
  * 从 Provider 的 API 地址拉取可用模型列表
+ * 返回值附带预置能力库匹配结果（inputModalities/supportsToolCalling/contextWindowTokens/maxOutputTokens）
  */
 export const fetchProviderModels = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
@@ -381,10 +412,15 @@ export const fetchProviderModels = async (req: AuthRequest, res: Response): Prom
       timeout: 10000,
     });
 
-    const models: string[] = (response.data?.data || [])
+    const { lookupCapabilities } = require('../services/llm/model-capabilities.registry');
+    const models: Array<{ id: string; capabilities: any }> = (response.data?.data || [])
       .map((m: any) => m.id)
       .filter(Boolean)
-      .sort();
+      .sort()
+      .map((id: string) => ({
+        id,
+        capabilities: lookupCapabilities(id),
+      }));
 
     res.json({ success: true, data: models });
   } catch (err: any) {
@@ -397,7 +433,7 @@ export const fetchProviderModels = async (req: AuthRequest, res: Response): Prom
  * 可观测性 P2：AI 调用看板统计数据
  * GET /api/system/ai-call-stats
  */
-export const getAiCallStats = async (req: AuthRequest, res: Response): Promise<void> => {
+export const getAiCallStats = async (_req: AuthRequest, res: Response): Promise<void> => {
   try {
     const totalCalls = await prisma.llmCallLog.count();
 

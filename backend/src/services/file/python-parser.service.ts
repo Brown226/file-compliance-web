@@ -132,6 +132,29 @@ export class PythonParserService {
         const cfg = await prisma.systemConfig.findUnique({ where: { key } });
         if (cfg?.value && typeof cfg.value === 'object') {
           const v = cfg.value as any;
+
+          // 新结构：providerId 引用 LlmProfile
+          if (v.providerId) {
+            const profilesCfg = await prisma.systemConfig.findUnique({
+              where: { key: 'llm_profiles' },
+            });
+            if (profilesCfg?.value) {
+              const profilesRaw =
+                typeof profilesCfg.value === 'string'
+                  ? JSON.parse(profilesCfg.value)
+                  : profilesCfg.value;
+              const profiles = Array.isArray(profilesRaw) ? profilesRaw : [];
+              const profile = profiles.find((p: any) => p.id === v.providerId);
+              if (profile && profile.apiKey && profile.model) {
+                form.append('vision_api_key', profile.apiKey);
+                form.append('vision_model_name', profile.model);
+                form.append('vision_base_url', profile.apiBase || '');
+                break;
+              }
+            }
+          }
+
+          // 兜底：旧结构
           if (v.apiKey && v.modelName) {
             form.append('vision_api_key', v.apiKey);
             form.append('vision_model_name', v.modelName);

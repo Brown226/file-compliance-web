@@ -113,7 +113,7 @@ export class MemoryService {
       chapterName: r.chapterName,
       category: r.category,
       createdAt: r.createdAt instanceof Date ? r.createdAt.toISOString() : String(r.createdAt),
-      score: undefined,
+      score: undefined as number | undefined,
     }));
   }
 
@@ -162,7 +162,7 @@ export class MemoryService {
    */
   static async learnFromReview(
     userId: string,
-    taskId: string,
+    _taskId: string,
     issues: Array<{ issueType: string; originalText: string; severity: string; action?: 'accept' | 'ignore' }>,
   ): Promise<void> {
     // 提取用户采纳的模式

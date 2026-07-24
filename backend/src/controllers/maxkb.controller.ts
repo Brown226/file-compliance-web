@@ -9,7 +9,7 @@ import { success, error } from '../utils/response';
  */
 
 /** 获取 MaxKB 集成状态 */
-export const getMaxKBStatus = async (req: Request, res: Response) => {
+export const getMaxKBStatus = async (_req: Request, res: Response) => {
   try {
     const [status, health] = await Promise.all([
       MaxKBService.getIntegrationStatus(),
@@ -27,7 +27,7 @@ export const getMaxKBStatus = async (req: Request, res: Response) => {
 };
 
 /** 一键初始化 MaxKB 集成 */
-export const initializeMaxKB = async (req: Request, res: Response) => {
+export const initializeMaxKB = async (_req: Request, res: Response) => {
   try {
     const result = await MaxKBService.initialize();
     success(res, result);
@@ -84,7 +84,7 @@ export const testMaxKBConnection = async (req: Request, res: Response) => {
 
 /** 获取 MaxKB 知识库管理页面 URL（用于 iframe 嵌入） */
 
-export const getMaxKBKnowledgeUrl = async (req: Request, res: Response) => {
+export const getMaxKBKnowledgeUrl = async (_req: Request, res: Response) => {
   try {
     const config = await MaxKBService.getConfig();
     const status = await MaxKBService.getIntegrationStatus();
@@ -116,7 +116,7 @@ export const getMaxKBKnowledgeUrl = async (req: Request, res: Response) => {
 };
 
 /** 获取 MaxKB 配置 */
-export const getMaxKBConfig = async (req: Request, res: Response) => {
+export const getMaxKBConfig = async (_req: Request, res: Response) => {
   try {
     const config = await MaxKBService.getConfig();
     // 脱敏密码
@@ -130,7 +130,7 @@ export const getMaxKBConfig = async (req: Request, res: Response) => {
 };
 
 /** 获取可选的知识库列表 */
-export const getKnowledgeBases = async (req: Request, res: Response) => {
+export const getKnowledgeBases = async (_req: Request, res: Response) => {
   try {
     const knowledgeBases = await MaxKBService.getAvailableKnowledgeBases();
     success(res, knowledgeBases);
@@ -140,7 +140,7 @@ export const getKnowledgeBases = async (req: Request, res: Response) => {
 };
 
 /** 获取 MaxKB 应用（智能体）列表 */
-export const getApplications = async (req: Request, res: Response) => {
+export const getApplications = async (_req: Request, res: Response) => {
   try {
     const config = await MaxKBService.getConfig();
     const workspaceId = await MaxKBService.getDefaultWorkspaceId();
@@ -201,7 +201,7 @@ export const clearMaxKBEmbedSession = async (req: Request, res: Response) => {
 };
 
 /** 获取知识库树形结构（含目录分组和文档数，用于前端树形选择器） */
-export const getKnowledgeTree = async (req: Request, res: Response) => {
+export const getKnowledgeTree = async (_req: Request, res: Response) => {
   try {
     const tree = await RAGService.getKnowledgeTree();
     success(res, tree);
@@ -213,7 +213,7 @@ export const getKnowledgeTree = async (req: Request, res: Response) => {
 /** Webhook: MaxKB 文档上传通知 */
 export const maxkbWebhook = async (req: Request, res: Response) => {
   try {
-    const { event, document_id, document_name, knowledge_id } = req.body;
+    const { event, document_name, knowledge_id } = req.body;
 
     console.log(`[MaxKB Webhook] 收到通知: event=${event}, doc=${document_name}, knowledge_id=${knowledge_id}`);
 

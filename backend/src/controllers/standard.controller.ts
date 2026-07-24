@@ -151,7 +151,7 @@ export const deleteStandard = async (req: Request, res: Response): Promise<void>
   }
 };
 
-export const clearAllStandards = async (req: Request, res: Response): Promise<void> => {
+export const clearAllStandards = async (_req: Request, res: Response): Promise<void> => {
   try {
     const count = await StandardService.clearAllStandards();
     success(res, { count }, `已清空 ${count} 条标准数据`);

@@ -12,12 +12,11 @@ export class HealthController {
   /**
    * 健康检查
    */
-  static async getHealth(req: Request, res: Response) {
+  static async getHealth(_req: Request, res: Response) {
     try {
       const status = await MetricsService.getHealthStatus();
       const statusCode = status.status === 'healthy' ? 200 : status.status === 'degraded' ? 200 : 503;
       res.status(statusCode).json({
-        status: status.status,
         ...status,
         timestamp: new Date().toISOString(),
       });
@@ -34,9 +33,8 @@ export class HealthController {
   /**
    * 指标统计
    */
-  static async getMetrics(req: Request, res: Response) {
+  static async getMetrics(_req: Request, res: Response) {
     try {
-      const { limit } = req.query;
       const summary = MetricsService.getSummary();
       success(res, summary);
     } catch (err) {
@@ -48,7 +46,7 @@ export class HealthController {
   /**
    * 计数器列表
    */
-  static async getCounters(req: Request, res: Response) {
+  static async getCounters(_req: Request, res: Response) {
     try {
       const counters = MetricsService.getCounters();
       success(res, counters);
@@ -81,7 +79,7 @@ export class HealthController {
   /**
    * 缓存统计
    */
-  static async getCacheStats(req: Request, res: Response) {
+  static async getCacheStats(_req: Request, res: Response) {
     try {
       const stats = CacheService.getStats();
       success(res, stats);
@@ -94,7 +92,7 @@ export class HealthController {
   /**
    * 清除缓存
    */
-  static async clearCache(req: Request, res: Response) {
+  static async clearCache(_req: Request, res: Response) {
     try {
       await CacheService.clear();
       success(res, { message: 'Cache cleared' });
@@ -107,7 +105,7 @@ export class HealthController {
   /**
    * 重置指标
    */
-  static async resetMetrics(req: Request, res: Response) {
+  static async resetMetrics(_req: Request, res: Response) {
     try {
       MetricsService.reset();
       CacheService.resetStats();
@@ -121,7 +119,7 @@ export class HealthController {
   /**
    * OCR 服务健康检查
    */
-  static async checkOcr(req: Request, res: Response) {
+  static async checkOcr(_req: Request, res: Response) {
     try {
       const healthy = await OcrService.checkHealth();
       res.json({ status: healthy ? 'ok' : 'degraded' });
@@ -134,7 +132,7 @@ export class HealthController {
   /**
    * 队列健康检查
    */
-  static async checkQueue(req: Request, res: Response) {
+  static async checkQueue(_req: Request, res: Response) {
     const status = (globalThis as any).__QUEUE_DEGRADED ? 'degraded' : 'healthy';
     res.json({ status });
   }
@@ -142,7 +140,7 @@ export class HealthController {
   /**
    * OPT-037: MaxKB 健康检查
    */
-  static async checkMaxKB(req: Request, res: Response) {
+  static async checkMaxKB(_req: Request, res: Response) {
     try {
       const { MaxKBService } = await import('../services/knowledge/maxkb.service');
       const health = await MaxKBService.healthCheck();
@@ -156,7 +154,7 @@ export class HealthController {
   /**
    * OPT-037: 综合健康检查（聚合所有服务状态）
    */
-  static async checkAll(req: Request, res: Response) {
+  static async checkAll(_req: Request, res: Response) {
     const results: Record<string, { status: string; error?: string }> = {};
 
     // Queue

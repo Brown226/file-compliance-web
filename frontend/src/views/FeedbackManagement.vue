@@ -1,21 +1,22 @@
 <template>
   <div class="feedback-management">
+    <div class="page-intro">
+      <h3>反馈管理</h3>
+      <p>查看用户提交的 Bug 报告、建议和功能请求，跟踪处理进度并批量更新状态。</p>
+    </div>
+
     <!-- 统计卡片 -->
-    <el-row :gutter="16" class="stats-row">
-      <el-col :span="6" v-for="stat in statsCards" :key="stat.key">
-        <el-card shadow="hover" class="stat-card">
-          <div class="stat-content">
-            <div class="stat-value" :style="{ color: stat.color }">{{ stat.count }}</div>
-            <div class="stat-label">{{ stat.label }}</div>
-          </div>
-        </el-card>
-      </el-col>
-    </el-row>
+    <section class="stats-bar">
+      <div v-for="stat in statsCards" :key="stat.key" class="stat-item">
+        <div class="stat-value">{{ stat.count }}</div>
+        <div class="stat-label">{{ stat.label }}</div>
+      </div>
+    </section>
 
     <!-- 筛选工具栏 -->
-    <div class="filter-toolbar">
-      <div class="filter-left">
-        <el-select v-model="statusFilter" placeholder="处理状态" clearable style="width: 150px" @change="handleFilterChange">
+    <section class="filter-card">
+      <div class="filter-form">
+        <el-select v-model="statusFilter" placeholder="处理状态" clearable @change="handleFilterChange">
           <el-option label="全部状态" value="" />
           <el-option label="待处理" value="PENDING" />
           <el-option label="处理中" value="IN_PROGRESS" />
@@ -23,7 +24,7 @@
           <el-option label="已关闭" value="CLOSED" />
         </el-select>
 
-        <el-select v-model="categoryFilter" placeholder="反馈类别" clearable style="width: 150px" @change="handleFilterChange">
+        <el-select v-model="categoryFilter" placeholder="反馈类别" clearable @change="handleFilterChange">
           <el-option label="全部类别" value="" />
           <el-option label="Bug报告" value="BUG_REPORT" />
           <el-option label="建议" value="SUGGESTION" />
@@ -38,39 +39,28 @@
           start-placeholder="开始日期"
           end-placeholder="结束日期"
           value-format="YYYY-MM-DD"
-          style="width: 240px"
           @change="handleFilterChange"
         />
-      </div>
 
-      <div class="filter-right">
         <el-input
           v-model="keywordFilter"
           placeholder="搜索标题或内容..."
           prefix-icon="Search"
           clearable
-          style="width: 240px"
           @input="debounceSearch"
         />
+      </div>
 
+      <div class="filter-actions">
         <el-button @click="loadFeedbacks">
           <el-icon><Refresh /></el-icon>
           刷新
         </el-button>
 
-        <el-button
-          type="danger"
-          :disabled="selectedIds.length === 0"
-          @click="handleBatchDelete"
-        >
-          <el-icon><Delete /></el-icon>
-          批量删除
-        </el-button>
-
         <el-dropdown @command="handleBatchStatusChange" :disabled="selectedIds.length === 0">
-          <el-button type="warning" :disabled="selectedIds.length === 0">
+          <el-button :disabled="selectedIds.length === 0">
             <el-icon><Edit /></el-icon>
-            批量更新状态
+            更新状态
             <el-icon class="el-icon--right"><ArrowDown /></el-icon>
           </el-button>
           <template #dropdown>
@@ -82,92 +72,85 @@
             </el-dropdown-menu>
           </template>
         </el-dropdown>
+
+        <el-button :disabled="selectedIds.length === 0" @click="handleBatchDelete">
+          <el-icon><Delete /></el-icon>
+          批量删除
+        </el-button>
       </div>
-    </div>
+    </section>
 
     <!-- 反馈列表 -->
-    <el-table
-      :data="feedbacks"
-      v-loading="loading"
-      stripe
-      style="width: 100%"
-      @selection-change="handleSelectionChange"
-    >
-      <el-table-column type="selection" width="55" />
+    <section class="table-card">
+      <div class="table-summary">
+        <span class="summary-label">共</span>
+        <span class="summary-value">{{ total }}</span>
+        <span class="summary-label">条反馈</span>
+        <span v-if="selectedIds.length > 0" class="summary-selected">· 已选 {{ selectedIds.length }} 条</span>
+      </div>
+      <el-table :data="feedbacks" v-loading="loading" stripe class="feedback-table" @selection-change="handleSelectionChange">
+        <el-table-column type="selection" width="55" />
 
-      <el-table-column prop="title" label="标题" min-width="200">
-        <template #default="{ row }">
-          <div class="title-cell">
-            <span class="title-text">{{ row.title }}</span>
-            <el-tag :type="getCategoryTagType(row.category)" size="small">
-              {{ getCategoryLabel(row.category) }}
-            </el-tag>
-          </div>
-        </template>
-      </el-table-column>
+        <el-table-column prop="title" label="标题" min-width="240">
+          <template #default="{ row }">
+            <div class="title-cell">
+              <span class="title-text">{{ row.title }}</span>
+              <span class="category-badge" :class="row.category">{{ getCategoryLabel(row.category) }}</span>
+            </div>
+          </template>
+        </el-table-column>
 
-      <el-table-column prop="user" label="提交人" width="120">
-        <template #default="{ row }">
-          {{ row.user?.name || row.user?.username || '-' }}
-        </template>
-      </el-table-column>
+        <el-table-column prop="user" label="提交人" width="110">
+          <template #default="{ row }">
+            <span class="user-name">{{ row.user?.name || row.user?.username || '-' }}</span>
+          </template>
+        </el-table-column>
 
-      <el-table-column prop="status" label="状态" width="120">
-        <template #default="{ row }">
-          <el-tag :type="getStatusTagType(row.status)">
-            {{ getStatusLabel(row.status) }}
-          </el-tag>
-        </template>
-      </el-table-column>
+        <el-table-column label="状态" width="90">
+          <template #default="{ row }">
+            <span class="status-badge" :class="row.status">{{ getStatusLabel(row.status) }}</span>
+          </template>
+        </el-table-column>
 
-      <el-table-column prop="createdAt" label="提交时间" width="180">
-        <template #default="{ row }">
-          {{ formatDate(row.createdAt) }}
-        </template>
-      </el-table-column>
+        <el-table-column label="提交时间" width="160">
+          <template #default="{ row }">
+            <span class="time-cell">{{ formatDate(row.createdAt) }}</span>
+          </template>
+        </el-table-column>
 
-      <el-table-column prop="resolvedAt" label="处理时间" width="180">
-        <template #default="{ row }">
-          <span v-if="row.resolvedAt">{{ formatDate(row.resolvedAt) }}</span>
-          <span v-else class="text-muted">-</span>
-        </template>
-      </el-table-column>
+        <el-table-column label="处理时间" width="160">
+          <template #default="{ row }">
+            <span v-if="row.resolvedAt" class="time-cell">{{ formatDate(row.resolvedAt) }}</span>
+            <span v-else class="text-muted">-</span>
+          </template>
+        </el-table-column>
 
-      <el-table-column label="操作" width="180" fixed="right">
-        <template #default="{ row }">
-          <el-button link type="primary" @click="viewDetail(row.id)">
-            查看
-          </el-button>
-          <el-button link type="success" @click="handleUpdateStatus(row)">
-            更新状态
-          </el-button>
-          <el-button link type="danger" @click="handleDelete(row)">
-            删除
-          </el-button>
-        </template>
-      </el-table-column>
-    </el-table>
+        <el-table-column label="操作" width="150" fixed="right">
+          <template #default="{ row }">
+            <el-button link @click="viewDetail(row.id)">查看</el-button>
+            <el-button link @click="handleUpdateStatus(row)">更新状态</el-button>
+            <el-button link type="danger" @click="handleDelete(row)">删除</el-button>
+          </template>
+        </el-table-column>
+      </el-table>
 
-    <!-- 分页 -->
-    <div class="pagination-wrapper">
-      <el-pagination
-        v-model:current-page="currentPage"
-        v-model:page-size="pageSize"
-        :total="total"
-        :page-sizes="[10, 20, 50, 100]"
-        layout="total, sizes, prev, pager, next, jumper"
-        @size-change="loadFeedbacks"
-        @current-change="loadFeedbacks"
-      />
-    </div>
+      <!-- 分页 -->
+      <div class="pagination-container">
+        <el-pagination
+          v-model:current-page="currentPage"
+          v-model:page-size="pageSize"
+          :total="total"
+          :page-sizes="[10, 20, 50, 100]"
+          layout="total, sizes, prev, pager, next, jumper"
+          @size-change="loadFeedbacks"
+          @current-change="loadFeedbacks"
+        />
+      </div>
+    </section>
 
     <!-- 更新状态对话框 -->
-    <el-dialog
-      v-model="statusDialogVisible"
-      title="更新处理状态"
-      width="500px"
-    >
-      <el-form :model="statusForm" label-width="100px">
+    <el-dialog v-model="statusDialogVisible" title="更新处理状态" width="520px">
+      <el-form :model="statusForm" label-width="90px">
         <el-form-item label="处理状态">
           <el-select v-model="statusForm.status" placeholder="请选择状态" style="width: 100%">
             <el-option label="待处理" value="PENDING" />
@@ -189,9 +172,7 @@
 
       <template #footer>
         <el-button @click="statusDialogVisible = false">取消</el-button>
-        <el-button type="primary" @click="submitStatusUpdate" :loading="statusUpdating">
-          确定
-        </el-button>
+        <el-button type="primary" @click="submitStatusUpdate" :loading="statusUpdating">确定</el-button>
       </template>
     </el-dialog>
   </div>
@@ -222,27 +203,23 @@ const currentPage = ref(1)
 const pageSize = ref(20)
 const total = ref(0)
 
-// 筛选条件
 const statusFilter = ref('')
 const categoryFilter = ref('')
 const dateRange = ref<string[]>([])
 const keywordFilter = ref('')
 let searchTimer: any = null
 
-// 批量操作
 const selectedIds = ref<string[]>([])
 
-// 统计卡片
 const statsCards = computed(() => [
-  { key: 'total', label: '总反馈', count: total.value, color: '#409eff' },
-  { key: 'pending', label: '待处理', count: feedbackStats.value.PENDING || 0, color: '#e6a23c' },
-  { key: 'in_progress', label: '处理中', count: feedbackStats.value.IN_PROGRESS || 0, color: '#409eff' },
-  { key: 'resolved', label: '已解决', count: feedbackStats.value.RESOLVED || 0, color: '#67c23a' },
+  { key: 'total', label: '总反馈', count: total.value },
+  { key: 'pending', label: '待处理', count: feedbackStats.value.PENDING || 0 },
+  { key: 'in_progress', label: '处理中', count: feedbackStats.value.IN_PROGRESS || 0 },
+  { key: 'resolved', label: '已解决', count: feedbackStats.value.RESOLVED || 0 },
 ])
 
 const feedbackStats = ref<Record<string, number>>({})
 
-// 状态更新对话框
 const statusDialogVisible = ref(false)
 const statusUpdating = ref(false)
 const statusForm = ref({
@@ -251,24 +228,19 @@ const statusForm = ref({
   remark: '',
 })
 
-// 防抖搜索
 const debounceSearch = () => {
-  if (searchTimer) {
-    clearTimeout(searchTimer)
-  }
+  if (searchTimer) clearTimeout(searchTimer)
   searchTimer = setTimeout(() => {
     currentPage.value = 1
     loadFeedbacks()
   }, 500)
 }
 
-// 筛选变化
 const handleFilterChange = () => {
   currentPage.value = 1
   loadFeedbacks()
 }
 
-// 加载反馈列表
 const loadFeedbacks = async () => {
   loading.value = true
   try {
@@ -295,7 +267,6 @@ const loadFeedbacks = async () => {
   }
 }
 
-// 加载统计数据
 const loadStats = async () => {
   try {
     const res = await getFeedbackStatsApi()
@@ -305,17 +276,14 @@ const loadStats = async () => {
   }
 }
 
-// 选择变化
 const handleSelectionChange = (selection: Feedback[]) => {
   selectedIds.value = selection.map(item => item.id)
 }
 
-// 查看详情
 const viewDetail = (id: string) => {
   router.push(`/feedback/${id}`)
 }
 
-// 更新状态
 const handleUpdateStatus = (row: Feedback) => {
   statusForm.value = {
     id: row.id,
@@ -325,7 +293,6 @@ const handleUpdateStatus = (row: Feedback) => {
   statusDialogVisible.value = true
 }
 
-// 提交状态更新
 const submitStatusUpdate = async () => {
   if (!statusForm.value.id || !statusForm.value.status) {
     ElMessage.warning('请选择处理状态')
@@ -349,7 +316,6 @@ const submitStatusUpdate = async () => {
   }
 }
 
-// 删除反馈
 const handleDelete = async (row: Feedback) => {
   try {
     await ElMessageBox.confirm('确定要删除这条反馈吗？此操作不可恢复。', '确认删除', {
@@ -369,7 +335,6 @@ const handleDelete = async (row: Feedback) => {
   }
 }
 
-// 批量更新状态
 const handleBatchStatusChange = async (status: string) => {
   if (selectedIds.value.length === 0) {
     ElMessage.warning('请选择要操作的反馈')
@@ -390,7 +355,6 @@ const handleBatchStatusChange = async (status: string) => {
   }
 }
 
-// 批量删除
 const handleBatchDelete = async () => {
   if (selectedIds.value.length === 0) {
     ElMessage.warning('请选择要删除的反馈')
@@ -416,18 +380,6 @@ const handleBatchDelete = async () => {
   }
 }
 
-// 获取状态标签类型
-const getStatusTagType = (status: FeedbackStatus) => {
-  const map: Record<FeedbackStatus, any> = {
-    PENDING: 'warning',
-    IN_PROGRESS: '',
-    RESOLVED: 'success',
-    CLOSED: 'info',
-  }
-  return map[status] || 'info'
-}
-
-// 获取状态标签
 const getStatusLabel = (status: FeedbackStatus) => {
   const map: Record<FeedbackStatus, string> = {
     PENDING: '待处理',
@@ -438,18 +390,6 @@ const getStatusLabel = (status: FeedbackStatus) => {
   return map[status] || status
 }
 
-// 获取类别标签类型
-const getCategoryTagType = (category: FeedbackCategory) => {
-  const map: Record<FeedbackCategory, any> = {
-    BUG_REPORT: 'danger',
-    SUGGESTION: 'success',
-    FEATURE_REQUEST: 'warning',
-    OTHER: 'info',
-  }
-  return map[category] || 'info'
-}
-
-// 获取类别标签
 const getCategoryLabel = (category: FeedbackCategory) => {
   const map: Record<FeedbackCategory, string> = {
     BUG_REPORT: 'Bug报告',
@@ -460,7 +400,6 @@ const getCategoryLabel = (category: FeedbackCategory) => {
   return map[category] || category
 }
 
-// 格式化日期
 const formatDate = (date: string) => {
   return new Date(date).toLocaleString('zh-CN')
 }
@@ -473,54 +412,147 @@ onMounted(() => {
 
 <style scoped>
 .feedback-management {
-  padding: 20px;
+  padding: 20px 24px 32px;
+  max-width: 1200px;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
 }
 
-.stats-row {
-  margin-bottom: 20px;
+.page-intro {
+  padding: 4px 0 4px 12px;
+  border-left: 3px solid #2563eb;
 }
 
-.stat-card {
+.page-intro h3 {
+  margin: 0 0 4px;
+  font-size: 16px;
+  font-weight: 600;
+  color: #0f172a;
+}
+
+.page-intro p {
+  margin: 0;
+  font-size: 12.5px;
+  color: #64748b;
+  line-height: 1.5;
+}
+
+/* 统计条 */
+.stats-bar {
+  display: flex;
+  gap: 0;
+  background: #fff;
+  border: 1px solid #e5e7eb;
   border-radius: 8px;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.03);
+  overflow: hidden;
 }
 
-.stat-content {
-  text-align: center;
-  padding: 10px 0;
+.stat-item {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 16px 12px;
+  border-right: 1px solid #f1f5f9;
+}
+
+.stat-item:last-child {
+  border-right: none;
 }
 
 .stat-value {
-  font-size: 28px;
+  font-size: 22px;
   font-weight: 700;
+  color: #0f172a;
+  line-height: 1.2;
 }
 
 .stat-label {
-  font-size: 14px;
-  color: #909399;
+  font-size: 12px;
+  color: #64748b;
   margin-top: 4px;
 }
 
-.filter-toolbar {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 20px;
-  padding: 16px;
-  background: #f5f7fa;
+/* 过滤卡片 */
+.filter-card {
+  background: #fff;
+  border: 1px solid #e5e7eb;
   border-radius: 8px;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.03);
+  padding: 16px 20px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
 }
 
-.filter-left,
-.filter-right {
+.filter-form {
   display: flex;
-  gap: 12px;
   align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.filter-form :deep(.el-input),
+.filter-form :deep(.el-select),
+.filter-form :deep(.el-date-editor) {
+  width: 180px;
+}
+
+.filter-actions {
+  display: flex;
+  gap: 10px;
+  margin-left: auto;
+}
+
+/* 表格卡片 */
+.table-card {
+  background: #fff;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.03);
+  overflow: hidden;
+}
+
+.table-summary {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 12px 20px;
+  border-bottom: 1px solid #f1f5f9;
+  background: #fafbfc;
+}
+
+.summary-label {
+  font-size: 12px;
+  color: #64748b;
+}
+
+.summary-value {
+  font-size: 14px;
+  font-weight: 600;
+  color: #0f172a;
+}
+
+.summary-selected {
+  font-size: 12px;
+  color: #2563eb;
+  margin-left: 4px;
+}
+
+.feedback-table {
+  --el-table-header-bg-color: #fafbfc;
 }
 
 .title-cell {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 10px;
 }
 
 .title-text {
@@ -528,15 +560,122 @@ onMounted(() => {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  color: #0f172a;
+}
+
+.category-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 8px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 500;
+  border: 1px solid transparent;
+  flex-shrink: 0;
+}
+
+.category-badge.BUG_REPORT {
+  background: #fef2f2;
+  color: #b91c1c;
+  border-color: #fecaca;
+}
+
+.category-badge.SUGGESTION {
+  background: #f0fdf4;
+  color: #15803d;
+  border-color: #bbf7d0;
+}
+
+.category-badge.FEATURE_REQUEST {
+  background: #fffbeb;
+  color: #b45309;
+  border-color: #fde68a;
+}
+
+.category-badge.OTHER {
+  background: #f1f5f9;
+  color: #64748b;
+  border-color: #e2e8f0;
+}
+
+.status-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 56px;
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: 500;
+  border: 1px solid transparent;
+}
+
+.status-badge.PENDING {
+  background: #fffbeb;
+  color: #b45309;
+  border-color: #fde68a;
+}
+
+.status-badge.IN_PROGRESS {
+  background: #eff6ff;
+  color: #2563eb;
+  border-color: #bfdbfe;
+}
+
+.status-badge.RESOLVED {
+  background: #f0fdf4;
+  color: #15803d;
+  border-color: #bbf7d0;
+}
+
+.status-badge.CLOSED {
+  background: #f1f5f9;
+  color: #64748b;
+  border-color: #e2e8f0;
+}
+
+.user-name {
+  font-weight: 500;
+  color: #0f172a;
+}
+
+.time-cell {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 12.5px;
+  color: #475569;
 }
 
 .text-muted {
-  color: #c0c4cc;
+  color: #94a3b8;
 }
 
-.pagination-wrapper {
-  margin-top: 20px;
+/* 分页 */
+.pagination-container {
+  padding: 12px 20px;
+  border-top: 1px solid #f1f5f9;
   display: flex;
   justify-content: flex-end;
+}
+
+@media (max-width: 960px) {
+  .filter-card {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .filter-actions {
+    margin-left: 0;
+    width: 100%;
+  }
+
+  .stats-bar {
+    flex-wrap: wrap;
+  }
+
+  .stat-item {
+    flex: 1 1 50%;
+    border-right: none;
+    border-bottom: 1px solid #f1f5f9;
+  }
 }
 </style>

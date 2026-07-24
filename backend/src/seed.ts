@@ -31,7 +31,7 @@ async function seed() {
   // 2. 创建默认管理员用户
   const adminSalt = await bcrypt.genSalt(10);
   const adminHash = await bcrypt.hash('Admin@12345', adminSalt);
-  const admin = await prisma.user.upsert({
+  await prisma.user.upsert({
     where: { username: 'admin' },
     update: { passwordHash: adminHash, mustChangePassword: false },
     create: {

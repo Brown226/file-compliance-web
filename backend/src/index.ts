@@ -5,6 +5,7 @@ import { PromptTemplateService } from './services/llm/prompt-template.service';
 import { WebSocketService } from './services/system/websocket.service';
 import { initQueueProcessors, closeQueue } from './services/system/queue.service';
 import { startScheduler } from './services/system/scheduler.service';
+import { presenceService } from './services/system/presence.service';
 import prisma from './config/db';
 import { setUploadDir, initUploadSubdirs, getUploadDir } from './config/upload';
 import type { Server } from 'http';
@@ -34,6 +35,10 @@ const startServer = async () => {
     // 初始化提示词模板（幂等 upsert，不覆盖用户自定义内容）
     await PromptTemplateService.seedBuiltinTemplates();
 
+    // 迁移旧的 LLM 凭证副本配置为 Provider 引用（幂等，已迁移则跳过）
+    const { migrateLlmConfigsToProviderRef } = await import('./services/llm/profile-migration.service');
+    await migrateLlmConfigsToProviderRef();
+
     // ===== API 角色：启动 HTTP 服务 + WebSocket =====
     let server: Server | undefined;
     if (runApi) {
@@ -41,6 +46,8 @@ const startServer = async () => {
         console.log(`Server is running in ${env.nodeEnv} mode on port ${env.port}`);
       });
       WebSocketService.initialize(server);
+      // 启动 presence 兜底清理任务（每 60 秒清理过期的在线会话）
+      presenceService.startCleanupTimer();
     } else {
       console.log('[Bootstrap] worker 角色：跳过 HTTP/WebSocket 启动');
     }
@@ -59,6 +66,7 @@ const startServer = async () => {
       console.log(`\n[${signal}] 收到关闭信号，正在优雅退出...`);
       const finalize = async () => {
         await closeQueue();
+        presenceService.stopCleanupTimer();
         console.log('[Shutdown] 服务已关闭');
         process.exit(0);
       };

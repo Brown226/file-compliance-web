@@ -14,7 +14,7 @@ export interface ModeConfigOverride {
   rules?: boolean;
   standardRef?: boolean;
   ai?: boolean;
-  aiStrategy?: 'standard' | 'llmOnly' | 'refCompare' | 'contractReview' | 'multimodal';
+  aiStrategy?: 'standard' | 'llmOnly' | 'refCompare' | 'contractReview' | 'multimodal' | 'decReview';
   crossFile?: boolean;
 }
 
@@ -28,7 +28,7 @@ const DEFAULT_MODE_CONFIGS: Record<ReviewModeType, {
   rules: boolean;
   standardRef: boolean;
   ai: boolean;
-  aiStrategy: 'standard' | 'llmOnly' | 'refCompare' | 'contractReview' | 'multimodal';
+  aiStrategy: 'standard' | 'llmOnly' | 'refCompare' | 'contractReview' | 'multimodal' | 'decReview';
   crossFile: boolean;
 }> = {
   LIBRARY_REVIEW: { enabled: true, rules: false, standardRef: false, ai: true, aiStrategy: 'standard', crossFile: false },
@@ -40,6 +40,7 @@ const DEFAULT_MODE_CONFIGS: Record<ReviewModeType, {
   RULE_ONLY:    { enabled: true, rules: true,  standardRef: false, ai: false, aiStrategy: 'standard', crossFile: false },
   SELF_CHECK:     { enabled: true, rules: false, standardRef: false, ai: false, aiStrategy: 'standard', crossFile: false },
   STANDARD_CHECK: { enabled: true, rules: false, standardRef: false, ai: true, aiStrategy: 'standard', crossFile: false },
+  DEC_REVIEW:     { enabled: true, rules: false, standardRef: false, ai: true, aiStrategy: 'decReview', crossFile: false },
 };
 
 /** 加载模式配置（合并默认配置 + DB 覆盖） */
@@ -48,7 +49,7 @@ export async function getModeCapabilitiesConfig(): Promise<Record<ReviewModeType
   rules: boolean;
   standardRef: boolean;
   ai: boolean;
-  aiStrategy: 'standard' | 'llmOnly' | 'refCompare' | 'contractReview' | 'multimodal';
+  aiStrategy: 'standard' | 'llmOnly' | 'refCompare' | 'contractReview' | 'multimodal' | 'decReview';
   crossFile: boolean;
 }>> {
   // 以默认配置为基底

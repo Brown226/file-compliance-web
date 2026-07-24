@@ -1,13 +1,14 @@
 import { Router } from 'express';
 import multer from 'multer';
 import path from 'path';
-import fs from 'fs';
+
+import prisma from '../config/db';
 import { authenticate } from '../middlewares/auth.middleware';
 import { requireRole, checkTaskAccess } from '../middlewares/rbac.middleware';
 import { uploadRateLimit } from '../middlewares/rate-limit.middleware';
 import { success, error } from '../utils/response';
 import { getMaxUploadSizeMB } from '../utils/system-config';
-import { getUserUploadDir, getUploadPath } from '../config/upload';
+import { getUserUploadDir } from '../config/upload';
 import {
   createTask,
   getTasks,
@@ -37,13 +38,13 @@ const router = Router();
 
 function createStorage() {
   return multer.diskStorage({
-    destination: (req, file, cb) => {
+    destination: (req, _file, cb) => {
       const user = (req as any).user || {};
       const dirName = user.username || user.id || 'anonymous';
       const uploadDir = getUserUploadDir(dirName);
       cb(null, uploadDir);
     },
-    filename: (req, file, cb) => {
+    filename: (_req, file, cb) => {
       const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
       let originalName = file.originalname;
       try {
@@ -66,7 +67,7 @@ function createStorage() {
 
 const storage = createStorage();
 
-async function createDynamicUpload(maxFiles: number): Promise<multer.Multer> {
+async function createDynamicUpload(_maxFiles: number): Promise<multer.Multer> {
   const maxMB = await getMaxUploadSizeMB();
   return multer({
     storage,
@@ -160,5 +161,37 @@ router.patch('/details/:detailId/adopt', toggleAdopt);
 
 // 人工复核（仅 MANAGER/ADMIN）
 router.patch('/:id/details/:detailId/review', requireRole('MANAGER'), reviewIssue);
+
+// 阶段 3：LLM 推理回放 — 查询任务级 LLM 调用日志（含 prompt/completion 全文）
+router.get('/:id/llm-logs', checkTaskAccess, async (req, res) => {
+  try {
+    const taskId = String(req.params.id);
+    const logs = await prisma.llmCallLog.findMany({
+      where: { taskId },
+      orderBy: { createdAt: 'asc' },
+      select: {
+        id: true,
+        mode: true,
+        model: true,
+        provider: true,
+        promptTokens: true,
+        completionTokens: true,
+        totalTokens: true,
+        latencyMs: true,
+        status: true,
+        errorMsg: true,
+        promptFull: true,
+        completionFull: true,
+        ragChunks: true,
+        createdAt: true,
+      },
+    });
+    // BigInt id 序列化为 string
+    const serialized = logs.map(l => ({ ...l, id: l.id.toString() }));
+    success(res, serialized);
+  } catch (e) {
+    error(res, (e as Error).message, 500);
+  }
+});
 
 export default router;

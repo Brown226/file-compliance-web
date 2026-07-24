@@ -159,3 +159,28 @@ export function getReviewSummaryApi(id: string) {
 export function getTaskFileContentApi(taskId: string, fileId: string) {
   return request.get<{ extractedText: string | null; fileName: string; fileType: string }>(`/tasks/${taskId}/files/${fileId}/content`)
 }
+
+// ==================== LLM 推理回放（阶段 3） ====================
+
+/** LLM 调用日志（推理回放用） */
+export interface LlmCallLog {
+  id: string
+  mode: string | null
+  model: string
+  provider: string | null
+  promptTokens: number
+  completionTokens: number
+  totalTokens: number
+  latencyMs: number
+  status: 'success' | 'failed' | 'cache'
+  errorMsg: string | null
+  promptFull: string | null
+  completionFull: string | null
+  ragChunks: any
+  createdAt: string
+}
+
+// 获取任务级 LLM 调用日志（推理回放）
+export function getLlmLogsApi(taskId: string) {
+  return request.get<LlmCallLog[]>(`/tasks/${taskId}/llm-logs`)
+}

@@ -55,7 +55,32 @@ export class EmbeddingService {
       let result: EmbeddingConfig | null = null;
       if (config?.value && typeof config.value === 'object') {
         const v = config.value as any;
-        if (v.apiKey) {
+
+        // 新结构：providerId 引用 LlmProfile
+        if (v.providerId) {
+          const profilesCfg = await prisma.systemConfig.findUnique({
+            where: { key: 'llm_profiles' },
+          });
+          if (profilesCfg?.value) {
+            const profilesRaw =
+              typeof profilesCfg.value === 'string'
+                ? JSON.parse(profilesCfg.value)
+                : profilesCfg.value;
+            const profiles = Array.isArray(profilesRaw) ? profilesRaw : [];
+            const profile = profiles.find((p: any) => p.id === v.providerId);
+            if (profile && profile.apiKey) {
+              result = {
+                baseUrl: profile.apiBase || 'https://api.siliconflow.cn/v1',
+                apiKey: profile.apiKey,
+                model: profile.model || 'BAAI/bge-m3',
+                dimensions: typeof v.dimensions === 'number' ? v.dimensions : 0,
+              };
+            }
+          }
+        }
+
+        // 兜底：旧结构
+        if (!result && v.apiKey) {
           result = {
             baseUrl: v.apiBaseUrl || 'https://api.siliconflow.cn/v1',
             apiKey: v.apiKey,
@@ -285,7 +310,7 @@ export class EmbeddingService {
           if (!source) return null;
           return { ...source, rerank_score: result.relevance_score ?? result.score };
         })
-        .filter(Boolean);
+        .filter((x: any) => x !== null) as any[];
     } catch (error: any) {
       console.warn(`[Rerank] API 调用失败: ${error.message}，使用原始排序`);
       return documents.slice(0, topN || documents.length);

@@ -258,7 +258,7 @@ export class TerminologyService {
   /**
    * 从错别字检查结果中过滤掉专业术语
    */
-  static filterTerminologyIssues(text: string, issues: any[]): any[] {
+  static filterTerminologyIssues(_text: string, issues: any[]): any[] {
     if (!issues || issues.length === 0) return issues;
     if (!initialized) return issues;
 

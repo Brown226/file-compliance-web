@@ -1,0 +1,58 @@
+// backend/src/services/review/fact-check.service.ts
+/**
+ * 事实维度校验服务 — 分支B-2
+ *
+ * 核查设计参数、技术描述等客观事实是否与 DEC 要求冲突。
+ */
+
+import { PipelineContext, PipelineReviewConfig } from '../review-pipeline/types';
+import { ReviewIssue, LlmService } from '../llm/llm.service';
+import { PromptTemplateService } from '../llm/prompt-template.service';
+import { ChunkSplitterService } from './chunk-splitter.service';
+
+export class FactCheckService {
+  static async check(
+    text: string,
+    ctx: PipelineContext,
+    factCheckpoints: any[],
+    config: PipelineReviewConfig,
+  ): Promise<ReviewIssue[]> {
+    const { chunks } = ChunkSplitterService.splitTextBySection(text, config.chunkSize || 4000);
+    const systemPrompt = await PromptTemplateService.getPromptByScene(
+      'dec_review', 'system', 'fact_check',
+      '你是设计文件事实维度校验专家。核查设计参数、技术描述等客观事实是否与规范要求冲突。',
+    );
+
+    const allIssues: ReviewIssue[] = [];
+    const CONCURRENT_LIMIT = 3;
+
+    for (let i = 0; i < chunks.length; i += CONCURRENT_LIMIT) {
+      const batch = chunks.slice(i, i + CONCURRENT_LIMIT);
+      const results = await Promise.all(
+        batch.map(async chunk => {
+          const checkpointsText = factCheckpoints
+            .map(c => `- [${c.clauseCode || '无编号'}] ${c.clauseText.substring(0, 200)}`)
+            .join('\n');
+          const userContent = `## 设计内容（${chunk.sectionPath}）\n\n${chunk.text}\n\n## 事实维度审点\n\n${checkpointsText}\n\n请核查以上设计内容的参数、技术描述等客观事实是否与审点冲突。输出 JSON 数组。`;
+          try {
+            return await LlmService.reviewText(userContent, {
+              systemPrompt,
+              maxTokens: config.llmMaxTokens || 4096,
+              timeout: config.llmTimeout || 180,
+              skipUserTemplate: true,
+              documentId: ctx.fileId,
+              taskId: ctx.taskId,
+              positionInfo: { chunkIndex: chunk.chunkIndex, chunkStartIndex: chunk.startIndex, totalChunks: chunks.length },
+            });
+          } catch (e) {
+            console.warn(`[FactCheck] chunk ${chunk.chunkIndex} 失败:`, (e as Error).message);
+            return [];
+          }
+        }),
+      );
+      for (const r of results) allIssues.push(...r);
+    }
+
+    return allIssues;
+  }
+}

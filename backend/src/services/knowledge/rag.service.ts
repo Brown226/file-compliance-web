@@ -249,7 +249,6 @@ export class RAGService {
         );
 
         // 2d. 按场景+变体加载用户提示词
-        const variant = standardContext ? 'with_context' : 'no_context';
         let userPrompt: string;
 
         if (standardContext) {

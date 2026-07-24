@@ -1,39 +1,34 @@
 <template>
   <div class="engine-tab">
     <section class="config-section">
-      <div class="config-card">
-        <el-form :model="config" label-width="120px" label-position="left">
-          <el-form-item label="Provider">
-            <el-select v-model="selectedProviderId" placeholder="从已配置的 Provider 导入" clearable
-              @change="applyProvider" style="width:100%">
-              <el-option v-for="p in providers" :key="p.id" :label="p.name" :value="p.id" />
-            </el-select>
-          </el-form-item>
-
-          <el-form-item label="API 密钥">
-            <el-input v-model="config.apiKey" type="password" placeholder="sk-..." show-password clearable />
-          </el-form-item>
-
-          <el-form-item label="API 基础 URL">
-            <el-input v-model="config.apiBaseUrl" placeholder="https://api.siliconflow.cn/v1" clearable />
-          </el-form-item>
-
-          <el-form-item label="模型名称">
-            <div style="display:flex;gap:8px;width:100%">
-              <el-select v-model="config.modelName" filterable allow-create default-first-option style="flex:1">
-                <el-option v-for="m in availableModels" :key="m" :label="m" :value="m" />
-              </el-select>
-              <el-button @click="fetchModelsFromProvider" :loading="fetchingModels">获取模型</el-button>
-            </div>
-            <div class="form-tip">推荐 Qwen3-Embedding-8B（4096维）或 BAAI/bge-m3（1024维），或点击“获取模型”自动拉取。</div>
-          </el-form-item>
-
-          <el-form-item label="向量维度">
-            <el-input-number v-model="config.dimensions" :min="0" :max="8192" controls-position="right" />
-            <div class="form-tip">设置为 0 表示自动检测（使用模型默认维度）。常用值：bge-m3=1024，Qwen3=4096。</div>
-          </el-form-item>
-        </el-form>
+      <div v-if="!config.providerId && hasLegacyFields" class="legacy-hint">
+        检测到旧配置结构，后端启动时会自动迁移为 Provider 引用。若仍未迁移，请重启后端服务。
       </div>
+
+      <el-form :model="config" label-width="84px" label-position="left">
+        <el-form-item label="Provider" required>
+          <el-select
+            v-model="config.providerId"
+            placeholder="选择 Provider"
+            clearable
+            filterable
+            style="width:100%"
+          >
+            <el-option
+              v-for="p in filteredProviders"
+              :key="p.id"
+              :label="`[${p.name}] ${p.model || '未设置模型'}`"
+              :value="p.id"
+            />
+          </el-select>
+          <div class="form-tip">凭证从 Provider 配置继承。</div>
+        </el-form-item>
+
+        <el-form-item label="向量维度">
+          <el-input-number v-model="config.dimensions" :min="0" :max="8192" controls-position="right" />
+          <div class="form-tip">0 表示自动检测。常用：bge-m3=1024，Qwen3=4096。</div>
+        </el-form-item>
+      </el-form>
 
       <div class="action-bar">
         <el-button @click="handleTest" :loading="testLoading" class="test-btn">
@@ -60,20 +55,21 @@
 import { computed, reactive, ref, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import { Check, Connection, CircleCheckFilled, CircleCloseFilled } from '@element-plus/icons-vue'
-import { getSystemConfigApi, saveSystemConfigApi, testLlmConnectionApi, getLlmProfilesApi, fetchProviderModelsApi, type LlmProfile } from '@/api/system'
+import { getSystemConfigApi, saveSystemConfigApi, testLlmConnectionApi, getLlmProfilesApi, type LlmProfile } from '@/api/system'
+
+interface EmbeddingModelConfig {
+  providerId: string
+  dimensions: number
+}
 
 const saveLoading = ref(false)
 const testLoading = ref(false)
 const connectionTestResult = ref<{ success: boolean; message?: string; latency?: number } | null>(null)
 const providers = ref<LlmProfile[]>([])
-const selectedProviderId = ref('')
-const availableModels = ref<string[]>(['Qwen/Qwen3-Embedding-8B','BAAI/bge-m3','BAAI/bge-large-zh-v1.5','text-embedding-3-small','text-embedding-3-large'])
-const fetchingModels = ref(false)
+const hasLegacyFields = ref(false)
 
-const config = reactive({
-  apiKey: '',
-  apiBaseUrl: 'https://api.siliconflow.cn/v1',
-  modelName: 'BAAI/bge-m3',
+const config = reactive<EmbeddingModelConfig>({
+  providerId: '',
   dimensions: 1024,
 })
 
@@ -81,15 +77,21 @@ const originalConfig = ref('')
 
 const normalizedConfig = computed(() => JSON.stringify(config))
 const hasUnsavedChanges = computed(() => normalizedConfig.value !== originalConfig.value)
+const selectedProvider = computed(() => providers.value.find((p) => p.id === config.providerId))
+
+const filteredProviders = computed(() =>
+  providers.value.filter((p) => p.isEnabled && ['embedding', 'all'].includes(p.usage || 'chat'))
+)
+
 const summary = computed(() => [
-  { label: '模型名称', value: config.modelName || '未设置' },
-  { label: '接口地址', value: config.apiBaseUrl || '未设置' },
+  { label: 'Provider', value: selectedProvider.value?.name || '未设置' },
+  { label: '模型', value: selectedProvider.value?.model || '未设置' },
   { label: '向量维度', value: String(config.dimensions) },
 ])
 
 const handleSave = async () => {
-  if (!config.apiKey || !config.apiBaseUrl || !config.modelName) {
-    ElMessage.warning('请填写完整的配置信息')
+  if (!config.providerId) {
+    ElMessage.warning('请先选择 Provider')
     return
   }
   saveLoading.value = true
@@ -105,8 +107,8 @@ const handleSave = async () => {
 }
 
 const handleTest = async () => {
-  if (!config.apiKey) {
-    ElMessage.warning('请先输入 API 密钥')
+  if (!config.providerId) {
+    ElMessage.warning('请先选择 Provider')
     return
   }
   testLoading.value = true
@@ -114,10 +116,7 @@ const handleTest = async () => {
   const startTime = Date.now()
   try {
     const { data: testResult } = await testLlmConnectionApi({
-      serviceType: 'custom',
-      apiKey: config.apiKey,
-      apiBaseUrl: config.apiBaseUrl,
-      modelName: config.modelName,
+      providerId: config.providerId,
       modelType: 'embedding',
     })
     const latency = Date.now() - startTime
@@ -134,15 +133,14 @@ const handleTest = async () => {
   } catch (e: any) {
     connectionTestResult.value = {
       success: false,
-      message: e.message || '请检查配置参数',
+      message: e.message || '请检查 Provider 配置',
     }
-    ElMessage.error(`连接失败: ${e.message || '请检查配置参数'}`)
+    ElMessage.error(`连接失败: ${e.message || '请检查 Provider 配置'}`)
   } finally {
     testLoading.value = false
   }
 }
 
-// === Provider 导入与模型拉取 ===
 async function loadProviders() {
   try {
     const res = await getLlmProfilesApi()
@@ -151,47 +149,18 @@ async function loadProviders() {
   } catch { /* ignore */ }
 }
 
-function applyProvider(providerId: string) {
-  if (!providerId) return
-  const p = providers.value.find((item: any) => item.id === providerId)
-  if (!p) return
-  config.apiBaseUrl = p.apiBase || ''
-  if (p.apiKey && !p.apiKey.includes('****')) config.apiKey = p.apiKey
-  if (p.model) config.modelName = p.model
-  fetchModelsFromProvider()
-  ElMessage.success(`已导入 Provider「${p.name}」的配置`)
-}
-
-async function fetchModelsFromProvider() {
-  if (!config.apiBaseUrl) { ElMessage.warning('请先填写 API 基础 URL'); return }
-  fetchingModels.value = true
-  try {
-    const res = await fetchProviderModelsApi({ apiBase: config.apiBaseUrl, apiKey: config.apiKey })
-    const data = (res as any).data || res
-    if (data.success && Array.isArray(data.data)) {
-      availableModels.value = data.data
-      ElMessage.success(`获取到 ${data.data.length} 个模型`)
-    } else {
-      ElMessage.error(data.message || '获取模型失败')
-    }
-  } catch (e: any) {
-    ElMessage.error(e.message || '获取模型失败')
-  } finally {
-    fetchingModels.value = false
-  }
-}
-
 onMounted(async () => {
-  loadProviders()
+  await loadProviders()
   try {
     const { data } = await getSystemConfigApi('embedding_model')
     const configData = typeof data?.value === 'string' ? JSON.parse(data.value) : (data?.value || data)
     if (configData && typeof configData === 'object') {
-      Object.keys(config).forEach(key => {
-        if (key in configData && configData[key] != null) {
-          ;(config as any)[key] = configData[key]
-        }
-      })
+      // 检测旧结构
+      if (!configData.providerId && (configData.apiKey || configData.modelName)) {
+        hasLegacyFields.value = true
+      }
+      if (configData.providerId !== undefined) config.providerId = configData.providerId
+      if (configData.dimensions !== undefined) config.dimensions = configData.dimensions
     }
     originalConfig.value = JSON.stringify(config)
   } catch (e) {
@@ -213,20 +182,23 @@ defineExpose({
 .engine-tab {
   display: flex;
   flex-direction: column;
-  gap: 18px;
+  gap: 14px;
 }
 
 .config-section {
   display: flex;
   flex-direction: column;
-  gap: 18px;
+  gap: 14px;
 }
 
-.config-card {
-  background: linear-gradient(180deg, #ffffff 0%, #f8fafc 100%);
-  border: 1px solid #e2e8f0;
-  border-radius: 16px;
-  padding: 20px;
+.legacy-hint {
+  font-size: 12px;
+  color: #b45309;
+  background: #fffbeb;
+  border: 1px solid #fde68a;
+  border-radius: 6px;
+  padding: 8px 12px;
+  line-height: 1.5;
 }
 
 .form-tip {
@@ -240,6 +212,7 @@ defineExpose({
   display: flex;
   justify-content: flex-end;
   gap: 10px;
+  padding-top: 4px;
 }
 
 .test-btn {
@@ -255,35 +228,35 @@ defineExpose({
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 10px 14px;
-  border-radius: 10px;
-  font-size: 14px;
-  font-weight: 600;
+  padding: 8px 12px;
+  border-radius: 6px;
+  font-size: 13px;
+  font-weight: 500;
 }
 
 .test-success {
   background: #f0fdf4;
-  border: 1px solid #86efac;
-  color: #166534;
+  border: 1px solid #bbf7d0;
+  color: #15803d;
 }
 
 .test-fail {
   background: #fef2f2;
-  border: 1px solid #fca5a5;
-  color: #991b1b;
+  border: 1px solid #fecaca;
+  color: #b91c1c;
 }
 
 .result-detail {
   font-weight: 400;
-  font-size: 13px;
-  opacity: 0.85;
+  font-size: 12px;
+  opacity: 0.9;
 }
 
 .result-latency {
   margin-left: auto;
   font-size: 12px;
   padding: 2px 8px;
-  background: rgba(0, 0, 0, 0.06);
+  background: rgba(0, 0, 0, 0.05);
   border-radius: 999px;
 }
 </style>

@@ -1,162 +1,125 @@
 <template>
   <div class="maxkb-config-tab">
-    <!-- 说明横幅 -->
-    <div class="info-banner">
-      <div class="banner-icon">🧠</div>
-      <div class="banner-content">
-        <div class="banner-title">MaxKB 知识库集成</div>
-        <div class="banner-desc">将标准规范同步到 MaxKB 知识库，审查时由 RAG 引擎自动检索相关条文</div>
+    <!-- 模块标题栏 -->
+    <div class="module-header">
+      <div class="module-title">
+        <el-icon :size="18"><Collection /></el-icon>
+        <div>
+          <h4>MaxKB 知识库集成</h4>
+          <span class="module-desc">将标准规范同步到 MaxKB，审查时由 RAG 引擎自动检索相关条文</span>
+        </div>
       </div>
-      <el-tag v-if="maxkbStatus?.initialized" type="success" size="large" effect="dark">
-        <el-icon><Check /></el-icon> 已初始化
-      </el-tag>
-      <el-tag v-else type="warning" size="large" effect="plain">
-        <el-icon><Clock /></el-icon> 未初始化
-      </el-tag>
+      <span
+        class="module-status"
+        :class="maxkbStatus?.initialized ? 'ready' : maxkbStatus?.maxkbReachable ? 'pending' : 'offline'"
+      >
+        {{ maxkbStatus?.initialized ? '已初始化' : maxkbStatus?.maxkbReachable ? '待初始化' : '未连接' }}
+      </span>
     </div>
 
-    <!-- 状态概览 -->
-    <div class="status-cards" v-if="maxkbStatus">
-      <div class="status-card">
-        <div class="status-icon" :class="maxkbStatus.maxkbReachable ? 'online' : 'offline'">
-          <el-icon><Monitor /></el-icon>
-        </div>
-        <div class="status-info">
-          <div class="status-label">服务状态</div>
-          <div class="status-value" :class="maxkbStatus.maxkbReachable ? 'online' : 'offline'">
+    <!-- 状态指标 -->
+    <div class="metrics-row" v-if="maxkbStatus">
+      <div class="metric">
+        <span class="metric-dot" :class="maxkbStatus.maxkbReachable ? 'online' : 'offline'"></span>
+        <div>
+          <div class="metric-label">服务状态</div>
+          <div class="metric-value" :class="maxkbStatus.maxkbReachable ? 'online' : 'offline'">
             {{ maxkbStatus.maxkbReachable ? '在线' : '离线' }}
           </div>
         </div>
       </div>
-      <div class="status-card">
-        <div class="status-icon" :class="maxkbStatus.initialized ? 'ready' : 'pending'">
-          <el-icon><Collection /></el-icon>
-        </div>
-        <div class="status-info">
-          <div class="status-label">集成状态</div>
-          <div class="status-value" :class="maxkbStatus.initialized ? 'ready' : 'pending'">
+      <div class="metric">
+        <span class="metric-dot" :class="maxkbStatus.initialized ? 'ready' : 'pending'"></span>
+        <div>
+          <div class="metric-label">集成状态</div>
+          <div class="metric-value" :class="maxkbStatus.initialized ? 'ready' : 'pending'">
             {{ maxkbStatus.initialized ? '已就绪' : '待初始化' }}
           </div>
         </div>
       </div>
-      <div class="status-card">
-        <div class="status-icon knowledge">
-          <el-icon><Document /></el-icon>
-        </div>
-        <div class="status-info">
-          <div class="status-label">知识库文档</div>
-          <div class="status-value">{{ maxkbStatus.knowledgeDocCount ?? '-' }}</div>
+      <div class="metric">
+        <span class="metric-dot neutral"></span>
+        <div>
+          <div class="metric-label">知识库文档</div>
+          <div class="metric-value">{{ maxkbStatus.knowledgeDocCount ?? 0 }}</div>
         </div>
       </div>
     </div>
 
-    <!-- 配置区域 -->
-    <div class="config-section">
-      <div class="section-title">
-        <el-icon><Setting /></el-icon>
-        <span>连接配置</span>
+    <!-- 连接配置 -->
+    <div class="module-body">
+      <div class="section-title">连接配置</div>
+
+      <el-form :model="maxkbConfigForm" label-width="100px" label-position="left">
+        <el-form-item label="MaxKB 地址">
+          <el-input v-model="maxkbConfigForm.baseUrl" placeholder="http://localhost:8080" clearable>
+            <template #append>
+              <el-button @click="testConnection" :loading="testConnLoading">检测</el-button>
+            </template>
+          </el-input>
+          <div class="form-tip">MaxKB 服务访问地址，默认同机部署为 http://localhost:8080</div>
+        </el-form-item>
+
+        <el-form-item label="管理员账号">
+          <el-input v-model="maxkbConfigForm.username" placeholder="admin" />
+        </el-form-item>
+
+        <el-form-item label="管理员密码">
+          <el-input v-model="maxkbConfigForm.password" type="password" placeholder="MaxKB 管理员密码" show-password />
+        </el-form-item>
+      </el-form>
+
+      <div v-if="!maxkbStatus?.maxkbReachable" class="offline-hint">
+        MaxKB 服务不可达，请确保服务已启动或检查连接配置。
       </div>
-      
-      <div class="config-card">
-        <el-form :model="maxkbConfigForm" label-width="110px" label-position="left">
-          <el-form-item label="MaxKB 地址">
-            <el-input v-model="maxkbConfigForm.baseUrl" placeholder="http://localhost:8080" clearable>
-              <template #append>
-                <el-button @click="testConnection" :loading="testConnLoading" class="test-btn-small">检测</el-button>
-              </template>
-            </el-input>
-            <div class="form-tip">MaxKB 服务的访问地址，默认同机部署为 http://localhost:8080</div>
-          </el-form-item>
-          
-          <el-form-item label="管理员账号">
-            <el-input v-model="maxkbConfigForm.username" placeholder="admin" />
-          </el-form-item>
-          
-          <el-form-item label="管理员密码">
-            <el-input v-model="maxkbConfigForm.password" type="password" placeholder="MaxKB 管理员密码" show-password />
-          </el-form-item>
-        </el-form>
-        
-        <div class="form-actions">
-          <el-button @click="handleSaveMaxKBConfig" :loading="saveLoading" type="primary">
-            <el-icon><Check /></el-icon>
-            保存配置
+
+      <div class="form-actions">
+        <el-button @click="handleSaveMaxKBConfig" :loading="saveLoading" type="primary">
+          <el-icon><Check /></el-icon>
+          保存配置
+        </el-button>
+        <template v-if="maxkbStatus?.maxkbReachable">
+          <el-button :loading="maxkbInitLoading" @click="handleInitializeMaxKB">
+            <el-icon><MagicStick /></el-icon>
+            {{ maxkbStatus?.initialized ? '重新初始化' : '一键初始化' }}
           </el-button>
-          <template v-if="maxkbStatus?.maxkbReachable">
-            <el-button 
-              :loading="maxkbInitLoading"
-              @click="handleInitializeMaxKB"
-            >
-              <el-icon><MagicStick /></el-icon>
-              {{ maxkbStatus?.initialized ? '重新初始化' : '一键初始化' }}
-            </el-button>
-            
-            <el-button 
-              type="info"
-              :disabled="!maxkbStatus?.initialized"
-              @click="handleHitTest"
-            >
-              <el-icon><Search /></el-icon>
-              命中测试
-            </el-button>
-          </template>
-        </div>
+          <el-button :disabled="!maxkbStatus?.initialized" @click="handleHitTest">
+            <el-icon><Search /></el-icon>
+            命中测试
+          </el-button>
+        </template>
       </div>
     </div>
-
-    <!-- 提示信息 -->
-    <el-alert
-      v-if="!maxkbStatus?.maxkbReachable"
-      title="MaxKB 服务不可达"
-      description="请确保 MaxKB 服务已启动，或检查连接配置是否正确。"
-      type="error"
-      show-icon
-      :closable="false"
-    />
 
     <!-- 命中测试对话框 -->
     <el-dialog v-model="hitTestVisible" title="知识库命中测试" width="640px" destroy-on-close>
       <div class="hit-test-form">
         <el-form label-width="90px">
           <el-form-item label="查询文本">
-            <el-input 
-              v-model="hitTestQuery" 
-              type="textarea" 
-              :rows="3" 
-              placeholder="输入测试查询文本"
-            />
+            <el-input v-model="hitTestQuery" type="textarea" :rows="3" placeholder="输入测试查询文本" />
           </el-form-item>
           <el-form-item label="返回条数">
             <el-input-number v-model="hitTestTopN" :min="1" :max="20" />
           </el-form-item>
         </el-form>
       </div>
-      
+
       <div v-if="hitTestResults.length > 0" class="hit-test-results">
         <div class="results-header">
           <span>检索结果</span>
-          <el-tag type="info" size="small">{{ hitTestResults.length }} 条</el-tag>
+          <span class="results-count">{{ hitTestResults.length }} 条</span>
         </div>
         <div class="results-list">
-          <el-card 
-            v-for="(r, i) in hitTestResults" 
-            :key="i" 
-            shadow="never" 
-            class="hit-card"
-          >
-            <template #header>
-              <div class="hit-card-header">
-                <span class="hit-title">{{ r.document_name || r.title || `结果 ${i + 1}` }}</span>
-                <el-tag type="success" size="small">
-                  {{ ((r.similarity || 0) * 100).toFixed(1) }}%
-                </el-tag>
-              </div>
-            </template>
+          <div v-for="(r, i) in hitTestResults" :key="i" class="hit-card">
+            <div class="hit-card-header">
+              <span class="hit-title">{{ r.document_name || r.title || `结果 ${i + 1}` }}</span>
+              <span class="hit-score">{{ ((r.similarity || 0) * 100).toFixed(1) }}%</span>
+            </div>
             <div class="hit-content">{{ r.content?.slice(0, 300) }}{{ r.content?.length > 300 ? '...' : '' }}</div>
-          </el-card>
+          </div>
         </div>
       </div>
-      
+
       <template #footer>
         <el-button @click="hitTestVisible = false">关闭</el-button>
         <el-button type="primary" @click="executeHitTest" :loading="hitTestLoading">
@@ -306,175 +269,141 @@ onMounted(async () => {
 .maxkb-config-tab {
   display: flex;
   flex-direction: column;
-  gap: 20px;
-  padding: 8px 0;
 }
 
-/* 信息横幅 */
-.info-banner {
+/* 模块标题栏 */
+.module-header {
   display: flex;
   align-items: center;
+  justify-content: space-between;
   gap: 16px;
-  padding: 16px 20px;
-  background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%);
-  border-radius: var(--corp-radius-lg);
-  color: #fff;
+  padding: 14px 20px;
+  border-bottom: 1px solid #f1f5f9;
+  background: #fafbfc;
 }
 
-.banner-icon {
-  font-size: 32px;
+.module-title {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+
+.module-title :deep(.el-icon) {
+  color: #64748b;
   flex-shrink: 0;
 }
 
-.banner-content {
-  flex: 1;
-}
-
-.banner-title {
-  font-size: 15px;
-  font-weight: 600;
-  margin-bottom: 4px;
-}
-
-.banner-desc {
-  font-size: 13px;
-  opacity: 0.9;
-}
-
-/* 状态卡片 */
-.status-cards {
-  display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: 14px;
-}
-
-.status-card {
-  display: flex;
-  align-items: center;
-  gap: 14px;
-  padding: 16px;
-  background: var(--bg-surface);
-  border-radius: var(--corp-radius-md);
-  border: 1px solid var(--corp-border-light);
-}
-
-.status-icon {
-  width: 44px;
-  height: 44px;
-  border-radius: 10px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 22px;
-}
-
-.status-icon.online { background: #e8f5e9; color: #4caf50; }
-.status-icon.offline { background: #ffebee; color: #f44336; }
-.status-icon.ready { background: #e3f2fd; color: #2196f3; }
-.status-icon.pending { background: #fff3e0; color: #ff9800; }
-.status-icon.knowledge { background: #f3e5f5; color: #9c27b0; }
-.status-icon.standard { background: #e0f7fa; color: #00bcd4; }
-
-.status-info {
-  flex: 1;
-}
-
-.status-label {
-  font-size: 12px;
-  color: var(--corp-text-secondary);
-  margin-bottom: 2px;
-}
-
-.status-value {
-  font-size: 15px;
-  font-weight: 600;
-}
-
-.status-value.online, .status-value.ready { color: #4caf50; }
-.status-value.offline, .status-value.pending { color: #ff9800; }
-
-/* LLM 信息卡片 */
-.llm-info-card {
-  background: var(--bg-surface);
-  border-radius: var(--corp-radius-lg);
-  border: 1px solid var(--corp-border-light);
-  overflow: hidden;
-}
-
-.card-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 12px 16px;
-  background: #fafafa;
-  border-bottom: 1px solid var(--corp-border-light);
-}
-
-.card-title {
+.module-title h4 {
+  margin: 0;
   font-size: 14px;
   font-weight: 600;
-  color: var(--corp-text-primary);
+  color: #0f172a;
 }
 
-.model-list {
-  padding: 12px 16px;
+.module-desc {
+  display: block;
+  margin-top: 2px;
+  font-size: 12px;
+  color: #94a3b8;
+}
+
+.module-status {
+  font-size: 12px;
+  font-weight: 600;
+  padding: 4px 10px;
+  border-radius: 999px;
+  flex-shrink: 0;
+}
+
+.module-status.ready {
+  background: #f0fdf4;
+  color: #15803d;
+}
+
+.module-status.pending {
+  background: #fffbeb;
+  color: #b45309;
+}
+
+.module-status.offline {
+  background: #f1f5f9;
+  color: #64748b;
+}
+
+/* 状态指标 */
+.metrics-row {
   display: flex;
-  flex-wrap: wrap;
+  gap: 32px;
+  padding: 16px 20px;
+  border-bottom: 1px solid #f1f5f9;
+}
+
+.metric {
+  display: flex;
+  align-items: center;
   gap: 10px;
 }
 
-.model-item {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 6px 12px;
-  background: #fff;
-  border: 1px solid var(--corp-border-light);
-  border-radius: 20px;
-  font-size: 13px;
+.metric-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #cbd5e1;
+  flex-shrink: 0;
 }
 
-.model-name {
-  font-weight: 500;
-  color: var(--corp-text-primary);
+.metric-dot.online { background: #10b981; box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.15); }
+.metric-dot.offline { background: #ef4444; box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.15); }
+.metric-dot.ready { background: #2563eb; box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.15); }
+.metric-dot.pending { background: #f59e0b; box-shadow: 0 0 0 3px rgba(245, 158, 11, 0.15); }
+
+.metric-label {
+  font-size: 12px;
+  color: #94a3b8;
+  margin-bottom: 1px;
 }
 
-.model-id {
-  font-size: 11px;
-  color: var(--corp-text-secondary);
-  font-family: monospace;
+.metric-value {
+  font-size: 13.5px;
+  font-weight: 600;
+  color: #0f172a;
 }
 
-/* 配置区域 */
-.config-section {
-  background: var(--bg-surface);
-  border-radius: var(--corp-radius-lg);
-  border: 1px solid var(--corp-border-light);
-  overflow: hidden;
+.metric-value.online { color: #15803d; }
+.metric-value.offline { color: #b91c1c; }
+.metric-value.ready { color: #2563eb; }
+.metric-value.pending { color: #b45309; }
+
+/* 模块主体 */
+.module-body {
+  padding: 16px 20px 18px;
 }
 
 .section-title {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 12px 16px;
-  background: #fafafa;
-  border-bottom: 1px solid var(--corp-border-light);
-  font-size: 14px;
+  font-size: 13px;
   font-weight: 600;
-  color: var(--corp-text-primary);
-}
-
-.config-card {
-  padding: 20px;
-  background: #fff;
+  color: #0f172a;
+  margin-bottom: 14px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid #f1f5f9;
 }
 
 .form-tip {
   font-size: 12px;
-  color: var(--corp-text-secondary);
+  color: #64748b;
   margin-top: 4px;
-  line-height: 1.4;
+  line-height: 1.5;
+}
+
+.offline-hint {
+  margin: 8px 0 12px;
+  padding: 8px 12px;
+  background: #fef2f2;
+  border: 1px solid #fecaca;
+  border-radius: 6px;
+  font-size: 12px;
+  color: #b91c1c;
 }
 
 .form-actions {
@@ -483,19 +412,8 @@ onMounted(async () => {
   gap: 10px;
   justify-content: flex-end;
   padding-top: 16px;
-  border-top: 1px solid var(--corp-border-light);
-  margin-top: 8px;
-}
-
-.test-btn-small {
-  font-size: 12px;
-}
-
-/* 操作按钮 */
-.action-section {
-  display: flex;
-  gap: 12px;
-  flex-wrap: wrap;
+  border-top: 1px solid #f1f5f9;
+  margin-top: 4px;
 }
 
 /* 命中测试 */
@@ -504,7 +422,7 @@ onMounted(async () => {
 }
 
 .hit-test-results {
-  border-top: 1px solid var(--corp-border-light);
+  border-top: 1px solid #f1f5f9;
   padding-top: 16px;
 }
 
@@ -513,52 +431,76 @@ onMounted(async () => {
   justify-content: space-between;
   align-items: center;
   margin-bottom: 12px;
-  font-size: 14px;
+  font-size: 13px;
   font-weight: 600;
-  color: var(--corp-text-primary);
+  color: #0f172a;
+}
+
+.results-count {
+  font-size: 12px;
+  color: #64748b;
+  font-weight: 500;
+  padding: 2px 8px;
+  background: #f1f5f9;
+  border-radius: 4px;
 }
 
 .results-list {
   max-height: 300px;
   overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
 }
 
 .hit-card {
-  margin-bottom: 10px;
-  border: 1px solid var(--corp-border-light);
+  padding: 12px;
+  border: 1px solid #e5e7eb;
+  border-radius: 6px;
+  background: #fafbfc;
 }
 
 .hit-card-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
+  gap: 12px;
+  margin-bottom: 8px;
 }
 
 .hit-title {
-  font-weight: 500;
-  color: var(--corp-text-primary);
+  font-size: 13px;
+  font-weight: 600;
+  color: #0f172a;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.hit-score {
+  font-size: 12px;
+  font-weight: 600;
+  color: #2563eb;
+  flex-shrink: 0;
 }
 
 .hit-content {
-  font-size: 13px;
-  color: var(--corp-text-secondary);
+  font-size: 12.5px;
+  color: #475569;
   line-height: 1.6;
   white-space: pre-wrap;
 }
 
-@media (max-width: 900px) {
-  .status-cards {
-    grid-template-columns: repeat(2, 1fr);
-  }
-}
-
-@media (max-width: 600px) {
-  .status-cards {
-    grid-template-columns: 1fr;
-  }
-  
-  .action-section {
+@media (max-width: 640px) {
+  .metrics-row {
     flex-direction: column;
+    gap: 12px;
+  }
+
+  .module-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 10px;
   }
 }
 </style>

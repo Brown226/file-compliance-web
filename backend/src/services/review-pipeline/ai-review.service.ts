@@ -130,7 +130,7 @@ export class AiReviewService {
 
     // ���д�����Ƭ���������������� AI ��飩
     const CONCURRENT_LIMIT = await getChunkConcurrency();
-    const chunkResults = await parallelLimit(chunks, CONCURRENT_LIMIT, async (chunk, idx) => {
+    const chunkResults = await parallelLimit(chunks, CONCURRENT_LIMIT, async (chunk, _idx) => {
       try {
         let llmIssues: ReviewIssue[];
         if (knowledgeContext) {
@@ -311,7 +311,7 @@ export class AiReviewService {
   static async runLLMWithFallback(
     text: string,
     ctx: PipelineContext,
-    scene: string,
+    _scene: string,
     config: PipelineReviewConfig,
   ) {
     const fallback = await AiReviewService.fallbackToLLMWithKnowledge(text, ctx, config);
@@ -474,8 +474,6 @@ export class AiReviewService {
       return AiReviewService.runAIReview(text, ctx, 'library_review', config);
     }
 
-    const refFileCount = refTexts.length;
-
     const llmMaxTokens = config.llmMaxTokens || 4096;
     const llmTimeout = config.llmTimeout || 180;
     const chunkSize = config.chunkSize || 4000;
@@ -564,8 +562,6 @@ export class AiReviewService {
       }
 
       // 以文审文不使用知识库 RAG
-      const ragContext = '';
-
       // 预加载用户提示词模板（以文审文只用 comparison variant）
       const userContentTpl = await PromptTemplateService.getPromptByScene(
         scene, 'user', 'comparison',
@@ -610,8 +606,6 @@ export class AiReviewService {
               });
 
               scored.sort((a, b) => b.sim - a.sim);
-              const topK = scored.slice(0, Math.min(5, scored.length));
-
               const selected = new Map<number, string>();
               for (const s of scored.slice(0, Math.min(5, scored.length))) {
                 const idx = refChunks.indexOf(s.chunk);
@@ -651,7 +645,7 @@ export class AiReviewService {
           return { issues, failed: false };
         } catch (e: any) {
           console.warn(`[AiReview] ��Ƭ ${chunk.chunkIndex + 1}/${totalChunks} �ȶ�ʧ��:`, e.message);
-          return { issues: [], failed: true, error: e.message };
+          return { issues: [] as any[], failed: true, error: e.message };
         }
       });
 
@@ -664,8 +658,6 @@ export class AiReviewService {
       if (failedChunks === totalChunks && totalChunks > 0) {
         throw new Error(`���� ${totalChunks} ����Ƭ�ȶԾ�ʧ��: ${errors[0]}`);
       }
-
-      const modeLabel = useFullRefs ? 'ȫ��' : (refVectors ? '��������' : '�ض�');
 
       // ---- �������� ----
       // 1. ���� originalText === suggestedText ����Ч��Ŀ
@@ -796,7 +788,7 @@ export class AiReviewService {
       userPromptVariant = 'no_ref';
     }
 
-    const userContentTpl = await PromptTemplateService.getPromptByScene(
+    await PromptTemplateService.getPromptByScene(
       scene, 'user', userPromptVariant,
       hasRefFiles
         ? '## 合同模板（参照基准）\n\n${refTexts}\n\n---\n\n## 待审合同\n\n${text}\n\n---\n\n请按系统指令中的审查策略，识别风险条款。输出 JSON 数组。'
@@ -805,7 +797,6 @@ export class AiReviewService {
 
     // ---- 参照文件超长时的 Embedding 智能检索 ----
     let refChunks: string[] | null = null;
-    let refVectors: number[][] | null = null;
     if (hasRefFiles) {
       // 动态计算上下文窗口
       let contextWindow = 131072;
@@ -841,13 +832,9 @@ export class AiReviewService {
             }, ['']);
             refChunks.push(...paras.filter((p: string) => p.length >= 50));
           }
-          if (refChunks.length > 0) {
-            refVectors = await EmbeddingService.embedTexts(refChunks);
-          }
         } catch (e: any) {
           console.warn(`[ContractReview] 参照文件 Embedding 失败，降级截断: ${e.message}`);
           refChunks = null;
-          refVectors = null;
           refTextsJoined = refTextsJoined.substring(0, Math.floor(maxRefChars));
         }
       }

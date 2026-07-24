@@ -1,10 +1,9 @@
 import WebSocket, { WebSocketServer } from 'ws';
 import { IncomingMessage, Server } from 'http';
 import { randomUUID } from 'crypto';
-import prisma from '../../config/db';
-import { TokenPayload } from '../auth/token.service';
 import { TokenService } from '../auth/token.service';
 import { redisClient } from '../../utils/redis';
+import { presenceService } from './presence.service';
 
 interface WsClient {
   ws: WebSocket;
@@ -129,6 +128,9 @@ export class WebSocketService {
       const clientId = `${userId}_${Date.now()}`;
       this.clients.set(clientId, client);
 
+      // 标记用户上线（presence 服务）
+      presenceService.markOnline(userId).catch(() => { /* 静默 */ });
+
       ws.on('message', (data: WebSocket.Data) => {
         try {
           const msg = JSON.parse(data.toString());
@@ -141,11 +143,15 @@ export class WebSocketService {
       ws.on('close', () => {
         this.clients.delete(clientId);
         this.removeFromAllTasks(clientId);
+        // 标记用户离线（presence 服务）
+        presenceService.markOffline(userId).catch(() => { /* 静默 */ });
       });
 
       ws.on('error', () => {
         this.clients.delete(clientId);
         this.removeFromAllTasks(clientId);
+        // 标记用户离线（presence 服务）
+        presenceService.markOffline(userId).catch(() => { /* 静默 */ });
       });
 
       // 发送心跳
@@ -194,6 +200,11 @@ export class WebSocketService {
 
       case 'pong':
         // heartbeat response
+        break;
+
+      case 'heartbeat':
+        // 前端心跳：续期 presence session
+        presenceService.heartbeat(client.userId).catch(() => { /* 静默 */ });
         break;
     }
   }

@@ -26,6 +26,15 @@ export function sendLlmTestApi(data: any) {
 
 // ==================== LLM Profiles 管理 ====================
 
+export type ProviderUsage = 'chat' | 'embedding' | 'vision' | 'all'
+
+export interface ModelCapabilities {
+  inputModalities: ('text' | 'image')[]
+  supportsToolCalling: boolean
+  contextWindowTokens: number
+  maxOutputTokens: number
+}
+
 export interface LlmProfile {
   id: string
   name: string
@@ -37,6 +46,8 @@ export interface LlmProfile {
   isEnabled: boolean
   timeout: number
   maxRetries: number
+  usage?: ProviderUsage
+  capabilities?: ModelCapabilities
 }
 
 // 获取所有 LLM 配置（密钥脱敏）

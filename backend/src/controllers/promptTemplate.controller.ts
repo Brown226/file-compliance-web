@@ -24,7 +24,7 @@ export class PromptTemplateController {
   }
 
   /** GET /api/prompt-templates/modules — 获取模块列表 */
-  static async getModules(req: Request, res: Response) {
+  static async getModules(_req: Request, res: Response) {
     try {
       const modules = await PromptTemplateService.getModules();
       res.json({ code: 200, data: modules });
@@ -74,7 +74,7 @@ export class PromptTemplateController {
   }
 
   /** POST /api/prompt-templates/reset-all — 批量重置 */
-  static async resetAll(req: Request, res: Response) {
+  static async resetAll(_req: Request, res: Response) {
     try {
       const result = await PromptTemplateService.resetAllToDefault();
       res.json({ code: 200, data: result });
@@ -100,7 +100,7 @@ export class PromptTemplateController {
   }
 
   /** POST /api/prompt-templates/seed — 初始化内置模板 */
-  static async seed(req: Request, res: Response) {
+  static async seed(_req: Request, res: Response) {
     try {
       const result = await PromptTemplateService.seedBuiltinTemplates();
       res.json({ code: 200, data: result });

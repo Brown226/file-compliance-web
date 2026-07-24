@@ -251,7 +251,7 @@ export class StructuredConsistencyService {
   private static async extractFromChunk(
     chunk: TextChunk,
     totalChunks: number,
-    ctx: PipelineContext,
+    _ctx: PipelineContext,
     config: PipelineReviewConfig,
   ): Promise<ChunkSummary> {
     const systemPrompt = await PromptLoader.resolve(
@@ -286,7 +286,7 @@ export class StructuredConsistencyService {
    * chunk 对象提供了 startIndex，用于后续精确计算原文绝对位置
    */
   private static parseExtractResult(raw: string, chunk: TextChunk): ChunkSummary {
-    const empty = { params: [], codes: [], refs: [], meta: [], facts: [] };
+    const empty: ChunkSummary = { params: [], codes: [], refs: [], meta: [], facts: [] };
 
     try {
       let jsonStr = raw.trim();
@@ -443,7 +443,7 @@ export class StructuredConsistencyService {
     }
 
     const paramsList = [...paramGroups.entries()]
-      .map(([name, entries]) => {
+      .map(([_name, entries]) => {
         const valueList = entries
           .map(e => `${e.value} (分片${e.chunkIndex + 1}L${e.lineHint})`)
           .join('; ');
@@ -491,7 +491,7 @@ export class StructuredConsistencyService {
       .sort((a, b) => b[1].length - a[1].length);
 
     let current = '';
-    for (const [name, entries] of sortedParams) {
+    for (const [_name, entries] of sortedParams) {
       const line = `- ${entries[0].name}: ${entries.map(e => `${e.value} (分片${e.chunkIndex + 1})`).join('; ')}\n`;
       if (current.length + line.length > maxChars * 0.5) break;
       current += line;
@@ -508,7 +508,7 @@ export class StructuredConsistencyService {
 
   private static async compareSummaries(
     formattedSummary: string,
-    ctx: PipelineContext,
+    _ctx: PipelineContext,
     config: PipelineReviewConfig,
   ): Promise<ReviewIssue[]> {
     const systemPrompt = await PromptLoader.resolve(

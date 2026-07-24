@@ -14,7 +14,7 @@ export class FormulaOcrService {
   /**
    * 识别公式（占位实现，未来对接 LaTeX-OCR/Mathpix）
    */
-  static async recognizeFormula(imageBase64: string): Promise<FormulaResult> {
+  static async recognizeFormula(_imageBase64: string): Promise<FormulaResult> {
     console.warn(
       '[FormulaOcr] 公式识别服务未配置。如需启用，请配置 LaTeX-OCR 或 Mathpix 服务。',
     );
@@ -128,7 +128,6 @@ export class FormulaOcrService {
 
     for (const pair of bracketPairs) {
       const stack: number[] = [];
-      let inCommand = false;
 
       for (let i = 0; i < latex.length; i++) {
         const ch = latex[i];

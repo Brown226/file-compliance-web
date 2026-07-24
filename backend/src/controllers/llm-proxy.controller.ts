@@ -1,4 +1,4 @@
-import { Request, Response } from 'express';
+import { Response } from 'express';
 import { AuthRequest } from '../middlewares/auth.middleware';
 import { success, error } from '../utils/response';
 import { LlmProxyService } from '../services/llm/llm-proxy.service';
@@ -66,7 +66,7 @@ export const proxyRerank = async (req: AuthRequest, res: Response): Promise<void
   }
 };
 
-export const getProxyStatus = async (req: AuthRequest, res: Response): Promise<void> => {
+export const getProxyStatus = async (_req: AuthRequest, res: Response): Promise<void> => {
   try {
     const [chatConfig, embeddingConfig, rerankConfig] = await Promise.all([
       LlmProxyService.getModelConfig('chat'),

@@ -93,7 +93,7 @@ router.get('/rule-registry', (_req: Request, res: Response) => {
   res.json({ code: 200, data: meta });
 });
 
-router.get('/storage-stats', authenticate, requireRole('ADMIN'), async (req: Request, res: Response) => {
+router.get('/storage-stats', authenticate, requireRole('ADMIN'), async (_req: Request, res: Response) => {
   try {
     const stats = await FileCleanupService.getStorageStats(getUploadPath());
 

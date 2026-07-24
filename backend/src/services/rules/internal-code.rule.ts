@@ -17,7 +17,6 @@ export function checkInternalCodes(ctx: FileContext, config?: any): RuleIssue[] 
 
   // 从文件名提取正确的项目编码和系统编码作为参考
   const fileProjectCode = fileName.match(/^([A-Z]{2}\d{2}[A-Z]\d{2}[A-Z]{2})/)?.[1];
-  const fileSystemCode = fileName.match(/-([A-Z]{3}\d{2})/)?.[1];
 
   // 如果文件名本身没有有效的项目编码，跳过检查（避免基于错误文件名产生连锁误报）
   if (!fileProjectCode) return issues;

@@ -4,7 +4,7 @@
  * 从 BasePipeline 提取而来，提供流水线运行时配置的读取和判断逻辑。
  */
 
-import { PipelineContext, PipelineReviewConfig, ReviewModeType } from './types';
+import { PipelineContext, PipelineReviewConfig } from './types';
 import { getMaxConcurrentReviews } from '../../utils/system-config';
 /**
  * 获取有效的审查配置（带默认值回退）

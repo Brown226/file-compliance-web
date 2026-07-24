@@ -1,6 +1,6 @@
 import prisma from '../../config/db';
 import { ParserService } from '../file/parser.service';
-import { LlmService, ReviewIssue } from '../llm/llm.service';
+import { LlmService } from '../llm/llm.service';
 import { PipelineContext, ReviewModeType } from '../review-pipeline';
 import { REVIEW_HANDLERS, getModeScene, getModeDisplayName } from '../review-pipeline/review-handlers';
 import { TextExtractionService } from '../review-pipeline/text-extraction.service';
@@ -17,7 +17,6 @@ import { TableExtractionService } from '../file/table-extraction.service';
 import { validateSeverity } from './severity-rules';
 import { validateOriginalText } from '../knowledge/text-fidelity.service';
 import { FormulaOcrService } from '../file/formula-ocr.service';
-import path from 'path';
 import { ReviewPlan } from '../../types/review-plan';
 import { TaskService } from '../system/task.service';
 import { DwgHandlerService } from '../file/dwg-handler.service';
@@ -187,8 +186,8 @@ export class ReviewService {
         totalChunks: locateMeta.chunk?.total ?? Math.max(1, Math.ceil((extractedText || '').length / 4000)),
       };
     }
-    if (!originalText || !extractedText) return null;
-    return LlmService.findTextPosition(extractedText, originalText);
+    if (!originalText || !extractedText) return undefined;
+    return LlmService.findTextPosition(extractedText, originalText) ?? undefined;
   }
 
   /**
@@ -270,7 +269,7 @@ export class ReviewService {
    * @param fn 处理函数
    */
   private static async runUserLevelConcurrency<T, R>(
-    userId: string,
+    _userId: string,
     items: T[],
     limit: number,
     fn: (item: T, index: number) => Promise<R>
@@ -378,10 +377,10 @@ export class ReviewService {
       const modeDisplayName = getModeDisplayName(reviewMode as ReviewModeType);
       // ����ʹ��ǰ�˴��������ǰ׺����������淶��/��������
       let ruleExecutionPlan = directPrefixes && directPrefixes.length > 0
-        ? { enabledPrefixes: directPrefixes, executableItems: [] }
+        ? { enabledPrefixes: directPrefixes, executableItems: [] as any[] }
         : null;
       if (!ruleExecutionPlan && ruleLibraryId) {
-        ruleExecutionPlan = await RuleLibraryService.getExecutionPlan(ruleLibraryId).catch(() => null);
+        ruleExecutionPlan = await RuleLibraryService.getExecutionPlan(ruleLibraryId).catch((): null => null);
         if (!ruleExecutionPlan) {
           console.warn('[Review] �����ִ�мƻ�����ʧ��, ID:', ruleLibraryId);
         }
@@ -409,7 +408,7 @@ export class ReviewService {
             select: { ruleCode: true, ruleName: true, category: true, description: true, severity: true },
           });
           if (specItems.length > 0) {
-            semanticItems = specItems;
+            semanticItems = specItems as any;
           }
         } catch (e) {
           console.warn('[Review] ���ع������Ŀʧ��:', e);
@@ -452,6 +451,31 @@ export class ReviewService {
       }
 
       // ===== Ϊÿ���ļ����� PipelineContext�������׶ν���� =====
+      // ===== DEC_REVIEW 专用：预加载审点库（StandardCheckpoint）=====
+      // 审点库与文件无关（任务级共享），在 fileContexts 构建前一次性加载
+      let decCheckpoints: PipelineContext['checkpoints'] = undefined;
+      if (reviewMode === 'DEC_REVIEW') {
+        const decStdIds = task.taskStandards.map((item: any) => item.standardId);
+        if (decStdIds.length > 0) {
+          try {
+            const checkpoints = await prisma.standardCheckpoint.findMany({
+              where: { standardId: { in: decStdIds } },
+              select: { id: true, clauseCode: true, clauseText: true, mandatory: true, auditDimension: true, checkPrompt: true },
+            });
+            if (checkpoints.length > 0) {
+              decCheckpoints = checkpoints;
+              console.log(`[Review] DEC_REVIEW 预加载审点 ${checkpoints.length} 条（标准 ${decStdIds.length} 个）`);
+            } else {
+              console.warn(`[Review] DEC_REVIEW: 标准下无审点，请先调用 POST /api/checkpoint/standards/:id/checkpoints/generate 生成审点`);
+            }
+          } catch (e) {
+            console.warn('[Review] DEC_REVIEW 预加载审点失败:', e);
+          }
+        } else {
+          console.warn('[Review] DEC_REVIEW: 任务未关联标准，无法加载审点');
+        }
+      }
+
       const fileContexts = task.files.map(file => {
         const absolutePath = resolveFilePath(file.filePath);
 
@@ -479,6 +503,7 @@ export class ReviewService {
           executionOverrides: executionPlan.executionOverrides,
           refFileGroup: refFileGroupCtx,
           semanticItems,
+          checkpoints: decCheckpoints,
           intraFileConsistency,
           reviewPoints,
           corePurposes,
@@ -1688,16 +1713,16 @@ export class ReviewService {
 
     // ʹ�� handler ִ�� AI ���
     try {
-      const handler = REVIEW_HANDLERS[reviewMode as any];
+      const handler = REVIEW_HANDLERS[reviewMode as ReviewModeType];
       if (!handler) throw new Error(`δ֪���ģʽ: ${reviewMode}`);
-      ctx.scene = ctx.scene || getModeScene(reviewMode as any);
+      ctx.scene = ctx.scene || getModeScene(reviewMode as ReviewModeType);
       const aiResult = await handler(ctx);
-      const result = { ruleIssues: [], aiIssues: aiResult.aiIssues || [], stdRefIssues: undefined };
+      const result: { ruleIssues: any[]; aiIssues: any[]; stdRefIssues: any } = { ruleIssues: [], aiIssues: aiResult.aiIssues || [], stdRefIssues: undefined };
 
       // д AI ���
       if (result.aiIssues.length > 0) {
         await prisma.taskDetail.createMany({
-          data: result.aiIssues.map((issue) => ({
+          data: result.aiIssues.map((issue: any) => ({
             taskId, fileId: file.id,
             issueType: issue.issueType,
             ruleCode: issue.ruleCode || null,

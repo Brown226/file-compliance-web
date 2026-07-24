@@ -64,7 +64,6 @@ export class PromptTemplateService {
    * 初始化内置模板（upsert，不会覆盖已有自定义内容）
    */
   static async seedBuiltinTemplates(): Promise<{ created: number; updated: number }> {
-    let created = 0;
     let updated = 0;
 
     for (const tpl of BUILTIN_TEMPLATES) {
@@ -102,9 +101,6 @@ export class PromptTemplateService {
         updated++;
       }
     }
-
-    const totalInDb = await prisma.promptTemplate.count({ where: { isBuiltin: true } });
-    created = Math.max(0, totalInDb - (updated - (BUILTIN_TEMPLATES.length - totalInDb > 0 ? 0 : 0)));
 
     console.log(`[PromptTemplate] 内置模板初始化完成: ${BUILTIN_TEMPLATES.length} 个模板`);
 

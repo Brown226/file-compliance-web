@@ -221,26 +221,15 @@
             </el-select>
           </div>
           <div class="header-right">
-            <!-- 导出操作（降级为次级样式）-->
-            <el-dropdown v-if="!isSelfCheck" @command="handleExportCommand" trigger="click">
-              <el-button class="export-action-btn">
-                <el-icon><Download /></el-icon> 导出报告
-                <el-icon class="el-icon--right"><ArrowDown /></el-icon>
+            <!-- 导出操作 -->
+            <ExportMenu :is-self-check="isSelfCheck" @command="handleExportCommand" />
+
+            <!-- LLM 推理回放 -->
+            <el-tooltip content="查看本次审查的 LLM 调用全过程（Prompt / Completion / RAG 片段）" placement="bottom">
+              <el-button size="small" @click="llmReplayVisible = true">
+                <el-icon><View /></el-icon>&nbsp;推理回放
               </el-button>
-              <template #dropdown>
-                <el-dropdown-menu>
-                  <el-dropdown-item command="word">
-                    <el-icon><Document /></el-icon>导出 Word
-                  </el-dropdown-item>
-                  <el-dropdown-item command="excel">
-                    <el-icon><Tickets /></el-icon>导出 Excel
-                  </el-dropdown-item>
-                  <el-dropdown-item divided command="print">
-                    <el-icon><Printer /></el-icon>打印报告
-                  </el-dropdown-item>
-                </el-dropdown-menu>
-              </template>
-            </el-dropdown>
+            </el-tooltip>
 
             <!-- 分隔 + 导航 -->
             <div class="header-divider"></div>
@@ -253,37 +242,15 @@
         </div>
 
         <!-- 审查中进度（非阻塞，嵌入结果面板） -->
-        <div v-if="reviewing" class="inline-review-progress">
-          <div class="progress-top">
-            <div class="progress-status">
-              <el-icon class="is-loading" :size="16"><Loading /></el-icon>
-              <span class="progress-title">{{ isSelfCheck ? '正在执行标准引用自检' : '正在智能审查文档' }}</span>
-            </div>
-            <span class="progress-percent">{{ reviewProgress }}%</span>
-          </div>
-          <el-progress
-            :percentage="reviewProgress"
-            :stroke-width="6"
-            :show-text="false"
-            :status="reviewProgress >= 100 ? 'success' : ''"
-            color="#2563EB"
-          />
-          <div class="progress-details">
-            <p class="progress-step">{{ reviewStep || '准备中...' }}</p>
-            <p class="progress-message">{{ reviewMessage }}</p>
-            <div v-if="reviewFileProgress.fileName" class="chunk-progress">
-              <el-icon><Document /></el-icon>
-              <span class="chunk-filename">{{ reviewFileProgress.fileName }}</span>
-              <el-tag size="small" type="info" round>
-                分片 {{ reviewFileProgress.chunkIndex }}/{{ reviewFileProgress.totalChunks }}
-              </el-tag>
-            </div>
-            <div v-if="totalLiveIssueCount > 0" class="live-issue-count">
-              <el-icon color="#E6A23C"><Warning /></el-icon>
-              已发现 <strong>{{ totalLiveIssueCount }}</strong> 个问题
-            </div>
-          </div>
-        </div>
+        <ReviewProgressBar
+          :reviewing="reviewing"
+          :review-progress="reviewProgress"
+          :review-step="reviewStep"
+          :review-message="reviewMessage"
+          :is-self-check="isSelfCheck"
+          :file-progress="reviewFileProgress"
+          :live-issue-count="totalLiveIssueCount"
+        />
 
         <div v-if="locateFeedback" class="locate-feedback">
           <el-alert
@@ -316,141 +283,32 @@
         </div>
 
         <!-- ====== 标准引用自检报告（SELF_CHECK） ====== -->
-        <div v-if="isSelfCheck && scReport" class="self-check-report-panel">
-          <div class="sc-summary-bar">
-            <el-tag type="info" effect="plain">检查 {{ scFilteredItems.length }} 条引用</el-tag>
-            <el-tag type="success" effect="plain">完全匹配 {{ scFilteredItems.filter((it: any) => it.matchResult?.matched && it.errorTypes?.length === 0).length }} 条</el-tag>
-            <el-tag v-if="scFilteredItems.filter((it: any) => it.errorTypes?.length > 0).length > 0" type="danger" effect="plain">存在问题 {{ scFilteredItems.filter((it: any) => it.errorTypes?.length > 0).length }} 条</el-tag>
-            <el-tag v-else type="success" effect="plain">全部正确</el-tag>
-            <span class="sc-lib-info">{{ scReport.standardLibraryInfo?.name }}（{{ scReport.standardLibraryInfo?.total }} 条）</span>
-          </div>
-          <el-table
-            :data="scFilteredItems"
-            border stripe size="small"
-            highlight-current-row
-            @current-change="scSelectItem"
-          >
-            <el-table-column type="index" label="#" width="42" />
-            <el-table-column prop="sourceFile" label="来源文件" min-width="130" show-overflow-tooltip />
-            <el-table-column label="文档中的标准" min-width="150">
-              <template #default="{ row: it }">
-                <div>{{ it.docStandardNo || '-' }}</div>
-                <div class="sc-name-sub">{{ it.docStandardName || '' }}</div>
-              </template>
-            </el-table-column>
-            <el-table-column label="错误类型" min-width="170">
-              <template #default="{ row: it }">
-                <template v-if="it.errorTypes.length > 0">
-                  <el-tag v-for="et in it.errorTypes" :key="et" :type="scErrorTagType(et)" size="small" effect="dark" style="margin-right:3px;margin-bottom:2px;">
-                    {{ scErrorLabel(et) }}
-                  </el-tag>
-                </template>
-                <el-tag v-else-if="it.matchResult.matched" type="success" size="small" effect="plain">一致</el-tag>
-                <span v-else>-</span>
-              </template>
-            </el-table-column>
-            <el-table-column label="正确标准" min-width="180" show-overflow-tooltip>
-              <template #default="{ row: it }">
-                <template v-if="it.matchResult.matched">
-                  <div class="correct-text">{{ it.matchResult.libraryStandardNo || '-' }}</div>
-                  <div class="sc-name-sub correct-text">{{ it.matchResult.libraryStandardName || '' }}</div>
-                  <el-tag v-if="it.matchResult.libraryStandardStatus === 'ABOLISHED'" type="danger" size="mini" effect="plain" style="margin-top:2px;">已废止</el-tag>
-                  <el-tag v-else-if="it.matchResult.libraryStandardStatus === 'UPCOMING'" type="warning" size="mini" effect="plain" style="margin-top:2px;">即将实施</el-tag>
-                </template>
-                <span v-else>-</span>
-              </template>
-            </el-table-column>
-            <el-table-column label="级别" width="52">
-              <template #default="{ row: it }">
-                <span v-if="it.matchResult.matchLevel > 0">L{{ it.matchResult.matchLevel }}</span>
-                <span v-else class="no-match">∅</span>
-              </template>
-            </el-table-column>
-          </el-table>
-          <el-button type="primary" size="small" style="margin-top:10px;" @click="handleExportScReport">
-            <el-icon><Download /></el-icon> 导出 Excel 报告
-          </el-button>
-        </div>
+        <SelfCheckReportPanel
+          v-if="isSelfCheck"
+          :report="scReport"
+          :items="scFilteredItems"
+          :error-tag-type="scErrorTagType"
+          :error-label="scErrorLabel"
+          @select-item="scSelectItem"
+          @export="handleExportScReport"
+        />
 
         <!-- Tab内容区 -->
         <div v-if="!isSelfCheck" class="tab-content">
           <!-- Tab 1: 审查摘要 -->
           <div v-if="activeTab === 'overview'" class="tab-pane">
             <!-- ===== 统计看板（始终可见）===== -->
-            <div class="stats-dashboard">
-              <div class="stats-grid">
-                <div class="stat-card-dash">
-                  <span class="stat-icon-dash">📄</span>
-                  <div class="stat-body">
-                    <span class="stat-value-dash">{{ reviewSummary?.totalFiles || files.length || 0 }}</span>
-                    <span class="stat-label-dash">审查文件</span>
-                  </div>
-                </div>
-                <div class="stat-card-dash">
-                  <span class="stat-icon-dash">🎯</span>
-                  <div class="stat-body">
-                    <span class="stat-value-dash">{{ reviewPlanSummary.taskMode }}</span>
-                    <span class="stat-label-dash">审查模式</span>
-                  </div>
-                </div>
-                <div class="stat-card-dash" :class="{ 'has-issues': issueDetails.length > 0 }">
-                  <span class="stat-icon-dash">{{ issueDetails.length > 0 ? '⚠️' : '✅' }}</span>
-                  <div class="stat-body">
-                    <span class="stat-value-dash">{{ issueDetails.length }}</span>
-                    <span class="stat-label-dash">发现问题</span>
-                  </div>
-                </div>
-                <div class="stat-card-dash">
-                  <span class="stat-icon-dash">📊</span>
-                  <div class="stat-body">
-                    <span class="stat-value-dash">{{ reviewSummary?.reviewMode ? getModeLabel(reviewSummary.reviewMode) : reviewPlanSummary.objective }}</span>
-                    <span class="stat-label-dash">审查目标</span>
-                  </div>
-                </div>
-              </div>
-
-              <!-- 合同审查评分卡片 -->
-              <div v-if="isContractReview && contractScoreData.score > 0" class="contract-score-card">
-                <div class="score-header">
-                  <div class="score-value" :class="contractScoreLevel">{{ contractScoreData.score }}</div>
-                  <div class="score-meta">
-                    <div class="score-label">综合评分 / 100</div>
-                    <div class="score-conclusion">{{ contractScoreConclusion }}</div>
-                  </div>
-                </div>
-                <div class="risk-summary">
-                  <div class="risk-item high">
-                    <span class="risk-count">{{ contractScoreData.high }}</span>
-                    <span class="risk-label">高风险</span>
-                  </div>
-                  <div class="risk-item medium">
-                    <span class="risk-count">{{ contractScoreData.medium }}</span>
-                    <span class="risk-label">中风险</span>
-                  </div>
-                  <div class="risk-item low">
-                    <span class="risk-count">{{ contractScoreData.low }}</span>
-                    <span class="risk-label">低风险</span>
-                  </div>
-                </div>
-              </div>
-
-              <!-- AI 审查空结果警告 -->
-              <div v-if="showAiWarning" class="ai-warning-banner">
-                <el-icon color="#E6A23C" :size="16"><WarningFilled /></el-icon>
-                <span>
-                  <template v-if="(task as any)?.reviewMode === 'CONTRACT_REVIEW'">
-                    合同风险审查未发现风险条款。可能原因：上传的文件不是合同文本，或合同条款对该立场无明显风险。建议更换为正式合同文件后重新审查。
-                  </template>
-                  <template v-else>
-                    AI 审查未产出结果。
-                    <template v-if="!task?.aiEngineUsed">任务未配置或未使用 AI 引擎。</template>
-                    <template v-else-if="task.aiEngineUsed === 'none'">AI 引擎已禁用。</template>
-                    <template v-else>引擎 {{ task.aiEngineUsed }} 已执行但未发现问题，请结合规则覆盖范围人工复核。</template>
-                  </template>
-                </span>
-              </div>
-
-            </div>
+            <StatsDashboard
+              :total-files="reviewSummary?.totalFiles || files.length || 0"
+              :task-mode="reviewPlanSummary.taskMode"
+              :issue-count="issueDetails.length"
+              :objective="reviewSummary?.reviewMode ? getModeLabel(reviewSummary.reviewMode) : reviewPlanSummary.objective"
+              :is-contract-review="isContractReview"
+              :contract-score="contractScoreData"
+              :show-ai-warning="showAiWarning"
+              :review-mode="(task as any)?.reviewMode"
+              :ai-engine-used="(task as any)?.aiEngineUsed"
+            />
 
             <!-- ===== 审查通过（无问题）===== -->
             <div v-if="task?.status === 'COMPLETED' && issueDetails.length === 0" class="summary-pass">
@@ -459,87 +317,17 @@
             </div>
 
             <!-- ===== 问题预览列表 ===== -->
-            <div v-if="issueDetails.length > 0" class="overview-issue-list">
-              <div class="overview-issue-header">
-                <h4 class="overview-section-title">问题概览</h4>
-                <div class="overview-header-actions">
-                  <span class="switch-label">大白话</span>
-                  <el-switch v-model="showPlainLanguage" size="small" />
-                </div>
-              </div>
-
-              <!-- 严重错误 -->
-              <template v-if="errorIssues.length > 0">
-                <div class="overview-severity-group">
-                  <div class="severity-group-header severity-error">
-                    <span class="severity-dot-sm error-dot"></span>
-                    严重错误 · {{ errorIssues.length }} 条
-                  </div>
-                  <div
-                    v-for="(issue, index) in errorIssues.slice(0, 5)"
-                    :key="issue.id"
-                    class="overview-issue-card"
-                    @click="navigateToIssue(issue)"
-                  >
-                    <div class="oic-tags">
-                      <el-tag :type="getCategoryTagType(issue.issueType)" size="small" effect="dark" round>
-                        {{ getIssueTypeLabel(issue.issueType) }}
-                      </el-tag>
-                      <el-tag type="danger" size="small" effect="plain" round>严重</el-tag>
-                    </div>
-                    <p class="oic-desc">{{ issue.description || '-' }}</p>
-                    <p v-if="showPlainLanguage && issue.plainLanguage" class="oic-plain">💡 {{ issue.plainLanguage }}</p>
-                    <div class="oic-preview-row" v-if="issue.originalText">
-                      <span class="oic-preview-label">原：</span>
-                      <span class="oic-preview-text original">{{ truncateText(issue.originalText, 80) }}</span>
-                    </div>
-                    <div class="oic-preview-row" v-if="issue.suggestedText">
-                      <span class="oic-preview-label">改：</span>
-                      <span class="oic-preview-text suggested">{{ truncateText(issue.suggestedText, 80) }}</span>
-                    </div>
-                    <el-icon class="oic-arrow"><ArrowRight /></el-icon>
-                  </div>
-                  <div v-if="errorIssues.length > 5" class="view-all-wrapper">
-                    <button class="view-all-btn" @click="activeTab = 'suggestions'">
-                      查看全部 {{ errorIssues.length }} 条严重错误
-                      <el-icon><ArrowRight /></el-icon>
-                    </button>
-                  </div>
-                </div>
-              </template>
-
-              <!-- 警告 -->
-              <template v-if="warningIssues.length > 0">
-                <div class="overview-severity-group">
-                  <div class="severity-group-header severity-warning">
-                    <span class="severity-dot-sm warning-dot"></span>
-                    警告 · {{ warningIssues.length }} 条
-                  </div>
-                  <div
-                    v-for="(issue, index) in warningIssues.slice(0, 5)"
-                    :key="issue.id"
-                    class="overview-issue-card warning"
-                    @click="navigateToIssue(issue)"
-                  >
-                    <div class="oic-tags">
-                      <el-tag :type="getCategoryTagType(issue.issueType)" size="small" effect="dark" round>
-                        {{ getIssueTypeLabel(issue.issueType) }}
-                      </el-tag>
-                      <el-tag type="warning" size="small" effect="plain" round>警告</el-tag>
-                    </div>
-                    <p class="oic-desc">{{ issue.description || '-' }}</p>
-                    <p v-if="showPlainLanguage && issue.plainLanguage" class="oic-plain">💡 {{ issue.plainLanguage }}</p>
-                    <el-icon class="oic-arrow"><ArrowRight /></el-icon>
-                  </div>
-                  <div v-if="warningIssues.length > 5" class="view-all-wrapper">
-                    <button class="view-all-btn view-all-btn-warning" @click="activeTab = 'suggestions'">
-                      查看全部 {{ warningIssues.length }} 条警告
-                      <el-icon><ArrowRight /></el-icon>
-                    </button>
-                  </div>
-                </div>
-              </template>
-            </div>
+            <OverviewIssueList
+              :issue-count="issueDetails.length"
+              :error-issues="errorIssues"
+              :warning-issues="warningIssues"
+              v-model:show-plain-language="showPlainLanguage"
+              :get-category-tag-type="getCategoryTagType"
+              :get-issue-type-label="getIssueTypeLabel"
+              :truncate-text="truncateText"
+              @navigate="navigateToIssue"
+              @view-all="activeTab = 'suggestions'"
+            />
           </div>
 
           <!-- Tab 2: 问题清单（使用重构后的 IssueCardList 组件）-->
@@ -592,63 +380,14 @@
           </div>
 
           <!-- Tab 3: 标准引用 -->
-          <div v-if="activeTab === 'knowledge'" class="tab-pane">
-            <div v-if="standardRefIssues.length > 0" class="knowledge-list">
-              <div
-                v-for="(item, index) in standardRefIssues"
-                :key="item.id || index"
-                class="knowledge-card"
-                :class="{ 'knowledge-card-clickable': item.fileId && item.originalText }"
-                @click="item.fileId && item.originalText && handleLocateKnowledgeItem(item)"
-                :title="item.fileId && item.originalText ? '点击定位到文件原文' : ''"
-              >
-                <div class="knowledge-header">
-                  <p class="knowledge-title">
-                    {{ getStandardRefTitle(item) }}
-                  </p>
-                  <div class="knowledge-header-right">
-                    <el-tag
-                      v-if="item.fileId && item.originalText"
-                      type="primary"
-                      size="small"
-                      effect="plain"
-                    >
-                      <el-icon :size="12"><Location /></el-icon> 定位原文
-                    </el-tag>
-                    <el-tag
-                      type="success"
-                      size="small"
-                    >
-                      当前可参考
-                    </el-tag>
-                  </div>
-                </div>
-                <p class="knowledge-content">{{ item.description }}</p>
-              </div>
-            </div>
+          <KnowledgeTab
+            v-if="activeTab === 'knowledge'"
+            :standard-ref-issues="standardRefIssues"
+            :get-standard-ref-title="getStandardRefTitle"
+            @locate-item="handleLocateKnowledgeItem"
+            @back-to-overview="activeTab = 'overview'"
+          />
 
-            <!-- 标准引用空状态引导 -->
-            <div v-else class="empty-state-knowledge">
-              <el-icon :size="64" color="#E6A23C"><Reading /></el-icon>
-              <h4>暂无标准引用</h4>
-              <p class="empty-reason">本次审查未命中相关标准条款</p>
-
-              <div class="possible-reasons">
-                <p><strong>可能的原因：</strong></p>
-                <ul>
-                  <li>当前审查模式未启用标准比对功能</li>
-                  <li>文档内容与知识库中的标准条款无关联</li>
-                  <li>知识库尚未导入相关领域的标准文件</li>
-                </ul>
-              </div>
-
-              <div class="empty-actions">
-                <el-button type="primary" @click="activeTab = 'overview'">
-                  ← 返回审查摘要
-                </el-button>
-              </div>
-            </div>
-          </div>
 
         </div>
       </div>
@@ -659,6 +398,12 @@
       v-model="fpDialogVisible"
       :submitting="fpSubmitting"
       @confirm="handleConfirmFalsePositive"
+    />
+
+    <!-- LLM 推理回放抽屉 -->
+    <LlmReplayDrawer
+      v-model="llmReplayVisible"
+      :task-id="taskId"
     />
   </div>
 </template>
@@ -682,12 +427,11 @@ import {
   FolderOpened,
   Files,
   Link,
-  Reading,
   Document,
   PictureFilled,
   Grid,
-  Location,
   Plus,
+  View,
 } from '@element-plus/icons-vue'
 import {
   getTaskByIdApi,
@@ -701,7 +445,14 @@ import type { Task, TaskDetail, TaskFile } from '@/types/models'
 import FilePreviewPanel from '@/views/TaskDetails/FilePreviewPanel.vue'
 import DwgPreviewPanel from '@/views/TaskDetails/DwgPreviewPanel.vue'
 import FalsePositiveDialog from '@/views/TaskDetails/FalsePositiveDialog.vue'
+import ExportMenu from '@/views/TaskDetails/ExportMenu.vue'
+import ReviewProgressBar from '@/views/TaskDetails/ReviewProgressBar.vue'
+import SelfCheckReportPanel from '@/views/TaskDetails/SelfCheckReportPanel.vue'
+import StatsDashboard from '@/views/TaskDetails/StatsDashboard.vue'
+import OverviewIssueList from '@/views/TaskDetails/OverviewIssueList.vue'
+import KnowledgeTab from '@/views/TaskDetails/KnowledgeTab.vue'
 import IssueCardList from './TaskDetails/IssueCardList.vue'
+import LlmReplayDrawer from '@/views/TaskDetails/LlmReplayDrawer.vue'
 import { useTaskExport, useTextLocator, useReviewStats, useWsProgress, useFalsePositive, useSelfCheck, useIssueHelpers } from './TaskDetails/composables'
 
 const route = useRoute()
@@ -710,6 +461,7 @@ const router = useRouter()
 // ===== 基础状态 =====
 const taskId = computed(() => route.params.id as string)
 const task = ref<Task | null>(null)
+const llmReplayVisible = ref(false)
 const allDetails = ref<TaskDetail[]>([])
 const files = ref<TaskFile[]>([])
 const loading = ref(false)
@@ -793,18 +545,6 @@ const contractScoreData = computed(() => {
   const low = issueDetails.value.length - high - medium
   const score = Math.max(0, 100 - high * 15 - medium * 8 - low * 3)
   return { score, high, medium, low: Math.max(0, low) }
-})
-
-const contractScoreLevel = computed(() => {
-  if (contractScoreData.value.score >= 80) return 'level-good'
-  if (contractScoreData.value.score >= 60) return 'level-warning'
-  return 'level-danger'
-})
-
-const contractScoreConclusion = computed(() => {
-  if (contractScoreData.value.score >= 80) return '合同整体风险较低'
-  if (contractScoreData.value.score >= 60) return '合同存在一定风险，建议重点关注中高风险项'
-  return '合同风险较高，建议逐条审查并修改'
 })
 
 // 默认左侧面板宽度：自检模式 40%（右侧表格需要更多空间），普通审查 55%

@@ -67,7 +67,7 @@ export class AnnouncementService {
   static async updateAnnouncement(
     id: string,
     updates: UpdateAnnouncementInput,
-    userId: string
+    _userId: string
   ): Promise<SystemAnnouncement> {
     const announcement = await prisma.systemAnnouncement.findUnique({ where: { id } });
     if (!announcement) {
@@ -102,7 +102,7 @@ export class AnnouncementService {
   /**
    * 发布公告（DRAFT → PUBLISHED）
    */
-  static async publishAnnouncement(id: string, userId: string): Promise<SystemAnnouncement> {
+  static async publishAnnouncement(id: string, _userId: string): Promise<SystemAnnouncement> {
     const announcement = await prisma.systemAnnouncement.findUnique({ where: { id } });
     if (!announcement) {
       throw new Error('公告不存在');
@@ -123,7 +123,7 @@ export class AnnouncementService {
   /**
    * 撤回公告（PUBLISHED → WITHDRAWN）
    */
-  static async withdrawAnnouncement(id: string, userId: string): Promise<SystemAnnouncement> {
+  static async withdrawAnnouncement(id: string, _userId: string): Promise<SystemAnnouncement> {
     const announcement = await prisma.systemAnnouncement.findUnique({ where: { id } });
     if (!announcement) {
       throw new Error('公告不存在');
@@ -144,7 +144,7 @@ export class AnnouncementService {
   /**
    * 删除公告（仅 DRAFT/WITHDRAWN 可删除）
    */
-  static async deleteAnnouncement(id: string, userId: string): Promise<void> {
+  static async deleteAnnouncement(id: string, _userId: string): Promise<void> {
     const announcement = await prisma.systemAnnouncement.findUnique({ where: { id } });
     if (!announcement) {
       throw new Error('公告不存在');

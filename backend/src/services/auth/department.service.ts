@@ -103,7 +103,7 @@ export class DepartmentService {
 
     for (const levelName of levels) {
       // 查找当前层级中是否有匹配的部门（根据名称 + 父级ID）
-      const existing = await prisma.department.findFirst({
+      const existing: { id: string } | null = await prisma.department.findFirst({
         where: { name: levelName, parentId: parentId }
       });
 
@@ -111,7 +111,7 @@ export class DepartmentService {
         parentId = existing.id;
       } else {
         // 创建新部门
-        const newDept = await prisma.department.create({
+        const newDept: { id: string } = await prisma.department.create({
           data: { name: levelName, parentId }
         });
         created.push(levelName);

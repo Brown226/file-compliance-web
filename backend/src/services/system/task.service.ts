@@ -3,7 +3,6 @@ import { Task, TaskDetail, TaskFile, TaskStatus } from '@prisma/client';
 import path from 'path';
 import fs from 'fs';
 import ExcelJS from 'exceljs';
-import { ReviewService } from '../review/review.service';
 import { addReviewJob } from './queue.service';
 import FalsePositiveLibraryService from '../review/falsePositiveLibrary.service';
 import { TextExtractionService } from '../review-pipeline/text-extraction.service';
@@ -130,7 +129,7 @@ export class TaskService {
   }): Promise<Task> {
     const { title, description, creatorId, creatorUsername, standardId, standardIds = [], maxkbKnowledgeId, maxkbKnowledgeIds,
       reviewSpecificationId, ruleLibraryId, perspective, reviewPlan,
-      selectedTemplateId, intraFileConsistency, entryModule, reviewMode,
+      intraFileConsistency, entryModule, reviewMode,
       files = [], dwgParsedData } = data;
 
     // 合并标准 ID：保留单选兼容，同时写入多选
