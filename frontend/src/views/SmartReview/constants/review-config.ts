@@ -1,12 +1,11 @@
 import type { EntryModule, ReviewObjective, ReviewEvidenceSource } from '../types/smart-review'
 
 export const ENTRY_MODULE_LABEL: Record<EntryModule, string> = {
-  LIBRARY: '以库审文',
+  LIBRARY: '标准合规审查',
   CONSISTENCY: '一致性审查',
   PROOFREAD: '基础校对',
   RULE_ONLY: '规则库审查',
-  MULTIMODAL: '结构化审查',
-  DOC_REVIEW: '以文审文',
+  DOC_REVIEW: '文件比对审查',
   CONTRACT: '合同风险审查',
 }
 
@@ -14,14 +13,12 @@ export const OBJECTIVE_OPTIONS: Array<{ value: ReviewObjective; label: string; d
   { value: 'COMPLIANCE', label: '合规审查', desc: '对照知识库或规则库检查文件是否合规。' },
   { value: 'COMPARE', label: '参照比对', desc: '与参考文件逐项比对，识别差异和不一致。' },
   { value: 'PROOFREAD', label: '基础校对', desc: '检查错别字、语病、术语一致性等文字问题。' },
-  { value: 'STRUCTURED', label: '结构化审查', desc: '检查图纸、表格、公式和结构化内容。' },
 ]
 
 export const OBJECTIVE_ICON_MAP: Record<string, string> = {
   COMPLIANCE: 'MagicStick',
   COMPARE: 'Document',
   PROOFREAD: 'EditPen',
-  STRUCTURED: 'DataAnalysis',
 }
 
 export const EVIDENCE_ICON_MAP: Record<string, string> = {
@@ -40,10 +37,6 @@ export const EVIDENCE_SOURCE_OPTIONS: Record<ReviewObjective, Array<{ value: Rev
     { value: 'STANDARD', label: '知识库（可选增强）' },
   ],
   PROOFREAD: [],
-  STRUCTURED: [
-    { value: 'STANDARD', label: '知识库' },
-    { value: 'RULE_LIBRARY', label: '语义规则库' },
-  ],
 }
 
 export const DEFAULT_RULE_PREFIXES = [

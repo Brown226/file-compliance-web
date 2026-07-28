@@ -13,10 +13,8 @@ import { resolveFilePath } from '../../config/upload';
 import { ConcurrencyService } from '../system/concurrency.service';
 import { withLock } from '../../utils/redis-lock';
 import { RuleLibraryService } from '../llm/rule-library.service';
-import { TableExtractionService } from '../file/table-extraction.service';
 import { validateSeverity } from './severity-rules';
 import { validateOriginalText } from '../knowledge/text-fidelity.service';
-import { FormulaOcrService } from '../file/formula-ocr.service';
 import { ReviewPlan } from '../../types/review-plan';
 import { TaskService } from '../system/task.service';
 import { DwgHandlerService } from '../file/dwg-handler.service';
@@ -372,7 +370,7 @@ export class ReviewService {
       });
 
       const executionPlan = this.adaptReviewPlanForExecution(task);
-      const reviewMode = executionPlan.reviewMode;
+      let reviewMode = executionPlan.reviewMode;
       const maxkbKnowledgeId = (task as any).maxkbKnowledgeId || undefined;
       const ruleLibraryId = executionPlan.ruleLibraryId;
       const directPrefixes = executionPlan.enabledPrefixes;
@@ -459,7 +457,7 @@ export class ReviewService {
       // ===== DEC_REVIEW 专用：预加载审点库（StandardCheckpoint）=====
       // 审点库与文件无关（任务级共享），在 fileContexts 构建前一次性加载
       let decCheckpoints: PipelineContext['checkpoints'] = undefined;
-      if (reviewMode === 'DEC_REVIEW') {
+      if (reviewMode === 'DEC_REVIEW' || reviewMode === 'LIBRARY_REVIEW') {
         const decStdIds = task.taskStandards.map((item: any) => item.standardId);
         if (decStdIds.length > 0) {
           try {
@@ -470,6 +468,10 @@ export class ReviewService {
             if (checkpoints.length > 0) {
               decCheckpoints = checkpoints;
               console.log(`[Review] DEC_REVIEW 预加载审点 ${checkpoints.length} 条（标准 ${decStdIds.length} 个）`);
+              if (reviewMode === 'LIBRARY_REVIEW') {
+                reviewMode = 'DEC_REVIEW';
+                console.log(`[Review] LIBRARY_REVIEW 自动升级为 DEC_REVIEW：双分支增强已启用`);
+              }
             } else {
               console.warn(`[Review] DEC_REVIEW: 标准下无审点，请先调用 POST /api/checkpoint/standards/:id/checkpoints/generate 生成审点`);
             }
@@ -1011,58 +1013,7 @@ export class ReviewService {
     await TextExtractionService.ensureWordStructure(ctx);
     TextExtractionService.ensureDwgStructure(ctx);
 
-    // ��ģ̬ģʽ��������ȡ + ��ʽ���
-    let extraRuleIssues: any[] = [];
-    if (ctx.reviewMode === 'MULTIMODAL') {
-      const tables = TableExtractionService.extractTablesFromText(ctx.extractedText);
-      for (const table of tables) {
-        extraRuleIssues.push(...TableExtractionService.validateTableData(table));
-      }
-      if (['xlsx', 'xls'].includes(ctx.fileType.toLowerCase())) {
-        const excelTables = await TableExtractionService.extractFromExcel(ctx.filePath);
-        for (const table of excelTables) {
-          extraRuleIssues.push(...TableExtractionService.validateTableData(table));
-        }
-      }
-      const formulaRegions = FormulaOcrService.detectFormulaRegions(ctx.extractedText);
-      for (const region of formulaRegions) {
-        extraRuleIssues.push({
-          issueType: 'VIOLATION', ruleCode: 'FORMULA_001', severity: 'info',
-          originalText: region.text,
-          description: '��⵽���ܵĹ�ʽ���ݣ������˹�ȷ�Ϲ�ʽ��ȷ�ԡ�',
-        });
-      }
-    }
-    // �� MULTIMODAL ģʽ�������������/��ʽ������������� behavior.rules �ſأ�
-    if (extraRuleIssues.length > 0 && ctx.reviewMode === 'MULTIMODAL') {
-      const extraData = extraRuleIssues.map((issue) => {
-        const meta = this.buildLocateMeta(ctx.extractedText, issue, { fileId: file.id });
-        if (meta) this.enrichDwgHandle(issue, meta, ctx);
-        if (meta && meta.absolute && !meta.hint?.pageHint) {
-          const pageHint = this.resolvePageHint(meta, ctx.pdfPages, ctx.parseResult);
-          if (pageHint != null) meta.hint = { ...(meta.hint || {}), pageHint };
-        }
-        return {
-          ...this.getConfidence(issue),
-          taskId, fileId: file.id,
-          issueType: issue.issueType, ruleCode: issue.ruleCode,
-          severity: issue.severity,
-          reviewSource: 'RULE_ENGINE',
-          originalText: issue.originalText,
-          suggestedText: issue.suggestedText || null,
-          description: issue.description,
-          cadHandleId: (issue as any).cadHandleId || null,
-          textPosition: this.buildLegacyTextPosition(meta, ctx.extractedText, issue.originalText),
-          locateMeta: meta,
-        };
-      });
-      const strippedExtra = extraData.map((item) => this.stripDbUnsupportedFields(item));
-      try {
-        await prisma.taskDetail.createMany({ data: strippedExtra, skipDuplicates: true });
-      } catch (e) {
-        console.error(`[Review] ? MULTIMODAL ǰ�ü��д��ʧ��: ${file.fileName}`, e);
-      }
-    }
+    // 阶段2
 
     // ��������
     let ruleIssues: any[] = [];
@@ -1081,7 +1032,7 @@ export class ReviewService {
           },
           prefixes.length > 0 ? { enabledRulePrefixes: new Set(prefixes) } : undefined,
         );
-        ruleIssues = [...baseIssues, ...extraRuleIssues];
+        ruleIssues = baseIssues;
       }
     }
 

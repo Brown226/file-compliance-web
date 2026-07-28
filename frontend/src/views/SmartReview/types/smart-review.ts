@@ -1,6 +1,6 @@
-export type EntryModule = 'LIBRARY' | 'CONSISTENCY' | 'PROOFREAD' | 'RULE_ONLY' | 'MULTIMODAL' | 'DOC_REVIEW' | 'CONTRACT' | 'DEC_REVIEW'
+export type EntryModule = 'LIBRARY' | 'CONSISTENCY' | 'PROOFREAD' | 'RULE_ONLY' | 'DOC_REVIEW' | 'CONTRACT'
 
-export type ReviewObjective = 'COMPLIANCE' | 'COMPARE' | 'PROOFREAD' | 'STRUCTURED'
+export type ReviewObjective = 'COMPLIANCE' | 'COMPARE' | 'PROOFREAD'
 
 export type ReviewEvidenceSource = 'STANDARD' | 'RULE_LIBRARY' | 'REFERENCE'
 

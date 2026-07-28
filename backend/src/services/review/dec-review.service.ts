@@ -107,7 +107,7 @@ export class DecReviewService {
     // ===== 第二层：3 层交叉复核 =====
     // ① 智能判标
     allComplianceIssues = await SmartJudgeService.judge(allComplianceIssues, ctx);
-    // ② 图文复核：复用现有 MULTIMODAL，此处简化（如有图纸则触发）
+    // ② 图文复核：TODO 未实现（如有图纸则触发视觉模型复核）
     // ③ 文本复核
     allComplianceIssues = await TextCrossCheckService.check(allComplianceIssues, ctx);
 

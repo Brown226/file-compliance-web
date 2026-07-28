@@ -18,10 +18,8 @@ export class TaskService {
       CONSISTENCY: 'CONSISTENCY',
       PROOFREAD: 'TYPO_GRAMMAR',
       RULE_ONLY: 'RULE_ONLY',   // 仅规则执行，无AI
-      MULTIMODAL: 'MULTIMODAL',
       DOC_REVIEW: 'DOC_REVIEW',
       CONTRACT: 'CONTRACT_REVIEW',  // 合同风险审查
-      DEC_REVIEW: 'DEC_REVIEW',     // DEC 规范审查（双分支：完整性+遵从性）
     }
     return map[entryModule] || 'LIBRARY_REVIEW'
   }
@@ -34,7 +32,6 @@ export class TaskService {
       return 'DOC_REVIEW';
     }
     if (plan.objective === 'PROOFREAD') return 'TYPO_GRAMMAR';
-    if (plan.objective === 'STRUCTURED') return 'MULTIMODAL';
     if (plan.execution.profile === 'RULE_ONLY') {
       // RULE_ONLY 模式：有审查规范集/规则库来源，或有直接启用的规则前缀
       const hasDirectPrefixes = Array.isArray(plan.evidence.enabledPrefixes) && plan.evidence.enabledPrefixes.length > 0;
@@ -78,7 +75,9 @@ export class TaskService {
           profile: input?.execution?.profile === 'RULE_ONLY' ? 'RULE_ONLY' : 'AI_ONLY',
         },
         templateId: typeof input?.templateId === 'string' && input.templateId.trim() ? input.templateId.trim() : undefined,
-        contractStance: input?.contractStance === 'contractor' ? 'contractor' : 'owner',
+        contractStance: input?.contractStance === 'contractor' || input?.contractStance === 'owner'
+          ? input.contractStance
+          : undefined,
       };
     }
     // 兜底：无有效 plan 时默认合规审查 + 标准依据
@@ -154,7 +153,7 @@ export class TaskService {
       }
     }
     // 优先使用前端直接传的 reviewMode（如 SELF_CHECK），否则从 entryModule 或 reviewPlan 推导
-    const validReviewModes = ['LIBRARY_REVIEW', 'DOC_REVIEW', 'CONSISTENCY', 'TYPO_GRAMMAR', 'MULTIMODAL', 'RULE_ONLY', 'SELF_CHECK', 'CONTRACT_REVIEW', 'DEC_REVIEW'];
+    const validReviewModes = ['LIBRARY_REVIEW', 'DOC_REVIEW', 'CONSISTENCY', 'TYPO_GRAMMAR', 'RULE_ONLY', 'SELF_CHECK', 'CONTRACT_REVIEW', 'DEC_REVIEW'];
     const resolvedReviewMode = (reviewMode && validReviewModes.includes(reviewMode))
       ? reviewMode
       : entryModule

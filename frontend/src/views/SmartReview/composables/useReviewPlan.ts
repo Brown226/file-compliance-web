@@ -132,16 +132,6 @@ export function useReviewPlan(state: ReturnType<typeof useSmartReviewState>) {
         draft.execution.profile = 'AI_ONLY'
         break
 
-      case 'MULTIMODAL':
-        draft.objective = 'STRUCTURED'
-        draft.evidence.sources = []
-        draft.evidence.ruleLibraryId = null
-        draft.evidence.maxkbKnowledgeIds = []
-        draft.enhancements.intraFileConsistency = true
-        draft.enhancements.crossFileConsistency = true
-        draft.execution.profile = 'AI_ONLY'
-        break
-
       case 'DOC_REVIEW':
         draft.objective = 'COMPARE'
         draft.evidence.sources = ['REFERENCE']
@@ -171,16 +161,6 @@ export function useReviewPlan(state: ReturnType<typeof useSmartReviewState>) {
         draft.enhancements.crossFileConsistency = false
         draft.execution.profile = 'AI_ONLY'
         draft.contractStance = 'owner'
-        break
-
-      case 'DEC_REVIEW':
-        // DEC 规范审查：基于标准库审点的双分支审核（完整性 + 遵从性）
-        draft.objective = 'COMPLIANCE'
-        draft.evidence.sources = ['STANDARD']
-        draft.evidence.ruleLibraryId = null
-        draft.enhancements.intraFileConsistency = true
-        draft.enhancements.crossFileConsistency = false
-        draft.execution.profile = 'AI_ONLY'
         break
     }
   }

@@ -12,11 +12,9 @@ export type ReviewModeType =
   | 'DOC_REVIEW'
   | 'CONSISTENCY'
   | 'TYPO_GRAMMAR'
-  | 'MULTIMODAL'
   | 'RULE_ONLY'
   | 'SELF_CHECK'
   | 'CONTRACT_REVIEW'
-  | 'STANDARD_CHECK'
   | 'DEC_REVIEW';
 
 /** 审查模式 → prompt 场景名映射（唯一数据源，review-handlers / ai-review 共用） */
@@ -26,10 +24,8 @@ export const MODE_SCENE_MAP: Record<ReviewModeType, string> = {
   TYPO_GRAMMAR:   'typo_grammar',
   DOC_REVIEW:     'doc_review',
   CONTRACT_REVIEW: 'contract_review',
-  MULTIMODAL:     'multimodal',
   RULE_ONLY:      'library_review',
   SELF_CHECK:     'self_check',
-  STANDARD_CHECK: 'standard_check',
   DEC_REVIEW:     'dec_review',
 };
 
@@ -187,12 +183,6 @@ export interface PipelineContext {
     mandatory: string;
     auditDimension: string;
     checkPrompt: string | null;
-  }>;
-  /** DEC_REVIEW 专用：设计文档章节感知切块结果 */
-  designChunks?: Array<{
-    chunkIndex: number;
-    text: string;
-    sectionPath: string;
   }>;
 
 }

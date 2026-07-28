@@ -1,4 +1,4 @@
-﻿<template>
+<template>
   <div class="smart-review">
     <div v-if="currentStep === 0" class="review-flow">
       <!-- 顶部：任务标题 -->
@@ -182,7 +182,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, nextTick } from 'vue'
 import { ElMessage } from 'element-plus'
-import { Check, MagicStick, WarningFilled, Loading, FolderOpened, Files, Link, Document, EditPen, DataAnalysis, Plus, Stamp, InfoFilled } from '@element-plus/icons-vue'
+import { Check, MagicStick, WarningFilled, Loading, FolderOpened, Files, Link, Document, EditPen, Plus, Stamp, InfoFilled } from '@element-plus/icons-vue'
 import { getKnowledgeTreeApi } from '@/api/maxkb'
 import { getRuleLibrariesApi } from '@/api/rule-library'
 import { getRuleRegistryApi, type RuleGroupMeta } from '@/api/system'
@@ -204,7 +204,6 @@ const objectiveIconComponentMap: Record<string, any> = {
   COMPLIANCE: MagicStick,
   COMPARE: Document,
   PROOFREAD: EditPen,
-  STRUCTURED: DataAnalysis,
 }
 const evidenceIconComponentMap: Record<string, any> = {
   STANDARD: FolderOpened,
@@ -272,7 +271,7 @@ onMounted(async () => {
   const restored = state.restoreState()
   if (restored && state.currentStep.value>0) { nextTick(()=>{ if(state.currentStep.value>=1&&state.fileList.value.length===0){ ElMessage.warning('已恢复之前的配置草稿，但文件需要重新上传'); state.currentStep.value=0; state.clearSavedState() } }) }
   const entry = sessionStorage.getItem('smartReview.entryModule') as EntryModule|null
-  if (entry && ['LIBRARY','CONSISTENCY','PROOFREAD','RULE_ONLY','MULTIMODAL','DOC_REVIEW','CONTRACT'].includes(entry)) { state.entryModule.value=entry; plan.applyEntryModulePreset(entry) }
+  if (entry && ['LIBRARY','CONSISTENCY','PROOFREAD','RULE_ONLY','DOC_REVIEW','CONTRACT'].includes(entry)) { state.entryModule.value=entry; plan.applyEntryModulePreset(entry) }
   try {
     await buildKnowledgeNameMap()
     const [libRes, ruleRegRes] = await Promise.all([getRuleLibrariesApi(), getRuleRegistryApi()])

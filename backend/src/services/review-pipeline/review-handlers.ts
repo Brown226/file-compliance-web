@@ -12,7 +12,6 @@ import { AiReviewService } from './ai-review.service';
 import { TerminologyService } from '../standard/terminology.service';
 import { StructuredConsistencyService } from '../review/structured-consistency.service';
 import { getEffectiveConfig } from './pipeline-config';
-import { StandardClauseCheckService } from '../standard/standard-clause-check.service';
 import { DecReviewService } from '../review/dec-review.service';
 
 /** 审查模式处理器签名 */
@@ -29,10 +28,8 @@ const MODE_META: Record<ReviewModeType, { displayName: string; description: stri
   TYPO_GRAMMAR:   { displayName: '基础校对', description: '文字质量审查（错别字/语法/通顺性/术语一致性等，跳过RAG，直接LLM）', needsRefFiles: false },
   DOC_REVIEW:     { displayName: '以文审文', description: '使用上游参照文件与待审文件进行比对审查', needsRefFiles: true },
   CONTRACT_REVIEW: { displayName: '合同风险审查', description: '审查核电工程合同，识别对业主不利的风险条款', needsRefFiles: false },
-  MULTIMODAL:     { displayName: '结构化审查', description: '表格数据/数值/公式/图纸标注的结构化审查', needsRefFiles: false },
   RULE_ONLY:      { displayName: '仅规则审查', description: '仅执行预定义规则引擎检查，不调用 AI，速度最快', needsRefFiles: false },
   SELF_CHECK:     { displayName: '标准引用自检', description: '提取文档中的标准引用并与标准库机械匹配', needsRefFiles: false },
-  STANDARD_CHECK: { displayName: '逐条核对', description: '拿着标准条文清单逐条核对，只输出不符合项，不编造来源（借鉴 OpenSpec 审查方法论）', needsRefFiles: false },
   DEC_REVIEW:     { displayName: 'DEC规范审查', description: '审点工程化 + 双分支并行审核（完整性/遵从性）+ 多层交叉复核 + 规则兜底', needsRefFiles: false },
 };
 
@@ -198,79 +195,12 @@ const handleContractReview: ReviewHandler = async (ctx) => {
 };
 
 /**
- * MULTIMODAL — 结构化审查
- * 直接调用 LLM，对表格数据/数值/公式/图纸标注进行结构化审查。
- * 注意：表格/公式的规则级检测已在阶段1完成，此处只做 AI 审查。
- */
-const handleMultimodal: ReviewHandler = async (ctx) => {
-  const text = ctx.extractedText || '';
-  if (!text.trim()) return { aiIssues: [], usedEngine: 'none' };
-
-  const scene = ctx.scene || getModeScene('MULTIMODAL');
-  const config = getEffectiveConfig(ctx);
-  const result = await AiReviewService.runLLMDirect(text, ctx, scene, config);
-  return { aiIssues: result.issues, usedEngine: result.engine, sources: result.sources };
-};
-
-/**
- * STANDARD_CHECK — 标准逐条核对
- *
- * 拿着标准条文清单，逐条问 LLM "这条符合吗？"
- * 只输出"不符合"的项，不编造来源。
- * 借鉴 OpenSpec 审查模块的"条文逐条 Agent 核对"方法。
- */
-const handleStandardCheck: ReviewHandler = async (ctx) => {
-  const text = ctx.extractedText || '';
-  if (!text.trim()) return { aiIssues: [], usedEngine: 'none' };
-
-  // 从 ctx.semanticItems 中提取标准条文
-  // 注意：semanticItems 的字段是 ruleCode/ruleName/description/category，不是 id/code/title/content
-  const clauses = (ctx.semanticItems || []).map(item => ({
-    id: item.ruleCode,
-    code: item.ruleCode,
-    title: item.ruleName,
-    content: item.description || '',
-    category: item.category || '',
-  }));
-
-  if (clauses.length === 0) {
-    console.log('[Handler] STANDARD_CHECK: 无标准条文，跳过');
-    return { aiIssues: [], usedEngine: 'none' };
-  }
-
-  console.log(`[Handler] STANDARD_CHECK: 开始逐条核对 ${clauses.length} 条条文`);
-
-  const config = getEffectiveConfig(ctx);
-  const { results, nonCompliant, unverified } = await StandardClauseCheckService.checkClausesWithAudit(
-    clauses,
-    text,
-    {
-      temperature: 0.1,
-      timeout: config.llmTimeout || 60,
-      concurrency: 3,
-    },
-  );
-
-  // 转换为 ReviewIssue
-  const issues: ReviewIssue[] = [];
-  for (const result of results) {
-    const issue = StandardClauseCheckService.toReviewIssue(result);
-    if (issue) issues.push(issue);
-  }
-
-  console.log(`[Handler] STANDARD_CHECK: 完成 - ${nonCompliant}条不符合, ${unverified}条不确定, 共${clauses.length}条`);
-
-  return { aiIssues: issues, usedEngine: 'standard-check' };
-};
-
-/**
  * DEC_REVIEW — DEC 规范审查（审点工程化 + 双分支并行 + 多层交叉复核）
  *
- * 与 STANDARD_CHECK 的核心区别：
  * - 审点工程化：规范条文经 LLM 加工成结构化审点（mandatory/auditDimension/checkPrompt），存 StandardCheckpoint
  * - 双分支并行：完整性审核（骨架级）+ 遵从性审核（内容级）同时运行
  * - 多层容错：遵从性分支内部 3 分支并行 → 3 层交叉复核 → 规则兜底
- * - 依赖 ctx.checkpoints（阶段0 预加载）和 ctx.designChunks（章节感知切块）
+ * - 依赖 ctx.checkpoints（阶段0 预加载）
  *
  * 若 ctx.checkpoints 未预加载（空），双分支会跑空并记录日志，不抛错。
  */
@@ -302,8 +232,6 @@ export const REVIEW_HANDLERS: Record<ReviewModeType, ReviewHandler> = {
     console.warn('[Handler] SELF_CHECK 被 processTask 误调用，请使用独立的 /api/self-check/run 端点');
     return { aiIssues: [], usedEngine: 'self_check' };
   },
-  MULTIMODAL:     handleMultimodal,
-  STANDARD_CHECK: handleStandardCheck,
   DEC_REVIEW:     handleDecReview,
 };
 

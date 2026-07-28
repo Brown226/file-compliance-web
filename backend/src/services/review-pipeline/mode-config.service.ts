@@ -36,10 +36,8 @@ const DEFAULT_MODE_CONFIGS: Record<ReviewModeType, {
   CONTRACT_REVIEW: { enabled: true, rules: false, standardRef: false, ai: true, aiStrategy: 'contractReview', crossFile: false },
   CONSISTENCY:    { enabled: true, rules: false, standardRef: false, ai: true, aiStrategy: 'standard', crossFile: true },
   TYPO_GRAMMAR:   { enabled: true, rules: false, standardRef: false, ai: true, aiStrategy: 'llmOnly', crossFile: false },
-  MULTIMODAL:     { enabled: true, rules: false, standardRef: false, ai: true, aiStrategy: 'multimodal', crossFile: false },
   RULE_ONLY:    { enabled: true, rules: true,  standardRef: false, ai: false, aiStrategy: 'standard', crossFile: false },
   SELF_CHECK:     { enabled: true, rules: false, standardRef: false, ai: false, aiStrategy: 'standard', crossFile: false },
-  STANDARD_CHECK: { enabled: true, rules: false, standardRef: false, ai: true, aiStrategy: 'standard', crossFile: false },
   DEC_REVIEW:     { enabled: true, rules: false, standardRef: false, ai: true, aiStrategy: 'decReview', crossFile: false },
 };
 

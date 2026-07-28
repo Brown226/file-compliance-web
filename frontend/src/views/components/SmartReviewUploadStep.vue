@@ -147,7 +147,7 @@ import {
   PictureFilled, Files, Grid,
 } from '@element-plus/icons-vue'
 
-type EntryModule = 'LIBRARY' | 'CONSISTENCY' | 'PROOFREAD' | 'RULE_ONLY' | 'MULTIMODAL' | 'DOC_REVIEW' | 'CONTRACT'
+type EntryModule = 'LIBRARY' | 'CONSISTENCY' | 'PROOFREAD' | 'RULE_ONLY' | 'DOC_REVIEW' | 'CONTRACT'
 
 const props = defineProps<{
   fileList: UploadFile[]
@@ -178,10 +178,6 @@ const moduleMeta: Record<string, { title: string; subtitle: string }> = {
   PROOFREAD: {
     title: '基础校对',
     subtitle: '错别字、语法、语句通顺性、术语一致性等文字质量检查，快速完成文字层面的质量把关。',
-  },
-  MULTIMODAL: {
-    title: '结构化审查',
-    subtitle: '针对含图纸、表格、公式的复杂文件进行专项识别，上传文件后 AI 将解析结构化内容并审查。',
   },
   DOC_REVIEW: {
     title: '以文审文',
