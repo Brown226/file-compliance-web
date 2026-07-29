@@ -6,11 +6,15 @@
  */
 
 import prisma from '../../config/db';
+import { Prisma } from '@prisma/client';
 import { PromptTemplateService } from './prompt-template.service';
 import { PromptLoader } from '../prompts';
 import { CacheService } from '../system/cache.service';
 import { get_encoding } from 'tiktoken';
 import { validateSeverity } from '../review/severity-rules';
+import * as crypto from 'crypto';
+import { retryWithBackoff } from '../../utils/retry';
+import { acquireLlmToken } from '../../utils/llm-rate-limiter';
 
 /** 默认编码使用 cl100k_base（GPT-4 / GPT-3.5-turbo 使用的编码） */
 const DEFAULT_ENCODING = 'cl100k_base';
@@ -35,6 +39,7 @@ export interface ReviewIssue {
   // 合同审查专用字段
   riskLevel?: string;     // 风险等级: HIGH / MEDIUM / LOW
   clauseType?: string;    // 条款类型: payment/penalty/warranty/ip/change/claim/insurance/dispute/other
+  recommendation?: string; // 合同审查修改建议（独立字段，与 plainLanguage 区分）
   diffRanges?: any;       // 字符级差异定位范围（标准引用检查使用）
   matchLevel?: number;    // 匹配等级（标准引用检查使用）
   similarity?: number;    // 相似度（标准引用检查使用）
@@ -154,6 +159,19 @@ export class LlmService {
         }
       }
 
+      // 合同审查双字段合并解析：{ riskIssues, complianceIssues } → 合并为单数组并打标记
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed) &&
+          (parsed.riskIssues || parsed.complianceIssues)) {
+        const riskArr = Array.isArray(parsed.riskIssues) ? parsed.riskIssues : [];
+        const compArr = Array.isArray(parsed.complianceIssues) ? parsed.complianceIssues : [];
+        const merged = [
+          ...riskArr.map((it: any) => ({ ...it, _chainTag: 'CLS_RISK' })),
+          ...compArr.map((it: any) => ({ ...it, _chainTag: 'CLS_COMPLIANCE' })),
+        ].filter(it => it && (it.issueType || it.riskLevel) && it.originalText);
+        // 复用数组解析逻辑（传入已合并数组）
+        parsed = merged;
+      }
+
       if (Array.isArray(parsed)) {
         return parsed
           .filter((item: any) => {
@@ -204,15 +222,21 @@ export class LlmService {
               description = `[${riskLabel}${clauseLabel ? ' · ' + clauseLabel : ''}] ${description}`;
             }
 
+            // ruleCode：优先用 LLM 返回值；否则用双链合并标记（CLS_RISK/CLS_COMPLIANCE）
+            const ruleCode = item.ruleCode ? String(item.ruleCode)
+              : item._chainTag ? String(item._chainTag)
+              : undefined;
+
             return {
               issueType: finalIssueType,
               severity,
               originalText: String(item.originalText || ''),
               suggestedText: item.suggestedText ? String(item.suggestedText) : undefined,
               description,
-              plainLanguage: item.plain_language ? String(item.plain_language) : (item.recommendation ? String(item.recommendation) : undefined),
+              plainLanguage: item.plain_language ? String(item.plain_language) : undefined,
+              recommendation: item.recommendation ? String(item.recommendation) : undefined,
               cadHandleId: item.cadHandleId ? String(item.cadHandleId) : undefined,
-              ruleCode: item.ruleCode ? String(item.ruleCode) : undefined,
+              ruleCode,
               standardRef: item.standardRef ? String(item.standardRef) : (item.clauseType ? clauseTypeLabels[item.clauseType] || item.clauseType : undefined),
               riskLevel: item.riskLevel || undefined,
               clauseType: item.clauseType || undefined,
@@ -949,6 +973,8 @@ export class LlmService {
       taskId?: string;
       /** 可观测性：审查模式 */
       mode?: string;
+      /** 可观测性：RAG 检索片段（留存到 LlmCallLog 供推理回放展示） */
+      ragChunks?: any;
     }
   ): Promise<ReviewIssue[]> {
     // 可观测性埋点（P2）：记录本次 LLM 调用的耗时/Token/状态
@@ -978,7 +1004,8 @@ export class LlmService {
       }
     }
 
-    const maxTokens = options?.maxTokens ?? config.maxTokens;
+    // 自动探测的模型上限优先：推理模型抬升下限、所有模型钳住真实 maxOutput
+    const maxTokens = this.resolveMaxTokens(options?.maxTokens, config);
     const timeoutMs = (options?.timeout ?? config.timeout) * 1000;
     // OPT-026: 审查场景默认 temperature=0，最大化可复现性（调用方仍可显式覆盖）
     const temperature = options?.temperature ?? 0;
@@ -1019,10 +1046,12 @@ export class LlmService {
       seed: 42, // OPT-026: 固定 seed 提升可复现性（OpenAI 兼容 API 支持）
     };
 
-    // ★ LLM 响应缓存：基于文档ID+chunkIndex，避免相同文档片段重复调用 API
+    // ★ LLM 响应缓存：基于文档ID+chunkIndex+文本hash，避免相同文档片段重复调用 API
+    // P0-J: 加入文本 hash，防止文档修改后同 docId+chunkIndex 命中旧缓存
     const chunkIdx = options?.positionInfo?.chunkIndex ?? 0;
     const docId = options?.documentId || 'unknown';
-    const llmCacheKey = CacheService.generateKey('llm:review', docId, String(chunkIdx), config.modelName, String(temperature));
+    const textHash = crypto.createHash('md5').update(text).digest('hex').slice(0, 8);
+    const llmCacheKey = CacheService.generateKey('llm:review', docId, String(chunkIdx), textHash, config.modelName, String(temperature));
     const LLM_CACHE_TTL = 24 * 3600; // 24 小时
     const cachedContent = await CacheService.get<string>(llmCacheKey);
     if (cachedContent !== null) {
@@ -1032,6 +1061,7 @@ export class LlmService {
         provider: config.provider, latencyMs: Date.now() - _callStart, status: 'cache',
         promptFull,
         completionFull: this.truncateForLog(cachedContent),
+        ragChunks: options?.ragChunks,
       });
       const issues = this.parseReviewResult(cachedContent);
       if (options?.positionInfo && issues.length > 0) {
@@ -1057,27 +1087,53 @@ export class LlmService {
       return issues;
     }
 
+    // 限流：按 model 分桶获取令牌，避免高并发打爆 LLM API
+    await acquireLlmToken(config.modelName);
+
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
 
     try {
-      const response = await fetch(`${config.apiBaseUrl}/chat/completions`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${config.apiKey}`,
-        },
-        body: JSON.stringify(body),
-        signal: controller.signal,
-      });
+      // 推理模型（如 minimax-m3）可能把 token 预算全耗在思考（reasoning_content）上，
+      // 导致 content 为空且 finish_reason=length；此时加倍 max_tokens 重试一次，避免审查空转
+      let data: any;
+      let content = '';
+      let reasoningContent = '';
+      // attempt 0: 原始请求；attempt 1-3: 429/5xx 指数退避重试（最多 3 次）
+      for (let attempt = 0; attempt < 4; attempt++) {
+        const response = await fetch(`${config.apiBaseUrl}/chat/completions`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${config.apiKey}`,
+          },
+          body: JSON.stringify(body),
+          signal: controller.signal,
+        });
 
-      if (!response.ok) {
-        const errorText = await response.text();
-        throw new Error(`LLM API 错误 (${response.status}): ${errorText}`);
+        if (!response.ok) {
+          // 429/502/503：可重试错误，指数退避（1s/2s/4s），读取 Retry-After 响应头
+          const isRetryable = response.status === 429 || response.status === 502 || response.status === 503;
+          if (isRetryable && attempt < 3) {
+            const retryAfter = response.headers.get('Retry-After');
+            const delayMs = retryAfter ? parseInt(retryAfter, 10) * 1000 : Math.pow(2, attempt) * 1000;
+            console.warn(`[LLM] HTTP ${response.status}，${delayMs}ms 后重试 (attempt ${attempt + 1}/3)`);
+            await new Promise(r => setTimeout(r, delayMs));
+            continue;
+          }
+          const errorText = await response.text();
+          throw new Error(`LLM API 错误 (${response.status}): ${errorText.substring(0, 500)}`);
+        }
+
+        data = await response.json() as any;
+        const message = data.choices?.[0]?.message || {};
+        content = message.content || '';
+        reasoningContent = message.reasoning_content || message.reasoning || '';
+        const finishReason = data.choices?.[0]?.finish_reason || '';
+        if (content || finishReason !== 'length' || attempt > 0) break;
+        body.max_tokens = Math.min(maxTokens * 2, config.modelMaxOutput || 16384);
+        console.warn(`[LLM] content 为空且 finish_reason=length（推理 token 预算耗尽），加倍 max_tokens=${body.max_tokens} 重试`);
       }
-
-      const data = await response.json() as any;
-      const content = data.choices?.[0]?.message?.content || '';
 
       // 解析 token 用量（可观测性 P2）
       if (data.usage) {
@@ -1092,12 +1148,18 @@ export class LlmService {
         provider: config.provider, latencyMs: Date.now() - _callStart, status: 'success',
         usage: _usage,
         promptFull,
-        completionFull: this.truncateForLog(content),
+        // content 为空时兜底记录 reasoning_content，保证推理回放始终有内容可看
+        completionFull: this.truncateForLog(
+          content || (reasoningContent ? `[模型未输出正式回答，以下为 reasoning_content]\n${reasoningContent}` : '')
+        ),
+        ragChunks: options?.ragChunks,
       });
 
-      // ★ 缓存 LLM 原始响应（不含位置信息，位置信息每次实时计算）
-      await CacheService.set(llmCacheKey, content, LLM_CACHE_TTL);
-      console.log(`[LLM] reviewText 已缓存响应 (${content.length}字)`);
+      // ★ 缓存 LLM 原始响应（不含位置信息，位置信息每次实时计算）；空 content 不缓存，避免 24h 内持续命中空结果
+      if (content) {
+        await CacheService.set(llmCacheKey, content, LLM_CACHE_TTL);
+        console.log(`[LLM] reviewText 已缓存响应 (${content.length}字)`);
+      }
 
       const issues = this.parseReviewResult(content);
 
@@ -1149,6 +1211,7 @@ export class LlmService {
         provider: config.provider, latencyMs: Date.now() - _callStart, status: 'failed',
         errorMsg: _callError,
         promptFull,
+        ragChunks: options?.ragChunks,
       });
       throw e;
     } finally {
@@ -1168,7 +1231,7 @@ export class LlmService {
     model: string;
     provider?: string;
     latencyMs: number;
-    status: 'success' | 'failed' | 'cache';
+    status: 'success' | 'failed' | 'cache' | 'retry';
     usage?: { promptTokens: number; completionTokens: number; totalTokens: number };
     errorMsg?: string | null;
     promptFull?: string;
@@ -1190,7 +1253,8 @@ export class LlmService {
           errorMsg: params.errorMsg ?? null,
           promptFull: params.promptFull ?? null,
           completionFull: params.completionFull ?? null,
-          ragChunks: params.ragChunks ?? null,
+          // 无检索片段时写 SQL NULL（DbNull）而非 JSON null，便于 SQL 层区分
+          ragChunks: params.ragChunks ?? Prisma.DbNull,
         },
       }).catch(e => console.warn('[LLM] 写入调用日志失败:', (e as Error).message));
     } catch (e) {
@@ -1237,6 +1301,68 @@ export class LlmService {
   }
 
   /**
+   * 自动探测模型能力（上下文窗口/最大输出/是否推理模型）
+   *
+   * 从 /models 接口读取模型元数据，兼容多种网关字段：
+   * - capabilities.contextWindow / maxOutput / reasoning（cbcn 内网网关）
+   * - context_length（OpenRouter）、max_model_len（vLLM）
+   * 探测失败返回 null，不影响主流程（降级为配置值）
+   */
+  private static _modelCapsCache = new Map<string, { caps: { contextWindow: number; maxOutput: number; reasoning: boolean } | null; timestamp: number }>();
+  private static readonly CAPS_CACHE_TTL = 60 * 60 * 1000; // 1小时
+
+  static async probeModelCapabilities(
+    apiBaseUrl: string,
+    apiKey: string,
+    modelName: string,
+  ): Promise<{ contextWindow: number; maxOutput: number; reasoning: boolean } | null> {
+    const cacheKey = `${apiBaseUrl}::${modelName}`;
+    const hit = this._modelCapsCache.get(cacheKey);
+    if (hit && Date.now() - hit.timestamp < this.CAPS_CACHE_TTL) return hit.caps;
+
+    let caps: { contextWindow: number; maxOutput: number; reasoning: boolean } | null = null;
+    try {
+      const res = await fetch(`${apiBaseUrl.replace(/\/+$/, '')}/models`, {
+        headers: { 'Authorization': `Bearer ${apiKey}` },
+        signal: AbortSignal.timeout(5000),
+      });
+      if (res.ok) {
+        const data = await res.json() as any;
+        const list = Array.isArray(data?.data) ? data.data : [];
+        const m = list.find((x: any) => x?.id === modelName);
+        if (m) {
+          const c = m.capabilities || {};
+          const contextWindow = Number(c.contextWindow ?? m.context_length ?? m.max_model_len ?? 0) || 0;
+          const maxOutput = Number(c.maxOutput ?? c.max_output_tokens ?? m.max_completion_tokens ?? 0) || 0;
+          const reasoning = c.reasoning === true;
+          if (contextWindow > 0 || maxOutput > 0) {
+            caps = { contextWindow, maxOutput, reasoning };
+            console.log(`[LLM] 模型能力探测: ${modelName} contextWindow=${contextWindow} maxOutput=${maxOutput} reasoning=${reasoning}`);
+          }
+        }
+      }
+    } catch (e) {
+      console.warn(`[LLM] 模型能力探测失败（降级为配置值）: ${(e as Error).message}`);
+    }
+    this._modelCapsCache.set(cacheKey, { caps, timestamp: Date.now() });
+    return caps;
+  }
+
+  /**
+   * 计算实际 max_tokens：自动探测的模型上限优先于写死的默认值
+   * - 推理模型（reasoning=true）：抬升下限到 16384，避免思考耗尽预算导致 content 为空
+   * - 始终不超过模型真实 maxOutput
+   */
+  private static resolveMaxTokens(requested: number | undefined, config: { maxTokens: number; modelMaxOutput?: number; modelReasoning?: boolean }): number {
+    let maxTokens = requested ?? config.maxTokens;
+    if (config.modelReasoning) maxTokens = Math.max(maxTokens, 16384);
+    if (config.modelMaxOutput && config.modelMaxOutput > 0) {
+      maxTokens = Math.min(maxTokens, config.modelMaxOutput);
+    }
+    return maxTokens;
+  }
+
+  /**
    * 从数据库获取 LLM 配置（带缓存）
    */
   private static _llmConfigCache: { config: any; timestamp: number } | null = null;
@@ -1259,6 +1385,12 @@ export class LlmService {
     temperature: number;
     timeout: number;
     provider?: string;
+    /** 自动探测：模型上下文窗口（最大输入） */
+    modelContextWindow?: number;
+    /** 自动探测：模型最大输出 token 数 */
+    modelMaxOutput?: number;
+    /** 自动探测：是否推理模型（思考占用输出预算） */
+    modelReasoning?: boolean;
   } | null> {
     // 检查缓存
     if (this._llmConfigCache && Date.now() - this._llmConfigCache.timestamp < this.CONFIG_CACHE_TTL) {
@@ -1313,6 +1445,15 @@ export class LlmService {
         }
       }
       this._llmConfigCache = { config: result, timestamp: Date.now() };
+      // 自动探测模型能力（上下文窗口/最大输出），探测失败不影响主流程
+      if (result) {
+        const caps = await this.probeModelCapabilities(result.apiBaseUrl, result.apiKey, result.modelName);
+        if (caps) {
+          (result as any).modelContextWindow = caps.contextWindow;
+          (result as any).modelMaxOutput = caps.maxOutput;
+          (result as any).modelReasoning = caps.reasoning;
+        }
+      }
       return result;
     } catch (e) {
       console.warn('[LLM] 获取 LLM 配置失败:', e);
@@ -1388,14 +1529,15 @@ export class LlmService {
   /**
    * 通用聊天接口 - 用于 AI 正则表达式生成等场景
    */
-  static async chat(prompt: string, options?: { systemPrompt?: string; maxTokens?: number; timeout?: number; temperature?: number }): Promise<string> {
+  static async chat(prompt: string, options?: { systemPrompt?: string; maxTokens?: number; timeout?: number; temperature?: number; taskId?: string; mode?: string }): Promise<string> {
     const config = await this.getLlmConfig();
     if (!config) {
       throw new Error('LLM 未配置，请在系统配置中设置 LLM API');
     }
 
     const systemPrompt = options?.systemPrompt || '你是一个正则表达式专家，擅长根据用户需求生成准确的正则表达式。请只输出正则表达式，不要输出其他解释文字。';
-    const maxTokens = options?.maxTokens ?? config.maxTokens;
+    // 自动探测的模型上限优先（推理模型抬升下限，避免思考耗尽预算）
+    const maxTokens = this.resolveMaxTokens(options?.maxTokens, config);
     const timeoutMs = (options?.timeout ?? config.timeout) * 1000;
     const temperature = options?.temperature ?? config.temperature;
 
@@ -1421,6 +1563,8 @@ export class LlmService {
       console.log(`[LLM] chat 缓存命中 (${cachedChat.length}字)`);
       // 记录缓存命中（token=0，不消耗实际额度）
       LlmService.recordLlmCall({
+        taskId: options?.taskId,
+        mode: options?.mode,
         model: config.modelName,
         provider: config.provider,
         latencyMs: 0,
@@ -1431,28 +1575,63 @@ export class LlmService {
       return cachedChat;
     }
 
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
     const _callStart = Date.now();
 
+    // ★ 单次 HTTP 请求执行器（每次重试新建 AbortController，已 abort 的 signal 不可复用）
+    const executeRequest = async (): Promise<any> => {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+      try {
+        // 限流：按 model 分桶获取令牌，避免高并发打爆 LLM API
+        await acquireLlmToken(config.modelName);
+        const response = await fetch(`${config.apiBaseUrl}/chat/completions`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${config.apiKey}`,
+          },
+          body: JSON.stringify(body),
+          signal: controller.signal,
+        });
+
+        if (!response.ok) {
+          const errorText = await response.text();
+          const err = new Error(`LLM API 错误 (${response.status}): ${errorText}`);
+          // 附带状态码供 retryWithBackoff 判断是否重试（5xx/429 重试，4xx 不重试）
+          (err as any).status = response.status;
+          (err as any).statusCode = response.status;
+          throw err;
+        }
+
+        return await response.json() as any;
+      } finally {
+        clearTimeout(timeoutId);
+      }
+    };
+
     try {
-      const response = await fetch(`${config.apiBaseUrl}/chat/completions`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${config.apiKey}`,
+      // ★ 包裹重试：5xx/429/超时/网络错误重试 3 次（指数退避 2s/4s/8s），4xx 不重试
+      const data = await retryWithBackoff(executeRequest, {
+        retries: 3,
+        baseDelay: 2000,
+        onRetry: (error, attempt) => {
+          // 重试时记录到 LlmCallLog（status='retry'），便于观测重试频率与失败原因
+          LlmService.recordLlmCall({
+            taskId: options?.taskId,
+            mode: options?.mode,
+            model: config.modelName,
+            provider: config.provider,
+            latencyMs: 0,
+            status: 'retry',
+            errorMsg: `[retry#${attempt}] ${(error as Error)?.message?.slice(0, 450) ?? null}`,
+            promptFull,
+          });
         },
-        body: JSON.stringify(body),
-        signal: controller.signal,
       });
 
-      if (!response.ok) {
-        const errorText = await response.text();
-        throw new Error(`LLM API 错误 (${response.status}): ${errorText}`);
-      }
-
-      const data = await response.json() as any;
-      const result = data.choices?.[0]?.message?.content || '';
+      const chatMessage = data.choices?.[0]?.message || {};
+      const result = chatMessage.content || '';
+      const chatReasoning = chatMessage.reasoning_content || chatMessage.reasoning || '';
 
       // 解析 token 用量并记录调用日志
       const _usage = data.usage ? {
@@ -1461,22 +1640,31 @@ export class LlmService {
         totalTokens: data.usage.total_tokens || 0,
       } : undefined;
       LlmService.recordLlmCall({
+        taskId: options?.taskId,
+        mode: options?.mode,
         model: config.modelName,
         provider: config.provider,
         latencyMs: Date.now() - _callStart,
         status: 'success',
         usage: _usage,
         promptFull,
-        completionFull: this.truncateForLog(result),
+        // content 为空时兜底记录 reasoning_content，保证推理回放始终有内容可看
+        completionFull: this.truncateForLog(
+          result || (chatReasoning ? `[模型未输出正式回答，以下为 reasoning_content]\n${chatReasoning}` : '')
+        ),
       });
 
-      // ★ 缓存 chat 响应
-      await CacheService.set(chatCacheKey, result, CHAT_CACHE_TTL);
+      // ★ 缓存 chat 响应（空 content 不缓存）
+      if (result) {
+        await CacheService.set(chatCacheKey, result, CHAT_CACHE_TTL);
+      }
 
       return result;
     } catch (e: any) {
       // 失败也记录调用日志
       LlmService.recordLlmCall({
+        taskId: options?.taskId,
+        mode: options?.mode,
         model: config.modelName,
         provider: config.provider,
         latencyMs: Date.now() - _callStart,
@@ -1485,8 +1673,6 @@ export class LlmService {
         promptFull,
       });
       throw e;
-    } finally {
-      clearTimeout(timeoutId);
     }
   }
 
