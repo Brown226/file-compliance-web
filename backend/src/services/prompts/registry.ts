@@ -41,6 +41,36 @@ export function resolveModule(input: string): string {
 }
 
 // ============================================================
+// 一致性审查维度 C1-C6 — 单一数据源
+// 注册表模板与运行时 fallback 共享此常量，避免维度定义重复/漂移。
+// 格式：「维度名：描述」，由 consistencyDimensionsBlock() 渲染为 bullet 列表。
+// ============================================================
+export const CONSISTENCY_DIMENSIONS = {
+  C1: '编码一致性：同一工程编码在不同段落中写法是否完全一致（大小写、分隔符、字符数）',
+  C2: '参数一致性：同一参数在不同位置的值是否一致。数值差异 >1% 视为不一致；单位不同的数值需换算后比较',
+  C3: '命名一致性：同一概念是否使用统一名称（如"设计温度"vs"运行温度"应判断是否为同一参数）',
+  C4: '交叉引用一致性：交叉引用中提到的编码/标准号，是否能在编码汇总或引用汇总的其他条目中找到对应',
+  C5: '文档元信息一致性：各位置提取的文件编号、版本号、日期等信息是否一致',
+  C6: '事实断言一致性：同一主体/话题在不同位置的事实陈述是否存在矛盾（如一处说"室内"，另一处说"室外"）',
+} as const;
+
+/**
+ * 将 CONSISTENCY_DIMENSIONS 渲染为「- **C1 编码一致性**：描述」格式的 bullet 列表。
+ * 注册表模板与 structured-consistency.service.ts 的 fallback 共用，保证 C1-C6 完全对齐。
+ */
+export function consistencyDimensionsBlock(): string {
+  return (Object.keys(CONSISTENCY_DIMENSIONS) as (keyof typeof CONSISTENCY_DIMENSIONS)[])
+    .map(k => {
+      const val = CONSISTENCY_DIMENSIONS[k];
+      const sep = val.indexOf('：');
+      const name = sep >= 0 ? val.slice(0, sep) : val;
+      const desc = sep >= 0 ? val.slice(sep + 1) : '';
+      return `- **${k} ${name}**：${desc}`;
+    })
+    .join('\n');
+}
+
+// ============================================================
 // 所有内置提示词模板（24条）
 // ============================================================
 export const BUILTIN_TEMPLATES: PromptTemplateData[] = [
@@ -325,34 +355,41 @@ ID: 327
     variant: 'extract',
     name: '一致性审查-结构化抽取-系统提示词',
     description: 'Map 阶段：从文本分片中抽取参数、编码、引用三项结构化摘要',
-    content: `你是文档结构化信息抽取器。从以下文本片段中提取四类信息，严格输出 JSON。
+    content: `你是文档结构化信息抽取器。从以下文本片段中提取五类信息，严格输出 JSON。
 
 ## 提取规则
 
 ### 参数（params）
 - 技术参数及其取值：温度、压力、电压、功率、型号、规格、尺寸、容量等含数值的参数
 - 不仅限于"参数名：值"格式，也应识别"参数名为/是/等于 XXX"、"XXX 的参数值为 YYY"等变体
-- 格式：{"name":"参数名","value":"参数值","lineHint":行号}
+- 格式：{"name":"参数名","value":"参数值","lineHint":行号,"fingerprint":"原文上下文片段"}
 
 ### 编码（codes）
 - 工程文件编码/图号：包含字母+数字组合的工程标识（如 1EAA360CR、ZG25401EA）
 - **排除**标准编号（GB/ISO/IEC/NB/DL/HJ/JGJ/CJJ/HAF/CECS/DB 等前缀开头的）
-- 格式：{"code":"编码","context":"所在上下文的简短描述","lineHint":行号}
+- 格式：{"code":"编码","context":"所在上下文的简短描述","lineHint":行号,"fingerprint":"原文上下文片段"}
 
 ### 引用（refs）
 - 交叉引用：被引用的文件编号、图纸编号、标准编号、条款号
 - 识别模式："详见XXX"、"按照GB/T XXX"、"参见XXX"、"依据XXX"等
-- 格式：{"ref":"被引用内容","lineHint":行号}
+- 格式：{"ref":"被引用内容","lineHint":行号,"fingerprint":"原文上下文片段"}
 
 ### 文档元信息（meta）
 - 文档标识信息：页眉/页脚中的文件编号、版本号、日期、页码
 - 文档标题、章节标题中的关键信息
-- 格式：{"key":"信息类别（如文件编号/版本号/日期/标题）","value":"具体值","lineHint":行号}
+- 格式：{"key":"信息类别（如文件编号/版本号/日期/标题）","value":"具体值","lineHint":行号,"fingerprint":"原文上下文片段"}
 
 ### 事实断言（facts）
 - 文档中明确陈述的事实性断言，特别是涉及设备位置、连接关系、操作条件、材料选用等
 - 如"设备安装在室内"、"取样管线疏水排到RVD1600"、"材料采用不锈钢"、"额定电压为380V"等
-- 格式：{"subject":"主体","claim":"断言内容","lineHint":行号}
+- 格式：{"subject":"主体","claim":"断言内容","lineHint":行号,"fingerprint":"原文上下文片段"}
+
+## fingerprint 字段说明（用于精确定位条目在原文中的位置）
+- fingerprint = 该条目在原文中所在位置的上下文片段，约 40 个字符
+- 由「条目关键词前 20 个字符 + 条目关键词 + 条目关键词后 20 个字符」组成，必须是原文的**连续子串**
+- 必须**逐字原样复制**原文，不得修改、不得编造、不得增删标点或空格
+- 如果条目前后不足 20 个字符，取实际可取的字符即可
+- 示例：原文"...本系统的设计温度为25℃，请在运行..."，条目"设计温度"的 fingerprint = "本系统的设计温度为25℃，请在运行"（前 4 字"本系统的"+ 条目"设计温度"+ 后 8 字"为25℃，请在运行"，实际取前后各 20 字）
 
 ## 输出格式
 严格输出单行 JSON（不要换行、不要 markdown 代码块）：
@@ -381,16 +418,11 @@ ID: 327
     role: 'system',
     variant: 'compare',
     name: '一致性审查-汇总比对-系统提示词',
-    description: 'Reduce 阶段：对全文档参数/编码/引用汇总做 C1-C4 一致性比对',
+    description: 'Reduce 阶段：对全文档参数/编码/引用汇总做 C1-C6 一致性比对',
     content: `你是文档一致性审查专家。以下是整份文档按参数/编码/引用/元信息/事实断言五类汇总的结构化清单。请按 C1-C6 六项维度检查一致性问题。
 
 ## 审查维度
-- **C1 编码一致性**：同一工程编码在不同段落中写法是否完全一致（大小写、分隔符、字符数）
-- **C2 参数一致性**：同一参数在不同位置的值是否一致。数值差异 >1% 视为不一致；单位不同的数值需换算后比较
-- **C3 命名一致性**：同一概念是否使用统一名称（如"设计温度"vs"运行温度"应判断是否为同一参数）
-- **C4 交叉引用一致性**：交叉引用中提到的编码/标准号，是否能在编码汇总或引用汇总的其他条目中找到对应
-- **C5 文档元信息一致性**：各位置提取的文件编号、版本号、日期等信息是否一致
-- **C6 事实断言一致性**：同一主体/话题在不同位置的事实陈述是否存在矛盾（如一处说"室内"，另一处说"室外"）
+${consistencyDimensionsBlock()}
 
 ## 重要规则 — 关于 suggestedText
 - 当发现不一致时，suggestedText 填写"存在不一致：值A(位置1) vs 值B(位置2)"，**不要猜测哪个值是正确的**
@@ -466,10 +498,11 @@ ID: 327
 - 专有名词和行业术语不是错别字，除非确实写错了
 - 如果某术语在核电行业中有标准写法，请指出非标准写法
 - 语句通顺性问题应标注为 FLUENCY 类型，错别字和语法问题标注为 TYPO 类型
+- **重要区分**：语法错误（主谓不一致、成分残缺、语序不当、关联词搭配不当、句式杂糅、主语缺失、谓语错误）属于 **TYPO**，不是 FLUENCY。FLUENCY 仅限修辞/风格类建议（如"表达可更简洁"、"语义轻微重复"），这类问题严重度低，不影响语义正确性
 
 ## 输出要求
 严格按照 JSON 数组格式输出，每个问题包含:
-- issueType: TYPO（文本错误：错别字/语法错误/语句不通顺）或 FLUENCY（语句通顺性）或 CONSISTENCY（上下文数据矛盾）
+- issueType: TYPO（文本错误：错别字/语法错误）或 FLUENCY（修辞/风格建议，不影响语义）或 CONSISTENCY（上下文数据矛盾）
 - originalText: 原始问题文本
 - suggestedText: 建议修改内容
 - description: 问题描述（如"错别字：'XX'应为'YY'"或"语句不通顺：句式杂糅，建议拆分为两句"）
@@ -502,41 +535,7 @@ ID: 327
 - 如果你无法确定是否为问题，**宁可漏报也不要误报**
 - 仅当你能明确指出错误类型（错别字/语法/语句不通）时，才输出问题
 - "表达不够优美"、"可读性较差"不是问题 — 只有**明确违反语法规则或明显错别字**才报告
-- FLUENCY 类型仅限明显语病（句式杂糅、主语缺失、谓语错误），不包括风格优化建议
-## 引用规则（重要）
-
-你的回答中必须使用 [ID:数字] 格式标注参考来源。请严格遵循以下规则：
-
-### 格式要求
-- 单个引用：[ID:327]
-- 多个引用：[ID:327] [ID:45]（用空格分隔，不要用逗号）
-- 位置：放在句末、标点符号前
-- 每句最多 4 个引用
-
-### 必须引用的内容
-1. 具体数值（尺寸、厚度、间距、强度等级等）
-2. 规范条文引用（GB、JGJ 等标准编号及条款）
-3. 材料要求（品种、规格、性能指标）
-4. 施工工艺要求（具体做法、步骤、工序）
-5. 验收标准（允许偏差、检验方法）
-
-### 不需要引用的内容
-- 通用常识性描述
-- 过渡性语句和章节引导语
-- 你自己的分析和归纳总结
-
-### 示例
-假设参考资料中有：
-\`\`\`
-ID: 327
-├── 来源: 建筑防水工程规范.pdf
-└── 内容: 屋面防水层采用SBS改性沥青防水卷材，厚度不小于4mm...
-\`\`\`
-
-你的回答应包含：
-> 屋面防水层采用SBS改性沥青防水卷材，厚度不小于4mm [ID:327]。
-
-**重要**：只引用参考资料中实际存在的 ID 编号，不要编造不存在的 ID。`,
+- FLUENCY 类型仅限修辞/风格建议（如"表达可更简洁"、"语义轻微重复"），**不包括**语法错误。语法错误（主谓不一致、成分残缺、语序不当、句式杂糅等）应标注为 TYPO`,
     placeholders: JSON.stringify([]),
     isBuiltin: true,
     enabled: true,
@@ -973,6 +972,18 @@ Please give a short succinct context to situate this chunk within the overall do
     description: '合同风险审查场景下，同时有参照文件和知识库检索结果时的用户提示词',
     content: '## 合同模板（权威基准）\n\n${refTexts}\n\n---\n\n## 企业知识库参考（辅助审查依据）\n\n${ragContext}\n\n---\n\n## 待审合同（被审查对象）\n\n${text}\n\n---\n\n请站在${stance}立场，结合合同模板和企业知识库，逐项核对待审合同的风险条款。重点识别：\n1. 与模板不一致的关键条款\n2. 对审查立场不利的风险条款\n3. 缺失的重要保护条款\n4. 不符合企业知识库中规定的条款\n\n严格按照 JSON 数组格式输出审查结果。',
     placeholders: JSON.stringify(['${refTexts}', '${ragContext}', '${text}', '${stance}']),
+    isBuiltin: true,
+    enabled: true,
+  },
+  {
+    key: 'contract_review_user_merged',
+    module: 'contract_review',
+    role: 'user',
+    variant: 'merged',
+    name: '合同风险审查-用户提示词(风险+合规合并)',
+    description: '合同风险审查双链合并版：单次 LLM 调用同时完成风险分析与合规检查，输出 {riskIssues,complianceIssues} 双字段结构',
+    content: '请对上述条款同时完成两项审查，合并为一次输出：\n\n1. **风险分析**：识别对该立场不利的风险点、缺失的保护条款、与模板的实质性差异\n2. **合规检查**：检查条款是否符合上述法律依据/法规要求，不符合则输出违规详情\n\n严格按照以下 JSON 结构输出（不要输出任何其他文字）：\n```\n{\n  "riskIssues": [\n    {\n      "riskLevel": "HIGH/MEDIUM/LOW",\n      "clauseType": "payment/penalty/warranty/ip/change/claim/insurance/dispute/other",\n      "originalText": "待审合同原文（逐字复制）",\n      "suggestedText": "建议修改内容",\n      "description": "风险说明（站在${stance}角度）",\n      "recommendation": "具体修改建议"\n    }\n  ],\n  "complianceIssues": [\n    {\n      "riskLevel": "HIGH/MEDIUM/LOW",\n      "clauseType": "payment/penalty/warranty/ip/change/claim/insurance/dispute/other",\n      "originalText": "待审合同原文（逐字复制）",\n      "suggestedText": "符合法规的建议内容",\n      "description": "违规详情说明",\n      "recommendation": "合规修改建议"\n    }\n  ]\n}\n```\n\n如果没有发现风险或合规问题，对应字段输出空数组 []。',
+    placeholders: JSON.stringify(['${stance}']),
     isBuiltin: true,
     enabled: true,
   },
