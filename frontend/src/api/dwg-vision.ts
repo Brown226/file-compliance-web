@@ -13,6 +13,7 @@ export interface TitleBlockResult {
   approver: string
   date: string
   company: string
+  bbox?: [number, number, number, number]
 }
 
 export interface SymbolItem {
@@ -20,6 +21,7 @@ export interface SymbolItem {
   tag: string
   description: string
   position: string
+  bbox?: [number, number, number, number]
 }
 
 export interface SymbolListResult {
@@ -32,6 +34,8 @@ export interface AnnotationIssue {
   item: string
   location: string
   severity: 'error' | 'warning' | 'info'
+  bbox?: [number, number, number, number]
+  confidence?: number
 }
 
 export interface AnnotationCheckResult {
@@ -45,12 +49,20 @@ export interface ComplianceIssue {
   violation: string
   suggestion: string
   severity: 'error' | 'warning' | 'info'
+  bbox?: [number, number, number, number]
+  confidence?: number
 }
 
 export interface ComplianceResult {
   designNotes: string[]
   issues: ComplianceIssue[]
   summary: string
+}
+
+export interface RuleIssue {
+  code: string
+  severity: 'error' | 'warning' | 'info'
+  message: string
 }
 
 export interface VisionAnalyzeResult {
@@ -60,6 +72,8 @@ export interface VisionAnalyzeResult {
   compliance?: ComplianceResult | null
   duration_ms: number
   errors: string[]
+  modelInfo?: { model: string; modelType: string }
+  ruleIssues?: RuleIssue[]
 }
 
 export interface VisionStatusResult {

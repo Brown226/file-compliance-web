@@ -8,6 +8,7 @@
 import Bull from 'bull';
 import { env } from '../../config/env';
 import { ReviewService } from '../review/review.service';
+import { DwgVisionService } from '../file/dwg-vision.service';
 import prisma from '../../config/db';
 import { getQueueConcurrency } from '../../utils/system-config';
 
@@ -16,8 +17,17 @@ export interface ReviewJobData {
   attempt?: number;
 }
 
+export interface DwgVisionJobData {
+  jobKey: string;  // 前端生成的唯一 key，用于状态查询
+  imageBase64: string;
+  analyses: string[];
+  refText?: string;
+  userId: string;
+}
+
 /** 内部持有的队列实例（延迟初始化） */
 let _reviewQueue: Bull.Queue<ReviewJobData> | null = null;
+let _dwgVisionQueue: Bull.Queue<DwgVisionJobData> | null = null;
 
 /** 全局降级标记 —— 在 __QUEUE_DEGRADED 为 true 时跳过所有 Redis 操作 */
 declare global {
@@ -40,6 +50,23 @@ function getReviewQueue(): Bull.Queue<ReviewJobData> {
     });
   }
   return _reviewQueue;
+}
+
+/**
+ * 获取图纸视觉分析队列（懒加载）
+ */
+function getDwgVisionQueue(): Bull.Queue<DwgVisionJobData> {
+  if (!_dwgVisionQueue) {
+    _dwgVisionQueue = new Bull<DwgVisionJobData>('dwg-vision', env.redisUrl, {
+      defaultJobOptions: {
+        attempts: 3,
+        backoff: { type: 'exponential', delay: 10000 },  // 10秒起始延迟
+        removeOnComplete: { age: 3600, count: 200 },
+        removeOnFail: { age: 86400, count: 100 },
+      },
+    });
+  }
+  return _dwgVisionQueue;
 }
 
 /** 初始化队列处理器（仅在主进程中调用一次） */
@@ -165,6 +192,46 @@ export async function addReviewJob(taskId: string): Promise<Bull.Job<ReviewJobDa
   return job;
 }
 
+/** 添加图纸视觉分析任务到队列 */
+export async function addDwgVisionJob(data: DwgVisionJobData): Promise<Bull.Job<DwgVisionJobData>> {
+  // 降级模式：同步执行
+  if ((globalThis as any).__QUEUE_DEGRADED) {
+    console.warn('[Queue] 降级模式：同步执行图纸视觉分析', data.jobKey);
+    setImmediate(() => DwgVisionService.analyze(data.imageBase64, data.analyses, data.refText).catch((err: Error) => {
+      console.error(`[Queue] 降级模式同步执行失败: ${data.jobKey}`, err.message);
+    }));
+    return { id: `sync:${data.jobKey}`, data } as any;
+  }
+
+  const queue = getDwgVisionQueue();
+  const job = await queue.add('dwg-vision', data, {
+    jobId: `dwg-vision:${data.jobKey}`,
+  });
+  console.log(`[Queue] ✅ 图纸视觉分析已入队: ${data.jobKey} (jobId=${job.id})`);
+  return job;
+}
+
+/** 获取图纸视觉分析任务状态 */
+export async function getDwgVisionJobStatus(jobKey: string): Promise<{
+  state: string;
+  progress: number;
+  result?: any;
+  failedReason?: string;
+} | null> {
+  if ((globalThis as any).__QUEUE_DEGRADED) {
+    return { state: 'degraded', progress: 0 };
+  }
+  const job = await getDwgVisionQueue().getJob(`dwg-vision:${jobKey}`);
+  if (!job) return null;
+
+  return {
+    state: await job.getState(),
+    progress: job.progress() as number || 0,
+    result: job.returnvalue,
+    failedReason: job.failedReason,
+  };
+}
+
 /** 获取任务状态 */
 export async function getJobStatus(taskId: string): Promise<{
   status: string;
@@ -236,8 +303,13 @@ export async function removeJob(taskId: string): Promise<boolean> {
 export async function closeQueue(): Promise<void> {
   if (_reviewQueue) {
     await _reviewQueue.close();
-    console.log('[Queue] 队列已关闭');
-  } else {
+    console.log('[Queue] review 队列已关闭');
+  }
+  if (_dwgVisionQueue) {
+    await _dwgVisionQueue.close();
+    console.log('[Queue] dwg-vision 队列已关闭');
+  }
+  if (!_reviewQueue && !_dwgVisionQueue) {
     console.log('[Queue] 队列未初始化，无需关闭');
   }
 }

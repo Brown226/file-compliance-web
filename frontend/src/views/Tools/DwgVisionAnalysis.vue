@@ -12,6 +12,10 @@
         </div>
       </div>
       <div class="hero-right">
+        <el-button plain @click="goBackToEntry">
+          <el-icon><ArrowLeft /></el-icon>
+          重新选择模块
+        </el-button>
         <el-tag v-if="visionStatus" :type="visionStatus.configured ? 'success' : 'warning'" effect="dark" round size="large">
           <el-icon style="margin-right:4px"><component :is="visionStatus.configured ? CircleCheck : WarningFilled" /></el-icon>
           {{ visionStatus.configured ? `视觉模型就绪 · ${visionStatus.modelName}` : '视觉模型未配置' }}
@@ -62,8 +66,34 @@
             <div class="preview-label">
               <el-icon><View /></el-icon>
               <span>图纸预览</span>
+              <el-tag v-if="bboxIssues.length" size="small" type="danger" effect="plain" class="overlay-count-tag">
+                {{ bboxIssues.length }} 个标注
+              </el-tag>
             </div>
-            <div class="preview-canvas" v-html="previewSvg"></div>
+            <div class="preview-canvas" :class="{ 'has-result': !!result }">
+              <div class="preview-wrapper">
+                <div class="preview-content" v-html="previewSvg"></div>
+                <!-- SVG 叠框层：覆盖在图纸预览之上，根据 issue 的归一化 bbox 渲染问题框 -->
+                <svg
+                  v-if="bboxIssues.length"
+                  class="overlay-svg"
+                  viewBox="0 0 1000 1000"
+                  preserveAspectRatio="none"
+                >
+                  <rect
+                    v-for="issue in bboxIssues"
+                    :key="issue.id"
+                    :ref="el => setRectRef(el, issue.id)"
+                    :x="issue.bbox![0]"
+                    :y="issue.bbox![1]"
+                    :width="rectWidth(issue.bbox!)"
+                    :height="rectHeight(issue.bbox!)"
+                    :class="['issue-rect', `issue-rect-${issue.severity}`, { 'issue-rect-active': activeIssueId === issue.id }]"
+                    @click.stop="handleRectClick(issue)"
+                  />
+                </svg>
+              </div>
+            </div>
           </div>
         </el-card>
 
@@ -179,6 +209,9 @@
                 <span>分析结果</span>
               </div>
               <div class="result-meta">
+                <el-tag v-if="result.modelInfo" size="small" type="success" effect="plain">
+                  {{ result.modelInfo.model }} · {{ result.modelInfo.modelType }}
+                </el-tag>
                 <el-tag size="small" type="info" effect="plain">
                   <el-icon style="margin-right:3px"><Clock /></el-icon>
                   耗时 {{ (result.duration_ms / 1000).toFixed(1) }}s
@@ -234,7 +267,10 @@
                 <span class="tab-label"><el-icon><Grid /></el-icon>图例符号</span>
               </template>
               <div class="summary-box">{{ result.symbols.summary }}</div>
-              <el-table :data="result.symbols.symbols" stripe size="small" max-height="460">
+              <el-table :data="result.symbols.symbols" stripe size="small" max-height="460"
+                @row-click="onSymbolsRowClick"
+                :row-class-name="symbolsRowClass"
+              >
                 <el-table-column prop="tag" label="位号" width="120" />
                 <el-table-column prop="type" label="类型" width="110">
                   <template #default="{ row }">
@@ -269,12 +305,20 @@
                   <div class="score-desc">{{ result.annotations.summary }}</div>
                 </div>
               </div>
-              <el-table :data="result.annotations.missingItems" stripe size="small" max-height="380">
+              <el-table :data="result.annotations.missingItems" stripe size="small" max-height="380"
+                @row-click="onAnnotationsRowClick"
+                :row-class-name="annotationsRowClass"
+              >
                 <el-table-column prop="item" label="问题" />
                 <el-table-column prop="location" label="位置" width="160" />
                 <el-table-column prop="severity" label="严重度" width="90">
                   <template #default="{ row }">
                     <el-tag size="small" :type="severityTag(row.severity)">{{ severityLabel(row.severity) }}</el-tag>
+                  </template>
+                </el-table-column>
+                <el-table-column label="复核" width="110">
+                  <template #default="{ row }">
+                    <el-tag v-if="row.confidence != null && row.confidence < 0.6" type="warning" size="small">待人工复核</el-tag>
                   </template>
                 </el-table-column>
               </el-table>
@@ -296,7 +340,10 @@
 
               <div v-if="result.compliance.issues.length" class="notes-section">
                 <div class="section-title"><el-icon><WarningFilled /></el-icon>合规问题</div>
-                <el-table :data="result.compliance.issues" stripe size="small" max-height="380">
+                <el-table :data="result.compliance.issues" stripe size="small" max-height="380"
+                  @row-click="onComplianceRowClick"
+                  :row-class-name="complianceRowClass"
+                >
                   <el-table-column prop="note" label="原文" width="200" show-overflow-tooltip />
                   <el-table-column prop="violation" label="问题" />
                   <el-table-column prop="suggestion" label="建议" />
@@ -305,7 +352,34 @@
                       <el-tag size="small" :type="severityTag(row.severity)">{{ severityLabel(row.severity) }}</el-tag>
                     </template>
                   </el-table-column>
+                  <el-table-column label="复核" width="110">
+                    <template #default="{ row }">
+                      <el-tag v-if="row.confidence != null && row.confidence < 0.6" type="warning" size="small">待人工复核</el-tag>
+                    </template>
+                  </el-table-column>
                 </el-table>
+              </div>
+            </el-tab-pane>
+
+            <!-- 规则检查（来自内置规则引擎，与 LLM 视觉识别互补） -->
+            <el-tab-pane name="ruleIssues" v-if="result.ruleIssues?.length">
+              <template #label>
+                <span class="tab-label"><el-icon><WarningFilled /></el-icon>规则检查</span>
+              </template>
+              <div class="summary-box">基于内置规则引擎的检查结果（共 {{ result.ruleIssues.length }} 条），与视觉模型识别结果相互补充</div>
+              <div class="rule-issues-list">
+                <div
+                  v-for="(rule, i) in result.ruleIssues"
+                  :key="i"
+                  class="rule-issue-item"
+                  :class="`rule-issue-${rule.severity}`"
+                >
+                  <div class="rule-issue-header">
+                    <el-tag size="small" :type="severityTag(rule.severity)">{{ severityLabel(rule.severity) }}</el-tag>
+                    <el-tag size="small" type="info" effect="plain" class="rule-code">{{ rule.code }}</el-tag>
+                  </div>
+                  <div class="rule-issue-message">{{ rule.message }}</div>
+                </div>
               </div>
             </el-tab-pane>
           </el-tabs>
@@ -316,15 +390,23 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, computed, nextTick, onMounted } from 'vue'
+import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import {
   UploadFilled, Loading, Document, View, SetUp, CircleCheckFilled, CircleCheck,
   VideoPlay, PictureFilled, Right, DataAnalysis, Clock, Grid, EditPen, Stamp,
-  Memo, WarningFilled,
+  Memo, WarningFilled, ArrowLeft,
 } from '@element-plus/icons-vue'
 import { dwgToPng } from '@/utils/dwg-parser'
 import { analyzeDwgVision, getVisionStatus, type VisionAnalyzeResult, type VisionStatusResult } from '@/api/dwg-vision'
+
+const router = useRouter()
+
+/** 返回审查模块选择页（与其他审查模式入口体验一致） */
+function goBackToEntry() {
+  router.push('/review')
+}
 
 // 分析选项配置
 const analysisOptions = [
@@ -344,6 +426,80 @@ const result = ref<VisionAnalyzeResult | null>(null)
 const activeTab = ref('titleBlock')
 const visionStatus = ref<VisionStatusResult | null>(null)
 const uploadRef = ref()
+
+/** 联动用：当前高亮的 issue id（`${tab}-${index}` 格式） */
+const activeIssueId = ref('')
+
+/** 收集所有维度的 issue，用于图纸叠框与列表双向联动 */
+interface CollectedIssue {
+  id: string
+  tab: 'symbols' | 'annotations' | 'compliance'
+  index: number
+  severity: 'error' | 'warning' | 'info'
+  bbox?: [number, number, number, number]
+  confidence?: number
+  label: string
+}
+
+const allIssues = computed<CollectedIssue[]>(() => {
+  const r = result.value
+  if (!r) return []
+  const list: CollectedIssue[] = []
+  // 图例符号：severity 统一 info（符号识别不是 issue）
+  r.symbols?.symbols?.forEach((s, i) => {
+    list.push({
+      id: `symbols-${i}`,
+      tab: 'symbols',
+      index: i,
+      severity: 'info',
+      bbox: s.bbox,
+      label: `${s.tag} ${s.description}`.trim(),
+    })
+  })
+  // 标注完整性
+  r.annotations?.missingItems?.forEach((a, i) => {
+    list.push({
+      id: `annotations-${i}`,
+      tab: 'annotations',
+      index: i,
+      severity: a.severity,
+      bbox: a.bbox,
+      confidence: a.confidence,
+      label: a.item,
+    })
+  })
+  // 合规审查
+  r.compliance?.issues?.forEach((c, i) => {
+    list.push({
+      id: `compliance-${i}`,
+      tab: 'compliance',
+      index: i,
+      severity: c.severity,
+      bbox: c.bbox,
+      confidence: c.confidence,
+      label: c.note,
+    })
+  })
+  return list
+})
+
+/** 有 bbox 的 issue（用于渲染叠框 rect） */
+const bboxIssues = computed(() => allIssues.value.filter(i => i.bbox))
+
+/** rect 元素 ref 集合，用于 scrollIntoView */
+const rectRefs = new Map<string, SVGRectElement>()
+function setRectRef(el: any, id: string) {
+  if (el) rectRefs.set(id, el as SVGRectElement)
+  else rectRefs.delete(id)
+}
+
+/** 计算 rect 宽高（bbox 视为 [x1, y1, x2, y2]，左上原点） */
+function rectWidth(bbox: [number, number, number, number]) {
+  return Math.max(0, bbox[2] - bbox[0])
+}
+function rectHeight(bbox: [number, number, number, number]) {
+  return Math.max(0, bbox[3] - bbox[1])
+}
 
 // 初始化：检查视觉模型配置
 onMounted(async () => {
@@ -478,6 +634,51 @@ function scoreColor(score: number): string {
   if (score >= 60) return '#d97706'
   return '#dc2626'
 }
+
+// ===== 图纸叠框 ↔ 列表 双向联动 =====
+
+/** 列表行点击 → 高亮对应 rect（无 bbox 不触发图纸动作） */
+function handleRowClick(row: any, tab: 'symbols' | 'annotations' | 'compliance') {
+  let arr: any[] = []
+  if (tab === 'symbols') arr = result.value?.symbols?.symbols ?? []
+  else if (tab === 'annotations') arr = result.value?.annotations?.missingItems ?? []
+  else if (tab === 'compliance') arr = result.value?.compliance?.issues ?? []
+  const index = arr.indexOf(row)
+  if (index < 0) return
+  const issue = allIssues.value.find(i => i.tab === tab && i.index === index)
+  if (!issue) return
+  activeIssueId.value = issue.id
+  if (!issue.bbox) return
+  nextTick(() => {
+    const rectEl = rectRefs.get(issue.id)
+    rectEl?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+  })
+}
+
+function onSymbolsRowClick(row: any) { handleRowClick(row, 'symbols') }
+function onAnnotationsRowClick(row: any) { handleRowClick(row, 'annotations') }
+function onComplianceRowClick(row: any) { handleRowClick(row, 'compliance') }
+
+/** 图纸 rect 点击 → 切换 tab + 高亮列表行 + 滚动到行 */
+function handleRectClick(issue: CollectedIssue) {
+  activeIssueId.value = issue.id
+  activeTab.value = issue.tab
+  nextTick(() => {
+    const activeRow = document.querySelector('.issue-row-active')
+    activeRow?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+  })
+}
+
+/** el-table 行 class（高亮当前联动的行） */
+function symbolsRowClass(_row: any, rowIndex: number) {
+  return activeIssueId.value === `symbols-${rowIndex}` ? 'issue-row-active' : ''
+}
+function annotationsRowClass(_row: any, rowIndex: number) {
+  return activeIssueId.value === `annotations-${rowIndex}` ? 'issue-row-active' : ''
+}
+function complianceRowClass(_row: any, rowIndex: number) {
+  return activeIssueId.value === `compliance-${rowIndex}` ? 'issue-row-active' : ''
+}
 </script>
 
 <style scoped>
@@ -504,6 +705,13 @@ function scoreColor(score: number): string {
   display: flex;
   align-items: center;
   gap: 16px;
+}
+
+.hero-right {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-shrink: 0;
 }
 
 .hero-icon {
@@ -683,11 +891,71 @@ function scoreColor(score: number): string {
   align-items: center;
   justify-content: center;
   background: #fff;
+  position: relative;
 }
 
-.preview-canvas :deep(svg) {
+/* preview-wrapper 收缩到 SVG 实际尺寸，让叠框精确覆盖图纸 */
+.preview-wrapper {
+  position: relative;
+  display: inline-block;
   max-width: 100%;
   max-height: 200px;
+  line-height: 0;
+}
+
+.preview-content :deep(svg) {
+  display: block;
+  max-width: 100%;
+  max-height: 200px;
+}
+
+.overlay-count-tag {
+  margin-left: auto;
+}
+
+/* ===== SVG 叠框层 ===== */
+.overlay-svg {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  z-index: 1;
+}
+
+.issue-rect {
+  pointer-events: visible;
+  cursor: pointer;
+  vector-effect: non-scaling-stroke;
+  stroke-width: 2;
+  fill-opacity: 0.15;
+  transition: stroke-width 0.15s, fill-opacity 0.15s;
+}
+
+.issue-rect-error {
+  stroke: #dc2626;
+  fill: #dc2626;
+}
+
+.issue-rect-warning {
+  stroke: #d97706;
+  fill: #d97706;
+}
+
+.issue-rect-info {
+  stroke: #2563eb;
+  fill: #2563eb;
+}
+
+.issue-rect:hover {
+  stroke-width: 4;
+  fill-opacity: 0.3;
+}
+
+.issue-rect-active {
+  stroke-width: 5;
+  fill-opacity: 0.4;
 }
 
 /* ===== 分析选项 ===== */
@@ -1067,6 +1335,59 @@ function scoreColor(score: number): string {
   margin-bottom: 5px;
   font-size: 13px;
   color: #475569;
+  line-height: 1.6;
+}
+
+/* ===== 联动行高亮（el-table 行） ===== */
+.result-tabs :deep(.issue-row-active td.el-table__cell) {
+  background-color: #dbeafe !important;
+}
+
+/* ===== 规则检查列表 ===== */
+.rule-issues-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.rule-issue-item {
+  border: 1px solid #e5e7eb;
+  border-left: 3px solid #94a3b8;
+  border-radius: 0 8px 8px 0;
+  padding: 10px 14px;
+  background: #f8fafc;
+}
+
+.rule-issue-error {
+  border-left-color: #dc2626;
+  background: #fef2f2;
+}
+
+.rule-issue-warning {
+  border-left-color: #d97706;
+  background: #fffbeb;
+}
+
+.rule-issue-info {
+  border-left-color: #2563eb;
+  background: #eff6ff;
+}
+
+.rule-issue-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.rule-code {
+  font-family: monospace;
+  font-size: 12px;
+}
+
+.rule-issue-message {
+  font-size: 13px;
+  color: #334155;
   line-height: 1.6;
 }
 

@@ -9,7 +9,7 @@
         没有符合视觉用途的 Provider。请先在 Provider 配置中将用途设为「视觉」或「通用」，并勾选 image 模态（如 Qwen-VL、GLM-4V、GPT-4o）。
       </div>
 
-      <el-form :model="config" label-width="84px" label-position="left">
+      <el-form :model="config" label-width="110px" label-position="left">
         <el-form-item label="Provider" required>
           <el-select
             v-model="config.providerId"
@@ -39,6 +39,49 @@
             <span class="unit-label">秒</span>
           </div>
           <div class="form-tip">视觉识别耗时较长，建议 120 秒以上。</div>
+        </el-form-item>
+
+        <el-form-item label="模型类型">
+          <el-radio-group v-model="config.modelType" @change="handleModelTypeChange">
+            <el-radio-button value="instruct">Instruct（指令型）</el-radio-button>
+            <el-radio-button value="thinking">Thinking（推理型）</el-radio-button>
+          </el-radio-group>
+          <div class="form-tip">指令型适合常规识别；推理型适合复杂图纸或需要逐步推理的场景。切换时若未手动改过下方的 Tokens / Temperature，将自动填入对应默认值。</div>
+        </el-form-item>
+
+        <el-form-item label="最大输出 Tokens">
+          <el-input-number
+            v-model="config.maxTokens"
+            :min="1"
+            :step="256"
+            controls-position="right"
+            @change="() => (manuallyEdited.maxTokens = true)"
+          />
+          <div class="form-tip">模型单次回复的最大 token 数。指令型默认 4096，推理型默认 16384。</div>
+        </el-form-item>
+
+        <el-form-item label="Temperature">
+          <el-input-number
+            v-model="config.temperature"
+            :min="0"
+            :max="2"
+            :step="0.1"
+            :precision="1"
+            controls-position="right"
+            @change="() => (manuallyEdited.temperature = true)"
+          />
+          <div class="form-tip">取值 0-2。越低越确定，越高越发散。视觉识别建议使用低温度。</div>
+        </el-form-item>
+
+        <el-form-item label="随机种子">
+          <el-input-number
+            v-model="config.seed"
+            :min="0"
+            :value-on-clear="null"
+            controls-position="right"
+            placeholder="留空表示不设置"
+          />
+          <div class="form-tip">固定种子可复现结果。留空表示不设置（每次随机）。</div>
         </el-form-item>
       </el-form>
 
@@ -72,6 +115,17 @@ import { getSystemConfigApi, saveSystemConfigApi, testLlmConnectionApi, getLlmPr
 interface VisionModelConfig {
   providerId: string
   timeout: number
+  modelType: 'instruct' | 'thinking'
+  maxTokens: number
+  temperature: number
+  seed: number | null
+}
+
+type VisionModelType = 'instruct' | 'thinking'
+
+const MODEL_DEFAULTS: Record<VisionModelType, { maxTokens: number; temperature: number }> = {
+  instruct: { maxTokens: 4096, temperature: 0.1 },
+  thinking: { maxTokens: 16384, temperature: 0.6 },
 }
 
 const saveLoading = ref(false)
@@ -83,6 +137,16 @@ const hasLegacyFields = ref(false)
 const config = reactive<VisionModelConfig>({
   providerId: '',
   timeout: 180,
+  modelType: 'instruct',
+  maxTokens: MODEL_DEFAULTS.instruct.maxTokens,
+  temperature: MODEL_DEFAULTS.instruct.temperature,
+  seed: null,
+})
+
+// 跟踪用户是否手动改过对应字段；未手动改过时切换 modelType 自动填默认值
+const manuallyEdited = reactive({
+  maxTokens: false,
+  temperature: false,
 })
 
 const originalConfig = ref('')
@@ -99,6 +163,17 @@ const visionProviders = computed(() =>
 const normalizedConfig = computed(() => JSON.stringify(config))
 const hasUnsavedChanges = computed(() => normalizedConfig.value !== originalConfig.value)
 const selectedProvider = computed(() => providers.value.find((p) => p.id === config.providerId))
+
+// 切换模型类型：仅在用户未手动改过 maxTokens / temperature 时自动填充对应默认值
+function handleModelTypeChange(value: VisionModelType) {
+  const defaults = MODEL_DEFAULTS[value]
+  if (!manuallyEdited.maxTokens) {
+    config.maxTokens = defaults.maxTokens
+  }
+  if (!manuallyEdited.temperature) {
+    config.temperature = defaults.temperature
+  }
+}
 
 const summary = computed(() => [
   { label: 'Provider', value: selectedProvider.value?.name || '未设置' },
@@ -179,6 +254,22 @@ onMounted(async () => {
       }
       if (v.providerId !== undefined) config.providerId = v.providerId
       if (v.timeout !== undefined) config.timeout = v.timeout
+      // 兼容旧配置：无 modelType 时默认 instruct + 默认值（已在初始化时设置）
+      if (v.modelType === 'instruct' || v.modelType === 'thinking') {
+        config.modelType = v.modelType
+      }
+      // 已存在的显式值视为用户已编辑，切换 modelType 时不再覆盖
+      if (typeof v.maxTokens === 'number') {
+        config.maxTokens = v.maxTokens
+        manuallyEdited.maxTokens = true
+      }
+      if (typeof v.temperature === 'number') {
+        config.temperature = v.temperature
+        manuallyEdited.temperature = true
+      }
+      if (typeof v.seed === 'number') {
+        config.seed = v.seed
+      }
     }
     originalConfig.value = JSON.stringify(config)
   } catch { /* ignore */ }
