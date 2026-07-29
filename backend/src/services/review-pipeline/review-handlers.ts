@@ -13,6 +13,8 @@ import { TerminologyService } from '../standard/terminology.service';
 import { StructuredConsistencyService } from '../review/structured-consistency.service';
 import { getEffectiveConfig } from './pipeline-config';
 import { DecReviewService } from '../review/dec-review.service';
+import { checkTypo } from '../rules/typo.rule';
+import { checkPunctuation } from '../rules/punctuation.rule';
 
 /** 审查模式处理器签名 */
 export type ReviewHandler = (ctx: PipelineContext) => Promise<{
@@ -50,14 +52,43 @@ const handleCustomRule: ReviewHandler = async (_ctx) => {
 
 /**
  * TYPO_GRAMMAR — 基础校对（文字质量审查）
- * 纯 LLM 调用（跳过 RAG），检查错别字/语法/通顺性/术语/标点/单位，输出经术语白名单过滤。
+ * 两层架构：① 确定性规则字典（typo.rule.ts 60+ 条，零成本零延迟 100%准确）
+ *           ② LLM 直调（跳过 RAG），检查语法/通顺性/上下文一致性/标点等
+ * LLM 结果与规则结果去重合并，规则优先（确定性错别字以规则为准）。
  */
 const handleTypoGrammar: ReviewHandler = async (ctx) => {
   const text = ctx.extractedText || '';
   if (!text.trim()) return { aiIssues: [], usedEngine: 'none' };
 
+  // ── 第一层：确定性规则字典（零 Token 消耗） ──
+  const fileCtx = {
+    fileName: ctx.fileName,
+    filePath: ctx.filePath,
+    fileType: ctx.fileType,
+    extractedText: ctx.extractedText,
+    pdfPages: ctx.pdfPages,
+    reviewMode: ctx.reviewMode,
+    parseResult: ctx.parseResult,
+  };
+  const ruleIssues = checkTypo(fileCtx as any);
+  const punctIssues = checkPunctuation(fileCtx as any);
+  // 合并确定性规则结果
+  const allRuleIssues = [...ruleIssues, ...punctIssues];
+  // 规则结果转为 ReviewIssue 格式
+  const ruleReviewIssues: ReviewIssue[] = allRuleIssues.map(r => ({
+    issueType: r.issueType,
+    originalText: r.originalText,
+    suggestedText: r.suggestedText,
+    description: r.description,
+    ruleCode: r.ruleCode,
+    severity: r.severity,
+  }));
+
+  // ── 第二层：LLM 审查（语法/通顺性/上下文一致性） ──
   const scene = ctx.scene || getModeScene('TYPO_GRAMMAR');
-  const config = getEffectiveConfig(ctx);
+  const baseConfig = getEffectiveConfig(ctx);
+  // 文字校对是字级别任务，用更小的 chunk 提升准确率和速度
+  const config = { ...baseConfig, chunkSize: 2000, chunkOverlap: 80 };
   const result = await AiReviewService.runLLMOnlyStrategy(text, ctx, scene, config);
 
   // 过滤术语白名单
@@ -76,7 +107,26 @@ const handleTypoGrammar: ReviewHandler = async (ctx) => {
       : issue,
   );
 
-  return { aiIssues: result.issues, usedEngine: result.engine, sources: result.sources };
+  // ── 合并去重：规则优先，LLM 的 TYPO 如果命中规则已报的 originalText 则丢弃 ──
+  const ruleOriginalTexts = new Set(
+    ruleReviewIssues
+      .filter(r => r.issueType === 'TYPO')
+      .map(r => (r.originalText || '').replace(/\s+/g, '').trim()),
+  );
+  const llmIssuesDeduped = result.issues.filter(issue => {
+    if (issue.issueType === 'TYPO') {
+      const normalized = (issue.originalText || '').replace(/\s+/g, '').trim();
+      if (ruleOriginalTexts.has(normalized)) return false; // 规则已报，丢弃 LLM 版本
+    }
+    return true;
+  });
+
+  const mergedIssues = [...ruleReviewIssues, ...llmIssuesDeduped];
+  const usedEngine = ruleReviewIssues.length > 0
+    ? `${result.engine}+rule-dict+unct`
+    : result.engine;
+
+  return { aiIssues: mergedIssues, usedEngine, sources: result.sources };
 };
 
 /**
