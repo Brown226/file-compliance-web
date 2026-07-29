@@ -245,6 +245,107 @@ export const parseRulesPreviewAsync = async (req: AuthRequest, res: Response): P
 };
 
 /**
+ * POST /api/rule-libraries/:id/parse-checkpoints-async
+ *
+ * V3.1 审点模式异步解析：用 ClauseSplitterService 切分条文 + LLM 加工成 DEC 风格审点
+ * 产出 clauseText + checkPrompt + auditDimension + mandatory，可直接驱动 DEC_REVIEW
+ *
+ * 与 parseRulesPreviewAsync 的区别：
+ * - 旧模式：LLM 一次性提炼动作化描述（description + checkMethod）
+ * - 审点模式：先正则切分条文 → 逐条 LLM 加工 → 产出可被 DEC 消费的审点
+ */
+export const parseCheckpointsPreviewAsync = async (req: AuthRequest, res: Response): Promise<void> => {
+  const savedPaths: string[] = [];
+  try {
+    const files = (req.files as Express.Multer.File[]) || [];
+    if (files.length === 0) { error(res, '请选择文件', 400); return; }
+    if (files.length > 5) {
+      files.forEach(f => { try { if (f.path && fs.existsSync(f.path)) fs.unlinkSync(f.path); } catch {} });
+      error(res, '最多支持同时上传 5 个文件', 400);
+      return;
+    }
+
+    const libraryId = req.params.id as string;
+
+    const fileMetaList: Array<{ originalName: string; savedPath: string; ext: string }> = [];
+    for (const f of files) {
+      const ext = path.extname(f.originalname).toLowerCase();
+      const savedName = `${uuidv4()}${ext}`;
+      const savedPath = path.join(UPLOAD_DIR(), savedName);
+      fs.renameSync(f.path, savedPath);
+      savedPaths.push(savedPath);
+      fileMetaList.push({ originalName: f.originalname, savedPath, ext });
+    }
+
+    const jobId = uuidv4();
+    const job: ParseJob = {
+      id: jobId, libraryId, status: 'PROCESSING',
+      progress: 5, step: '上传完成', message: '等待切分条文...',
+      items: [], sourceFileName: fileMetaList.map(m => m.originalName).join(', '),
+      createdAt: Date.now(),
+    };
+    parseJobs.set(jobId, job);
+
+    success(res, { jobId, status: 'PROCESSING' }, '审点解析任务已创建');
+
+    (async () => {
+      try {
+        const total = fileMetaList.length;
+        const allItems: any[] = [];
+        let totalClauses = 0;
+        let totalSkipped = 0;
+        let totalFailed = 0;
+
+        for (let i = 0; i < total; i++) {
+          const meta = fileMetaList[i];
+          job.progress = Math.floor((i / total) * 90);
+          job.step = `解析文件 (${i + 1}/${total})`;
+          job.message = `正在解析：${meta.originalName}`;
+
+          const fileType = FileTypeService.getStandardizedType(meta.ext);
+          const text = await TextExtractionService.extractFileText(meta.savedPath, fileType, meta.originalName);
+          if (!text || text.trim().length < 10) {
+            job.message = `${meta.originalName} 内容过少，已跳过`;
+            continue;
+          }
+
+          job.step = `切分条文 + LLM 加工 (${i + 1}/${total})`;
+          job.message = `${meta.originalName} 已解析（${text.length} 字符），正在切分条文并加工审点...`;
+
+          const result = await RuleLibraryService.previewCheckpointsFromText(libraryId, text, meta.originalName);
+          const tagged = (result.items || []).map(it => ({
+            ...it,
+            sourceLocation: it.sourceLocation || meta.originalName,
+          }));
+          allItems.push(...tagged);
+          totalClauses += result.totalClauses;
+          totalSkipped += result.skipped;
+          totalFailed += result.failed;
+        }
+
+        job.status = 'COMPLETED';
+        job.progress = 100;
+        job.step = '审点加工完成';
+        job.items = allItems;
+        job.message = `切分 ${totalClauses} 条条文，加工 ${allItems.length} 条审点（跳过已存在 ${totalSkipped}，失败 ${totalFailed}）`;
+      } catch (err: any) {
+        console.error('Async Parse Checkpoints Error:', err);
+        job.status = 'FAILED';
+        job.progress = 0;
+        job.step = '解析失败';
+        job.message = err?.message || '审点解析失败';
+      } finally {
+        savedPaths.forEach(p => { try { if (fs.existsSync(p)) fs.unlinkSync(p); } catch {} });
+      }
+    })();
+  } catch (err: any) {
+    console.error('Create Async Parse Checkpoints Job Error:', err);
+    savedPaths.forEach(p => { try { if (fs.existsSync(p)) fs.unlinkSync(p); } catch {} });
+    error(res, err.message || '创建审点解析任务失败', 500);
+  }
+};
+
+/**
  * GET /api/rule-libraries/parse-jobs/:jobId
  * 查询解析任务状态
  */

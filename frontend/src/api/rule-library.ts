@@ -31,6 +31,12 @@ export interface RuleLibraryItem {
   messageTemplate?: string
   sourceQuote?: string
   sourceLocation?: string
+  // ===== V3.1 审点字段 =====
+  clauseText?: string | null
+  checkPrompt?: string | null
+  auditDimension?: 'compliance' | 'fact' | 'text' | null
+  mandatory?: 'mandatory' | 'guidance' | null
+  clauseHash?: string | null
   enabled: boolean
   createdAt: string
   updatedAt?: string
@@ -50,6 +56,12 @@ export interface RuleLibraryPreviewItem {
   messageTemplate?: string | null
   sourceQuote?: string | null
   sourceLocation?: string | null
+  // ===== V3.1 审点字段 =====
+  clauseText?: string | null
+  checkPrompt?: string | null
+  auditDimension?: 'compliance' | 'fact' | 'text' | null
+  mandatory?: 'mandatory' | 'guidance' | null
+  clauseHash?: string | null
   executable: boolean
   duplicate: boolean
 }
@@ -93,6 +105,16 @@ export const parseRulesPreviewAsyncApi = (libraryId: string, formData: FormData)
   request.post<{ jobId: string; status: string }>(`/rule-libraries/${libraryId}/parse-preview-async`, formData, {
     headers: { 'Content-Type': 'multipart/form-data' },
     timeout: 5 * 60 * 1000, // 5 分钟超时（仅针对文件上传阶段，解析在后台执行）
+  })
+
+/**
+ * V3.1 审点模式异步解析：用 ClauseSplitterService 切分条文 + LLM 加工成 DEC 风格审点
+ * 产出 clauseText + checkPrompt + auditDimension + mandatory，可直接驱动 DEC_REVIEW
+ */
+export const parseCheckpointsPreviewAsyncApi = (libraryId: string, formData: FormData) =>
+  request.post<{ jobId: string; status: string }>(`/rule-libraries/${libraryId}/parse-checkpoints-async`, formData, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+    timeout: 5 * 60 * 1000,
   })
 
 export interface RuleParseJobResult {

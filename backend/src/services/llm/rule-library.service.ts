@@ -12,6 +12,7 @@
 import prisma from '../../config/db';
 import { LlmService } from '../llm/llm.service';
 import { PromptTemplateService } from './prompt-template.service';
+import { ClauseSplitterService, SplitClause } from '../standard/checkpoint/clause-splitter.service';
 
 export type RuleSourceType = 'STANDARD' | 'RULE_LIBRARY';
 export type RuleExecutionType = 'BUILTIN_PREFIX' | 'REGEX' | 'KEYWORD_REQUIRED' | 'KEYWORD_FORBIDDEN' | 'MANUAL';
@@ -46,6 +47,12 @@ export interface RulePreviewItem {
   messageTemplate?: string | null;
   sourceQuote?: string | null;
   sourceLocation?: string | null;
+  // ===== 审点库机制字段（V3.1）=====
+  clauseText?: string | null;       // 条文原文（规范原文）
+  checkPrompt?: string | null;      // LLM 加工的判定 prompt
+  auditDimension?: 'compliance' | 'fact' | 'text' | null;  // 审查维度
+  mandatory?: 'mandatory' | 'guidance' | null;              // 强制性
+  clauseHash?: string | null;       // 条文 hash（幂等去重）
   executable: boolean;
   duplicate: boolean;
 }
@@ -436,6 +443,150 @@ export class RuleLibraryService {
     return { items, sourceFileName };
   }
 
+  /**
+   * 审点模式预览（V3.1 新增）
+   *
+   * 与 previewRulesFromText 的区别：
+   * - 旧模式：LLM 一次性从全文提炼"动作化描述"规则（description + checkMethod）
+   * - 审点模式：先用 ClauseSplitterService 正则切分条文 → 逐条 LLM 加工成 DEC 风格审点
+   *   产出 clauseText（原文）+ checkPrompt（判定 prompt）+ auditDimension（维度）+ mandatory（强制性）
+   *
+   * 数据源：任意规范文档纯文本（由调用方从 PDF/Word 解析得到）
+   */
+  static async previewCheckpointsFromText(libraryId: string, text: string, sourceFileName?: string, options?: { concurrency?: number }): Promise<{ items: RulePreviewItem[]; sourceFileName?: string; totalClauses: number; skipped: number; failed: number }> {
+    const library = await prisma.ruleLibrary.findUnique({
+      where: { id: libraryId },
+      include: { items: true },
+    });
+    if (!library) throw new Error('规则库不存在');
+
+    const concurrency = options?.concurrency ?? 3;
+
+    // 1. 用 ClauseSplitterService 切分条文（不依赖 Standard，纯文本切分）
+    const clauses = ClauseSplitterService.splitText(text);
+    console.log(`[RuleLibrary][审点模式] 切分出 ${clauses.length} 条条文`);
+
+    if (clauses.length === 0) {
+      return { items: [], sourceFileName, totalClauses: 0, skipped: 0, failed: 0 };
+    }
+
+    // 2. 查已存在的 clauseHash（幂等去重）
+    const existingHashes = new Set(
+      library.items
+        .map((item: any) => item.clauseHash)
+        .filter((h: any): h is string => Boolean(h)),
+    );
+
+    const toProcess = clauses.filter(c => !existingHashes.has(c.clauseHash));
+    const skipped = clauses.length - toProcess.length;
+    console.log(`[RuleLibrary][审点模式] 跳过已存在 ${skipped} 条，待加工 ${toProcess.length} 条`);
+
+    // 3. 并发 LLM 加工（复用 checkpoint_extract 场景的 prompt）
+    const items: RulePreviewItem[] = [];
+    let failed = 0;
+
+    for (let i = 0; i < toProcess.length; i += concurrency) {
+      const batch = toProcess.slice(i, i + concurrency);
+      await Promise.all(
+        batch.map(async (clause) => {
+          try {
+            const checkpoint = await this.extractCheckpointFromClause(clause);
+            if (!checkpoint) {
+              failed++;
+              return;
+            }
+            // 适配成 RulePreviewItem 格式
+            items.push({
+              ruleCode: checkpoint.clauseCode || null,
+              ruleName: checkpoint.clauseCode || `条文_${clause.orderIndex + 1}`,
+              category: checkpoint.auditDimension === 'text' ? 'FORMAT'
+                : checkpoint.auditDimension === 'fact' ? 'CONSISTENCY'
+                : 'COMPLETENESS',
+              description: checkpoint.checkPrompt || checkpoint.clauseText.slice(0, 100),
+              checkMethod: checkpoint.checkPrompt || null,
+              severity: checkpoint.mandatory === 'mandatory' ? 'error' : 'warning',
+              executionType: 'MANUAL',
+              builtinPrefix: null,
+              targetScope: 'TEXT',
+              params: null,
+              messageTemplate: null,
+              sourceQuote: checkpoint.clauseText,
+              sourceLocation: sourceFileName || null,
+              clauseText: checkpoint.clauseText,
+              checkPrompt: checkpoint.checkPrompt,
+              auditDimension: checkpoint.auditDimension,
+              mandatory: checkpoint.mandatory,
+              clauseHash: checkpoint.clauseHash,
+              executable: true,  // 审点模式产出的条目可被 DEC 消费
+              duplicate: false,
+            });
+          } catch (e) {
+            console.warn(`[RuleLibrary][审点模式] 条文 ${clause.clauseCode || clause.clauseHash} 加工失败:`, (e as Error).message);
+            failed++;
+          }
+        }),
+      );
+      console.log(`[RuleLibrary][审点模式] 进度: ${Math.min(i + concurrency, toProcess.length)}/${toProcess.length}`);
+    }
+
+    return { items, sourceFileName, totalClauses: clauses.length, skipped, failed };
+  }
+
+  /**
+   * 单条条文 LLM 加工（复用 checkpoint_extract prompt 场景）
+   */
+  private static async extractCheckpointFromClause(clause: SplitClause): Promise<{
+    clauseCode: string | null;
+    clauseText: string;
+    clauseHash: string;
+    mandatory: 'mandatory' | 'guidance';
+    auditDimension: 'compliance' | 'fact' | 'text';
+    checkPrompt: string;
+  } | null> {
+    const systemPrompt = await PromptTemplateService.getPromptByScene(
+      'checkpoint_extract', 'system', 'default',
+      '你是规范审点工程化专家。把给定的规范条文转成机器可执行的审点。',
+    );
+    const userPrompt = await PromptTemplateService.getPromptByScene(
+      'checkpoint_extract', 'user', 'default',
+      '## 规范条文\n\n${clauseContent}\n\n请把以上条文转成审点，输出 JSON。',
+    );
+    const userContent = userPrompt.replace(/\$\{clauseContent\}/g, clause.clauseText);
+
+    const result = await LlmService.chat(userContent, {
+      systemPrompt,
+      temperature: 0.1,
+      timeout: 60,
+    });
+
+    try {
+      const jsonStr = this.extractJsonFromLlmResponse(result);
+      const parsed = JSON.parse(jsonStr);
+      return {
+        clauseCode: parsed.clauseCode || clause.clauseCode || null,
+        clauseText: clause.clauseText,
+        clauseHash: clause.clauseHash,
+        mandatory: parsed.mandatory === 'guidance' ? 'guidance' : 'mandatory',
+        auditDimension: ['compliance', 'fact', 'text'].includes(parsed.auditDimension) ? parsed.auditDimension : 'compliance',
+        checkPrompt: parsed.checkPrompt || '',
+      };
+    } catch (e) {
+      console.warn(`[RuleLibrary][审点模式] 条文 ${clause.clauseCode || clause.clauseHash} LLM 响应解析失败:`, (e as Error).message);
+      return null;
+    }
+  }
+
+  /**
+   * 从 LLM 响应中提取 JSON（兼容 ```json 包裹）
+   */
+  private static extractJsonFromLlmResponse(text: string): string {
+    const codeBlockMatch = text.match(/```(?:json)?\s*([\s\S]*?)```/);
+    if (codeBlockMatch) return codeBlockMatch[1].trim();
+    const jsonMatch = text.match(/\{[\s\S]*\}/);
+    if (jsonMatch) return jsonMatch[0];
+    return text.trim();
+  }
+
   static async importPreviewItems(
     libraryId: string,
     items: RulePreviewItem[],
@@ -478,6 +629,12 @@ export class RuleLibraryService {
           messageTemplate: item.messageTemplate || null,
           sourceQuote: item.sourceQuote || null,
           sourceLocation: item.sourceLocation || sourceFileName || null,
+          // V3.1 审点库机制字段（旧规则这些字段为 undefined，不写入保持 null）
+          clauseText: item.clauseText || null,
+          checkPrompt: item.checkPrompt || null,
+          auditDimension: item.auditDimension || null,
+          mandatory: item.mandatory || null,
+          clauseHash: item.clauseHash || null,
         } as any;
 
         if (existing && this.buildDuplicateKey(existing.ruleCode, existing.ruleName) === duplicateKey) {

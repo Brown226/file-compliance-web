@@ -13,6 +13,7 @@ import {
   parseRulesFromFile,
   parseRulesPreview,
   parseRulesPreviewAsync,
+  parseCheckpointsPreviewAsync,
   getParseJobStatus,
   importPreviewItems,
   addItem,
@@ -44,6 +45,8 @@ router.delete('/:id', requireRole('ADMIN', 'MANAGER'), deleteLibrary);
 router.post('/:id/parse', requireRole('ADMIN', 'MANAGER'), upload.single('file'), parseRulesFromFile);
 router.post('/:id/parse-preview', requireRole('ADMIN', 'MANAGER'), upload.single('file'), parseRulesPreview);
 router.post('/:id/parse-preview-async', requireRole('ADMIN', 'MANAGER'), upload.array('files', 5), parseRulesPreviewAsync);
+// V3.1 审点模式：切分条文 + LLM 加工成 DEC 风格审点（产出 clauseText/checkPrompt/auditDimension/mandatory）
+router.post('/:id/parse-checkpoints-async', requireRole('ADMIN', 'MANAGER'), upload.array('files', 5), parseCheckpointsPreviewAsync);
 router.post('/:id/import', requireRole('ADMIN', 'MANAGER'), importPreviewItems);
 
 // 规则条目管理
