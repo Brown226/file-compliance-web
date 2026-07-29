@@ -18,6 +18,29 @@ import { parallelLimit } from '../../utils/parallel';
 import { EmbeddingService } from '../knowledge/embedding.service';
 import { TerminologyService } from '../standard/terminology.service';
 
+/**
+ * Levenshtein 编辑距离（用于跨 chunk 模糊去重）
+ * 仅用于短文本（≤30 字符），O(n*m) 复杂度可控
+ */
+function levenshteinDistance(a: string, b: string): number {
+  if (a === b) return 0;
+  const m = a.length, n = b.length;
+  if (m === 0) return n;
+  if (n === 0) return m;
+  const prev = new Array(n + 1);
+  const curr = new Array(n + 1);
+  for (let j = 0; j <= n; j++) prev[j] = j;
+  for (let i = 1; i <= m; i++) {
+    curr[0] = i;
+    for (let j = 1; j <= n; j++) {
+      const cost = a[i - 1] === b[j - 1] ? 0 : 1;
+      curr[j] = Math.min(prev[j] + 1, curr[j - 1] + 1, prev[j - 1] + cost);
+    }
+    for (let j = 0; j <= n; j++) prev[j] = curr[j];
+  }
+  return prev[n];
+}
+
 export class AiReviewService {
   // ==================== AI ���ʵ�� ====================
 
@@ -53,6 +76,7 @@ export class AiReviewService {
         llmTimeout: config.llmTimeout || 180,
         scene,
         documentId: ctx.fileId,
+        taskId: ctx.taskId, mode: ctx.reviewMode,
       });
 
       // ���Ȼص���һ���Դ������� issues��RAG �ڲ��Ѵ������з�Ƭ��
@@ -146,7 +170,7 @@ export class AiReviewService {
             systemPrompt,
             skipUserTemplate: true,
             documentId: ctx.fileId,
-            taskId: ctx.taskId,
+            taskId: ctx.taskId, mode: ctx.reviewMode,
             positionInfo: {
               chunkIndex: chunk.chunkIndex,
               chunkStartIndex: chunk.startIndex,
@@ -164,7 +188,7 @@ export class AiReviewService {
             systemPrompt,
             skipUserTemplate: true,
             documentId: ctx.fileId,
-            taskId: ctx.taskId,
+            taskId: ctx.taskId, mode: ctx.reviewMode,
             positionInfo: {
               chunkIndex: chunk.chunkIndex,
               chunkStartIndex: chunk.startIndex,
@@ -270,20 +294,86 @@ export class AiReviewService {
         userTpl = userTpl.replace(/\$\{stance\}/g, stanceLabel);
       }
 
-      const chunks = LlmService.splitText(text, chunkSize, true, chunkOverlap);
-    LlmService.enrichChunksWithContext(chunks, text); // OPT-018: inject section context
-      const totalChunks = chunks.length;
-      const CONCURRENT_LIMIT = await getChunkConcurrency();
-      const chunkResults = await parallelLimit(chunks, CONCURRENT_LIMIT, async (chunk) => {
+      // 接入 MaxKB RAG：当用户选择了知识库时，检索相关标准参数注入 user prompt 作为对照基准
+      const knowledgeIds = ctx.maxkbKnowledgeIds && ctx.maxkbKnowledgeIds.length > 0
+        ? ctx.maxkbKnowledgeIds
+        : ctx.maxkbKnowledgeId
+          ? [ctx.maxkbKnowledgeId]
+          : [];
+
+      let ragContext = '';
+      if (knowledgeIds.length > 0) {
         try {
-          const userContent = userTpl.replace(/\$\{text\}/g, chunk.text);
+          const workspaceId = await MaxKBService.getDefaultWorkspaceId();
+          const ragResults: string[] = [];
+          // 用文档前 1000 字符作为检索 query（避免超长导致 MaxKB 检索异常）
+          const query = text.substring(0, 1000);
+          for (const kbId of knowledgeIds.slice(0, 3)) {
+            try {
+              const hits = await MaxKBService.hitTest(workspaceId, kbId, query, 5);
+              if (Array.isArray(hits)) {
+                for (const hit of hits) {
+                  const content = (hit as any).content || (hit as any).text || '';
+                  if (content) ragResults.push(content);
+                }
+              }
+            } catch (e: any) {
+              console.warn(`[Pipeline] MaxKB hit_test 知识库 ${kbId} 失败:`, e.message);
+            }
+          }
+          if (ragResults.length > 0) {
+            ragContext = ragResults.slice(0, 10).join('\n---\n');
+          }
+        } catch (e: any) {
+          console.warn('[Pipeline] MaxKB RAG 检索失败，跳过 RAG 注入:', e.message);
+        }
+      }
+
+      const ragPrefix = ragContext
+        ? `参考标准参数：\n${ragContext}\n\n请对照上述标准参数检查文档一致性。\n\n`
+        : '';
+
+      const chunks = LlmService.splitText(text, chunkSize, true, chunkOverlap);
+      LlmService.enrichChunksWithContext(chunks, text); // OPT-018: inject section context
+      const totalChunks = chunks.length;
+
+      // 短文本单分片路径：跳过 parallelLimit 无意义开销
+      let chunkResults: ReviewIssue[][];
+      if (totalChunks === 1) {
+        try {
+          const chunk = chunks[0];
+          const userContent = ragPrefix + userTpl.replace(/\$\{text\}/g, chunk.text);
           const llmIssues = await LlmService.reviewText(userContent, {
             maxTokens: llmMaxTokens,
             timeout: llmTimeout,
             systemPrompt,
             skipUserTemplate: true,
             documentId: ctx.fileId,
-            taskId: ctx.taskId,
+            taskId: ctx.taskId, mode: ctx.reviewMode,
+            positionInfo: {
+              chunkIndex: chunk.chunkIndex,
+              chunkStartIndex: chunk.startIndex,
+              totalChunks,
+            },
+          });
+          await ctx.onChunkProgress?.(chunk.text.length, llmIssues, chunk.chunkIndex, totalChunks, 'llm-direct');
+          chunkResults = [llmIssues];
+        } catch (e: any) {
+          console.warn(`[Pipeline] LLM 单分片调用失败:`, e.message);
+          chunkResults = [[]];
+        }
+      } else {
+        const CONCURRENT_LIMIT = await getChunkConcurrency();
+        chunkResults = await parallelLimit(chunks, CONCURRENT_LIMIT, async (chunk) => {
+        try {
+          const userContent = ragPrefix + userTpl.replace(/\$\{text\}/g, chunk.text);
+          const llmIssues = await LlmService.reviewText(userContent, {
+            maxTokens: llmMaxTokens,
+            timeout: llmTimeout,
+            systemPrompt,
+            skipUserTemplate: true,
+            documentId: ctx.fileId,
+            taskId: ctx.taskId, mode: ctx.reviewMode,
             positionInfo: {
               chunkIndex: chunk.chunkIndex,
               chunkStartIndex: chunk.startIndex,
@@ -297,6 +387,7 @@ export class AiReviewService {
           return [];
         }
       });
+      }
       for (const r of chunkResults) issues.push(...r);
       return { issues: StandardTraceabilityService.enrichWithStandardRef(issues), engine: 'llm-direct' };
     } catch (e) {
@@ -338,22 +429,23 @@ export class AiReviewService {
 
     try {
       const rawSystemPrompt = await PromptLoader.loadSystemPrompt(scene, { hasContext: false });
-      let systemPrompt = AiReviewService.injectSemanticContext(rawSystemPrompt, ctx);
-      // 文本校对场景：将术语白名单采样注入提示词，让 LLM 预先知道正确术语，减少误报。
-      // 借鉴 TextGuard proofread.py 的 _build_global_words_section（仅取前 N 条示例避免超长）。
+      // Prompt Caching：保持 rawSystemPrompt 前缀稳定，动态内容统一追加到末尾
+      let systemPrompt = rawSystemPrompt;
+      // 合同立场必须替换模板内占位符（不替换会导致 LLM 收到字面量 ${stance}）
+      if (scene === 'contract_review') {
+        const stanceLabel = ctx.contractStance === 'contractor' ? '承包商' : '业主/建设方';
+        systemPrompt = systemPrompt.replace(/\$\{stance\}/g, stanceLabel);
+      }
+      // 动态后缀：语义上下文 + 术语白名单 + 用户记忆
+      const dynamicSuffix: string[] = [];
+      const semanticContext = AiReviewService.extractSemanticContextSuffix(ctx);
+      if (semanticContext) dynamicSuffix.push(semanticContext);
       if (scene === 'typo_grammar') {
         const glossary = TerminologyService.getWhitelistGlossary(20);
         if (glossary) {
-          systemPrompt += `\n\n## 专业术语白名单（以下均为正确写法，切勿作为错别字/语法问题报告）\n${glossary}`;
+          dynamicSuffix.push(`## 专业术语白名单（以下均为正确写法，切勿作为错别字/语法问题报告）\n${glossary}`);
         }
       }
-      // ��ͬ�������ע��
-      if (scene === 'contract_review') {
-        const stanceLabel = ctx.contractStance === 'contractor' ? '�а���' : 'ҵ��/���跽';
-        systemPrompt = systemPrompt.replace(/\$\{stance\}/g, stanceLabel);
-      }
-
-      // 注入长期记忆（如果用户有历史偏好）
       if (ctx.userId) {
         try {
           const { MemoryService } = await import('../system/memory.service');
@@ -362,17 +454,25 @@ export class AiReviewService {
             const memoryContext = memories
               .map(m => `- ${m.content}`)
               .join('\n');
-            systemPrompt += `\n\n## 用户历史偏好\n以下信息来自该用户的历史审查行为，请参考：\n${memoryContext}`;
+            dynamicSuffix.push(`## 用户历史偏好\n以下信息来自该用户的历史审查行为，请参考：\n${memoryContext}`);
           }
         } catch {
           // 记忆不可用时不阻塞审查
         }
       }
+      if (dynamicSuffix.length > 0) {
+        systemPrompt = systemPrompt + '\n\n' + dynamicSuffix.join('\n\n');
+      }
 
       const chunks = LlmService.splitText(text, chunkSize, true, chunkOverlap);
     LlmService.enrichChunksWithContext(chunks, text); // OPT-018: inject section context
       const totalChunks = chunks.length;
-      const CONCURRENT_LIMIT = await getChunkConcurrency();
+      // 文字校对是轻量模式（无 RAG/规则引擎开销），瓶颈仅在 LLM API 调用，
+      // 用更高并发抵消 chunk 数量增多带来的轮次增加
+      const baseConcurrency = await getChunkConcurrency();
+      const CONCURRENT_LIMIT = scene === 'typo_grammar'
+        ? Math.max(baseConcurrency, 4)
+        : baseConcurrency;
       const chunkResults = await parallelLimit(chunks, CONCURRENT_LIMIT, async (chunk) => {
         try {
           let userTpl = await PromptLoader.loadUserPrompt(scene, 'default');
@@ -381,7 +481,9 @@ export class AiReviewService {
             const stanceLabel = ctx.contractStance === 'contractor' ? '�а���' : 'ҵ��/���跽';
             userTpl = userTpl.replace(/\$\{stance\}/g, stanceLabel);
           }
-          const userContent = userTpl.replace(/\$\{text\}/g, chunk.text);
+          // P1-I: 注入章节上下文前缀，让 LLM 知道当前 chunk 所属章节和前文摘要
+          const contextPrefix = LlmService.buildChunkContextPrefix(chunk);
+          const userContent = contextPrefix + userTpl.replace(/\$\{text\}/g, chunk.text);
 
           const llmIssues = await LlmService.reviewText(userContent, {
             maxTokens: llmMaxTokens,
@@ -389,7 +491,7 @@ export class AiReviewService {
             systemPrompt,
             skipUserTemplate: true,
             documentId: ctx.fileId,
-            taskId: ctx.taskId,
+            taskId: ctx.taskId, mode: ctx.reviewMode,
             positionInfo: {
               chunkIndex: chunk.chunkIndex,
               chunkStartIndex: chunk.startIndex,
@@ -407,13 +509,24 @@ export class AiReviewService {
       for (const r of chunkResults) issues.push(...r);
 
       // ���Ƭȥ�أ��� originalText ǰ 60 �ַ�ȥ�أ��� semantic-spec ��ͬ���ԣ�
-      // 分片去重：基于 issueType + 归一化全文 去重（避免"前60字相同"误删不同问题）
-      const seen = new Set<string>();
+      // 分片去重：基于 issueType + 归一化全文 精确去重 + 模糊去重
+      // P1-S: 增加 Levenshtein 距离 ≤ 2 的模糊匹配，处理 LLM 输出 originalText 有轻微偏差的重复
+      const seen: Array<{ key: string; normalized: string }> = [];
       const deduped = issues.filter(issue => {
         const normalized = (issue.originalText || '').replace(/\s+/g, '').trim();
+        if (!normalized) return false;
         const key = (issue.issueType || '') + '::' + normalized;
-        if (!normalized || seen.has(key)) return false;
-        seen.add(key);
+        // 精确匹配
+        if (seen.some(s => s.key === key)) return false;
+        // 模糊匹配：同 issueType + 编辑距离 ≤ 2 + 长度 ≥ 4（避免短文本误去重）
+        if (normalized.length >= 4) {
+          const isFuzzyDup = seen.some(s => {
+            if (s.key.split('::')[0] !== (issue.issueType || '')) return false;
+            return levenshteinDistance(normalized, s.normalized) <= 2;
+          });
+          if (isFuzzyDup) return false;
+        }
+        seen.push({ key, normalized });
         return true;
       });
 
@@ -633,7 +746,7 @@ export class AiReviewService {
             systemPrompt: finalSystemPrompt,
             skipUserTemplate: true,
             documentId: ctx.fileId,
-            taskId: ctx.taskId,
+            taskId: ctx.taskId, mode: ctx.reviewMode,
             positionInfo: {
               chunkIndex: chunk.chunkIndex,
               chunkStartIndex: chunk.startIndex,
@@ -840,7 +953,7 @@ export class AiReviewService {
       }
     }
 
-    // ---- 3. 解析条款 + 双链并行执行 ----
+    // ---- 3. 解析条款 + 单链合并执行（风险+合规双链已合并为单次 LLM 调用）----
     const { parseContractClauses, getDefaultLegalBasis } = await import('../review/contract-parser.service');
     const clauses = parseContractClauses(text);
     console.log(`[ContractReview] 解析到 ${clauses.length} 个条款`);
@@ -849,112 +962,82 @@ export class AiReviewService {
       return { issues: [], engine: 'none' };
     }
 
-    const CONCURRENT_LIMIT = Math.min(clauses.length, 5);
+    const CONCURRENT_LIMIT = Math.min(clauses.length, await getChunkConcurrency());
     const totalClauses = clauses.length;
-    let clausesProcessed = 0; // 共享进度计数器（两条链合计）
-    const totalSteps = totalClauses * 2; // 风险分析 + 合规检查各遍历一次
+    let clausesProcessed = 0; // 进度计数器（单链）
+    const totalSteps = totalClauses; // 单链：总步数 = 条款数
 
     /** 报告合同审查进度 */
-    const reportProgress = async (batchIssues: ReviewIssue[], label: string) => {
-      clausesProcessed += 1;
+    const reportProgress = async (batchIssues: ReviewIssue[], batchSize: number) => {
+      clausesProcessed += batchSize;
       if (ctx.onChunkProgress) {
         await ctx.onChunkProgress(
           text.length,
           batchIssues,
           clausesProcessed - 1,
           totalSteps,
-          `contract-${label}`,
+          'contract-unified',
         );
       }
     };
 
-    // 风险分析链：逐条款识别风险
-    const riskTask = async () => {
-      const riskPrompt = systemPrompt + '\n\n你的任务是：**风险分析**。识别条款中对业主/承包商不利的风险点。';
-      const riskResults: ReviewIssue[] = [];
+    // 加载合并版用户提示词（风险+合规双字段输出）
+    const mergedUserPromptTemplate = await PromptTemplateService.getPromptByScene(
+      'contract_review', 'user', 'merged',
+      '请对上述条款同时完成：1) 风险分析（识别对该方不利的风险点）2) 合规检查（是否符合法规要求）。输出 {"riskIssues":[...],"complianceIssues":[...]}。',
+    );
 
+    // 单链统一执行：每条款调 1 次 LLM，同时输出风险与合规结果
+    const unifiedTask = async () => {
+      const results: ReviewIssue[] = [];
       for (let i = 0; i < clauses.length; i += CONCURRENT_LIMIT) {
         const batch = clauses.slice(i, i + CONCURRENT_LIMIT);
         const batchResults = await Promise.all(
-          batch.map(async (clause) => {
+          batch.map(async (clause, batchIdx) => {
+            const clauseIdx = i + batchIdx;
             const legalBasis = getDefaultLegalBasis(clause.clauseNo + clause.clauseTitle);
             const userContent = `【条款】${clause.clauseNo} ${clause.clauseTitle}\n${clause.clauseContent}\n\n【法律依据】${legalBasis}`
               + (refTextsJoined ? `\n\n【参照文件】\n${refTextsJoined}` : '')
               + (ragContext ? `\n\n【知识库上下文】\n${ragContext}` : '')
-              + `\n\n请识别该条款中的风险点，输出 JSON 数组。`;
+              + `\n\n${mergedUserPromptTemplate}`;
             try {
               const issues = await LlmService.reviewText(userContent, {
-                systemPrompt: riskPrompt,
+                systemPrompt,
                 skipUserTemplate: true,
                 maxTokens: llmMaxTokens,
                 timeout: llmTimeout,
                 documentId: ctx.fileId,
-            taskId: ctx.taskId,
+                taskId: ctx.taskId, mode: ctx.reviewMode,
+                // P2-J：传入 positionInfo 提升缓存命中率
+                positionInfo: {
+                  chunkIndex: clauseIdx,
+                  chunkStartIndex: clause.startOffset,
+                  totalChunks: totalClauses,
+                },
               });
-              return issues.map(i => ({
-                ...i,
-                ruleCode: `CLS_RISK_${clause.clauseNo.replace(/[^\w]/g, '_')}`,
-                standardRef: `[${clause.clauseNo}] ${clause.clauseTitle}`,
+              return issues.map(iss => ({
+                ...iss,
+                // 若 LLM 未返回 ruleCode，根据 _chainTag 或条款编号补全
+                ruleCode: iss.ruleCode || `CLS_${clause.clauseNo.replace(/[^\w]/g, '_')}`,
+                standardRef: iss.standardRef || `[${clause.clauseNo}] ${clause.clauseTitle}`,
               }));
             } catch (e) {
-              console.warn(`[ContractReview] 风险分析条款 ${clause.clauseNo} 失败:`, (e as Error).message);
+              console.warn(`[ContractReview] 条款 ${clause.clauseNo} 审查失败:`, (e as Error).message);
               return [];
             }
           }),
         );
-        for (const r of batchResults) riskResults.push(...r);
+        for (const r of batchResults) results.push(...r);
         // 报告进度（以批次为单位）
-        await reportProgress(batchResults.flat(), 'risk');
+        await reportProgress(batchResults.flat(), batch.length);
       }
-      return riskResults;
+      return results;
     };
 
-    // 合规检查链：逐条款检查合规性
-    const complianceTask = async () => {
-      const compliancePrompt = systemPrompt + '\n\n你的任务是：**合规检查**。检查条款是否符合相关法律法规要求。';
-      const complianceResults: ReviewIssue[] = [];
-
-      for (let i = 0; i < clauses.length; i += CONCURRENT_LIMIT) {
-        const batch = clauses.slice(i, i + CONCURRENT_LIMIT);
-        const batchResults = await Promise.all(
-          batch.map(async (clause) => {
-            const legalBasis = getDefaultLegalBasis(clause.clauseNo + clause.clauseTitle);
-            const userContent = `【条款】${clause.clauseNo} ${clause.clauseTitle}\n${clause.clauseContent}\n\n【相关法规】${legalBasis}`
-              + (refTextsJoined ? `\n\n【参照文件】\n${refTextsJoined}` : '')
-              + (ragContext ? `\n\n【知识库上下文】\n${ragContext}` : '')
-              + `\n\n请检查该条款是否符合上述法规要求。如不符合，输出违规详情。`;
-            try {
-              const issues = await LlmService.reviewText(userContent, {
-                systemPrompt: compliancePrompt,
-                skipUserTemplate: true,
-                maxTokens: llmMaxTokens,
-                timeout: llmTimeout,
-                documentId: ctx.fileId,
-            taskId: ctx.taskId,
-              });
-              return issues.map(i => ({
-                ...i,
-                ruleCode: `CLS_COMPLIANCE_${clause.clauseNo.replace(/[^\w]/g, '_')}`,
-                standardRef: `[${clause.clauseNo}] ${clause.clauseTitle}`,
-              }));
-            } catch (e) {
-              console.warn(`[ContractReview] 合规检查条款 ${clause.clauseNo} 失败:`, (e as Error).message);
-              return [];
-            }
-          }),
-        );
-        for (const r of batchResults) complianceResults.push(...r);
-        // 报告进度（以批次为单位）
-        await reportProgress(batchResults.flat(), 'compliance');
-      }
-      return complianceResults;
-    };
-
-    // 并行执行两条链
-    const [riskIssues, complianceIssues] = await Promise.all([riskTask(), complianceTask()]);
+    // 执行单链
+    const allIssues = await unifiedTask();
 
     // ---- 4. 合并结果去重 ----
-    const allIssues = [...riskIssues, ...complianceIssues];
     const seen = new Set<string>();
     const deduped = allIssues.filter(issue => {
       const key = (issue.issueType || '') + '::' + (issue.originalText || '').replace(/\s+/g, '');
@@ -978,14 +1061,17 @@ export class AiReviewService {
 
     const { score } = calculateContractScore(filtered);
 
-    console.log(`[ContractReview] 完成：${riskIssues.length} 个风险点，${complianceIssues.length} 个合规问题，综合评分 ${score}/100`);
+    // 统计风险与合规数量（按 ruleCode 前缀区分，CLS_RISK_* 为风险，CLS_COMPLIANCE_* 为合规）
+    const riskCount = filtered.filter(i => (i.ruleCode || '').startsWith('CLS_RISK')).length;
+    const complianceCount = filtered.filter(i => (i.ruleCode || '').startsWith('CLS_COMPLIANCE')).length;
+    console.log(`[ContractReview] 完成：${riskCount} 个风险点，${complianceCount} 个合规问题，综合评分 ${score}/100`);
 
     return {
       issues: filtered,
       engine: 'contract-review',
       sources: [{
         document_name: '合同审查报告',
-        content: `审查条款数: ${clauses.length} | 风险点: ${riskIssues.length} | 合规问题: ${complianceIssues.length} | 综合评分: ${score}/100`,
+        content: `审查条款数: ${clauses.length} | 风险点: ${riskCount} | 合规问题: ${complianceCount} | 综合评分: ${score}/100`,
         similarity: 1.0,
       }],
     };
@@ -1052,6 +1138,34 @@ export class AiReviewService {
     }
 
     return enhancedPrompt;
+  }
+
+  /**
+   * 抽取语义上下文后缀（Prompt Caching 友好版）
+   *
+   * 与 injectSemanticContext 的区别：
+   * - injectSemanticContext 把动态内容拼到前缀，破坏缓存
+   * - 本方法只返回后缀字符串，由调用方追加到 systemPrompt 末尾
+   */
+  static extractSemanticContextSuffix(ctx: PipelineContext): string {
+    const skipModes = ['TYPO_GRAMMAR', 'CONSISTENCY'];
+    const hasReviewPoints = ctx.reviewPoints && ctx.reviewPoints.length > 0;
+    const hasPurposes = ctx.corePurposes && ctx.corePurposes.length > 0;
+
+    const parts: string[] = [];
+    if (!skipModes.includes(ctx.reviewMode || '') && hasReviewPoints) {
+      parts.push(`审查参考（请作为审查范围参考，不要作为审查依据）\n参考要点：${ctx.reviewPoints!.join('；')}`);
+    }
+    if (!skipModes.includes(ctx.reviewMode || '') && hasPurposes) {
+      parts.push(`审查背景与目标：${ctx.corePurposes!.join('；')}`);
+    }
+    if (parts.length > 0) {
+      parts.push('注意：上述仅供参考以明确审查范围，不得作为审查依据。系统指令的所有审查原则仍然适用。');
+    }
+    if (ctx._semanticPromptContext) {
+      parts.push(ctx._semanticPromptContext);
+    }
+    return parts.join('\n\n');
   }
 
   /**
@@ -1171,7 +1285,7 @@ export class AiReviewService {
           systemPrompt,
           skipUserTemplate: true,
           documentId: ctx.fileId,
-            taskId: ctx.taskId,
+            taskId: ctx.taskId, mode: ctx.reviewMode,
           positionInfo: {
             chunkIndex: chunk.chunkIndex,
             chunkStartIndex: chunk.startIndex,

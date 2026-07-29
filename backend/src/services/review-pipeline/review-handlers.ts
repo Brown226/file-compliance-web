@@ -88,7 +88,7 @@ const handleTypoGrammar: ReviewHandler = async (ctx) => {
   const scene = ctx.scene || getModeScene('TYPO_GRAMMAR');
   const baseConfig = getEffectiveConfig(ctx);
   // 文字校对是字级别任务，用更小的 chunk 提升准确率和速度
-  const config = { ...baseConfig, chunkSize: 2000, chunkOverlap: 80 };
+  const config = { ...baseConfig, chunkSize: 3000, chunkOverlap: 120 };
   const result = await AiReviewService.runLLMOnlyStrategy(text, ctx, scene, config);
 
   // 过滤术语白名单
