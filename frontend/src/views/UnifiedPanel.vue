@@ -112,6 +112,7 @@
         <StorageManagement v-show="activeSystem === 'storage'" />
         <BasicSettings v-show="activeSystem === 'basicSettings'" />
         <AuditLogs v-show="activeSystem === 'audit'" />
+        <FeatureFlags v-if="isAdmin" v-show="activeSystem === 'featureFlags'" />
         <FeedbackManagement v-if="isAdmin" v-show="activeSystem === 'feedback'" />
       </div>
     </div>
@@ -129,6 +130,7 @@ import PromptConfig from './PromptConfig.vue'
 import AiEngineConfig from './admin/AiEngineConfig.vue'
 import StorageManagement from './admin/StorageManagement.vue'
 import BasicSettings from './admin/BasicSettings.vue'
+import FeatureFlags from './admin/FeatureFlags.vue'
 import AuditLogs from './AuditLogs.vue'
 import FeedbackManagement from './FeedbackManagement.vue'
 
@@ -158,7 +160,10 @@ const systemItems = computed(() => {
     { id: 'basicSettings', name: '基础设置' },
     { id: 'audit', name: '审计日志' },
   ]
-  if (isAdmin.value) items.push({ id: 'feedback', name: '反馈管理' })
+  if (isAdmin.value) {
+    items.push({ id: 'featureFlags', name: '功能管理' })
+    items.push({ id: 'feedback', name: '反馈管理' })
+  }
   return items
 })
 

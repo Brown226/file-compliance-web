@@ -12,7 +12,7 @@
         <h3 class="section-title">常用审查</h3>
         <div class="module-grid">
           <button
-            v-for="item in commonModules"
+            v-for="item in visibleCommonModules"
             :key="item.id"
             type="button"
             class="module-item"
@@ -22,14 +22,12 @@
           >
             <span class="item-icon"><el-icon :size="20"><component :is="item.icon" /></el-icon></span>
             <span class="item-body">
-              <span class="item-title">{{ item.title }}</span>
+              <el-tooltip v-if="item.techHint" :content="item.techHint" placement="top" :show-after="300">
+                <span class="item-title">{{ item.title }}</span>
+              </el-tooltip>
+              <span v-else class="item-title">{{ item.title }}</span>
               <span class="item-desc">{{ item.desc }}</span>
               <span class="item-scenario">{{ item.scenario }}</span>
-              <span
-                v-if="item.preset"
-                class="item-preset"
-                @click.stop="selectPreset(item.preset.target)"
-              >{{ item.preset.label }} →</span>
             </span>
           </button>
         </div>
@@ -40,7 +38,7 @@
         <h3 class="section-title">专项审查</h3>
         <div class="module-grid">
           <button
-            v-for="item in specialModules"
+            v-for="item in visibleSpecialModules"
             :key="item.id"
             type="button"
             class="module-item"
@@ -50,7 +48,10 @@
           >
             <span class="item-icon"><el-icon :size="20"><component :is="item.icon" /></el-icon></span>
             <span class="item-body">
-              <span class="item-title">{{ item.title }}</span>
+              <el-tooltip v-if="item.techHint" :content="item.techHint" placement="top" :show-after="300">
+                <span class="item-title">{{ item.title }}</span>
+              </el-tooltip>
+              <span v-else class="item-title">{{ item.title }}</span>
               <span class="item-desc">{{ item.desc }}</span>
               <span class="item-scenario">{{ item.scenario }}</span>
             </span>
@@ -73,18 +74,16 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import {
-  Document, Fold, Link, EditPen, List, CircleCheck, View,
+  Document, Fold, Link, EditPen, Stamp, CircleCheck, View,
 } from '@element-plus/icons-vue'
 import SmartReviewLegacy from './SmartReview.vue'
 import SelfCheck from './SelfCheck/index.vue'
+import { loadFeatureFlags, isFeatureEnabled } from '@/composables/useFeatureFlags'
 
 type ModuleId = 'LIBRARY' | 'CONSISTENCY' | 'PROOFREAD' | 'RULE_ONLY' | 'DOC_REVIEW' | 'SELF_CHECK' | 'CONTRACT' | 'DWG_VISION'
-
-const router = useRouter()
-const selectedModule = ref<ModuleId | ''>('')
 
 interface ModuleItem {
   id: ModuleId
@@ -95,54 +94,68 @@ interface ModuleItem {
   color: string
   /** 跳转路由（不为空时点击卡片直接跳转，不走表单） */
   linkTo?: string
-  /** 预设标签（次级入口，点击切换到另一个 module） */
-  preset?: { label: string; target: ModuleId }
+  /** 技术词 tooltip（RAG/规则引擎/DEC 等），通过 el-tooltip 悬停显示 */
+  techHint?: string
+  /** 功能开关 key（如 entry.RULE_ONLY），未启用时隐藏此卡 */
+  featureKey?: string
 }
+
+const router = useRouter()
+const selectedModule = ref<ModuleId | ''>('')
 
 const commonModules: ModuleItem[] = [
   {
-    id: 'LIBRARY',
-    title: '标准合规审查',
-    desc: '基于标准库 + AI 综合合规审查（自动启用 DEC 双分支增强）',
-    scenario: '初次送审、标准符合性检查',
-    icon: Document,
-    color: '#2563eb',
-  },
-  {
-    id: 'DOC_REVIEW',
-    title: '文件比对审查',
-    desc: '上传参照文件，AI 逐项比对差异',
-    scenario: '合同 vs 模板、新旧版变更比对',
-    icon: Fold,
-    color: '#7c3aed',
-    preset: { label: '合同风险审查预设', target: 'CONTRACT' },
-  },
-  {
-    id: 'CONSISTENCY',
-    title: '一致性审查',
-    desc: '多文件间数据与参数自洽性核对',
-    scenario: '总图分图参数核对、跨表校验',
-    icon: Link,
-    color: '#0891b2',
-  },
-  {
     id: 'PROOFREAD',
-    title: '基础校对',
-    desc: '纯 LLM 驱动的文字、语法检查',
+    title: '文字校对',
+    desc: '检查错别字、语句通顺、标点',
     scenario: '终稿发布前的文字把关',
     icon: EditPen,
     color: '#059669',
+    techHint: '纯 LLM 驱动，覆盖 TYPO/FLUENCY/CONSISTENCY 三类文字问题',
+    featureKey: 'entry.PROOFREAD',
+  },
+  {
+    id: 'LIBRARY',
+    title: '以库审文',
+    desc: '结合知识库或语义规则库进行合规审查',
+    scenario: '技术文档 vs 知识库、规范要点核查',
+    icon: Document,
+    color: '#2563eb',
+    techHint: '知识库走 RAG + DEC 双分支增强；语义规则库作为 AI 审查点逐条匹配',
+    featureKey: 'entry.LIBRARY',
+  },
+  {
+    id: 'DOC_REVIEW',
+    title: '以文审文',
+    desc: '待审文档与参照文档逐项比对',
+    scenario: '借鉴多份文档写作后的一致性核查',
+    icon: Fold,
+    color: '#7c3aed',
+    techHint: '上传参照文件，AI 语义级比对差异与遗漏',
+    featureKey: 'entry.DOC_REVIEW',
+  },
+  {
+    id: 'CONSISTENCY',
+    title: '上下文一致性',
+    desc: '检查文件内部及多文件间的术语、数值、指标自洽',
+    scenario: '长文档或跨文件参数核对',
+    icon: Link,
+    color: '#0891b2',
+    techHint: 'Map-Reduce 架构：先抽取结构化摘要，再跨分片做 C1-C4 一致性比对',
+    featureKey: 'entry.CONSISTENCY',
   },
 ]
 
 const specialModules: ModuleItem[] = [
   {
-    id: 'RULE_ONLY',
-    title: '规则库审查',
-    desc: '仅执行预定义规则，不调用 AI',
-    scenario: '批量格式检查、快速初筛',
-    icon: List,
-    color: '#d97706',
+    id: 'CONTRACT',
+    title: '合同风险审查',
+    desc: '立场驱动识别不利条款、缺失保护条款',
+    scenario: '核电工程合同业主/承包商风险审查',
+    icon: Stamp,
+    color: '#dc2626',
+    techHint: '独立 prompt 与结果结构（riskLevel + clauseType + recommendation），不复用以文审文逻辑',
+    featureKey: 'entry.CONTRACT',
   },
   {
     id: 'SELF_CHECK',
@@ -151,6 +164,8 @@ const specialModules: ModuleItem[] = [
     scenario: '核查设计文件中的标准是否现行有效',
     icon: CircleCheck,
     color: '#4f46e5',
+    techHint: '独立端点 /api/self-check，不走 7 模式 handler',
+    featureKey: 'entry.SELF_CHECK',
   },
   {
     id: 'DWG_VISION',
@@ -158,10 +173,31 @@ const specialModules: ModuleItem[] = [
     desc: '视觉大模型识别标题栏、符号、标注、合规性',
     scenario: 'DWG 工程图纸的结构化审查',
     icon: View,
-    color: '#dc2626',
+    color: '#d97706',
     linkTo: '/dwg-vision',
+    techHint: '视觉模型 + 图纸结构化提取',
+    featureKey: 'entry.DWG_VISION',
   },
 ]
+
+// 功能开关加载状态（加载完成前显示全部，避免闪烁）
+const flagsLoaded = ref(false)
+onMounted(async () => {
+  await loadFeatureFlags()
+  flagsLoaded.value = true
+})
+
+// 按功能开关过滤后的卡片
+const visibleCommonModules = computed(() =>
+  flagsLoaded.value
+    ? commonModules.filter(m => !m.featureKey || isFeatureEnabled(m.featureKey))
+    : commonModules
+)
+const visibleSpecialModules = computed(() =>
+  flagsLoaded.value
+    ? specialModules.filter(m => !m.featureKey || isFeatureEnabled(m.featureKey))
+    : specialModules
+)
 
 const selectedModuleLabel = computed(() => {
   const all = [...commonModules, ...specialModules]
@@ -175,11 +211,6 @@ const selectModule = (item: ModuleItem) => {
   }
   selectedModule.value = item.id
   sessionStorage.setItem('smartReview.entryModule', item.id)
-}
-
-const selectPreset = (target: ModuleId) => {
-  selectedModule.value = target
-  sessionStorage.setItem('smartReview.entryModule', target)
 }
 </script>
 
@@ -328,18 +359,6 @@ const selectPreset = (target: ModuleId) => {
 
 .item-scenario::before {
   content: '适用：';
-}
-
-.item-preset {
-  margin-top: 6px;
-  font-size: 12px;
-  color: var(--accent);
-  cursor: pointer;
-  user-select: none;
-}
-
-.item-preset:hover {
-  text-decoration: underline;
 }
 
 /* ===== 已选模块栏 ===== */

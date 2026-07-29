@@ -36,10 +36,7 @@
           <el-icon><ChatDotRound /></el-icon>
           <template #title><span>AI 工作台</span></template>
         </el-menu-item>
-        <el-menu-item index="/dwg-vision">
-          <el-icon><View /></el-icon>
-          <template #title><span>图纸视觉分析</span></template>
-        </el-menu-item>
+        <!-- 图纸视觉分析入口已下沉到「新建审查 → 专项审查」，不在侧边栏重复暴露 -->
         <!-- 反馈意见（所有角色可见，用户区低频入口） -->
         <el-menu-item index="/feedback">
           <el-icon><ChatLineRound /></el-icon>
@@ -257,7 +254,7 @@ import {
   Fold, Expand, Search, QuestionFilled, Edit,
   WarningFilled, ChatDotRound, ChatLineRound,
   Bell, User, ArrowLeft, Brush, Guide, ChatLineSquare,
-  MagicStick, Memo, Reading, Collection, View, DataLine,
+  MagicStick, Memo, Reading, Collection, DataLine,
 } from '@element-plus/icons-vue'
 import { logoutApi, changePasswordApi, changeUsernameApi, loginApi } from '@/api/auth'
 import GlobalSearch from '@/components/GlobalSearch.vue'

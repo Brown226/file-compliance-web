@@ -11,7 +11,7 @@
         <el-button type="primary" size="large" @click="$router.push('/review')">
           <el-icon><Plus /></el-icon> 新建审查
         </el-button>
-        <el-button size="large" @click="$router.push('/review-center?tab=tasks')">
+        <el-button size="large" @click="$router.push('/tasks')">
           <el-icon><Document /></el-icon> 查看任务记录
         </el-button>
       </div>
@@ -45,7 +45,7 @@
       <div class="recent-section">
         <div class="recent-header">
           <span class="recent-title">最近审查任务</span>
-          <el-button type="primary" link @click="$router.push('/review-center?tab=tasks')">查看全部 ></el-button>
+          <el-button type="primary" link @click="$router.push('/tasks')">查看全部 ></el-button>
         </div>
 
         <el-card shadow="never" class="recent-table-card">

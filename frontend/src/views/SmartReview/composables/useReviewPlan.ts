@@ -36,7 +36,6 @@ export function useReviewPlan(state: ReturnType<typeof useSmartReviewState>) {
   // ===== 证据源操�?=====
   const isEvidenceLocked = (source: ReviewEvidenceSource): boolean => {
     if (!state.entryModule.value) return state.reviewPlanDraft.objective === 'COMPARE'
-    if (state.entryModule.value === 'RULE_ONLY') return source !== 'RULE_LIBRARY'
     if (state.entryModule.value === 'PROOFREAD') return true
     if (state.entryModule.value === 'CONSISTENCY' && state.reviewPlanDraft.objective === 'COMPARE') {
       return source !== 'REFERENCE'
@@ -108,7 +107,8 @@ export function useReviewPlan(state: ReturnType<typeof useSmartReviewState>) {
     switch (module) {
       case 'LIBRARY':
         draft.objective = 'COMPLIANCE'
-        draft.evidence.sources = []
+        // 默认勾选知识库证据源，用户可在向导内切换为语义规则库或同时勾选
+        draft.evidence.sources = ['STANDARD']
         draft.execution.profile = 'AI_ONLY'
         break
 
@@ -120,6 +120,8 @@ export function useReviewPlan(state: ReturnType<typeof useSmartReviewState>) {
         draft.enhancements.intraFileConsistency = true
         draft.enhancements.crossFileConsistency = true
         draft.execution.profile = 'AI_ONLY'
+        // 默认开启「工程规则增强」：执行 CONSIST 前缀规则（核电工程文档高价值检查点）
+        state.enabledRulePrefixes.value = ['CONSIST']
         break
 
       case 'PROOFREAD':

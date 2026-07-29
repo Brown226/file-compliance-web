@@ -1,4 +1,4 @@
-﻿import { ref, reactive, computed, watch } from 'vue'
+import { ref, reactive, computed, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import type { UploadFile } from 'element-plus'
 import type { ReviewPlan } from '../types/smart-review'
@@ -64,16 +64,14 @@ export function useSmartReviewState() {
   const submitting = ref(false)
 
   // ===== 计算属性 =====
+  // 证据源选择器：仅"以库审文"模式显示，让用户在知识库/语义规则库间选择
+  // 其他模式证据源由 applyEntryModulePreset 锁定，不再让用户选
   const showEvidenceSection = computed(() => {
-    if (!entryModule.value) return true
-    return ['LIBRARY', 'RULE_ONLY', 'DOC_REVIEW', 'CONTRACT'].includes(entryModule.value)
+    if (!entryModule.value) return true  // 历史任务恢复场景：无 entryModule，显示全部配置
+    return entryModule.value === 'LIBRARY'
   })
 
   const showObjectiveSelector = computed(() => !entryModule.value)
-
-  const showExecutionProfileSection = computed(() =>
-    !entryModule.value || entryModule.value === 'RULE_ONLY'
-  )
 
   const visibleAnalysisProgress = computed(() => analysisProgress.value.slice(-6))
 
@@ -178,7 +176,6 @@ export function useSmartReviewState() {
     // 计算属性
     showEvidenceSection,
     showObjectiveSelector,
-    showExecutionProfileSection,
     visibleAnalysisProgress,
 
     // 方法
