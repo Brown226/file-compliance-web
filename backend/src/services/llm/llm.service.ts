@@ -62,6 +62,8 @@ export interface ReviewIssue {
   /** OPT-029: originalText 保真校验结果（exact/normalized/fuzzy/not_found）
    *  用于追踪 LLM 输出的 originalText 是否忠实于原文 */
   textFidelity?: 'exact' | 'normalized' | 'fuzzy' | 'not_found';
+  /** DOC_REVIEW（以文审文）：问题来源的参照文件名（多参照文件场景下精确溯源） */
+  refSource?: string;
 }
 
 export interface LocateMeta {
@@ -278,6 +280,7 @@ export class LlmService {
               standardRef: item.standardRef ? String(item.standardRef) : (item.clauseType ? clauseTypeLabels[item.clauseType] || item.clauseType : undefined),
               riskLevel: item.riskLevel || undefined,
               clauseType: item.clauseType || undefined,
+              refSource: item.refSource ? String(item.refSource) : undefined,
             };
           });
       }
@@ -783,6 +786,123 @@ export class LlmService {
     }
 
     return chunks;
+  }
+
+  /**
+   * 章节边界检测：从文本中识别章节标题位置，返回按位置排序的章节标记列表。
+   * 供 enrichChunksWithContext 和参照块章节切分（DOC_REVIEW）共用。
+   *
+   * 识别模式（与 enrichChunksWithContext 保持一致）：
+   *   - Markdown: # 标题
+   *   - 第X章/节/篇/部
+   *   - 数字编号: 1.1 标题 / 4.2.1 标题
+   *   - 中文编号: 一、标题
+   *   - (一) 标题
+   *
+   * @param text 源文本
+   * @returns 按 pos 升序排列的章节标记数组
+   */
+  static detectSectionBoundaries(text: string): Array<{ pos: number; title: string }> {
+    if (!text || text.length === 0) return [];
+
+    const SECTION_PATTERNS = [
+      /^#{1,4}\s+(.+)/,                                 // Markdown: # 标题
+      /^(第[一二三四五六七八九十百千\d]+[章节篇部])\s*(.*)/, // 第X章/节/篇
+      /^(\d+(?:\.\d+){0,3})\s+(.+)/,                    // 数字编号: 1.1 标题 / 4.2.1 标题
+      /^([一二三四五六七八九十]+[、.])\s*(.+)/,           // 中文编号: 一、标题
+      /^([\(（][一二三四五六七八九十\d]+[\)）])\s*(.+)/,   // (一) 标题
+    ];
+
+    const lines = text.split('\n');
+    const markers: Array<{ pos: number; title: string }> = [];
+    let charPos = 0;
+    for (const line of lines) {
+      const trimmedLine = line.trim();
+      if (trimmedLine.length > 0 && trimmedLine.length <= 80) {
+        for (const pattern of SECTION_PATTERNS) {
+          const match = trimmedLine.match(pattern);
+          if (match) {
+            const title = trimmedLine.slice(0, 60); // 截断过长标题
+            markers.push({ pos: charPos, title });
+            break;
+          }
+        }
+      }
+      charPos += line.length + 1;
+    }
+    return markers;
+  }
+
+  /**
+   * 按章节边界切分文本（用于 DOC_REVIEW 参照文件分块）。
+   * - 按章节标题切分，单章节超过 maxChunkChars 时再按句号切分
+   * - 返回的块结构包含 sectionTitle 元数据，用于后续 prompt 注入
+   *
+   * @param text 源文本
+   * @param maxChunkChars 单块最大字符数（默认 1500），超出按句号二次切分
+   * @returns 块数组，每块含 { content, sectionTitle, startPos }
+   */
+  static splitBySectionBoundaries(
+    text: string,
+    maxChunkChars: number = 1500,
+  ): Array<{ content: string; sectionTitle?: string; startPos: number }> {
+    if (!text || text.trim().length === 0) return [];
+
+    const markers = this.detectSectionBoundaries(text);
+    const chunks: Array<{ content: string; sectionTitle?: string; startPos: number }> = [];
+
+    // 无章节标记时，退化到按句号 + 长度切分
+    if (markers.length === 0) {
+      const sentences = text.split(/(?<=[。！？\n])/);
+      let current = '';
+      let startPos = 0;
+      for (const s of sentences) {
+        if (current.length + s.length > maxChunkChars && current.length > 0) {
+          chunks.push({ content: current, startPos });
+          startPos += current.length;
+          current = s;
+        } else {
+          current += s;
+        }
+      }
+      if (current.trim().length > 0) {
+        chunks.push({ content: current, startPos });
+      }
+      return chunks.filter(c => c.content.trim().length >= 50);
+    }
+
+    // 有章节标记：按章节切分
+    // 在末尾追加一个虚拟结束标记，便于处理最后一个章节
+    const boundaries = [...markers, { pos: text.length, title: '__END__' }];
+    for (let i = 0; i < boundaries.length - 1; i++) {
+      const startMarker = boundaries[i];
+      const endPos = boundaries[i + 1].pos;
+      const sectionText = text.substring(startMarker.pos, endPos);
+      const sectionTitle = startMarker.title;
+
+      // 单章节内若超过 maxChunkChars，按句号二次切分
+      if (sectionText.length > maxChunkChars) {
+        const sentences = sectionText.split(/(?<=[。！？\n])/);
+        let current = '';
+        let chunkStart = startMarker.pos;
+        for (const s of sentences) {
+          if (current.length + s.length > maxChunkChars && current.length > 0) {
+            chunks.push({ content: current, sectionTitle, startPos: chunkStart });
+            chunkStart += current.length;
+            current = s;
+          } else {
+            current += s;
+          }
+        }
+        if (current.trim().length > 0) {
+          chunks.push({ content: current, sectionTitle, startPos: chunkStart });
+        }
+      } else if (sectionText.trim().length >= 50) {
+        chunks.push({ content: sectionText, sectionTitle, startPos: startMarker.pos });
+      }
+    }
+
+    return chunks.filter(c => c.content.trim().length >= 50);
   }
 
   /**

@@ -447,10 +447,8 @@ export class AiReviewService {
       const totalChunks = chunks.length;
       // 文字校对是轻量模式（无 RAG/规则引擎开销），瓶颈仅在 LLM API 调用，
       // 用更高并发抵消 chunk 数量增多带来的轮次增加
-      const baseConcurrency = await getChunkConcurrency();
-      const CONCURRENT_LIMIT = scene === 'typo_grammar'
-        ? Math.max(baseConcurrency, 4)
-        : baseConcurrency;
+      // C1: getChunkConcurrency(scene) 内置场景化下限保护（typo_grammar=4, doc_review=3）
+      const CONCURRENT_LIMIT = await getChunkConcurrency(scene);
       const chunkResults = await parallelLimit(chunks, CONCURRENT_LIMIT, async (chunk) => {
         try {
           let userTpl = await PromptLoader.loadUserPrompt(scene, 'default');
@@ -518,34 +516,52 @@ export class AiReviewService {
     ctx: PipelineContext,
     scene: string,
     config: PipelineReviewConfig,
-  ): Promise<{ issues: ReviewIssue[]; engine: string; sources?: SourceReference[] }> {
-    // �޲����ļ�ʱ��������׼ AI ��飨����ԭʼ scene��
+  ): Promise<{ issues: ReviewIssue[]; engine: string; sources?: SourceReference[]; degraded?: boolean; degradedReason?: string }> {
+    // 无参照文件时降级为标准 AI 审查（保留原始 scene）
     if (!ctx.refFileGroup || ctx.refFileGroup.refFiles.length === 0) {
       return AiReviewService.runAIReview(text, ctx, scene, config);
     }
 
-    // ���������ļ��ı�������Դ��ע
+    // ===== C2: 参照文件加载改并行（Promise.allSettled） + D1: 解析失败明确告知 =====
     const { TextExtractionService } = await import('./text-extraction.service');
+    const refFileResults = await Promise.allSettled(
+      ctx.refFileGroup.refFiles.map(async (refFile) => {
+        let refContent: string | null = refFile.extractedText || null;
+        if (!refContent) {
+          refContent = await TextExtractionService.extractFileText(refFile.filePath, refFile.fileType, refFile.fileName);
+        }
+        return { fileName: refFile.fileName, content: refContent };
+      }),
+    );
+
+    // 收集成功/失败列表（D1）
     const refTexts: string[] = [];
     const refFileNames: string[] = [];
-    for (const refFile of ctx.refFileGroup.refFiles) {
-      let refContent = refFile.extractedText || null;
-      if (!refContent) {
-        try {
-          refContent = await TextExtractionService.extractFileText(refFile.filePath, refFile.fileType, refFile.fileName);
-        } catch (e) {
-          console.warn(`[AiReview] �����ļ�����ʧ��: ${refFile.fileName}`, e);
-        }
-      }
-      if (refContent) {
-        refTexts.push(`�������ļ�: ${refFile.fileName}��\n${refContent}`);
-        refFileNames.push(refFile.fileName);
+    const failedFileNames: string[] = [];
+    for (let i = 0; i < refFileResults.length; i++) {
+      const r = refFileResults[i];
+      const refFile = ctx.refFileGroup.refFiles[i];
+      if (r.status === 'fulfilled' && r.value.content) {
+        refTexts.push(`【参照文件: ${r.value.fileName}】\n${r.value.content}`);
+        refFileNames.push(r.value.fileName);
+      } else {
+        const reason = r.status === 'rejected' ? (r.reason?.message || String(r.reason)) : '内容为空';
+        console.warn(`[AiReview] 参照文件解析失败: ${refFile.fileName}:`, reason);
+        failedFileNames.push(refFile.fileName);
       }
     }
 
+    // D1: 全部参照文件解析失败 → 降级到无参照审查并明确告知
     if (refTexts.length === 0) {
-      console.warn('[AiReview] �����ļ������ı����ݣ���������׼ AI ���');
-      return AiReviewService.runAIReview(text, ctx, 'library_review', config);
+      const degradedReason = `所有参照文件解析失败: ${failedFileNames.join(', ')}`;
+      console.warn(`[AiReview] ${degradedReason}，降级为无参照审查`);
+      const fallback = await AiReviewService.runAIReview(text, ctx, 'library_review', config);
+      return { ...fallback, degraded: true, degradedReason };
+    }
+
+    // D1: 部分失败 → 继续执行但记录日志
+    if (failedFileNames.length > 0) {
+      console.warn(`[AiReview] 部分参照文件解析失败（继续执行）: ${failedFileNames.join(', ')}`);
     }
 
     const llmMaxTokens = config.llmMaxTokens || 4096;
@@ -554,8 +570,8 @@ export class AiReviewService {
     const chunkOverlap = config.chunkOverlap ?? 300;
 
     try {
-      // ��̬����������ݿ��ÿռ����ȴ� LLM ģ�����ö�ȡ�����Ĵ���
-      let contextWindow = 131072; // Ĭ��ֵ���ַ�����
+      // 动态读取上下文数据库配置（优先从 LLM 模型配置读取以推导窗口）
+      let contextWindow = 131072; // 默认值（字符数）
       try {
         const { default: prisma } = await import('../../config/db');
         const llmCfg = await prisma.systemConfig.findUnique({ where: { key: 'llm_chat_model' } });
@@ -566,71 +582,79 @@ export class AiReviewService {
           }
         }
       } catch (e) {
-        // ���ݿⲻ�ɴʹ��Ĭ��ֵ
+        // 数据库不可达，使用默认值
       }
-      const outputBudget = llmMaxTokens * 3.5;             // ��� token �� �ַ�����
-      const safetyMargin = 4000;                            // ��ȫԣ��
-      const maxTargetChunkPerRequest = chunkSize;           // ��������Ĵ����Ƭ
+      const outputBudget = llmMaxTokens * 3.5;             // 输出 token → 字符数估算
+      const safetyMargin = 4000;                            // 安全余量
+      const maxTargetChunkPerRequest = chunkSize;           // 单次最大待审分片
 
-      // ��֤ϵͳ��ʾ��
+      // 验证系统提示词
       const systemPrompt = await PromptTemplateService.getPromptByScene(
         scene, 'system', 'default',
-        '���Ǻ˵繤���ļ��Ϲ����ר�ҡ��밴������������˶Դ����ļ��Ƿ�������ļ���ȫһ�¡��ϸ��� JSON �����ʽ����������',
+        '你是核电工程文件合规审查专家。请按照系统指令逐项比对待审文件是否与参照文件完全一致。严格按 JSON 数组格式输出问题。',
       );
       const finalSystemPrompt = AiReviewService.injectSemanticContext(systemPrompt, ctx);
       const actualSystemPromptLen = finalSystemPrompt.length;
 
-      // ���ò��տռ� = ������ - ��� - ϵͳ��ʾ�� - �����Ƭ - ��ȫԣ�� - userPrompt ģ�忪��
-      const maxRefChars = contextWindow - outputBudget - actualSystemPromptLen - maxTargetChunkPerRequest - safetyMargin;
+      // 参照可用空间 = 上下文 - 输出 - 系统提示词 - 待审分片 - 安全余量 - userPrompt 模板开销
+      let maxRefChars = contextWindow - outputBudget - actualSystemPromptLen - maxTargetChunkPerRequest - safetyMargin;
+      // D2: maxRefChars 兜底，防止系统提示词过长或 contextWindow 配置过小时为负导致审查跑空
+      maxRefChars = Math.max(maxRefChars, 2000);
 
-      // ȫ�������ı�
+      // 全量参照文本
       const rawRefTextsJoined = refTexts.join('\n\n---\n\n');
 
-      // ��֧: �����ܷ��� �� ȫ������; �Ų��� �� ��������ȡ����ض���
+      // 二支: 参照总长度 ≤ 全量阈值 → 全量参照; 否则 → 智能检索定向截断
       const useFullRefs = rawRefTextsJoined.length <= maxRefChars;
       let refTextsJoined: string;
 
       if (useFullRefs) {
         refTextsJoined = rawRefTextsJoined;
       } else {
-        // fallback: �򵥽ضϵ����ޣ���������·���� per-chunk ѭ����ʵ�֣�
+        // fallback: 简单截断到上限（下面智能检索路径会重新填充 effectiveRefTexts）
         refTextsJoined = rawRefTextsJoined.substring(0, Math.floor(maxRefChars));
       }
 
       const chunks = LlmService.splitText(text, chunkSize, true, chunkOverlap);
-    LlmService.enrichChunksWithContext(chunks, text); // OPT-018: inject section context
+      LlmService.enrichChunksWithContext(chunks, text); // OPT-018: inject section context
       const totalChunks = chunks.length;
       const allIssues: ReviewIssue[] = [];
       let failedChunks = 0;
       const errors: string[] = [];
 
-      // ������������: ֻ�ڲ��չ���ʱԤ�PropertyParams����
-      let refChunks: string[] | null = null;
+      // ===== A3 + A4: 参照块按章节边界切分 + 多文件 refSource 打标 =====
+      // 结构: { fileName, sectionTitle?, content }
+      interface RefChunkStructured { fileName: string; sectionTitle?: string; content: string; }
+      let refChunksStructured: RefChunkStructured[] | null = null;
       let refVectors: number[][] | null = null;
       if (!useFullRefs) {
         try {
           const { EmbeddingService } = await import('../knowledge/embedding.service');
-          // �������ı�������ֿ飨~1500 �ַ���
-          refChunks = [];
-          for (const refText of refTexts) {
-            const paras = refText.split('\n').reduce((acc: string[], line: string) => {
-              if (!line.trim()) { acc.push(''); return acc; }
-              const last = acc.length > 0 ? acc[acc.length - 1] : '';
-              if (last.length + line.length < 1500) {
-                acc[acc.length - 1] = last + '\n' + line;
-              } else {
-                acc.push(line);
-              }
-              return acc;
-            }, ['']);
-            refChunks.push(...paras.filter(p => p.length >= 50));
+          refChunksStructured = [];
+          // A3: 按章节边界切分（替代原"按行聚类 1500 字符"硬切）
+          for (const refFile of ctx.refFileGroup.refFiles) {
+            // 找到对应已成功解析的内容
+            const refTextItem = refTexts.find(rt => rt.startsWith(`【参照文件: ${refFile.fileName}】`));
+            if (!refTextItem) continue; // 解析失败的文件跳过
+            const refContent = refTextItem.substring(`【参照文件: ${refFile.fileName}】\n`.length);
+
+            // A3: 用 splitBySectionBoundaries 切分，保留 sectionTitle 元数据
+            const sectionChunks = LlmService.splitBySectionBoundaries(refContent, 1500);
+            for (const sc of sectionChunks) {
+              refChunksStructured.push({
+                fileName: refFile.fileName,
+                sectionTitle: sc.sectionTitle,
+                content: sc.content,
+              });
+            }
           }
-          if (refChunks.length > 0) {
-            refVectors = await EmbeddingService.embedTexts(refChunks);
+          if (refChunksStructured.length > 0) {
+            refVectors = await EmbeddingService.embedTexts(refChunksStructured.map(rc => rc.content));
           }
         } catch (e: any) {
-          console.warn(`[AiReview] ������������ʧ��: ${e.message}�����˵��ض�ģʽ`);
-          refChunks = null;
+          console.warn(`[AiReview] 参照块嵌入失败: ${e.message}，降级到截断模式`);
+          // C3: 预嵌入批量失败直接走截断模式，不退化到逐片嵌入
+          refChunksStructured = null;
           refVectors = null;
         }
       }
@@ -642,32 +666,37 @@ export class AiReviewService {
         '## 参照文件（权威基准）\n\n${refTexts}\n\n---\n\n## 待审文件（被审查对象）\n\n${text}\n\n---\n\n请按系统指令中的审查策略，逐项比对。输出 JSON 数组。',
       );
 
-      // �� ����ԤǶ����������Ƭ��������Ƭ���� Embedding API���� N �ν�Ϊ 1 �Σ�
+      // 预嵌入待审分片（避免每个分片循环里调 Embedding API，N 次降为 1 次）
       let chunkVectors: number[][] | null = null;
-      if (!useFullRefs && refChunks && refVectors) {
+      if (!useFullRefs && refChunksStructured && refVectors) {
         try {
           const allChunkTexts = chunks.map(c => c.text);
           chunkVectors = await EmbeddingService.embedTexts(allChunkTexts);
-          console.log(`[AiReview] ����Ƕ�� ${chunks.length} ������Ƭ���`);
+          console.log(`[AiReview] 预嵌入 ${chunks.length} 个待审分片完成`);
         } catch (e: any) {
-          console.warn(`[AiReview] ����Ƕ��ʧ�ܣ�����Ϊ��ƬǶ��: ${e.message}`);
+          // C3: 预嵌入批量失败 → 直接走截断模式，删除逐片嵌入退化逻辑
+          console.warn(`[AiReview] 预嵌入失败，走截断模式（不再逐片嵌入）: ${e.message}`);
+          refChunksStructured = null;
+          refVectors = null;
         }
       }
 
-      // ���д�����Ƭ�����������������������ģ�
-      const CONCURRENT_LIMIT = await getChunkConcurrency();
+      // 并发处理待审分片（C1: DOC_REVIEW 场景化下限保护）
+      const CONCURRENT_LIMIT = await getChunkConcurrency('doc_review');
       const chunkResults = await parallelLimit(chunks, CONCURRENT_LIMIT, async (chunk) => {
         try {
           let effectiveRefTexts: string;
 
-          if (useFullRefs || !refChunks || !refVectors) {
+          if (useFullRefs || !refChunksStructured || !refVectors) {
             effectiveRefTexts = refTextsJoined;
           } else {
-            // ��������: ʹ��ԤǶ������� �� �����������ƶ� �� ȡ Top-5 ���ն���
+            // A1: 智能检索 → Top-15 余弦召回 → rerankDocuments 精排 → Top-5
             try {
+              const { EmbeddingService } = await import('../knowledge/embedding.service');
               const chunkVec = chunkVectors ? chunkVectors[chunk.chunkIndex] : await EmbeddingService.embedText(chunk.text);
 
-              const scored = refChunks.map((rc, i) => {
+              // Top-15 余弦召回（从 Top-5 扩到 Top-15）
+              const scored = refChunksStructured.map((rc, i) => {
                 const rv = refVectors![i];
                 let dot = 0, na = 0, nb = 0;
                 for (let j = 0; j < rv.length; j++) {
@@ -676,28 +705,51 @@ export class AiReviewService {
                   nb += rv[j] * rv[j];
                 }
                 const sim = dot / (Math.sqrt(na) * Math.sqrt(nb) + 1e-10);
-                return { chunk: rc, sim };
+                return { refChunk: rc, sim };
               });
 
               scored.sort((a, b) => b.sim - a.sim);
-              const selected = new Map<number, string>();
-              for (const s of scored.slice(0, Math.min(5, scored.length))) {
-                const idx = refChunks.indexOf(s.chunk);
-                if (idx >= 0 && !selected.has(idx)) selected.set(idx, s.chunk);
-              }
-              const ordered = Array.from(selected.entries())
-                .sort(([a], [b]) => a - b)
-                .map(([, c]) => c);
+              const topK = scored.slice(0, Math.min(15, scored.length)).map(s => s.refChunk);
 
-              effectiveRefTexts = '## �����ļ�����������������Ϊ�������������صĲ��ն���\n\n'
+              // A1: rerankDocuments 二次精排（失败降级到余弦 Top-5）
+              let finalTop5: RefChunkStructured[];
+              try {
+                const rerankInput = topK.map(rc => ({
+                  title: rc.sectionTitle || rc.fileName,
+                  content: rc.content,
+                  _original: rc, // 保留原始结构化对象
+                }));
+                const rerankResult = await EmbeddingService.rerankDocuments(chunk.text, rerankInput as any, 5);
+                // 从 rerank 结果还原 RefChunkStructured（rerank 会保留原对象字段）
+                finalTop5 = rerankResult.map((r: any) => r._original as RefChunkStructured).filter(Boolean);
+                if (finalTop5.length === 0) {
+                  // rerank 返回空，降级到余弦 Top-5
+                  console.warn(`[AiReview] 分片${chunk.chunkIndex + 1} rerank 返回空，降级到余弦 Top-5`);
+                  finalTop5 = topK.slice(0, Math.min(5, topK.length));
+                }
+              } catch (rerankErr: any) {
+                // A1.4: rerank 抛错或超时降级到 Top-5 余弦结果，记录 warn 日志不阻塞
+                console.warn(`[AiReview] 分片${chunk.chunkIndex + 1} rerank 失败: ${rerankErr.message}，降级到余弦 Top-5`);
+                finalTop5 = topK.slice(0, Math.min(5, topK.length));
+              }
+
+              // A4: 拼接时保留文件边界信息 + 章节标题
+              const ordered = finalTop5.map(rc => {
+                const sectionLabel = rc.sectionTitle ? ` / 章节: ${rc.sectionTitle}` : '';
+                return `【参照文件: ${rc.fileName}${sectionLabel}】\n${rc.content}`;
+              });
+
+              effectiveRefTexts = '## 参照文件（以下为本次检索与当前分片最相关的参照条款）\n\n'
                 + ordered.join('\n\n---\n\n');
             } catch (e: any) {
-              console.warn(`[AiReview] ��Ƭ${chunk.chunkIndex + 1} ��������ʧ��: ${e.message}��ʹ�ýضϲ���`);
+              console.warn(`[AiReview] 分片${chunk.chunkIndex + 1} 检索失败: ${e.message}，使用截断参照`);
               effectiveRefTexts = refTextsJoined;
             }
           }
 
-          const userContent = userContentTpl
+          // B1: 补全 buildChunkContextPrefix 注入（与 runLLMOnlyStrategy 对齐）
+          const contextPrefix = LlmService.buildChunkContextPrefix(chunk);
+          const userContent = contextPrefix + userContentTpl
             .replace(/\$\{refTexts\}/g, effectiveRefTexts)
             .replace(/\$\{text\}/g, chunk.text);
 
@@ -718,7 +770,7 @@ export class AiReviewService {
           await ctx.onChunkProgress?.(chunk.text.length, issues, chunk.chunkIndex, totalChunks, 'llm-ref-compare');
           return { issues, failed: false };
         } catch (e: any) {
-          console.warn(`[AiReview] ��Ƭ ${chunk.chunkIndex + 1}/${totalChunks} �ȶ�ʧ��:`, e.message);
+          console.warn(`[AiReview] 分片 ${chunk.chunkIndex + 1}/${totalChunks} 比对失败:`, e.message);
           return { issues: [] as any[], failed: true, error: e.message };
         }
       });
@@ -730,39 +782,178 @@ export class AiReviewService {
       }
 
       if (failedChunks === totalChunks && totalChunks > 0) {
-        throw new Error(`���� ${totalChunks} ����Ƭ�ȶԾ�ʧ��: ${errors[0]}`);
+        throw new Error(`全部 ${totalChunks} 个分片比对均失败: ${errors[0]}`);
       }
 
-      // ---- �������� ----
-      // 1. ���� originalText === suggestedText ����Ч��Ŀ
-      // 2. ���� description ����ȷ��ʾ"һ��/������"���������LLM ��ʱ�����"����������ļ�һ�£�������"������Ϊ��Ŀ���أ�
+      // ===== A2: 反向全覆盖检查（参照块在待审向量索引检索，发现"缺失"盲区） =====
+      let reverseIssues: ReviewIssue[] = [];
+      if (!useFullRefs && refChunksStructured && refVectors && chunkVectors && chunks.length > 0) {
+        try {
+          reverseIssues = await AiReviewService.runReverseCoverageCheck(
+            text, chunkVectors, refChunksStructured, refVectors,
+            ctx, llmMaxTokens, llmTimeout,
+          );
+          console.log(`[AiReview] 反向全覆盖检查发现 ${reverseIssues.length} 个疑似缺失问题`);
+        } catch (e: any) {
+          console.warn(`[AiReview] 反向全覆盖检查失败（不阻塞主流程）: ${e.message}`);
+        }
+      }
+      allIssues.push(...reverseIssues);
+
+      // ---- D4: 后处理过滤（优先 status 字段，正则兜底） ----
+      // D4.2: 优先用 LLM 输出的 status 字段（matched 不入库），正则作为兜底
       const filtered = allIssues.filter(issue => {
+        // D4: status=matched 的条目不入库（与 B2 三类输出配合）
+        if (issue.status === 'matched') return false;
+
         const desc = (issue.description || '').trim();
         const orig = (issue.originalText || '').trim();
         const sug = (issue.suggestedText || '').trim();
-        // originalText �� suggestedText ��ȫ��ͬ �� ��Ч
+        // originalText 与 suggestedText 完全相同 → 无效
         if (orig && sug && orig === sug) return false;
-        // description ����"������ļ�\s*һ��\s*[��,]?\s*������".test(desc)) return false;
-        if (/����\s*��.*һ��\s*[��,]?\s*������/.test(desc)) return false;
-                if (/无(?:问题|争议|异议|条款)/.test(desc)) return false;
-        // description �����Ұ�������"һ��"�ж����� �� ������ LLM ����˷������̶�������
-        if (desc.length > 200 && /һ��/.test(desc) && !/��һ��/.test(desc)) return false;
+        // D4: 正则兜底（LLM 未输出 status 时使用）— 过滤"与参照...一致...无问题"类描述
+        if (/与\s*参照.*一致\s*[，,]?\s*无问题/.test(desc)) return false;
+        if (/无(?:问题|争议|异议|条款)/.test(desc)) return false;
+        // description 模糊包含大量"一致"字样 → 视为 LLM 输出的冗余"无问题"陈述
+        if (desc.length > 200 && /一致/.test(desc) && !/不一致/.test(desc)) return false;
         return true;
       });
 
       const removedCount = allIssues.length - filtered.length;
       if (removedCount > 0) {
+        console.log(`[AiReview] 后处理过滤 ${removedCount} 条无效/一致条目`);
       }
 
-      return { issues: filtered, engine: 'llm-ref-compare' };
+      // D1: 部分参照文件解析失败时，附加一条 info 级提示 issue（明确告知用户）
+      let finalIssues = filtered;
+      if (failedFileNames.length > 0 && failedFileNames.length < ctx.refFileGroup.refFiles.length) {
+        finalIssues.push({
+          issueType: 'COMPLETENESS',
+          severity: 'info',
+          originalText: '',
+          description: `部分参照文件解析失败（已跳过）: ${failedFileNames.join(', ')}。完整比对结果可能受影响。`,
+        });
+      }
+
+      return { issues: finalIssues, engine: 'llm-ref-compare' };
     } catch (e: any) {
       if (e.name === 'AbortError') {
-        console.warn('[AiReview] LLM ����ʱ����������׼ AI ���');
+        console.warn('[AiReview] LLM 超时，降级为标准 AI 审查');
       } else {
-        console.error('[AiReview] LLM �ȶ�ʧ��:', e);
+        console.error('[AiReview] LLM 比对失败:', e);
       }
-      return AiReviewService.runAIReview(text, ctx, 'library_review', config);
+      // D3: 失败降级明确告知
+      const degradedReason = `参照比对失败，已降级为无参照审查: ${e.message || e}`;
+      const fallback = await AiReviewService.runAIReview(text, ctx, 'library_review', config);
+      return { ...fallback, degraded: true, degradedReason };
     }
+  }
+
+  /**
+   * A2: 反向全覆盖检查 — 对每个参照块在待审文档向量索引里检索，
+   * 相似度 < 阈值的参照块标记"疑似缺失"，批量送 LLM 确认，生成 COMPLETENESS issue。
+   *
+   * 解决"待审文档缺失参照某条款"的漏报盲区（正向 Top-K 检索查不到的）。
+   */
+  private static async runReverseCoverageCheck(
+    fullText: string,
+    chunkVectors: number[][],
+    refChunksStructured: Array<{ fileName: string; sectionTitle?: string; content: string }>,
+    refVectors: number[][],
+    ctx: PipelineContext,
+    llmMaxTokens: number,
+    llmTimeout: number,
+  ): Promise<ReviewIssue[]> {
+    // 读取缺失阈值配置（默认 0.4）
+    let missingThreshold = 0.4;
+    try {
+      const { default: prisma } = await import('../../config/db');
+      const cfg = await prisma.systemConfig.findUnique({ where: { key: 'doc_review_missing_threshold' } });
+      if (cfg?.value != null) {
+        const v = cfg.value as any;
+        if (typeof v === 'number' && v > 0 && v < 1) missingThreshold = v;
+        else if (v && typeof v === 'object' && typeof v.value === 'number' && v.value > 0 && v.value < 1) missingThreshold = v.value;
+      }
+    } catch (e) { /* 用默认值 */ }
+
+    // 对每个参照块，在待审分片向量里检索最大相似度
+    const suspectedMissing: Array<{ refChunk: typeof refChunksStructured[0]; maxSim: number }> = [];
+    for (let i = 0; i < refChunksStructured.length; i++) {
+      const refVec = refVectors[i];
+      let maxSim = 0;
+      for (let j = 0; j < chunkVectors.length; j++) {
+        const chunkVec = chunkVectors[j];
+        let dot = 0, na = 0, nb = 0;
+        for (let k = 0; k < refVec.length; k++) {
+          dot += chunkVec[k] * refVec[k];
+          na += chunkVec[k] * chunkVec[k];
+          nb += refVec[k] * refVec[k];
+        }
+        const sim = dot / (Math.sqrt(na) * Math.sqrt(nb) + 1e-10);
+        if (sim > maxSim) maxSim = sim;
+      }
+      if (maxSim < missingThreshold) {
+        suspectedMissing.push({ refChunk: refChunksStructured[i], maxSim });
+      }
+    }
+
+    if (suspectedMissing.length === 0) return [];
+
+    console.log(`[AiReview] 反向检查发现 ${suspectedMissing.length} 个疑似缺失参照块（阈值 ${missingThreshold}）`);
+
+    // 待审文档全文摘要（前 2000 字符）
+    const fullTextSummary = fullText.substring(0, 2000);
+
+    // 分批送 LLM 确认（每批 ≤ 5 个），避免单次 prompt 过长
+    const BATCH_SIZE = 5;
+    const confirmedIssues: ReviewIssue[] = [];
+
+    for (let start = 0; start < suspectedMissing.length; start += BATCH_SIZE) {
+      const batch = suspectedMissing.slice(start, start + BATCH_SIZE);
+      const refList = batch.map((b, idx) => {
+        const sectionLabel = b.refChunk.sectionTitle ? ` / ${b.refChunk.sectionTitle}` : '';
+        return `[${idx + 1}] 来源: ${b.refChunk.fileName}${sectionLabel}\n内容: ${b.refChunk.content.substring(0, 500)}`;
+      }).join('\n\n');
+
+      const userContent = `## 待审文档全文摘要（前 2000 字符）\n\n${fullTextSummary}\n\n---\n\n## 疑似缺失的参照条款（待你确认）\n\n${refList}\n\n---\n\n请逐条判断：待审文档是否真的缺失上述参照条款所要求的内容？\n\n输出 JSON 数组，每个元素：\n{\n  "index": 1,\n  "missing": true/false,\n  "description": "缺失说明（仅 missing=true 时填写）"\n}\n\n判断标准：\n- missing=true：待审文档确实缺失该条款要求的内容（即使表述不同，也应有对应内容）\n- missing=false：待审文档已有等价内容（即使表述方式不同）`;
+
+      try {
+        const result = await LlmService.reviewText(userContent, {
+          maxTokens: Math.min(llmMaxTokens, 2048),
+          timeout: Math.min(llmTimeout, 120),
+          systemPrompt: '你是文档完整性审查专家。请严格判断待审文档是否缺失参照文件中的关键条款。仅确认真正缺失的内容，避免误报。',
+          skipUserTemplate: true,
+          documentId: ctx.fileId,
+          taskId: ctx.taskId, mode: ctx.reviewMode, traceId: ctx.traceId,
+        });
+
+        // 解析 LLM 确认结果并生成 COMPLETENESS issue
+        for (const issue of result) {
+          // LLM 应返回 index/missing 字段；但 reviewText 返回 ReviewIssue 结构
+          // 这里用 description 中是否包含"缺失"来兜底判断
+          // （LLM 已被要求输出 JSON 数组，但 reviewText 解析会尝试映射为 ReviewIssue）
+          if (issue.description && /缺/.test(issue.description)) {
+            const idx = issue.originalText ? parseInt(String(issue.originalText).replace(/[^\d]/g, ''), 10) - 1 : NaN;
+            const refChunk = !isNaN(idx) && idx >= 0 && idx < batch.length
+              ? batch[idx].refChunk
+              : batch[0].refChunk;
+            const sectionLabel = refChunk.sectionTitle ? ` / 章节: ${refChunk.sectionTitle}` : '';
+            confirmedIssues.push({
+              issueType: 'COMPLETENESS',
+              severity: 'warning',
+              status: 'missing',
+              originalText: refChunk.content.substring(0, 200),
+              description: `参照文件【${refChunk.fileName}${sectionLabel}】要求的内容在待审文档中未体现: ${issue.description}`,
+              refSource: refChunk.fileName,
+            });
+          }
+        }
+      } catch (e: any) {
+        console.warn(`[AiReview] 反向检查批次 ${start / BATCH_SIZE + 1} LLM 确认失败: ${e.message}`);
+      }
+    }
+
+    return confirmedIssues;
   }
 
   // ==================== 合同风险审查独立策略 ====================

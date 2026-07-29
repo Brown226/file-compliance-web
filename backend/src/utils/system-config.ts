@@ -39,11 +39,21 @@ export async function getMaxConcurrentReviews(): Promise<number> {
   return (typeof v === 'number' && v > 0 && v <= 10) ? v : 3;
 }
 
-/** LLM 分片并发数：单文件内同时调用 LLM API 的 chunk 数 */
-export async function getChunkConcurrency(): Promise<number> {
+/** LLM 分片并发数：单文件内同时调用 LLM API 的 chunk 数
+ *  scene 参数：不同审查模式的下限保护
+ *   - typo_grammar: Math.max(base, 4)  — 纯 LLM 模式，prompt 短，可激进
+ *   - doc_review:   Math.max(base, 3)  — DOC prompt 比纯 LLM 长但比 TYPO 短，3 为保守值
+ *   - 其他: base（默认 2）
+ */
+export async function getChunkConcurrency(scene?: string): Promise<number> {
   const s = await getBasicSettings();
   const v = s.chunkConcurrency;
-  return (typeof v === 'number' && v > 0 && v <= 5) ? v : 2;
+  const base = (typeof v === 'number' && v > 0 && v <= 5) ? v : 2;
+
+  // 场景化下限保护
+  if (scene === 'typo_grammar') return Math.max(base, 4);
+  if (scene === 'doc_review') return Math.max(base, 3);
+  return base;
 }
 
 /** LLM 限流 QPS：每秒允许的 LLM API 调用数（按 model 分桶），0 表示不限流 */
