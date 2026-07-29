@@ -17,29 +17,7 @@ import { StandardTraceabilityService } from '../standard/standard-traceability.s
 import { parallelLimit } from '../../utils/parallel';
 import { EmbeddingService } from '../knowledge/embedding.service';
 import { TerminologyService } from '../standard/terminology.service';
-
-/**
- * Levenshtein 编辑距离（用于跨 chunk 模糊去重）
- * 仅用于短文本（≤30 字符），O(n*m) 复杂度可控
- */
-function levenshteinDistance(a: string, b: string): number {
-  if (a === b) return 0;
-  const m = a.length, n = b.length;
-  if (m === 0) return n;
-  if (n === 0) return m;
-  const prev = new Array(n + 1);
-  const curr = new Array(n + 1);
-  for (let j = 0; j <= n; j++) prev[j] = j;
-  for (let i = 1; i <= m; i++) {
-    curr[0] = i;
-    for (let j = 1; j <= n; j++) {
-      const cost = a[i - 1] === b[j - 1] ? 0 : 1;
-      curr[j] = Math.min(prev[j] + 1, curr[j - 1] + 1, prev[j - 1] + cost);
-    }
-    for (let j = 0; j <= n; j++) prev[j] = curr[j];
-  }
-  return prev[n];
-}
+import { dedupIssues } from '../../utils/issue-dedup';
 
 export class AiReviewService {
   // ==================== AI ���ʵ�� ====================
@@ -170,7 +148,7 @@ export class AiReviewService {
             systemPrompt,
             skipUserTemplate: true,
             documentId: ctx.fileId,
-            taskId: ctx.taskId, mode: ctx.reviewMode,
+            taskId: ctx.taskId, mode: ctx.reviewMode, traceId: ctx.traceId,
             positionInfo: {
               chunkIndex: chunk.chunkIndex,
               chunkStartIndex: chunk.startIndex,
@@ -188,7 +166,7 @@ export class AiReviewService {
             systemPrompt,
             skipUserTemplate: true,
             documentId: ctx.fileId,
-            taskId: ctx.taskId, mode: ctx.reviewMode,
+            taskId: ctx.taskId, mode: ctx.reviewMode, traceId: ctx.traceId,
             positionInfo: {
               chunkIndex: chunk.chunkIndex,
               chunkStartIndex: chunk.startIndex,
@@ -349,7 +327,7 @@ export class AiReviewService {
             systemPrompt,
             skipUserTemplate: true,
             documentId: ctx.fileId,
-            taskId: ctx.taskId, mode: ctx.reviewMode,
+            taskId: ctx.taskId, mode: ctx.reviewMode, traceId: ctx.traceId,
             positionInfo: {
               chunkIndex: chunk.chunkIndex,
               chunkStartIndex: chunk.startIndex,
@@ -373,7 +351,7 @@ export class AiReviewService {
             systemPrompt,
             skipUserTemplate: true,
             documentId: ctx.fileId,
-            taskId: ctx.taskId, mode: ctx.reviewMode,
+            taskId: ctx.taskId, mode: ctx.reviewMode, traceId: ctx.traceId,
             positionInfo: {
               chunkIndex: chunk.chunkIndex,
               chunkStartIndex: chunk.startIndex,
@@ -448,8 +426,8 @@ export class AiReviewService {
       }
       if (ctx.userId) {
         try {
-          const { MemoryService } = await import('../system/memory.service');
-          const memories = await MemoryService.recall(ctx.userId, text, 3);
+          const { OpenSpecAgentService } = await import('../llm/openspec-agent.service');
+          const memories = await OpenSpecAgentService.recallMemory(ctx.userId, text, 3);
           if (memories.length > 0) {
             const memoryContext = memories
               .map(m => `- ${m.content}`)
@@ -491,7 +469,7 @@ export class AiReviewService {
             systemPrompt,
             skipUserTemplate: true,
             documentId: ctx.fileId,
-            taskId: ctx.taskId, mode: ctx.reviewMode,
+            taskId: ctx.taskId, mode: ctx.reviewMode, traceId: ctx.traceId,
             positionInfo: {
               chunkIndex: chunk.chunkIndex,
               chunkStartIndex: chunk.startIndex,
@@ -509,26 +487,9 @@ export class AiReviewService {
       for (const r of chunkResults) issues.push(...r);
 
       // ���Ƭȥ�أ��� originalText ǰ 60 �ַ�ȥ�أ��� semantic-spec ��ͬ���ԣ�
-      // 分片去重：基于 issueType + 归一化全文 精确去重 + 模糊去重
-      // P1-S: 增加 Levenshtein 距离 ≤ 2 的模糊匹配，处理 LLM 输出 originalText 有轻微偏差的重复
-      const seen: Array<{ key: string; normalized: string }> = [];
-      const deduped = issues.filter(issue => {
-        const normalized = (issue.originalText || '').replace(/\s+/g, '').trim();
-        if (!normalized) return false;
-        const key = (issue.issueType || '') + '::' + normalized;
-        // 精确匹配
-        if (seen.some(s => s.key === key)) return false;
-        // 模糊匹配：同 issueType + 编辑距离 ≤ 2 + 长度 ≥ 4（避免短文本误去重）
-        if (normalized.length >= 4) {
-          const isFuzzyDup = seen.some(s => {
-            if (s.key.split('::')[0] !== (issue.issueType || '')) return false;
-            return levenshteinDistance(normalized, s.normalized) <= 2;
-          });
-          if (isFuzzyDup) return false;
-        }
-        seen.push({ key, normalized });
-        return true;
-      });
+      // 分片去重：精确去重 + 模糊去重（Levenshtein ≤ 2，长度 ≥ 4）
+      // 统一使用 dedupIssues 工具，与 handleTypoGrammar / handleLibraryReview 保持一致
+      const deduped = dedupIssues(issues);
 
       return { issues: StandardTraceabilityService.enrichWithStandardRef(deduped), engine: 'llm-direct' };
     } catch (e) {
@@ -746,7 +707,7 @@ export class AiReviewService {
             systemPrompt: finalSystemPrompt,
             skipUserTemplate: true,
             documentId: ctx.fileId,
-            taskId: ctx.taskId, mode: ctx.reviewMode,
+            taskId: ctx.taskId, mode: ctx.reviewMode, traceId: ctx.traceId,
             positionInfo: {
               chunkIndex: chunk.chunkIndex,
               chunkStartIndex: chunk.startIndex,
@@ -1007,7 +968,7 @@ export class AiReviewService {
                 maxTokens: llmMaxTokens,
                 timeout: llmTimeout,
                 documentId: ctx.fileId,
-                taskId: ctx.taskId, mode: ctx.reviewMode,
+                taskId: ctx.taskId, mode: ctx.reviewMode, traceId: ctx.traceId,
                 // P2-J：传入 positionInfo 提升缓存命中率
                 positionInfo: {
                   chunkIndex: clauseIdx,
@@ -1037,14 +998,8 @@ export class AiReviewService {
     // 执行单链
     const allIssues = await unifiedTask();
 
-    // ---- 4. 合并结果去重 ----
-    const seen = new Set<string>();
-    const deduped = allIssues.filter(issue => {
-      const key = (issue.issueType || '') + '::' + (issue.originalText || '').replace(/\s+/g, '');
-      if (seen.has(key)) return false;
-      seen.add(key);
-      return true;
-    });
+    // ---- 4. 合并结果去重（精确去重，保持原行为）----
+    const deduped = dedupIssues(allIssues, { enableFuzzy: false });
 
     // ---- 5. 过滤 + 计算合规评分 ----
     const filtered = deduped.filter(issue => {
@@ -1285,7 +1240,7 @@ export class AiReviewService {
           systemPrompt,
           skipUserTemplate: true,
           documentId: ctx.fileId,
-            taskId: ctx.taskId, mode: ctx.reviewMode,
+            taskId: ctx.taskId, mode: ctx.reviewMode, traceId: ctx.traceId,
           positionInfo: {
             chunkIndex: chunk.chunkIndex,
             chunkStartIndex: chunk.startIndex,
@@ -1300,16 +1255,8 @@ export class AiReviewService {
     });
     for (const r of chunkResults) allIssues.push(...r);
 
-    // ��ȥ�أ��� originalText ǰ 60 �ַ�ȥ��
-    // 分片去重：基于 issueType + 归一化全文 去重（与其他策略保持一致）
-    const seen = new Set<string>();
-    const deduped = allIssues.filter(issue => {
-      const normalized = (issue.originalText || '').replace(/\s+/g, '').trim();
-      const key = (issue.issueType || '') + '::' + normalized;
-      if (!normalized || seen.has(key)) return false;
-      seen.add(key);
-      return true;
-    });
+    // 分片去重：基于 issueType + 归一化全文 精确去重（与其他策略保持一致）
+    const deduped = dedupIssues(allIssues, { enableFuzzy: false });
 
     return { issues: deduped, engine: 'semantic-spec' };
   }

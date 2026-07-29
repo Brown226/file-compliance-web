@@ -15,6 +15,7 @@ import { getEffectiveConfig } from './pipeline-config';
 import { DecReviewService } from '../review/dec-review.service';
 import { checkTypo } from '../rules/typo.rule';
 import { checkPunctuation } from '../rules/punctuation.rule';
+import { dedupIssues } from '../../utils/issue-dedup';
 
 /** 审查模式处理器签名 */
 export type ReviewHandler = (ctx: PipelineContext) => Promise<{
@@ -107,21 +108,15 @@ const handleTypoGrammar: ReviewHandler = async (ctx) => {
       : issue,
   );
 
-  // ── 合并去重：规则优先，LLM 的 TYPO 如果命中规则已报的 originalText 则丢弃 ──
-  const ruleOriginalTexts = new Set(
-    ruleReviewIssues
-      .filter(r => r.issueType === 'TYPO')
-      .map(r => (r.originalText || '').replace(/\s+/g, '').trim()),
-  );
-  const llmIssuesDeduped = result.issues.filter(issue => {
-    if (issue.issueType === 'TYPO') {
-      const normalized = (issue.originalText || '').replace(/\s+/g, '').trim();
-      if (ruleOriginalTexts.has(normalized)) return false; // 规则已报，丢弃 LLM 版本
-    }
-    return true;
+  // ── 合并去重：规则优先，对所有类型做精确+模糊去重 ──
+  // 原逻辑仅对 TYPO 类型做精确去重，这里扩展到所有类型（TYPO/FLUENCY/CONSISTENCY 等），
+  // 并引入基于 Levenshtein 距离的模糊去重，避免规则与 LLM 报同一问题的细微变体。
+  // 规则结果在前，LLM 结果在后，dedupIssues 保留先出现的（规则结果确定性更高）。
+  const mergedIssues = dedupIssues([...ruleReviewIssues, ...result.issues], {
+    fuzzyThreshold: 2,
+    fuzzyMinLength: 4,
+    enableFuzzy: true,
   });
-
-  const mergedIssues = [...ruleReviewIssues, ...llmIssuesDeduped];
   const usedEngine = ruleReviewIssues.length > 0
     ? `${result.engine}+rule-dict+unct`
     : result.engine;
@@ -149,14 +144,11 @@ const handleLibraryReview: ReviewHandler = async (ctx) => {
       AiReviewService.runAIReview(text, ctx, scene, config),
       AiReviewService.runSemanticSpecReview(text, ctx, config),
     ]);
-    const mergedIssues = [...ragResult.issues];
-    // 基于 issueType + 归一化全文 去重，避免"前60字相同"误删不同问题
-    const norm = (i: any) => ((i.issueType || '') + '::' + (i.originalText || '').replace(/\s+/g, '').trim());
-    const ragKeys = new Set(ragResult.issues.map(norm));
-    for (const issue of specResult.issues) {
-      const key = norm(issue);
-      if (key && !ragKeys.has(key)) mergedIssues.push(issue);
-    }
+    // 基于 issueType + 归一化全文 精确去重（保持原行为，不引入模糊匹配）
+    // RAG 结果在前，规范库结果在后，dedupIssues 保留先出现的
+    const mergedIssues = dedupIssues([...ragResult.issues, ...specResult.issues], {
+      enableFuzzy: false,
+    });
     return { aiIssues: mergedIssues, usedEngine: `${ragResult.engine}+${specResult.engine}` };
   }
 
