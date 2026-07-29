@@ -25,6 +25,7 @@ export const SCENE_MODULE_MAP: Record<string, string> = {
   MULTIMODAL: 'multimodal',
   RULE_ONLY: 'library_review', // 复用 library_review 提示词
   CONTRACT_REVIEW: 'contract_review', // 合同风险审查
+  DWG_VISION: 'dwg_vision', // DWG 视觉审查
 };
 
 /**
@@ -1246,6 +1247,170 @@ Please give a short succinct context to situate this chunk within the overall do
 
 【输出格式】使用三段式 Markdown 输出。`,
     placeholders: JSON.stringify([]),
+    isBuiltin: true,
+    enabled: true,
+  },
+
+  // ==========================================
+  // DWG 视觉审查（dwg_vision）— 4 维度 × system/user
+  // 由 DwgVisionService 使用，variant 对应审查维度
+  // ==========================================
+  {
+    key: 'dwg_vision_title_block_system',
+    module: 'dwg_vision',
+    role: 'system',
+    variant: 'title_block',
+    name: 'DWG视觉审查-标题栏-系统提示词',
+    description: 'DWG 视觉审查中标题栏识别维度的系统提示词（提取图号/图名/版本/比例等结构化字段）',
+    content: `你是一位核电工程图纸审查专家。请仔细分析图纸中的标题栏（通常位于图框右下角），提取所有结构化信息。
+严格按照 JSON 格式输出，不要添加任何额外说明。`,
+    placeholders: JSON.stringify([]),
+    isBuiltin: true,
+    enabled: true,
+  },
+  {
+    key: 'dwg_vision_title_block_user',
+    module: 'dwg_vision',
+    role: 'user',
+    variant: 'title_block',
+    name: 'DWG视觉审查-标题栏-用户提示词',
+    description: 'DWG 视觉审查中标题栏识别维度的用户提示词，要求输出标题栏字段 JSON',
+    content: `请识别这张工程图纸的标题栏/图签信息，提取以下字段：
+- drawingNo: 图号/图纸编号
+- title: 图纸名称/图名
+- revision: 版本号/版次
+- scale: 比例
+- designer: 设计人
+- checker: 校核人
+- reviewer: 审核人
+- approver: 批准人/审定人
+- date: 日期
+- company: 设计单位/公司名称
+- bbox: 标题栏区域的归一化坐标 [x1,y1,x2,y2]（0-1000 坐标系，左上为原点）
+
+如果某个字段在图中找不到，填空字符串 ""。
+输出纯 JSON 对象，格式：{"drawingNo":"","title":"","revision":"","scale":"","designer":"","checker":"","reviewer":"","approver":"","date":"","company":"","bbox":[x1,y1,x2,y2]}`,
+    placeholders: JSON.stringify([]),
+    isBuiltin: true,
+    enabled: true,
+  },
+  {
+    key: 'dwg_vision_symbols_system',
+    module: 'dwg_vision',
+    role: 'system',
+    variant: 'symbols',
+    name: 'DWG视觉审查-图例符号-系统提示词',
+    description: 'DWG 视觉审查中图例符号识别维度的系统提示词',
+    content: `你是一位核电工程 P&ID 图纸识别专家。请仔细分析图纸中的所有工程图例符号，识别设备、阀门、泵、仪表等标准图例。
+严格按照 JSON 格式输出，不要添加任何额外说明。`,
+    placeholders: JSON.stringify([]),
+    isBuiltin: true,
+    enabled: true,
+  },
+  {
+    key: 'dwg_vision_symbols_user',
+    module: 'dwg_vision',
+    role: 'user',
+    variant: 'symbols',
+    name: 'DWG视觉审查-图例符号-用户提示词',
+    description: 'DWG 视觉审查中图例符号识别维度的用户提示词，要求输出符号清单 JSON',
+    content: `请识别这张工程图纸中所有可辨认的标准图例符号（阀门、泵、容器、仪表、储罐、换热器等），并生成设备/管阀清单。
+
+对每个识别到的符号，输出：
+- type: 类型（valve/pump/vessel/instrument/tank/heat_exchanger/other）
+- tag: 位号/编号（如能看到，如 "V-101"、"P-201A"）
+- description: 简要描述（如 "闸阀 DN50"、"离心泵"）
+- position: 在图纸中的大致位置描述（如 "左上区域"、"主管线中段"）
+- bbox: 符号区域的归一化坐标 [x1,y1,x2,y2]（0-1000 坐标系）
+
+输出纯 JSON 对象，格式：{"symbols":[{"type":"","tag":"","description":"","position":"","bbox":[x1,y1,x2,y2]}],"totalCount":0,"summary":""}
+其中 summary 为图纸内容的一句话概述。`,
+    placeholders: JSON.stringify([]),
+    isBuiltin: true,
+    enabled: true,
+  },
+  {
+    key: 'dwg_vision_annotations_system',
+    module: 'dwg_vision',
+    role: 'system',
+    variant: 'annotations',
+    name: 'DWG视觉审查-标注完整性-系统提示词',
+    description: 'DWG 视觉审查中标注完整性检查维度的系统提示词',
+    content: `你是一位核电工程图纸质量审查专家。请检查图纸中的标注完整性，找出缺失或不规范的标注。
+严格按照 JSON 格式输出，不要添加任何额外说明。`,
+    placeholders: JSON.stringify([]),
+    isBuiltin: true,
+    enabled: true,
+  },
+  {
+    key: 'dwg_vision_annotations_user',
+    module: 'dwg_vision',
+    role: 'user',
+    variant: 'annotations',
+    name: 'DWG视觉审查-标注完整性-用户提示词',
+    description: 'DWG 视觉审查中标注完整性检查维度的用户提示词，要求输出问题清单 + 完整性评分',
+    content: `请检查这张工程图纸的标注完整性，重点关注：
+1. 管线是否有完整的管线编号/管道号
+2. 设备是否有位号标识
+3. 尺寸标注是否完整（关键尺寸是否遗漏）
+4. 是否存在未标注的管线或设备
+5. 阀门是否有编号或规格标注
+6. 仪表是否有回路编号
+
+对每个发现的问题，输出：
+- item: 问题描述（如 "管线未标注管径"）
+- location: 位置描述（如 "图纸右侧主管线"）
+- severity: 严重程度（error=必须整改/warning=建议整改/info=提示）
+- bbox: 问题区域的归一化坐标 [x1,y1,x2,y2]（0-1000 坐标系，无法定位时填 null）
+- confidence: 置信度（0-1，低于 0.6 将标记待人工复核）
+
+同时给出整体完整性评分（0-100分）。
+输出纯 JSON 对象，格式：{"missingItems":[{"item":"","location":"","severity":"","bbox":[x1,y1,x2,y2],"confidence":0.0}],"completenessScore":0,"summary":""}`,
+    placeholders: JSON.stringify([]),
+    isBuiltin: true,
+    enabled: true,
+  },
+  {
+    key: 'dwg_vision_compliance_system',
+    module: 'dwg_vision',
+    role: 'system',
+    variant: 'compliance',
+    name: 'DWG视觉审查-设计说明合规-系统提示词',
+    description: 'DWG 视觉审查中设计说明合规审查维度的系统提示词',
+    content: `你是一位核电工程文件合规审查专家，熟悉 HAF、GB、NB/T、EJ 等核电相关标准。请审查图纸中的设计说明和技术要求是否合规。
+严格按照 JSON 格式输出，不要添加任何额外说明。`,
+    placeholders: JSON.stringify([]),
+    isBuiltin: true,
+    enabled: true,
+  },
+  {
+    key: 'dwg_vision_compliance_user',
+    module: 'dwg_vision',
+    role: 'user',
+    variant: 'compliance',
+    name: 'DWG视觉审查-设计说明合规-用户提示词',
+    description: 'DWG 视觉审查中设计说明合规审查维度的用户提示词，含 ${refSection} 占位符用于注入参照标准条文',
+    content: `请审查这张工程图纸中的设计说明、技术要求、注释文字等内容，检查是否存在合规性问题。
+
+重点检查：
+1. 设计参数是否合理（温度、压力、流量等）
+2. 材料选用是否符合核电规范
+3. 安全相关说明是否完整
+4. 焊接/检验要求是否明确
+5. 引用的标准是否为现行有效版本
+\${refSection}
+
+对每个发现的问题，输出：
+- note: 原文内容（图纸中的相关文字）
+- violation: 违规/问题描述
+- suggestion: 修改建议
+- severity: 严重程度（error/warning/info）
+- bbox: 对应文字区域的归一化坐标 [x1,y1,x2,y2]（0-1000 坐标系，无法定位时填 null）
+- confidence: 置信度（0-1，低于 0.6 将标记待人工复核）
+
+同时提取图纸中所有可见的设计说明/技术要求文字。
+输出纯 JSON 对象，格式：{"designNotes":[""],"issues":[{"note":"","violation":"","suggestion":"","severity":"","bbox":[x1,y1,x2,y2],"confidence":0.0}],"summary":""}`,
+    placeholders: JSON.stringify(['${refSection}']),
     isBuiltin: true,
     enabled: true,
   },

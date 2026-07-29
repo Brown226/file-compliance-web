@@ -23,6 +23,9 @@ export interface DwgVisionJobData {
   analyses: string[];
   refText?: string;
   userId: string;
+  fileName?: string;  // 原始图纸文件名（用于历史回放展示）
+  kbId?: string;      // Task 15: MaxKB 知识库 ID（用于 compliance 维度的 RAG 注入）
+  query?: string;     // Task 15: RAG 检索查询词（可选）
 }
 
 /** 内部持有的队列实例（延迟初始化） */
@@ -134,6 +137,38 @@ export async function initQueueProcessors(): Promise<void> {
   });
 
   console.log('[Queue] 队列处理器已启动 (review:2)');
+
+  // ── DWG 视觉分析队列处理器 ──
+  const dwgVisionQueue = getDwgVisionQueue();
+  dwgVisionQueue.process('dwg-vision', 2, async (job) => {
+    const { imageBase64, analyses, refText, userId, fileName, jobKey, kbId, query } = job.data;
+    console.log(`[Queue] 开始处理图纸视觉分析: ${jobKey} (attempt ${job.attemptsMade + 1})`);
+
+    try {
+      await job.progress(10);
+      const result = await DwgVisionService.analyze(imageBase64, analyses, refText, { userId, fileName, kbId, query });
+      await job.progress(100);
+      console.log(`[Queue] 图纸视觉分析完成: ${jobKey}`);
+      return result;
+    } catch (err: any) {
+      console.error(`[Queue] 图纸视觉分析失败: ${jobKey}`, err.message);
+      throw err;
+    }
+  });
+
+  dwgVisionQueue.on('completed', (job) => {
+    console.log(`[Queue] DWG Vision Job ${job.id} 完成`);
+  });
+
+  dwgVisionQueue.on('failed', (job, err) => {
+    console.error(`[Queue] DWG Vision Job ${job.id} 失败 (${job.attemptsMade}/${job.opts.attempts}):`, err.message);
+  });
+
+  dwgVisionQueue.on('stalled', (jobId) => {
+    console.warn(`[Queue] DWG Vision Job ${jobId} 停滞，将被重试`);
+  });
+
+  console.log('[Queue] 队列处理器已启动 (dwg-vision:2)');
 }
 
 /** 添加审查任务到队列（增强版：细粒度状态检测 + 智能重入队） */
@@ -197,7 +232,7 @@ export async function addDwgVisionJob(data: DwgVisionJobData): Promise<Bull.Job<
   // 降级模式：同步执行
   if ((globalThis as any).__QUEUE_DEGRADED) {
     console.warn('[Queue] 降级模式：同步执行图纸视觉分析', data.jobKey);
-    setImmediate(() => DwgVisionService.analyze(data.imageBase64, data.analyses, data.refText).catch((err: Error) => {
+    setImmediate(() => DwgVisionService.analyze(data.imageBase64, data.analyses, data.refText, { userId: data.userId, fileName: data.fileName, kbId: data.kbId, query: data.query }).catch((err: Error) => {
       console.error(`[Queue] 降级模式同步执行失败: ${data.jobKey}`, err.message);
     }));
     return { id: `sync:${data.jobKey}`, data } as any;

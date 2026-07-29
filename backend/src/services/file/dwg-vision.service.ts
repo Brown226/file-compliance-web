@@ -1,6 +1,8 @@
 import prisma from '../../config/db';
 import { redisClient } from '../../utils/redis';
 import crypto from 'crypto';
+import { PromptLoader } from '../prompts';
+import { MaxKBService } from '../knowledge/maxkb.service';
 
 // ==================== 内部工具：并发限制器 ====================
 
@@ -119,85 +121,16 @@ interface VisionConfig {
 }
 
 // ==================== Prompt 模板 ====================
-
-const TITLE_BLOCK_SYSTEM_PROMPT = `你是一位核电工程图纸审查专家。请仔细分析图纸中的标题栏（通常位于图框右下角），提取所有结构化信息。
-严格按照 JSON 格式输出，不要添加任何额外说明。`;
-
-const TITLE_BLOCK_USER_PROMPT = `请识别这张工程图纸的标题栏/图签信息，提取以下字段：
-- drawingNo: 图号/图纸编号
-- title: 图纸名称/图名
-- revision: 版本号/版次
-- scale: 比例
-- designer: 设计人
-- checker: 校核人
-- reviewer: 审核人
-- approver: 批准人/审定人
-- date: 日期
-- company: 设计单位/公司名称
-- bbox: 标题栏区域的归一化坐标 [x1,y1,x2,y2]（0-1000 坐标系，左上为原点）
-
-如果某个字段在图中找不到，填空字符串 ""。
-输出纯 JSON 对象，格式：{"drawingNo":"","title":"","revision":"","scale":"","designer":"","checker":"","reviewer":"","approver":"","date":"","company":"","bbox":[x1,y1,x2,y2]}`;
-
-const SYMBOLS_SYSTEM_PROMPT = `你是一位核电工程 P&ID 图纸识别专家。请仔细分析图纸中的所有工程图例符号，识别设备、阀门、泵、仪表等标准图例。
-严格按照 JSON 格式输出，不要添加任何额外说明。`;
-
-const SYMBOLS_USER_PROMPT = `请识别这张工程图纸中所有可辨认的标准图例符号（阀门、泵、容器、仪表、储罐、换热器等），并生成设备/管阀清单。
-
-对每个识别到的符号，输出：
-- type: 类型（valve/pump/vessel/instrument/tank/heat_exchanger/other）
-- tag: 位号/编号（如能看到，如 "V-101"、"P-201A"）
-- description: 简要描述（如 "闸阀 DN50"、"离心泵"）
-- position: 在图纸中的大致位置描述（如 "左上区域"、"主管线中段"）
-- bbox: 符号区域的归一化坐标 [x1,y1,x2,y2]（0-1000 坐标系）
-
-输出纯 JSON 对象，格式：{"symbols":[{"type":"","tag":"","description":"","position":"","bbox":[x1,y1,x2,y2]}],"totalCount":0,"summary":""}
-其中 summary 为图纸内容的一句话概述。`;
-
-const ANNOTATIONS_SYSTEM_PROMPT = `你是一位核电工程图纸质量审查专家。请检查图纸中的标注完整性，找出缺失或不规范的标注。
-严格按照 JSON 格式输出，不要添加任何额外说明。`;
-
-const ANNOTATIONS_USER_PROMPT = `请检查这张工程图纸的标注完整性，重点关注：
-1. 管线是否有完整的管线编号/管道号
-2. 设备是否有位号标识
-3. 尺寸标注是否完整（关键尺寸是否遗漏）
-4. 是否存在未标注的管线或设备
-5. 阀门是否有编号或规格标注
-6. 仪表是否有回路编号
-
-对每个发现的问题，输出：
-- item: 问题描述（如 "管线未标注管径"）
-- location: 位置描述（如 "图纸右侧主管线"）
-- severity: 严重程度（error=必须整改/warning=建议整改/info=提示）
-- bbox: 问题区域的归一化坐标 [x1,y1,x2,y2]（0-1000 坐标系，无法定位时填 null）
-- confidence: 置信度（0-1，低于 0.6 将标记待人工复核）
-
-同时给出整体完整性评分（0-100分）。
-输出纯 JSON 对象，格式：{"missingItems":[{"item":"","location":"","severity":"","bbox":[x1,y1,x2,y2],"confidence":0.0}],"completenessScore":0,"summary":""}`;
-
-const COMPLIANCE_SYSTEM_PROMPT = `你是一位核电工程文件合规审查专家，熟悉 HAF、GB、NB/T、EJ 等核电相关标准。请审查图纸中的设计说明和技术要求是否合规。
-严格按照 JSON 格式输出，不要添加任何额外说明。`;
-
-const COMPLIANCE_USER_PROMPT_TEMPLATE = `请审查这张工程图纸中的设计说明、技术要求、注释文字等内容，检查是否存在合规性问题。
-
-重点检查：
-1. 设计参数是否合理（温度、压力、流量等）
-2. 材料选用是否符合核电规范
-3. 安全相关说明是否完整
-4. 焊接/检验要求是否明确
-5. 引用的标准是否为现行有效版本
-{refSection}
-
-对每个发现的问题，输出：
-- note: 原文内容（图纸中的相关文字）
-- violation: 违规/问题描述
-- suggestion: 修改建议
-- severity: 严重程度（error/warning/info）
-- bbox: 对应文字区域的归一化坐标 [x1,y1,x2,y2]（0-1000 坐标系，无法定位时填 null）
-- confidence: 置信度（0-1，低于 0.6 将标记待人工复核）
-
-同时提取图纸中所有可见的设计说明/技术要求文字。
-输出纯 JSON 对象，格式：{"designNotes":[""],"issues":[{"note":"","violation":"","suggestion":"","severity":"","bbox":[x1,y1,x2,y2],"confidence":0.0}],"summary":""}`;
+//
+// 4 个维度的 system/user prompt 已迁移至 `services/prompts/registry.ts`，
+// 通过 PromptLoader 动态加载（DB 优先 → Registry fallback）。
+// 维度与 variant 对应关系：
+//   title_block  → 标题栏识别
+//   symbols      → 图例符号识别
+//   annotations  → 标注完整性检查
+//   compliance   → 设计说明合规审查（含 ${refSection} 占位符）
+//
+// 用户可在「提示词管理」界面修改这些模板，重置时回退到 registry 默认值。
 
 // ==================== 核心服务 ====================
 
@@ -519,7 +452,11 @@ export class DwgVisionService {
    * 标题栏/图签识别
    */
   static async analyzeTitleBlock(imageBase64: string, config: VisionConfig): Promise<TitleBlockResult | null> {
-    const parsed = await this.callAndParse(imageBase64, TITLE_BLOCK_SYSTEM_PROMPT, TITLE_BLOCK_USER_PROMPT, config);
+    const [systemPrompt, userPrompt] = await Promise.all([
+      PromptLoader.loadSystemPrompt('dwg_vision', { variant: 'title_block' }),
+      PromptLoader.loadUserPrompt('dwg_vision', 'title_block'),
+    ]);
+    const parsed = await this.callAndParse(imageBase64, systemPrompt, userPrompt, config);
     if (!parsed) return null;
 
     return {
@@ -542,7 +479,11 @@ export class DwgVisionService {
    * 图例符号识别
    */
   static async analyzeSymbols(imageBase64: string, config: VisionConfig): Promise<SymbolListResult | null> {
-    const parsed = await this.callAndParse(imageBase64, SYMBOLS_SYSTEM_PROMPT, SYMBOLS_USER_PROMPT, config);
+    const [systemPrompt, userPrompt] = await Promise.all([
+      PromptLoader.loadSystemPrompt('dwg_vision', { variant: 'symbols' }),
+      PromptLoader.loadUserPrompt('dwg_vision', 'symbols'),
+    ]);
+    const parsed = await this.callAndParse(imageBase64, systemPrompt, userPrompt, config);
     if (!parsed) return null;
 
     const symbols: SymbolItem[] = (parsed.symbols || []).map((s: any) => ({
@@ -564,7 +505,11 @@ export class DwgVisionService {
    * 标注完整性检查
    */
   static async checkAnnotations(imageBase64: string, config: VisionConfig): Promise<AnnotationCheckResult | null> {
-    const parsed = await this.callAndParse(imageBase64, ANNOTATIONS_SYSTEM_PROMPT, ANNOTATIONS_USER_PROMPT, config);
+    const [systemPrompt, userPrompt] = await Promise.all([
+      PromptLoader.loadSystemPrompt('dwg_vision', { variant: 'annotations' }),
+      PromptLoader.loadUserPrompt('dwg_vision', 'annotations'),
+    ]);
+    const parsed = await this.callAndParse(imageBase64, systemPrompt, userPrompt, config);
     if (!parsed) return null;
 
     const missingItems: AnnotationIssue[] = (parsed.missingItems || []).map((item: any) => ({
@@ -584,6 +529,11 @@ export class DwgVisionService {
 
   /**
    * 设计说明合规审查
+   *
+   * refText 来源（按优先级）：
+   *   1. 调用方手动传入的标准条文（手动 refText 模式，向后兼容）
+   *   2. 知识库 RAG 注入（Task 15 实现后，由 caller 检索后传入）
+   *   3. 无参照 → refSection 为空字符串
    */
   static async checkDesignCompliance(imageBase64: string, config: VisionConfig, refText?: string): Promise<ComplianceResult | null> {
     let refSection = '';
@@ -591,8 +541,11 @@ export class DwgVisionService {
       refSection = `\n\n以下是需要对照的标准条文/规范要求：\n"""\n${refText.substring(0, 3000)}\n"""`;
     }
 
-    const userPrompt = COMPLIANCE_USER_PROMPT_TEMPLATE.replace('{refSection}', refSection);
-    const parsed = await this.callAndParse(imageBase64, COMPLIANCE_SYSTEM_PROMPT, userPrompt, config);
+    const [systemPrompt, userPrompt] = await Promise.all([
+      PromptLoader.loadSystemPrompt('dwg_vision', { variant: 'compliance' }),
+      PromptLoader.loadUserPrompt('dwg_vision', 'compliance', { refSection }),
+    ]);
+    const parsed = await this.callAndParse(imageBase64, systemPrompt, userPrompt, config);
     if (!parsed) return null;
 
     const issues: ComplianceIssue[] = (parsed.issues || []).map((issue: any) => ({
@@ -663,18 +616,35 @@ export class DwgVisionService {
 
   /**
    * 统一分析入口（并行执行所选分析项）
+   *
+   * options:
+   *   - userId:    触发分析的用户 ID（用于历史回放筛选）
+   *   - fileName:  原始图纸文件名（用于历史回放展示）
+   *   - kbId:      MaxKB 知识库 ID（Task 15，用于 compliance 维度的 RAG 注入）
+   *   - query:     RAG 检索查询词（可选，默认用图纸合规通用关键词）
+   *
+   * RAG 注入策略（Task 15）：
+   *   - 仅当 analyses 包含 'compliance' 且 kbId 存在时触发检索
+   *   - 检索结果与手动 refText 合并（手动在前，RAG 在后，用换行分隔）
+   *   - 检索失败降级为仅使用手动 refText，不中断主流程
+   *
+   * 落库策略：分析完成后将结果写入 vision_analyses 表（失败不中断主流程），
+   * 前端可通过历史查询端点回放。
    */
   static async analyze(
     imageBase64: string,
     analyses: string[],
     refText?: string,
+    options?: { userId?: string; fileName?: string; kbId?: string; query?: string },
   ): Promise<VisionAnalyzeResult> {
     // 缓存检查：相同输入直接返回历史结果
-    const cacheKey = this.buildCacheKey(imageBase64, analyses, refText);
+    const cacheKey = this.buildCacheKey(imageBase64, analyses, refText, options?.kbId, options?.query);
     try {
       const cached = await redisClient.get<VisionAnalyzeResult>(cacheKey);
       if (cached) {
         console.log('[DWG Vision] 缓存命中，跳过 API 调用');
+        // 缓存命中也落库（记录一次历史）
+        this.persistVisionAnalysis(imageBase64, analyses, cached, refText, options).catch(() => { /* ignore */ });
         return cached;
       }
     } catch (e: any) {
@@ -684,6 +654,23 @@ export class DwgVisionService {
     const startTime = Date.now();
     const errors: string[] = [];
     const config = await this.getVisionConfig();
+
+    // ── Task 15: MaxKB RAG 注入（仅 compliance 维度需要）──
+    let mergedRefText = refText;
+    if (analyses.includes('compliance') && options?.kbId) {
+      try {
+        const ragText = await this.fetchRagContext(options.kbId, options.query);
+        if (ragText) {
+          mergedRefText = mergedRefText
+            ? `${mergedRefText}\n---\n${ragText}`
+            : ragText;
+          console.log('[DWG Vision] MaxKB RAG 注入成功，refText 长度:', mergedRefText.length);
+        }
+      } catch (e: any) {
+        console.warn('[DWG Vision] MaxKB RAG 注入失败，降级为手动 refText:', e.message);
+        errors.push(`知识库检索失败: ${e.message}`);
+      }
+    }
 
     const result: VisionAnalyzeResult = {
       titleBlock: null,
@@ -723,7 +710,7 @@ export class DwgVisionService {
 
     if (analyses.includes('compliance')) {
       tasks.push(
-        this.checkDesignCompliance(imageBase64, config, refText)
+        this.checkDesignCompliance(imageBase64, config, mergedRefText)
           .then(r => { result.compliance = r; })
           .catch(e => { errors.push(`设计说明合规审查失败: ${e.message}`); })
       );
@@ -752,18 +739,149 @@ export class DwgVisionService {
       console.warn('[DWG Vision] 缓存写入失败，跳过:', e.message);
     }
 
+    // 结果落库（失败不中断主流程）
+    this.persistVisionAnalysis(imageBase64, analyses, result, mergedRefText, options).catch((e: any) => {
+      console.warn('[DWG Vision] 结果落库失败，跳过:', e.message);
+    });
+
     return result;
   }
 
   /**
-   * 构建缓存 key：基于图片+分析项+参考文本的 sha256
-   * 分析项排序以保证不同顺序但相同内容命中缓存
+   * MaxKB RAG 检索（Task 15）
+   * 用 query 在指定知识库中检索相关条文，格式化为 refText 片段
+   *
+   * @param kbId  MaxKB 知识库 ID
+   * @param query 检索查询词（可选，默认用图纸合规通用关键词）
+   * @returns     格式化的条文文本（空字符串表示无结果）
    */
-  private static buildCacheKey(imageBase64: string, analyses: string[], refText?: string): string {
+  private static async fetchRagContext(kbId: string, query?: string): Promise<string> {
+    const searchQuery = query?.trim() || '核电工程图纸设计说明 安全 材料 焊接 检验 标准引用';
+    const workspaceId = await MaxKBService.getDefaultWorkspaceId();
+
+    const hits = await MaxKBService.hitTest(workspaceId, kbId, searchQuery, 5);
+    if (!Array.isArray(hits) || hits.length === 0) {
+      console.log('[DWG Vision] MaxKB 检索无结果');
+      return '';
+    }
+
+    const chunks: string[] = [];
+    for (const hit of hits) {
+      const content = (hit as any).content || (hit as any).text || '';
+      if (content) {
+        const title = (hit as any).title || (hit as any).document_name || '';
+        chunks.push(title ? `【${title}】\n${content}` : content);
+      }
+    }
+
+    return chunks.join('\n---\n');
+  }
+
+  /**
+   * 将分析结果落库（Task 25）
+   * - imageHash: imageBase64 的 sha256，用于同图去重查询
+   * - refText:   截断至 3000 字符，避免存储过大
+   * - 落库失败仅记录日志，不抛错（历史回放是辅助功能，不影响主流程）
+   */
+  private static async persistVisionAnalysis(
+    imageBase64: string,
+    analyses: string[],
+    result: VisionAnalyzeResult,
+    refText: string | undefined,
+    options: { userId?: string; fileName?: string } | undefined,
+  ): Promise<void> {
+    try {
+      const imageHash = crypto.createHash('sha256').update(imageBase64).digest('hex');
+      await prisma.visionAnalysis.create({
+        data: {
+          userId: options?.userId || null,
+          fileName: options?.fileName || null,
+          imageHash,
+          analyses: analyses as any,
+          result: result as any,
+          modelInfo: (result.modelInfo || null) as any,
+          durationMs: result.duration_ms,
+          errors: result.errors as any,
+          refText: refText ? refText.substring(0, 3000) : null,
+        },
+      });
+      console.log('[DWG Vision] 分析结果已落库 (imageHash=%s)', imageHash.substring(0, 12));
+    } catch (e: any) {
+      console.warn('[DWG Vision] 结果落库失败:', e.message);
+      // 不抛错，避免影响主流程
+    }
+  }
+
+  /**
+   * 查询历史分析记录（Task 25）
+   * @param filter.userId    按用户筛选（可选）
+   * @param filter.fileName  按文件名模糊匹配（可选）
+   * @param filter.imageHash 按图片 hash 精确匹配（可选，用于同图历史）
+   * @param filter.limit     返回条数（默认 20，最大 100）
+   * @param filter.offset    分页偏移
+   */
+  static async queryHistory(filter: {
+    userId?: string;
+    fileName?: string;
+    imageHash?: string;
+    limit?: number;
+    offset?: number;
+  } = {}): Promise<{ total: number; items: any[] }> {
+    const where: any = {};
+    if (filter.userId) where.userId = filter.userId;
+    if (filter.imageHash) where.imageHash = filter.imageHash;
+    if (filter.fileName) where.fileName = { contains: filter.fileName, mode: 'insensitive' };
+
+    const limit = Math.min(Math.max(filter.limit || 20, 1), 100);
+    const offset = Math.max(filter.offset || 0, 0);
+
+    const [total, rows] = await Promise.all([
+      prisma.visionAnalysis.count({ where }),
+      prisma.visionAnalysis.findMany({
+        where,
+        orderBy: { createdAt: 'desc' },
+        take: limit,
+        skip: offset,
+      }),
+    ]);
+
+    return {
+      total,
+      items: rows.map(r => ({
+        id: r.id,
+        userId: r.userId,
+        fileName: r.fileName,
+        imageHash: r.imageHash,
+        analyses: r.analyses,
+        result: r.result,
+        modelInfo: r.modelInfo,
+        durationMs: r.durationMs,
+        errors: r.errors,
+        refText: r.refText,
+        createdAt: r.createdAt,
+      })),
+    };
+  }
+
+  /**
+   * 构建缓存 key：基于图片+分析项+参考文本+知识库+查询词的 sha256
+   * 分析项排序以保证不同顺序但相同内容命中缓存
+   *
+   * Task 15: kbId 和 query 纳入 cache key，避免不同知识库/查询词的结果误命中
+   */
+  private static buildCacheKey(
+    imageBase64: string,
+    analyses: string[],
+    refText?: string,
+    kbId?: string,
+    query?: string,
+  ): string {
     const hash = crypto.createHash('sha256')
       .update(imageBase64)
       .update(analyses.slice().sort().join(','))
       .update(refText || '')
+      .update(kbId || '')
+      .update(query || '')
       .digest('hex');
     return `dwg_vision:cache:${hash}`;
   }

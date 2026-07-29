@@ -922,3 +922,25 @@ model ReviewFeedback {
   @@index([createdAt], name: "idx_review_feedback_created_at")
   @@map("review_feedback")
 }
+
+// DWG 视觉审查结果落库（Task 25）
+// 由 DwgVisionService.analyze() 在分析完成后写入，供前端历史回放使用。
+// userId / fileName 不加外键约束，支持匿名分析与已删除文件的追溯。
+model VisionAnalysis {
+  id          String   @id @default(uuid())
+  userId      String?  @map("user_id") @db.VarChar(50)  // 触发分析的用户（匿名时为 null）
+  fileName    String?  @map("file_name") @db.VarChar(255) // 原始图纸文件名
+  imageHash   String?  @map("image_hash") @db.VarChar(64)  // 图片 sha256，用于同图去重/历史查询
+  analyses    Json                                       // 选中的分析维度数组，如 ["titleBlock","compliance"]
+  result      Json                                       // 完整 VisionAnalyzeResult JSON
+  modelInfo   Json?                                      // { model, modelType }
+  durationMs  Int      @map("duration_ms")               // 分析耗时（毫秒）
+  errors      Json                                       // 错误信息数组（空数组表示无错误）
+  refText     String?  @db.Text                          // 参照文本（手动 refText 或 RAG 注入，截断至 3000 字符）
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  @@index([userId], name: "idx_vision_analysis_user")
+  @@index([createdAt], name: "idx_vision_analysis_created")
+  @@index([imageHash], name: "idx_vision_analysis_image_hash")
+  @@map("vision_analyses")
+}

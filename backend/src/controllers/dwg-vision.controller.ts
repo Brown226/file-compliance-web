@@ -2,6 +2,7 @@ import { Request, Response } from 'express';
 import { addDwgVisionJob, getDwgVisionJobStatus } from '../services/system/queue.service';
 import { redisClient } from '../utils/redis';
 import prisma from '../config/db';
+import { DwgVisionService } from '../services/file/dwg-vision.service';
 
 const VALID_ANALYSES = ['titleBlock', 'symbols', 'annotations', 'compliance'];
 
@@ -76,7 +77,7 @@ export const visionAnalyze = async (req: Request, res: Response): Promise<void> 
   let quotaAcquired = false;
 
   try {
-    const { imageBase64, fileName, analyses, refText } = req.body;
+    const { imageBase64, fileName, analyses, refText, kbId, query } = req.body;
 
     // 参数校验
     if (!imageBase64 || typeof imageBase64 !== 'string') {
@@ -101,6 +102,12 @@ export const visionAnalyze = async (req: Request, res: Response): Promise<void> 
       return;
     }
 
+    // Task 15: kbId 与 compliance 维度的合理性校验
+    if (kbId && !selectedAnalyses.includes('compliance')) {
+      res.status(400).json({ code: 400, message: '知识库 ID 仅在 compliance 维度被选中时有效' });
+      return;
+    }
+
     // 用户级配额检查
     const quota = await checkDwgVisionQuota(userId);
     if (!quota.ok) {
@@ -111,7 +118,7 @@ export const visionAnalyze = async (req: Request, res: Response): Promise<void> 
 
     // 生成 jobKey 并入队
     const jobKey = `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
-    console.log(`[DWG Vision] 入队: ${fileName || 'unknown'}, 分析项: ${selectedAnalyses.join(', ')}, jobKey=${jobKey}`);
+    console.log(`[DWG Vision] 入队: ${fileName || 'unknown'}, 分析项: ${selectedAnalyses.join(', ')}, kbId=${kbId || 'none'}, jobKey=${jobKey}`);
 
     const job = await addDwgVisionJob({
       jobKey,
@@ -119,6 +126,9 @@ export const visionAnalyze = async (req: Request, res: Response): Promise<void> 
       analyses: selectedAnalyses,
       refText,
       userId,
+      fileName,
+      kbId,
+      query,
     });
 
     // 任务完成后（成功或失败）释放并发计数
@@ -196,6 +206,84 @@ export const visionJobStatus = async (req: Request, res: Response): Promise<void
 
     res.json({ code: 200, message: 'success', data: status });
   } catch (err: any) {
+    res.status(500).json({ code: 500, message: err.message });
+  }
+};
+
+/**
+ * GET /api/dwg/vision-history
+ * 查询图纸视觉分析历史记录（Task 25）
+ *
+ * 查询参数：
+ *   - limit:     返回条数（默认 20，最大 100）
+ *   - offset:    分页偏移
+ *   - fileName:  按文件名模糊匹配（可选）
+ *   - imageHash: 按图片 hash 精确匹配（可选，用于同图历史）
+ *   - userId:    按用户筛选（仅 ADMIN 可用，普通用户只能看自己的历史）
+ *
+ * 权限规则：
+ *   - ADMIN: 可查看所有用户的历史，可通过 userId 参数筛选
+ *   - MANAGER/USER: 只能查看自己的历史，userId 参数被忽略
+ */
+export const visionHistory = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const currentUser = (req as any).user;
+    const currentRole = currentUser?.role || 'USER';
+    const currentUserId = currentUser?.id;
+
+    const { limit, offset, fileName, imageHash, userId } = req.query;
+
+    // 权限：非 ADMIN 只能看自己的历史
+    const filterUserId = currentRole === 'ADMIN' && userId
+      ? String(userId)
+      : currentUserId;
+
+    const result = await DwgVisionService.queryHistory({
+      userId: filterUserId,
+      fileName: fileName ? String(fileName) : undefined,
+      imageHash: imageHash ? String(imageHash) : undefined,
+      limit: limit ? parseInt(String(limit), 10) : undefined,
+      offset: offset ? parseInt(String(offset), 10) : undefined,
+    });
+
+    res.json({ code: 200, message: 'success', data: result });
+  } catch (err: any) {
+    console.error('[DWG Vision] 查询历史失败:', err);
+    res.status(500).json({ code: 500, message: err.message });
+  }
+};
+
+/**
+ * GET /api/dwg/vision-history/:id
+ * 查询单条历史记录详情（Task 25）
+ */
+export const visionHistoryDetail = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const id = req.params.id as string;
+    if (!id) {
+      res.status(400).json({ code: 400, message: '缺少 id 参数' });
+      return;
+    }
+
+    const currentUser = (req as any).user;
+    const currentRole = currentUser?.role || 'USER';
+    const currentUserId = currentUser?.id;
+
+    const record = await prisma.visionAnalysis.findUnique({ where: { id } });
+    if (!record) {
+      res.status(404).json({ code: 404, message: '历史记录不存在' });
+      return;
+    }
+
+    // 权限：非 ADMIN 只能看自己的记录
+    if (currentRole !== 'ADMIN' && record.userId && record.userId !== currentUserId) {
+      res.status(403).json({ code: 403, message: '无权查看他人的历史记录' });
+      return;
+    }
+
+    res.json({ code: 200, message: 'success', data: record });
+  } catch (err: any) {
+    console.error('[DWG Vision] 查询历史详情失败:', err);
     res.status(500).json({ code: 500, message: err.message });
   }
 };

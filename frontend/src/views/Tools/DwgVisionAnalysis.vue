@@ -138,20 +138,69 @@
                 :rows="3"
                 placeholder="粘贴需要对照的标准条文 / 规范要求，用于合规性比对"
               />
+
+              <!-- Task 15: 知识库 RAG 注入 -->
+              <div class="kb-section">
+                <div class="kb-label">
+                  <span>从知识库检索标准条文（可选）</span>
+                  <el-tooltip
+                    content="选择知识库后，系统会自动检索与图纸相关的标准条文，注入到合规审查提示词中。检索失败时降级为仅使用上方手动输入的条文。"
+                    placement="top"
+                  >
+                    <el-icon class="kb-help"><WarningFilled /></el-icon>
+                  </el-tooltip>
+                </div>
+                <el-select
+                  v-model="selectedKbId"
+                  placeholder="选择知识库（留空则不启用 RAG）"
+                  :loading="loadingKnowledgeBases"
+                  clearable
+                  style="width: 100%"
+                  size="default"
+                >
+                  <el-option
+                    v-for="kb in knowledgeBases"
+                    :key="kb.id"
+                    :label="kb.name + (kb.desc ? ` — ${kb.desc}` : '')"
+                    :value="kb.id"
+                  />
+                </el-select>
+                <el-input
+                  v-if="selectedKbId"
+                  v-model="ragQuery"
+                  type="textarea"
+                  :rows="2"
+                  placeholder="检索查询词（可选，留空使用默认关键词：核电工程图纸设计说明 安全 材料 焊接 检验 标准引用）"
+                  style="margin-top: 8px"
+                />
+              </div>
             </div>
           </transition>
 
-          <el-button
-            type="primary"
-            size="large"
-            :loading="analyzing"
-            :disabled="!dwgFile || selectedAnalyses.length === 0"
-            class="analyze-btn"
-            @click="startAnalysis"
-          >
-            <el-icon v-if="!analyzing" style="margin-right:6px"><VideoPlay /></el-icon>
-            {{ analyzing ? '分析中...' : '开始分析' }}
-          </el-button>
+          <div class="action-row">
+            <el-button
+              type="primary"
+              size="large"
+              :loading="analyzing"
+              :disabled="!dwgFile || selectedAnalyses.length === 0"
+              class="analyze-btn"
+              @click="startAnalysis"
+            >
+              <el-icon v-if="!analyzing" style="margin-right:6px"><VideoPlay /></el-icon>
+              {{ analyzing ? '分析中...' : '开始分析' }}
+            </el-button>
+
+            <!-- Task 25: 历史记录入口 -->
+            <el-button
+              size="large"
+              plain
+              class="history-btn"
+              @click="openHistory"
+            >
+              <el-icon style="margin-right:6px"><Clock /></el-icon>
+              历史记录
+            </el-button>
+          </div>
 
           <!-- 进度提示 -->
           <div v-if="analyzing" class="progress-hint">
@@ -386,6 +435,63 @@
         </el-card>
       </div>
     </div>
+
+    <!-- Task 25: 历史记录抽屉 -->
+    <el-drawer
+      v-model="historyVisible"
+      title="图纸视觉分析历史记录"
+      direction="rtl"
+      size="480px"
+    >
+      <div v-loading="historyLoading" class="history-list">
+        <el-empty v-if="!historyLoading && historyItems.length === 0" description="暂无历史记录" />
+        <div
+          v-for="item in historyItems"
+          :key="item.id"
+          class="history-item"
+          @click="replayHistoryItem(item)"
+        >
+          <div class="history-item-header">
+            <el-icon><Document /></el-icon>
+            <span class="history-filename" :title="item.fileName || '未命名'">
+              {{ item.fileName || '未命名' }}
+            </span>
+            <el-tag size="small" type="info">{{ (item.durationMs / 1000).toFixed(1) }}s</el-tag>
+          </div>
+          <div class="history-item-meta">
+            <span>{{ new Date(item.createdAt).toLocaleString('zh-CN') }}</span>
+            <span v-if="item.modelInfo?.model" class="history-model">{{ item.modelInfo.model }}</span>
+          </div>
+          <div class="history-item-analyses">
+            <el-tag
+              v-for="a in item.analyses"
+              :key="a"
+              size="small"
+              effect="plain"
+            >
+              {{ analysisOptions.find(o => o.key === a)?.label || a }}
+            </el-tag>
+          </div>
+          <div v-if="item.errors && item.errors.length > 0" class="history-item-errors">
+            <el-icon><WarningFilled /></el-icon>
+            <span>{{ item.errors.length }} 项错误</span>
+          </div>
+        </div>
+      </div>
+
+      <template #footer>
+        <el-pagination
+          v-if="historyTotal > historyPageSize"
+          small
+          background
+          layout="prev, pager, next"
+          :total="historyTotal"
+          :page-size="historyPageSize"
+          v-model:current-page="historyPage"
+          @current-change="loadHistory"
+        />
+      </template>
+    </el-drawer>
   </div>
 </template>
 
@@ -399,7 +505,8 @@ import {
   Memo, WarningFilled, ArrowLeft,
 } from '@element-plus/icons-vue'
 import { dwgToPng } from '@/utils/dwg-parser'
-import { analyzeDwgVision, getVisionStatus, type VisionAnalyzeResult, type VisionStatusResult } from '@/api/dwg-vision'
+import { analyzeDwgVision, getVisionStatus, getVisionHistory, type VisionAnalyzeResult, type VisionStatusResult, type VisionHistoryItem } from '@/api/dwg-vision'
+import { getKnowledgeBasesApi } from '@/api/maxkb'
 
 const router = useRouter()
 
@@ -426,6 +533,20 @@ const result = ref<VisionAnalyzeResult | null>(null)
 const activeTab = ref('titleBlock')
 const visionStatus = ref<VisionStatusResult | null>(null)
 const uploadRef = ref()
+
+// Task 15: 知识库 RAG 注入相关状态
+const knowledgeBases = ref<Array<{ id: string; name: string; desc?: string }>>([])
+const selectedKbId = ref<string>('')
+const ragQuery = ref<string>('')
+const loadingKnowledgeBases = ref(false)
+
+// Task 25: 历史记录相关状态
+const historyVisible = ref(false)
+const historyLoading = ref(false)
+const historyItems = ref<VisionHistoryItem[]>([])
+const historyTotal = ref(0)
+const historyPage = ref(1)
+const historyPageSize = ref(10)
 
 /** 联动用：当前高亮的 issue id（`${tab}-${index}` 格式） */
 const activeIssueId = ref('')
@@ -509,7 +630,57 @@ onMounted(async () => {
       visionStatus.value = res.data
     }
   } catch { /* ignore */ }
+
+  // Task 15: 加载可用知识库列表（用于 compliance 维度的 RAG 注入）
+  loadKnowledgeBases()
 })
+
+/** 加载 MaxKB 知识库列表 */
+async function loadKnowledgeBases() {
+  loadingKnowledgeBases.value = true
+  try {
+    const list = await getKnowledgeBasesApi()
+    knowledgeBases.value = Array.isArray(list) ? list : []
+  } catch (e: any) {
+    console.warn('[DWG Vision] 加载知识库列表失败:', e?.message)
+    knowledgeBases.value = []
+  } finally {
+    loadingKnowledgeBases.value = false
+  }
+}
+
+/** Task 25: 加载历史记录 */
+async function loadHistory() {
+  historyLoading.value = true
+  try {
+    const res = await getVisionHistory({
+      limit: historyPageSize.value,
+      offset: (historyPage.value - 1) * historyPageSize.value,
+    })
+    if (res.code === 200) {
+      historyItems.value = res.data.items
+      historyTotal.value = res.data.total
+    }
+  } catch (e: any) {
+    ElMessage.error('加载历史记录失败: ' + (e?.message || ''))
+  } finally {
+    historyLoading.value = false
+  }
+}
+
+/** Task 25: 打开历史抽屉 */
+function openHistory() {
+  historyVisible.value = true
+  loadHistory()
+}
+
+/** Task 25: 回放历史记录 */
+function replayHistoryItem(item: VisionHistoryItem) {
+  result.value = item.result
+  activeTab.value = 'titleBlock'
+  historyVisible.value = false
+  ElMessage.success(`已加载历史记录：${item.fileName || '未命名'}（${new Date(item.createdAt).toLocaleString('zh-CN')}）`)
+}
 
 // 切换分析项
 function toggleAnalysis(key: string) {
@@ -579,6 +750,8 @@ async function startAnalysis() {
       fileName: dwgFile.value.name,
       analyses: selectedAnalyses.value,
       refText: refText.value || undefined,
+      kbId: selectedKbId.value || undefined,
+      query: ragQuery.value || undefined,
     })
 
     if (res.code === 200) {
@@ -1034,10 +1207,39 @@ function complianceRowClass(_row: any, rowIndex: number) {
   margin-bottom: 6px;
 }
 
+/* Task 15: 知识库 RAG 注入区块 */
+.kb-section {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px dashed #e5e7eb;
+}
+
+.kb-label {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 13px;
+  font-weight: 500;
+  color: #374151;
+  margin-bottom: 6px;
+}
+
+.kb-help {
+  color: #9ca3af;
+  cursor: help;
+  font-size: 14px;
+}
+
+/* 按钮行（分析 + 历史） */
+.action-row {
+  display: flex;
+  gap: 10px;
+  margin-top: 16px;
+}
+
 /* 分析按钮 */
 .analyze-btn {
-  width: 100%;
-  margin-top: 16px;
+  flex: 1;
   height: 44px;
   font-size: 15px;
   font-weight: 600;
@@ -1052,6 +1254,79 @@ function complianceRowClass(_row: any, rowIndex: number) {
 
 .analyze-btn:disabled {
   background: #e5e7eb;
+}
+
+.history-btn {
+  width: 130px;
+  height: 44px;
+  border-radius: 10px;
+}
+
+/* Task 25: 历史记录抽屉 */
+.history-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-height: 200px;
+}
+
+.history-item {
+  padding: 12px 14px;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.2s;
+  background: #fff;
+}
+
+.history-item:hover {
+  border-color: #2563eb;
+  background: #f0f7ff;
+}
+
+.history-item-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 6px;
+}
+
+.history-filename {
+  flex: 1;
+  font-size: 14px;
+  font-weight: 500;
+  color: #1f2937;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.history-item-meta {
+  display: flex;
+  justify-content: space-between;
+  font-size: 12px;
+  color: #6b7280;
+  margin-bottom: 6px;
+}
+
+.history-model {
+  color: #9ca3af;
+  font-style: italic;
+}
+
+.history-item-analyses {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.history-item-errors {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 6px;
+  color: #dc2626;
+  font-size: 12px;
 }
 
 /* 进度提示 */

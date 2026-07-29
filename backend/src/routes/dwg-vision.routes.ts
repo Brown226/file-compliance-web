@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { visionAnalyze, visionStatus, visionJobStatus } from '../controllers/dwg-vision.controller';
+import { visionAnalyze, visionStatus, visionJobStatus, visionHistory, visionHistoryDetail } from '../controllers/dwg-vision.controller';
 import { authenticate } from '../middlewares/auth.middleware';
 
 const router = Router();
@@ -12,5 +12,11 @@ router.get('/vision-status', authenticate, visionStatus);
 
 // 图纸视觉分析任务状态查询
 router.get('/vision-job-status/:jobKey', authenticate, visionJobStatus);
+
+// 图纸视觉分析历史查询（Task 25）
+router.get('/vision-history', authenticate, visionHistory);
+
+// 图纸视觉分析历史详情（Task 25）
+router.get('/vision-history/:id', authenticate, visionHistoryDetail);
 
 export default router;

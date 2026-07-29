@@ -53,6 +53,7 @@ const MODULE_LABELS: Record<string, string> = {
   contextual_retrieval: '上下文检索增强',
   polish: 'AI润色',
   semantic_spec: '语义规范库审查',
+  dwg_vision: 'DWG视觉审查',
 };
 
 // ==================== 服务类 ====================

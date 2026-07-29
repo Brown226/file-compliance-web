@@ -86,12 +86,18 @@ export interface VisionStatusResult {
 
 /**
  * 图纸视觉智能分析
+ *
+ * Task 15: kbId / query 用于 compliance 维度的 MaxKB RAG 注入
+ *   - kbId:  MaxKB 知识库 ID（可选，仅在 analyses 包含 'compliance' 时生效）
+ *   - query: RAG 检索查询词（可选，为空时后端使用默认关键词）
  */
 export function analyzeDwgVision(data: {
   imageBase64: string
   fileName: string
   analyses: string[]
   refText?: string
+  kbId?: string
+  query?: string
 }) {
   return request.post<any, { code: number; data: VisionAnalyzeResult; message?: string }>(
     '/dwg/vision-analyze',
@@ -105,4 +111,50 @@ export function analyzeDwgVision(data: {
  */
 export function getVisionStatus() {
   return request.get<any, { code: number; data: VisionStatusResult }>('/dwg/vision-status')
+}
+
+// ==================== 历史记录（Task 25）====================
+
+export interface VisionHistoryItem {
+  id: string
+  userId: string | null
+  fileName: string | null
+  imageHash: string | null
+  analyses: string[]
+  result: VisionAnalyzeResult
+  modelInfo: { model: string; modelType: string } | null
+  durationMs: number
+  errors: string[]
+  refText: string | null
+  createdAt: string
+}
+
+export interface VisionHistoryResult {
+  total: number
+  items: VisionHistoryItem[]
+}
+
+/**
+ * 查询图纸视觉分析历史记录
+ */
+export function getVisionHistory(params?: {
+  limit?: number
+  offset?: number
+  fileName?: string
+  imageHash?: string
+  userId?: string
+}) {
+  return request.get<any, { code: number; data: VisionHistoryResult }>(
+    '/dwg/vision-history',
+    { params }
+  )
+}
+
+/**
+ * 查询单条历史记录详情
+ */
+export function getVisionHistoryDetail(id: string) {
+  return request.get<any, { code: number; data: VisionHistoryItem }>(
+    `/dwg/vision-history/${id}`
+  )
 }
