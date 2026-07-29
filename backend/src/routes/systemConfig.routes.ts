@@ -10,6 +10,7 @@ import {
   saveLlmProfiles,
   fetchProviderModels,
   getAiCallStats,
+  probeModelCapabilities,
 } from '../controllers/systemConfig.controller';
 import { OcrService } from '../services/file/ocr.service';
 
@@ -30,6 +31,9 @@ router.use(authenticate);
 
 // 测试 LLM 连接 - 仅管理员（必须在 /:key 之前注册）
 router.post('/test-llm', requireRole('ADMIN'), testLlmConnection);
+
+// 探测模型能力（上下文窗口/最大输出）- 仅管理员（必须在 /:key 之前注册）
+router.post('/probe-model-caps', requireRole('ADMIN'), probeModelCapabilities);
 
 // 发送 LLM 测试消息 - 仅管理员（必须在 /:key 之前注册）
 router.post('/test-llm-send', requireRole('ADMIN'), sendLlmTest);

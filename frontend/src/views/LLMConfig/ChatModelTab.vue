@@ -33,20 +33,37 @@
           </div>
         </el-form-item>
 
+        <div v-if="probedCaps?.probed" class="probe-banner">
+          <el-icon><CircleCheckFilled /></el-icon>
+          <span>
+            已自动探测模型能力：最大输出 {{ formatTokens(probedCaps.maxOutput) }} · 上下文窗口 {{ formatTokens(probedCaps.contextWindow) }}
+            <el-tag v-if="probedCaps.reasoning" size="small" type="warning" effect="plain" class="reasoning-tag">推理模型</el-tag>
+          </span>
+          <span class="probe-note">运行时以探测值为准，下方参数仅作探测失败时的兜底</span>
+        </div>
+        <div v-else-if="probeDone && config.providerId" class="probe-banner probe-miss">
+          <el-icon><CircleCloseFilled /></el-icon>
+          <span>该 Provider 未提供模型能力元数据，请手动填写下方参数</span>
+        </div>
+
         <div class="param-row">
           <el-form-item label="最大输出 Tokens">
             <el-input-number
               v-model="config.maxTokens"
               :min="1"
-              :max="100000"
+              :max="1000000"
               controls-position="right"
+              :disabled="probedCaps?.probed"
               @input="userTouchedMaxTokens = true"
             />
             <div class="form-tip">
-              单次回复长度上限
-              <span v-if="capDefaults.maxOutputTokens > 0" class="cap-hint">
-                · 模型库默认 {{ capDefaults.maxOutputTokens }}
-              </span>
+              <span v-if="probedCaps?.probed" class="cap-hint">自动探测，无需手动配置</span>
+              <template v-else>
+                单次回复长度上限（探测失败时的兜底值）
+                <span v-if="capDefaults.maxOutputTokens > 0" class="cap-hint">
+                  · 模型库默认 {{ capDefaults.maxOutputTokens }}
+                </span>
+              </template>
             </div>
           </el-form-item>
 
@@ -55,18 +72,20 @@
               <el-input-number
                 v-model="config.contextLength"
                 :min="4096"
-                :max="1048576"
+                :max="2097152"
                 :step="4096"
                 controls-position="right"
+                :disabled="probedCaps?.probed"
                 @input="userTouchedContextLength = true"
               />
               <span class="unit-label">字符</span>
             </div>
             <div class="form-tip">
-              <span v-if="capDefaults.contextWindowTokens > 0">
+              <span v-if="probedCaps?.probed" class="cap-hint">自动探测，无需手动配置</span>
+              <span v-else-if="capDefaults.contextWindowTokens > 0">
                 模型库 {{ (capDefaults.contextWindowTokens / 1000).toFixed(0) }}K tokens（已按 1.5 倍换算为字符）
               </span>
-              <span v-else>128K 模型填 200000</span>
+              <span v-else>探测失败时的兜底值，128K 模型填 200000</span>
             </div>
           </el-form-item>
 
@@ -131,8 +150,10 @@ import {
   saveSystemConfigApi,
   testLlmConnectionApi,
   getLlmProfilesApi,
+  probeModelCapsApi,
   type LlmProfile,
   type ModelCapabilities,
+  type ProbedModelCaps,
 } from '@/api/system'
 
 interface ChatModelConfig {
@@ -154,6 +175,9 @@ const userTouchedMaxTokens = ref(false)
 const userTouchedContextLength = ref(false)
 // 加载已完成（避免初始回填被误判为用户修改）
 const configLoaded = ref(false)
+// 后端自动探测的模型能力（探测成功时运行时以此为准，手动参数仅作兜底）
+const probedCaps = ref<ProbedModelCaps | null>(null)
+const probeDone = ref(false)
 
 const tempMarks = { 0: '0', 0.5: '0.5', 1: '1' }
 
@@ -218,6 +242,39 @@ function formatCapSummary(caps: ModelCapabilities): string {
   if (caps.contextWindowTokens >= 1000) parts.push(`${caps.contextWindowTokens / 1000}K`)
   return parts.join(' · ') || '基础'
 }
+
+function formatTokens(n: number): string {
+  if (n >= 1000) return `${Math.round(n / 1000)}K tokens`
+  return `${n} tokens`
+}
+
+/** 探测模型能力并回填配置（探测成功时同步写入配置字段，保证旧版读取路径也拿到正确值） */
+async function probeCaps() {
+  probedCaps.value = null
+  probeDone.value = false
+  if (!config.providerId) return
+  try {
+    const { data } = await probeModelCapsApi(config.providerId)
+    probedCaps.value = data
+    if (data?.probed) {
+      if (data.maxOutput > 0) config.maxTokens = data.maxOutput
+      // 配置字段单位为字符，按 1.5 倍换算
+      if (data.contextWindow > 0) config.contextLength = Math.round(data.contextWindow * 1.5)
+    }
+  } catch {
+    probedCaps.value = null
+  } finally {
+    probeDone.value = true
+  }
+}
+
+// 切换 Provider 时自动探测
+watch(
+  () => config.providerId,
+  () => {
+    if (configLoaded.value) probeCaps()
+  }
+)
 
 const handleTestConnection = async () => {
   if (!config.providerId) {
@@ -330,8 +387,10 @@ onMounted(async () => {
     }
     originalConfig.value = JSON.stringify(config)
     configLoaded.value = true
-    // 首次加载若该 Provider 无已保存值，主动触发一次填充
-    if (config.providerId && capDefaults.value) {
+    // 自动探测模型能力（探测成功会自动回填 maxTokens/contextLength）
+    await probeCaps()
+    // 探测失败时降级：若该 Provider 无已保存值，用模型库预置值填充
+    if (!probedCaps.value?.probed && config.providerId && capDefaults.value) {
       const caps = capDefaults.value
       if (!userTouchedMaxTokens.value && caps.maxOutputTokens > 0) {
         config.maxTokens = caps.maxOutputTokens
@@ -390,6 +449,35 @@ defineExpose({
   font-size: 12px;
   color: #94a3b8;
   flex-shrink: 0;
+}
+
+.probe-banner {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  margin-bottom: 12px;
+  font-size: 13px;
+  color: #15803d;
+  background: #f0fdf4;
+  border: 1px solid #bbf7d0;
+  border-radius: 6px;
+}
+
+.probe-banner.probe-miss {
+  color: #b45309;
+  background: #fffbeb;
+  border-color: #fde68a;
+}
+
+.probe-note {
+  margin-left: auto;
+  font-size: 12px;
+  color: #64748b;
+}
+
+.reasoning-tag {
+  margin-left: 6px;
 }
 
 .param-row {

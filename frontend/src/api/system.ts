@@ -65,6 +65,20 @@ export function fetchProviderModelsApi(data: { apiBase: string; apiKey?: string 
   return request.post<string[]>('/system-config/llm-profiles/fetch-models', data)
 }
 
+/** 模型能力探测结果（后端从 /models 接口自动读取） */
+export interface ProbedModelCaps {
+  probed: boolean
+  model: string
+  contextWindow: number
+  maxOutput: number
+  reasoning: boolean
+}
+
+// 探测模型能力（上下文窗口/最大输出/是否推理模型）
+export function probeModelCapsApi(providerId: string) {
+  return request.post<ProbedModelCaps>('/system-config/probe-model-caps', { providerId })
+}
+
 // ==================== 可观测性 P2：AI 调用看板 ====================
 
 export interface AiCallModelStat {
@@ -276,3 +290,31 @@ export interface RuleRegistryData {
 export function getRuleRegistryApi() {
   return request.get<RuleRegistryData>('/system/rule-registry')
 }
+
+// ===== 功能开关 =====
+
+export interface FeatureFlag {
+  key: string
+  label: string
+  enabled: boolean
+  description: string | null
+  category: string
+  updatedAt: string
+  updatedBy: string | null
+}
+
+/** 获取启用的功能 key 集合（已认证用户可读，用于前端入口过滤） */
+export function getEnabledFeatureFlagsApi() {
+  return request.get<string[]>('/system/feature-flags/enabled')
+}
+
+/** 获取所有功能开关（ADMIN only，管理页用） */
+export function getFeatureFlagsApi() {
+  return request.get<FeatureFlag[]>('/system/feature-flags')
+}
+
+/** 更新功能开关（ADMIN only） */
+export function updateFeatureFlagApi(key: string, enabled: boolean) {
+  return request.put(`/system/feature-flags/${key}`, { enabled })
+}
+

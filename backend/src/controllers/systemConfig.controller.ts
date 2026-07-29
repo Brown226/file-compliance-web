@@ -3,6 +3,7 @@ import { AuthRequest } from '../middlewares/auth.middleware';
 import prisma from '../config/db';
 import { success, error } from '../utils/response';
 import { invalidateConfigCache } from '../utils/system-config';
+import { LlmService } from '../services/llm/llm.service';
 import axios from 'axios';
 
 /**
@@ -90,6 +91,44 @@ export const saveSystemConfig = async (req: AuthRequest, res: Response): Promise
     } else {
       error(res, `服务器内部错误: ${err.message || '未知错误'}`, 500);
     }
+  }
+};
+
+/**
+ * 探测模型能力（上下文窗口/最大输出/是否推理模型）
+ *
+ * 从 Provider 的 /models 接口自动读取模型元数据，供前端回填与展示。
+ * 探测不到时返回 probed=false，前端降级为手动填写。
+ */
+export const probeModelCapabilities = async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const { providerId } = req.body;
+    if (!providerId) {
+      error(res, '请提供 providerId', 400);
+      return;
+    }
+    const profilesCfg = await prisma.systemConfig.findUnique({ where: { key: 'llm_profiles' } });
+    const raw = profilesCfg?.value
+      ? (typeof profilesCfg.value === 'string' ? JSON.parse(profilesCfg.value) : profilesCfg.value)
+      : [];
+    const profiles = Array.isArray(raw) ? raw : [];
+    const profile = profiles.find((p: any) => p.id === providerId);
+    if (!profile || !profile.apiBase || !profile.model) {
+      error(res, `未找到 Provider 或 Provider 缺少 apiBase/model: ${providerId}`, 400);
+      return;
+    }
+
+    const caps = await LlmService.probeModelCapabilities(profile.apiBase, profile.apiKey || '', profile.model);
+    success(res, {
+      probed: !!caps,
+      model: profile.model,
+      contextWindow: caps?.contextWindow ?? 0,
+      maxOutput: caps?.maxOutput ?? 0,
+      reasoning: caps?.reasoning ?? false,
+    });
+  } catch (err: any) {
+    console.error('Probe Model Capabilities Error:', err);
+    error(res, err.message || '探测失败', 500);
   }
 };
 
