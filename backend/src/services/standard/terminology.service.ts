@@ -257,15 +257,20 @@ export class TerminologyService {
 
   /**
    * 从错别字检查结果中过滤掉专业术语
+   *
+   * P1-H: 增强模糊匹配——除了精确匹配 originalText，还检查 originalText 是否
+   * **包含**某条术语（≥2 字）。LLM 输出的 originalText 可能有轻微偏差
+   * （多/少标点、含上下文字），精确匹配会漏过这些误报。
    */
   static filterTerminologyIssues(_text: string, issues: any[]): any[] {
     if (!issues || issues.length === 0) return issues;
     if (!initialized) return issues;
 
     return issues.filter((issue) => {
-      const orig = issue.originalText || '';
-      const suggested = issue.suggestedText || '';
+      const orig = (issue.originalText || '').replace(/\s+/g, '');
+      const suggested = (issue.suggestedText || '').replace(/\s+/g, '');
 
+      // 精确匹配
       if (TerminologyService.isInTerminology(orig)) {
         TerminologyService.filteredLog.push({ term: orig, issueType: issue.issueType || 'UNKNOWN', timestamp: Date.now() });
         return false;
@@ -274,6 +279,17 @@ export class TerminologyService {
       if (TerminologyService.isInTerminology(suggested) && TerminologyService.isInTerminology(orig)) {
         TerminologyService.filteredLog.push({ term: `${orig} → ${suggested}`, issueType: issue.issueType || 'UNKNOWN', timestamp: Date.now() });
         return false;
+      }
+
+      // P1-H: 模糊匹配——originalText 包含某条术语（≥2 字）时也过滤
+      // 仅对 TYPO 类型生效（错别字场景），避免误过滤 FLUENCY/CONSISTENCY 的合法问题
+      if (issue.issueType === 'TYPO' && orig.length >= 2) {
+        for (const term of termLookupSet) {
+          if (term.length >= 2 && orig.includes(term)) {
+            TerminologyService.filteredLog.push({ term: `${orig} (含术语"${term}")`, issueType: issue.issueType || 'UNKNOWN', timestamp: Date.now() });
+            return false;
+          }
+        }
       }
 
       return true;

@@ -18,7 +18,8 @@
 
 import { LlmService, ReviewIssue, TextChunk } from '../llm/llm.service';
 import { PipelineContext, PipelineReviewConfig } from '../review-pipeline/types';
-import { PromptLoader } from '../prompts';
+import { PromptLoader, consistencyDimensionsBlock } from '../prompts';
+import { parallelLimit } from '../../utils/parallel';
 
 // ============================================================
 // 类型定义
@@ -32,6 +33,8 @@ interface ExtractedParam {
   chunkIndex: number;
   /** 该分片在原文中的起始字符偏移（0-based） */
   chunkStartIndex: number;
+  /** 原文上下文指纹（前20字+条目+后20字），LLM 抽取阶段返回，用于精确定位 */
+  fingerprint?: string;
 }
 
 /** LLM 抽取的编码条目 */
@@ -41,6 +44,7 @@ interface ExtractedCode {
   lineHint: number;
   chunkIndex: number;
   chunkStartIndex: number;
+  fingerprint?: string;
 }
 
 /** LLM 抽取的引用条目 */
@@ -49,6 +53,7 @@ interface ExtractedRef {
   lineHint: number;
   chunkIndex: number;
   chunkStartIndex: number;
+  fingerprint?: string;
 }
 
 /** LLM 抽取的文档元信息 */
@@ -58,6 +63,7 @@ interface ExtractedMeta {
   lineHint: number;
   chunkIndex: number;
   chunkStartIndex: number;
+  fingerprint?: string;
 }
 
 /** LLM 抽取的事实断言 */
@@ -67,6 +73,7 @@ interface ExtractedFact {
   lineHint: number;
   chunkIndex: number;
   chunkStartIndex: number;
+  fingerprint?: string;
 }
 
 /** 单个分片的抽取结果 */
@@ -80,11 +87,11 @@ interface ChunkSummary {
 
 /** LLM 返回的原始 JSON 结构 */
 interface RawExtractResult {
-  params?: Array<{ name?: string; value?: string; lineHint?: number }>;
-  codes?: Array<{ code?: string; context?: string; lineHint?: number }>;
-  refs?: Array<{ ref?: string; lineHint?: number }>;
-  meta?: Array<{ key?: string; value?: string; lineHint?: number }>;
-  facts?: Array<{ subject?: string; claim?: string; lineHint?: number }>;
+  params?: Array<{ name?: string; value?: string; lineHint?: number; fingerprint?: string }>;
+  codes?: Array<{ code?: string; context?: string; lineHint?: number; fingerprint?: string }>;
+  refs?: Array<{ ref?: string; lineHint?: number; fingerprint?: string }>;
+  meta?: Array<{ key?: string; value?: string; lineHint?: number; fingerprint?: string }>;
+  facts?: Array<{ subject?: string; claim?: string; lineHint?: number; fingerprint?: string }>;
 }
 
 /** 上下文预算 */
@@ -152,19 +159,24 @@ export class StructuredConsistencyService {
     const chunks = LlmService.splitText(text, budget.extractChunkSize, true) as TextChunk[];
     console.log(`[StructConsist] 文本分为 ${chunks.length} 个分片`);
 
-    const summaries: ChunkSummary[] = [];
-    for (const chunk of chunks) {
-      try {
-        const summary = await this.extractFromChunk(chunk, chunks.length, ctx, config);
-        summaries.push(summary);
-        await ctx.onChunkProgress?.(
-          chunk.text.length, [], chunk.chunkIndex, chunks.length, 'struct-extract',
-        );
-      } catch (e: any) {
-        console.warn(`[StructConsist] 分片 ${chunk.chunkIndex + 1} 抽取失败:`, e.message);
-        summaries.push({ params: [], codes: [], refs: [], meta: [], facts: [] });
-      }
-    }
+    // Phase A 并行抽取：并发度 3（平衡速度与 LLM 速率限制）
+    // parallelLimit 通过预分配数组 + 索引赋值，严格保持与 chunks 一致的顺序
+    const summaries = await parallelLimit(
+      chunks,
+      3,
+      async (chunk) => {
+        try {
+          const summary = await this.extractFromChunk(chunk, chunks.length, ctx, config);
+          await ctx.onChunkProgress?.(
+            chunk.text.length, [], chunk.chunkIndex, chunks.length, 'struct-extract',
+          );
+          return summary;
+        } catch (e: any) {
+          console.warn(`[StructConsist] 分片 ${chunk.chunkIndex + 1} 抽取失败:`, e.message);
+          return { params: [], codes: [], refs: [], meta: [], facts: [] };
+        }
+      },
+    );
 
     // ---- Phase B: Merge — 汇总去重 ----
     const merged = this.mergeSummaries(summaries);
@@ -224,8 +236,14 @@ export class StructuredConsistencyService {
     } else {
       try {
         const llmConfig = await LlmService.getLlmConfig();
-        const maxTokens = llmConfig?.maxTokens || 8192;
-        contextWindow = maxTokens * 3;
+        // 优先用自动探测的模型上下文窗口，探测不到时降级为 maxTokens*3 估算；
+        // 探测值钳制到 96K，避免超长窗口模型（512K+）产生巨型比对 prompt 拖垮耗时
+        if (llmConfig?.modelContextWindow && llmConfig.modelContextWindow > 0) {
+          contextWindow = Math.min(llmConfig.modelContextWindow, 96000);
+        } else {
+          const maxTokens = llmConfig?.maxTokens || 8192;
+          contextWindow = maxTokens * 3;
+        }
       } catch {
         contextWindow = 8192 * 3;
       }
@@ -276,6 +294,9 @@ export class StructuredConsistencyService {
       systemPrompt,
       maxTokens: 1024,
       timeout: config.llmTimeout,
+      taskId: _ctx.taskId,
+      mode: _ctx.reviewMode,
+      traceId: _ctx.traceId,
     });
 
     return this.parseExtractResult(raw, chunk);
@@ -310,6 +331,7 @@ export class StructuredConsistencyService {
           lineHint: typeof p.lineHint === 'number' ? p.lineHint : 0,
           chunkIndex: chunk.chunkIndex,
           chunkStartIndex: chunk.startIndex,
+          fingerprint: p.fingerprint?.trim() || undefined,
         }));
 
       const codes: ExtractedCode[] = (parsed.codes || [])
@@ -320,6 +342,7 @@ export class StructuredConsistencyService {
           lineHint: typeof c.lineHint === 'number' ? c.lineHint : 0,
           chunkIndex: chunk.chunkIndex,
           chunkStartIndex: chunk.startIndex,
+          fingerprint: c.fingerprint?.trim() || undefined,
         }));
 
       const refs: ExtractedRef[] = (parsed.refs || [])
@@ -329,6 +352,7 @@ export class StructuredConsistencyService {
           lineHint: typeof r.lineHint === 'number' ? r.lineHint : 0,
           chunkIndex: chunk.chunkIndex,
           chunkStartIndex: chunk.startIndex,
+          fingerprint: r.fingerprint?.trim() || undefined,
         }));
 
       const meta: ExtractedMeta[] = (parsed.meta || [])
@@ -339,6 +363,7 @@ export class StructuredConsistencyService {
           lineHint: typeof m.lineHint === 'number' ? m.lineHint : 0,
           chunkIndex: chunk.chunkIndex,
           chunkStartIndex: chunk.startIndex,
+          fingerprint: m.fingerprint?.trim() || undefined,
         }));
 
       const facts: ExtractedFact[] = (parsed.facts || [])
@@ -349,6 +374,7 @@ export class StructuredConsistencyService {
           lineHint: typeof f.lineHint === 'number' ? f.lineHint : 0,
           chunkIndex: chunk.chunkIndex,
           chunkStartIndex: chunk.startIndex,
+          fingerprint: f.fingerprint?.trim() || undefined,
         }));
 
       return { params, codes, refs, meta, facts };
@@ -511,17 +537,30 @@ export class StructuredConsistencyService {
     _ctx: PipelineContext,
     config: PipelineReviewConfig,
   ): Promise<ReviewIssue[]> {
+    const fallback = this.fallbackCompareSystem();
     const systemPrompt = await PromptLoader.resolve(
       'consistency',
       'system',
       'compare',
-      this.fallbackCompareSystem(),
+      fallback,
     );
+
+    // 检测是否降级到 fallback：DB 不可达且 registry 未命中时，
+    // C5/C6 维度依赖此兜底，需告警以便排查（registry 正常时不会触发）
+    if (systemPrompt === fallback) {
+      console.warn(
+        `[StructConsist] PromptLoader 加载失败，降级到 fallback，C5/C6 维度可能受影响。` +
+        `taskId=${_ctx.taskId} file=${_ctx.fileName}`,
+      );
+    }
 
     const raw = await LlmService.chat(formattedSummary, {
       systemPrompt,
       maxTokens: 2048,
       timeout: config.llmTimeout,
+      taskId: _ctx.taskId,
+      mode: _ctx.reviewMode,
+      traceId: _ctx.traceId,
     });
 
     return this.parseCompareResult(raw);
@@ -608,6 +647,7 @@ export class StructuredConsistencyService {
 
       if (matches.length > 0) {
         // ---- Step 2: 在匹配条目所在分片的原文范围内精确搜索 ----
+        // 优先级：fingerprint 精确匹配 > originalText 多级匹配 > lineHint 估算
         for (const match of matches) {
           const range = chunkRanges.get(match.chunkIndex);
           if (!range) continue;
@@ -615,6 +655,31 @@ export class StructuredConsistencyService {
           const searchEnd = Math.min(range.end + 3000, fullText.length);
           const chunkSubstring = fullText.substring(range.start, searchEnd);
 
+          // Level 0: 指纹精确匹配（fingerprint = 条目所在原文片段的前20字+条目+后20字）
+          // LLM 抽取阶段返回的连续原文子串，indexOf 命中即可精确定位
+          if (match.fingerprint) {
+            const fpIdx = chunkSubstring.indexOf(match.fingerprint);
+            if (fpIdx >= 0) {
+              const absStart = range.start + fpIdx;
+              const absEnd = absStart + match.fingerprint.length;
+              locateMeta = {
+                version: 2,
+                mode: 'text' as const,
+                confidence: 'exact' as const,
+                absolute: { start: absStart, end: absEnd },
+                quote: { text: match.fingerprint },
+                chunk: {
+                  index: match.chunkIndex,
+                  start: range.start,
+                  end: searchEnd,
+                  total: chunkRanges.size,
+                },
+              };
+              break; // 指纹精确命中，无需继续
+            }
+          }
+
+          // 降级：用 originalText 在分片子串中多级匹配（exact/trimmed/normalized）
           const located = this.preciseSearch(searchText, chunkSubstring, range.start, fullText);
           if (located) {
             locateMeta = {
@@ -763,8 +828,8 @@ export class StructuredConsistencyService {
   private static findAllInSummaries(
     searchText: string,
     summaries: ChunkSummary[],
-  ): Array<{ chunkIndex: number; lineHint: number; chunkStartIndex: number }> {
-    const results: Array<{ chunkIndex: number; lineHint: number; chunkStartIndex: number }> = [];
+  ): Array<{ chunkIndex: number; lineHint: number; chunkStartIndex: number; fingerprint?: string }> {
+    const results: Array<{ chunkIndex: number; lineHint: number; chunkStartIndex: number; fingerprint?: string }> = [];
     const normalized = searchText.replace(/\s+/g, '');
 
     for (const s of summaries) {
@@ -774,6 +839,7 @@ export class StructuredConsistencyService {
             chunkIndex: p.chunkIndex,
             lineHint: p.lineHint,
             chunkStartIndex: p.chunkStartIndex,
+            fingerprint: p.fingerprint,
           });
         }
       }
@@ -783,6 +849,7 @@ export class StructuredConsistencyService {
             chunkIndex: c.chunkIndex,
             lineHint: c.lineHint,
             chunkStartIndex: c.chunkStartIndex,
+            fingerprint: c.fingerprint,
           });
         }
       }
@@ -792,6 +859,7 @@ export class StructuredConsistencyService {
             chunkIndex: r.chunkIndex,
             lineHint: r.lineHint,
             chunkStartIndex: r.chunkStartIndex,
+            fingerprint: r.fingerprint,
           });
         }
       }
@@ -860,6 +928,26 @@ export class StructuredConsistencyService {
   }
 
   private static fallbackCompareSystem(): string {
-    return '你是文档一致性审查专家。按C1-C4维度检查一致性问题。输出JSON数组：[{"issueType":"CONSISTENCY","originalText":"","suggestedText":"","description":"","ruleCode":"C1","standardRef":null,"plain_language":""}]。未发现问题输出[]。';
+    // 与 registry.ts 的 consistency_compare_system 模板对齐：覆盖 C1-C6 全部六维度
+    // PromptLoader 加载失败（DB 不可达且 registry 未命中）时使用此兜底
+    return `你是文档一致性审查专家。按 C1-C6 六项维度检查一致性问题。
+
+## 审查维度
+${consistencyDimensionsBlock()}
+
+## 重要规则 — 关于 suggestedText
+- 当发现不一致时，suggestedText 填写"存在不一致：值A(位置1) vs 值B(位置2)"，**不要猜测哪个值是正确的**
+
+## 输出要求
+严格按照 JSON 数组格式输出，每个问题包含:
+- issueType: 统一填 "CONSISTENCY"
+- originalText: 问题涉及的参数名/编码/引用/元信息/事实断言文本
+- suggestedText: 列出各位置的值（如"不一致：值A(位置1) vs 值B(位置2)"），不猜测正确答案
+- description: 描述不一致的具体情况（指出哪些位置、哪些值不一致）
+- ruleCode: 填 "C1" / "C2" / "C3" / "C4" / "C5" / "C6"
+- standardRef: null
+- plain_language: 用通俗语言解释这个问题
+
+如果未发现不一致，输出空数组 []。只输出 JSON，不要解释。`;
   }
 }

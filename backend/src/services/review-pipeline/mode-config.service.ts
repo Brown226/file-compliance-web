@@ -9,6 +9,13 @@ import { ReviewModeType } from './types';
 
 const CONFIG_KEY = 'pipeline_mode_capabilities';
 
+export interface ParamToleranceConfig {
+  /** 默认数值容差（相对差异阈值），未配置 byUnit 时使用 */
+  default: number;
+  /** 按参数单位差异化容差，key 为单位（如 'MPa'、'℃'），value 为相对差异阈值 */
+  byUnit?: Record<string, number>;
+}
+
 export interface ModeConfigOverride {
   enabled?: boolean;
   rules?: boolean;
@@ -16,6 +23,7 @@ export interface ModeConfigOverride {
   ai?: boolean;
   aiStrategy?: 'standard' | 'llmOnly' | 'refCompare' | 'contractReview' | 'multimodal' | 'decReview';
   crossFile?: boolean;
+  paramTolerance?: ParamToleranceConfig;
 }
 
 export interface ModeCapabilitiesConfig {
@@ -30,11 +38,12 @@ const DEFAULT_MODE_CONFIGS: Record<ReviewModeType, {
   ai: boolean;
   aiStrategy: 'standard' | 'llmOnly' | 'refCompare' | 'contractReview' | 'multimodal' | 'decReview';
   crossFile: boolean;
+  paramTolerance?: ParamToleranceConfig;
 }> = {
   LIBRARY_REVIEW: { enabled: true, rules: false, standardRef: false, ai: true, aiStrategy: 'standard', crossFile: false },
   DOC_REVIEW:     { enabled: true, rules: false, standardRef: false, ai: true, aiStrategy: 'refCompare', crossFile: false },
   CONTRACT_REVIEW: { enabled: true, rules: false, standardRef: false, ai: true, aiStrategy: 'contractReview', crossFile: false },
-  CONSISTENCY:    { enabled: true, rules: false, standardRef: false, ai: true, aiStrategy: 'standard', crossFile: true },
+  CONSISTENCY:    { enabled: true, rules: true,  standardRef: false, ai: true, aiStrategy: 'standard', crossFile: true, paramTolerance: { default: 0.01, byUnit: { 'MPa': 0.005, '℃': 0.02 } } },
   TYPO_GRAMMAR:   { enabled: true, rules: false, standardRef: false, ai: true, aiStrategy: 'llmOnly', crossFile: false },
   RULE_ONLY:    { enabled: true, rules: true,  standardRef: false, ai: false, aiStrategy: 'standard', crossFile: false },
   SELF_CHECK:     { enabled: true, rules: false, standardRef: false, ai: false, aiStrategy: 'standard', crossFile: false },
@@ -49,6 +58,7 @@ export async function getModeCapabilitiesConfig(): Promise<Record<ReviewModeType
   ai: boolean;
   aiStrategy: 'standard' | 'llmOnly' | 'refCompare' | 'contractReview' | 'multimodal' | 'decReview';
   crossFile: boolean;
+  paramTolerance?: ParamToleranceConfig;
 }>> {
   // 以默认配置为基底
   const result: Record<string, any> = {};
@@ -73,6 +83,7 @@ export async function getModeCapabilitiesConfig(): Promise<Record<ReviewModeType
           if (cfg.ai !== undefined) result[mode].ai = cfg.ai;
           if (cfg.aiStrategy !== undefined) result[mode].aiStrategy = cfg.aiStrategy;
           if (cfg.crossFile !== undefined) result[mode].crossFile = cfg.crossFile;
+          if (cfg.paramTolerance !== undefined) result[mode].paramTolerance = cfg.paramTolerance;
         }
       }
     }
@@ -100,6 +111,7 @@ export async function saveModeCapabilitiesConfig(config: Record<string, any>): P
       ai: c.ai,
       aiStrategy: c.aiStrategy,
       crossFile: c.crossFile,
+      paramTolerance: c.paramTolerance,
     };
   }
 

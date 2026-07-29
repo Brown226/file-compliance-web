@@ -14,7 +14,7 @@ export function checkNaming(ctx: FileContext, config?: any): RuleIssue[] {
   const allowedExt: string[] = config?.allowedExt || ['pdf', 'doc', 'docx', 'xls', 'xlsx', 'dwg', 'txt', 'ppt', 'pptx'];
   if (!allowedExt.includes(ctx.fileType.toLowerCase())) {
     issues.push({
-      issueType: 'CONSISTENCY', ruleCode: 'NAME_010', severity: 'error',
+      issueType: 'NAMING', ruleCode: 'NAME_010', severity: 'error',
       originalText: name, suggestedText: undefined,
       description: `不支持的文件类型: .${ctx.fileType}，允许: ${allowedExt.join(', ')}`,
     });
@@ -24,7 +24,7 @@ export function checkNaming(ctx: FileContext, config?: any): RuleIssue[] {
   // NAME_001: 包含中文字符
   if (/[\u4e00-\u9fff]/.test(nameWithoutExt)) {
     issues.push({
-      issueType: 'CONSISTENCY', ruleCode: 'NAME_001', severity: 'error',
+      issueType: 'NAMING', ruleCode: 'NAME_001', severity: 'error',
       originalText: name,
       suggestedText: nameWithoutExt.replace(/[\u4e00-\u9fff]+/g, '') + '.' + ctx.fileType,
       description: '文件名包含中文字符，应使用规范编码命名。',
@@ -34,7 +34,7 @@ export function checkNaming(ctx: FileContext, config?: any): RuleIssue[] {
   // NAME_002: 包含空格
   if (/\s/.test(nameWithoutExt)) {
     issues.push({
-      issueType: 'CONSISTENCY', ruleCode: 'NAME_002', severity: 'error',
+      issueType: 'NAMING', ruleCode: 'NAME_002', severity: 'error',
       originalText: name,
       suggestedText: name.replace(/\s+/g, '-'),
       description: '文件名包含空格，应使用连字符(-)替代或移除空格。',
@@ -44,7 +44,7 @@ export function checkNaming(ctx: FileContext, config?: any): RuleIssue[] {
   // NAME_003: 包含非法特殊字符（仅允许字母、数字、连字符、括号）
   if (/[!@#$%^&+=\[\]{}|\\:;"'<>,?/~`]/.test(nameWithoutExt)) {
     issues.push({
-      issueType: 'CONSISTENCY', ruleCode: 'NAME_003', severity: 'error',
+      issueType: 'NAMING', ruleCode: 'NAME_003', severity: 'error',
       originalText: name,
       description: '文件名包含非法特殊字符，仅保留字母、数字、连字符(-)和括号()。',
     });
@@ -73,27 +73,27 @@ export function checkNaming(ctx: FileContext, config?: any): RuleIssue[] {
         const seqMatch = nameWithoutExt.match(/^[A-Z]{2}\d{2}[A-Z]\d{2}[A-Z]{2}-[A-Z]{3}\d{2}-(\d+)\(/);
         if (seqMatch && seqMatch[1] !== '001' || (seqMatch && !/^\d{3}$/.test(seqMatch[1]))) {
           issues.push({
-            issueType: 'CONSISTENCY', ruleCode: 'NAME_008', severity: 'warning',
+            issueType: 'NAMING', ruleCode: 'NAME_008', severity: 'warning',
             originalText: seqMatch[1],
             suggestedText: seqMatch[1].padStart(3, '0'),
             description: `序号"${seqMatch[1]}"格式错误，应为3位数字(001-999)。`,
           });
         } else if (!projectCodeMatch) {
           issues.push({
-            issueType: 'CONSISTENCY', ruleCode: 'NAME_004', severity: 'warning',
+            issueType: 'NAMING', ruleCode: 'NAME_004', severity: 'warning',
             originalText: name,
             description: '项目编码格式错误。标准: 2字母+2数字+1字母+2数字+2字母，如 FJ24A00AC',
           });
         } else if (!systemCodeMatch) {
           issues.push({
-            issueType: 'CONSISTENCY', ruleCode: 'NAME_005', severity: 'warning',
+            issueType: 'NAMING', ruleCode: 'NAME_005', severity: 'warning',
             originalText: name,
             description: '系统编码格式错误。标准: 3字母+2数字，如 JPS02',
           });
         } else {
           // 项目编码和系统编码都对，但整体格式不匹配
           issues.push({
-            issueType: 'CONSISTENCY', ruleCode: 'NAME_006', severity: 'warning',
+            issueType: 'NAMING', ruleCode: 'NAME_006', severity: 'warning',
             originalText: name,
             description: '图纸类型标识或版本号格式不符合规范。标准格式: [项目编码]-[系统编码]-[类型标识]([版本号])，如 FJ24A00AC-JPS02-001(A)',
           });
@@ -112,7 +112,7 @@ export function checkNaming(ctx: FileContext, config?: any): RuleIssue[] {
       const matchesAny = docPatterns.some(p => p.test(nameWithoutExt));
       if (!matchesAny) {
         issues.push({
-          issueType: 'CONSISTENCY', ruleCode: 'NAME_007', severity: 'warning',
+          issueType: 'NAMING', ruleCode: 'NAME_007', severity: 'warning',
           originalText: name,
           description: '文档文件命名格式不符合规范。标准格式: [项目编码]-[系统编码][文件类型][序号]，如 FJ24A00AC-JPS01AJK001',
         });
@@ -124,7 +124,7 @@ export function checkNaming(ctx: FileContext, config?: any): RuleIssue[] {
   const versionMatch = nameWithoutExt.match(/\(([^)]+)\)/);
   if (versionMatch && !/^[A-Z]$/.test(versionMatch[1])) {
     issues.push({
-      issueType: 'CONSISTENCY', ruleCode: 'NAME_009', severity: 'warning',
+      issueType: 'NAMING', ruleCode: 'NAME_009', severity: 'warning',
       originalText: versionMatch[0],
       suggestedText: `(${versionMatch[1].toUpperCase().charAt(0)})`,
       description: `版本号"${versionMatch[1]}"格式错误，应为括号内单个大写字母，如(A)、(B)`,

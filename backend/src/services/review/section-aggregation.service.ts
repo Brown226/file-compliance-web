@@ -80,7 +80,7 @@ export class SectionAggregationService {
     }
 
     // 2. 阶段 A：LLM 提取所有文件中的系统描述实体
-    const allEntities = await this.extractSystemEntities(fileTexts);
+    const allEntities = await this.extractSystemEntities(fileTexts, taskId);
     if (allEntities.length < 2) {
       console.log('[SemanticAgg] 提取到的系统实体不足2，跳过');
       return 0;
@@ -91,7 +91,7 @@ export class SectionAggregationService {
     const groups = this.groupBySystemParam(allEntities);
 
     // 4. 阶段 B：对每组做语义比对，找出不一致
-    const inconsistencies = await this.findSemanticInconsistencies(groups);
+    const inconsistencies = await this.findSemanticInconsistencies(groups, taskId);
     if (inconsistencies.length === 0) {
       console.log('[SemanticAgg] 未发现语义不一致');
       return 0;
@@ -163,6 +163,7 @@ export class SectionAggregationService {
    */
   private static async extractSystemEntities(
     fileTexts: Array<{ fileId: string; fileName: string; text: string }>,
+    taskId?: string,
   ): Promise<SystemEntity[]> {
     const allEntities: SystemEntity[] = [];
 
@@ -171,7 +172,7 @@ export class SectionAggregationService {
     for (let i = 0; i < fileTexts.length; i += CONCURRENCY) {
       const batch = fileTexts.slice(i, i + CONCURRENCY);
       const batchResults = await Promise.allSettled(
-        batch.map((ft) => this.extractEntitiesFromFile(ft)),
+        batch.map((ft) => this.extractEntitiesFromFile(ft, taskId)),
       );
       for (const result of batchResults) {
         if (result.status === 'fulfilled') {
@@ -188,6 +189,7 @@ export class SectionAggregationService {
    */
   private static async extractEntitiesFromFile(
     file: { fileId: string; fileName: string; text: string },
+    taskId?: string,
   ): Promise<SystemEntity[]> {
     const prompt = `你是核电站技术文档审查助手。请从以下文档片段中提取"系统描述实体"。
 
@@ -218,6 +220,8 @@ ${file.text}
         temperature: 0,
         maxTokens: 4000,
         timeout: 60000,
+        taskId,
+        mode: 'semantic-aggregation',
       });
       const entities = this.parseLlmEntities(response, file.fileId, file.fileName);
       console.log(`[SemanticAgg] ${file.fileName}: 提取到 ${entities.length} 个实体`);
@@ -309,6 +313,7 @@ ${file.text}
    */
   private static async findSemanticInconsistencies(
     groups: Map<string, SystemEntity[]>,
+    taskId?: string,
   ): Promise<SemanticInconsistency[]> {
     const results: SemanticInconsistency[] = [];
 
@@ -323,7 +328,7 @@ ${file.text}
       if (this.allValuesNumericClose(entries)) continue;
 
       // LLM 语义判断
-      const reason = await this.judgeSemanticConsistency(systemName, paramName, entries);
+      const reason = await this.judgeSemanticConsistency(systemName, paramName, entries, taskId);
       if (reason) {
         results.push({ systemName, paramName, entries, reason });
       }
@@ -362,6 +367,7 @@ ${file.text}
     systemName: string,
     paramName: string,
     entries: SystemEntity[],
+    taskId?: string,
   ): Promise<string> {
     // 限制单次比对数量
     const limited = entries.slice(0, MAX_PAIRS_PER_LLM_CALL);
@@ -394,6 +400,8 @@ ${valuesList}
         temperature: 0,
         maxTokens: 200,
         timeout: 30000,
+        taskId,
+        mode: 'semantic-aggregation',
       });
       const trimmed = (response || '').trim();
       if (trimmed === 'CONSISTENT' || trimmed.includes('CONSISTENT')) {

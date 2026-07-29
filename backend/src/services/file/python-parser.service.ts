@@ -76,6 +76,11 @@ export interface ParseResult {
   };
   /** Markdown 格式的文档内容（markitdown 服务新增字段） */
   markdown?: string;
+  /**
+   * Task 10: 从表格中抽取的键值对（参数名=值），供一致性检查服务消费。
+   * 来源：MarkItDown 输出的 markdown 表格 / 增强解析器的 structure.tables / ocr-service 的 PP-Structure。
+   */
+  table_kv_pairs?: Array<{ key: string; value: string }>;
 }
 
 interface ParseResponse {

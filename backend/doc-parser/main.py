@@ -14,7 +14,7 @@ import logging
 import subprocess
 import tempfile
 from io import BytesIO
-from typing import Optional
+from typing import Any, Dict, List, Optional
 
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException, Query, Response
 from fastapi.middleware.cors import CORSMiddleware
@@ -124,6 +124,112 @@ def convert_doc_to_docx(content: bytes, filename: str) -> Optional[bytes]:
             return None
 
 
+def _parse_markdown_table_kv_pairs(markdown_text: str) -> List[Dict[str, str]]:
+    """
+    从 Markdown 文本中解析表格键值对。
+    仅处理二列表格（第一列=键，第二列=值），或更多列时把第一列作键、其余列拼接为值。
+    Markdown 表格语法示例：
+        | 参数名 | 值 |
+        |---|---|
+        | 设计温度 | 350°C |
+        | 设计压力 | 17.5MPa |
+    """
+    if not markdown_text:
+        return []
+
+    pairs: List[Dict[str, str]] = []
+    lines = markdown_text.split('\n')
+    i = 0
+    n = len(lines)
+    while i < n:
+        line = lines[i].strip()
+        # 找到表格起始行：以 | 开头且包含至少一个 |
+        if not line.startswith('|') or '|' not in line[1:]:
+            i += 1
+            continue
+
+        # 收集连续的表格行
+        table_lines: List[str] = []
+        while i < n and lines[i].strip().startswith('|'):
+            table_lines.append(lines[i].strip())
+            i += 1
+
+        if len(table_lines) < 2:
+            continue
+
+        # 解析每行为单元格列表
+        def parse_row(row_line: str) -> List[str]:
+            # 去掉首尾的 |，然后按 | 分隔
+            inner = row_line.strip()
+            if inner.startswith('|'):
+                inner = inner[1:]
+            if inner.endswith('|'):
+                inner = inner[:-1]
+            return [c.strip() for c in inner.split('|')]
+
+        rows = [parse_row(tl) for tl in table_lines]
+        # 第二行是分隔符行（|---|---|），跳过
+        if len(rows) >= 2 and all(re.fullmatch(r':?-{2,}:?', c or '') for c in rows[1]):
+            rows = [rows[0]] + rows[2:]
+
+        for row in rows:
+            if not row or len(row) < 2:
+                continue
+            key = (row[0] or '').strip()
+            if not key:
+                continue
+            if len(row) == 2:
+                value = (row[1] or '').strip()
+            else:
+                value = ' '.join((c or '').strip() for c in row[1:] if (c or '').strip())
+            if not value:
+                continue
+            pairs.append({'key': key, 'value': value})
+
+    return pairs
+
+
+def _extract_table_kv_from_structure_tables(tables: List[dict]) -> List[Dict[str, str]]:
+    """
+    从增强解析器的 structure.tables 中提取键值对。
+    tables: [{ page, rows: [[c1, c2, ...], ...], caption }]
+    """
+    pairs: List[Dict[str, str]] = []
+    if not tables:
+        return pairs
+    for table in tables:
+        rows = table.get('rows') or []
+        for row in rows:
+            if not row or len(row) < 2:
+                continue
+            key = (row[0] or '').strip() if isinstance(row[0], str) else ''
+            if not key:
+                continue
+            if len(row) == 2:
+                value = (row[1] or '').strip() if isinstance(row[1], str) else ''
+            else:
+                value = ' '.join(
+                    (c or '').strip() if isinstance(c, str) else ''
+                    for c in row[1:]
+                    if (c if isinstance(c, str) else '').strip()
+                )
+            if not value:
+                continue
+            pairs.append({'key': key, 'value': value})
+    return pairs
+
+
+def _enrich_result_table_kv(result: Optional[dict]) -> Optional[dict]:
+    """为解析结果补充 table_kv_pairs 字段（若已存在则不覆盖）。"""
+    if result is None:
+        return None
+    if 'table_kv_pairs' not in result:
+        structure = result.get('structure') or {}
+        tables = structure.get('tables') or []
+        result['table_kv_pairs'] = _extract_table_kv_from_structure_tables(tables)
+    return result
+
+
 def _parse_with_markitdown(content: bytes, ext: str, filename: str) -> Optional[dict]:
     """
     使用 MarkItDown 统一引擎解析文档，返回与现有格式兼容的结构。
@@ -162,6 +268,11 @@ def _parse_with_markitdown(content: bytes, ext: str, filename: str) -> Optional[
                 headers.append({'text': stripped.lstrip('#').strip(), 'level': level, 'line': i})
             paragraphs.append({'text': stripped, 'style': 'Heading' if stripped.startswith('#') else 'Normal', 'page': 0})
 
+        # Task 10: 从 markdown 表格中抽取键值对，供一致性检查服务消费
+        table_kv_pairs = _parse_markdown_table_kv_pairs(markdown_text)
+        if table_kv_pairs:
+            logger.info(f"MarkItDown 表格 KV 抽取: {filename}, {len(table_kv_pairs)} 对")
+
         return {
             'text': markdown_text,
             'pages': [markdown_text],
@@ -179,6 +290,7 @@ def _parse_with_markitdown(content: bytes, ext: str, filename: str) -> Optional[
                 'dimensions': [],
             },
             'markdown': markdown_text,
+            'table_kv_pairs': table_kv_pairs,
         }
     except ImportError:
         logger.warning("MarkItDown 未安装，跳过")
@@ -217,7 +329,7 @@ def _parse_with_enhanced(content: bytes, ext: str, filename: str, vision_config:
             from pdf_enhanced import enhanced_pdf_parse
             result = enhanced_pdf_parse(content, filename)
             if result:
-                return result
+                return _enrich_result_table_kv(result)
         except Exception as e:
             logger.warning(f"PDF 增强解析失败: {e}")
 
@@ -274,6 +386,7 @@ def _parse_with_enhanced(content: bytes, ext: str, filename: str, vision_config:
                     'dimensions': [],
                 },
                 'markdown': ocr_text,
+                'table_kv_pairs': [],
             }
 
     elif ext == ".docx":
@@ -281,7 +394,7 @@ def _parse_with_enhanced(content: bytes, ext: str, filename: str, vision_config:
             from docx_enhanced import enhanced_docx_parse
             result = enhanced_docx_parse(content, filename)
             if result:
-                return result
+                return _enrich_result_table_kv(result)
         except Exception as e:
             logger.warning(f"DOCX 增强解析失败: {e}")
 
@@ -290,7 +403,7 @@ def _parse_with_enhanced(content: bytes, ext: str, filename: str, vision_config:
             from xlsx_enhanced import enhanced_xlsx_parse
             result = enhanced_xlsx_parse(content, filename)
             if result:
-                return result
+                return _enrich_result_table_kv(result)
         except Exception as e:
             logger.warning(f"XLSX 增强解析失败: {e}")
             raise HTTPException(status_code=500, detail=f"XLSX 文件解析失败: {filename}。{e}")
@@ -300,7 +413,7 @@ def _parse_with_enhanced(content: bytes, ext: str, filename: str, vision_config:
             from pptx_enhanced import enhanced_pptx_parse
             result = enhanced_pptx_parse(content, filename)
             if result:
-                return result
+                return _enrich_result_table_kv(result)
         except Exception as e:
             logger.warning(f"PPTX 增强解析失败: {e}")
 

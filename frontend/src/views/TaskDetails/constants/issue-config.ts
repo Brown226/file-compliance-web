@@ -5,6 +5,7 @@ export const ISSUE_TYPE_LABELS: Record<IssueType, string> = {
   CONSISTENCY: '一致性',
   COMPLETENESS: '完整性',
   TYPO: '文本错误',
+  NAMING: '命名',
 }
 
 export const ISSUE_TYPE_TAG_TYPES: Record<IssueType, any> = {
@@ -12,6 +13,7 @@ export const ISSUE_TYPE_TAG_TYPES: Record<IssueType, any> = {
   CONSISTENCY: 'info',
   COMPLETENESS: 'warning',
   TYPO: 'warning',
+  NAMING: 'warning',
 }
 
 export const SEVERITY_LABELS: Record<Severity, string> = {
@@ -31,6 +33,7 @@ export const ALL_CATEGORIES = [
   { value: 'CONSISTENCY', label: '一致性' },
   { value: 'COMPLETENESS', label: '完整性' },
   { value: 'TYPO', label: '文本错误' },
+  { value: 'NAMING', label: '命名' },
 ]
 
 export const DWG_RULE_TYPE_OPTIONS = [

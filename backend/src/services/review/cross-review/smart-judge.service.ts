@@ -20,7 +20,7 @@ export class SmartJudgeService {
     for (let i = 0; i < issues.length; i += BATCH_SIZE) {
       const batch = issues.slice(i, i + BATCH_SIZE);
       try {
-        const judged = await this.judgeBatch(batch);
+        const judged = await this.judgeBatch(batch, _ctx);
         scored.push(...judged);
       } catch (e) {
         // LLM 失败时保留原始结果
@@ -35,7 +35,7 @@ export class SmartJudgeService {
     return filtered;
   }
 
-  private static async judgeBatch(issues: ReviewIssue[]): Promise<ReviewIssue[]> {
+  private static async judgeBatch(issues: ReviewIssue[], ctx?: PipelineContext): Promise<ReviewIssue[]> {
     const items = issues.map((i, idx) => ({
       index: idx,
       issueType: i.issueType,
@@ -60,6 +60,8 @@ ${JSON.stringify(items, null, 2)}
       systemPrompt: '你是工程文件审查的智能判标专家。只输出 JSON，不要输出其他文字。',
       temperature: 0.1,
       timeout: 60,
+      taskId: ctx?.taskId,
+      mode: 'smart-judge',
     });
 
     // 解析 LLM 返回的置信度

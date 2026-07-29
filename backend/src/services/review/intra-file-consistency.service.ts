@@ -8,6 +8,8 @@
  * 3. 术语一致性：同一概念是否使用了统一的术语
  *
  * 规则代码: INTRA_CONSIST_001（文件内参数值不一致）
+ *
+ * Task 10: 新增从 markdown 表格中抽取键值对，与正则抽取的参数合并后参与一致性比对。
  */
 
 import prisma from '../../config/db';
@@ -24,6 +26,61 @@ interface ParamEntry {
 interface Inconsistency {
   paramName: string;
   entries: Array<{ value: string; lineNumber: number; context: string }>;
+}
+
+/**
+ * Task 10: 从 markdown 文本中抽取表格键值对（参数名=值）。
+ * 仅处理 markdown 表格语法 `| key | value |`，二列表格第一列为键、第二列为值；
+ * 多列表格第一列为键、其余列用空格拼接为值。
+ *
+ * 与 doc-parser 侧的 _parse_markdown_table_kv_pairs 等价，用于在不修改对外接口签名的前提下
+ * 让一致性服务能消费表格中的参数（extractedText 已包含 markdown 表格语法）。
+ */
+function extractTableKvPairsFromMarkdown(text: string): Array<{ key: string; value: string; line: number }> {
+  if (!text) return [];
+  const pairs: Array<{ key: string; value: string; line: number }> = [];
+  const lines = text.split('\n');
+  let i = 0;
+  while (i < lines.length) {
+    const line = lines[i];
+    const trimmed = line.trim();
+    if (!trimmed.startsWith('|') || trimmed.indexOf('|', 1) === -1) {
+      i++;
+      continue;
+    }
+    const startLine = i + 1;
+    const tableLines: string[] = [];
+    while (i < lines.length && lines[i].trim().startsWith('|')) {
+      tableLines.push(lines[i].trim());
+      i++;
+    }
+    if (tableLines.length < 2) continue;
+
+    const parseRow = (rowLine: string): string[] => {
+      let inner = rowLine.trim();
+      if (inner.startsWith('|')) inner = inner.slice(1);
+      if (inner.endsWith('|')) inner = inner.slice(0, -1);
+      return inner.split('|').map(c => c.trim());
+    };
+
+    const rows = tableLines.map(parseRow);
+    // 跳过分隔符行（|---|---|）
+    if (rows.length >= 2 && rows[1].every(c => /^:?-{2,}:?$/.test(c || ''))) {
+      rows.splice(1, 1);
+    }
+
+    for (const row of rows) {
+      if (!row || row.length < 2) continue;
+      const key = (row[0] || '').trim();
+      if (!key) continue;
+      const value = row.length === 2
+        ? (row[1] || '').trim()
+        : row.slice(1).map(c => (c || '').trim()).filter(Boolean).join(' ');
+      if (!value) continue;
+      pairs.push({ key, value, line: startLine });
+    }
+  }
+  return pairs;
 }
 
 export class IntraFileConsistencyService {
@@ -56,6 +113,21 @@ export class IntraFileConsistencyService {
 
     // 2. 从各段落抽取参数
     const allParams = this.extractParametersFromSections(sections);
+
+    // Task 10: 从 markdown 表格中抽取键值对，合并到参数列表
+    const tableKvPairs = extractTableKvPairsFromMarkdown(extractedText);
+    for (const kv of tableKvPairs) {
+      allParams.push({
+        paramName: kv.key,
+        value: kv.value,
+        lineNumber: kv.line,
+        context: `| ${kv.key} | ${kv.value} |`,
+      });
+    }
+    if (tableKvPairs.length > 0) {
+      console.log(`[IntraConsist] ${fileName}: 表格 KV 抽取到 ${tableKvPairs.length} 对`);
+    }
+
     if (allParams.length === 0) {
       console.log(`[IntraConsist] ${fileName}: 未抽取到参数`);
       return 0;

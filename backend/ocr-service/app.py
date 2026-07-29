@@ -5,8 +5,10 @@ import base64
 import io
 import json
 import os
+import re
 import tempfile
 import traceback
+from html.parser import HTMLParser
 from typing import Any, Dict, List, Optional
 from urllib import error, request
 
@@ -437,6 +439,176 @@ def _do_layout(file_bytes: bytes, file_type: str | None, file_name: str | None) 
         return result
     finally:
         os.unlink(temp_path)
+
+
+# ==================== Table KV Extraction (PP-Structure) ====================
+
+class _HtmlTableParser(HTMLParser):
+    """从 HTML 表格中提取行数据（每行是一个单元格文本列表）。"""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.rows: List[List[str]] = []
+        self._cur_row: Optional[List[str]] = None
+        self._cur_cell: Optional[List[str]] = None
+        # 标签栈用于过滤 <td>/<th> 内部的嵌套标签（如 <span>、<p>）
+        self._in_cell = False
+
+    def handle_starttag(self, tag: str, attrs):
+        if tag in ('tr',):
+            self._cur_row = []
+        elif tag in ('td', 'th'):
+            self._cur_cell = []
+            self._in_cell = True
+
+    def handle_endtag(self, tag: str):
+        if tag in ('tr',) and self._cur_row is not None:
+            self.rows.append(self._cur_row)
+            self._cur_row = None
+        elif tag in ('td', 'th') and self._cur_cell is not None:
+            text = ''.join(self._cur_cell).strip()
+            # 把 <br> 转换后的换行、多空格压缩
+            text = re.sub(r'\s+', ' ', text)
+            if self._cur_row is not None:
+                self._cur_row.append(text)
+            self._cur_cell = None
+            self._in_cell = False
+
+    def handle_data(self, data: str):
+        if self._in_cell and self._cur_cell is not None:
+            self._cur_cell.append(data)
+
+
+def _parse_html_table(html: str) -> List[List[str]]:
+    """解析 HTML 表格，返回行列表（每行是单元格文本列表）。"""
+    if not html:
+        return []
+    parser = _HtmlTableParser()
+    try:
+        parser.feed(html)
+    except Exception as e:
+        log_to_file(f'HTML table parse failed: {e}')
+    return [row for row in parser.rows if row]
+
+
+def _rows_to_kv_pairs(rows: List[List[str]]) -> List[Dict[str, str]]:
+    """
+    把表格行转换为键值对：
+    - 二列表格：第一列=键，第二列=值
+    - 多列表格：第一列=键，其余列用空格拼接为值
+    - 跳过空行/空键
+    """
+    pairs: List[Dict[str, str]] = []
+    for row in rows:
+        if not row or len(row) < 2:
+            continue
+        key = (row[0] or '').strip()
+        if not key:
+            continue
+        # 二列表格直接取第二列；多列表格把剩余列拼接
+        if len(row) == 2:
+            value = (row[1] or '').strip()
+        else:
+            value = ' '.join((c or '').strip() for c in row[1:] if (c or '').strip())
+        if not value:
+            continue
+        pairs.append({'key': key, 'value': value})
+    return pairs
+
+
+def _extract_tables_from_layout(output: Any) -> List[Dict[str, Any]]:
+    """
+    从 PPStructureV3 的输出中提取所有表格块，解析为 KV 对。
+    返回：[{ rows: [[c1, c2, ...], ...], kv_pairs: [{key, value}, ...] }]
+    """
+    tables: List[Dict[str, Any]] = []
+    if not output:
+        return tables
+
+    for page_res in output:
+        page_data = getattr(page_res, 'res', None)
+        if not isinstance(page_data, list):
+            continue
+        for block in page_data:
+            if not isinstance(block, dict):
+                continue
+            if block.get('type') != 'table':
+                continue
+            raw = block.get('res')
+            html = None
+            if isinstance(raw, dict):
+                html = raw.get('html')
+            elif isinstance(raw, str):
+                html = raw
+            if not html:
+                continue
+            rows = _parse_html_table(html)
+            if not rows:
+                continue
+            kv_pairs = _rows_to_kv_pairs(rows)
+            tables.append({'rows': rows, 'kv_pairs': kv_pairs})
+
+    return tables
+
+
+def _do_table_extraction(file_bytes: bytes, file_type: str | None, file_name: str | None) -> dict:
+    """使用 PPStructureV3 提取表格 KV 对。"""
+    pipeline = _get_layout_pipeline()
+    if pipeline is None:
+        raise HTTPException(status_code=503, detail='PPStructureV3 不可用，无法识别表格')
+
+    ext = '.pdf' if infer_file_type(file_type, file_name) == 'pdf' else '.png'
+    with tempfile.NamedTemporaryFile(suffix=ext, delete=False) as f:
+        f.write(file_bytes)
+        temp_path = f.name
+    try:
+        output = pipeline.predict(input=temp_path)
+        tables = _extract_tables_from_layout(output)
+        # 扁平化所有表格的 KV 对到一个列表
+        all_kv_pairs: List[Dict[str, str]] = []
+        for t in tables:
+            all_kv_pairs.extend(t['kv_pairs'])
+        log_to_file(f'Table extraction: {len(tables)} tables, {len(all_kv_pairs)} kv pairs')
+        return {'tables': tables, 'kv_pairs': all_kv_pairs}
+    finally:
+        os.unlink(temp_path)
+
+
+@app.post('/api/ocr/table')
+async def ocr_table(file: UploadFile = File(...)):
+    """
+    使用 PP-Structure 识别文件中的表格，输出二列键值对。
+    输出格式: { tables: [{ rows, kv_pairs }], kv_pairs: [{key, value}] }
+    仅处理 PPStructureV3 识别到的 type='table' 块。
+    """
+    contents = await file.read()
+    try:
+        return _do_table_extraction(contents, file.content_type or file.filename, file.filename)
+    except HTTPException:
+        raise
+    except Exception as e:
+        log_to_file(f'Table OCR error: {traceback.format_exc()}')
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post('/api/ocr/table/base64')
+async def ocr_table_base64(data: dict):
+    """Base64 输入的表格识别端点（与 /api/ocr/table 等价）。"""
+    base64_data = data.get('image', '')
+    file_type = data.get('fileType', 'pdf')
+    file_name = data.get('fileName', '')
+    if not base64_data:
+        raise HTTPException(status_code=400, detail='缺少图片数据')
+    try:
+        if 'data:image/' in base64_data:
+            base64_data = base64_data.split(',', 1)[1]
+        file_bytes = base64.b64decode(base64_data)
+        return _do_table_extraction(file_bytes, file_type, file_name)
+    except HTTPException:
+        raise
+    except Exception as e:
+        log_to_file(f'Table OCR base64 error: {traceback.format_exc()}')
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 if __name__ == '__main__':

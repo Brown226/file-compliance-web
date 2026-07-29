@@ -3,8 +3,20 @@
     <div v-if="currentStep === 0" class="review-flow">
       <!-- 顶部：任务标题 -->
       <div class="flow-section flow-section--title">
-        <label class="title-label">任务标题 <span class="required-mark">*</span></label>
-        <el-input v-model="form.title" placeholder="请输入任务标题" size="large" clearable maxlength="100" show-word-limit />
+        <label class="title-label">
+          任务标题 <span class="required-mark">*</span>
+          <el-button
+            link
+            type="primary"
+            size="small"
+            class="auto-title-btn"
+            @click="fillAutoTitle"
+          >
+            <el-icon><MagicStick /></el-icon>
+            {{ form.title ? '重新生成' : '自动生成' }}
+          </el-button>
+        </label>
+        <el-input v-model="form.title" :placeholder="autoTitlePreview" size="large" clearable maxlength="100" show-word-limit />
       </div>
 
       <!-- 中部：上传文件 -->
@@ -46,32 +58,8 @@
               </div>
             </div>
 
-            <!-- 规则库模式：检查项目 -->
-            <template v-if="entryModule === 'RULE_ONLY'">
-              <div class="config-section">
-                <div class="config-section-label">检查项目 <el-tag v-if="enabledRulePrefixes.length > 0" size="small" type="info" style="margin-left: auto">{{ enabledRulePrefixes.length }}项</el-tag></div>
-                <div v-if="!ruleRegistryLoaded" style="padding:20px;text-align:center;color:#94a3b8"><el-icon class="is-loading" :size="24"><Loading /></el-icon><span style="margin-left:8px">加载检查项目...</span></div>
-                <div v-else class="rule-prefix-panel">
-                  <div v-for="group in rulePrefixGroups" :key="group.title" class="rule-prefix-group">
-                    <div class="rule-prefix-group__header" @click="toggleGroup(group.items.map((i:any)=>i.prefix),!group.items.every((item:any)=>enabledRulePrefixes.includes(item.prefix)))">
-                      <el-icon :size="14"><component :is="group.icon" /></el-icon>
-                      <span class="rule-prefix-group__title">{{ group.title }}</span>
-                      <span class="rule-prefix-group__count">{{ group.items.filter((i:any)=>enabledRulePrefixes.includes(i.prefix)).length }}/{{ group.items.length }}</span>
-                      <el-checkbox :model-value="group.items.every((item:any)=>enabledRulePrefixes.includes(item.prefix))" :indeterminate="group.items.some((item:any)=>enabledRulePrefixes.includes(item.prefix))&&!group.items.every((item:any)=>enabledRulePrefixes.includes(item.prefix))" size="small" @click.stop @change="(val:any)=>toggleGroup(group.items.map((i:any)=>i.prefix),!!val)" />
-                    </div>
-                    <div class="rule-prefix-group__items">
-                      <div v-for="item in group.items" :key="item.prefix" class="rule-prefix-item" :class="{'rule-prefix-item--active':enabledRulePrefixes.includes(item.prefix)}" @click="togglePrefix(item.prefix)">
-                        <div class="rule-prefix-item__info"><span class="rule-prefix-item__label">{{ item.label }}</span><span class="rule-prefix-item__desc">{{ item.description }}</span></div>
-                        <el-checkbox :model-value="enabledRulePrefixes.includes(item.prefix)" size="small" />
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </template>
-
-            <!-- 其他模式：证据源（合同审查隐藏，改为独立知识库入口） -->
-            <template v-else-if="showEvidenceSection && entryModule !== 'DOC_REVIEW' && entryModule !== 'CONTRACT'">
+            <!-- 证据源：仅"以库审文"模式显示，让用户在知识库/语义规则库间选择 -->
+            <template v-if="showEvidenceSection && entryModule === 'LIBRARY'">
               <div class="config-section">
                 <div class="config-section-label">审查依据</div>
                 <div class="evidence-cards">
@@ -91,6 +79,23 @@
                 </div>
               </div>
             </template>
+
+            <!-- 上下文一致性：检查范围勾选项 -->
+            <div v-if="entryModule === 'CONSISTENCY'" class="config-section">
+              <div class="config-section-label">检查范围</div>
+              <div class="consistency-checks">
+                <el-checkbox v-model="reviewPlanDraft.enhancements.intraFileConsistency">文件内一致性（术语、数值、指标自洽）</el-checkbox>
+                <el-checkbox v-model="reviewPlanDraft.enhancements.crossFileConsistency" :disabled="crossFileDisabled">跨文件一致性（多文件间参数核对）</el-checkbox>
+              </div>
+              <div class="consistency-engineering-toggle">
+                <el-switch v-model="engineeringRuleEnhancement" size="small" />
+                <span class="toggle-label">工程规则增强</span>
+                <span class="toggle-desc">项目名一致性、目录编码与正文一致性（针对核电工程文档，非核电文档可关闭）</span>
+              </div>
+              <div class="config-reason config-reason--info" style="margin-top: 8px;">
+                <el-icon><InfoFilled /></el-icon> 将检查文件内部及多文件间的术语、数值、指标一致性。
+              </div>
+            </div>
 
             <div v-if="entryModule==='DOC_REVIEW'&&reviewPlanDraft?.objective==='COMPARE'" class="config-reason config-reason--warning">
               <el-icon><WarningFilled /></el-icon> 参照比对目标强制使用参考文件，未上传参考文件将无法提交。
@@ -180,26 +185,26 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, nextTick } from 'vue'
+import { ref, computed, onMounted, nextTick, watch } from 'vue'
 import { ElMessage } from 'element-plus'
-import { Check, MagicStick, WarningFilled, Loading, FolderOpened, Files, Link, Document, EditPen, Plus, Stamp, InfoFilled } from '@element-plus/icons-vue'
+import { Check, MagicStick, WarningFilled, FolderOpened, Files, Link, Document, EditPen, Plus, Stamp, InfoFilled } from '@element-plus/icons-vue'
 import { getKnowledgeTreeApi } from '@/api/maxkb'
 import { getRuleLibrariesApi } from '@/api/rule-library'
-import { getRuleRegistryApi, type RuleGroupMeta } from '@/api/system'
+import { getModeCapabilitiesApi } from '@/api/task'
 import SmartReviewUploadStep from './components/SmartReviewUploadStep.vue'
 import KnowledgeTreeSelector from '@/components/KnowledgeTreeSelector.vue'
 import SmartReviewRuleLibraryDialog from './components/SmartReviewRuleLibraryDialog.vue'
 import { useSmartReviewState } from './SmartReview/composables/useSmartReviewState'
 import { useReviewPlan } from './SmartReview/composables/useReviewPlan'
 import { useTaskSubmission } from './SmartReview/composables/useTaskSubmission'
-import { PROGRESS_STEP_LABELS, PROGRESS_STATUS_LABELS, CONTRACT_STANCES } from './SmartReview/constants/review-config'
+import { PROGRESS_STEP_LABELS, PROGRESS_STATUS_LABELS, CONTRACT_STANCES, ENTRY_MODULE_LABEL } from './SmartReview/constants/review-config'
 import type { EntryModule } from './SmartReview/types/smart-review'
 
 const state = useSmartReviewState()
-const { currentStep, isFromHistory, fileList, refFileList, dwgParsedDataMap, form, entryModule, reviewPlanDraft, enabledRulePrefixes, rulePrefixGroups, ruleRegistryLoaded, loading, loadingMessage, analysisProgress, backgroundStatus, submitting, visibleAnalysisProgress, showEvidenceSection, showObjectiveSelector, showExecutionProfileSection } = state
+const { currentStep, isFromHistory, fileList, refFileList, dwgParsedDataMap, form, entryModule, reviewPlanDraft, loading, loadingMessage, analysisProgress, backgroundStatus, submitting, visibleAnalysisProgress, showEvidenceSection, showObjectiveSelector } = state
 const plan = useReviewPlan(state)
 const submission = useTaskSubmission(state, plan)
-const { availableEvidenceSources, isEvidenceLocked, handleEvidenceCardClick, togglePrefix, toggleGroup, canSubmit } = plan
+const { availableEvidenceSources, isEvidenceLocked, handleEvidenceCardClick, canSubmit } = plan
 const objectiveIconComponentMap: Record<string, any> = {
   COMPLIANCE: MagicStick,
   COMPARE: Document,
@@ -211,8 +216,58 @@ const evidenceIconComponentMap: Record<string, any> = {
   REFERENCE: Link,
 }
 
+// ===== 任务标题自动生成 =====
+// 规则：{意图标签}·{第一个文件名(去扩展名,截断20字)}·{MM-DD HH:mm}
+// 用户不输入时 placeholder 展示预览，点"自动生成"按钮填入
+const buildAutoTitle = (): string => {
+  const parts: string[] = []
+  // 意图标签
+  if (entryModule.value && ENTRY_MODULE_LABEL[entryModule.value as EntryModule]) {
+    parts.push(ENTRY_MODULE_LABEL[entryModule.value as EntryModule])
+  }
+  // 第一个文件名（去扩展名，截断 20 字）
+  const firstName = fileList.value[0]?.name
+  if (firstName) {
+    const baseName = firstName.replace(/\.[^.]+$/, '').slice(0, 20)
+    parts.push(baseName)
+  }
+  // 时间戳 MM-DD HH:mm
+  const now = new Date()
+  const mm = String(now.getMonth() + 1).padStart(2, '0')
+  const dd = String(now.getDate()).padStart(2, '0')
+  const hh = String(now.getHours()).padStart(2, '0')
+  const mi = String(now.getMinutes()).padStart(2, '0')
+  parts.push(`${mm}-${dd} ${hh}:${mi}`)
+  return parts.join(' · ')
+}
+
+// 实时预览（未输入时 placeholder 显示）
+const autoTitlePreview = computed(() => {
+  const preview = buildAutoTitle()
+  return preview || '点击右侧"自动生成"或自行输入'
+})
+
+const fillAutoTitle = () => {
+  form.title = buildAutoTitle()
+}
+
 // 合同审查立场选项
 const contractStances = CONTRACT_STANCES
+
+// 工程规则增强开关（CONSISTENCY 模式专用）：控制是否启用 CONSIST 前缀规则
+// 默认开启（applyEntryModulePreset 中设置 enabledRulePrefixes=['CONSIST']），
+// 非核电工程文档可关闭以避免误报
+const engineeringRuleEnhancement = computed({
+  get: () => state.enabledRulePrefixes.value.includes('CONSIST'),
+  set: (val: boolean) => {
+    const idx = state.enabledRulePrefixes.value.indexOf('CONSIST')
+    if (val && idx < 0) {
+      state.enabledRulePrefixes.value.push('CONSIST')
+    } else if (!val && idx >= 0) {
+      state.enabledRulePrefixes.value.splice(idx, 1)
+    }
+  },
+})
 
 const maxkbDialogVisible = ref(false)
 const ruleLibraryDialogVisible = ref(false)
@@ -222,6 +277,30 @@ const maxkbKnowledgeIds = computed({
 })
 const knowledgeNameMap = ref<Map<string, string>>(new Map())
 const ruleLibraries = ref<Array<{ id: string; name: string; status: string; ruleCount: number; executableCount: number }>>([])
+
+// Task 15: 模式能力配置（从后端 mode-config 拉取），用于禁用与模式能力不符的勾选项
+const ENTRY_MODULE_TO_REVIEW_MODE: Record<string, string> = {
+  LIBRARY: 'LIBRARY_REVIEW',
+  CONSISTENCY: 'CONSISTENCY',
+  PROOFREAD: 'TYPO_GRAMMAR',
+  DOC_REVIEW: 'DOC_REVIEW',
+  RULE_ONLY: 'RULE_ONLY',
+  CONTRACT: 'CONTRACT_REVIEW',
+}
+const modeCapabilities = ref<Record<string, { crossFile?: boolean }>>({})
+// 当前入口模式是否支持跨文件一致性（mode-config crossFile=true）
+const crossFileDisabled = computed(() => {
+  const mode = entryModule.value ? ENTRY_MODULE_TO_REVIEW_MODE[entryModule.value] : undefined
+  if (!mode) return false
+  const cfg = modeCapabilities.value[mode]
+  return cfg ? cfg.crossFile !== true : false
+})
+// 模式不支持跨文件时，自动取消勾选，避免提交与 mode-config 矛盾的配置
+watch(crossFileDisabled, (disabled) => {
+  if (disabled && state.reviewPlanDraft?.enhancements?.crossFileConsistency) {
+    state.reviewPlanDraft.enhancements.crossFileConsistency = false
+  }
+})
 
 const progressStepLabel = (step: string) => PROGRESS_STEP_LABELS[step] || step || '处理中'
 const progressStatusLabel = (status: string) => PROGRESS_STATUS_LABELS[status] || status || '处理中'
@@ -274,10 +353,14 @@ onMounted(async () => {
   if (entry && ['LIBRARY','CONSISTENCY','PROOFREAD','RULE_ONLY','DOC_REVIEW','CONTRACT'].includes(entry)) { state.entryModule.value=entry; plan.applyEntryModulePreset(entry) }
   try {
     await buildKnowledgeNameMap()
-    const [libRes, ruleRegRes] = await Promise.all([getRuleLibrariesApi(), getRuleRegistryApi()])
-    ruleLibraries.value = (libRes.data||[]).map((l:any)=>({ id:l.id, name:l.name, status:l.status||'DRAFT', description:l.description||'', ruleCount:l._count?.items||l.items?.length||0, executableCount:l.enabledExecutableItemCount||l.executableItemCount||0 }))
-    if (ruleRegRes.data) { state.rulePrefixGroups.value=ruleRegRes.data.groups||[]; if(!state.enabledRulePrefixes.value.length&&ruleRegRes.data.allPrefixes?.length) state.enabledRulePrefixes.value=[...ruleRegRes.data.allPrefixes]; state.ruleRegistryLoaded.value=true }
+    const libRes = await getRuleLibrariesApi()
+    ruleLibraries.value = (libRes.data||[]).map((l:any)=>({ id:l.id, name:l.name, status:l.status||'DRAFT', description:l.description||'', ruleCount:l._count?.items||l.items?.length||0, executableCount:l.enabledExecutableCount||l.executableItemCount||0 }))
   } catch(e) { console.warn('[SmartReview] 加载数据失败:',e) }
+  // Task 15: 拉取 mode-config 能力配置，用于禁用与模式不符的勾选项
+  try {
+    const { data: caps } = await getModeCapabilitiesApi()
+    if (caps && typeof caps === 'object') modeCapabilities.value = caps as Record<string, { crossFile?: boolean }>
+  } catch(e) { console.warn('[SmartReview] 加载模式能力配置失败:',e) }
 })
 </script>
 
@@ -316,7 +399,9 @@ onMounted(async () => {
 
 /* ---- 标题 ---- */
 .title-input-section { margin-bottom: 18px; }
-.title-label { display: block; font-size: 14px; font-weight: 600; color: #374151; margin-bottom: 8px; }
+.title-label { display: flex; align-items: center; gap: 10px; font-size: 14px; font-weight: 600; color: #374151; margin-bottom: 8px; }
+.title-label .required-mark { margin-right: auto; }
+.auto-title-btn { margin-left: auto; font-weight: 400; }
 .required-mark { color: #EF4444; margin-left: 2px; font-weight: 700; }
 
 /* ---- 提交按钮 ---- */
@@ -347,6 +432,13 @@ onMounted(async () => {
 /* ---- 目标选择 ---- */
 .objective-cards { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
 .locked-objective { display: flex; align-items: center; gap: 8px; padding: 10px 14px; background: #F8FAFC; border: 1px solid #E2E8F0; border-radius: 8px; font-size: 13px; font-weight: 600; color: #475569; }
+
+/* ---- 一致性检查范围 ---- */
+.consistency-checks { display: flex; flex-direction: column; gap: 10px; padding: 12px 14px; background: #FAFBFC; border: 1px solid #E2E8F0; border-radius: 8px; }
+.consistency-checks :deep(.el-checkbox__label) { font-size: 13px; color: #1E293B; }
+.consistency-engineering-toggle { display: flex; align-items: center; gap: 8px; margin-top: 12px; padding: 10px 14px; background: #F0F9FF; border: 1px solid #BAE6FD; border-radius: 8px; }
+.consistency-engineering-toggle .toggle-label { font-size: 13px; font-weight: 600; color: #0C4A6E; }
+.consistency-engineering-toggle .toggle-desc { font-size: 12px; color: #64748B; }
 
 /* ---- 证据源 ---- */
 .evidence-cards { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; }

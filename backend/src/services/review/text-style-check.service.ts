@@ -42,6 +42,7 @@ export class TextStyleCheckService {
               skipUserTemplate: true,
               documentId: ctx.fileId,
               taskId: ctx.taskId,
+              mode: ctx.reviewMode,
               positionInfo: { chunkIndex: chunk.chunkIndex, chunkStartIndex: chunk.startIndex, totalChunks: chunks.length },
             });
           } catch (e) {

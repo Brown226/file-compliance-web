@@ -103,6 +103,51 @@
       </el-table>
     </div>
 
+    <!-- 数值容差配置（仅 CONSISTENCY 模式） -->
+    <div class="section-block" v-if="consistencyMode">
+      <div class="section-title">数值容差配置（CONSISTENCY 模式）</div>
+      <div class="tolerance-desc">跨文件一致性检查中，相对差异小于容差的同名参数取值视为相同。可按参数单位差异化配置。</div>
+      <div class="tolerance-config" v-if="consistencyMode.paramTolerance">
+        <div class="tolerance-row">
+          <span class="tolerance-label">默认容差</span>
+          <el-input-number
+            v-model="consistencyMode.paramTolerance.default"
+            :step="0.001"
+            :min="0"
+            :max="1"
+            :precision="4"
+            size="small"
+          />
+          <span class="tolerance-hint">相对差异阈值，如 0.01 表示 1%</span>
+        </div>
+        <div class="tolerance-row">
+          <span class="tolerance-label">按单位容差</span>
+          <el-button size="small" type="primary" plain @click="addUnitTolerance">添加单位</el-button>
+        </div>
+        <div
+          v-for="(item, idx) in consistencyMode.paramTolerance.byUnit"
+          :key="idx"
+          class="tolerance-unit-row"
+        >
+          <el-input
+            v-model="item.unit"
+            size="small"
+            placeholder="单位，如 MPa、℃"
+            style="width: 160px"
+          />
+          <el-input-number
+            v-model="item.tolerance"
+            :step="0.001"
+            :min="0"
+            :max="1"
+            :precision="4"
+            size="small"
+          />
+          <el-button size="small" type="danger" plain @click="removeUnitTolerance(idx)">删除</el-button>
+        </div>
+      </div>
+    </div>
+
     <!-- 重置按钮 -->
     <div class="panel-footer">
       <el-button @click="handleReset">重置为默认</el-button>
@@ -132,7 +177,7 @@ const modeMeta: Record<string, { displayName: string; description: string; icon:
 const defaultConfig: Record<string, any> = {
   LIBRARY_REVIEW: { enabled: true, rules: true, standardRef: true, ai: true, aiStrategy: 'standard', crossFile: false },
   DOC_REVIEW: { enabled: true, rules: true, standardRef: true, ai: true, aiStrategy: 'refCompare', crossFile: false },
-  CONSISTENCY: { enabled: true, rules: true, standardRef: true, ai: true, aiStrategy: 'standard', crossFile: true },
+  CONSISTENCY: { enabled: true, rules: true, standardRef: true, ai: true, aiStrategy: 'standard', crossFile: true, paramTolerance: { default: 0.01, byUnit: [{ unit: 'MPa', tolerance: 0.005 }, { unit: '℃', tolerance: 0.02 }] } },
   TYPO_GRAMMAR: { enabled: true, rules: true, standardRef: false, ai: true, aiStrategy: 'llmOnly', crossFile: false },
   MULTIMODAL: { enabled: true, rules: true, standardRef: false, ai: true, aiStrategy: 'multimodal', crossFile: false },
   RULE_ONLY: { enabled: true, rules: true, standardRef: false, ai: false, aiStrategy: 'standard', crossFile: false },
@@ -146,12 +191,82 @@ const saving = ref(false)
 
 // 是否有修改
 const hasChanges = computed(() => {
-  return JSON.stringify(modeList.value.reduce((acc, m) => ({ ...acc, [m.mode]: { enabled: m.enabled, rules: m.rules, standardRef: m.standardRef, ai: m.ai, aiStrategy: m.aiStrategy, crossFile: m.crossFile } }), {})) !== JSON.stringify(originalData.value)
+  return JSON.stringify(modeList.value.reduce((acc, m) => ({
+    ...acc,
+    [m.mode]: {
+      enabled: m.enabled,
+      rules: m.rules,
+      standardRef: m.standardRef,
+      ai: m.ai,
+      aiStrategy: m.aiStrategy,
+      crossFile: m.crossFile,
+      paramTolerance: m.paramTolerance,
+    }
+  }), {})) !== JSON.stringify(originalData.value)
 })
 
 // 标记已修改
 function onChange(_index: number) {
   // hasChanges 会自动响应变化
+}
+
+// CONSISTENCY 模式项（用于容差配置 UI）
+const consistencyMode = computed(() => modeList.value.find(m => m.mode === 'CONSISTENCY'))
+
+function addUnitTolerance() {
+  if (!consistencyMode.value?.paramTolerance) return
+  consistencyMode.value.paramTolerance.byUnit.push({ unit: '', tolerance: 0.01 })
+}
+
+function removeUnitTolerance(idx: number) {
+  if (!consistencyMode.value?.paramTolerance) return
+  consistencyMode.value.paramTolerance.byUnit.splice(idx, 1)
+}
+
+/** 规范化配置数据：将 paramTolerance.byUnit 统一为数组结构（便于 UI 编辑与变更比较） */
+function normalizeConfigData(data: Record<string, any>): Record<string, any> {
+  const result: Record<string, any> = {}
+  for (const [mode, cfg] of Object.entries(data)) {
+    const c = cfg as any
+    const pt = c.paramTolerance
+    result[mode] = {
+      enabled: c.enabled !== false,
+      rules: c.rules !== false,
+      standardRef: !!c.standardRef,
+      ai: c.ai !== false,
+      aiStrategy: c.aiStrategy || 'standard',
+      crossFile: c.crossFile === true,
+      paramTolerance: mode === 'CONSISTENCY'
+        ? {
+            default: pt?.default ?? 0.01,
+            byUnit: pt?.byUnit
+              ? Array.isArray(pt.byUnit)
+                ? pt.byUnit.map((it: any) => ({ unit: it.unit, tolerance: Number(it.tolerance) }))
+                : Object.entries(pt.byUnit).map(([unit, tol]: [string, any]) => ({ unit, tolerance: Number(tol) }))
+              : [],
+          }
+        : undefined,
+    }
+  }
+  return result
+}
+
+/** 构造 modeList 项 */
+function buildModeItem(mode: string, cfg: any) {
+  return {
+    mode,
+    displayName: modeMeta[mode]?.displayName || mode,
+    description: modeMeta[mode]?.description || '',
+    icon: modeMeta[mode]?.icon || Setting,
+    color: modeMeta[mode]?.color || '#6B7280',
+    enabled: cfg.enabled,
+    rules: cfg.rules,
+    standardRef: cfg.standardRef,
+    ai: cfg.ai,
+    aiStrategy: cfg.aiStrategy,
+    crossFile: cfg.crossFile,
+    paramTolerance: cfg.paramTolerance,
+  }
 }
 
 // 加载数据
@@ -160,34 +275,17 @@ async function fetchData() {
   try {
     const { data } = await getModeCapabilitiesApi()
     if (data && typeof data === 'object') {
-      originalData.value = JSON.parse(JSON.stringify(data))
-      modeList.value = Object.entries(data).map(([mode, cfg]: [string, any]) => ({
-        mode,
-        displayName: modeMeta[mode]?.displayName || mode,
-        description: modeMeta[mode]?.description || '',
-        icon: modeMeta[mode]?.icon || Setting,
-        color: modeMeta[mode]?.color || '#6B7280',
-        enabled: cfg.enabled !== false,
-        rules: cfg.rules !== false,
-        standardRef: !!cfg.standardRef,
-        ai: cfg.ai !== false,
-        aiStrategy: cfg.aiStrategy || 'standard',
-        crossFile: cfg.crossFile === true,
-      }))
+      const normalized = normalizeConfigData(data)
+      originalData.value = JSON.parse(JSON.stringify(normalized))
+      modeList.value = Object.entries(normalized).map(([mode, cfg]: [string, any]) => buildModeItem(mode, cfg))
     }
   } catch (e) {
     console.error('加载模式配置失败', e)
     ElMessage.error('加载配置失败，使用默认配置')
     // 使用默认配置
-    originalData.value = JSON.parse(JSON.stringify(defaultConfig))
-    modeList.value = Object.entries(defaultConfig).map(([mode, cfg]: [string, any]) => ({
-      mode,
-      displayName: modeMeta[mode]?.displayName || mode,
-      description: modeMeta[mode]?.description || '',
-      icon: modeMeta[mode]?.icon || Setting,
-      color: modeMeta[mode]?.color || '#6B7280',
-      ...cfg,
-    }))
+    const normalized = normalizeConfigData(defaultConfig)
+    originalData.value = JSON.parse(JSON.stringify(normalized))
+    modeList.value = Object.entries(normalized).map(([mode, cfg]: [string, any]) => buildModeItem(mode, cfg))
   } finally {
     loading.value = false
   }
@@ -207,10 +305,32 @@ async function handleSave() {
         aiStrategy: m.aiStrategy,
         crossFile: m.crossFile,
       }
+      // CONSISTENCY 模式：将 byUnit 数组结构转回对象结构（后端期望 Record<string, number>）
+      if (m.mode === 'CONSISTENCY' && m.paramTolerance) {
+        config[m.mode].paramTolerance = {
+          default: m.paramTolerance.default,
+          byUnit: m.paramTolerance.byUnit.reduce((acc: Record<string, number>, item: { unit: string; tolerance: number }) => {
+            if (item.unit) acc[item.unit] = item.tolerance
+            return acc
+          }, {}),
+        }
+      }
     })
     console.log('[ModeCapabilities] 保存配置:', JSON.stringify(config, null, 2))
     await saveModeCapabilitiesApi(config)
-    originalData.value = JSON.parse(JSON.stringify(config))
+    // 保存后以 modeList 当前状态（数组结构）重建 originalData，保持 hasChanges 比较一致
+    originalData.value = JSON.parse(JSON.stringify(modeList.value.reduce((acc, m) => ({
+      ...acc,
+      [m.mode]: {
+        enabled: m.enabled,
+        rules: m.rules,
+        standardRef: m.standardRef,
+        ai: m.ai,
+        aiStrategy: m.aiStrategy,
+        crossFile: m.crossFile,
+        paramTolerance: m.paramTolerance,
+      }
+    }), {})))
     ElMessage.success('保存成功')
   } catch (e) {
     console.error('保存配置失败', e)
@@ -298,6 +418,44 @@ onMounted(() => { fetchData() })
 .desc-text {
   font-size: 13px;
   color: var(--el-text-color-regular);
+}
+
+.tolerance-config {
+  margin-top: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.tolerance-desc {
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
+  margin-bottom: 4px;
+}
+
+.tolerance-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.tolerance-label {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--el-text-color-primary);
+  min-width: 84px;
+}
+
+.tolerance-hint {
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
+}
+
+.tolerance-unit-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding-left: 96px;
 }
 
 .panel-footer {

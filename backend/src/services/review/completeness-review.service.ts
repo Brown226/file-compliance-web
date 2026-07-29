@@ -54,6 +54,7 @@ export class CompletenessReviewService {
       skipUserTemplate: true,
       documentId: ctx.fileId,
       taskId: ctx.taskId,
+      mode: ctx.reviewMode,
     });
 
     return { issues: result };

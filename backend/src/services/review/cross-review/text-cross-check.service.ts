@@ -25,7 +25,7 @@ export class TextCrossCheckService {
     deduped = this.deduplicateNormalized(deduped);
 
     // 第三步：LLM 交叉核验
-    const crossChecked = await this.crossCheckWithLLM(deduped);
+    const crossChecked = await this.crossCheckWithLLM(deduped, _ctx);
 
     console.log(`[TextCrossCheck] 文本复核: 输入 ${issues.length} 条，去重 ${deduped.length} 条，交叉核验后 ${crossChecked.length} 条`);
     return crossChecked;
@@ -64,14 +64,14 @@ export class TextCrossCheckService {
   }
 
   /** LLM 交叉核验：检测矛盾和语义重复 */
-  private static async crossCheckWithLLM(issues: ReviewIssue[]): Promise<ReviewIssue[]> {
+  private static async crossCheckWithLLM(issues: ReviewIssue[], ctx?: PipelineContext): Promise<ReviewIssue[]> {
     if (issues.length <= 1) return issues;
 
     const results: ReviewIssue[] = [];
     for (let i = 0; i < issues.length; i += BATCH_SIZE) {
       const batch = issues.slice(i, i + BATCH_SIZE);
       try {
-        const checked = await this.crossCheckBatch(batch);
+        const checked = await this.crossCheckBatch(batch, ctx);
         results.push(...checked);
       } catch (e) {
         // LLM 失败时保留原始结果
@@ -82,7 +82,7 @@ export class TextCrossCheckService {
     return results;
   }
 
-  private static async crossCheckBatch(issues: ReviewIssue[]): Promise<ReviewIssue[]> {
+  private static async crossCheckBatch(issues: ReviewIssue[], ctx?: PipelineContext): Promise<ReviewIssue[]> {
     const items = issues.map((i, idx) => ({
       index: idx,
       issueType: i.issueType,
@@ -106,6 +106,8 @@ ${JSON.stringify(items, null, 2)}
       systemPrompt: '你是工程文件审查的文本交叉核验专家。只输出 JSON，不要输出其他文字。',
       temperature: 0.1,
       timeout: 60,
+      taskId: ctx?.taskId,
+      mode: 'text-cross-check',
     });
 
     const removeSet = this.parseCrossCheckResponse(response);
