@@ -78,3 +78,48 @@ const matchedCount = computed(() =>
 )
 const errorCount = computed(() => props.items.filter((it) => (it.errorTypes?.length ?? 0) > 0).length)
 </script>
+
+<style scoped>
+.self-check-report-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 12px;
+  flex: 1;
+  overflow: auto;
+  min-width: 0;
+  min-height: 0;
+}
+
+.sc-summary-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding: 8px 12px;
+  background: var(--el-fill-color-lighter);
+  border-radius: 8px;
+}
+
+.sc-lib-info {
+  font-size: 12px;
+  color: var(--el-text-color-placeholder);
+  margin-left: auto;
+}
+
+.sc-name-sub {
+  font-size: 11px;
+  color: var(--el-text-color-secondary);
+  margin-top: 2px;
+}
+
+.correct-text {
+  color: var(--el-color-success);
+}
+
+.no-match {
+  color: var(--el-color-danger);
+  font-weight: 700;
+  font-size: 16px;
+}
+</style>

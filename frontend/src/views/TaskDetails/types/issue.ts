@@ -5,6 +5,7 @@ export type IssueType =
   | 'CONSISTENCY'
   | 'COMPLETENESS'
   | 'TYPO'
+  | 'NAMING'
 
 export interface DiffRange {
   start: number

@@ -3,9 +3,6 @@
     <!-- 页面标题区 -->
     <div class="page-header">
       <h2 class="page-title">审查任务列表</h2>
-      <el-button type="primary" @click="$router.push('/tasks/new')">
-        <el-icon><Plus /></el-icon> 新建任务
-      </el-button>
     </div>
 
     <!-- 过滤栏 -->
@@ -48,8 +45,7 @@
           <el-option label="以文审文" value="DOC_REVIEW" />
           <el-option label="合同风险审查" value="CONTRACT_REVIEW" />
           <el-option label="一致性审查" value="CONSISTENCY" />
-          <el-option label="错别字/语法" value="TYPO_GRAMMAR" />
-          <!-- <el-option label="结构化审查" value="MULTIMODAL" /> -->
+          <el-option label="基础校对" value="TYPO_GRAMMAR" />
           <el-option label="仅规则审查" value="RULE_ONLY" />
           <el-option label="标准引用自检" value="SELF_CHECK" />
         </el-select>
@@ -211,24 +207,21 @@
               <div class="status-progress">
                 <el-progress
                   :percentage="row.progress || 0"
-                  :stroke-width="16"
+                  :stroke-width="14"
                   :text-inside="true"
                   :format="(p: number) => `${p}%`"
                   status=""
-                  color="#409EFF"
+                  color="#2563eb"
                 />
                 <span class="progress-label">审查中</span>
               </div>
             </template>
 
-            <!-- 其他状态：使用增强标签 -->
+            <!-- 其他状态：使用状态标签 -->
             <template v-else>
-              <div :class="['status-enhanced', `status-${(row.status || '').toLowerCase()}`]">
-                <span class="status-icon" v-if="row.status === 'COMPLETED'">✓</span>
-                <span class="status-icon" v-else-if="row.status === 'FAILED'">✗</span>
-                <span class="status-icon" v-else-if="row.status === 'PENDING'">⏳</span>
-                <span class="status-text">{{ getStatusLabel(row.status) }}</span>
-              </div>
+              <span :class="['status-tag', `status-${(row.status || '').toLowerCase()}`]">
+                {{ getStatusLabel(row.status) }}
+              </span>
             </template>
           </template>
         </el-table-column>
@@ -239,11 +232,9 @@
         </el-table-column>
         <el-table-column prop="issue_count" label="问题" width="70" align="center">
           <template #default="{ row }">
-            <div
-              :class="['issue-count-enhanced', { 'has-issues': (row.issue_count || 0) > 0 }]"
-            >
-              <span class="issue-number">{{ row.issue_count || 0 }}</span>
-            </div>
+            <span :class="['count-num', { 'has-issues': (row.issue_count || 0) > 0 }]">
+              {{ row.issue_count || 0 }}
+            </span>
           </template>
         </el-table-column>
         <el-table-column prop="user" label="创建人" width="100">
@@ -253,10 +244,9 @@
         </el-table-column>
         <el-table-column prop="create_time" label="创建时间" width="150" align="center">
           <template #default="{ row }">
-            <div class="time-enhanced" :title="formatTime(row.create_time)">
-              <el-icon><Clock /></el-icon>
-              <span>{{ formatTimeRelative(row.create_time) }}</span>
-            </div>
+            <span class="time-cell" :title="formatTime(row.create_time)">
+              {{ formatTimeRelative(row.create_time) }}
+            </span>
           </template>
         </el-table-column>
         <el-table-column label="操作" width="180" fixed="right" align="center">
@@ -388,10 +378,8 @@ import { onMounted } from 'vue'
 import {
   Download,
   Search,
-  Plus,
   Select,
   Delete,
-  Clock,
   View,
   ArrowDown,
   Refresh,
@@ -437,421 +425,130 @@ onMounted(() => {
   fetchTasks()
 })
 </script>
-
 <style scoped>
+/* ===== Swiss Industrial Data 椋庢牸 =====
+   璁捐鍘熷垯锛氭暟鎹负涓績銆佸己缃戞牸甯冨眬銆佸崟涓€钃濊壊寮鸿皟锛?2563eb锛夈€?
+   缁嗙嚎鍒嗛殧锛?px #e5e7eb锛夈€佹渶灏戦槾褰便€佺粺涓€ 4px 鍦嗚
+*/
 .task-history {
+  --si-accent: #2563eb;
+  --si-accent-bg: #eff6ff;
+  --si-text-primary: #111827;
+  --si-text-regular: #374151;
+  --si-text-secondary: #6b7280;
+  --si-text-muted: #9ca3af;
+  --si-border: #e5e7eb;
+  --si-border-light: #f3f4f6;
+  --si-bg-surface: #ffffff;
+  --si-bg-hover: #f9fafb;
+  --si-success: #16a34a;
+  --si-success-bg: #f0fdf4;
+  --si-danger: #dc2626;
+  --si-danger-bg: #fef2f2;
+  --si-warning: #d97706;
+  --si-warning-bg: #fffbeb;
   padding: 0;
-  background-color: transparent;
+  background: transparent;
+  color: var(--si-text-primary);
+  font-feature-settings: 'tnum';
 }
 
-/* ===== 页面标题区 ===== */
+/* ===== 椤甸潰鏍囬鍖?===== */
 .page-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 24px;
+  margin-bottom: 20px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid var(--si-border);
 }
 
 .page-title {
   margin: 0;
-  font-size: 24px;
-  font-weight: 700;
-  line-height: 1.35;
-  color: var(--corp-text-primary);
-}
-
-/* ===== 过滤栏 ===== */
-.filter-bar {
-  margin-bottom: 22px;
-  padding: 18px 22px;
-  border-radius: var(--corp-radius-md);
-  background: var(--bg-surface);
-  border: 1px solid var(--corp-border-light);
-  box-shadow: var(--corp-shadow-sm);
-}
-
-.filter-form {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: flex-end;
-  gap: 12px 10px;
-}
-
-::deep(.filter-form .el-form-item) {
-  margin-bottom: 4px;
-  margin-right: 14px;
-}
-
-::deep(.filter-form .el-form-item__label) {
-  font-size: 15px;
-  line-height: 36px;
-}
-
-::deep(.filter-form .el-input__wrapper),
-::deep(.filter-form .el-select__wrapper) {
-  min-height: 38px;
-}
-
-::deep(.filter-form .el-input__inner),
-::deep(.filter-form .el-select__selected-item) {
-  font-size: 15px;
-  line-height: 1.6;
-}
-
-::deep(.filter-form .el-button) {
-  font-size: 14px;
-  min-height: 36px;
-  padding: 0 14px;
-}
-
-/* ===== 批量操作 ===== */
-.batch-actions {
-  display: flex;
-  align-items: center;
-  gap: 14px;
-  padding: 10px 18px;
-  margin-bottom: 12px;
-  background: linear-gradient(135deg, var(--corp-primary-lighter), var(--color-primary-50));
-  border-radius: var(--corp-radius-sm);
-  border-left: 3px solid var(--corp-primary);
-  animation: fadeInUp 0.3s ease;
-}
-
-.selected-info {
-  font-size: 15px;
-  color: var(--corp-primary);
+  font-size: 20px;
   font-weight: 600;
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-
-.selected-info strong {
-  font-size: 17px;
-}
-
-.slide-fade-enter-active { transition: all 0.25s ease; }
-.slide-fade-leave-active { transition: all 0.15s ease; }
-.slide-fade-enter-from { opacity: 0; transform: translateY(-8px); }
-.slide-fade-leave-to { opacity: 0; transform: translateY(-8px); }
-
-/* ===== 表格 ===== */
-.table-wrapper {
-  background: var(--corp-bg-panel);
-  border-radius: var(--corp-radius-md);
-  overflow: hidden;
-  box-shadow: var(--corp-shadow-sm);
-}
-
-:deep(.table-wrapper .el-table) {
-  font-size: 14px;
-}
-
-:deep(.table-wrapper .el-table th.el-table__cell) {
-  height: 48px;
-  padding: 10px 0;
-}
-
-:deep(.table-wrapper .el-table td.el-table__cell) {
-  height: 48px;
-  padding: 10px 0;
-}
-
-:deep(.table-wrapper .el-table .cell) {
-  line-height: 1.55;
-}
-
-.task-row {
-  cursor: default;
-  transition: all 0.15s ease;
-}
-
-:deep(.task-row:hover td:first-child::before) {
-  content: '';
-  position: absolute;
-  left: 0;
-  top: 0;
-  bottom: 0;
-  width: 3px;
-  background: linear-gradient(180deg, var(--corp-primary), var(--color-primary-400));
-  border-radius: 0 2px 2px 0;
-}
-
-:deep(.el-table__inner-wrapper::before) {
-  display: none;
-}
-
-.task-name-cell {
-  font-size: 14px;
-  line-height: 1.5;
-  font-weight: 600;
-  color: var(--corp-text-primary);
-}
-
-.mode-tag {
-  display: inline-flex;
-  align-items: center;
-  padding: 4px 10px;
-  border-radius: 999px;
-  font-size: 13px;
   line-height: 1.4;
-  font-weight: 600;
-  color: var(--color-primary-700);
-  background: var(--color-primary-50);
-  border: 1px solid var(--color-primary-200);
+  color: var(--si-text-primary);
+  letter-spacing: -0.01em;
 }
 
-.status-tag {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-width: 60px;
-  padding: 3px 10px;
-  border-radius: 999px;
-  font-size: 13px;
-  line-height: 1.35;
-  font-weight: 600;
-  border: 1px solid transparent;
-}
-
-.table-wrapper .status-tag.status-completed {
-  color: #166534 !important;
-  background-color: #dcfce7 !important;
-  border-color: #86efac !important;
-}
-
-.table-wrapper .status-tag.status-processing {
-  color: #1d4ed8 !important;
-  background-color: #dbeafe !important;
-  border-color: #93c5fd !important;
-}
-
-.table-wrapper .status-tag.status-pending {
-  color: #9a3412 !important;
-  background-color: #ffedd5 !important;
-  border-color: #fdba74 !important;
-}
-
-.table-wrapper .status-tag.status-failed {
-  color: #b91c1c !important;
-  background-color: #fee2e2 !important;
-  border-color: #fca5a5 !important;
-}
-
-/* 进度条包裹 */
-.progress-wrap {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.progress-wrap :deep(.el-progress) {
-  flex: 1;
-  max-width: 120px;
-}
-
-.progress-wrap :deep(.el-progress-bar__outer.el-progress-bar__outer) {
-  border-radius: 8px;
-  background-color: var(--color-gray-200);
-}
-
-.progress-wrap :deep(.el-progress-bar__inner.el-progress-bar__inner) {
-  background: linear-gradient(90deg, var(--color-primary-400), var(--color-primary-600));
-  border-radius: 8px;
-}
-
-.progress-label {
-  font-size: 12px;
-  color: var(--corp-primary);
-  font-weight: 500;
-  white-space: nowrap;
-}
-
-.count-num {
-  font-size: 15px;
-  font-weight: 650;
-  color: var(--corp-text-regular);
-  font-family: 'SF Mono', monospace;
-  font-variant-numeric: tabular-nums;
-}
-
-.issue-count {
-  font-size: 15px;
-  font-weight: 700;
-  color: var(--corp-text-regular);
-  font-family: 'SF Mono', monospace;
-  font-variant-numeric: tabular-nums;
-}
-
-.issue-count.has-issue {
-  color: var(--corp-danger);
-  animation: pulse 2s infinite;
-}
-
-.time-cell {
-  font-size: 14px;
-  color: var(--corp-text-secondary);
-  font-variant-numeric: tabular-nums;
-}
-
-.action-btns {
-  display: flex;
-  gap: 4px;
-}
-
-.action-btns .el-button.el-button {
-  font-size: 14px;
-  padding: 0 6px;
-}
-
-/* ===== 空状态 ===== */
-.empty-state {
-  text-align: center;
-  padding: 40px 0 32px;
-}
-
-.empty-svg {
-  width: 120px;
-  height: 100px;
-  margin-bottom: 16px;
-}
-
-.empty-state p {
-  color: var(--corp-text-secondary);
-  font-size: 15px;
-  margin: 0 0 20px;
-  font-weight: 500;
-}
-
-.empty-hint {
-  font-size: 13px !important;
-  color: var(--corp-text-secondary) !important;
-  margin: -12px 0 16px !important;
-  font-weight: 400 !important;
-  opacity: 0.7;
-}
-
-/* ===== 分页 ===== */
-.pagination-container {
-  margin-top: 24px;
-  display: flex;
-  justify-content: center;
-}
-
-:deep(.pagination-container .el-pagination) {
-  font-size: 14px;
-}
-
-:deep(.pagination-container .el-pager li),
-:deep(.pagination-container .btn-prev),
-:deep(.pagination-container .btn-next),
-:deep(.pagination-container .el-input__inner) {
-  min-width: 34px;
-  height: 34px;
-  line-height: 34px;
-  font-size: 14px;
-}
-
-/* ===== 高级筛选 ===== */
-.advanced-filter {
-  padding-top: 12px;
-  border-top: 1px solid var(--color-gray-100);
-  margin-top: 8px;
-}
-
-.slide-down-enter-active,
-.slide-down-leave-active {
-  transition: all 0.25s ease;
-  overflow: hidden;
-}
-
-.slide-down-enter-from,
-.slide-down-leave-to {
-  opacity: 0;
-  max-height: 0;
-  padding-top: 0;
-  margin-top: 0;
-}
-
-.slide-down-enter-to,
-.slide-down-leave-from {
-  max-height: 80px;
-}
-
-/* ===== 增强筛选栏样式 ===== */
+/* ===== 杩囨护鏍?===== */
 .filter-bar-enhanced {
-  margin-bottom: 20px;
-  padding: 18px 22px;
-  border-radius: var(--corp-radius-md);
-  background: linear-gradient(135deg, #FAFCFF 0%, #FFFFFF 100%);
-  border: 1px solid #E4E7ED;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
-  /* 关键：使用Flexbox实现水平对齐 */
+  margin-bottom: 16px;
+  padding: 14px 16px;
+  background: var(--si-bg-surface);
+  border: 1px solid var(--si-border);
+  border-radius: 4px;
   display: flex;
   justify-content: space-between;
   align-items: center;
-  gap: 20px;
+  gap: 16px;
+  flex-wrap: wrap;
 }
 
 .filter-left {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 10px;
   flex-wrap: wrap;
-  flex: 1; /* 占据剩余空间 */
-  min-width: 0; /* 防止溢出 */
+  flex: 1;
+  min-width: 0;
 }
 
 .filter-right {
   display: flex;
   align-items: center;
-  gap: 10px;
-  flex-shrink: 0; /* 不压缩按钮组 */
-  white-space: nowrap; /* 防止换行 */
+  gap: 8px;
+  flex-shrink: 0;
+  white-space: nowrap;
 }
 
 .search-box {
-  min-width: 260px;
+  min-width: 240px;
 }
 
 .search-input :deep(.el-input__wrapper) {
-  border-radius: 20px;
-  box-shadow: 0 2px 6px rgba(64, 158, 255, 0.08);
+  border-radius: 4px;
+  box-shadow: none;
 }
 
 .filter-select {
-  width: 150px !important;
+  width: 140px !important;
+}
+
+.filter-input :deep(.el-input__wrapper) {
+  border-radius: 4px;
+  box-shadow: none;
 }
 
 .advanced-toggle {
   font-weight: 500;
-  letter-spacing: 0.5px;
+  letter-spacing: 0;
 }
 
 .advanced-filter-enhanced {
-  margin-top: 16px;
-  padding-top: 16px;
-  border-top: 1px solid #EBEEF5;
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--si-border-light);
+  width: 100%;
 }
 
 .filter-row {
   display: flex;
-  gap: 24px;
+  gap: 20px;
   flex-wrap: wrap;
 }
 
-/* ===== 增强批量操作栏样式 ===== */
+/* ===== 鎵归噺鎿嶄綔鏍?===== */
 .batch-actions-enhanced {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 12px 20px;
-  margin-bottom: 16px;
-  background: linear-gradient(90deg, #ECF5FF 0%, #F0F9FF 50%, #ECF5FF 100%);
-  border: 2px solid #409EFF;
-  border-radius: 10px;
-  animation: slideDown 0.3s ease;
-  box-shadow: 0 4px 12px rgba(64, 158, 255, 0.15);
+  padding: 10px 16px;
+  margin-bottom: 12px;
+  background: var(--si-accent-bg);
+  border: 1px solid var(--si-accent);
+  border-radius: 4px;
 }
 
 .batch-left {
@@ -861,62 +558,198 @@ onMounted(() => {
 }
 
 .batch-text {
-  font-size: 14px;
-  color: #303133;
+  font-size: 13px;
+  color: var(--si-text-regular);
 }
 
 .batch-text strong {
-  color: #409EFF;
-  font-size: 18px;
+  color: var(--si-accent);
+  font-size: 15px;
   font-weight: 700;
-  margin: 0 3px;
+  margin: 0 2px;
 }
 
 .batch-right {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
 }
 
 .cancel-select {
   font-weight: 500;
 }
 
-/* ===== 增强分页组件样式 ===== */
-.pagination-enhanced {
-  margin-top: 24px;
-  padding: 16px 20px;
-  display: flex;
-  justify-content: space-between;
+.slide-fade-enter-active { transition: all 0.2s ease; }
+.slide-fade-leave-active { transition: all 0.15s ease; }
+.slide-fade-enter-from { opacity: 0; transform: translateY(-4px); }
+.slide-fade-leave-to { opacity: 0; transform: translateY(-4px); }
+
+.slide-down-enter-active,
+.slide-down-leave-active {
+  transition: all 0.2s ease;
+  overflow: hidden;
+}
+.slide-down-enter-from,
+.slide-down-leave-to {
+  opacity: 0;
+  max-height: 0;
+  padding-top: 0;
+  margin-top: 0;
+}
+.slide-down-enter-to,
+.slide-down-leave-from {
+  max-height: 80px;
+}
+
+/* ===== 琛ㄦ牸 ===== */
+.table-wrapper {
+  background: var(--si-bg-surface);
+  border: 1px solid var(--si-border);
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+:deep(.table-wrapper .el-table) {
+  font-size: 13px;
+  --el-table-border-color: var(--si-border-light);
+  --el-table-header-bg-color: var(--si-bg-hover);
+  --el-table-row-hover-bg-color: var(--si-bg-hover);
+}
+
+:deep(.table-wrapper .el-table th.el-table__cell) {
+  height: 44px;
+  padding: 8px 0;
+  font-weight: 600;
+  color: var(--si-text-secondary);
+  font-size: 12px;
+  letter-spacing: 0.02em;
+  background: var(--si-bg-hover);
+  border-bottom: 1px solid var(--si-border);
+}
+
+:deep(.table-wrapper .el-table td.el-table__cell) {
+  height: 48px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--si-border-light);
+}
+
+:deep(.table-wrapper .el-table .cell) {
+  line-height: 1.5;
+}
+
+.task-row {
+  cursor: default;
+  transition: background 0.15s ease;
+}
+
+:deep(.task-row:hover td:first-child::before) {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  background: var(--si-accent);
+}
+
+:deep(.el-table__inner-wrapper::before) {
+  display: none;
+}
+
+.task-name-cell {
+  font-size: 13px;
+  line-height: 1.5;
+  font-weight: 600;
+  color: var(--si-text-primary);
+}
+
+.plan-summary-cell {
+  font-size: 13px;
+  color: var(--si-text-secondary);
+}
+
+/* ===== 鐘舵€佹爣绛?===== */
+.status-tag {
+  display: inline-flex;
   align-items: center;
-  background: #FAFCFF;
-  border-radius: 8px;
-  border: 1px solid #E4E7ED;
+  justify-content: center;
+  min-width: 56px;
+  padding: 3px 10px;
+  border-radius: 3px;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.4;
+  border: 1px solid transparent;
+  letter-spacing: 0.02em;
 }
 
-.pagination-left {
-  display: flex;
-  align-items: center;
-  gap: 12px;
+.status-completed {
+  color: var(--si-success);
+  background: var(--si-success-bg);
+  border-color: #bbf7d0;
 }
 
-.total-count {
-  color: #409EFF;
-  font-size: 18px;
-  font-weight: 700;
-  margin: 0 3px;
+.status-processing {
+  color: var(--si-accent);
+  background: var(--si-accent-bg);
+  border-color: #bfdbfe;
 }
 
-.selected-tag {
+.status-pending {
+  color: var(--si-warning);
+  background: var(--si-warning-bg);
+  border-color: #fde68a;
+}
+
+.status-failed {
+  color: var(--si-danger);
+  background: var(--si-danger-bg);
+  border-color: #fecaca;
+}
+
+/* 杩涘害鏉?*/
+.status-progress {
+  text-align: center;
+}
+
+.status-progress :deep(.el-progress-bar__outer) {
+  border-radius: 2px;
+  background-color: var(--si-border-light);
+}
+
+.status-progress :deep(.el-progress-bar__inner) {
+  background: var(--si-accent);
+  border-radius: 2px;
+}
+
+.progress-label {
+  display: block;
+  margin-top: 3px;
+  font-size: 11px;
+  color: var(--si-accent);
   font-weight: 600;
 }
 
-.pagination-component :deep(.el-pagination) {
-  font-size: 13px;
-  justify-content: flex-end;
+/* ===== 鏁板瓧鍒?===== */
+.count-num {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--si-text-regular);
+  font-variant-numeric: tabular-nums;
 }
 
-/* ===== 操作按钮增强样式 ===== */
+.count-num.has-issues {
+  color: var(--si-danger);
+}
+
+/* ===== 鏃堕棿鍒?===== */
+.time-cell {
+  font-size: 12px;
+  color: var(--si-text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ===== 鎿嶄綔鎸夐挳 ===== */
 .action-btns {
   display: flex;
   gap: 6px;
@@ -924,247 +757,182 @@ onMounted(() => {
   justify-content: center;
 }
 
+.action-btns :deep(.el-button) {
+  font-size: 12px;
+  padding: 0 10px;
+  height: 28px;
+  border-radius: 3px;
+}
+
 .primary-action {
   font-weight: 500;
-  border-radius: 6px;
-  padding: 6px 14px;
-  box-shadow: 0 2px 6px rgba(64, 158, 255, 0.2);
 }
 
 .more-action {
   font-weight: 500;
-  border-radius: 6px;
-  padding: 6px 10px;
-  background-color: #F5F7FA;
-  border-color: #DCDFE6;
-  color: #606266;
+  background-color: var(--si-bg-hover);
+  border-color: var(--si-border);
+  color: var(--si-text-secondary);
 }
 
 .more-action:hover {
-  background-color: #ECF5FF;
-  border-color: #C6E2FF;
-  color: #409EFF;
+  background-color: var(--si-accent-bg);
+  border-color: var(--si-accent);
+  color: var(--si-accent);
 }
 
-/* ===== 状态标签增强样式 ===== */
-.status-enhanced {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 6px 14px;
-  border-radius: 20px;
-  font-size: 13px;
-  font-weight: 600;
-  transition: all 0.25s ease;
-}
-
-.status-icon {
-  font-size: 14px;
-  font-weight: 700;
-}
-
-.status-text {
-  letter-spacing: 0.5px;
-}
-
-/* 已完成 - 绿色 */
-.status-completed {
-  background: linear-gradient(135deg, #F0F9EB 0%, #E1F3D8 100%);
-  color: #67C23A;
-  border: 1px solid #B3E19D;
-}
-
-.status-completed .status-icon {
-  color: #67C23A;
-}
-
-/* 失败 - 红色 */
-.status-failed {
-  background: linear-gradient(135deg, #FEF0F0 0%, #FDE2E2 100%);
-  color: #F56C6C;
-  border: 1px solid #FBC4C4;
-}
-
-.status-failed .status-icon {
-  color: #F56C6C;
-}
-
-/* 排队中 - 灰色 */
-.status-pending {
-  background: linear-gradient(135deg, #F4F4F5 0%, #E9E9EB 100%);
-  color: #909399;
-  border: 1px solid #DCDFE6;
-}
-
-.status-pending .status-icon {
-  color: #909399;
-}
-
-/* 进度条状态 */
-.status-progress {
+/* ===== 绌虹姸鎬?===== */
+.empty-state {
   text-align: center;
+  padding: 48px 0 32px;
 }
 
-.progress-label {
-  display: block;
-  margin-top: 4px;
-  font-size: 11px;
-  color: #409EFF;
-  font-weight: 600;
+.empty-svg {
+  width: 100px;
+  height: 80px;
+  margin-bottom: 12px;
+  opacity: 0.6;
 }
 
-/* ===== 问题数增强样式 ===== */
-.issue-count-enhanced {
-  display: inline-flex;
+.empty-state p {
+  color: var(--si-text-secondary);
+  font-size: 14px;
+  margin: 0 0 16px;
+  font-weight: 500;
+}
+
+.empty-hint {
+  font-size: 12px !important;
+  color: var(--si-text-muted) !important;
+  margin: -10px 0 16px !important;
+  font-weight: 400 !important;
+}
+
+/* ===== 鍒嗛〉 ===== */
+.pagination-enhanced {
+  margin-top: 16px;
+  padding: 12px 16px;
+  display: flex;
+  justify-content: space-between;
   align-items: center;
-  justify-content: center;
-  gap: 4px;
-  padding: 2px 6px;
+  background: var(--si-bg-surface);
+  border: 1px solid var(--si-border);
   border-radius: 4px;
-  font-size: 14px;
-  font-weight: 600;
-  transition: all 0.2s ease;
 }
 
-.issue-number {
-  color: #606266;
-}
-
-.issue-count-enhanced.has-issues .issue-number {
-  color: #F56C6C;
-}
-
-/* ===== 时间列增强样式 ===== */
-.time-enhanced {
-  display: inline-flex;
+.pagination-left {
+  display: flex;
   align-items: center;
-  gap: 5px;
-  font-size: 13px;
-  color: #909399;
-  white-space: nowrap;
-  padding: 4px 8px;
-  border-radius: 6px;
-  transition: all 0.2s ease;
+  gap: 10px;
 }
 
-.time-enhanced:hover {
-  background: #F5F7FA;
-  color: #409EFF;
+.total-count {
+  color: var(--si-accent);
+  font-size: 15px;
+  font-weight: 700;
+  margin: 0 2px;
+  font-variant-numeric: tabular-nums;
 }
 
-.time-enhanced .el-icon {
-  font-size: 14px;
+.selected-tag {
+  font-weight: 600;
 }
 
-/* ===== 表格行悬停效果 ===== */
+.pagination-component :deep(.el-pagination) {
+  font-size: 12px;
+  justify-content: flex-end;
+}
+
+.pagination-component :deep(.el-pager li),
+.pagination-component :deep(.btn-prev),
+.pagination-component :deep(.btn-next) {
+  border-radius: 3px;
+}
+
+/* ===== 琛ㄦ牸琛?hover ===== */
 .task-history :deep(.el-table__body tr:hover > td) {
-  background-color: #F5F9FF !important;
-  cursor: pointer;
+  background-color: var(--si-bg-hover) !important;
 }
 
 .task-history :deep(.el-table__body tr) {
-  transition: all 0.2s ease;
+  transition: background 0.15s ease;
 }
 
-/* ===== 响应式布局优化 ===== */
-
-/* 中等屏幕 (≤1200px) */
+/* ===== 鍝嶅簲寮?===== */
 @media (max-width: 1200px) {
   .filter-bar-enhanced {
-    gap: 16px;
-    padding: 16px 18px;
+    gap: 12px;
+    padding: 12px 14px;
   }
-
   .search-box {
-    min-width: 220px;
+    min-width: 200px;
   }
-
   .filter-select {
-    width: 140px !important;
+    width: 130px !important;
   }
 }
 
-/* 小屏幕 (≤992px) */
 @media (max-width: 992px) {
   .filter-bar-enhanced {
     flex-direction: column;
     align-items: stretch;
-    gap: 14px;
+    gap: 12px;
   }
-
   .filter-left {
     justify-content: stretch;
   }
-
   .filter-right {
     justify-content: space-between;
-    padding-top: 12px;
-    border-top: 1px dashed #E4E7ED;
+    padding-top: 10px;
+    border-top: 1px dashed var(--si-border);
   }
-
   .search-box {
     min-width: auto;
     flex: 1;
   }
-
   .filter-select {
     flex: 1 !important;
     width: auto !important;
-    min-width: 120px;
+    min-width: 110px;
   }
 }
 
-/* 移动端 (≤768px) */
 @media (max-width: 768px) {
   .filter-bar-enhanced {
-    padding: 14px 16px;
-    gap: 12px;
-  }
-
-  .filter-left {
-    flex-direction: column;
+    padding: 10px 12px;
     gap: 10px;
   }
-
-  .search-input :deep(.el-input__wrapper) {
-    border-radius: 8px; /* 移动端使用较小圆角 */
-  }
-
-  .filter-right {
-    flex-wrap: wrap;
+  .filter-left {
+    flex-direction: column;
     gap: 8px;
   }
-
-  .filter-right .el-button-group {
-    display: flex;
+  .search-input :deep(.el-input__wrapper) {
+    border-radius: 4px;
+  }
+  .filter-right {
     flex-wrap: wrap;
     gap: 6px;
   }
-
-  /* 隐藏分隔线，节省空间 */
+  .filter-right .el-button-group {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+  }
   .filter-right .el-divider--vertical {
     display: none;
   }
-
-  /* 高级按钮文字简化 */
   .advanced-toggle span:not(.el-icon) {
-    display: none; /* 只显示图标 */
+    display: none;
   }
 }
 
-/* 超小屏幕 (≤480px) */
 @media (max-width: 480px) {
   .filter-bar-enhanced {
-    padding: 12px;
+    padding: 10px;
   }
-
   .filter-right .el-button {
-    font-size: 13px;
-    padding: 7px 12px;
-  }
-
-  .filter-select :deep(.el-select__placeholder) {
-    font-size: 13px;
+    font-size: 12px;
+    padding: 6px 10px;
   }
 }
 </style>

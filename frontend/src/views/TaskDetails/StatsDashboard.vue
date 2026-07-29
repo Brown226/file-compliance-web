@@ -2,28 +2,31 @@
   <div class="stats-dashboard">
     <div class="stats-grid">
       <div class="stat-card-dash">
-        <span class="stat-icon-dash">📄</span>
+        <el-icon class="stat-icon-dash" :size="18"><Document /></el-icon>
         <div class="stat-body">
           <span class="stat-value-dash">{{ totalFiles }}</span>
           <span class="stat-label-dash">审查文件</span>
         </div>
       </div>
       <div class="stat-card-dash">
-        <span class="stat-icon-dash">🎯</span>
+        <el-icon class="stat-icon-dash" :size="18"><Aim /></el-icon>
         <div class="stat-body">
           <span class="stat-value-dash">{{ taskMode }}</span>
           <span class="stat-label-dash">审查模式</span>
         </div>
       </div>
       <div class="stat-card-dash" :class="{ 'has-issues': issueCount > 0 }">
-        <span class="stat-icon-dash">{{ issueCount > 0 ? '⚠️' : '✅' }}</span>
+        <el-icon class="stat-icon-dash" :size="18" :color="issueCount > 0 ? '#D97706' : '#16A34A'">
+          <WarningFilled v-if="issueCount > 0" />
+          <CircleCheckFilled v-else />
+        </el-icon>
         <div class="stat-body">
           <span class="stat-value-dash">{{ issueCount }}</span>
           <span class="stat-label-dash">发现问题</span>
         </div>
       </div>
       <div class="stat-card-dash">
-        <span class="stat-icon-dash">📊</span>
+        <el-icon class="stat-icon-dash" :size="18"><DataAnalysis /></el-icon>
         <div class="stat-body">
           <span class="stat-value-dash">{{ objective }}</span>
           <span class="stat-label-dash">审查目标</span>
@@ -76,7 +79,13 @@
 
 <script setup lang="ts">
 import { computed } from 'vue'
-import { WarningFilled } from '@element-plus/icons-vue'
+import {
+  WarningFilled,
+  CircleCheckFilled,
+  Document,
+  Aim,
+  DataAnalysis,
+} from '@element-plus/icons-vue'
 
 const props = defineProps<{
   totalFiles: number
@@ -102,3 +111,147 @@ const scoreConclusion = computed(() => {
   return '合同风险较高，建议逐条审查并修改'
 })
 </script>
+
+<style scoped>
+.stats-dashboard {
+  margin-bottom: 20px;
+}
+
+.stats-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 8px;
+}
+
+.stat-card-dash {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  background: #F9FAFB;
+  border: 1px solid #E5E7EB;
+  border-radius: 6px;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+.stat-card-dash:hover {
+  border-color: #D1D5DB;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.04);
+}
+.stat-card-dash.has-issues {
+  background: #FEF2F2;
+  border-color: #FECACA;
+}
+
+.stat-icon-dash {
+  font-size: 18px;
+  flex-shrink: 0;
+}
+
+.stat-body {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+
+.stat-value-dash {
+  font-size: 15px;
+  font-weight: 700;
+  color: #111827;
+  line-height: 1.2;
+}
+
+.stat-label-dash {
+  font-size: 11px;
+  color: #6B7280;
+}
+
+/* ===== 合同审查评分卡片 ===== */
+.contract-score-card {
+  display: flex;
+  align-items: center;
+  gap: 24px;
+  padding: 16px 20px;
+  margin-top: 12px;
+  background: linear-gradient(135deg, #F0F9FF 0%, #E0F2FE 100%);
+  border: 1px solid #BAE6FD;
+  border-radius: 8px;
+}
+.score-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.score-value {
+  font-size: 42px;
+  font-weight: 800;
+  line-height: 1;
+}
+.score-value.level-good { color: #16A34A; }
+.score-value.level-warning { color: #D97706; }
+.score-value.level-danger { color: #DC2626; }
+.score-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.score-label {
+  font-size: 12px;
+  color: #6B7280;
+}
+.score-conclusion {
+  font-size: 13px;
+  font-weight: 600;
+  color: #374151;
+}
+.risk-summary {
+  display: flex;
+  gap: 20px;
+  margin-left: auto;
+}
+.risk-item {
+  text-align: center;
+}
+.risk-count {
+  font-size: 22px;
+  font-weight: 700;
+  display: block;
+}
+.risk-item.high .risk-count { color: #DC2626; }
+.risk-item.medium .risk-count { color: #D97706; }
+.risk-item.low .risk-count { color: #16A34A; }
+.risk-label {
+  font-size: 11px;
+  color: #6B7280;
+}
+
+.ai-warning-banner {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  margin-top: 8px;
+  background: rgba(230, 162, 60, 0.08);
+  border: 1px solid rgba(230, 162, 60, 0.25);
+  border-radius: 6px;
+  font-size: 13px;
+  color: #90640b;
+  line-height: 1.5;
+}
+
+@media (max-width: 768px) {
+  .stats-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+  .contract-score-card {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 12px;
+  }
+  .risk-summary {
+    margin-left: 0;
+    width: 100%;
+    justify-content: space-between;
+  }
+}
+</style>

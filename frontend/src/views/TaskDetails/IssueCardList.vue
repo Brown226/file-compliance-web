@@ -1,18 +1,5 @@
 <template>
   <div class="right-panel">
-    <!-- 校对模式：双栏视图 -->
-    <ProofreadView
-      v-if="isProofreadMode"
-      :original-text="originalText"
-      :issues="details"
-      @accept="(idx: number) => handleProofreadAccept(idx)"
-      @ignore="(idx: number) => handleProofreadIgnore(idx)"
-      @accept-all="handleProofreadAcceptAll"
-      @ignore-all="handleProofreadIgnoreAll"
-    />
-
-    <!-- 非校对模式：原有视图 -->
-    <template v-else>
     <div class="panel-header">
       <span class="panel-title">审查结果明细</span>
       <span class="result-count">共 {{ filteredAndSearched.length }} 项</span>
@@ -285,7 +272,6 @@
       </template>
       <el-empty v-else description="该任务暂无审查结果（或筛选无匹配）" />
     </div>
-    </template>
   </div>
 </template>
 
@@ -305,7 +291,6 @@ import {
 } from '@element-plus/icons-vue'
 import IssueCard from './IssueCard.vue'
 import BatchToolbar from './BatchToolbar.vue'
-import ProofreadView from './ProofreadView.vue'
 import { useIssueFilter, useBatchSelection } from './composables'
 import { ALL_CATEGORIES, DWG_RULE_TYPE_OPTIONS } from './constants/issue-config'
 import type { IssueDetail } from './types/issue'
@@ -320,8 +305,6 @@ const props = defineProps<{
   reviewMode?: string
   /** RULE_ONLY 模式启用的规则前缀列表 */
   enabledPrefixes?: string[]
-  /** 校对模式全文原文（TYPO_GRAMMAR 模式使用） */
-  originalText?: string
   /** OPT-015: 任务 ID（用于审查结果反馈） */
   taskId?: string
 }>()
@@ -334,39 +317,7 @@ const emit = defineEmits<{
   cancelFp: [detail: IssueDetail]
   locateText: [payload: { detail: IssueDetail; elementId: string }]
   batchFalsePositive: [issueIds: string[], reason?: string]
-  /** 校对模式采纳/忽略事件 */
-  proofreadAccept: [issueId: string]
-  proofreadIgnore: [issueId: string]
-  proofreadAcceptAll: []
-  proofreadIgnoreAll: []
 }>()
-
-/** 是否为校对模式 */
-const isProofreadMode = computed(() => {
-  return props.reviewMode === 'TYPO_GRAMMAR'
-})
-
-/** 校对模式：采纳单个问题 */
-function handleProofreadAccept(index: number) {
-  const issue = props.details[index]
-  if (issue) emit('proofreadAccept', issue.id)
-}
-
-/** 校对模式：忽略单个问题 */
-function handleProofreadIgnore(index: number) {
-  const issue = props.details[index]
-  if (issue) emit('proofreadIgnore', issue.id)
-}
-
-/** 校对模式：全部采纳 */
-function handleProofreadAcceptAll() {
-  emit('proofreadAcceptAll')
-}
-
-/** 校对模式：全部忽略 */
-function handleProofreadIgnoreAll() {
-  emit('proofreadIgnoreAll')
-}
 
 const errorContentRef = ref<HTMLElement | null>(null)
 const showAdvancedFilters = ref(false)
@@ -806,18 +757,6 @@ defineExpose({
 .filter-advanced { padding-top: 8px; border-top: 1px solid #F0F0F0; margin-top: 8px; }
 
 /* ===== 批量操作工具栏样式已迁移至 BatchToolbar.vue ===== */
-
-/* 进入批量模式按钮栏 */
-.enter-batch-bar {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 8px 14px;
-  background: #FAFAFA;
-  border-bottom: 1px solid #EBEEF5;
-  flex-shrink: 0;
-}
-
 
 /* 批量模式下卡片增加左边距（为checkbox留空间） */
 .batch-mode-active .issue-card {

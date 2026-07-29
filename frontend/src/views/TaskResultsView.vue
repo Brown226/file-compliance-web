@@ -142,19 +142,15 @@
         </div>
 
         <!-- 空状态提示（无文件时） -->
-        <div v-if="files.length === 0" class="file-preview-empty-state">
-          <el-empty description=" " :image-size="120">
-            <template #image>
-              <div class="custom-empty-image">
-                <el-icon :size="64" color="#DCDFE6"><Document /></el-icon>
-              </div>
-            </template>
-            <template #description>
-              <p class="empty-title">等待文件加载</p>
-              <p class="empty-desc">上传文件后将在此处显示预览内容</p>
-            </template>
-          </el-empty>
-        </div>
+        <EmptyState
+          v-if="files.length === 0"
+          :icon="Document"
+          title="等待文件加载"
+          description="上传文件后将在此处显示预览内容"
+          :icon-size="64"
+          icon-color="#DCDFE6"
+          class="file-preview-empty-state"
+        />
 
         <div v-else class="editor-container">
           <!-- DWG图纸预览（保留专用组件，支持图纸交互） -->
@@ -226,7 +222,7 @@
 
             <!-- LLM 推理回放 -->
             <el-tooltip content="查看本次审查的 LLM 调用全过程（Prompt / Completion / RAG 片段）" placement="bottom">
-              <el-button size="small" @click="llmReplayVisible = true">
+              <el-button size="small" class="header-action-btn" @click="llmReplayVisible = true">
                 <el-icon><View /></el-icon>&nbsp;推理回放
               </el-button>
             </el-tooltip>
@@ -295,6 +291,12 @@
 
         <!-- Tab内容区 -->
         <div v-if="!isSelfCheck" class="tab-content">
+          <!-- 当前 Tab 说明条（DEC 双清单等含 description 的 Tab 显示） -->
+          <div v-if="currentTabDescription" class="tab-description-bar">
+            <el-icon :size="14"><InfoFilled /></el-icon>
+            <span>{{ currentTabDescription }}</span>
+          </div>
+
           <!-- Tab 1: 审查摘要 -->
           <div v-if="activeTab === 'overview'" class="tab-pane">
             <!-- ===== 统计看板（始终可见）===== -->
@@ -322,9 +324,6 @@
               :error-issues="errorIssues"
               :warning-issues="warningIssues"
               v-model:show-plain-language="showPlainLanguage"
-              :get-category-tag-type="getCategoryTagType"
-              :get-issue-type-label="getIssueTypeLabel"
-              :truncate-text="truncateText"
               @navigate="navigateToIssue"
               @view-all="activeTab = defaultIssueTabKey"
             />
@@ -333,14 +332,16 @@
           <!-- Tab 2: 问题清单（DEC_REVIEW 时拆为完整性+遵从性双清单，共用此内容区）-->
           <div v-if="showIssueListTab" class="tab-pane" style="height:100%; display:flex; flex-direction:column;">
             <!-- 审查通过空状态 -->
-            <div v-if="!loading && task?.status === 'COMPLETED' && currentTabIssues.length === 0" class="empty-state-pass">
-              <div class="pass-icon-wrapper">
-                <el-icon :size="56" color="#67C23A"><CircleCheckFilled /></el-icon>
-              </div>
-              <h3>审查通过</h3>
-              <p class="pass-subtitle">未发现需要处理的问题，文档质量良好</p>
-
-              <div class="empty-actions">
+            <EmptyState
+              v-if="!loading && task?.status === 'COMPLETED' && currentTabIssues.length === 0"
+              :icon="CircleCheckFilled"
+              title="审查通过"
+              description="未发现需要处理的问题，文档质量良好"
+              variant="success"
+              icon-color="#67C23A"
+              :icon-size="56"
+            >
+              <template #actions>
                 <el-button type="primary" size="large" @click="handleExportReport">
                   <el-icon><Download /></el-icon> 导出审查报告
                 </el-button>
@@ -350,8 +351,8 @@
                 <el-button size="large" @click="$router.push('/tasks/new')">
                   <el-icon><Plus /></el-icon> 新建任务
                 </el-button>
-              </div>
-            </div>
+              </template>
+            </EmptyState>
 
             <!-- 有问题时显示问题列表 -->
             <IssueCardList
@@ -363,7 +364,6 @@
               :is-docx-selected="isDocxFileSelected"
               :review-mode="(task as any)?.reviewMode"
               :enabled-prefixes="(task as any)?.reviewPlan?.evidence?.enabledPrefixes"
-              :original-text="proofreadOriginalText"
               :task-id="taskId"
               @update:selected-file-id="(id) => { selectedFileId.value = id; if (id) switchToFileContext(id) }"
               @select-file-by-id="switchToFileContext"
@@ -372,10 +372,6 @@
               @open-fp-dialog="(detail) => handleFalsePositive(detail)"
               @batch-false-positive="handleBatchFalsePositiveFromIssueList"
               @batch-adopt="handleBatchAdoptFromIssueList"
-              @proofread-accept="handleProofreadAccept"
-              @proofread-ignore="handleProofreadIgnore"
-              @proofread-accept-all="handleProofreadAcceptAll"
-              @proofread-ignore-all="handleProofreadIgnoreAll"
             />
           </div>
 
@@ -383,7 +379,6 @@
           <KnowledgeTab
             v-if="activeTab === 'knowledge'"
             :standard-ref-issues="standardRefIssues"
-            :get-standard-ref-title="getStandardRefTitle"
             @locate-item="handleLocateKnowledgeItem"
             @back-to-overview="activeTab = 'overview'"
           />
@@ -432,6 +427,7 @@ import {
   Grid,
   Plus,
   View,
+  InfoFilled,
 } from '@element-plus/icons-vue'
 import {
   getTaskByIdApi,
@@ -453,7 +449,8 @@ import OverviewIssueList from '@/views/TaskDetails/OverviewIssueList.vue'
 import KnowledgeTab from '@/views/TaskDetails/KnowledgeTab.vue'
 import IssueCardList from './TaskDetails/IssueCardList.vue'
 import LlmReplayDrawer from '@/views/TaskDetails/LlmReplayDrawer.vue'
-import { useTaskExport, useTextLocator, useReviewStats, useWsProgress, useFalsePositive, useSelfCheck, useIssueHelpers } from './TaskDetails/composables'
+import EmptyState from '@/views/TaskDetails/EmptyState.vue'
+import { useTaskExport, useTextLocator, useReviewStats, useWsProgress, useFalsePositive, useSelfCheck, getModeLabel } from './TaskDetails/composables'
 
 const route = useRoute()
 const router = useRouter()
@@ -526,12 +523,6 @@ const showAiWarning = computed(() => {
 
 // ===== 合同审查评分 =====
 const isContractReview = computed(() => (task.value as any)?.reviewMode === 'CONTRACT_REVIEW')
-
-/** 校对模式原文文本（暂无全文获取接口，预留） */
-const proofreadOriginalText = computed(() => {
-  // TODO: 从文件内容 API 获取全文文本后启用双栏高亮
-  return undefined as string | undefined
-})
 
 const contractScoreData = computed(() => {
   const high = issueDetails.value.filter((d: any) => {
@@ -719,20 +710,43 @@ watch(() => selectedFileId.value, (fileId) => {
 // ===== Tab 配置（DEC_REVIEW 模式下显示完整性+遵从性双清单）=====
 const isDecReviewMode = computed(() => (task.value as any)?.reviewMode === 'DEC_REVIEW')
 
-const tabs = computed(() => {
-  const result: Array<{ key: string; label: string; icon: string }> = [
+interface TabConfig {
+  key: string
+  label: string
+  icon: string
+  description?: string
+}
+
+const tabs = computed<TabConfig[]>(() => {
+  const result: TabConfig[] = [
     { key: 'overview', label: '审查摘要', icon: 'DataAnalysis' },
   ]
   if (isDecReviewMode.value) {
     result.push(
-      { key: 'completeness', label: '完整性审查', icon: 'CircleCheck' },
-      { key: 'compliance', label: '遵从性审查', icon: 'WarningFilled' },
+      {
+        key: 'completeness',
+        label: '完整性核查',
+        icon: 'CircleCheck',
+        description: '检查设计文档的章节结构是否齐全，对照规范要求识别缺失的必备章节与内容',
+      },
+      {
+        key: 'compliance',
+        label: '合规性核查',
+        icon: 'WarningFilled',
+        description: '检查文档内容是否符合相关标准条款，包含分项合规、事实维度与文本表述三层交叉复核',
+      },
     )
   } else {
     result.push({ key: 'suggestions', label: '问题清单', icon: 'WarningFilled' })
   }
   result.push({ key: 'knowledge', label: '标准引用', icon: 'Reading' })
   return result
+})
+
+/** 当前 Tab 的说明文字（用于 Tab 内容区顶部展示） */
+const currentTabDescription = computed(() => {
+  const tab = tabs.value.find(t => t.key === activeTab.value)
+  return tab?.description || ''
 })
 
 // ===== Tab Badge / getTabBadge 已迁移到 useReviewStats composable =====
@@ -799,12 +813,10 @@ const showIssueListTab = computed(() =>
   ['suggestions', 'completeness', 'compliance'].includes(activeTab.value)
 )
 
-// ===== 工具函数（使用 Composable）=====
-const {
-  getIssueTitle, getConfidenceLabel, getConfidenceTagType,
-  getStandardRefTitle, getIssueTypeLabel, getCategoryTagType,
-  pct, truncateText, pickLocateKeyword, collectLocateAnchors,
-} = useIssueHelpers()
+// ===== 工具函数 =====
+// 标签类函数（getCategoryTagType / getIssueTypeLabel / truncateText / getStandardRefTitle 等）
+// 已下沉到子组件（OverviewIssueList / KnowledgeTab / IssueCard）直接 import useIssueHelpers，
+// 父层不再透传，避免"改一处忘两处"的同步问题。
 
 // ===== WebSocket 实时进度处理 =====
 
@@ -1078,26 +1090,6 @@ const fetchData = async (silent = false) => {
 // pickLocateKeyword, collectLocateAnchors 已迁移到 useIssueHelpers composable =====
 
 // ===== IssueCardList 桥接事件处理 =====
-
-const handleProofreadAccept = (issueId: string) => {
-  console.log('[Proofread] 采纳:', issueId)
-  ElMessage.success('已采纳修改建议')
-}
-
-const handleProofreadIgnore = (issueId: string) => {
-  console.log('[Proofread] 忽略:', issueId)
-  ElMessage.info('已忽略该问题')
-}
-
-const handleProofreadAcceptAll = () => {
-  console.log('[Proofread] 全部采纳')
-  ElMessage.success('已全部采纳')
-}
-
-const handleProofreadIgnoreAll = () => {
-  console.log('[Proofread] 全部忽略')
-  ElMessage.info('已全部忽略')
-}
 
 const handleCopyCadHandle = (handleId: string) => {
   navigator.clipboard.writeText(handleId).then(() => {
@@ -1432,30 +1424,6 @@ onUnmounted(() => {
   min-height: 400px;
 }
 
-.custom-empty-image {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 120px;
-  height: 120px;
-  background: linear-gradient(135deg, #F5F7FA 0%, #FFFFFF 100%);
-  border-radius: 50%;
-  margin-bottom: 16px;
-}
-
-.empty-title {
-  font-size: 16px;
-  font-weight: 600;
-  color: #606266;
-  margin: 0 0 8px;
-}
-
-.empty-desc {
-  font-size: 13px;
-  color: #C0C4CC;
-  margin: 0;
-}
-
 /* 文件切换 Tab */
 .file-tabs {
   display: flex;
@@ -1567,13 +1535,14 @@ onUnmounted(() => {
 .header-right {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 12px;
   flex-shrink: 0;
   min-width: 0;
 }
 
-/* ===== 导出报告：统一的次级下拉按钮 ===== */
-.export-action-btn {
+/* ===== 导出报告 / 推理回放：统一的次级按钮 ===== */
+.export-action-btn,
+.header-action-btn {
   font-weight: 500;
   font-size: 13px;
   padding: 7px 14px;
@@ -1585,7 +1554,9 @@ onUnmounted(() => {
 }
 
 .export-action-btn:hover,
-.export-action-btn:focus {
+.export-action-btn:focus,
+.header-action-btn:hover,
+.header-action-btn:focus {
   color: #2563EB !important;
   background: #F9FAFB !important;
   border-color: #93C5FD !important;
@@ -1610,7 +1581,7 @@ onUnmounted(() => {
   background: none;
   border: none;
   cursor: pointer;
-  padding: 5px 10px;
+  padding: 7px 12px;
   border-radius: 6px;
   transition: all 0.2s ease;
   white-space: nowrap;
@@ -1629,51 +1600,55 @@ onUnmounted(() => {
   white-space: nowrap;
 }
 
-.plain-mode-switch {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  flex-shrink: 0;
-}
-
-.switch-label {
-  font-size: 12px;
-  color: #6B7280;
-  white-space: nowrap;
-}
-
 /* Tab导航 */
 .tab-navigation {
+  position: relative;
+  z-index: 1;
   display: flex;
+  gap: 4px;
+  padding: 6px 12px;
+  background: #F9FAFB;
   border-bottom: 1px solid #E5E7EB;
-  padding: 0 16px;
 }
 
 .tab-item {
-  padding: 10px 16px;
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 14px;
   font-size: 13px;
   font-weight: 500;
   color: #6B7280;
   border: none;
-  background: none;
+  background: transparent;
+  border-radius: 6px 6px 0 0;
   cursor: pointer;
-  border-bottom: 2px solid transparent;
   transition: all 0.2s;
 }
 
 .tab-item:hover {
-  color: #3B82F6;
+  color: #2563EB;
+  background: rgba(37, 99, 235, 0.06);
 }
 
 .tab-item.active {
-  color: #3B82F6;
-  border-bottom-color: #3B82F6;
+  color: #2563EB;
+  background: #FFFFFF;
+  font-weight: 600;
 }
 
-.tab-item {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
+.tab-item.active::after {
+  content: '';
+  position: absolute;
+  left: 4px;
+  right: 4px;
+  bottom: 0;
+  z-index: 3;
+  height: 3px;
+  background: #2563EB;
+  border-radius: 3px 3px 0 0;
+  box-shadow: 0 -1px 4px rgba(37, 99, 235, 0.25);
 }
 
 .tab-icon {
@@ -1702,502 +1677,31 @@ onUnmounted(() => {
   padding: 16px;
 }
 
-/* ===== Overview Tab: 统计看板 ===== */
-.stats-dashboard {
-  margin-bottom: 20px;
-}
-
-.stats-grid {
-  display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: 8px;
-}
-
-.stat-card-dash {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 10px 12px;
-  background: #F9FAFB;
-  border: 1px solid #E5E7EB;
-  border-radius: 6px;
-  transition: border-color 0.15s, box-shadow 0.15s;
-}
-.stat-card-dash:hover {
-  border-color: #D1D5DB;
-  box-shadow: 0 1px 4px rgba(0,0,0,0.04);
-}
-.stat-card-dash.has-issues {
-  background: #FEF2F2;
-  border-color: #FECACA;
-}
-
-.stat-icon-dash {
-  font-size: 18px;
-  flex-shrink: 0;
-}
-
-.stat-body {
-  display: flex;
-  flex-direction: column;
-  gap: 1px;
-  min-width: 0;
-}
-
-.stat-value-dash {
-  font-size: 15px;
-  font-weight: 700;
-  color: #111827;
-  line-height: 1.2;
-}
-
-.stat-label-dash {
-  font-size: 11px;
-  color: #6B7280;
-}
-
-/* ===== Overview Tab: 问题预览列表 ===== */
-.overview-issue-list {
-  margin-top: 20px;
-}
-
-.overview-issue-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 12px;
-}
-
-.overview-section-title {
-  font-size: 14px;
-  font-weight: 700;
-  color: #111827;
-  margin: 0;
-}
-
-.overview-header-actions {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.overview-header-actions .switch-label {
-  font-size: 12px;
-  color: #6B7280;
-}
-
-/* 严重度分组 */
-.overview-severity-group {
-  margin-bottom: 16px;
-}
-
-.severity-group-header {
+/* ===== Tab 说明条（DEC 双清单等含描述的 Tab 顶部展示）===== */
+.tab-description-bar {
   display: flex;
   align-items: center;
   gap: 6px;
-  font-size: 12px;
-  font-weight: 700;
-  padding: 6px 0 8px;
-  margin-bottom: 6px;
-  border-bottom: 1px solid #F3F4F6;
-}
-.severity-group-header.severity-error { color: #DC2626; }
-.severity-group-header.severity-warning { color: #D97706; }
-
-.severity-dot-sm {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  flex-shrink: 0;
-}
-.error-dot { background: #EF4444; }
-.warning-dot { background: #F59E0B; }
-
-/* 概览问题卡片 */
-.overview-issue-card {
-  position: relative;
-  padding: 10px 36px 10px 12px;
-  background: #FFFFFF;
-  border: 1px solid #E5E7EB;
-  border-left: 3px solid #EF4444;
-  border-radius: 6px;
-  margin-bottom: 6px;
-  cursor: pointer;
-  transition: all 0.15s ease;
-}
-.overview-issue-card:hover {
-  border-color: #D1D5DB;
-  box-shadow: 0 2px 8px rgba(0,0,0,0.06);
-  transform: translateX(2px);
-}
-.overview-issue-card.warning {
-  border-left-color: #F59E0B;
-}
-
-.oic-tags {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  margin-bottom: 4px;
-}
-
-.oic-desc {
-  font-size: 13px;
-  font-weight: 600;
-  color: #111827;
-  margin: 0 0 4px;
-  line-height: 1.4;
-}
-
-.oic-plain {
-  font-size: 12px;
-  color: #6B7280;
-  margin: 0 0 6px;
-  line-height: 1.4;
-}
-
-.oic-preview-row {
-  display: flex;
-  gap: 4px;
-  font-size: 12px;
-  line-height: 1.5;
-  margin-bottom: 2px;
-  overflow: hidden;
-}
-
-.oic-preview-label {
-  color: #9CA3AF;
-  flex-shrink: 0;
-  font-weight: 500;
-}
-
-.oic-preview-text {
-  flex: 1;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.oic-preview-text.original {
-  color: #DC2626;
-  background: #FEF2F2;
-  padding: 1px 6px;
-  border-radius: 3px;
-}
-.oic-preview-text.suggested {
-  color: #059669;
-  background: #ECFDF5;
-  padding: 1px 6px;
-  border-radius: 3px;
-}
-
-.oic-arrow {
-  position: absolute;
-  right: 10px;
-  top: 50%;
-  transform: translateY(-50%);
-  font-size: 14px;
-  color: #9CA3AF;
-  opacity: 0;
-  transition: opacity 0.15s;
-}
-.overview-issue-card:hover .oic-arrow {
-  opacity: 1;
-  color: #3B82F6;
-}
-
-/* 查看全部按钮 */
-.view-all-wrapper {
-  margin-top: 8px;
-  text-align: center;
-}
-
-.view-all-btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 6px 16px;
-  font-size: 12px;
-  color: #3B82F6;
-  background: #EFF6FF;
-  border: 1px solid #BFDBFE;
-  border-radius: 6px;
-  cursor: pointer;
-  transition: all 0.15s ease;
-  font-weight: 500;
-}
-
-.view-all-btn:hover {
-  background: #DBEAFE;
-  border-color: #93C5FD;
-  color: #2563EB;
-}
-
-.view-all-btn-warning {
-  background: #FFFBEB;
-  border-color: #FDE68A;
-  color: #D97706;
-}
-
-.view-all-btn-warning:hover {
-  background: #FEF3C7;
-  border-color: #FCD34D;
-  color: #B45309;
-}
-
-/* 知识库卡片 */
-.knowledge-list {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-
-.knowledge-card {
-  padding: 12px;
-  background: #EFF6FF;
-  border-radius: 6px;
-  border: 1px solid #BFDBFE;
-  transition: all 0.15s ease;
-}
-
-.knowledge-card-clickable {
-  cursor: pointer;
-}
-
-.knowledge-card-clickable:hover {
-  border-color: #93C5FD;
-  box-shadow: 0 2px 8px rgba(59, 130, 246, 0.12);
-  transform: translateX(3px);
-}
-
-.knowledge-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 8px;
-}
-
-.knowledge-header-right {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-
-.knowledge-title {
-  font-size: 13px;
-  font-weight: 600;
-  color: #1E40AF;
-  margin: 0;
-}
-
-.knowledge-content {
-  font-size: 12px;
-  color: #374151;
-  line-height: 1.6;
-  margin: 0;
-}
-
-/* 统计分析 */
-.analytics-overview {
-  display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: 12px;
-  margin-bottom: 24px;
-}
-
-.stat-card {
-  padding: 16px;
-  border-radius: 8px;
-  text-align: center;
-  background: #F9FAFB;
-  border: 1px solid #E5E7EB;
-}
-
-.stat-card.total {
-  background: #EFF6FF;
-  border-color: #BFDBFE;
-}
-
-.stat-card.error {
-  background: #FEF2F2;
-  border-color: #FECACA;
-}
-
-.stat-card.warning {
-  background: #FFFBEB;
-  border-color: #FDE68A;
-}
-
-.stat-card.info {
-  background: #EFF6FF;
-  border-color: #BFDBFE;
-}
-
-.stat-number {
-  font-size: 28px;
-  font-weight: 700;
-  margin-bottom: 4px;
-}
-
-.stat-card.total .stat-number {
-  color: #3B82F6;
-}
-
-.stat-card.error .stat-number {
-  color: #EF4444;
-}
-
-.stat-card.warning .stat-number {
-  color: #F59E0B;
-}
-
-.stat-card.info .stat-number {
-  color: #3B82F6;
-}
-
-.stat-label {
-  font-size: 12px;
-  color: #6B7280;
-}
-
-.analytics-section {
-  margin-bottom: 24px;
-}
-
-.severity-bars {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-
-.severity-bar-item {
-  display: grid;
-  grid-template-columns: 60px 1fr 100px;
-  align-items: center;
-  gap: 12px;
-}
-
-.severity-label {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 13px;
-  font-weight: 600;
-  color: #374151;
-}
-
-.severity-dot {
-  width: 10px;
-  height: 10px;
-  border-radius: 50%;
-}
-
-.severity-bar-track {
-  height: 8px;
-  background: #F3F4F6;
-  border-radius: 4px;
-  overflow: hidden;
-}
-
-.severity-bar-fill {
-  height: 100%;
-  border-radius: 4px;
-  transition: width 0.5s ease;
-}
-
-.severity-count {
-  font-size: 12px;
-  color: #6B7280;
-  text-align: right;
-}
-
-.category-list {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
-  gap: 8px;
-}
-
-.category-item {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
   padding: 8px 12px;
-  background: #F9FAFB;
+  margin-bottom: 12px;
+  background: #F0F9FF;
+  border: 1px solid #BAE6FD;
   border-radius: 6px;
-  border: 1px solid #E5E7EB;
-}
-
-.category-count {
-  font-size: 13px;
-  font-weight: 600;
-  color: #3B82F6;
-}
-
-/* 工具类 */
-.w-full {
-  width: 100%;
-}
-
-.mr-1 {
-  margin-right: 4px;
-}
-
-.mt-3 {
-  margin-top: 12px;
-}
-
-/* 审查摘要 */
-.review-summary {
-  padding: 24px;
-}
-
-.summary-title {
-  font-size: 16px;
-  font-weight: 600;
-  color: var(--el-text-color-primary);
-  margin: 0 0 16px 0;
-}
-
-.summary-cards {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 12px;
-  margin-bottom: 20px;
-}
-
-.summary-card {
-  display: flex;
-  flex-direction: column;
-  padding: 12px 16px;
-  background: var(--el-fill-color-light);
-  border-radius: 8px;
-  min-width: 140px;
-  border: 1px solid var(--el-border-color-lighter);
-}
-
-.summary-card.sub {
-  background: transparent;
-  border: none;
-  min-width: 100px;
-  padding: 6px 12px;
-}
-
-.summary-card.has-issues {
-  border-color: var(--el-color-warning);
-  background: rgba(230, 162, 60, 0.06);
-}
-
-.summary-label {
   font-size: 12px;
-  color: var(--el-text-color-secondary);
-  margin-bottom: 4px;
+  color: #0369A1;
+  line-height: 1.5;
 }
 
-.summary-value {
-  font-size: 16px;
-  font-weight: 700;
-  color: var(--el-text-color-primary);
+.tab-description-bar .el-icon {
+  color: #0EA5E9;
+  flex-shrink: 0;
 }
 
+/* ===== Overview Tab: 统计看板（样式已下沉到 StatsDashboard 子组件）===== */
+/* ===== Overview Tab: 问题预览列表（样式已下沉到 OverviewIssueList 子组件）===== */
+/* ===== Knowledge Tab: 知识库卡片（样式已下沉到 KnowledgeTab 子组件）===== */
+
+/* 审查通过（无问题）横幅 — 摘要 Tab 使用 */
 .summary-pass {
   display: flex;
   align-items: center;
@@ -2210,79 +1714,6 @@ onUnmounted(() => {
   font-weight: 500;
 }
 
-.ai-warning-banner {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 10px 14px;
-  margin-top: 8px;
-  background: rgba(230, 162, 60, 0.08);
-  border: 1px solid rgba(230, 162, 60, 0.25);
-  border-radius: 6px;
-  font-size: 13px;
-  color: #90640b;
-  line-height: 1.5;
-}
-
-/* ===== 合同审查评分卡片 ===== */
-.contract-score-card {
-  display: flex;
-  align-items: center;
-  gap: 24px;
-  padding: 16px 20px;
-  margin-top: 12px;
-  background: linear-gradient(135deg, #F0F9FF 0%, #E0F2FE 100%);
-  border: 1px solid #BAE6FD;
-  border-radius: 8px;
-}
-.score-header {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-.score-value {
-  font-size: 42px;
-  font-weight: 800;
-  line-height: 1;
-}
-.score-value.level-good { color: #16A34A; }
-.score-value.level-warning { color: #D97706; }
-.score-value.level-danger { color: #DC2626; }
-.score-meta {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-.score-label {
-  font-size: 12px;
-  color: #6B7280;
-}
-.score-conclusion {
-  font-size: 13px;
-  font-weight: 600;
-  color: #374151;
-}
-.risk-summary {
-  display: flex;
-  gap: 20px;
-  margin-left: auto;
-}
-.risk-item {
-  text-align: center;
-}
-.risk-count {
-  font-size: 22px;
-  font-weight: 700;
-  display: block;
-}
-.risk-item.high .risk-count { color: #DC2626; }
-.risk-item.medium .risk-count { color: #D97706; }
-.risk-item.low .risk-count { color: #16A34A; }
-.risk-label {
-  font-size: 11px;
-  color: #6B7280;
-}
-
 /* 响应式 */
 @media (max-width: 1200px) {
   .main-content {
@@ -2293,10 +1724,6 @@ onUnmounted(() => {
   .right-panel {
     flex: none;
     height: 50vh;
-  }
-
-  .analytics-overview {
-    grid-template-columns: repeat(2, 1fr);
   }
 }
 
@@ -2403,7 +1830,7 @@ onUnmounted(() => {
   }
 
   .header-right {
-    gap: 6px;
+    gap: 10px;
   }
 
   .resize-divider {
@@ -2411,11 +1838,12 @@ onUnmounted(() => {
   }
 
   .tab-navigation {
-    padding: 0 12px;
+    padding: 4px 8px;
+    gap: 2px;
   }
 
   .tab-item {
-    padding: 8px 12px;
+    padding: 6px 10px;
     font-size: 12px;
   }
 
@@ -2543,79 +1971,7 @@ onUnmounted(() => {
   }
 }
 
-/* ====== 标准引用自检报告样式 ====== */
-.self-check-report-panel {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  padding: 12px;
-  flex: 1;
-  overflow: auto;
-  min-width: 0;
-  min-height: 0;
-}
-
-.sc-summary-bar {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  flex-wrap: wrap;
-  padding: 8px 12px;
-  background: var(--el-fill-color-lighter);
-  border-radius: 8px;
-}
-
-.sc-lib-info {
-  font-size: 12px;
-  color: var(--el-text-color-placeholder);
-  margin-left: auto;
-}
-
-.sc-name-sub {
-  font-size: 11px;
-  color: var(--el-text-color-secondary);
-  margin-top: 2px;
-}
-
-.sc-detail-card {
-  margin-top: 8px;
-}
-
-.sc-diff-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 13px;
-  line-height: 1.8;
-}
-
-.sc-wrong {
-  color: var(--el-color-danger);
-  font-family: monospace;
-  background: #fde8e8;
-  padding: 1px 6px;
-  border-radius: 3px;
-  border: 1px dashed var(--el-color-danger);
-}
-
-.sc-correct {
-  color: var(--el-color-success);
-  font-family: monospace;
-  background: #e8f5e9;
-  padding: 1px 6px;
-  border-radius: 3px;
-  font-weight: 600;
-}
-
-.correct-text {
-  color: var(--el-color-success);
-}
-
-.no-match {
-  color: var(--el-color-danger);
-  font-weight: 700;
-  font-size: 16px;
-}
+/* ====== 标准引用自检报告样式（已下沉到 SelfCheckReportPanel 子组件）====== */
 
 /* 响应式布局优化 */
 @media (max-width: 1200px) {
@@ -2739,85 +2095,7 @@ onUnmounted(() => {
   }
 }
 
-/* ===== 空状态样式 ===== */
-.empty-state-pass,
-.empty-state-knowledge {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  padding: 60px 20px;
-  text-align: center;
-}
-
-.pass-icon-wrapper {
-  width: 80px;
-  height: 80px;
-  border-radius: 50%;
-  background: linear-gradient(135deg, #ECFDF5 0%, #D1FAE5 100%);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  margin-bottom: 16px;
-}
-
-.empty-state-pass h3,
-.empty-state-knowledge h4 {
-  margin: 0 0 8px;
-  font-size: 20px;
-  font-weight: 600;
-  color: #065F46;
-}
-
-.pass-subtitle {
-  margin: 0 0 28px;
-  font-size: 14px;
-  color: #6B7280;
-}
-
-.empty-state-pass p,
-.empty-state-knowledge .empty-reason {
-  margin: 0 0 24px;
-  font-size: 14px;
-  color: #6B7280;
-}
-
-.empty-actions {
-  display: flex;
-  gap: 12px;
-  margin-bottom: 16px;
-}
-
-.empty-hint {
-  font-size: 12px;
-  color: #9CA3AF;
-  max-width: 400px;
-  line-height: 1.6;
-}
-
-.empty-state-knowledge .possible-reasons {
-  text-align: left;
-  background: #FFFBEB;
-  border: 1px solid #FDE68A;
-  border-radius: 8px;
-  padding: 16px 20px;
-  margin-bottom: 24px;
-  max-width: 440px;
-}
-
-.empty-state-knowledge .possible-reasons p {
-  margin: 0 0 8px;
-  color: #92400E;
-  font-size: 13px;
-}
-
-.empty-state-knowledge .possible-reasons ul {
-  margin: 0;
-  padding-left: 20px;
-  color: #78716C;
-  font-size: 13px;
-  line-height: 1.8;
-}
+/* ===== 空状态样式（已统一到 EmptyState 组件）===== */
 
 /* OPT-011: 封面信息卡片 */
 .cover-info-card {
