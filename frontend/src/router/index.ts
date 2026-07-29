@@ -31,7 +31,12 @@ const routes: Array<RouteRecordRaw> = [
         meta: { title: '审查中心' }
       },
       { path: 'workspace', redirect: '/review-center' },
-      { path: 'tasks', redirect: '/review-center?tab=tasks' },
+      {
+        path: 'tasks',
+        name: 'TaskHistory',
+        component: () => import('../views/TaskHistory.vue'),
+        meta: { title: '全部任务' }
+      },
       {
         path: 'review',
         name: 'SmartReview',
@@ -141,7 +146,7 @@ const routes: Array<RouteRecordRaw> = [
         path: 'admin/rule-libraries',
         name: 'RuleLibraries',
         component: () => import('../views/admin/RuleLibraries.vue'),
-        meta: { title: '语义知识库', allowViewer: true }
+        meta: { title: '语义规则库', allowViewer: true }
       },
       {
         path: 'admin/rules',
@@ -206,6 +211,12 @@ const routes: Array<RouteRecordRaw> = [
         name: 'AdminFeedback',
         component: () => import('../views/FeedbackManagement.vue'),
         meta: { title: '反馈管理', requiresAdmin: true }
+      },
+      {
+        path: 'admin/feature-flags',
+        name: 'AdminFeatureFlags',
+        component: () => import('../views/admin/FeatureFlags.vue'),
+        meta: { title: '功能管理', requiresAdmin: true }
       },
 
       // ===== 旧路由重定向（兼容已有书签）=====
@@ -303,11 +314,17 @@ const router = createRouter({
   routes
 })
 
-router.beforeEach((to, _from, next) => {
+router.beforeEach(async (to, _from, next) => {
   cancelAllPendingRequests()
 
   const userStore = useUserStore()
   const isAuthenticated = !!userStore.token
+
+  // 已认证用户首次跳转时加载功能开关（幂等，重复调用只发一次请求）
+  if (isAuthenticated) {
+    const { loadFeatureFlags } = await import('@/composables/useFeatureFlags')
+    loadFeatureFlags()
+  }
 
   if (to.meta.requiresAuth && !isAuthenticated) {
     next({ name: 'Login' })
