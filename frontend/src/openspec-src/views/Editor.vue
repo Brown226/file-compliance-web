@@ -813,14 +813,21 @@ onMounted(async () => {
     try {
       const project = JSON.parse(projectData)
       // 只有当 currentProject 属于当前文档时才使用
-      if (project.documentId === documentId) {
+      // 兼容 DocumentWizard 写入的 id 字段和正式流程的 documentId 字段
+      if (project.id === documentId || project.documentId === documentId) {
         documentTitle.value = project.title || '施工设计说明'
         hasCurrentProjectData = true
         // 填充项目概况信息到 projectForm
+        // 兼容 DocumentWizard 的 summary 字段
         if (project.projectInfo) {
           projectForm.value = {
             ...projectForm.value,
             ...project.projectInfo
+          }
+        } else if (project.summary) {
+          projectForm.value = {
+            ...projectForm.value,
+            projectSummary: project.summary,
           }
         }
         // 使用完毕后清除 currentProject
@@ -830,10 +837,14 @@ onMounted(async () => {
   }
 
   // 加载文档大纲
-  await loadDocumentOutline(documentId)
+  // 注意：DocumentWizard 用 Date.now() 作 id，非真实后端文档 ID，此时跳过后端加载
+  const isTempId = /^\d+$/.test(documentId)
+  if (!isTempId) {
+    await loadDocumentOutline(documentId)
+  }
 
   // 如果本地没有数据（既不是本地缓存也不是 currentProject），从后端 API 获取
-  if (!hasLocalProjectInfo && !hasCurrentProjectData) {
+  if (!hasLocalProjectInfo && !hasCurrentProjectData && !isTempId) {
     try {
       const result = await getDocumentById(documentId)
       if (result.code === 200 && result.data) {

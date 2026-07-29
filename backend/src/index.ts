@@ -35,6 +35,10 @@ const startServer = async () => {
     // 初始化提示词模板（幂等 upsert，不覆盖用户自定义内容）
     await PromptTemplateService.seedBuiltinTemplates();
 
+    // 初始化功能开关默认值（幂等 upsert，不覆盖已修改的值）
+    const { seedFeatureFlags } = await import('./services/system/feature-flag.service');
+    await seedFeatureFlags();
+
     // 迁移旧的 LLM 凭证副本配置为 Provider 引用（幂等，已迁移则跳过）
     const { migrateLlmConfigsToProviderRef } = await import('./services/llm/profile-migration.service');
     await migrateLlmConfigsToProviderRef();

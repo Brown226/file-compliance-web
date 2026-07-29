@@ -18,7 +18,6 @@
     <div class="ai-content">
       <AiAssistant v-show="activeTab === 'chat'" />
       <PolishTool v-show="activeTab === 'polish'" />
-      <DocumentWizard v-if="activeTab === 'generate'" />
       <ProjectQA v-if="activeTab === 'qa'" />
       <MemoryManagement v-if="activeTab === 'memory'" />
     </div>
@@ -28,10 +27,9 @@
 <script setup lang="ts">
 import { ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { ChatDotRound, Brush, DocumentAdd, ChatLineSquare, Memo } from '@element-plus/icons-vue'
+import { ChatDotRound, Brush, ChatLineSquare, Memo } from '@element-plus/icons-vue'
 import AiAssistant from '@/views/ai-assistant/AiAssistant.vue'
 import PolishTool from '@/views/Tools/PolishTool.vue'
-import DocumentWizard from '@/views/openspec/DocumentWizard.vue'
 import ProjectQA from '@/views/openspec/ProjectQA.vue'
 import MemoryManagement from '@/views/openspec/MemoryManagement.vue'
 
@@ -41,7 +39,6 @@ const router = useRouter()
 const tabs = [
   { key: 'chat', label: '智能问答', icon: ChatDotRound },
   { key: 'polish', label: 'AI 润色', icon: Brush },
-  { key: 'generate', label: '文档生成', icon: DocumentAdd },
   { key: 'qa', label: '项目问答', icon: ChatLineSquare },
   { key: 'memory', label: '长期记忆', icon: Memo },
 ]

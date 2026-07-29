@@ -181,6 +181,7 @@ import { Plus } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useUserStore } from '@/stores/user'
 import { getEmbedUrlApi, clearEmbedSessionApi } from '@/api/maxkb'
+import { getSystemConfigApi, saveSystemConfigApi } from '@/api/system'
 
 interface Agent {
   id: string
@@ -206,8 +207,6 @@ const showEditDialog = ref(false)
 const editingIndex = ref(-1)
 const editForm = ref<Partial<Agent>>({})
 
-const STORAGE_KEY = 'maxkb-ai-assistant-agents'
-
 const colorOptions = [
   'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
   'linear-gradient(135deg, #f093fb 0%, #f5576c 100%)',
@@ -216,6 +215,10 @@ const colorOptions = [
   'linear-gradient(135deg, #fa709a 0%, #fee140 100%)',
   'linear-gradient(135deg, #a18cd1 0%, #fbc2eb 100%)',
 ]
+
+// 智能体配置存储在后端 system_configs 表，key = AI_ASSISTANT_AGENTS_KEY
+// 跨设备共享，仅管理员可写，所有登录用户可读
+const AI_ASSISTANT_AGENTS_KEY = 'ai_assistant_agents'
 
 // ==================== UUID 提取 ====================
 
@@ -234,40 +237,51 @@ const extractUUID = (input: string): string => {
   return trimmed // 无法识别则原样返回，让后端报错
 }
 
-// ==================== 智能体管理 ====================
+// ==================== 智能体管理（后端持久化） ====================
 
-const loadAgents = () => {
+const loadAgents = async () => {
   try {
-    const data = localStorage.getItem(STORAGE_KEY)
-    if (data) {
-      const parsed = JSON.parse(data)
-      const valid: Agent[] = []
-      for (const a of parsed) {
-        const appId = a.applicationId || ''
-        if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(appId)) {
-          valid.push({
-            id: a.id || Date.now().toString(),
-            name: a.name || '未命名',
-            description: a.description || '',
-            applicationId: appId,
-            color: a.color || colorOptions[0],
-            category: a.category || '',
-            model: a.model || '',
-          })
-        }
-      }
-      agents.value = valid
-      if (valid.length !== parsed.length) saveAgents()
-    } else {
-      agents.value = []
+    const { data } = await getSystemConfigApi(AI_ASSISTANT_AGENTS_KEY)
+    const raw = data?.value
+    // 兼容 string（双重序列化）和 array 两种返回
+    let parsed: any[] = []
+    if (Array.isArray(raw)) {
+      parsed = raw
+    } else if (typeof raw === 'string') {
+      try { parsed = JSON.parse(raw) || [] } catch { parsed = [] }
     }
-  } catch {
+    const valid: Agent[] = []
+    for (const a of parsed) {
+      const appId = a.applicationId || ''
+      if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(appId)) {
+        valid.push({
+          id: a.id || Date.now().toString(),
+          name: a.name || '未命名',
+          description: a.description || '',
+          applicationId: appId,
+          color: a.color || colorOptions[0],
+          category: a.category || '',
+          model: a.model || '',
+        })
+      }
+    }
+    agents.value = valid
+    // 数据库脏数据时自动回写清洗后的结果
+    if (valid.length !== parsed.length) await saveAgents()
+  } catch (e) {
+    console.error('[AiAssistant] 加载智能体失败:', e)
     agents.value = []
   }
 }
 
-const saveAgents = () => {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(agents.value))
+const saveAgents = async () => {
+  try {
+    await saveSystemConfigApi(AI_ASSISTANT_AGENTS_KEY, agents.value)
+  } catch (e: any) {
+    ElMessage.error('保存智能体失败: ' + (e.message || '未知错误'))
+    console.error('[AiAssistant] saveAgents failed:', e)
+    throw e
+  }
 }
 
 const openAddDialog = () => {
@@ -282,7 +296,7 @@ const openEditDialog = (index: number) => {
   showEditDialog.value = true
 }
 
-const saveAgent = () => {
+const saveAgent = async () => {
   if (!editForm.value.name?.trim()) {
     ElMessage.warning('请输入名称')
     return
@@ -300,43 +314,65 @@ const saveAgent = () => {
   }
   editForm.value.applicationId = extractedId
 
-  if (editingIndex.value === -1) {
-    agents.value.push({
-      id: Date.now().toString(),
-      name: editForm.value.name!.trim(),
-      description: editForm.value.description?.trim() || '',
-      applicationId: extractedId,
-      color: editForm.value.color || colorOptions[0],
-      category: editForm.value.category?.trim() || '',
-      model: editForm.value.model?.trim() || '',
-    })
-    ElMessage.success('添加成功')
-  } else {
-    agents.value[editingIndex.value] = {
-      ...agents.value[editingIndex.value],
-      name: editForm.value.name!.trim(),
-      description: editForm.value.description?.trim() || '',
-      applicationId: extractedId,
-      color: editForm.value.color || colorOptions[0],
-      category: editForm.value.category?.trim() || '',
-      model: editForm.value.model?.trim() || '',
-    }
-    ElMessage.success('保存成功')
+  // 先保存到本地数组，再调后端持久化；失败时回滚本地修改
+  const wasAdding = editingIndex.value === -1
+  const snapshot = wasAdding ? null : { ...agents.value[editingIndex.value] }
+  const newAgent: Agent = {
+    id: wasAdding ? Date.now().toString() : agents.value[editingIndex.value].id,
+    name: editForm.value.name!.trim(),
+    description: editForm.value.description?.trim() || '',
+    applicationId: extractedId,
+    color: editForm.value.color || colorOptions[0],
+    category: editForm.value.category?.trim() || '',
+    model: editForm.value.model?.trim() || '',
   }
 
-  saveAgents()
-  showEditDialog.value = false
+  if (wasAdding) {
+    agents.value.push(newAgent)
+  } else {
+    agents.value[editingIndex.value] = newAgent
+  }
+
+  try {
+    await saveAgents()
+    ElMessage.success(wasAdding ? '添加成功' : '保存成功')
+    showEditDialog.value = false
+  } catch {
+    // 回滚
+    if (wasAdding) {
+      agents.value.pop()
+    } else if (snapshot) {
+      agents.value[editingIndex.value] = snapshot
+    }
+  }
 }
 
 const deleteAgent = async (index: number) => {
   const agent = agents.value[index]
   try {
     await ElMessageBox.confirm(`确定要删除智能体"${agent.name}"吗？`, '确认删除', { type: 'warning' })
-    try { await clearEmbedSessionApi(agent.applicationId) } catch {}
-    agents.value.splice(index, 1)
-    saveAgents()
+  } catch {
+    return // 用户取消
+  }
+
+  // 1. 清理 MaxKB 会话（失败不阻塞删除流程，但提示用户）
+  try {
+    await clearEmbedSessionApi(agent.applicationId)
+  } catch (e) {
+    ElMessage.warning('MaxKB 会话清理失败，可能需要稍后手动清理')
+    console.error('[AiAssistant] clearEmbedSession failed:', e)
+  }
+
+  // 2. 先保存到后端，成功后再修改本地数组（避免本地与后端不一致）
+  const snapshot = [...agents.value]
+  agents.value.splice(index, 1)
+  try {
+    await saveAgents()
     ElMessage.success('删除成功')
-  } catch {}
+  } catch {
+    // 保存失败，回滚本地修改
+    agents.value = snapshot
+  }
 }
 
 // ==================== 对话逻辑 ====================
@@ -364,6 +400,7 @@ const exitChat = () => {
 onMounted(() => {
   loadAgents()
 })
+
 </script>
 
 <style scoped>

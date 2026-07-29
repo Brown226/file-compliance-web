@@ -454,11 +454,16 @@ export class ReviewService {
       }
 
       // ===== Ϊÿ���ļ����� PipelineContext�������׶ν���� =====
-      // ===== DEC_REVIEW 专用：预加载审点库（StandardCheckpoint）=====
-      // 审点库与文件无关（任务级共享），在 fileContexts 构建前一次性加载
+            // ===== DEC_REVIEW 专用：预加载审点（V3.1 双源）=====
+      // 审点与文件无关（任务级共享），在 fileContexts 构建前一次性加载
+      // V3.1：规则库（RuleLibraryItem）若包含审点字段（clauseText/checkPrompt）也作为审点源
       let decCheckpoints: PipelineContext['checkpoints'] = undefined;
       if (reviewMode === 'DEC_REVIEW' || reviewMode === 'LIBRARY_REVIEW') {
         const decStdIds = task.taskStandards.map((item: any) => item.standardId);
+        const effectiveRuleLibId = executionPlan.ruleLibraryId || (task as any).ruleLibraryId;
+        const sources: string[] = [];
+
+        // 来源 1：Standard.standardCheckpoint（旧审点库，保留兼容）
         if (decStdIds.length > 0) {
           try {
             const checkpoints = await prisma.standardCheckpoint.findMany({
@@ -466,28 +471,69 @@ export class ReviewService {
               select: { id: true, clauseCode: true, clauseText: true, mandatory: true, auditDimension: true, checkPrompt: true },
             });
             if (checkpoints.length > 0) {
-              decCheckpoints = checkpoints;
-              console.log(`[Review] DEC_REVIEW 预加载审点 ${checkpoints.length} 条（标准 ${decStdIds.length} 个）`);
-              if (reviewMode === 'LIBRARY_REVIEW') {
-                reviewMode = 'DEC_REVIEW';
-                console.log(`[Review] LIBRARY_REVIEW 自动升级为 DEC_REVIEW：双分支增强已启用`);
-              }
-            } else {
-              console.warn(`[Review] DEC_REVIEW: 标准下无审点，请先调用 POST /api/checkpoint/standards/:id/checkpoints/generate 生成审点`);
+              decCheckpoints = [...(decCheckpoints || []), ...checkpoints];
+              sources.push(`StandardCheckpoint ${checkpoints.length} 条（标准 ${decStdIds.length} 个）`);
             }
           } catch (e) {
-            console.warn('[Review] DEC_REVIEW 预加载审点失败:', e);
+            console.warn('[Review] StandardCheckpoint 预加载失败:', e);
+          }
+        }
+
+        // 来源 2：RuleLibraryItem（V3.1：规则库吸收审点库机制后的主审点源）
+        if (effectiveRuleLibId) {
+          try {
+            const ruleItems = await prisma.ruleLibraryItem.findMany({
+              where: { libraryId: effectiveRuleLibId, enabled: true, clauseText: { not: null } },
+              select: {
+                id: true, ruleCode: true, clauseText: true, checkPrompt: true,
+                auditDimension: true, mandatory: true, severity: true,
+                ruleName: true, description: true, clauseHash: true,
+              },
+            });
+            // 适配成 ctx.checkpoints 格式
+            const adapted = ruleItems.map((item: any) => ({
+              id: item.id,
+              clauseCode: item.ruleCode || item.ruleName || null,
+              clauseText: item.clauseText || item.description || '',
+              mandatory: item.mandatory || (item.severity === 'error' ? 'mandatory' : 'guidance'),
+              auditDimension: item.auditDimension || 'compliance',
+              checkPrompt: item.checkPrompt || '',
+            })).filter((c: any) => c.clauseText && c.clauseText.length >= 10);  // 过滤过短条目
+            if (adapted.length > 0) {
+              decCheckpoints = [...(decCheckpoints || []), ...adapted];
+              sources.push(`RuleLibraryItem ${adapted.length} 条（规则库 ${effectiveRuleLibId.slice(0, 8)}…）`);
+            }
+          } catch (e) {
+            console.warn('[Review] RuleLibraryItem 审点加载失败:', e);
+          }
+        }
+
+        if (decCheckpoints && decCheckpoints.length > 0) {
+          console.log(`[Review] DEC_REVIEW 预加载审点 ${decCheckpoints.length} 条：${sources.join(' + ')}`);
+          if (reviewMode === 'LIBRARY_REVIEW') {
+            reviewMode = 'DEC_REVIEW';
+            console.log(`[Review] LIBRARY_REVIEW 自动升级为 DEC_REVIEW：双分支增强已启用`);
           }
         } else {
-          console.warn('[Review] DEC_REVIEW: 任务未关联标准，无法加载审点');
+          const hints: string[] = [];
+          if (decStdIds.length === 0 && !effectiveRuleLibId) {
+            hints.push('任务未关联标准也未挂规则库');
+          } else {
+            if (decStdIds.length > 0) hints.push('标准下无审点');
+            if (effectiveRuleLibId) hints.push('规则库无审点字段（clauseText 为空，请用审点模式 /parse-checkpoints-async 重新生成）');
+          }
+          console.warn(`[Review] DEC_REVIEW: ${hints.join('，')}`);
         }
       }
+      // Task 14: 生成全链路 traceId，关联本次任务处理的所有 LLM 调用（Phase A 分片 + Phase C 比对等）
+      const traceId = `${taskId}-${reviewMode}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
 
-      const fileContexts = task.files.map(file => {
+const fileContexts = task.files.map(file => {
         const absolutePath = resolveFilePath(file.filePath);
 
         const ctx: PipelineContext = {
           taskId,
+          traceId,
           fileId: file.id,
           fileName: file.fileName,
           filePath: absolutePath,
@@ -534,149 +580,31 @@ export class ReviewService {
         timestamp: Date.now(),
       });
 
-      // �׶�1���������ȫ�����У���Դ���ĵͣ�������Ӧ��
-      const fastPhasePromises = fileContexts.map(({ file, ctx }, index) =>
-        this.runFileFastPhase(taskId, file, ctx, index, totalFiles)
-          .then(res => ({ ...res, fileId: file.id, fileName: file.fileName }))
-          .catch(error => ({ error, fileId: file.id, fileName: file.fileName, ruleIssues: [] as any[], stdRefIssues: [] as any[] }))
-      );
-      const fastPhaseResults = await Promise.all(fastPhasePromises);
-
-      // ��ȡ�׶�2�Ĳ������ƣ��� basic_settings ��ȡ��Ĭ�� 3��
+      // 获取阶段2的并发限制（从 basic_settings 读取，默认 3）
       const maxConcurrent = await getMaxConcurrentReviews();
 
+      // P1-D: 流水线化 — 删除原 fastPhasePromises + Promise.all 硬同步点
+      // 每文件阶段1完成立即进入阶段2（同一 worker 内顺序执行，不同文件并行）
+      // 长尾 PDF 不再阻塞其他文件启动 AI 审查
+
       // ===== �������: �׶�1��� =====
-      let fastSuccessCount = 0;
-      let fastFailedCount = 0;
-      for (const result of fastPhaseResults) {
-        if ('error' in result) {
-          fastFailedCount++;
-          console.error(`[Review] �ļ� ${result.fileName} �׶�1ʧ��:`, result.error);
-          await this.createErrorDetail(taskId, result.fileId, result.fileName, result.error);
-        } else {
-          fastSuccessCount++;
-          // �׶�1������� runFileFastPhase ����⣬�˴������� WebSocket
-          WebSocketService.emitTaskProgress(taskId, {
-            type: 'fast_phase_complete',
-            step: '����������',
-            progress: 40,
-            message: `����������: ${result.ruleIssues.length} ����������, ${result.stdRefIssues.length} ����׼��������`,
-            fileName: result.fileName,
-            phase: 'phase1',
-            ruleCount: result.ruleIssues.length,
-            stdRefCount: result.stdRefIssues.length,
-            timestamp: Date.now(),
-          });
-        }
-      }
-
-
-      // ===== �ļ���һ���Լ�飨��������׶�2���У���� await ���ܣ� =====
-      let intraConsistencyPromise: Promise<Array<{ fileId: string; issueCount: number }>> | null = null;
-      if (intraFileConsistency) {
-        WebSocketService.emitTaskProgress(taskId, {
-          type: 'intra_consistency_check',
-          step: '�ļ���һ���Լ��',
-          progress: 42,
-          message: '���ڽ����ļ���һ���Լ��...',
-          timestamp: Date.now(),
-        });
-
-        // �ռ��ѳɹ���ȡ�ı����ļ�������
-        const filesWithText = fileContexts.filter(({ ctx }) => ctx.extractedText && ctx.extractedText.trim().length > 0);
-
-        // ������������ await����׶�2����ִ��
-        intraConsistencyPromise = Promise.all(
-          filesWithText.map(async ({ file, ctx }) => {
-            try {
-              const issueCount = await IntraFileConsistencyService.check(
-                taskId, file.id, file.fileName, ctx.extractedText,
-              );
-              if (issueCount > 0) {
-              }
-              return { fileId: file.id, issueCount };
-            } catch (e) {
-              console.warn(`[Review] ${file.fileName} �ļ���һ���Լ��ʧ��:`, e);
-              return { fileId: file.id, issueCount: 0 };
-            }
-          }),
-        );
-      }
-
-      // ===== �׶�2: �û����𲢷� AI ��� =====
-      // ʹ��ͳһ������ pipeline �ж��Ƿ���Ҫ AI ���
-      let slowPhaseResults: any[] = [];
-      if (!needsAI) {
-        // ����Ҫ AI ����ģʽ�����ݽ׶�1�������ļ�״̬
-        const failedFileIds = new Set(
-          fastPhaseResults.filter(r => 'error' in r).map(r => r.fileId)
-        );
-        for (const { file } of fileContexts) {
-          const status = failedFileIds.has(file.id) ? 'FAILED' : 'COMPLETED';
-          await prisma.taskFile.update({
-            where: { id: file.id },
-            data: { status },
-          }).catch((e) => { console.warn(`[Review] �����ļ�״̬ʧ�� (${file.id}):`, e); });
-        }
-        WebSocketService.emitTaskProgress(taskId, {
-          type: 'phase2_start',
-          step: 'AI ������',
-          progress: 45,
-          message: `${modeDisplayName}ģʽ���� AI ��飬ֱ�����`,
-          timestamp: Date.now(),
-        });
-      } else {
-        // ���˵��׶�1ʧ�ܵ��ļ������������ִ��������� AI ���
-        const failedFileIds = new Set(
-          fastPhaseResults.filter(r => 'error' in r).map(r => r.fileId)
-        );
-        const eligibleForAI = fileContexts.filter(({ file }) => !failedFileIds.has(file.id));
-        const skippedCount = fileContexts.length - eligibleForAI.length;
-
-        if (skippedCount > 0) {
-          console.warn(`[Review] �7�2�1�5 ${skippedCount} ���ļ��׶�1ʧ�ܣ������׶�2:`,
-            fileContexts.filter(({ file }) => failedFileIds.has(file.id)).map(({ file }) => file.fileName));
-        }
-
-        // ��ǽ׶�1ʧ�ܵ��ļ�״̬
-        for (const fileId of failedFileIds) {
-          await prisma.taskFile.update({
-            where: { id: fileId },
-            data: { status: 'FAILED' },
-          }).catch((e) => { console.warn(`[Review] ���½׶�1ʧ���ļ�״̬ (${fileId}):`, e); });
-        }
-
-        // �� LLM ����Ԥ�죺�׶�2��ʼǰ��� LLM �Ƿ���ã�������ȷ״̬
-        let llmConfigAvailable = true;
+      // ===== P1-D: pipeline - phase1+phase2 sequential in same worker =====
+      // LLM config precheck (only when needsAI)
+      if (needsAI) {
         try {
           const llmConfig = await LlmService.getLlmConfig();
           if (!llmConfig) {
-            llmConfigAvailable = false;
-            console.warn('[Review] ?? LLM δ���ã�AI ��齫�޷�����ִ��');
+            console.warn('[Review] LLM not configured, AI review cannot run');
             WebSocketService.emitTaskProgress(taskId, {
-              type: 'llm_warning',
-              step: 'AI ��龯��',
-              progress: 45,
-              message: '?? LLM δ���ã�AI ��齫�޷�ִ�С�����ϵͳ���������� LLM API��',
+              type: 'llm_warning', step: 'AI warning', progress: 45,
+              message: 'LLM not configured, AI review cannot run. Please configure LLM API in system settings.',
               timestamp: Date.now(),
             });
-          } else {
           }
         } catch (e) {
-          console.warn('[Review] LLM ���ü���쳣:', e);
+          console.warn('[Review] LLM config check error:', e);
         }
-
-        WebSocketService.emitTaskProgress(taskId, {
-          type: 'phase2_start',
-          step: 'AI ������',
-          progress: 45,
-          message: llmConfigAvailable
-            ? `��ʼ AI ��飨${eligibleForAI.length} ���ļ����û��������� ${maxConcurrent}��`
-            : `��ʼ AI ��飨${eligibleForAI.length} ���ļ����� ?? LLM δ���ã�������ʧ��`,
-          timestamp: Date.now(),
-        });
-
-        // P0-1: 任务级预加载误报库到内存，供各文件上下文共享
+        // P0-1: task-level preload false positive library to memory, shared by all file contexts
         try {
           const allFps = await prisma.falsePositiveLibrary.findMany({ select: { originalText: true } });
           const fpLibrarySet = new Set<string>();
@@ -684,25 +612,108 @@ export class ReviewService {
             fpLibrarySet.add(normalizeText(fp.originalText));
           }
           if (fpLibrarySet.size > 0) {
-            for (const { ctx } of eligibleForAI) {
+            for (const { ctx } of fileContexts) {
               (ctx as any).fpLibrarySet = fpLibrarySet;
             }
           }
         } catch (e) {
-          console.warn('[Review] 预加载误报库失败，继续执行审查:', e);
+          console.warn('[Review] preload false positive library failed, continue:', e);
         }
+        WebSocketService.emitTaskProgress(taskId, {
+          type: 'phase2_start', step: 'AI review phase', progress: 45,
+          message: `Start AI review (${fileContexts.length} files, user concurrency limit ${maxConcurrent})`,
+          timestamp: Date.now(),
+        });
+      } else {
+        WebSocketService.emitTaskProgress(taskId, {
+          type: 'phase2_start', step: 'AI review phase', progress: 45,
+          message: `${modeDisplayName} mode does not need AI review, finishing directly`,
+          timestamp: Date.now(),
+        });
+      }
 
-        // �û����𲢷�ִ�н׶�2��ÿ���û����������������׶�1ʧ�ܵ��ļ���
-        slowPhaseResults = await this.runUserLevelConcurrency(
-          task.creatorId,
-          eligibleForAI,
-          maxConcurrent,
-          ({ file, ctx }, index) =>
-            this.runFileSlowPhase(taskId, file, ctx, index, totalFiles)
-              .then(res => ({ ...res, fileId: file.id, fileName: file.fileName }))
-              .catch(error => ({ error, fileId: file.id, fileName: file.fileName, aiIssues: [] as any[] }))
+      // Pipeline: each file phase1 complete -> immediately enter phase2 (same worker sequential, different files parallel)
+      const pipelineResults = await this.runUserLevelConcurrency(
+        task.creatorId,
+        fileContexts,
+        maxConcurrent,
+        async ({ file, ctx }, index) => {
+          // Phase 1: fast review
+          let fastResult;
+          try {
+            fastResult = await this.runFileFastPhase(taskId, file, ctx, index, totalFiles);
+            // WS push fast_phase_complete (moved inside worker)
+            WebSocketService.emitTaskProgress(taskId, {
+              type: 'fast_phase_complete', step: 'fast review complete', progress: 40,
+              message: `fast review complete: ${fastResult.ruleIssues.length} rule issues, ${fastResult.stdRefIssues.length} std ref issues`,
+              fileName: file.fileName, phase: 'phase1',
+              ruleCount: fastResult.ruleIssues.length, stdRefCount: fastResult.stdRefIssues.length,
+              timestamp: Date.now(),
+            });
+          } catch (error) {
+            // Phase 1 failed: log error + mark file FAILED + return (skip phase 2)
+            await this.createErrorDetail(taskId, file.id, file.fileName, error);
+            await prisma.taskFile.update({
+              where: { id: file.id }, data: { status: 'FAILED' },
+            }).catch((e) => { console.warn(`[Review] update file status failed (${file.id}):`, e); });
+            return { error, fileId: file.id, fileName: file.fileName, aiIssues: [] as any[], ruleIssues: [] as any[], stdRefIssues: [] as any[] };
+          }
+
+          // Phase 1 success, check if phase 2 needed
+          if (!needsAI) {
+            await prisma.taskFile.update({
+              where: { id: file.id }, data: { status: 'COMPLETED' },
+            }).catch((e) => { console.warn(`[Review] update file status failed (${file.id}):`, e); });
+            return { ...fastResult, fileId: file.id, fileName: file.fileName };
+          }
+
+          // Phase 2: AI review (same worker sequential, does not wait for other files phase 1)
+          try {
+            const slowRes = await this.runFileSlowPhase(taskId, file, ctx, index, totalFiles);
+            return { ...slowRes, fileId: file.id, fileName: file.fileName };
+          } catch (error) {
+            await this.createErrorDetail(taskId, file.id, file.fileName, error);
+            return { error, fileId: file.id, fileName: file.fileName, aiIssues: [] as any[] };
+          }
+        },
+      );
+
+      // pipelineResults is the new slowPhaseResults
+      const slowPhaseResults = pipelineResults;
+
+      // Derive phase1 stats from pipeline results (for downstream task summary at L822+).
+      // Phase 1 failed results carry both `error` and `ruleIssues` placeholder (see worker return above);
+      // phase 2 failed results carry `error` without `ruleIssues`.
+      let fastFailedCount = 0;
+      for (const r of pipelineResults) {
+        if ('error' in r && 'ruleIssues' in r) {
+          fastFailedCount++;
+        }
+      }
+      const fastSuccessCount = pipelineResults.length - fastFailedCount;
+
+      // ===== intra-file consistency check (started after pipeline complete, because it depends on extractedText being fully populated) =====
+      let intraConsistencyPromise: Promise<Array<{ fileId: string; issueCount: number }>> | null = null;
+      if (intraFileConsistency) {
+        WebSocketService.emitTaskProgress(taskId, {
+          type: 'intra_consistency_check', step: 'intra-file consistency check', progress: 42,
+          message: 'running intra-file consistency check...', timestamp: Date.now(),
+        });
+        const filesWithText = fileContexts.filter(({ ctx }) => ctx.extractedText && ctx.extractedText.trim().length > 0);
+        intraConsistencyPromise = Promise.all(
+          filesWithText.map(async ({ file, ctx }) => {
+            try {
+              const issueCount = await IntraFileConsistencyService.check(
+                taskId, file.id, file.fileName, ctx.extractedText,
+              );
+              return { fileId: file.id, issueCount };
+            } catch (e) {
+              console.warn(`[Review] ${file.fileName} intra-file consistency check failed:`, e);
+              return { fileId: file.id, issueCount: 0 };
+            }
+          }),
         );
-      } // end of needsAI else
+      }
 
       // ===== �������: �׶�2��� =====
       let slowSuccessCount = 0;
@@ -716,7 +727,10 @@ export class ReviewService {
           await this.createErrorDetail(taskId, result.fileId, result.fileName, result.error);
         } else {
           slowSuccessCount++;
-          if (result.usedEngine) enginesUsed.add(result.usedEngine);
+          // 类型守卫：区分阶段1（ruleIssues）与阶段2（aiIssues/usedEngine）结果
+          const usedEngine = 'usedEngine' in result ? result.usedEngine : undefined;
+          const aiIssues = 'aiIssues' in result ? (result.aiIssues || []) : [];
+          if (usedEngine) enginesUsed.add(usedEngine);
           // OPT-027: RAG 降级时发送 WebSocket 告警事件
           if ((result as any).degraded) {
             WebSocketService.emitTaskProgress(taskId, {
@@ -734,11 +748,11 @@ export class ReviewService {
             type: 'slow_phase_complete',
             step: 'AI������',
             progress: 80,
-            message: `AI������: ${result.aiIssues.length} ������ (${result.usedEngine || 'unknown'})`,
+            message: `AI审查完成: ${aiIssues.length} 个问题 (${usedEngine || 'unknown'})`,
             fileName: result.fileName,
             phase: 'phase2',
-            aiCount: result.aiIssues.length,
-            usedEngine: result.usedEngine,
+            aiCount: aiIssues.length,
+            usedEngine: usedEngine,
             timestamp: Date.now(),
           });
         }
@@ -771,7 +785,22 @@ export class ReviewService {
       }
 
       // ===== ���ļ�һ���Լ�� =====
-      const crossFileNeeded = executionPlan.crossFileConsistency && totalFiles >= 2;
+      // Task 15: 校验 mode-config 的 crossFile 能力，避免用户请求与模式能力不一致
+      let crossFileNeeded = executionPlan.crossFileConsistency && totalFiles >= 2;
+      if (crossFileNeeded) {
+        try {
+          const modeCaps = await getModeCapabilitiesConfig();
+          const modeCfg = (modeCaps as Record<string, { crossFile?: boolean }>)[reviewMode as string];
+          if (modeCfg && modeCfg.crossFile === false) {
+            console.warn(
+              `[Review] Task ${taskId}: crossFileConsistency requested but mode "${reviewMode}" has crossFile=false in mode-config, skipping cross-file check`,
+            );
+            crossFileNeeded = false;
+          }
+        } catch (e) {
+          console.warn(`[Review] Task ${taskId}: load mode-config failed, fallback to original crossFileNeeded decision:`, e);
+        }
+      }
       if (crossFileNeeded) {
         WebSocketService.emitTaskProgress(taskId, {
           type: 'cross_file_check',
@@ -888,6 +917,22 @@ export class ReviewService {
         } catch (e) {
           console.warn('[Observability] 任务级 LLM 汇总失败（不影响主流程）:', (e as Error).message);
         }
+
+        // ===== 学习闭环：审查完成后写入用户偏好到长期记忆 =====
+        try {
+          const { OpenSpecAgentService } = await import('../llm/openspec-agent.service');
+          const fileNames = task.files.map((f: any) => f.fileName).join('、').slice(0, 100);
+          await OpenSpecAgentService.saveMemory(
+            task.creatorId,
+            `用户完成审查任务「${task.title}」，涉及文件：${fileNames}；审查模式：${task.reviewMode}；成功 ${successCount} 个文件，失败 ${failedCount} 个。`,
+            {
+              sourceType: 'review_behavior',
+              category: 'other',
+            },
+          );
+        } catch (e) {
+          console.warn('[Memory] 学习闭环写入失败（不影响主流程）:', (e as Error).message);
+        }
       }
 
     } catch (error) {
@@ -961,6 +1006,10 @@ export class ReviewService {
         if (parsed.text && parsed.text.trim().length > 0) {
           ctx.extractedText = parsed.text;
           parseResultFromPreExtract = parsed.result;
+          // P2-E: 同步写回 ctx.parseResult，避免阶段2 extractPdfPages 二次解析
+          if (parseResultFromPreExtract && !ctx.parseResult) {
+            ctx.parseResult = parseResultFromPreExtract;
+          }
         } else {
           console.warn(`[Review] Ԥ��ȡ���ؿ��ı�: ${file.fileName}, fileType=${file.fileType}`);
         }
@@ -1017,22 +1066,26 @@ export class ReviewService {
 
     // ��������
     let ruleIssues: any[] = [];
-    if (ctx.reviewMode === 'RULE_ONLY') {
+    if (ctx.reviewMode === 'RULE_ONLY' || ctx.reviewMode === 'CONSISTENCY') {
       const rulesEnabled = ctx.executionOverrides?.stages?.rules !== false;
       if (rulesEnabled) {
         // ����ʹ�� rulePlan �е�ǰ׺���ˣ�RULE_ONLY ģʽ�û�ѡ���Ĺ���ǰ׺��
         const prefixes = ctx.rulePlan?.enabledPrefixes?.length
           ? ctx.rulePlan.enabledPrefixes
           : [];
-        const baseIssues = await RuleEngineService.runAllRules(
-          {
-            fileName: ctx.fileName, filePath: ctx.filePath, fileType: ctx.fileType,
-            extractedText: ctx.extractedText, pdfPages: ctx.pdfPages,
-            reviewMode: ctx.reviewMode, parseResult: ctx.parseResult,
-          },
-          prefixes.length > 0 ? { enabledRulePrefixes: new Set(prefixes) } : undefined,
-        );
-        ruleIssues = baseIssues;
+        // CONSISTENCY 模式：无前缀时不跑规则（避免跑全部规则产生噪音）；
+        // RULE_ONLY 模式：无前缀则跑全部规则（保留原行为）
+        if (ctx.reviewMode === 'RULE_ONLY' || prefixes.length > 0) {
+          const baseIssues = await RuleEngineService.runAllRules(
+            {
+              fileName: ctx.fileName, filePath: ctx.filePath, fileType: ctx.fileType,
+              extractedText: ctx.extractedText, pdfPages: ctx.pdfPages,
+              reviewMode: ctx.reviewMode, parseResult: ctx.parseResult,
+            },
+            prefixes.length > 0 ? { enabledRulePrefixes: new Set(prefixes) } : undefined,
+          );
+          ruleIssues = baseIssues;
+        }
       }
     }
 
@@ -1327,10 +1380,10 @@ export class ReviewService {
             textPosition: this.buildLegacyTextPosition(meta, ctx.extractedText, issue.originalText),
             locateMeta: meta,
             // 人工复核状态：AI_INFERRED 纯推断结果或合同 HIGH 风险需要人工复核
-            riskLevel: (issue as any).riskLevel || null,
-            reviewStatus: ((confidence) => { return (confidence === 'AI_INFERRED' || (issue as any).riskLevel === 'HIGH') ? 'PENDING_REVIEW' : 'CONFIRMED'; })(this.getConfidence(issue).confidence),
-            clauseType: (issue as any).clauseType || null,
-            recommendation: (issue as any).recommendation || null,
+            riskLevel: issue.riskLevel || null,
+            reviewStatus: ((confidence) => { return (confidence === 'AI_INFERRED' || issue.riskLevel === 'HIGH') ? 'PENDING_REVIEW' : 'CONFIRMED'; })(this.getConfidence(issue).confidence),
+            clauseType: issue.clauseType || null,
+            recommendation: issue.recommendation || null,
           };
         });
 
@@ -1500,9 +1553,9 @@ export class ReviewService {
             textPosition: this.buildLegacyTextPosition(meta, ctx.extractedText, issue.originalText),
             locateMeta: meta,
             // ��ͬ���ר���ֶ�
-            riskLevel: (issue as any).riskLevel || null,
-            clauseType: (issue as any).clauseType || null,
-            recommendation: (issue as any).recommendation || null,
+            riskLevel: issue.riskLevel || null,
+            clauseType: issue.clauseType || null,
+            recommendation: issue.recommendation || null,
           };
         });
         await prisma.taskDetail.createMany({

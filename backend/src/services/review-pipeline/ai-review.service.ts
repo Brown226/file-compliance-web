@@ -915,7 +915,7 @@ export class AiReviewService {
     }
 
     // ---- 3. 解析条款 + 单链合并执行（风险+合规双链已合并为单次 LLM 调用）----
-    const { parseContractClauses, getDefaultLegalBasis } = await import('../review/contract-parser.service');
+    const { parseContractClauses, getDefaultLegalBasis, extractClauseParameters } = await import('../review/contract-parser.service');
     const clauses = parseContractClauses(text);
     console.log(`[ContractReview] 解析到 ${clauses.length} 个条款`);
 
@@ -956,7 +956,7 @@ export class AiReviewService {
         const batchResults = await Promise.all(
           batch.map(async (clause, batchIdx) => {
             const clauseIdx = i + batchIdx;
-            const legalBasis = getDefaultLegalBasis(clause.clauseNo + clause.clauseTitle);
+            const legalBasis = getDefaultLegalBasis(clause.clauseType || clause.clauseNo + clause.clauseTitle);
             const userContent = `【条款】${clause.clauseNo} ${clause.clauseTitle}\n${clause.clauseContent}\n\n【法律依据】${legalBasis}`
               + (refTextsJoined ? `\n\n【参照文件】\n${refTextsJoined}` : '')
               + (ragContext ? `\n\n【知识库上下文】\n${ragContext}` : '')
@@ -998,8 +998,43 @@ export class AiReviewService {
     // 执行单链
     const allIssues = await unifiedTask();
 
-    // ---- 4. 合并结果去重（精确去重，保持原行为）----
-    const deduped = dedupIssues(allIssues, { enableFuzzy: false });
+    // ---- 3.5 P2-A: 跨条款一致性检查（单次 Reduce 调用）----
+    // 发现"条款 A 说乙方负责保险，条款 B 说甲方承担保险费用"这类跨条款矛盾
+    if (clauses.length >= 2) {
+      try {
+        const parameterTable = extractClauseParameters(clauses);
+        // 仅当至少有 1 个参数被提取出来时才调用 LLM（避免无意义调用）
+        const hasAnyParam = parameterTable.some(p => Object.keys(p.parameters).length > 0);
+        if (hasAnyParam) {
+          const conflictPrompt = `以下是合同各条款的关键参数提取表：\n${JSON.stringify(parameterTable, null, 2)}\n\n请检查参数间是否存在矛盾（如付款方不一致、保险责任方冲突、质保期前后不符等）。输出 JSON 数组 [{"clauseA":"第X条","clauseB":"第Y条","conflictType":"...","description":"...","recommendation":"...","originalText":"..."})]，无冲突输出 []。`;
+          const conflictResult = await LlmService.reviewText(conflictPrompt, {
+            systemPrompt: '你是合同一致性审查专家，专注于发现跨条款参数矛盾。',
+            skipUserTemplate: true,
+            maxTokens: llmMaxTokens,
+            timeout: llmTimeout,
+            documentId: ctx.fileId,
+            taskId: ctx.taskId, mode: ctx.reviewMode,
+          });
+          const crossClauseIssues: ReviewIssue[] = (Array.isArray(conflictResult) ? conflictResult : []).map((c: any) => ({
+            issueType: 'CONSISTENCY' as any,
+            severity: 'warning' as any,
+            riskLevel: 'MEDIUM',
+            originalText: c.originalText || `${c.clauseA || ''} vs ${c.clauseB || ''}`.trim() || '跨条款矛盾',
+            description: `[跨条款矛盾] ${c.description || c.conflictType || ''}`.trim(),
+            recommendation: c.recommendation,
+            ruleCode: 'CLS_CROSS_CLAUSE',
+            clauseType: 'other',
+          }));
+          allIssues.push(...crossClauseIssues);
+          console.log(`[ContractReview] 跨条款检查发现 ${crossClauseIssues.length} 个矛盾`);
+        }
+      } catch (e: any) {
+        console.warn('[ContractReview] 跨条款检查失败:', e.message);
+      }
+    }
+
+    // ---- 4. 合并结果去重（P2-B: 启用模糊去重，Levenshtein ≤ 2 视为重复）----
+    const deduped = dedupIssues(allIssues);
 
     // ---- 5. 过滤 + 计算合规评分 ----
     const filtered = deduped.filter(issue => {
@@ -1264,6 +1299,7 @@ export class AiReviewService {
 
 /**
  * 计算合同合规评分
+ * P2-H: 按 clauseType 加权扣分（付款/违约风险权重高于排版问题）
  * 借鉴 ContractReviewSystem review.py:calculate_score
  */
 function calculateContractScore(issues: ReviewIssue[]): {
@@ -1271,16 +1307,46 @@ function calculateContractScore(issues: ReviewIssue[]): {
   score: number;
 } {
   const riskSummary = { high: 0, medium: 0, low: 0 };
+
+  // P2-H: 按 clauseType 加权扣分
+  const weights: Record<string, { high: number; medium: number; low: number }> = {
+    payment: { high: 15, medium: 8, low: 3 },
+    penalty: { high: 15, medium: 8, low: 3 },
+    warranty: { high: 12, medium: 6, low: 2 },
+    insurance: { high: 12, medium: 6, low: 2 },
+    dispute: { high: 10, medium: 5, low: 2 },
+    other: { high: 8, medium: 4, low: 1 },
+  };
+
+  // 解析风险等级（优先 riskLevel，fallback 到 severity）
+  const resolveLevel = (issue: ReviewIssue): 'HIGH' | 'MEDIUM' | 'LOW' => {
+    if (issue.riskLevel) {
+      const rl = String(issue.riskLevel).toUpperCase();
+      if (rl === 'HIGH' || rl === 'CRITICAL') return 'HIGH';
+      if (rl === 'MEDIUM' || rl === 'MODERATE') return 'MEDIUM';
+      if (rl === 'LOW' || rl === 'INFO') return 'LOW';
+    }
+    if (issue.severity === 'error') return 'HIGH';
+    if (issue.severity === 'warning') return 'MEDIUM';
+    return 'LOW';
+  };
+
   for (const issue of issues) {
-    const desc = (issue.description || '').toLowerCase();
-    if (/高风险|严重|重大|high/i.test(desc)) riskSummary.high++;
-    else if (/中风险|一般|medium/i.test(desc)) riskSummary.medium++;
-    else if (issue.severity === 'error') riskSummary.high++;
-    else if (issue.severity === 'warning') riskSummary.medium++;
+    const level = resolveLevel(issue);
+    if (level === 'HIGH') riskSummary.high++;
+    else if (level === 'MEDIUM') riskSummary.medium++;
     else riskSummary.low++;
   }
 
-  const score = Math.max(0, 100 - riskSummary.high * 15 - riskSummary.medium * 8 - riskSummary.low * 3);
+  // 按 clauseType 加权扣分
+  let deduction = 0;
+  for (const issue of issues) {
+    const level = resolveLevel(issue);
+    const w = weights[issue.clauseType || 'other'] || weights.other;
+    deduction += level === 'HIGH' ? w.high : level === 'MEDIUM' ? w.medium : w.low;
+  }
+
+  const score = Math.max(0, 100 - deduction);
 
   return { riskSummary, score };
 }

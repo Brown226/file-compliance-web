@@ -16,21 +16,6 @@ import { env } from '../../config/env';
 
 const AGENT_BASE_URL = env.openspecAgentUrl || 'http://localhost:5000';
 
-export interface GenerationParams {
-  projectInfo: string;
-  template: string;
-  chapterName: string;
-  professionTagId?: number;
-  userId?: string;
-  projectId?: string;
-}
-
-export interface ParagraphResult {
-  content: string;
-  chapterName: string;
-  references: Array<{ id: string; source: string; content: string }>;
-}
-
 export interface MemoryItem {
   id: number;
   content: string;
@@ -68,55 +53,6 @@ function _authHeaders(userId?: string): { Authorization: string } {
 
 export class OpenSpecAgentService {
   /**
-   * 流式生成段落（SSE 流）
-   * 调用 /agent/rag/generate_paragraph_stream
-   * 返回 fetch Response，调用方可直接消费 body 流
-   */
-  static async generateParagraphStream(
-    params: GenerationParams,
-  ): Promise<Response> {
-    const response = await fetch(`${AGENT_BASE_URL}/agent/rag/generate_paragraph_stream`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        ..._authHeaders(params.userId),
-      },
-      body: JSON.stringify({
-        name: params.chapterName,
-        prompt: params.projectInfo,
-        template: params.template,
-        profession_tag_id: params.professionTagId,
-        user_id: params.userId,
-        project_id: params.projectId,
-      }),
-    });
-    return response;
-  }
-
-  /**
-   * 批量生成文档（非流式）
-   * 调用 /agent/workflow/chat/batch
-   */
-  static async generateBatch(
-    projectInfo: string,
-    chapters: Array<{ name: string; template: string }>,
-    userId?: string,
-    projectId?: string,
-  ): Promise<ParagraphResult[]> {
-    const response = await axios.post(
-      `${AGENT_BASE_URL}/agent/workflow/chat/batch`,
-      {
-        message: projectInfo,
-        chapters,
-        user_id: userId,
-        project_id: projectId,
-      },
-      { headers: _authHeaders(userId) },
-    );
-    return response.data?.data?.paragraphs || [];
-  }
-
-  /**
    * 召回长期记忆
    * 调用 /agent/memory/recall
    * 注意：agent 从 JWT 提取 user_id，body 里不传 user_id
@@ -141,6 +77,42 @@ export class OpenSpecAgentService {
       createdAt: m.created_at,
       score: m.similarity,
     }));
+  }
+
+  /**
+   * 保存长期记忆（自动去重，相似度 >= 0.9 跳过）
+   * 调用 /agent/memory/save
+   * 供审查流程完成后写入用户偏好使用
+   * 返回保存的记忆，去重跳过时返回 null
+   */
+  static async saveMemory(
+    userId: string,
+    content: string,
+    options?: {
+      chapterName?: string;
+      sourceType?: string;
+      category?: string;
+    },
+  ): Promise<MemoryItem | null> {
+    const response = await axios.post(
+      `${AGENT_BASE_URL}/agent/memory/save`,
+      {
+        content,
+        chapter_name: options?.chapterName ?? null,
+        source_type: options?.sourceType ?? 'requirement',
+        category: options?.category ?? 'other',
+      },
+      { headers: _authHeaders(userId) },
+    );
+    const data = response.data?.data;
+    if (!data) return null; // 去重跳过
+    return {
+      id: data.id,
+      content: data.content,
+      chapterName: data.chapter_name ?? null,
+      category: data.category ?? 'other',
+      createdAt: data.created_at,
+    };
   }
 
   /**

@@ -51,8 +51,7 @@ const MODULE_LABELS: Record<string, string> = {
   review_specification: '规范集AI解析',
   pre_analysis: '文件预分析',
   contextual_retrieval: '上下文检索增强',
-  qa: '智能问答',
-  langchain_qa: 'LangChain问答',
+  polish: 'AI润色',
   semantic_spec: '语义规范库审查',
 };
 
@@ -110,7 +109,7 @@ export class PromptTemplateService {
   }
 
   private static async cleanupDeprecatedModules(): Promise<void> {
-    const deprecatedModules = ['llm_direct', 'rag_review', 'legacy_maxkb', 'maxkb_rag', 'maxkb_app'];
+    const deprecatedModules = ['llm_direct', 'rag_review', 'legacy_maxkb', 'maxkb_rag', 'maxkb_app', 'qa', 'langchain_qa'];
 
     for (const mod of deprecatedModules) {
       try {

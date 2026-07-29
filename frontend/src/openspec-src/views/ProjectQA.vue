@@ -18,9 +18,6 @@
             <el-button size="small" @click="refreshSession">
               <el-icon><Refresh /></el-icon> 刷新会话
             </el-button>
-            <el-button size="small" type="primary" @click="exportReport">
-              <el-icon><Download /></el-icon> 导出报告
-            </el-button>
           </div>
         </div>
 
@@ -97,33 +94,21 @@
         </div>
       </main>
 
-      <!-- 右侧：知识库检索面板 -->
+      <!-- 右侧：引用来源面板（展示本轮问答检索到的真实 chunks） -->
       <aside class="qa-sidebar">
         <div class="sidebar-title">
           <el-icon><Search /></el-icon>
-          <span>知识库检索</span>
+          <span>引用来源</span>
+          <el-tag v-if="knowledgeItems.length" size="small" type="info" round class="sidebar-count">
+            {{ knowledgeItems.length }}
+          </el-tag>
         </div>
 
-        <!-- 当前查询气泡 -->
-        <!-- <div v-if="currentQuery" class="query-bubble">
-          {{ currentQuery }}
-        </div> -->
-
-        <!-- Tab 切换 -->
-        <div class="knowledge-tabs">
-          <el-tabs v-model="activeTab" @tab-change="handleTabChange">
-            <el-tab-pane label="规范标准" name="standards" />
-            <el-tab-pane label="期刊文献" name="journals" />
-            <el-tab-pane label="我的引用" name="myRefs" />
-          </el-tabs>
-        </div>
-
-        <!-- 搜索输入框 -->
-        <div class="knowledge-search">
+        <!-- 搜索输入框（仅在有条目时显示） -->
+        <div v-if="knowledgeItems.length" class="knowledge-search">
           <el-input
             v-model="knowledgeSearch"
-            placeholder="搜索规范条款（如：手术室 接地）"
-            @input="filterKnowledge"
+            placeholder="按文档名过滤"
           >
             <template #prefix>
               <el-icon><Search /></el-icon>
@@ -131,22 +116,27 @@
           </el-input>
         </div>
 
-        <!-- 知识条目列表 -->
+        <!-- 引用条目列表 -->
         <div class="knowledge-list">
           <div
-            v-for="item in filteredKnowledgeItems"
-            :key="item.id"
+            v-for="(item, idx) in filteredKnowledgeItems"
+            :key="(item.doc_id || '') + idx"
             class="knowledge-item"
-            :class="{ active: item.id === activeKnowledgeId }"
-            @click="activeKnowledgeId = item.id"
+            :class="{ active: activeKnowledgeId === (item.doc_id || '') + idx }"
+            @click="activeKnowledgeId = (item.doc_id || '') + idx"
           >
             <div class="knowledge-header">
-              <h4>{{ item.title }}</h4>
+              <h4>{{ item.doc_name || '未命名文档' }}</h4>
             </div>
-            <div class="knowledge-meta">
-              <el-tag size="small" :type="item.statusType || ''">{{ item.status }}</el-tag>
-              <span class="knowledge-date">{{ item.updatedAt }}</span>
-            </div>
+            <p v-if="item.content || item.chunk_content" class="knowledge-snippet">
+              "{{ item.content || item.chunk_content }}"
+            </p>
+          </div>
+
+          <!-- 空状态：无引用时显示提示 -->
+          <div v-if="knowledgeItems.length === 0" class="knowledge-empty">
+            <el-icon class="empty-icon"><Document /></el-icon>
+            <p class="empty-text">发起问答后，此处展示检索到的引用来源</p>
           </div>
         </div>
       </aside>
@@ -157,10 +147,11 @@
 <script setup lang="ts">
 import { ref, computed, watch, nextTick, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { ChatDotRound, Refresh, Download, Search, Document, Loading } from '@element-plus/icons-vue'
+import { ChatDotRound, Refresh, Search, Document, Loading } from '@element-plus/icons-vue'
 import ProjectList from '@openspec/components/ProjectList.vue'
 import MarkdownRenderer from '@openspec/components/MarkdownRenderer.vue'
 import type { ProjectItem } from '@openspec/data/mockData'
+import type { ChunkReference } from '@openspec/service/qa'
 import { useQAChat } from '@openspec/composables/useQAChat'
 
 // ===== 问答交互（对接 Agent /agent/workflow/chat/stream） =====
@@ -172,7 +163,6 @@ const newQuestion = ref('')
 const addQuestion = () => {
   const q = newQuestion.value.trim()
   if (!q) return
-  currentQuery.value = q
   // 传 projectId 作为会话隔离，agent 用 documentId 作 LangGraph thread_id
   askQuestion(q, selectedProjectId.value, currentSessionId.value || selectedProjectId.value)
   newQuestion.value = ''
@@ -186,10 +176,6 @@ const currentSessionId = ref<string>('')
 const refreshSession = () => {
   clearMessages()
   ElMessage.success('会话已刷新')
-}
-
-const exportReport = () => {
-  ElMessage.info('导出报告功能待接入')
 }
 
 // ===== 自动滚动到底部 =====
@@ -206,43 +192,29 @@ watch(
   }
 )
 
-// ===== 右侧知识库面板 =====
+// ===== 右侧引用来源面板（取最近一条 AI 回答检索到的 chunks） =====
 
-const currentQuery = ref('')
-const activeTab = ref('standards')
 const knowledgeSearch = ref('')
-const activeKnowledgeId = ref(1)
+const activeKnowledgeId = ref<string>('')
 
-interface KnowledgeItem {
-  id: number
-  title: string
-  status: string
-  statusType: '' | 'success' | 'warning' | 'info' | 'danger'
-  updatedAt: string
-  tab: string
-}
-
-const knowledgeItems = ref<KnowledgeItem[]>([
-  { id: 1, title: 'GB 50054-2011 低压配电设计规范', status: '现行有效', statusType: 'success', updatedAt: '2025-12-04更新', tab: 'standards' },
-  { id: 2, title: 'JGJ 312-2013 医疗建筑电气设计规范', status: '现行有效', statusType: 'success', updatedAt: '2024-08-15更新', tab: 'standards' },
-  { id: 3, title: 'GB 51309-2018 消防应急照明和疏散指示系统技术标准', status: '现行有效', statusType: 'success', updatedAt: '2025-03-22更新', tab: 'standards' },
-  { id: 4, title: 'GB/T 50062-2008 电力装置的继电保护和自动装置设计规范', status: '现行有效', statusType: 'success', updatedAt: '2023-11-30更新', tab: 'standards' },
-  { id: 5, title: '《建筑电气》2024-12 期刊', status: '2024年第12期', statusType: 'info', updatedAt: '手术室供电新方案', tab: 'journals' },
-])
+// 从 chatMessages 末尾向前找最近一条 AI 消息的 chunkReferences
+const knowledgeItems = computed<ChunkReference[]>(() => {
+  for (let i = chatMessages.value.length - 1; i >= 0; i--) {
+    const msg = chatMessages.value[i]
+    if (msg.role === 'assistant' && msg.chunkReferences?.length) {
+      return msg.chunkReferences
+    }
+  }
+  return []
+})
 
 const filteredKnowledgeItems = computed(() => {
   const keyword = knowledgeSearch.value.trim().toLowerCase()
-  return knowledgeItems.value.filter((it) => {
-    const byTab = it.tab === activeTab.value
-    const byKey = !keyword ? true : it.title.toLowerCase().includes(keyword)
-    return byTab && byKey
-  })
+  if (!keyword) return knowledgeItems.value
+  return knowledgeItems.value.filter(it =>
+    (it.doc_name || '').toLowerCase().includes(keyword),
+  )
 })
-
-const filterKnowledge = () => {}
-const handleTabChange = () => {
-  activeKnowledgeId.value = 0
-}
 
 // ===== 左侧项目列表（本地持久化，不走后端） =====
 //
@@ -740,25 +712,8 @@ onMounted(() => {
   flex-shrink: 0;
 }
 
-.query-bubble {
-  margin: 12px 12px 0;
-  padding: 10px 12px;
-  background: var(--el-color-primary-light-9);
-  border: 1px solid var(--el-color-primary-light-7);
-  border-radius: var(--radius-md);
-  font-size: 13px;
-  color: var(--el-color-primary);
-  line-height: 1.5;
-  flex-shrink: 0;
-}
-
-.knowledge-tabs {
-  padding: 0 12px;
-  flex-shrink: 0;
-}
-
-.knowledge-tabs :deep(.el-tabs__header) {
-  margin-bottom: 0;
+.sidebar-count {
+  margin-left: auto;
 }
 
 .knowledge-search {
@@ -797,14 +752,37 @@ onMounted(() => {
   line-height: 1.4;
 }
 
-.knowledge-meta {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
+.knowledge-snippet {
+  font-size: 12px;
+  color: var(--gray-600);
+  line-height: 1.5;
+  margin: 0;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  font-style: italic;
 }
 
-.knowledge-date {
-  font-size: 11px;
-  color: var(--gray-500);
+.knowledge-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 60px 16px;
+  color: var(--gray-400);
+  text-align: center;
+  gap: 8px;
+}
+
+.knowledge-empty .empty-icon {
+  font-size: 32px;
+  color: var(--gray-300);
+}
+
+.knowledge-empty .empty-text {
+  font-size: 12px;
+  margin: 0;
+  line-height: 1.5;
 }
 </style>

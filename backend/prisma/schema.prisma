@@ -324,6 +324,20 @@ model SystemConfig {
   @@map("system_configs")
 }
 
+/// 功能开关：控制前端功能入口的可见性，支持内测后再开放给用户
+model FeatureFlag {
+  key         String   @id          // 如 "entry.RULE_ONLY", "entry.CONTRACT"
+  label       String                // 中文显示名
+  enabled     Boolean  @default(false)
+  description String?
+  category    String   @default("entry")  // 分组：entry/feature/experimental
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  updatedBy   String?
+
+  @@map("feature_flags")
+}
+
 model ReviewRule {
   id          String   @id @default(uuid())
   ruleCode    String   @unique  // NAME_001, CODE_001, UNIT_001, ATTR_001, HEADER_001, PAGE_001, SCAN_001
@@ -802,11 +816,18 @@ model RuleLibraryItem {
   messageTemplate String?       @map("message_template") @db.Text
   sourceQuote     String?       @map("source_quote") @db.Text
   sourceLocation  String?       @map("source_location")
+  // ===== 审点库机制字段（V3.1：规则库吸收审点库能力，作为唯一审查点载体）=====
+  clauseText      String?       @map("clause_text") @db.Text  // 条文原文（规范原文，区别于 description 的动作化描述）
+  checkPrompt     String?       @map("check_prompt") @db.Text  // LLM 加工的判定 prompt（用于 DEC 三维度审查）
+  auditDimension  String?       @map("audit_dimension")  // 审查维度：compliance/fact/text
+  mandatory       String?       @default("mandatory")  // 强制性：mandatory/guidance
+  clauseHash      String?       @map("clause_hash")  // 条文 SHA-256 前 16 位，用于幂等去重
   enabled         Boolean       @default(true)
   createdAt       DateTime      @default(now())
   updatedAt       DateTime      @updatedAt
 
   @@index([libraryId])
+  @@index([libraryId, clauseHash])
   @@map("rule_library_items")
 }
 
@@ -876,28 +897,14 @@ model LlmCallLog {
   promptFull       String?  @db.Text  // DEC: LLM prompt 全文（脱敏后，用于推理回放）
   completionFull   String?  @db.Text  // DEC: LLM completion 全文
   ragChunks        Json?    // DEC: 检索到的 RAG chunks 全文
+  traceId          String?  @map("trace_id") @db.VarChar(80)  // Task 14: 全链路追踪 ID（关联同一次任务的多次 LLM 调用）
   createdAt        DateTime @default(now()) @map("created_at") @db.Timestamp(6)
 
   @@index([taskId], name: "idx_llm_log_task_id")
   @@index([model], name: "idx_llm_log_model")
   @@index([createdAt], name: "idx_llm_log_created_at")
+  @@index([traceId], name: "idx_llm_log_trace_id")
   @@map("llm_call_log")
-}
-
-// 长期用户记忆 - 跨会话持久化用户偏好
-// 嵌入由 OpenSpec Agent 生成并存储于 Agent 侧，Node 侧仅存文本与元数据
-model UserMemory {
-  id          BigInt    @id @default(autoincrement()) @db.BigInt
-  userId      String    @map("user_id") @db.VarChar(50)
-  content     String    @db.Text
-  chapterName String?   @map("chapter_name") @db.VarChar(200)
-  sourceType  String    @default("requirement") @map("source_type") @db.VarChar(50)
-  category    String    @default("other") @db.VarChar(50)
-  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamp(6)
-
-  @@index([userId], name: "idx_user_memory_user_id")
-  @@index([category], name: "idx_user_memory_category")
-  @@map("user_memory")
 }
 
 // OPT-015: 审查结果反馈（用于计算 precision/recall）
