@@ -89,6 +89,8 @@ export interface DwgStructure {
 /** 单个文件的审查上下文 */
 export interface PipelineContext {
   taskId: string;
+  /** Task 14: 全链路追踪 ID（关联同一次任务处理的所有 LLM 调用，便于推理回放重建完整流程） */
+  traceId?: string;
   fileId: string;
   fileName: string;
   filePath: string;

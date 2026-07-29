@@ -15,8 +15,10 @@ export { checkCompleteness } from './completeness.rule';
 export { checkConsistency } from './consistency.rule';
 export { checkLayout } from './layout.rule';
 export { checkTypo } from './typo.rule';
+export { checkPunctuation } from './punctuation.rule';
 export { checkInternalCodes } from './internal-code.rule';
 export { checkDwgRules, checkTitleBlock, checkLayerNaming, checkDimensions, checkStandardRefs, checkScale, checkOverlap } from './dwg.rule';
+export { checkContractRules } from './contract.rule';
 
 import { RuleIssue, FileContext, RunRulesOptions } from './types';
 import { checkNaming } from './naming.rule';
@@ -29,8 +31,10 @@ import { checkCompleteness } from './completeness.rule';
 import { checkConsistency } from './consistency.rule';
 import { checkLayout } from './layout.rule';
 import { checkTypo } from './typo.rule';
+import { checkPunctuation } from './punctuation.rule';
 import { checkInternalCodes } from './internal-code.rule';
 import { checkDwgRules } from './dwg.rule';
+import { checkContractRules } from './contract.rule';
 
 import prisma from '../../config/db';
 
@@ -141,6 +145,13 @@ const RULE_REGISTRY: RuleEntry[] = [
     meta: { label: '术语一致性', description: '专业术语使用是否统一检查', group: '内容规范', icon: 'EditPen' },
   },
   {
+    prefix: 'PUNCT',
+    category: 'PUNCTUATION',
+    fn: checkPunctuation,
+    condition: (ctx) => !!ctx.extractedText,
+    meta: { label: '标点规范', description: '中英文标点混用、全半角混用、连续标点、配对缺失', group: '内容规范', icon: 'EditPen' },
+  },
+  {
     prefix: 'INTERNAL_CODE',
     category: 'ENCODING',
     fn: checkInternalCodes,
@@ -188,6 +199,13 @@ const RULE_REGISTRY: RuleEntry[] = [
     fn: checkDwgRules('DWG_OVERLAP'),
     condition: (ctx) => ctx.fileType.toLowerCase() === 'dwg' && !!(ctx.parseResult?.metadata as any)?.layer_stats,
     meta: { label: '重叠检查', description: '图元重叠、干涉问题检查', group: '图纸审查 (DWG)', icon: 'DataAnalysis' },
+  },
+  {
+    prefix: 'CONTRACT',
+    category: 'VIOLATION',
+    fn: checkContractRules,
+    condition: (ctx) => ctx.reviewMode === 'CONTRACT_REVIEW' && !!ctx.extractedText,
+    meta: { label: '合同规则', description: '核电工程合同阈值与必需条款检查', group: '逻辑验证', icon: 'List' },
   },
 ];
 

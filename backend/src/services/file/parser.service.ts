@@ -9,25 +9,10 @@ import { PythonParserService, ParseResult } from './python-parser.service';
  * DWG 文件已改为前端 WASM 解析（@mlightcad/libredwg-web），后端不再处理
  */
 export class ParserService {
-  private static _lastParseResult: ParseResult | null = null;
-
   /** 清除字符串中的 null 字节和非法 UTF-8 控制字符，防止 PostgreSQL 报错 */
   static sanitizeUtf8(str: string): string {
     if (!str) return str;
     return str.replace(/\x00/g, '').replace(/[\x01-\x08\x0b\x0c\x0e-\x1f]/g, '');
-  }
-
-  /** @deprecated 使用 parseFileWithResult 获取完整结果，避免并发场景下的静态状态污染 */
-  static getLastParseResult(): ParseResult | null {
-    return this._lastParseResult;
-  }
-
-  /** @deprecated 使用 parseFileWithResult 获取完整结果 */
-  static getLastMarkdown(): string {
-    if (this._lastParseResult?.markdown) {
-      return this._lastParseResult.markdown;
-    }
-    return this._lastParseResult?.text || '';
   }
 
   /**
@@ -53,7 +38,6 @@ export class ParserService {
 
     // DWG/DXF 由前端 WASM 解析，后端返回空
     if (['dwg', 'dxf'].includes(fileType.toLowerCase())) {
-      this._lastParseResult = null;
       return { text: '', result: null };
     }
 
@@ -68,12 +52,10 @@ export class ParserService {
         metadata: { has_tables: false, has_images: false },
         structure: { paragraphs: [], tables: [] },
       };
-      this._lastParseResult = result;
       return { text: ParserService.sanitizeUtf8(text), result };
     }
 
     const result = await PythonParserService.parseFile(absolutePath, fileType);
-    this._lastParseResult = result;
     return { text: ParserService.sanitizeUtf8(result.text || ''), result };
   }
 
@@ -82,7 +64,6 @@ export class ParserService {
    */
   static async parsePdfPagesWithResult(filePath: string): Promise<{ pages: string[]; result: ParseResult | null }> {
     const result = await PythonParserService.parseFile(path.resolve(filePath), 'pdf');
-    this._lastParseResult = result;
     return { pages: result.pages || [], result };
   }
 

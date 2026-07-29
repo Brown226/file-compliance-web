@@ -53,7 +53,7 @@
             :type="detail.riskLevel === 'HIGH' ? 'danger' : detail.riskLevel === 'MEDIUM' ? 'warning' : 'info'"
             size="small" effect="dark" round
           >
-            {{ detail.riskLevel === 'HIGH' ? '🔴 高风险' : detail.riskLevel === 'MEDIUM' ? '🟡 中风险' : '🔵 低风险' }}
+            {{ riskLevelLabel(detail.riskLevel) }}
           </el-tag>
           <el-tag
             v-if="reviewMode === 'CONTRACT_REVIEW' && detail.clauseType"
@@ -388,6 +388,16 @@ const clauseTypeLabel = (type: string): string => {
     insurance: '保险条款', dispute: '争议解决', other: '其他',
   }
   return map[type] || type
+}
+
+/** 风险等级中文标签（纯文字，无 emoji） */
+const riskLevelLabel = (level: string): string => {
+  const map: Record<string, string> = {
+    HIGH: '高风险',
+    MEDIUM: '中风险',
+    LOW: '低风险',
+  }
+  return map[level] || level
 }
 
 // ===== OPT-015: 审查结果反馈 =====

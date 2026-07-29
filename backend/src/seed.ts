@@ -383,6 +383,21 @@ async function seed() {
     console.log('✅ V2.0 版本公告创建完成');
   }
 
+  // 6. 合同规则阈值（核电工程合同默认值，可被管理面板覆盖）
+  await prisma.systemConfig.upsert({
+    where: { key: 'contract_rule_thresholds' },
+    update: {},
+    create: {
+      key: 'contract_rule_thresholds',
+      value: {
+        payment_advance_ratio_max: 0.30,
+        penalty_ratio_max: 0.20,
+        warranty_months_min: 24,
+        required_clauses: ['insurance', 'dispute'],
+      },
+    },
+  });
+
   console.log('✅ 数据库初始化完成！');
   console.log('');
   console.log('📋 默认账号信息:');

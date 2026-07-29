@@ -24,6 +24,23 @@ export type ReviewHandler = (ctx: PipelineContext) => Promise<{
   usedEngine?: string;
 }>;
 
+/**
+ * P3-A: 文本不可提取时返回明确的"无法审查" issue
+ * 避免 OCR 失败/扫描件无文本时用户看到"无问题"误导
+ */
+function buildNoTextIssue(ctx: PipelineContext): ReviewIssue {
+  return {
+    issueType: 'COMPLETENESS',
+    severity: 'error',
+    originalText: '（无法提取文本）',
+    description: ctx.ocrDegradedReason
+      ? `该文件 OCR 失败（${ctx.ocrDegradedReason}），无法进行 AI 审查，请人工审查`
+      : '该文件无法提取文本（可能为扫描件且 OCR 不可用），请人工审查',
+    recommendation: '请上传可检索文本的 PDF 或 DOCX 文件，或联系管理员检查 OCR 服务状态',
+    ruleCode: 'OCR_FAILED',
+  } as ReviewIssue;
+}
+
 /** 各模式的显示名称与描述 */
 const MODE_META: Record<ReviewModeType, { displayName: string; description: string; needsRefFiles: boolean }> = {
   LIBRARY_REVIEW: { displayName: '以库审文', description: '使用标准库+规则引擎+AI进行合规审查', needsRefFiles: false },
@@ -59,7 +76,8 @@ const handleCustomRule: ReviewHandler = async (_ctx) => {
  */
 const handleTypoGrammar: ReviewHandler = async (ctx) => {
   const text = ctx.extractedText || '';
-  if (!text.trim()) return { aiIssues: [], usedEngine: 'none' };
+  // P3-A: 文本不可提取时返回明确的"无法审查" issue（避免误导用户"无问题"）
+  if (!text.trim()) return { aiIssues: [buildNoTextIssue(ctx)], usedEngine: 'none' };
 
   // ── 第一层：确定性规则字典（零 Token 消耗） ──
   const fileCtx = {
@@ -130,7 +148,8 @@ const handleTypoGrammar: ReviewHandler = async (ctx) => {
  */
 const handleLibraryReview: ReviewHandler = async (ctx) => {
   const text = ctx.extractedText || '';
-  if (!text.trim()) return { aiIssues: [], usedEngine: 'none' };
+  // P3-A: 文本不可提取时返回明确的"无法审查" issue（避免误导用户"无问题"）
+  if (!text.trim()) return { aiIssues: [buildNoTextIssue(ctx)], usedEngine: 'none' };
 
   const scene = ctx.scene || getModeScene('LIBRARY_REVIEW');
   const config = getEffectiveConfig(ctx);
@@ -174,14 +193,15 @@ const handleLibraryReview: ReviewHandler = async (ctx) => {
  *
  *   Phase A (Map):   每个文本分片 → LLM 抽取结构化摘要（参数/编码/引用）
  *   Phase B (Merge): 合并所有分片摘要，去重、归一化、按参数名分组
- *   Phase C (Reduce): 合并后的摘要 → LLM 做 C1-C4 一致性比对
+ *   Phase C (Reduce): 合并后的摘要 → LLM 做 C1-C6 一致性比对（Task 2 扩展，原 C1-C4 已升级为全维度）
  *
  * 分片大小自动联动 PipelineReviewConfig.chunkSize 和 LLM 上下文窗口。
  * 跨文件一致性由 ReviewService 阶段2编排层另行处理。
  */
 const handleConsistency: ReviewHandler = async (ctx) => {
   const text = ctx.extractedText || '';
-  if (!text.trim()) return { aiIssues: [], usedEngine: 'none' };
+  // P3-A: 文本不可提取时返回明确的"无法审查" issue（避免误导用户"无问题"）
+  if (!text.trim()) return { aiIssues: [buildNoTextIssue(ctx)], usedEngine: 'none' };
 
   const config = getEffectiveConfig(ctx);
 
@@ -209,7 +229,8 @@ const handleConsistency: ReviewHandler = async (ctx) => {
  */
 const handleDocReview: ReviewHandler = async (ctx) => {
   const text = ctx.extractedText || '';
-  if (!text.trim()) return { aiIssues: [], usedEngine: 'none' };
+  // P3-A: 文本不可提取时返回明确的"无法审查" issue（避免误导用户"无问题"）
+  if (!text.trim()) return { aiIssues: [buildNoTextIssue(ctx)], usedEngine: 'none' };
 
   const scene = ctx.scene || getModeScene('DOC_REVIEW');
   const config = getEffectiveConfig(ctx);
@@ -229,7 +250,8 @@ const handleDocReview: ReviewHandler = async (ctx) => {
  */
 const handleContractReview: ReviewHandler = async (ctx) => {
   const text = ctx.extractedText || '';
-  if (!text.trim()) return { aiIssues: [], usedEngine: 'none' };
+  // P3-A: 文本不可提取时返回明确的"无法审查" issue（避免误导用户"无问题"）
+  if (!text.trim()) return { aiIssues: [buildNoTextIssue(ctx)], usedEngine: 'none' };
 
   const config = getEffectiveConfig(ctx);
   const result = await AiReviewService.runContractReviewStrategy(text, ctx, config);
@@ -248,7 +270,8 @@ const handleContractReview: ReviewHandler = async (ctx) => {
  */
 const handleDecReview: ReviewHandler = async (ctx) => {
   const text = ctx.extractedText || '';
-  if (!text.trim()) return { aiIssues: [], usedEngine: 'none' };
+  // P3-A: 文本不可提取时返回明确的"无法审查" issue（避免误导用户"无问题"）
+  if (!text.trim()) return { aiIssues: [buildNoTextIssue(ctx)], usedEngine: 'none' };
 
   if (!ctx.checkpoints || ctx.checkpoints.length === 0) {
     console.warn('[Handler] DEC_REVIEW: ctx.checkpoints 为空，请确认阶段0 已预加载审点库（StandardCheckpoint）');

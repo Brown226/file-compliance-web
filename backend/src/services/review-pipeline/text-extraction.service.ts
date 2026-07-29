@@ -105,6 +105,12 @@ export class TextExtractionService {
   static async extractPdfPages(ctx: PipelineContext): Promise<string[] | undefined> {
     const normalizedFileType = FileTypeService.normalizeFileType(ctx.fileType);
     if (normalizedFileType !== 'pdf') return undefined;
+
+    // P2-E: 优先复用已有 ctx.parseResult.pages，避免二次调用 Python 解析服务
+    if (ctx.parseResult?.pages && ctx.parseResult.pages.length > 0) {
+      return ctx.parseResult.pages;
+    }
+
     try {
       const { pages, result } = await ParserService.parsePdfPagesWithResult(ctx.filePath);
       // 同步更新 ctx.parseResult，确保并发安全

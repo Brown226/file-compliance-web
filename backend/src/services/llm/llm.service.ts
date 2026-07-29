@@ -15,6 +15,9 @@ import { validateSeverity } from '../review/severity-rules';
 import * as crypto from 'crypto';
 import { retryWithBackoff } from '../../utils/retry';
 import { acquireLlmToken } from '../../utils/llm-rate-limiter';
+import { RiskItemSchema } from '../review-pipeline/contract-review.schema';
+import fs from 'fs';
+import path from 'path';
 
 /** 默认编码使用 cl100k_base（GPT-4 / GPT-3.5-turbo 使用的编码） */
 const DEFAULT_ENCODING = 'cl100k_base';
@@ -50,6 +53,15 @@ export interface ReviewIssue {
     totalChunks: number; // 总分片数
   };
   locateMeta?: LocateMeta | null;
+  /** DOC_REVIEW（以文审文）模式：LLM 判定的匹配状态
+   *  - matched: 原文符合规范（不作为问题展示）
+   *  - mismatched: 原文不符合规范（默认值，兼容旧 LLM 输出）
+   *  - missing: 原文中缺失应存在的要素
+   */
+  status?: 'matched' | 'mismatched' | 'missing';
+  /** OPT-029: originalText 保真校验结果（exact/normalized/fuzzy/not_found）
+   *  用于追踪 LLM 输出的 originalText 是否忠实于原文 */
+  textFidelity?: 'exact' | 'normalized' | 'fuzzy' | 'not_found';
 }
 
 export interface LocateMeta {
@@ -208,6 +220,23 @@ export class LlmService {
             };
 
             const isContractReview = !!item.riskLevel;
+            // P2-C: 合同审查 item 走 zod 校验（safeParse 失败仅告警不丢弃，降级保留原 item）
+            if (isContractReview) {
+              const zodResult = RiskItemSchema.safeParse({
+                clauseNo: item.clauseNo || '',
+                clauseTitle: item.clauseTitle,
+                riskType: item.riskType || 'other',
+                riskLevel: item.riskLevel,
+                riskDescription: item.description || item.riskDescription || '',
+                suggestion: item.recommendation || item.suggestion || '',
+                legalBasis: item.standardRef,
+                originalText: item.originalText,
+              });
+              if (!zodResult.success) {
+                console.warn('[LLM] 合同审查 item zod 校验失败:', zodResult.error.issues.map(i => `${i.path.join('.')}: ${i.message}`).join('; '));
+                // 校验失败但保留 item（降级处理，不丢弃）
+              }
+            }
             const issueType = item.issueType || riskLevelToIssueType[item.riskLevel] || 'VIOLATION';
             const finalIssueType = validTypes.includes(issueType) ? issueType : 'VIOLATION';
             // OPT-022: severity 合理性校验，防止 LLM 将 info 级问题标为 error
@@ -227,9 +256,18 @@ export class LlmService {
               : item._chainTag ? String(item._chainTag)
               : undefined;
 
+            // DOC_REVIEW: 解析 status 字段（matched/mismatched/missing）
+            // 旧 LLM 输出无 status 时默认 mismatched（向后兼容，传统输出都是问题）
+            const validStatuses = ['matched', 'mismatched', 'missing'];
+            const status: 'matched' | 'mismatched' | 'missing' =
+              item.status && validStatuses.includes(String(item.status))
+                ? String(item.status) as 'matched' | 'mismatched' | 'missing'
+                : 'mismatched';
+
             return {
               issueType: finalIssueType,
               severity,
+              status,
               originalText: String(item.originalText || ''),
               suggestedText: item.suggestedText ? String(item.suggestedText) : undefined,
               description,
@@ -256,6 +294,49 @@ export class LlmService {
       }
       console.warn('[LLM] 解析审查结果失败:', (e as Error).message, '\n原始内容:', content.substring(0, 200));
       return [];
+    }
+  }
+
+  /**
+   * OPT-029: 对 LLM 输出的 originalText 做保真校验
+   *
+   * LLM 输出的 originalText 可能改写原文（同义替换/省略/合并），导致前端高亮定位失败。
+   * 本方法在 reviewText 返回前调用 TextFidelityService.validateOriginalText 做校验：
+   * - exact/normalized: 保留原 originalText
+   * - fuzzy: 用 correctedText 覆盖 originalText（取最接近的原文片段）
+   * - not_found: 保留原 originalText（无法定位，交前端兜底）
+   * 同时在 issue 上加 textFidelity 字段记录校验结果（exact/normalized/fuzzy/not_found）。
+   *
+   * 失败时不阻塞主流程，返回原 issue 数组。
+   *
+   * @param issues LLM 解析出的问题列表
+   * @param sourceText 当前 chunk 的待审文本（reviewText 第一个参数 text）
+   */
+  private static applyTextFidelity(issues: ReviewIssue[], sourceText: string): ReviewIssue[] {
+    if (!issues || issues.length === 0 || !sourceText) return issues;
+    try {
+      // 动态 require 避免循环依赖（text-fidelity.service 位于 knowledge 目录）
+      const { validateOriginalText } = require('../knowledge/text-fidelity.service');
+      return issues.map(issue => {
+        if (!issue.originalText) return issue;
+        try {
+          const result = validateOriginalText(issue.originalText, sourceText);
+          // 记录保真等级
+          issue.textFidelity = result.confidence;
+          // fuzzy / not_found 时若拿到 correctedText，用 correctedText 覆盖 originalText
+          if ((result.confidence === 'fuzzy' || result.confidence === 'not_found')
+              && result.correctedText) {
+            issue.originalText = result.correctedText;
+          }
+          return issue;
+        } catch (e) {
+          console.warn('[LLM] originalText 保真校验单条失败:', (e as Error).message);
+          return issue;
+        }
+      });
+    } catch (e) {
+      console.warn('[LLM] originalText 保真校验整体失败:', (e as Error).message);
+      return issues;
     }
   }
 
@@ -975,6 +1056,8 @@ export class LlmService {
       mode?: string;
       /** 可观测性：RAG 检索片段（留存到 LlmCallLog 供推理回放展示） */
       ragChunks?: any;
+      /** Task 14: 全链路追踪 ID（关联同一次任务处理的多次 LLM 调用） */
+      traceId?: string;
     }
   ): Promise<ReviewIssue[]> {
     // 可观测性埋点（P2）：记录本次 LLM 调用的耗时/Token/状态
@@ -1057,13 +1140,14 @@ export class LlmService {
     if (cachedContent !== null) {
       console.log(`[LLM] reviewText 缓存命中 (${cachedContent.length}字)`);
       LlmService.recordLlmCall({
-        taskId: options?.taskId, mode: options?.mode, model: config.modelName,
+        taskId: options?.taskId, mode: options?.mode, traceId: options?.traceId, model: config.modelName,
         provider: config.provider, latencyMs: Date.now() - _callStart, status: 'cache',
         promptFull,
         completionFull: this.truncateForLog(cachedContent),
         ragChunks: options?.ragChunks,
       });
-      const issues = this.parseReviewResult(cachedContent);
+      // OPT-029: 对 LLM 输出的 originalText 做保真校验，提升前端高亮定位成功率
+      const issues = this.applyTextFidelity(this.parseReviewResult(cachedContent), text);
       if (options?.positionInfo && issues.length > 0) {
         const { chunkIndex, chunkStartIndex, totalChunks } = options.positionInfo;
         return issues.map(issue => {
@@ -1144,7 +1228,7 @@ export class LlmService {
         };
       }
       LlmService.recordLlmCall({
-        taskId: options?.taskId, mode: options?.mode, model: config.modelName,
+        taskId: options?.taskId, mode: options?.mode, traceId: options?.traceId, model: config.modelName,
         provider: config.provider, latencyMs: Date.now() - _callStart, status: 'success',
         usage: _usage,
         promptFull,
@@ -1161,7 +1245,8 @@ export class LlmService {
         console.log(`[LLM] reviewText 已缓存响应 (${content.length}字)`);
       }
 
-      const issues = this.parseReviewResult(content);
+      // OPT-029: 对 LLM 输出的 originalText 做保真校验，提升前端高亮定位成功率
+      const issues = this.applyTextFidelity(this.parseReviewResult(content), text);
 
       // 为每个 issue 添加位置信息
       if (options?.positionInfo && issues.length > 0) {
@@ -1207,7 +1292,7 @@ export class LlmService {
     } catch (e) {
       _callError = (e as Error).message;
       LlmService.recordLlmCall({
-        taskId: options?.taskId, mode: options?.mode, model: config.modelName,
+        taskId: options?.taskId, mode: options?.mode, traceId: options?.traceId, model: config.modelName,
         provider: config.provider, latencyMs: Date.now() - _callStart, status: 'failed',
         errorMsg: _callError,
         promptFull,
@@ -1237,6 +1322,7 @@ export class LlmService {
     promptFull?: string;
     completionFull?: string;
     ragChunks?: any;
+    traceId?: string;
   }): void {
     try {
       prisma.llmCallLog.create({
@@ -1255,10 +1341,64 @@ export class LlmService {
           completionFull: params.completionFull ?? null,
           // 无检索片段时写 SQL NULL（DbNull）而非 JSON null，便于 SQL 层区分
           ragChunks: params.ragChunks ?? Prisma.DbNull,
+          traceId: params.traceId ?? null,
         },
-      }).catch(e => console.warn('[LLM] 写入调用日志失败:', (e as Error).message));
+      }).catch(e => {
+        console.warn('[LLM] 写入调用日志失败:', (e as Error).message);
+        // Task 16: DB 写入失败时落盘到 fallback 文件，避免生产环境丢失推理回放数据
+        LlmService.writeLlmCallFallback(params, e as Error);
+      });
     } catch (e) {
       console.warn('[LLM] 写入调用日志异常:', (e as Error).message);
+      // Task 16: 同步异常也落盘
+      LlmService.writeLlmCallFallback(params, e as Error);
+    }
+  }
+
+  /**
+   * Task 16: LlmCallLog 写入失败时的 fallback 落盘机制
+   *
+   * 当 prisma.llmCallLog.create 失败（DB 不可用 / 字段超长 / 连接池耗尽等）时，
+   * 将本次调用的关键信息以 JSON 行格式追加到 backend/logs/llm-call-failed.log，
+   * 避免生产环境丢失推理回放数据。
+   *
+   * 设计权衡：
+   * - 用 fs.appendFileSync 同步写入，保证 fire-and-forget 调用链中日志不丢
+   * - 不做日志轮转（按 Task 要求），由运维定期清理
+   * - 写入失败时只 console.warn，不再向上抛出
+   */
+  private static writeLlmCallFallback(params: {
+    taskId?: string;
+    mode?: string;
+    model: string;
+    provider?: string;
+    status: string;
+    errorMsg?: string | null;
+    promptFull?: string;
+    completionFull?: string;
+    traceId?: string;
+  }, error: Error): void {
+    try {
+      const logPath = path.join(__dirname, '../../logs/llm-call-failed.log');
+      fs.mkdirSync(path.dirname(logPath), { recursive: true });
+      const entry = JSON.stringify({
+        timestamp: new Date().toISOString(),
+        taskId: params.taskId ?? null,
+        mode: params.mode ?? null,
+        model: params.model,
+        provider: params.provider ?? null,
+        status: params.status,
+        traceId: params.traceId ?? null,
+        error: error.message,
+        // 保留 prompt/completion 摘要用于推理回放，单条最长 60KB
+        promptFull: params.promptFull?.slice(0, 60000) ?? null,
+        completionFull: params.completionFull?.slice(0, 60000) ?? null,
+        originalErrorMsg: params.errorMsg ?? null,
+      });
+      fs.appendFileSync(logPath, entry + '\n', 'utf8');
+    } catch (writeErr) {
+      // fallback 自身失败时只 warn，绝不影响主流程
+      console.warn('[LLM] fallback 日志写入失败:', (writeErr as Error).message);
     }
   }
 
@@ -1529,7 +1669,7 @@ export class LlmService {
   /**
    * 通用聊天接口 - 用于 AI 正则表达式生成等场景
    */
-  static async chat(prompt: string, options?: { systemPrompt?: string; maxTokens?: number; timeout?: number; temperature?: number; taskId?: string; mode?: string }): Promise<string> {
+  static async chat(prompt: string, options?: { systemPrompt?: string; maxTokens?: number; timeout?: number; temperature?: number; taskId?: string; mode?: string; traceId?: string }): Promise<string> {
     const config = await this.getLlmConfig();
     if (!config) {
       throw new Error('LLM 未配置，请在系统配置中设置 LLM API');
@@ -1565,6 +1705,7 @@ export class LlmService {
       LlmService.recordLlmCall({
         taskId: options?.taskId,
         mode: options?.mode,
+        traceId: options?.traceId,
         model: config.modelName,
         provider: config.provider,
         latencyMs: 0,
@@ -1619,6 +1760,7 @@ export class LlmService {
           LlmService.recordLlmCall({
             taskId: options?.taskId,
             mode: options?.mode,
+            traceId: options?.traceId,
             model: config.modelName,
             provider: config.provider,
             latencyMs: 0,
@@ -1642,6 +1784,7 @@ export class LlmService {
       LlmService.recordLlmCall({
         taskId: options?.taskId,
         mode: options?.mode,
+        traceId: options?.traceId,
         model: config.modelName,
         provider: config.provider,
         latencyMs: Date.now() - _callStart,
@@ -1665,6 +1808,7 @@ export class LlmService {
       LlmService.recordLlmCall({
         taskId: options?.taskId,
         mode: options?.mode,
+        traceId: options?.traceId,
         model: config.modelName,
         provider: config.provider,
         latencyMs: Date.now() - _callStart,

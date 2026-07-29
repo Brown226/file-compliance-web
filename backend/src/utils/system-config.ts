@@ -46,6 +46,13 @@ export async function getChunkConcurrency(): Promise<number> {
   return (typeof v === 'number' && v > 0 && v <= 5) ? v : 2;
 }
 
+/** LLM 限流 QPS：每秒允许的 LLM API 调用数（按 model 分桶），0 表示不限流 */
+export async function getLlmRateLimit(): Promise<number> {
+  const s = await getBasicSettings();
+  const v = s.llmRateLimit;
+  return (typeof v === 'number' && v >= 0) ? v : 20;
+}
+
 export function invalidateConfigCache(): void {
   cachedBasicSettings = null;
   cacheTs = 0;

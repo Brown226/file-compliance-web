@@ -18,6 +18,8 @@ import { RagflowProvider } from './ragflow.service';
 import { LlmService, ReviewIssue, SourceReference } from '../llm/llm.service';
 import { PromptTemplateService } from '../llm/prompt-template.service';
 import { CacheService } from '../system/cache.service';
+import { parallelLimit } from '../../utils/parallel';
+import { getChunkConcurrency } from '../../utils/system-config';
 
 // ==================== 类型定义 ====================
 
@@ -56,6 +58,10 @@ export interface RAGReviewOptions {
   scene?: string;
   /** 文档ID，用于LLM缓存键 */
   documentId?: string;
+  /** 可观测性：任务ID（用于 LlmCallLog 关联任务） */
+  taskId?: string;
+  /** 可观测性：审查模式 */
+  mode?: string;
 }
 
 // ==================== RAG 检索服务 ====================
@@ -183,7 +189,7 @@ export class RAGService {
     if (agentEnabled) {
       console.log(`[RAG] Agent 模式启用（疑点驱动检索），共 ${kbIds.length} 个知识库`);
       try {
-        return await RAGService.runRAGReviewAgent(text, kbIds, { chunkSize, topK, llmMaxTokens, llmTimeout, scene, documentId: options?.documentId });
+        return await RAGService.runRAGReviewAgent(text, kbIds, { chunkSize, topK, llmMaxTokens, llmTimeout, scene, documentId: options?.documentId, taskId: options?.taskId, mode: options?.mode });
       } catch (e: any) {
         console.warn(`[RAG] Agent 模式失败，降级到单跳 legacy:`, e.message);
       }
@@ -194,14 +200,12 @@ export class RAGService {
     const totalChunks = chunks.length;
     console.log(`[RAG] 文本分为 ${totalChunks} 片, 总长度 ${text.length}, 知识库: [${kbIds.join(',')}], 场景: ${scene}`);
 
-    const allIssues: ReviewIssue[] = [];
-    const allSources: SourceReference[] = [];
+    // P2-D: 分片并行化（受 getChunkConcurrency 控制，默认 2，最大 5）
+    const concurrency = Math.min(totalChunks, await getChunkConcurrency());
 
-    // 2. 对每个分片进行 RAG 增强 LLM 审查
-    for (let i = 0; i < chunks.length; i++) {
-      const chunk = chunks[i];
+    // 2. 对每个分片进行 RAG 增强 LLM 审查（并行）
+    const chunkResults = await parallelLimit(chunks, concurrency, async (chunk, i) => {
       console.log(`[RAG] 处理分片 ${i + 1}/${totalChunks} (${chunk.text.length}字)`);
-
       try {
         // 2a. 向量检索：并行从多个知识库获取相关标准规范
         // 按前缀路由：ragflow: 前缀走 RAGFlow 提供方，否则走 MaxKB（默认）
@@ -275,6 +279,16 @@ export class RAGService {
           systemPrompt: systemPrompt,
           skipUserTemplate: true,
           documentId: options?.documentId,
+          taskId: options?.taskId,
+          mode: options?.mode,
+          // 推理回放：留存本分片实际检索到的知识库片段（content 截断控制单行体积）
+          ragChunks: retrievedChunks.length > 0
+            ? retrievedChunks.map(c => ({
+                document_name: c.document_name,
+                similarity: c.similarity,
+                content: c.content.substring(0, 2000),
+              }))
+            : undefined,
           positionInfo: {
             chunkIndex: chunk.chunkIndex,
             chunkStartIndex: chunk.startIndex,
@@ -289,18 +303,26 @@ export class RAGService {
             issue.sourceReferences = sources;
             if (issue.ruleCode === undefined) issue.ruleCode = 'KB_VERIFIED';
           }
-          allSources.push(...sources);
         } else if (issues.length > 0) {
           for (const issue of issues) {
             if (issue.ruleCode === undefined) issue.ruleCode = 'UNVERIFIED';
           }
         }
 
-        allIssues.push(...issues);
         console.log(`[RAG] 分片 ${i + 1}: 检测到 ${issues.length} 个问题`);
+        return { issues, sources };
       } catch (e: any) {
         console.warn(`[RAG] 分片 ${i + 1} 审查失败:`, e.message);
+        return { issues: [] as ReviewIssue[], sources: [] as SourceReference[] };
       }
+    });
+
+    // 合并并行结果
+    const allIssues: ReviewIssue[] = [];
+    const allSources: SourceReference[] = [];
+    for (const r of chunkResults) {
+      allIssues.push(...r.issues);
+      allSources.push(...r.sources);
     }
 
     console.log(`[RAG] 审查完成: ${allIssues.length} 个问题, ${allSources.length} 条引用来源`);
@@ -340,13 +362,11 @@ export class RAGService {
   static async runRAGReviewAgent(
     text: string,
     kbIds: string[],
-    options: { chunkSize: number; topK: number; llmMaxTokens: number; llmTimeout: number; scene: string; documentId?: string },
+    options: { chunkSize: number; topK: number; llmMaxTokens: number; llmTimeout: number; scene: string; documentId?: string; taskId?: string; mode?: string },
   ): Promise<RAGReviewResult> {
-    const { chunkSize, llmMaxTokens, llmTimeout, documentId } = options;
+    const { chunkSize, llmMaxTokens, llmTimeout, documentId, taskId, mode } = options;
     const chunks = LlmService.splitText(text, chunkSize, true);
     const totalChunks = chunks.length;
-    const allIssues: ReviewIssue[] = [];
-    const allSources: SourceReference[] = [];
 
     const EXTRACT_SYS = '你是核电工程文件合规审查助手。请通读给定文本，只列出"可能违反标准规范或存在合规疑点"的地方，不要下最终结论、不要编造标准。' +
       '输出 JSON 数组，每条含 {"question": "疑点的简明问法（用于检索标准条款）", "snippet": "对应的原文片段（逐字复制，20-60字）"}。' +
@@ -356,12 +376,17 @@ export class RAGService {
       '严格依据条款判定：条款能支持判定才报告问题；条款不足以判定则不要编造。' +
       '输出 JSON 数组（0 或 1 条）：{"issueType":"VIOLATION|CONSISTENCY|COMPLETENESS","originalText":"逐字复制的原文片段","suggestedText":"修改建议","description":"问题描述","ruleCode":"KB_VERIFIED","standardRef":"依据的条款编号或名称","plain_language":"通俗解释"}。若不构成问题输出 []。';
 
-    for (let i = 0; i < chunks.length; i++) {
-      const chunk = chunks[i];
+    // P2-D: 分片并行化（受 getChunkConcurrency 控制，默认 2，最大 5）
+    // 内层疑点循环保持串行，避免单分片内 LLM 调用爆炸
+    const concurrencyAgent = Math.min(totalChunks, await getChunkConcurrency());
+
+    const chunkResultsAgent = await parallelLimit(chunks, concurrencyAgent, async (chunk, i) => {
+      const chunkIssues: ReviewIssue[] = [];
+      const chunkSources: SourceReference[] = [];
       try {
         // ① 疑点抽取
         const suspicions = await LlmService.reviewText(chunk.text, {
-          maxTokens: llmMaxTokens, timeout: llmTimeout, systemPrompt: EXTRACT_SYS, skipUserTemplate: true, documentId,
+          maxTokens: llmMaxTokens, timeout: llmTimeout, systemPrompt: EXTRACT_SYS, skipUserTemplate: true, documentId, taskId, mode,
         }) as any[];
         // reviewText 返回 ReviewIssue[]；疑点抽取复用其 JSON 解析，字段映射：description/originalText 兜底
         const points: Array<{ question: string; snippet: string }> = (Array.isArray(suspicions) ? suspicions : [])
@@ -398,7 +423,7 @@ export class RAGService {
 
           if (top.length === 0) {
             // ④ 无命中：AI 推测，标记未核实
-            allIssues.push({
+            chunkIssues.push({
               issueType: 'VIOLATION',
               originalText: pt.snippet,
               suggestedText: '',
@@ -414,7 +439,13 @@ export class RAGService {
           const clauseCtx = this.formatRAGContext(top);
           const verifyUser = `【疑点】${pt.question}\n【原文片段】${pt.snippet}\n\n【知识库检索到的相关条款】\n${clauseCtx}\n\n请依据条款判定该疑点是否违规，按要求输出 JSON。`;
           const verdicts = await LlmService.reviewText(verifyUser, {
-            maxTokens: llmMaxTokens, timeout: llmTimeout, systemPrompt: VERIFY_SYS, skipUserTemplate: true, documentId,
+            maxTokens: llmMaxTokens, timeout: llmTimeout, systemPrompt: VERIFY_SYS, skipUserTemplate: true, documentId, taskId, mode,
+            // 推理回放：留存本疑点命中的条款片段
+            ragChunks: top.map(c => ({
+              document_name: c.document_name,
+              similarity: c.similarity,
+              content: c.content.substring(0, 2000),
+            })),
           });
           const srcRefs: SourceReference[] = top.map(c => ({
             content: c.content.substring(0, 200), document_name: c.document_name, similarity: c.similarity,
@@ -422,13 +453,22 @@ export class RAGService {
           for (const v of verdicts) {
             v.sourceReferences = srcRefs;               // 真实绑定：本疑点命中的条款
             if (v.ruleCode === undefined) v.ruleCode = 'KB_VERIFIED';
-            allIssues.push(v);
+            chunkIssues.push(v);
           }
-          allSources.push(...srcRefs);
+          chunkSources.push(...srcRefs);
         }
       } catch (e: any) {
         console.warn(`[RAG-Agent] 分片 ${i + 1} 处理失败:`, e.message);
       }
+      return { issues: chunkIssues, sources: chunkSources };
+    });
+
+    // 合并并行结果
+    const allIssues: ReviewIssue[] = [];
+    const allSources: SourceReference[] = [];
+    for (const r of chunkResultsAgent) {
+      allIssues.push(...r.issues);
+      allSources.push(...r.sources);
     }
 
     console.log(`[RAG-Agent] 完成: ${allIssues.length} 个问题, ${allSources.length} 条引用`);

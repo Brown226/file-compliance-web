@@ -8,8 +8,9 @@
 import { z } from 'zod';
 
 // 合同风险项结构化 schema
+// P2-C: 接入 parseReviewResult 做格式校验（safeParse 失败仅告警不丢弃）
 export const RiskItemSchema = z.object({
-  clauseNo: z.string().min(1, '条款编号不能为空'),
+  clauseNo: z.string().optional(),
   clauseTitle: z.string().optional(),
   riskType: z.enum([
     'legal_risk',       // 法律风险

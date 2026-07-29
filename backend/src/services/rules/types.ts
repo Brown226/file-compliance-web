@@ -15,6 +15,8 @@ export interface RuleIssue {
   description: string;
   /** CAD 图元 Handle ID（用于前端 CAD 定位，仅 DWG 规则使用） */
   cadHandleId?: string;
+  /** 法律/标准依据（合同规则专用，可被 RAG 填充） */
+  standardRef?: string;
 }
 
 export interface FileContext {
