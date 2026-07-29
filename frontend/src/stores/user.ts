@@ -17,6 +17,10 @@ export const useUserStore = defineStore('user', () => {
   function logout() {
     token.value = ''
     userInfo.value = null
+    // 重置功能开关缓存，避免下个用户看到上个用户的开关状态
+    import('@/composables/useFeatureFlags').then(({ resetFeatureFlags }) => {
+      resetFeatureFlags()
+    })
   }
 
   /** 判断是否为管理员 */

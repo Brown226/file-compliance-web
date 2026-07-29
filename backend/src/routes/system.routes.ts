@@ -9,6 +9,7 @@ import path from 'path';
 import fs from 'fs';
 import { getRuleRegistryMetadata } from '../services/rules';
 import { getUploadPath, getUploadDir, getUploadInfo, setUploadDir, initUploadSubdirs } from '../config/upload';
+import { listFeatureFlags, updateFeatureFlag, getEnabledFeatureKeys } from '../services/system/feature-flag.service';
 
 const router = Router();
 
@@ -192,6 +193,47 @@ router.put('/config-path', authenticate, requireRole('ADMIN'), async (req: Reque
   } catch (e: any) {
     console.error('设置存储路径失败:', e);
     res.status(500).json({ code: 500, message: '设置存储路径失败: ' + e.message });
+  }
+});
+
+// ===== 功能开关 =====
+// 获取启用的功能 key 集合（已认证用户可读，用于前端入口过滤）
+router.get('/feature-flags/enabled', authenticate, async (_req: Request, res: Response) => {
+  try {
+    const enabledKeys = await getEnabledFeatureKeys();
+    res.json({ code: 200, data: Array.from(enabledKeys) });
+  } catch (error: any) {
+    console.error('获取功能开关失败:', error);
+    res.status(500).json({ code: 500, message: '获取功能开关失败', error: error.message });
+  }
+});
+
+// 获取所有功能开关（ADMIN only，管理页用）
+router.get('/feature-flags', authenticate, requireRole('ADMIN'), async (_req: Request, res: Response) => {
+  try {
+    const flags = await listFeatureFlags();
+    res.json({ code: 200, data: flags });
+  } catch (error: any) {
+    console.error('获取功能开关列表失败:', error);
+    res.status(500).json({ code: 500, message: '获取功能开关列表失败', error: error.message });
+  }
+});
+
+// 更新功能开关（ADMIN only）
+router.put('/feature-flags/:key', authenticate, requireRole('ADMIN'), async (req: Request, res: Response) => {
+  try {
+    const key = req.params.key as string;
+    const { enabled } = req.body;
+    if (typeof enabled !== 'boolean') {
+      res.status(400).json({ code: 400, message: 'enabled 必须为布尔值' });
+      return;
+    }
+    const updatedBy = (req as any).user?.username || 'unknown';
+    await updateFeatureFlag(key, enabled, updatedBy);
+    res.json({ code: 200, message: `功能开关 ${key} 已${enabled ? '启用' : '禁用'}` });
+  } catch (error: any) {
+    console.error('更新功能开关失败:', error);
+    res.status(500).json({ code: 500, message: '更新功能开关失败', error: error.message });
   }
 });
 
