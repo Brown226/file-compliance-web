@@ -24,6 +24,7 @@ import prisma from '../../config/db';
 import { Prisma } from '@prisma/client';
 import { LlmService } from '../llm/llm.service';
 import { createAllTools } from './tools';
+import { TraceService } from './trace/trace.service';
 import { getUploadDir } from '../../config/upload';
 
 // require ESM-only SDK（Node 22.12+ 支持），同时保留类型
@@ -225,6 +226,10 @@ export class AgentService {
     let needFallback = false;
     let firstStepLogged = false;
 
+    // Task 13.2：工具执行步骤计数器（用于 AgentTrace.stepIndex）
+    // streamText 的步骤是顺序执行的，简单的递增计数器即可
+    let toolStepCounter = 0;
+
     // 9. 启动流式调用
     //    - system: Agent 系统提示词（定义工作流/行为准则/安全约束）+ 已上传文件列表
     //    - messages: ModelMessage 数组（Task 7.5：已用 convertToModelMessages 转换）
@@ -273,6 +278,31 @@ export class AgentService {
             : '';
         console.log(`[Agent] tool#${toolCall.toolCallId} end: ${toolCall.toolName} ` +
           `(${toolExecutionMs}ms) ${outputType} ${preview}`);
+
+        // Task 13.2：记录 AgentTrace（fire-and-forget，不阻塞流）
+        const traceStepIndex = toolStepCounter++;
+        const traceStatus: 'success' | 'failed' =
+          toolOutput?.type === 'tool-error' ? 'failed' : 'success';
+        const traceError: string | undefined =
+          toolOutput?.type === 'tool-error' ? String(toolOutput.error ?? '') : undefined;
+        const traceInput = toolCall?.args ?? toolCall?.input;
+        const traceOutput = toolOutput?.type === 'tool-result' ? toolOutput.output : undefined;
+
+        // fire-and-forget：失败仅 warn 不 throw（与 onFinish 里 LlmCallLog 写入模式一致）
+        TraceService.recordTrace({
+          sessionId: sessionId || '',
+          userId,
+          stepIndex: traceStepIndex,
+          toolName: toolCall.toolName,
+          input: traceInput,
+          output: traceOutput,
+          durationMs: toolExecutionMs,
+          status: traceStatus,
+          traceId: sessionId || undefined,  // 用 sessionId 作为 traceId 关联 LlmCallLog
+          error: traceError,
+        }).catch((e: Error) => {
+          console.warn(`[Agent:Trace] 记录失败: ${toolCall.toolName}`, (e as Error).message);
+        });
       },
       onError: ({ error }: any) => {
         console.error('[Agent] streamText onError:', (error as Error)?.message || error);
@@ -397,6 +427,9 @@ export class AgentService {
 
     console.log('[Agent] generateText 兜底启动，model=' + config.modelName);
 
+    // Task 13.2：兜底模式也记录 trace（与 chatStream 一致）
+    let fallbackToolStepCounter = 0;
+
     // generateText 会自动执行工具调用循环（与 streamText 的循环逻辑一致，但非流式）
     const result = await generateText({
       model,
@@ -404,6 +437,28 @@ export class AgentService {
       messages: modelMessages,
       tools,
       stopWhen: isStepCount(10),
+      onToolExecutionEnd: ({ toolCall, toolOutput, toolExecutionMs }: any) => {
+        const traceStepIndex = fallbackToolStepCounter++;
+        const traceStatus: 'success' | 'failed' =
+          toolOutput?.type === 'tool-error' ? 'failed' : 'success';
+        const traceError: string | undefined =
+          toolOutput?.type === 'tool-error' ? String(toolOutput.error ?? '') : undefined;
+
+        TraceService.recordTrace({
+          sessionId: sessionId || '',
+          userId,
+          stepIndex: traceStepIndex,
+          toolName: toolCall.toolName,
+          input: toolCall?.args ?? toolCall?.input,
+          output: toolOutput?.type === 'tool-result' ? toolOutput.output : undefined,
+          durationMs: toolExecutionMs,
+          status: traceStatus,
+          traceId: sessionId || undefined,
+          error: traceError,
+        }).catch((e: Error) => {
+          console.warn(`[Agent:Trace] 兜底模式记录失败: ${toolCall.toolName}`, (e as Error).message);
+        });
+      },
     });
 
     const toolNames = result.steps?.flatMap((s: any) => (s.toolCalls ?? []).map((tc: any) => tc.toolName)) ?? [];

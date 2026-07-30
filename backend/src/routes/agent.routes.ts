@@ -22,6 +22,7 @@ import fs from 'fs';
 import crypto from 'crypto';
 import { authenticate, AuthRequest } from '../middlewares/auth.middleware';
 import { AgentService } from '../services/agent/agent.service';
+import { TraceService } from '../services/agent/trace/trace.service';
 import { getUploadDir } from '../config/upload';
 
 const router = Router();
@@ -173,6 +174,72 @@ router.post('/upload', agentUpload.single('file'), (req: AuthRequest, res: Respo
   } catch (e: any) {
     console.error('[Agent] 文件上传失败:', e?.message || e);
     return res.status(500).json({ success: false, message: `文件上传失败: ${e?.message || e}` });
+  }
+});
+
+/**
+ * GET /api/agent/traces/:sessionId — 查询会话的 Agent 执行追踪列表
+ *
+ * Task 13.3：返回该会话所有工具调用的 trace（按 stepIndex 排序），
+ * 供前端调试面板展示 Agent 的决策过程。
+ *
+ * 权限：只能查自己的会话（TraceService.listTraces 内部校验 userId）
+ *
+ * 返回：{ success, data: TraceItem[] }
+ */
+router.get('/traces/:sessionId', async (req: AuthRequest, res: Response) => {
+  try {
+    const userId = req.user?.id;
+    if (!userId) {
+      return res.status(401).json({ success: false, message: '未认证' });
+    }
+
+    const sessionId = String(req.params.sessionId || '');
+    if (!sessionId) {
+      return res.status(400).json({ success: false, message: 'sessionId 不能为空' });
+    }
+
+    const traces = await TraceService.listTraces(sessionId, userId);
+    return res.json({ success: true, data: traces });
+  } catch (e: any) {
+    // 会话不存在或无权访问时返回 404
+    if (e?.message?.includes('不存在或无权访问')) {
+      return res.status(404).json({ success: false, message: e.message });
+    }
+    console.error('[Agent] 查询 trace 列表失败:', e?.message || e);
+    return res.status(500).json({ success: false, message: `查询失败: ${e?.message || e}` });
+  }
+});
+
+/**
+ * GET /api/agent/traces/trace/:traceId — 查询单条 trace + 关联的 LlmCallLog
+ *
+ * Task 13.4：通过 traceId 关联 LlmCallLog，展示工具调用对应的 LLM 调用详情
+ * （token 用量 / 耗时 / 模型 / 状态）。
+ *
+ * 返回：{ success, data: TraceWithLlmCallLog }
+ */
+router.get('/traces/trace/:traceId', async (req: AuthRequest, res: Response) => {
+  try {
+    const userId = req.user?.id;
+    if (!userId) {
+      return res.status(401).json({ success: false, message: '未认证' });
+    }
+
+    const traceId = String(req.params.traceId || '');
+    if (!traceId) {
+      return res.status(400).json({ success: false, message: 'traceId 不能为空' });
+    }
+
+    const trace = await TraceService.getTraceWithLlmCallLog(traceId);
+    if (!trace) {
+      return res.status(404).json({ success: false, message: 'trace 不存在' });
+    }
+
+    return res.json({ success: true, data: trace });
+  } catch (e: any) {
+    console.error('[Agent] 查询 trace 详情失败:', e?.message || e);
+    return res.status(500).json({ success: false, message: `查询失败: ${e?.message || e}` });
   }
 });
 
