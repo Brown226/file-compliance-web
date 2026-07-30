@@ -102,6 +102,9 @@
         <span v-if="connectionTestResult.message" class="result-detail">{{ connectionTestResult.message }}</span>
         <span v-if="connectionTestResult.latency !== undefined" class="result-latency">延迟: {{ connectionTestResult.latency }}ms</span>
       </div>
+
+      <!-- Task 30.2: DWG 维度模型路由（高级配置，默认折叠） -->
+      <DwgVisionRoutePanel ref="routePanelRef" />
     </section>
   </div>
 </template>
