@@ -206,6 +206,20 @@ export interface VisionAnalyzeResult {
    * - 前端实时分析/历史回放时用此值调用 /api/dwg/vision-llm-logs/:traceId
    */
   traceId?: string;
+  /**
+   * Task 33: 自动判定的专业类型
+   * - 仅在 user 未显式指定 profession 且 analyses 包含 'profession' 时填充
+   * - user 手动选择专业时该字段为 undefined（profession.profession 即为用户选择）
+   * - 前端展示「自动判定: XXX」标签
+   */
+  detectedProfession?: DwgProfession;
+  /**
+   * Task 33: 自动判定的依据/失败原因
+   * - 判定成功：模型返回的 reason（如「含房间布局/门窗/疏散通道」）
+   * - 判定失败：固定文案「自动判定失败，降级为建筑专业」
+   * - 前端可在 tooltip/副标题展示
+   */
+  detectedProfessionReason?: string;
 }
 
 /**
@@ -1111,6 +1125,57 @@ export class DwgVisionService {
   };
 
   /**
+   * Task 33: 专业路由自动判定
+   *
+   * Step0: 用小模型对图纸做一次轻量调用，判定图纸专业（建筑/结构/机电/工艺/核电）
+   * 后续 prompt 按专业分流，加载对应 PROFESSION_VARIANT_MAP 的 prompt
+   *
+   * 判定逻辑：
+   *   - 用标题栏维度配置（小模型优先）调用 VLM
+   *   - prompt 要求模型从图纸内容特征（图例符号/标注/设计说明关键词）判定专业
+   *   - 返回 DwgProfession 联合类型之一；无法判定时降级为 'building'（最通用）
+   *
+   * 用户手动选择时跳过自动判定（在 analyze 入口判断）
+   *
+   * @param imageBase64  图纸 PNG base64
+   * @param config       视觉模型配置（建议用 titleBlock 维度的小模型）
+   * @returns            { profession, reason } —— 判定出的专业类型 + 依据/失败原因
+   */
+  static async detectProfession(
+    imageBase64: string,
+    config: VisionConfig,
+    traceId?: string,
+  ): Promise<{ profession: DwgProfession; reason: string }> {
+    // 简化判定 prompt（直接内联，不走 registry，避免污染模板库）
+    const systemPrompt = `你是图纸专业判定助手。根据图纸内容特征判定其所属专业类别。
+仅从以下 7 个专业中选择一个，输出 JSON：{"profession": "building|structural|plumbing|hvac|electrical|process|nuclear", "reason": "判定依据简述"}
+
+判定依据：
+- building（建筑）：平面图/立面图/剖面图，含房间布局/门窗/家具/疏散通道
+- structural（结构）：配筋图/模板图，含钢筋符号/混凝土等级/抗震等级
+- plumbing（给排水）：管线图含给排水符号/阀门/水龙头/排水沟
+- hvac（暖通）：风管/水管/空调设备/风口符号
+- electrical（电气）：电气线路/配电箱/灯具/开关符号
+- process（工艺）：工艺流程图/P&ID，含设备/管道/仪表
+- nuclear（核电）：含焊缝符号/NDT 标注/检验等级/HAF 标准
+
+无法判定时默认 building。`;
+
+    const userPrompt = '请判定这张图纸的专业类别。';
+
+    const parsed = await this.callAndParse(imageBase64, systemPrompt, userPrompt, config, { traceId, mode: 'profession_detect' });
+    const valid: DwgProfession[] = ['building', 'structural', 'plumbing', 'hvac', 'electrical', 'process', 'nuclear'];
+    const detected = parsed?.profession;
+    if (typeof detected === 'string' && valid.includes(detected as DwgProfession)) {
+      const reason = String(parsed.reason || '未提供判定依据');
+      console.log(`[DWG Vision] Task 33 专业自动判定: ${detected}（依据: ${reason}）`);
+      return { profession: detected as DwgProfession, reason };
+    }
+    console.log('[DWG Vision] Task 33 专业自动判定失败，降级为 building');
+    return { profession: 'building', reason: '自动判定失败，降级为建筑专业' };
+  }
+
+  /**
    * 专业审查：按用户选择的专业加载对应 prompt 进行针对性审查
    * Task 17 实现，Task 33 专业路由自动判定将复用此方法
    */
@@ -1537,12 +1602,32 @@ export class DwgVisionService {
       );
     }
 
-    // Task 17: 专业分流审查
-    if (analyses.includes('profession') && options?.profession) {
+    // Task 17/33: 专业分流审查
+    // - user 显式指定 profession → 直接用 user 选择的 profession
+    // - user 未指定 → 先调 detectProfession 自动判定（用 titleBlock 维度的小模型），
+    //   再用 detected profession 调 analyzeProfession
+    // - 自动判定结果（含 reason）写入 result.detectedProfession / detectedProfessionReason
+    if (analyses.includes('profession')) {
       tasks.push(
-        this.analyzeProfession(imageBase64, options.profession, configMap.profession, traceId)
-          .then(r => { result.profession = r; emitDimensionDone('profession', true); })
-          .catch(e => { errors.push(`专业审查失败: ${e.message}`); emitDimensionDone('profession', false, e.message); })
+        (async () => {
+          try {
+            let profession = options?.profession;
+            if (!profession) {
+              // Task 33: 自动判定（用 titleBlock 维度的小模型，未配置时降级到默认 config）
+              const detectConfig = configMap.titleBlock || config;
+              const detected = await this.detectProfession(imageBase64, detectConfig, traceId);
+              profession = detected.profession;
+              result.detectedProfession = detected.profession;
+              result.detectedProfessionReason = detected.reason;
+            }
+            const r = await this.analyzeProfession(imageBase64, profession, configMap.profession, traceId);
+            result.profession = r;
+            emitDimensionDone('profession', true);
+          } catch (e: any) {
+            errors.push(`专业审查失败: ${e.message}`);
+            emitDimensionDone('profession', false, e.message);
+          }
+        })()
       );
     }
 

@@ -133,6 +133,10 @@ export interface VisionAnalyzeResult {
   dwgMetadataVerification?: DwgMetadataVerification
   /** Task 29: 本次分析的 jobKey（traceId），用于查询推理回放日志 */
   traceId?: string
+  /** Task 33: 自动判定的专业类型（user 未显式指定 profession 时填充） */
+  detectedProfession?: DwgProfession
+  /** Task 33: 自动判定的依据/失败原因（前端 tooltip 展示） */
+  detectedProfessionReason?: string
 }
 
 /**

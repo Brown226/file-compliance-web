@@ -201,6 +201,34 @@
             </div>
           </transition>
 
+          <!-- Task 33: 专业审查专业选择器 -->
+          <transition name="el-zoom-in-top">
+            <div v-if="selectedAnalyses.includes('profession')" class="ref-section">
+              <div class="kb-label">
+                <span>专业选择</span>
+                <el-tooltip
+                  content="默认「自动判定」：后端用小模型对图纸做一次轻量调用，从图纸内容特征（图例符号/标注/设计说明关键词）判定专业，判定失败时降级为建筑专业。也可手动指定专业跳过自动判定。"
+                  placement="top"
+                >
+                  <el-icon class="kb-help"><WarningFilled /></el-icon>
+                </el-tooltip>
+              </div>
+              <el-select
+                v-model="selectedProfession"
+                placeholder="选择专业"
+                style="width: 100%"
+                size="default"
+              >
+                <el-option
+                  v-for="opt in professionOptions"
+                  :key="opt.value"
+                  :label="opt.label"
+                  :value="opt.value"
+                />
+              </el-select>
+            </div>
+          </transition>
+
           <div class="action-row">
             <el-button
               type="primary"
@@ -290,6 +318,17 @@
                   <el-icon style="margin-right:3px"><Clock /></el-icon>
                   耗时 {{ (result.duration_ms / 1000).toFixed(1) }}s
                 </el-tag>
+                <!-- Task 33: 自动判定专业标签（仅 user 选「自动判定」且判定有结果时显示） -->
+                <el-tooltip
+                  v-if="result.detectedProfession"
+                  :content="result.detectedProfessionReason || '自动判定'"
+                  placement="bottom"
+                >
+                  <el-tag size="small" type="warning" effect="plain">
+                    <el-icon style="margin-right:3px"><DataAnalysis /></el-icon>
+                    自动判定: {{ professionLabelMap[result.detectedProfession] || result.detectedProfession }}
+                  </el-tag>
+                </el-tooltip>
                 <!-- Task 29: 推理回放按钮（仅 result.traceId 存在时显示） -->
                 <el-button
                   v-if="currentTraceId"
@@ -508,7 +547,7 @@ import {
   Memo, WarningFilled, ArrowLeft, InfoFilled,
 } from '@element-plus/icons-vue'
 import { dwgToPng, parseDwgFile } from '@/utils/dwg-parser'
-import { analyzeDwgVision, getVisionStatus, getVisionHistory, type VisionAnalyzeResult, type VisionStatusResult, type VisionHistoryItem, type OcrVerificationResult, type DwgMetadata, type DwgMetadataVerification } from '@/api/dwg-vision'
+import { analyzeDwgVision, getVisionStatus, getVisionHistory, type VisionAnalyzeResult, type VisionStatusResult, type VisionHistoryItem, type OcrVerificationResult, type DwgMetadata, type DwgMetadataVerification, type DwgProfession } from '@/api/dwg-vision'
 import DwgVisionHistoryDrawer from './DwgVisionHistoryDrawer.vue'
 import DwgVisionPreviewPanel from './DwgVisionPreviewPanel.vue'
 import LlmReplayDrawer from '@/views/TaskDetails/LlmReplayDrawer.vue'
@@ -530,7 +569,32 @@ const analysisOptions = [
   { key: 'symbols', label: '图例符号识别', desc: '识别阀门、泵、仪表等设备符号', icon: Grid, bg: '#f0fdf4', color: '#16a34a' },
   { key: 'annotations', label: '标注完整性', desc: '检查尺寸标注与技术要求完整性', icon: EditPen, bg: '#fffbeb', color: '#d97706' },
   { key: 'compliance', label: '合规审查', desc: '对照标准条文检查设计说明', icon: Stamp, bg: '#fef2f2', color: '#dc2626' },
+  // Task 17/33: 专业审查（含自动判定）
+  { key: 'profession', label: '专业审查', desc: '按图纸专业（建筑/结构/机电/核电等）做针对性审查', icon: DataAnalysis, bg: '#f5f3ff', color: '#7c3aed' },
 ]
+
+// Task 33: 专业选择器选项（'auto' = 自动判定，其余为 7 个专业）
+const professionOptions: Array<{ value: DwgProfession | 'auto'; label: string }> = [
+  { value: 'auto', label: '自动判定（小模型预分类）' },
+  { value: 'building', label: '建筑' },
+  { value: 'structural', label: '结构' },
+  { value: 'plumbing', label: '给排水' },
+  { value: 'hvac', label: '暖通' },
+  { value: 'electrical', label: '电气' },
+  { value: 'process', label: '工艺' },
+  { value: 'nuclear', label: '核电' },
+]
+
+// Task 33: 专业标签映射（detectedProfession / 用户选择显示用）
+const professionLabelMap: Record<DwgProfession, string> = {
+  building: '建筑',
+  structural: '结构',
+  plumbing: '给排水',
+  hvac: '暖通',
+  electrical: '电气',
+  process: '工艺',
+  nuclear: '核电',
+}
 
 // Task 26: 分析项 label 映射（传给历史抽屉子组件）
 const analysisLabelMap = computed(() => {
@@ -555,6 +619,9 @@ const knowledgeBases = ref<Array<{ id: string; name: string; desc?: string }>>([
 const selectedKbId = ref<string>('')
 const ragQuery = ref<string>('')
 const loadingKnowledgeBases = ref(false)
+
+// Task 33: 专业选择（'auto' = 自动判定；其余为 7 个专业之一）
+const selectedProfession = ref<DwgProfession | 'auto'>('auto')
 
 // Task 25: 历史记录相关状态
 const historyVisible = ref(false)
@@ -897,6 +964,8 @@ async function startAnalysis() {
     }
 
     // 2. 调用后端 Vision 分析
+    // Task 33: profession 字段仅在 user 手动选择某专业时传，
+    //   'auto' 时不传，后端自动调用 detectProfession 判定
     const res = await analyzeDwgVision({
       imageBase64,
       fileName: dwgFile.value.name,
@@ -904,6 +973,7 @@ async function startAnalysis() {
       refText: refText.value || undefined,
       kbId: selectedKbId.value || undefined,
       query: ragQuery.value || undefined,
+      profession: selectedProfession.value === 'auto' ? undefined : selectedProfession.value,
       dwgMetadata,
     })
 
