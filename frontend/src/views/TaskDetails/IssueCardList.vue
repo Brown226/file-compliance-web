@@ -208,6 +208,8 @@
                   @cancel-fp="(detail: IssueDetail) => $emit('cancelFp', detail)"
                   @toggle-select="toggleIssueSelection"
                   @select-file-by-id="(fileId: string) => $emit('selectFileById', fileId)"
+                  @locate-bbox="(detail: IssueDetail) => $emit('locateBbox', detail)"
+                  @open-clause="(detail: IssueDetail) => $emit('openClause', detail)"
                 />
               </div>
             </div>
@@ -244,6 +246,8 @@
                 @cancel-fp="(detail) => $emit('cancelFp', detail)"
                 @toggle-select="toggleIssueSelection"
                 @select-file-by-id="(fileId) => $emit('selectFileById', fileId)"
+                @locate-bbox="(detail) => $emit('locateBbox', detail)"
+                @open-clause="(detail) => $emit('openClause', detail)"
               />
             </div>
           </div>
@@ -267,6 +271,8 @@
             @cancel-fp="(detail) => $emit('cancelFp', detail)"
             @toggle-select="toggleIssueSelection"
             @select-file-by-id="(fileId) => $emit('selectFileById', fileId)"
+            @locate-bbox="(detail) => $emit('locateBbox', detail)"
+            @open-clause="(detail) => $emit('openClause', detail)"
           />
         </template>
       </template>
@@ -317,6 +323,9 @@ const emit = defineEmits<{
   cancelFp: [detail: IssueDetail]
   locateText: [payload: { detail: IssueDetail; elementId: string }]
   batchFalsePositive: [issueIds: string[], reason?: string]
+  // Task 42: dwg-vision 专属事件透传
+  locateBbox: [detail: IssueDetail]
+  openClause: [detail: IssueDetail]
 }>()
 
 const errorContentRef = ref<HTMLElement | null>(null)

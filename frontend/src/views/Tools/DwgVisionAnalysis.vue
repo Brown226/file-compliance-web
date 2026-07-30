@@ -439,126 +439,20 @@
               <div class="total-count">共识别 <b>{{ result.symbols.totalCount }}</b> 个图例符号</div>
             </el-tab-pane>
 
-            <!-- 标注完整性 -->
-            <el-tab-pane name="annotations" v-if="result.annotations">
+            <!-- Task 42: 问题（合并 annotations/compliance/ruleIssues/profession/frameCheck，用 IssueCardList 统一展示） -->
+            <el-tab-pane name="issues" v-if="hasVisionIssues">
               <template #label>
-                <span class="tab-label"><el-icon><EditPen /></el-icon>标注检查</span>
+                <span class="tab-label"><el-icon><WarningFilled /></el-icon>问题 ({{ visionIssues.length }})</span>
               </template>
-              <div class="score-card">
-                <el-progress
-                  type="dashboard"
-                  :percentage="result.annotations.completenessScore"
-                  :color="scoreColor(result.annotations.completenessScore)"
-                  :width="120"
-                >
-                  <template #default="{ percentage }">
-                    <span class="score-num">{{ percentage }}</span>
-                    <span class="score-unit">分</span>
-                  </template>
-                </el-progress>
-                <div class="score-info">
-                  <div class="score-title">标注完整性评分</div>
-                  <div class="score-desc">{{ result.annotations.summary }}</div>
-                </div>
-              </div>
-              <el-table :data="result.annotations.missingItems" stripe size="small" max-height="380"
-                @row-click="onAnnotationsRowClick"
-                :row-class-name="annotationsRowClass"
-              >
-                <el-table-column prop="item" label="问题" />
-                <el-table-column prop="location" label="位置" width="160" />
-                <el-table-column prop="severity" label="严重度" width="90">
-                  <template #default="{ row }">
-                    <el-tag size="small" :type="severityTag(row.severity)">{{ severityLabel(row.severity) }}</el-tag>
-                  </template>
-                </el-table-column>
-                <el-table-column label="复核" width="110">
-                  <template #default="{ row }">
-                    <el-tag v-if="row.confidence != null && row.confidence < 0.6" type="warning" size="small">待人工复核</el-tag>
-                  </template>
-                </el-table-column>
-              </el-table>
+              <IssueCardList
+                :details="visionIssues"
+                :loading="analyzing"
+                :selected-file-id="null"
+                @locate-bbox="handleLocateBbox"
+                @open-clause="handleOpenClause"
+              />
             </el-tab-pane>
 
-            <!-- 合规审查 -->
-            <el-tab-pane name="compliance" v-if="result.compliance">
-              <template #label>
-                <span class="tab-label"><el-icon><Stamp /></el-icon>合规审查</span>
-              </template>
-              <div class="summary-box">{{ result.compliance.summary }}</div>
-
-              <div v-if="result.compliance.designNotes.length" class="notes-section">
-                <div class="section-title"><el-icon><Memo /></el-icon>设计说明 / 技术要求</div>
-                <ul class="design-notes">
-                  <li v-for="(note, i) in result.compliance.designNotes" :key="i">{{ note }}</li>
-                </ul>
-              </div>
-
-              <div v-if="result.compliance.issues.length" class="notes-section">
-                <div class="section-title"><el-icon><WarningFilled /></el-icon>合规问题</div>
-                <el-table :data="result.compliance.issues" stripe size="small" max-height="380"
-                  @row-click="onComplianceRowClick"
-                  :row-class-name="complianceRowClass"
-                >
-                  <el-table-column prop="note" label="原文" width="200" show-overflow-tooltip />
-                  <el-table-column prop="violation" label="问题" />
-                  <el-table-column prop="suggestion" label="建议" />
-                  <el-table-column label="区域" width="100">
-                    <template #default="{ row }">
-                      <el-tag v-if="row.markId != null" size="small" type="info">{{ markIdLabel(row.markId) }}</el-tag>
-                      <span v-else>—</span>
-                    </template>
-                  </el-table-column>
-                  <el-table-column prop="severity" label="严重度" width="90">
-                    <template #default="{ row }">
-                      <el-tag size="small" :type="severityTag(row.severity)">{{ severityLabel(row.severity) }}</el-tag>
-                    </template>
-                  </el-table-column>
-                  <el-table-column label="复核" width="110">
-                    <template #default="{ row }">
-                      <el-tag v-if="row.confidence != null && row.confidence < 0.6" type="warning" size="small">待人工复核</el-tag>
-                    </template>
-                  </el-table-column>
-                  <!-- Task 28: 规范条文链接列 -->
-                  <el-table-column label="条文" width="100" fixed="right">
-                    <template #default="{ row }">
-                      <el-button
-                        v-if="row.clauseText"
-                        size="small"
-                        type="primary"
-                        link
-                        @click.stop="openClauseDialog(row)"
-                      >
-                        <el-icon style="margin-right: 2px"><Document /></el-icon>查看条文
-                      </el-button>
-                      <span v-else>—</span>
-                    </template>
-                  </el-table-column>
-                </el-table>
-              </div>
-            </el-tab-pane>
-
-            <!-- 规则检查（来自内置规则引擎，与 LLM 视觉识别互补） -->
-            <el-tab-pane name="ruleIssues" v-if="result.ruleIssues?.length">
-              <template #label>
-                <span class="tab-label"><el-icon><WarningFilled /></el-icon>规则检查</span>
-              </template>
-              <div class="summary-box">基于内置规则引擎的检查结果（共 {{ result.ruleIssues.length }} 条），与视觉模型识别结果相互补充</div>
-              <div class="rule-issues-list">
-                <div
-                  v-for="(rule, i) in result.ruleIssues"
-                  :key="i"
-                  class="rule-issue-item"
-                  :class="`rule-issue-${rule.severity}`"
-                >
-                  <div class="rule-issue-header">
-                    <el-tag size="small" :type="severityTag(rule.severity)">{{ severityLabel(rule.severity) }}</el-tag>
-                    <el-tag size="small" type="info" effect="plain" class="rule-code">{{ rule.code }}</el-tag>
-                  </div>
-                  <div class="rule-issue-message">{{ rule.message }}</div>
-                </div>
-              </div>
-            </el-tab-pane>
           </el-tabs>
         </el-card>
       </div>
@@ -618,6 +512,8 @@ import { analyzeDwgVision, getVisionStatus, getVisionHistory, type VisionAnalyze
 import DwgVisionHistoryDrawer from './DwgVisionHistoryDrawer.vue'
 import DwgVisionPreviewPanel from './DwgVisionPreviewPanel.vue'
 import LlmReplayDrawer from '@/views/TaskDetails/LlmReplayDrawer.vue'
+import IssueCardList from '@/views/TaskDetails/IssueCardList.vue'
+import type { IssueDetail, IssueType } from '@/views/TaskDetails/types/issue'
 import type { BboxOverlay } from '@/composables/useSvgZoomPan'
 import { getKnowledgeBasesApi } from '@/api/maxkb'
 
@@ -741,6 +637,88 @@ const allIssues = computed<CollectedIssue[]>(() => {
 /** 有 bbox 的 issue（用于渲染叠框 rect） */
 const bboxIssues = computed(() => allIssues.value.filter(i => i.bbox))
 
+/**
+ * Task 42: 把 VisionAnalyzeResult 各维度 issue 转成扁平 IssueDetail[]，
+ * 供 IssueCardList 统一展示。id 与 allIssues 保持一致（`${tab}-${index}`），
+ * 便于 SVG 叠框联动定位。
+ */
+const visionIssues = computed<IssueDetail[]>(() => {
+  const r = result.value
+  if (!r) return []
+  const list: IssueDetail[] = []
+  // 标注完整性（annotations.missingItems）
+  r.annotations?.missingItems?.forEach((a, i) => {
+    list.push({
+      id: `annotations-${i}`,
+      severity: a.severity,
+      issueType: 'COMPLETENESS' as IssueType,
+      description: a.item || '—',
+      originalText: a.location || '',
+      bbox: a.bbox,
+      confidence: a.confidence,
+      reasoning: a.reasoning,
+    })
+  })
+  // 合规审查（compliance.issues）
+  r.compliance?.issues?.forEach((c, i) => {
+    list.push({
+      id: `compliance-${i}`,
+      severity: c.severity,
+      issueType: 'VIOLATION' as IssueType,
+      description: c.note || c.violation || '—',
+      originalText: c.violation || '',
+      suggestedText: c.suggestion || '',
+      bbox: c.bbox,
+      confidence: c.confidence,
+      reasoning: c.reasoning,
+      markId: c.markId,
+      clauseRef: c.clauseRef,
+      clauseText: c.clauseText,
+    })
+  })
+  // 规则检查（ruleIssues）
+  r.ruleIssues?.forEach((rule, i) => {
+    list.push({
+      id: `rule-${i}`,
+      severity: rule.severity,
+      issueType: 'VIOLATION' as IssueType,
+      ruleCode: rule.code,
+      description: rule.message || '—',
+      originalText: '',
+    })
+  })
+  // 专业审查（profession.issues，Task 17）
+  r.profession?.issues?.forEach((p, i) => {
+    list.push({
+      id: `profession-${i}`,
+      severity: p.severity,
+      issueType: 'VIOLATION' as IssueType,
+      description: p.item || '—',
+      originalText: p.location || '',
+      bbox: p.bbox,
+      confidence: p.confidence,
+      reasoning: p.reasoning,
+    })
+  })
+  // 图框规范（frameCheck.issues，Task 18）
+  r.frameCheck?.issues?.forEach((f, i) => {
+    list.push({
+      id: `frame-${i}`,
+      severity: f.severity,
+      issueType: 'VIOLATION' as IssueType,
+      description: f.item || '—',
+      originalText: f.location || '',
+      bbox: f.bbox,
+      confidence: f.confidence,
+      reasoning: f.reasoning,
+    })
+  })
+  return list
+})
+
+/** Task 42: visionIssues 是否有数据（控制「问题」tab 显隐） */
+const hasVisionIssues = computed(() => visionIssues.value.length > 0)
+
 /** rect 元素 ref 集合，用于 scrollIntoView */
 const rectRefs = new Map<string, SVGRectElement>()
 function setRectRef(el: any, id: string) {
@@ -811,7 +789,10 @@ function openHistory() {
 /** Task 25/29: 回放历史记录（增强：自动退出分屏 + 提示预览恢复） */
 function replayHistoryItem(item: VisionHistoryItem) {
   result.value = item.result
-  activeTab.value = 'titleBlock'
+  // Task 42: 优先展示「问题」tab（如有 issue），否则回退 titleBlock
+  const r = item.result
+  const hasIssues = r.annotations?.missingItems?.length || r.compliance?.issues?.length || r.ruleIssues?.length || r.profession?.issues?.length || r.frameCheck?.issues?.length
+  activeTab.value = hasIssues ? 'issues' : 'titleBlock'
   historyVisible.value = false
   splitView.value = false  // Task 27: 回放时退出分屏
   // Task 29: 历史记录不含 SVG 预览，提示用户需重新上传恢复预览
@@ -917,11 +898,11 @@ async function startAnalysis() {
 
     if (res.code === 200) {
       result.value = res.data
-      // 自动切换到第一个有结果的 tab
-      if (res.data.titleBlock) activeTab.value = 'titleBlock'
+      // Task 42: 优先展示「问题」tab（如有 issue），否则按 titleBlock/symbols 顺序
+      const hasIssues = res.data.annotations?.missingItems?.length || res.data.compliance?.issues?.length || res.data.ruleIssues?.length || res.data.profession?.issues?.length || res.data.frameCheck?.issues?.length
+      if (hasIssues) activeTab.value = 'issues'
+      else if (res.data.titleBlock) activeTab.value = 'titleBlock'
       else if (res.data.symbols) activeTab.value = 'symbols'
-      else if (res.data.annotations) activeTab.value = 'annotations'
-      else if (res.data.compliance) activeTab.value = 'compliance'
 
       if (res.data.errors.length > 0) {
         ElMessage.warning(`分析完成，但有 ${res.data.errors.length} 项失败`)
@@ -1043,7 +1024,9 @@ function handleRectClick(issue: BboxOverlay) {
   activeIssueId.value = issue.id
   const original = allIssues.value.find(i => i.id === issue.id)
   if (original) {
-    activeTab.value = original.tab
+    // Task 42: annotations/compliance tab 已合并为「问题」tab，统一切到 'issues'
+    // symbols tab 保留独立展示，符号类 rect 点击仍切到 'symbols'
+    activeTab.value = original.tab === 'symbols' ? 'symbols' : 'issues'
   }
   nextTick(() => {
     const activeRow = document.querySelector('.issue-row-active')
@@ -1073,6 +1056,30 @@ function openClauseDialog(row: any) {
   }
   clauseDialogTitle.value = row.clauseRef ? `规范条文 · ${row.clauseRef}` : '规范条文原文'
   clauseDialogVisible.value = true
+}
+
+/**
+ * Task 42: IssueCardList 「定位图纸」按钮回调
+ * 设置 activeIssueId + focusBbox，触发 SVG 叠框高亮 + DwgVisionPreviewPanel pan/zoom
+ */
+function handleLocateBbox(detail: IssueDetail) {
+  activeIssueId.value = detail.id
+  if (!detail.bbox) return
+  // Task 27: 触发 DwgVisionPreviewPanel pan/zoom（分屏模式下生效）
+  focusBbox.value = detail.bbox
+  // 正常模式下（内联 SVG 预览）仍走 rectRefs scrollIntoView
+  nextTick(() => {
+    const rectEl = rectRefs.get(detail.id)
+    rectEl?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+  })
+}
+
+/**
+ * Task 42: IssueCardList 「查看条文」按钮回调
+ * 复用 openClauseDialog 弹窗展示 clauseRef + clauseText
+ */
+function handleOpenClause(detail: IssueDetail) {
+  openClauseDialog(detail)
 }
 </script>
 

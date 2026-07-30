@@ -66,6 +66,26 @@
             <span class="file-icon-inline">{{ getFileEmoji(detail.file.fileType || detail.file.file_type) }}</span>
             {{ detail.file.fileName }}
           </el-tag>
+          <!-- Task 42: dwg-vision 置信度标记（低于 0.6 待人工复核） -->
+          <el-tag
+            v-if="detail.confidence != null && detail.confidence < 0.6"
+            type="warning"
+            size="small"
+            effect="dark"
+            round
+          >
+            待复核
+          </el-tag>
+          <!-- Task 21: SoM 区域标号 -->
+          <el-tag
+            v-if="detail.markId != null"
+            type="info"
+            size="small"
+            effect="plain"
+            round
+          >
+            区域 {{ detail.markId }}
+          </el-tag>
         </div>
         <span class="issue-desc">{{ detail.description || '-' }}</span>
         <!-- 大白话解释，默认展示 -->
@@ -94,6 +114,18 @@
               @click="emit('locateText', { detail, elementId: `issue-${detail.id}` })"
             >
               <el-icon :size="14"><Location /></el-icon>
+            </el-button>
+          </el-tooltip>
+          <!-- Task 42: dwg-vision 定位图纸 bbox -->
+          <el-tooltip content="定位图纸区域" placement="top" :show-after="300">
+            <el-button
+              v-if="detail.bbox"
+              circle
+              size="small"
+              class="locate-bbox-btn"
+              @click="emit('locateBbox', detail)"
+            >
+              <el-icon :size="14"><Aim /></el-icon>
             </el-button>
           </el-tooltip>
           <el-tooltip :content="detail.isFalsePositive ? '取消误报' : '标记误报'" placement="top" :show-after="300">
@@ -156,6 +188,40 @@
         <div class="standard-ref-body">
           {{ detail.standardRef }}
         </div>
+      </div>
+
+      <!-- Task 28: 规范条文链接（dwg-vision compliance 专属） -->
+      <div v-if="detail.clauseRef" class="clause-ref-section">
+        <div class="clause-ref-header">
+          <el-icon><DocumentIcon /></el-icon>
+          <span class="clause-ref-label">规范条文</span>
+          <span class="clause-ref-text">{{ detail.clauseRef }}</span>
+          <el-button
+            v-if="detail.clauseText"
+            link
+            type="primary"
+            size="small"
+            class="view-clause-btn"
+            @click="emit('openClause', detail)"
+          >
+            查看条文
+          </el-button>
+        </div>
+      </div>
+
+      <!-- Task 22: CoT 推理过程（dwg-vision 专属，可折叠） -->
+      <div v-if="detail.reasoning" class="reasoning-section">
+        <el-collapse>
+          <el-collapse-item name="reasoning">
+            <template #title>
+              <div class="reasoning-title">
+                <el-icon><Warning /></el-icon>
+                <span>推理过程</span>
+              </div>
+            </template>
+            <div class="reasoning-body">{{ detail.reasoning }}</div>
+          </el-collapse-item>
+        </el-collapse>
       </div>
 
       <!-- 标准引用匹配详情 -->
@@ -311,6 +377,8 @@ import {
   CircleCheck,
   CircleCheckFilled,
   Edit,
+  Aim,
+  Document as DocumentIcon,
 } from '@element-plus/icons-vue'
 import DiffHighlight from './DiffHighlight.vue'
 import { useIssueHelpers } from './composables'
@@ -335,6 +403,11 @@ const emit = defineEmits<{
   cancelFp: [detail: IssueDetail]
   toggleSelect: [issueId: string, isSelected: boolean]
   selectFileById: [fileId: string]
+  // Task 42: dwg-vision 专属事件
+  /** 点击"定位图纸"按钮，触发 SVG 叠框 pan/zoom 到 bbox 区域 */
+  locateBbox: [detail: IssueDetail]
+  /** 点击"查看条文"按钮，弹窗展示 clauseRef + clauseText */
+  openClause: [detail: IssueDetail]
 }>()
 
 // 卡片展开状态：error 默认展开，其他默认折叠
@@ -665,6 +738,73 @@ async function submitFeedback(type: FeedbackType) {
   font-size: 12px;
   color: #1E3A8A;
   line-height: 1.5;
+}
+
+/* ===== Task 42: dwg-vision 定位图纸按钮 ===== */
+.locate-bbox-btn {
+  width: 28px;
+  height: 28px;
+  border: none;
+  background: #FCE7F3;
+  color: #BE185D;
+  border-radius: 6px;
+  transition: all 0.15s ease;
+}
+.locate-bbox-btn:hover {
+  background: #FBCFE8;
+  color: #9D174D;
+  transform: scale(1.1);
+}
+
+/* ===== Task 28: 规范条文链接 ===== */
+.clause-ref-section {
+  margin: 8px 0;
+  padding: 6px 8px;
+  background: #F0FDF4;
+  border-radius: 4px;
+  border-left: 3px solid #10B981;
+}
+.clause-ref-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: #065F46;
+}
+.clause-ref-label {
+  font-weight: 600;
+}
+.clause-ref-text {
+  flex: 1;
+  color: #047857;
+  font-family: 'SF Mono', 'Monaco', 'Inconsolata', 'Roboto Mono', monospace;
+}
+.view-clause-btn {
+  padding: 0 6px;
+  height: auto;
+  font-size: 12px;
+}
+
+/* ===== Task 22: CoT 推理过程 ===== */
+.reasoning-section {
+  margin: 8px 0;
+}
+.reasoning-title {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  color: #6B7280;
+  font-weight: 500;
+}
+.reasoning-body {
+  font-size: 12px;
+  color: #4B5563;
+  line-height: 1.6;
+  background: #F9FAFB;
+  padding: 6px 8px;
+  border-radius: 4px;
+  white-space: pre-wrap;
 }
 
 /* ===== 标准引用详情块 ===== */

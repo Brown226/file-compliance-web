@@ -56,4 +56,17 @@ export interface IssueDetail {
   riskLevel?: 'HIGH' | 'MEDIUM' | 'LOW'
   clauseType?: string
   recommendation?: string
+  // dwg-vision 专属字段（Task 42：复用 IssueCardList 统一展示）
+  /** 归一化坐标 [x1,y1,x2,y2]（0-1000 坐标系），用于 SVG 叠框定位联动 */
+  bbox?: [number, number, number, number]
+  /** Task 21: SoM 区域标号（1=标题栏/2=图例表/3=标注/4=设计说明/5=图框/6=主体图形） */
+  markId?: number
+  /** Task 28: 规范条文编号（如 "GB 50016-2014 第 5.5.3 条"） */
+  clauseRef?: string
+  /** Task 28: 规范条文原文（点击"查看条文"弹窗展示） */
+  clauseText?: string
+  /** Task 22: CoT 推理过程（模型先思考再下结论，前端可折叠展示） */
+  reasoning?: string
+  /** 置信度 0-1，低于 0.6 将标记待人工复核 */
+  confidence?: number
 }
