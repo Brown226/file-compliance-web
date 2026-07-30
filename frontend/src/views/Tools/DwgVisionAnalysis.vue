@@ -290,6 +290,17 @@
                   <el-icon style="margin-right:3px"><Clock /></el-icon>
                   耗时 {{ (result.duration_ms / 1000).toFixed(1) }}s
                 </el-tag>
+                <!-- Task 29: 推理回放按钮（仅 result.traceId 存在时显示） -->
+                <el-button
+                  v-if="currentTraceId"
+                  size="small"
+                  type="primary"
+                  plain
+                  @click="replayDrawerVisible = true"
+                >
+                  <el-icon style="margin-right:3px"><Memo /></el-icon>
+                  推理回放
+                </el-button>
               </div>
             </div>
           </template>
@@ -584,6 +595,12 @@
         <el-button @click="clauseDialogVisible = false">关闭</el-button>
       </template>
     </el-dialog>
+
+    <!-- Task 29: LLM 推理回放抽屉（按 traceId 查询本次分析各维度的 LLM 调用日志） -->
+    <LlmReplayDrawer
+      v-model="replayDrawerVisible"
+      :traceId="currentTraceId"
+    />
   </div>
 </template>
 
@@ -600,6 +617,7 @@ import { dwgToPng, parseDwgFile } from '@/utils/dwg-parser'
 import { analyzeDwgVision, getVisionStatus, getVisionHistory, type VisionAnalyzeResult, type VisionStatusResult, type VisionHistoryItem, type OcrVerificationResult, type DwgMetadata, type DwgMetadataVerification } from '@/api/dwg-vision'
 import DwgVisionHistoryDrawer from './DwgVisionHistoryDrawer.vue'
 import DwgVisionPreviewPanel from './DwgVisionPreviewPanel.vue'
+import LlmReplayDrawer from '@/views/TaskDetails/LlmReplayDrawer.vue'
 import type { BboxOverlay } from '@/composables/useSvgZoomPan'
 import { getKnowledgeBasesApi } from '@/api/maxkb'
 
@@ -661,6 +679,11 @@ const focusBbox = ref<[number, number, number, number] | null>(null)
 const clauseDialogVisible = ref(false)
 const clauseDialogTitle = ref('规范条文原文')
 const clauseDialogContent = ref<{ clauseRef?: string; clauseText?: string }>({})
+
+/** Task 29: 推理回放抽屉状态 */
+const replayDrawerVisible = ref(false)
+/** Task 29: 当前分析的 traceId（jobKey），从 result.traceId 取，用于查询 LLM 调用日志 */
+const currentTraceId = computed(() => result.value?.traceId || '')
 
 /** 收集所有维度的 issue，用于图纸叠框与列表双向联动 */
 interface CollectedIssue {

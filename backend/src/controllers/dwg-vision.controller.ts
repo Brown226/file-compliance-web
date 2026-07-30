@@ -410,3 +410,47 @@ function sendSseEvent(res: Response, type: string, data: any): void {
     res.write(`data: ${JSON.stringify(data)}\n\n`);
   } catch { /* ignore */ }
 }
+
+/**
+ * GET /api/dwg/vision-llm-logs/:traceId
+ * Task 29: 查询图纸视觉分析的 LLM 调用日志（推理回放）
+ *
+ * 按 traceId（即 jobKey）查询 LlmCallLog，返回该次分析所有维度的 LLM 调用记录。
+ * 权限：所有登录用户均可查询（dwg-vision 是工具页面，日志 traceId 不可枚举，无敏感隔离需求）。
+ */
+export const visionLlmLogs = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const traceId = req.params.traceId as string;
+    if (!traceId) {
+      res.status(400).json({ code: 400, message: '缺少 traceId 参数' });
+      return;
+    }
+
+    const logs = await prisma.llmCallLog.findMany({
+      where: { traceId },
+      orderBy: { createdAt: 'asc' },
+      select: {
+        id: true,
+        mode: true,
+        model: true,
+        provider: true,
+        promptTokens: true,
+        completionTokens: true,
+        totalTokens: true,
+        latencyMs: true,
+        status: true,
+        errorMsg: true,
+        promptFull: true,
+        completionFull: true,
+        ragChunks: true,
+        createdAt: true,
+      },
+    });
+    // BigInt id 序列化为 string
+    const serialized = logs.map(l => ({ ...l, id: l.id.toString() }));
+    res.json({ code: 200, message: 'success', data: serialized });
+  } catch (err: any) {
+    console.error('[DWG Vision] 查询 LLM 调用日志失败:', err);
+    res.status(500).json({ code: 500, message: err.message });
+  }
+};

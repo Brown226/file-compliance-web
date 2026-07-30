@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { visionAnalyze, visionStatus, visionJobStatus, visionHistory, visionHistoryDetail, visionStream } from '../controllers/dwg-vision.controller';
+import { visionAnalyze, visionStatus, visionJobStatus, visionHistory, visionHistoryDetail, visionStream, visionLlmLogs } from '../controllers/dwg-vision.controller';
 import { authenticate } from '../middlewares/auth.middleware';
 
 const router = Router();
@@ -21,5 +21,8 @@ router.get('/vision-history', authenticate, visionHistory);
 
 // 图纸视觉分析历史详情（Task 25）
 router.get('/vision-history/:id', authenticate, visionHistoryDetail);
+
+// Task 29: LLM 调用日志查询（推理回放抽屉用，按 traceId=jobKey 查询）
+router.get('/vision-llm-logs/:traceId', authenticate, visionLlmLogs);
 
 export default router;

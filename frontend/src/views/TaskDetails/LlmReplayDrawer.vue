@@ -92,10 +92,14 @@
 import { ref, computed, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import { getLlmLogsApi, type LlmCallLog } from '@/api/task'
+import { getVisionLlmLogs, type VisionLlmCallLog } from '@/api/dwg-vision'
 
 const props = defineProps<{
   modelValue: boolean
-  taskId: string
+  /** 任务 ID 模式：按 taskId 查询任务级 LLM 调用日志（TaskDetails 场景） */
+  taskId?: string
+  /** Task 29: traceId 模式：按 traceId(jobKey) 查询图纸视觉分析的 LLM 调用日志（DwgVisionAnalysis 场景） */
+  traceId?: string
 }>()
 
 const emit = defineEmits<{
@@ -108,13 +112,14 @@ const drawerVisible = computed({
 })
 
 const loading = ref(false)
-const logs = ref<LlmCallLog[]>([])
+// 两种查询模式返回字段一致，统一用 VisionLlmCallLog 类型承载
+const logs = ref<(LlmCallLog | VisionLlmCallLog)[]>([])
 const activeNames = ref<string>('')
 
 watch(
   () => props.modelValue,
   async (visible) => {
-    if (visible && props.taskId) {
+    if (visible && (props.taskId || props.traceId)) {
       await loadLogs()
     }
   },
@@ -123,8 +128,16 @@ watch(
 async function loadLogs() {
   loading.value = true
   try {
-    const res = await getLlmLogsApi(props.taskId)
-    logs.value = res.data || []
+    // Task 29: traceId 优先（dwg-vision 场景），否则走 taskId（任务审查场景）
+    if (props.traceId) {
+      const res = await getVisionLlmLogs(props.traceId)
+      logs.value = res.data || []
+    } else if (props.taskId) {
+      const res = await getLlmLogsApi(props.taskId)
+      logs.value = res.data || []
+    } else {
+      logs.value = []
+    }
   } catch (e) {
     ElMessage.error('加载 LLM 调用日志失败')
     logs.value = []

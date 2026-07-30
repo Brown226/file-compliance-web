@@ -129,6 +129,8 @@ export interface VisionAnalyzeResult {
   ocrVerification?: OcrVerificationResult
   /** Task 20: DWG 元数据双校验结果 */
   dwgMetadataVerification?: DwgMetadataVerification
+  /** Task 29: 本次分析的 jobKey（traceId），用于查询推理回放日志 */
+  traceId?: string
 }
 
 /**
@@ -271,5 +273,38 @@ export function getVisionHistory(params?: {
 export function getVisionHistoryDetail(id: string) {
   return request.get<any, { code: number; data: VisionHistoryItem }>(
     `/dwg/vision-history/${id}`
+  )
+}
+
+// ==================== Task 29: 推理回放（LLM 调用日志）====================
+
+/**
+ * Task 29: 图纸视觉分析的 LLM 调用日志（推理回放用）
+ * 字段与后端 LlmCallLog 表对齐（已序列化 BigInt id 为 string）
+ */
+export interface VisionLlmCallLog {
+  id: string
+  mode: string | null
+  model: string
+  provider: string | null
+  promptTokens: number
+  completionTokens: number
+  totalTokens: number
+  latencyMs: number
+  status: 'success' | 'failed' | 'cache'
+  errorMsg: string | null
+  promptFull: string | null
+  completionFull: string | null
+  ragChunks: any
+  createdAt: string
+}
+
+/**
+ * Task 29: 按 traceId（jobKey）查询图纸视觉分析的 LLM 调用日志
+ * 用于推理回放抽屉展示该次分析各维度的 prompt/response/tokens/latency
+ */
+export function getVisionLlmLogs(traceId: string) {
+  return request.get<any, { code: number; data: VisionLlmCallLog[] }>(
+    `/dwg/vision-llm-logs/${traceId}`
   )
 }

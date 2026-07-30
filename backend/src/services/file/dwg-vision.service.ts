@@ -1,4 +1,5 @@
 import prisma from '../../config/db';
+import { Prisma } from '@prisma/client';
 import { redisClient } from '../../utils/redis';
 import crypto from 'crypto';
 import os from 'os';
@@ -192,6 +193,12 @@ export interface VisionAnalyzeResult {
    * - 前端未传 dwgMetadata 时该字段为 undefined
    */
   dwgMetadataVerification?: DwgMetadataVerification;
+  /**
+   * Task 29: 本次分析的 jobKey（traceId），用于关联 LlmCallLog 查询推理回放
+   * - analyze 方法把 options.jobKey 嵌入此字段
+   * - 前端实时分析/历史回放时用此值调用 /api/dwg/vision-llm-logs/:traceId
+   */
+  traceId?: string;
 }
 
 /**
@@ -547,13 +554,17 @@ export class DwgVisionService {
 
   /**
    * 调用 Vision LLM API（带 HTTP 重试）
+   *
+   * Task 29: 返回值扩展为 { content, usage, latencyMs }，供 callAndParse 写 LlmCallLog
+   * - usage: OpenAI 兼容 API 的 token 用量（prompt/completion/total），上游未返回时为 undefined
+   * - latencyMs: 本次调用耗时（毫秒，含重试）
    */
   private static async callVisionApi(
     imageBase64: string,
     systemPrompt: string,
     userPrompt: string,
     config: VisionConfig,
-  ): Promise<string> {
+  ): Promise<{ content: string; usage?: { promptTokens: number; completionTokens: number; totalTokens: number }; latencyMs: number }> {
     const url = `${config.apiBaseUrl.replace(/\/+$/, '')}/chat/completions`;
 
     const payload: any = {
@@ -579,29 +590,125 @@ export class DwgVisionService {
 
     // 用并发限制器包裹实际 API 调用，避免瞬时并发过高触发上游限流
     const limiter = await this.getLimiter();
-    return limiter.run(async () => {
-      const response = await this.fetchWithRetry(url, payload, config);
-      const data = await response.json() as any;
-      return data.choices?.[0]?.message?.content || '';
-    });
+    const callStart = Date.now();
+    const response = await limiter.run(() => this.fetchWithRetry(url, payload, config));
+    const latencyMs = Date.now() - callStart;
+    const data = await response.json() as any;
+    const content = data.choices?.[0]?.message?.content || '';
+    // OpenAI 兼容 API 的 usage 字段（上游未返回时为 undefined）
+    let usage: { promptTokens: number; completionTokens: number; totalTokens: number } | undefined;
+    if (data.usage && typeof data.usage === 'object') {
+      usage = {
+        promptTokens: typeof data.usage.prompt_tokens === 'number' ? data.usage.prompt_tokens : 0,
+        completionTokens: typeof data.usage.completion_tokens === 'number' ? data.usage.completion_tokens : 0,
+        totalTokens: typeof data.usage.total_tokens === 'number' ? data.usage.total_tokens : 0,
+      };
+    }
+    return { content, usage, latencyMs };
   }
 
   /**
    * 调用 Vision API 并解析 JSON，解析失败时重试 1 次（不退避）
+   *
+   * Task 29: 新增 logCtx 参数（traceId/mode），每次 callVisionApi 调用后写 LlmCallLog
+   * - traceId: 通常是 analyze 方法的 jobKey，关联同一次分析的多次 LLM 调用
+   * - mode: 维度名（titleBlock/symbols/annotations/compliance/profession/frameCheck）
+   * - 写日志失败不中断主流程（fire-and-forget）
    */
   private static async callAndParse(
     imageBase64: string,
     systemPrompt: string,
     userPrompt: string,
     config: VisionConfig,
+    logCtx?: { traceId?: string; mode?: string },
   ): Promise<any> {
-    const raw1 = await this.callVisionApi(imageBase64, systemPrompt, userPrompt, config);
-    const parsed1 = this.parseJsonResponse(raw1);
+    // Task 29: 拼接 promptFull（system + user，截断至 60KB 避免 MySQL TEXT 64KB 限制）
+    const promptFull = `${systemPrompt}\n\n---\n\n${userPrompt}`.substring(0, 60000);
+
+    let raw1: { content: string; usage?: any; latencyMs: number };
+    try {
+      raw1 = await this.callVisionApi(imageBase64, systemPrompt, userPrompt, config);
+    } catch (e: any) {
+      // 第一次调用失败：写 failed 日志，再重试 1 次
+      this.recordVisionLlmCall({
+        traceId: logCtx?.traceId, mode: logCtx?.mode, model: config.modelName,
+        latencyMs: 0, status: 'failed', errorMsg: (e as Error).message?.substring(0, 1000),
+        promptFull,
+      });
+      // 重试 1 次（仍可能失败，再写一次 failed 日志）
+      try {
+        raw1 = await this.callVisionApi(imageBase64, systemPrompt, userPrompt, config);
+      } catch (e2: any) {
+        this.recordVisionLlmCall({
+          traceId: logCtx?.traceId, mode: logCtx?.mode, model: config.modelName,
+          latencyMs: 0, status: 'failed', errorMsg: (e2 as Error).message?.substring(0, 1000),
+          promptFull,
+        });
+        throw e2;
+      }
+    }
+    // 第一次调用成功：写 success 日志
+    this.recordVisionLlmCall({
+      traceId: logCtx?.traceId, mode: logCtx?.mode, model: config.modelName,
+      latencyMs: raw1.latencyMs, status: 'success', usage: raw1.usage,
+      promptFull, completionFull: raw1.content?.substring(0, 60000),
+    });
+
+    const parsed1 = this.parseJsonResponse(raw1.content);
     if (parsed1 !== null) return parsed1;
 
-    // 第一次解析失败，重试 1 次
+    // 第一次解析失败，重试 1 次（再写一次 success 日志）
     const raw2 = await this.callVisionApi(imageBase64, systemPrompt, userPrompt, config);
-    return this.parseJsonResponse(raw2);
+    this.recordVisionLlmCall({
+      traceId: logCtx?.traceId, mode: `${logCtx?.mode || ''}_retry`, model: config.modelName,
+      latencyMs: raw2.latencyMs, status: 'success', usage: raw2.usage,
+      promptFull, completionFull: raw2.content?.substring(0, 60000),
+    });
+    return this.parseJsonResponse(raw2.content);
+  }
+
+  /**
+   * Task 29: 异步写入 LLM 调用日志（fire-and-forget，失败不影响主流程）
+   *
+   * 复用 LlmCallLog 表，traceId 字段存 jobKey 关联同一次分析的多次调用。
+   * promptFull/completionFull 超 60KB 截断（MySQL TEXT 64KB 限制留余量）。
+   * 写入失败仅 console.warn，不落盘 fallback（dwg-vision 是工具页面，非生产审查流程）。
+   */
+  private static recordVisionLlmCall(params: {
+    traceId?: string;
+    mode?: string;
+    model: string;
+    latencyMs: number;
+    status: 'success' | 'failed';
+    usage?: { promptTokens: number; completionTokens: number; totalTokens: number };
+    errorMsg?: string;
+    promptFull?: string;
+    completionFull?: string;
+  }): void {
+    try {
+      prisma.llmCallLog.create({
+        data: {
+          taskId: params.traceId ?? null,  // 复用 taskId 字段存 jobKey（dwg-vision 无传统 taskId）
+          mode: params.mode ?? null,
+          model: params.model,
+          provider: 'vision-compat',
+          promptTokens: params.usage?.promptTokens ?? 0,
+          completionTokens: params.usage?.completionTokens ?? 0,
+          totalTokens: params.usage?.totalTokens ?? 0,
+          latencyMs: params.latencyMs,
+          status: params.status,
+          errorMsg: params.errorMsg ?? null,
+          promptFull: params.promptFull ?? null,
+          completionFull: params.completionFull ?? null,
+          ragChunks: Prisma.DbNull,
+          traceId: params.traceId ?? null,
+        },
+      }).catch(e => {
+        console.warn('[DWG Vision] 写入 LLM 调用日志失败:', (e as Error).message);
+      });
+    } catch (e) {
+      console.warn('[DWG Vision] 写入 LLM 调用日志异常:', (e as Error).message);
+    }
   }
 
   /**
@@ -689,12 +796,12 @@ export class DwgVisionService {
   /**
    * 标题栏/图签识别
    */
-  static async analyzeTitleBlock(imageBase64: string, config: VisionConfig): Promise<TitleBlockResult | null> {
+  static async analyzeTitleBlock(imageBase64: string, config: VisionConfig, traceId?: string): Promise<TitleBlockResult | null> {
     const [systemPrompt, userPrompt] = await Promise.all([
       PromptLoader.loadSystemPrompt('dwg_vision', { variant: 'title_block' }),
       PromptLoader.loadUserPrompt('dwg_vision', 'title_block'),
     ]);
-    const parsed = await this.callAndParse(imageBase64, systemPrompt, userPrompt, config);
+    const parsed = await this.callAndParse(imageBase64, systemPrompt, userPrompt, config, { traceId, mode: 'titleBlock' });
     if (!parsed) return null;
 
     return {
@@ -716,12 +823,12 @@ export class DwgVisionService {
   /**
    * 图例符号识别
    */
-  static async analyzeSymbols(imageBase64: string, config: VisionConfig): Promise<SymbolListResult | null> {
+  static async analyzeSymbols(imageBase64: string, config: VisionConfig, traceId?: string): Promise<SymbolListResult | null> {
     const [systemPrompt, userPrompt] = await Promise.all([
       PromptLoader.loadSystemPrompt('dwg_vision', { variant: 'symbols' }),
       PromptLoader.loadUserPrompt('dwg_vision', 'symbols'),
     ]);
-    const parsed = await this.callAndParse(imageBase64, systemPrompt, userPrompt, config);
+    const parsed = await this.callAndParse(imageBase64, systemPrompt, userPrompt, config, { traceId, mode: 'symbols' });
     if (!parsed) return null;
 
     const symbols: SymbolItem[] = (parsed.symbols || []).map((s: any) => ({
@@ -742,12 +849,12 @@ export class DwgVisionService {
   /**
    * 标注完整性检查
    */
-  static async checkAnnotations(imageBase64: string, config: VisionConfig): Promise<AnnotationCheckResult | null> {
+  static async checkAnnotations(imageBase64: string, config: VisionConfig, traceId?: string): Promise<AnnotationCheckResult | null> {
     const [systemPrompt, userPrompt] = await Promise.all([
       PromptLoader.loadSystemPrompt('dwg_vision', { variant: 'annotations' }),
       PromptLoader.loadUserPrompt('dwg_vision', 'annotations'),
     ]);
-    const parsed = await this.callAndParse(imageBase64, systemPrompt, userPrompt, config);
+    const parsed = await this.callAndParse(imageBase64, systemPrompt, userPrompt, config, { traceId, mode: 'annotations' });
     if (!parsed) return null;
 
     const missingItems: AnnotationIssue[] = (parsed.missingItems || []).map((item: any) => ({
@@ -785,7 +892,7 @@ export class DwgVisionService {
    *   - prompt 已在 registry 中预定义 6 个标号区域
    *   - 解析时提取 markId（1-6 整数），超出范围或非整数丢弃
    */
-  static async checkDesignCompliance(imageBase64: string, config: VisionConfig, refText?: string): Promise<ComplianceResult | null> {
+  static async checkDesignCompliance(imageBase64: string, config: VisionConfig, refText?: string, traceId?: string): Promise<ComplianceResult | null> {
     let refSection = '';
     if (refText && refText.trim()) {
       refSection = `\n\n以下是需要对照的标准条文/规范要求：\n"""\n${refText.substring(0, 3000)}\n"""`;
@@ -800,7 +907,7 @@ export class DwgVisionService {
     const samplingCfg = await this.getSamplingConfig();
     if (!samplingCfg.enabled || samplingCfg.samples < 2) {
       // 单次模式（向后兼容）
-      const parsed = await this.callAndParse(imageBase64, systemPrompt, userPrompt, config);
+      const parsed = await this.callAndParse(imageBase64, systemPrompt, userPrompt, config, { traceId, mode: 'compliance' });
       if (!parsed) return null;
       return this.buildComplianceResult(parsed);
     }
@@ -810,8 +917,8 @@ export class DwgVisionService {
     const samples: any[] = [];
     const sampleErrors: string[] = [];
     const results = await Promise.allSettled(
-      Array.from({ length: samplingCfg.samples }, () =>
-        this.callAndParse(imageBase64, systemPrompt, userPrompt, sampledConfig),
+      Array.from({ length: samplingCfg.samples }, (_, i) =>
+        this.callAndParse(imageBase64, systemPrompt, userPrompt, sampledConfig, { traceId, mode: `compliance_sample${i + 1}` }),
       ),
     );
     for (let i = 0; i < results.length; i++) {
@@ -1004,6 +1111,7 @@ export class DwgVisionService {
     imageBase64: string,
     profession: DwgProfession,
     config: VisionConfig,
+    traceId?: string,
   ): Promise<ProfessionCheckResult | null> {
     const variant = this.PROFESSION_VARIANT_MAP[profession];
     if (!variant) {
@@ -1014,7 +1122,7 @@ export class DwgVisionService {
       PromptLoader.loadSystemPrompt('dwg_vision', { variant }),
       PromptLoader.loadUserPrompt('dwg_vision', variant),
     ]);
-    const parsed = await this.callAndParse(imageBase64, systemPrompt, userPrompt, config);
+    const parsed = await this.callAndParse(imageBase64, systemPrompt, userPrompt, config, { traceId, mode: `profession_${profession}` });
     if (!parsed) return null;
 
     const issues: ProfessionIssue[] = (parsed.issues || []).map((issue: any) => ({
@@ -1038,12 +1146,12 @@ export class DwgVisionService {
   /**
    * 图框规范检查：检查幅面代号、尺寸、装订边、标题栏位置等
    */
-  static async checkFrame(imageBase64: string, config: VisionConfig): Promise<FrameCheckResult | null> {
+  static async checkFrame(imageBase64: string, config: VisionConfig, traceId?: string): Promise<FrameCheckResult | null> {
     const [systemPrompt, userPrompt] = await Promise.all([
       PromptLoader.loadSystemPrompt('dwg_vision', { variant: 'frame_check' }),
       PromptLoader.loadUserPrompt('dwg_vision', 'frame_check'),
     ]);
-    const parsed = await this.callAndParse(imageBase64, systemPrompt, userPrompt, config);
+    const parsed = await this.callAndParse(imageBase64, systemPrompt, userPrompt, config, { traceId, mode: 'frameCheck' });
     if (!parsed) return null;
 
     const issues: FrameCheckIssue[] = (parsed.issues || []).map((issue: any) => ({
@@ -1178,6 +1286,8 @@ export class DwgVisionService {
     const errors: string[] = [];
     const config = await this.getVisionConfig();
     const jobKey = options?.jobKey;
+    // Task 29: jobKey 作为 traceId 传给各维度，关联 LlmCallLog
+    const traceId = jobKey;
 
     // Task 30: 按维度预取模型配置（多模型路由）
     // 各维度独立 config，未配置时降级到默认 config
@@ -1246,7 +1356,7 @@ export class DwgVisionService {
           try {
             // Task 31: 预处理剪裁 - 裁剪标题栏区域送小模型识别
             const { imageBase64: titleBlockImage } = await this.cropTitleBlockRegion(imageBase64);
-            const r = await this.analyzeTitleBlock(titleBlockImage, configMap.titleBlock);
+            const r = await this.analyzeTitleBlock(titleBlockImage, configMap.titleBlock, traceId);
             result.titleBlock = r;
             emitDimensionDone('titleBlock', true);
 
@@ -1269,7 +1379,7 @@ export class DwgVisionService {
 
     if (analyses.includes('symbols')) {
       tasks.push(
-        this.analyzeSymbols(imageBase64, configMap.symbols)
+        this.analyzeSymbols(imageBase64, configMap.symbols, traceId)
           .then(r => { result.symbols = r; emitDimensionDone('symbols', true); })
           .catch(e => { errors.push(`图例符号识别失败: ${e.message}`); emitDimensionDone('symbols', false, e.message); })
       );
@@ -1277,7 +1387,7 @@ export class DwgVisionService {
 
     if (analyses.includes('annotations')) {
       tasks.push(
-        this.checkAnnotations(imageBase64, configMap.annotations)
+        this.checkAnnotations(imageBase64, configMap.annotations, traceId)
           .then(r => { result.annotations = r; emitDimensionDone('annotations', true); })
           .catch(e => { errors.push(`标注完整性检查失败: ${e.message}`); emitDimensionDone('annotations', false, e.message); })
       );
@@ -1285,7 +1395,7 @@ export class DwgVisionService {
 
     if (analyses.includes('compliance')) {
       tasks.push(
-        this.checkDesignCompliance(imageBase64, configMap.compliance, mergedRefText)
+        this.checkDesignCompliance(imageBase64, configMap.compliance, mergedRefText, traceId)
           .then(r => { result.compliance = r; emitDimensionDone('compliance', true); })
           .catch(e => { errors.push(`设计说明合规审查失败: ${e.message}`); emitDimensionDone('compliance', false, e.message); })
       );
@@ -1294,7 +1404,7 @@ export class DwgVisionService {
     // Task 17: 专业分流审查
     if (analyses.includes('profession') && options?.profession) {
       tasks.push(
-        this.analyzeProfession(imageBase64, options.profession, configMap.profession)
+        this.analyzeProfession(imageBase64, options.profession, configMap.profession, traceId)
           .then(r => { result.profession = r; emitDimensionDone('profession', true); })
           .catch(e => { errors.push(`专业审查失败: ${e.message}`); emitDimensionDone('profession', false, e.message); })
       );
@@ -1303,7 +1413,7 @@ export class DwgVisionService {
     // Task 18: 图框规范检查
     if (analyses.includes('frameCheck')) {
       tasks.push(
-        this.checkFrame(imageBase64, configMap.frameCheck)
+        this.checkFrame(imageBase64, configMap.frameCheck, traceId)
           .then(r => { result.frameCheck = r; emitDimensionDone('frameCheck', true); })
           .catch(e => { errors.push(`图框规范检查失败: ${e.message}`); emitDimensionDone('frameCheck', false, e.message); })
       );
@@ -1314,6 +1424,8 @@ export class DwgVisionService {
 
     // 填入本次分析使用的模型信息
     result.modelInfo = { model: config.modelName, modelType: config.modelType };
+    // Task 29: 嵌入 traceId（jobKey），供前端调用推理回放端点
+    if (traceId) result.traceId = traceId;
 
     // 规则校验
     result.ruleIssues = this.applyRuleChecks(result);
