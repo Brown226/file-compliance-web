@@ -24,6 +24,7 @@ import { authenticate, AuthRequest } from '../middlewares/auth.middleware';
 import { AgentService } from '../services/agent/agent.service';
 import { TraceService } from '../services/agent/trace/trace.service';
 import { QASessionService } from '../services/agent/qa-session.service';
+import { MemoryService } from '../services/agent/memory/memory.service';
 import { getUploadDir } from '../config/upload';
 
 const router = Router();
@@ -394,6 +395,116 @@ router.delete('/sessions/:sessionId', async (req: AuthRequest, res: Response) =>
       return res.status(404).json({ success: false, message: e.message });
     }
     console.error('[Agent] 删除会话失败:', e?.message || e);
+    return res.status(500).json({ success: false, message: `删除失败: ${e?.message || e}` });
+  }
+});
+
+// ===== 记忆管理（Task 18）=====
+
+/**
+ * GET /api/agent/memory — 列出用户的长期记忆
+ *
+ * Task 18.1：返回用户的所有记忆项（按 updatedAt 倒序），支持 type/scope 过滤。
+ *
+ * Query:
+ *   - type: preference / routine / feedback
+ *   - scope: global / project / session
+ *
+ * 返回：{ success, data: MemoryItem[] }
+ */
+router.get('/memory', async (req: AuthRequest, res: Response) => {
+  try {
+    const userId = req.user?.id;
+    if (!userId) {
+      return res.status(401).json({ success: false, message: '未认证' });
+    }
+
+    const type = req.query?.type as string | undefined;
+    const scope = req.query?.scope as string | undefined;
+
+    const memories = await MemoryService.listMemories({
+      userId,
+      ...(type ? { type: type as any } : {}),
+      ...(scope ? { scope: scope as any } : {}),
+    });
+
+    return res.json({ success: true, data: memories });
+  } catch (e: any) {
+    console.error('[Agent] 查询记忆列表失败:', e?.message || e);
+    return res.status(500).json({ success: false, message: `查询失败: ${e?.message || e}` });
+  }
+});
+
+/**
+ * PUT /api/agent/memory/:memoryId — 更新记忆
+ *
+ * Task 18.1：更新记忆的 value 和/或 confidence（value 变化时自动重新生成 embedding）。
+ *
+ * Body: { value?: string, confidence?: number }
+ *
+ * 返回：{ success, message }
+ */
+router.put('/memory/:memoryId', async (req: AuthRequest, res: Response) => {
+  try {
+    const userId = req.user?.id;
+    if (!userId) {
+      return res.status(401).json({ success: false, message: '未认证' });
+    }
+
+    const memoryId = String(req.params.memoryId || '');
+    if (!memoryId) {
+      return res.status(400).json({ success: false, message: 'memoryId 不能为空' });
+    }
+
+    const { value, confidence } = req.body || {};
+    if (value === undefined && confidence === undefined) {
+      return res.status(400).json({ success: false, message: '至少提供 value 或 confidence 之一' });
+    }
+    if (value !== undefined && (typeof value !== 'string' || !value.trim())) {
+      return res.status(400).json({ success: false, message: 'value 必须为非空字符串' });
+    }
+    if (confidence !== undefined && (typeof confidence !== 'number' || confidence < 0.5 || confidence > 1.0)) {
+      return res.status(400).json({ success: false, message: 'confidence 必须为 0.5-1.0 之间的数字' });
+    }
+
+    await MemoryService.updateMemory({
+      id: memoryId,
+      userId,
+      value: value?.trim(),
+      confidence,
+    });
+
+    return res.json({ success: true, message: '记忆已更新' });
+  } catch (e: any) {
+    console.error('[Agent] 更新记忆失败:', e?.message || e);
+    return res.status(500).json({ success: false, message: `更新失败: ${e?.message || e}` });
+  }
+});
+
+/**
+ * DELETE /api/agent/memory/:memoryId — 删除记忆
+ *
+ * Task 18.1：删除指定记忆项（含 userId 权限校验，deleteMany 返回 0 视为不存在）。
+ *
+ * 返回：{ success, message }
+ */
+router.delete('/memory/:memoryId', async (req: AuthRequest, res: Response) => {
+  try {
+    const userId = req.user?.id;
+    if (!userId) {
+      return res.status(401).json({ success: false, message: '未认证' });
+    }
+
+    const memoryId = String(req.params.memoryId || '');
+    if (!memoryId) {
+      return res.status(400).json({ success: false, message: 'memoryId 不能为空' });
+    }
+
+    await MemoryService.deleteMemory({ id: memoryId, userId });
+
+    return res.json({ success: true, message: '记忆已删除' });
+  } catch (e: any) {
+    console.error('[Agent] 删除记忆失败:', e?.message || e);
     return res.status(500).json({ success: false, message: `删除失败: ${e?.message || e}` });
   }
 });
