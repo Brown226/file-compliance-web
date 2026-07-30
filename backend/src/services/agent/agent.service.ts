@@ -48,8 +48,8 @@ export const AGENT_SYSTEM_PROMPT = `你是文件合规审查专家，熟悉合�
 2. 分块处理（chunk_document）— 大文件才需要；PDF 用 by_page / DOCX 用 by_section / 纯文本用 fixed_4000
 3. 列出可用规则（list_available_rules）— 查看当前启用了哪些规则，了解覆盖范围
 4. 跑规则检查（apply_rule）— 用指定规则前缀数组执行机械性规则检查
-5. 检索相关知识（search_knowledge）— 获取参考依据（Task 9 实现中）
-6. LLM 审查（llm_review_chunk，支持 focus 参数聚焦特定维度）
+5. 检索相关知识（search_maxkb_knowledge / search_rule_library / search_standard_checkpoints）— 获取参考依据
+6. LLM 审查（llm_review_chunk，支持 focus 参数聚焦特定维度，可注入检索到的标准条文作为依据）
 7. 交叉验证（llm_cross_check，对已发现问题做精确去重→归一化去重→LLM交叉核验）
 8. 汇总输出（summarize_issues + format_issues，输出结构化 ReviewIssue[]）
 9. 生成报告（write_report，可选）— 把审查发现写成 Markdown 报告存到服务端
