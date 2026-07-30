@@ -687,6 +687,17 @@ const visionIssues = computed<IssueDetail[]>(() => {
       originalText: '',
     })
   })
+  // Task 34: 跨维度关联校验（crossDimensionIssues）
+  r.crossDimensionIssues?.forEach((rule, i) => {
+    list.push({
+      id: `cross-${i}`,
+      severity: rule.severity,
+      issueType: 'CONSISTENCY' as IssueType,
+      ruleCode: rule.code,
+      description: rule.message || '—',
+      originalText: '',
+    })
+  })
   // 专业审查（profession.issues，Task 17）
   r.profession?.issues?.forEach((p, i) => {
     list.push({
@@ -791,7 +802,7 @@ function replayHistoryItem(item: VisionHistoryItem) {
   result.value = item.result
   // Task 42: 优先展示「问题」tab（如有 issue），否则回退 titleBlock
   const r = item.result
-  const hasIssues = r.annotations?.missingItems?.length || r.compliance?.issues?.length || r.ruleIssues?.length || r.profession?.issues?.length || r.frameCheck?.issues?.length
+  const hasIssues = r.annotations?.missingItems?.length || r.compliance?.issues?.length || r.ruleIssues?.length || r.crossDimensionIssues?.length || r.profession?.issues?.length || r.frameCheck?.issues?.length
   activeTab.value = hasIssues ? 'issues' : 'titleBlock'
   historyVisible.value = false
   splitView.value = false  // Task 27: 回放时退出分屏
@@ -899,7 +910,7 @@ async function startAnalysis() {
     if (res.code === 200) {
       result.value = res.data
       // Task 42: 优先展示「问题」tab（如有 issue），否则按 titleBlock/symbols 顺序
-      const hasIssues = res.data.annotations?.missingItems?.length || res.data.compliance?.issues?.length || res.data.ruleIssues?.length || res.data.profession?.issues?.length || res.data.frameCheck?.issues?.length
+      const hasIssues = res.data.annotations?.missingItems?.length || res.data.compliance?.issues?.length || res.data.ruleIssues?.length || res.data.crossDimensionIssues?.length || res.data.profession?.issues?.length || res.data.frameCheck?.issues?.length
       if (hasIssues) activeTab.value = 'issues'
       else if (res.data.titleBlock) activeTab.value = 'titleBlock'
       else if (res.data.symbols) activeTab.value = 'symbols'

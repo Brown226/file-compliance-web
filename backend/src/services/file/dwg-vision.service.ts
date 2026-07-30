@@ -180,6 +180,13 @@ export interface VisionAnalyzeResult {
   /** 轻量版 DWG 规则校验结果（基于 VLM 输出，非 DWG 元数据） */
   ruleIssues?: Array<{ code: string; severity: 'error' | 'warning' | 'info'; message: string }>;
   /**
+   * Task 34: 跨维度关联校验结果
+   * - 标题栏 drawingNo ↔ 合规审查引用标准版本/图号交叉验证
+   * - 标题栏 scale ↔ 标注完整性中的比例尺标注匹配
+   * - 各维度并行完成后统一执行，不一致项作为 info issue 输出
+   */
+  crossDimensionIssues?: Array<{ code: string; severity: 'error' | 'warning' | 'info'; message: string }>;
+  /**
    * Task 24: OCR + VLM 交叉验证结果
    * - 用 PaddleOCR/doc-parser 对整图做 OCR，与 VLM 提取的标题栏字段做子串匹配
    * - diff 大（关键字段 drawingNo/title 不一致）则 needsReview=true
@@ -1225,6 +1232,135 @@ export class DwgVisionService {
   }
 
   /**
+   * Task 34: 跨维度关联校验
+   *
+   * 把多个维度结果做交叉一致性检查，发现矛盾时输出 issue：
+   *
+   * 1. DWG_CROSS_DRAWINGNO（标题栏 drawingNo ↔ 合规审查引用图号）：
+   *    - 从 compliance.issues 的 note/violation/suggestion 文本中正则提取图号引用
+   *    - 与标题栏 titleBlock.drawingNo 比对，若引用图号与标题栏不一致 → error issue
+   *    - 用例：标题栏 drawingNo="DWG-001"，但 compliance 引用"详见 DWG-002 图"
+   *
+   * 2. DWG_CROSS_STDREF（标题栏 drawingNo ↔ 合规审查标准引用版本）：
+   *    - 从 compliance.issues.clauseRef + designNotes 中正则提取标准号（如 GB 50016-2014）
+   *    - 与 dwgMetadataVerification.wasStandardRefs 比对，版本号不一致 → warning issue
+   *    - 用例：compliance 引用 "GB 50016-2014"，WASM 元数据含 "GB 50016-2018"
+   *
+   * 3. DWG_CROSS_SCALE（标题栏 scale ↔ annotations 比例尺标注）：
+   *    - 从 annotations.missingItems 中找比例尺相关项（item/location 含"比例"）
+   *    - 与标题栏 titleBlock.scale 比对，不一致 → warning issue
+   *    - 用例：标题栏 scale="1:100"，annotations 标注"比例 1:50"
+   *
+   * @param result 各维度并行完成后的完整 VisionAnalyzeResult
+   * @returns 跨维度 issue 列表（无 issue 时为空数组）
+   */
+  private static crossDimensionCheck(result: VisionAnalyzeResult): Array<{ code: string; severity: 'error' | 'warning' | 'info'; message: string }> {
+    const issues: Array<{ code: string; severity: 'error' | 'warning' | 'info'; message: string }> = [];
+    const tb = result.titleBlock;
+    const comp = result.compliance;
+    const ann = result.annotations;
+    const dwgMeta = result.dwgMetadataVerification;
+
+    if (!tb) return issues;  // 无标题栏则跳过所有跨维度校验
+
+    // ── 1. DWG_CROSS_DRAWINGNO: 标题栏 drawingNo ↔ compliance 引用图号 ──
+    if (comp && tb.drawingNo) {
+      const titleDrawingNo = tb.drawingNo.trim();
+      // 从所有 compliance issue 的 note/violation/suggestion 文本中提取图号引用
+      // 图号格式常见：DWG-001 / TJ-001 / 结施-01 / 建施-001 等（字母+连字符+数字）
+      const drawingNoPattern = /([A-Za-z\u4e00-\u9fa5]{2,6}[-—]\d{1,4})/g;
+      const referencedNos = new Set<string>();
+      for (const issue of comp.issues) {
+        const texts = [issue.note, issue.violation, issue.suggestion].filter(Boolean) as string[];
+        for (const text of texts) {
+          const matches = text.match(drawingNoPattern);
+          if (matches) matches.forEach(m => referencedNos.add(m.trim()));
+        }
+      }
+      // 也检查 designNotes
+      for (const note of comp.designNotes || []) {
+        const matches = note.match(drawingNoPattern);
+        if (matches) matches.forEach(m => referencedNos.add(m.trim()));
+      }
+
+      // 若引用的图号中存在与标题栏不一致的 → error issue
+      for (const ref of referencedNos) {
+        if (ref && ref !== titleDrawingNo) {
+          issues.push({
+            code: 'DWG_CROSS_DRAWINGNO',
+            severity: 'error',
+            message: `跨维度不一致：标题栏图号「${titleDrawingNo}」与合规审查引用图号「${ref}」不一致`,
+          });
+          break;  // 同类只报一条，避免噪声
+        }
+      }
+    }
+
+    // ── 2. DWG_CROSS_STDREF: compliance 标准引用 ↔ WASM 元数据标准引用 ──
+    if (comp && dwgMeta && dwgMeta.status === 'success') {
+      // 从 compliance clauseRef + designNotes 提取标准号（如 "GB 50016-2014"）
+      const stdPattern = /(GB\s*[\d.]+-\d{4}|GB\/T\s*[\d.]+-\d{4}|HAF\s*[\d.]+|BT\s*[\d.]+)/g;
+      const vlmStdRefs = new Set<string>();
+      for (const issue of comp.issues) {
+        if (issue.clauseRef) {
+          const matches = issue.clauseRef.match(stdPattern);
+          if (matches) matches.forEach(m => vlmStdRefs.add(m.replace(/\s+/g, ' ').trim()));
+        }
+      }
+      for (const note of comp.designNotes || []) {
+        const matches = note.match(stdPattern);
+        if (matches) matches.forEach(m => vlmStdRefs.add(m.replace(/\s+/g, ' ').trim()));
+      }
+
+      // WASM 元数据的标准号（dwgMeta.wasStandardRefs 是字符串数组）
+      const wasmStdRefs = new Set((dwgMeta.wasStandardRefs || []).map(s => s.replace(/\s+/g, ' ').trim()));
+
+      // 找版本号不一致的标准（同一标准号不同版本年份）
+      for (const vlm of vlmStdRefs) {
+        // 提取标准号主体（去掉年份）：GB 50016-2014 → GB 50016
+        const base = vlm.replace(/-\d{4}$/, '').trim();
+        for (const wasm of wasmStdRefs) {
+          const wasmBase = wasm.replace(/-\d{4}$/, '').trim();
+          if (base === wasmBase && vlm !== wasm) {
+            issues.push({
+              code: 'DWG_CROSS_STDREF',
+              severity: 'warning',
+              message: `跨维度不一致：合规审查引用标准「${vlm}」与 DWG 元数据标准引用「${wasm}」版本不一致`,
+            });
+            break;  // 同类只报一条
+          }
+        }
+      }
+    }
+
+    // ── 3. DWG_CROSS_SCALE: 标题栏 scale ↔ annotations 比例尺标注 ──
+    if (ann && tb.scale) {
+      const titleScale = tb.scale.trim();
+      const scalePattern = /^(1:\d+|\d+:1)$/;
+      if (scalePattern.test(titleScale)) {
+        // 从 annotations.missingItems 中找比例尺相关项
+        for (const item of ann.missingItems || []) {
+          const itemText = `${item.item || ''} ${item.location || ''}`.trim();
+          if (itemText.includes('比例') || itemText.includes('scale')) {
+            // 从该项提取比例尺标注值
+            const scaleMatch = itemText.match(/(1:\d+|\d+:1)/);
+            if (scaleMatch && scaleMatch[1] !== titleScale) {
+              issues.push({
+                code: 'DWG_CROSS_SCALE',
+                severity: 'warning',
+                message: `跨维度不一致：标题栏比例「${titleScale}」与标注完整性中的比例尺「${scaleMatch[1]}」不匹配`,
+              });
+              break;  // 同类只报一条
+            }
+          }
+        }
+      }
+    }
+
+    return issues;
+  }
+
+  /**
    * 统一分析入口（并行执行所选分析项）
    *
    * options:
@@ -1437,6 +1573,13 @@ export class DwgVisionService {
       } catch (e: any) {
         console.warn('[DWG Vision] Task 20 元数据双校验失败:', e.message);
       }
+    }
+
+    // Task 34: 跨维度关联校验（必须在元数据双校验之后执行，依赖 dwgMetadataVerification）
+    try {
+      result.crossDimensionIssues = this.crossDimensionCheck(result);
+    } catch (e: any) {
+      console.warn('[DWG Vision] Task 34 跨维度关联校验失败:', e.message);
     }
 
     result.duration_ms = Date.now() - startTime;

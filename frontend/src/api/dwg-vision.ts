@@ -125,6 +125,8 @@ export interface VisionAnalyzeResult {
   errors: string[]
   modelInfo?: { model: string; modelType: string }
   ruleIssues?: RuleIssue[]
+  /** Task 34: 跨维度关联校验结果（标题栏 ↔ 合规审查 ↔ 标注完整性 交叉一致性） */
+  crossDimensionIssues?: RuleIssue[]
   /** Task 24: OCR + VLM 交叉验证结果 */
   ocrVerification?: OcrVerificationResult
   /** Task 20: DWG 元数据双校验结果 */
