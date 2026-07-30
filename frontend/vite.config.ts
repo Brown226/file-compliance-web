@@ -79,6 +79,12 @@ export default defineConfig({
         ws: true,
         changeOrigin: true,
       },
+      // 上传文件静态服务代理（后端 app.ts 把 /uploads/ 挂载到 backend/uploads/）
+      // Agent 报告、上传的临时文件等通过此路径访问
+      '/uploads': {
+        target: process.env.API_PROXY_TARGET || 'http://localhost:3000',
+        changeOrigin: true,
+      },
       // MaxKB 管理界面 iframe 嵌入代理（生产环境由 nginx 处理）
       // 注意：不能使用 /admin 前缀，会与前端路由 /admin 冲突
       '/maxkb-proxy': {

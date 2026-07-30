@@ -38,7 +38,7 @@ export function useAgentChat() {
    */
   async function loadHistory(sid: string): Promise<void> {
     const res = await listMessagesApi(sid)
-    const historyMessages = (res as any as MessageItem[]).map(m => ({
+    const historyMessages = (res.data as MessageItem[]).map(m => ({
       id: m.id,
       role: m.role === 'user' ? 'user' : 'assistant',
       parts: [{ type: 'text', text: m.content || '' }],
