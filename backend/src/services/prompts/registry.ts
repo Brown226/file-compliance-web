@@ -1421,9 +1421,11 @@ Please give a short succinct context to situate this chunk within the overall do
 - bbox: 对应文字区域的归一化坐标 [x1,y1,x2,y2]（0-1000 坐标系，无法定位时填 null）
 - markId: 区域标号（1-6 整数，引用上方标号；无法判断时填 null）
 - confidence: 置信度（0-1，低于 0.6 将标记待人工复核）
+- clauseRef: 规范条文编号（如 "GB 50016-2014 第 5.5.3 条"，引用你判定违规所依据的具体条文编号；无明确引用时填 null）
+- clauseText: 规范条文原文（你引用的具体条文内容，便于审查人员核对；无明确引用时填 null）
 
 同时提取图纸中所有可见的设计说明/技术要求文字。
-输出纯 JSON 对象，格式：{"designNotes":[""],"issues":[{"reasoning":"","note":"","violation":"","suggestion":"","severity":"","bbox":[x1,y1,x2,y2],"markId":1,"confidence":0.0}],"summary":""}`,
+输出纯 JSON 对象，格式：{"designNotes":[""],"issues":[{"reasoning":"","note":"","violation":"","suggestion":"","severity":"","bbox":[x1,y1,x2,y2],"markId":1,"confidence":0.0,"clauseRef":"","clauseText":""}],"summary":""}`,
     placeholders: JSON.stringify(['${refSection}']),
     isBuiltin: true,
     enabled: true,

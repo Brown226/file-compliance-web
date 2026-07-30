@@ -38,39 +38,16 @@
 
       <!-- ===== 左侧：上传与控制（分屏模式下仅显示 SVG 预览） ===== -->
       <div class="left-panel" :class="{ 'split-left': splitView && result }">
-        <!-- 分屏模式：仅显示 SVG 预览 + 叠框 -->
-        <div v-if="splitView && result" class="split-preview-container">
-          <div class="preview-label">
-            <el-icon><View /></el-icon>
-            <span>图纸预览（分屏）</span>
-            <el-tag v-if="bboxIssues.length" size="small" type="danger" effect="plain">
-              {{ bboxIssues.length }} 个标注
-            </el-tag>
-          </div>
-          <div class="preview-canvas split-canvas">
-            <div class="preview-wrapper">
-              <div class="preview-content" v-html="previewSvg"></div>
-              <svg
-                v-if="bboxIssues.length"
-                class="overlay-svg"
-                viewBox="0 0 1000 1000"
-                preserveAspectRatio="none"
-              >
-                <rect
-                  v-for="issue in bboxIssues"
-                  :key="issue.id"
-                  :ref="el => setRectRef(el, issue.id)"
-                  :x="issue.bbox![0]"
-                  :y="issue.bbox![1]"
-                  :width="rectWidth(issue.bbox!)"
-                  :height="rectHeight(issue.bbox!)"
-                  :class="['issue-rect', `issue-rect-${issue.severity}`, { 'issue-rect-active': activeIssueId === issue.id }]"
-                  @click.stop="handleRectClick(issue)"
-                />
-              </svg>
-            </div>
-          </div>
-        </div>
+        <!-- Task 26/27: 分屏模式 — 使用 DwgVisionPreviewPanel 通用组件（支持 pan/zoom + bbox 联动） -->
+        <DwgVisionPreviewPanel
+          v-if="splitView && result"
+          :svg-content="previewSvg"
+          :bbox-issues="bboxIssues"
+          :active-issue-id="activeIssueId"
+          :focus-bbox="focusBbox"
+          class="split-preview-container"
+          @rect-click="handleRectClick"
+        />
 
         <!-- 正常模式：上传图纸 + SVG 预览 + 分析选项 -->
         <template v-else>
@@ -531,6 +508,21 @@
                       <el-tag v-if="row.confidence != null && row.confidence < 0.6" type="warning" size="small">待人工复核</el-tag>
                     </template>
                   </el-table-column>
+                  <!-- Task 28: 规范条文链接列 -->
+                  <el-table-column label="条文" width="100" fixed="right">
+                    <template #default="{ row }">
+                      <el-button
+                        v-if="row.clauseText"
+                        size="small"
+                        type="primary"
+                        link
+                        @click.stop="openClauseDialog(row)"
+                      >
+                        <el-icon style="margin-right: 2px"><Document /></el-icon>查看条文
+                      </el-button>
+                      <span v-else>—</span>
+                    </template>
+                  </el-table-column>
                 </el-table>
               </div>
             </el-tab-pane>
@@ -573,6 +565,25 @@
       @replay="replayHistoryItem"
       @page-change="loadHistory"
     />
+
+    <!-- Task 28: 规范条文原文弹窗 -->
+    <el-dialog
+      v-model="clauseDialogVisible"
+      :title="clauseDialogTitle"
+      width="600px"
+      :destroy-on-close="true"
+    >
+      <div class="clause-dialog-body">
+        <div v-if="clauseDialogContent.clauseRef" class="clause-ref">
+          <el-icon><Document /></el-icon>
+          <span>{{ clauseDialogContent.clauseRef }}</span>
+        </div>
+        <div class="clause-text">{{ clauseDialogContent.clauseText }}</div>
+      </div>
+      <template #footer>
+        <el-button @click="clauseDialogVisible = false">关闭</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -588,6 +599,8 @@ import {
 import { dwgToPng, parseDwgFile } from '@/utils/dwg-parser'
 import { analyzeDwgVision, getVisionStatus, getVisionHistory, type VisionAnalyzeResult, type VisionStatusResult, type VisionHistoryItem, type OcrVerificationResult, type DwgMetadata, type DwgMetadataVerification } from '@/api/dwg-vision'
 import DwgVisionHistoryDrawer from './DwgVisionHistoryDrawer.vue'
+import DwgVisionPreviewPanel from './DwgVisionPreviewPanel.vue'
+import type { BboxOverlay } from '@/composables/useSvgZoomPan'
 import { getKnowledgeBasesApi } from '@/api/maxkb'
 
 const router = useRouter()
@@ -640,6 +653,14 @@ const historyPageSize = ref(10)
 
 /** 联动用：当前高亮的 issue id（`${tab}-${index}` 格式） */
 const activeIssueId = ref('')
+
+/** Task 27: pan/zoom 目标 bbox（点击列表项时设置，DwgVisionPreviewPanel watch 此值自动定位） */
+const focusBbox = ref<[number, number, number, number] | null>(null)
+
+/** Task 28: 规范条文弹窗状态 */
+const clauseDialogVisible = ref(false)
+const clauseDialogTitle = ref('规范条文原文')
+const clauseDialogContent = ref<{ clauseRef?: string; clauseText?: string }>({})
 
 /** 收集所有维度的 issue，用于图纸叠框与列表双向联动 */
 interface CollectedIssue {
@@ -962,7 +983,10 @@ function scoreColor(score: number): string {
 
 // ===== 图纸叠框 ↔ 列表 双向联动 =====
 
-/** 列表行点击 → 高亮对应 rect（无 bbox 不触发图纸动作） */
+/**
+ * 列表行点击 → 高亮对应 rect（无 bbox 不触发图纸动作）
+ * Task 27: 同时设置 focusBbox，触发 DwgVisionPreviewPanel pan/zoom 到对应区域
+ */
 function handleRowClick(row: any, tab: 'symbols' | 'annotations' | 'compliance') {
   let arr: any[] = []
   if (tab === 'symbols') arr = result.value?.symbols?.symbols ?? []
@@ -974,6 +998,9 @@ function handleRowClick(row: any, tab: 'symbols' | 'annotations' | 'compliance')
   if (!issue) return
   activeIssueId.value = issue.id
   if (!issue.bbox) return
+  // Task 27: 触发 DwgVisionPreviewPanel pan/zoom（分屏模式下生效）
+  focusBbox.value = issue.bbox
+  // 正常模式下（内联 SVG 预览）仍走 rectRefs scrollIntoView
   nextTick(() => {
     const rectEl = rectRefs.get(issue.id)
     rectEl?.scrollIntoView({ behavior: 'smooth', block: 'center' })
@@ -984,10 +1011,17 @@ function onSymbolsRowClick(row: any) { handleRowClick(row, 'symbols') }
 function onAnnotationsRowClick(row: any) { handleRowClick(row, 'annotations') }
 function onComplianceRowClick(row: any) { handleRowClick(row, 'compliance') }
 
-/** 图纸 rect 点击 → 切换 tab + 高亮列表行 + 滚动到行 */
-function handleRectClick(issue: CollectedIssue) {
+/**
+ * 图纸 rect 点击 → 切换 tab + 高亮列表行 + 滚动到行
+ * Task 26: DwgVisionPreviewPanel emit 的 BboxOverlay 只含 id/bbox/severity，
+ * 需从 allIssues 中查找原始 issue 获取 tab 信息
+ */
+function handleRectClick(issue: BboxOverlay) {
   activeIssueId.value = issue.id
-  activeTab.value = issue.tab
+  const original = allIssues.value.find(i => i.id === issue.id)
+  if (original) {
+    activeTab.value = original.tab
+  }
   nextTick(() => {
     const activeRow = document.querySelector('.issue-row-active')
     activeRow?.scrollIntoView({ behavior: 'smooth', block: 'center' })
@@ -1003,6 +1037,19 @@ function annotationsRowClass(_row: any, rowIndex: number) {
 }
 function complianceRowClass(_row: any, rowIndex: number) {
   return activeIssueId.value === `compliance-${rowIndex}` ? 'issue-row-active' : ''
+}
+
+/**
+ * Task 28: 打开规范条文原文弹窗
+ * 展示 issue 的 clauseRef（条文编号）和 clauseText（条文原文）
+ */
+function openClauseDialog(row: any) {
+  clauseDialogContent.value = {
+    clauseRef: row.clauseRef,
+    clauseText: row.clauseText,
+  }
+  clauseDialogTitle.value = row.clauseRef ? `规范条文 · ${row.clauseRef}` : '规范条文原文'
+  clauseDialogVisible.value = true
 }
 </script>
 

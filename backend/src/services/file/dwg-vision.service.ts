@@ -99,6 +99,10 @@ export interface ComplianceIssue {
   reasoning?: string;
   /** Task 21: SoM 区域标号（1=标题栏/2=图例表/3=标注/4=设计说明/5=图框/6=主体图形），VLM 引用标号定位 */
   markId?: number;
+  /** Task 28: 规范条文编号（如 "GB 50016-2014 第 5.5.3 条"），用于前端条文链接展示 */
+  clauseRef?: string;
+  /** Task 28: 规范条文原文（模型引用的具体条文内容，前端点击弹窗展示） */
+  clauseText?: string;
 }
 
 export interface ComplianceResult {
@@ -860,6 +864,7 @@ export class DwgVisionService {
 
   /**
    * Task 21 + 23: 从单次 parsed 构建 ComplianceResult（含 markId 提取）
+   * Task 28: 同时提取 clauseRef/clauseText 字段
    */
   private static buildComplianceResult(parsed: any): ComplianceResult {
     const issues: ComplianceIssue[] = (parsed.issues || []).map((issue: any) => ({
@@ -871,6 +876,9 @@ export class DwgVisionService {
       confidence: this.normalizeConfidence(issue.confidence),
       reasoning: typeof issue.reasoning === 'string' ? issue.reasoning : undefined,
       markId: this.normalizeMarkId(issue.markId),
+      // Task 28: 规范条文链接字段
+      clauseRef: typeof issue.clauseRef === 'string' && issue.clauseRef.trim() ? issue.clauseRef.trim().substring(0, 200) : undefined,
+      clauseText: typeof issue.clauseText === 'string' && issue.clauseText.trim() ? issue.clauseText.trim().substring(0, 2000) : undefined,
     }));
 
     return {
@@ -943,6 +951,9 @@ export class DwgVisionService {
         // 合并后 confidence 用投票比例覆盖（更可信），reasoning 取最长那条
         reasoning: longestReasoning || undefined,
         markId: this.normalizeMarkId(firstIssue.markId),
+        // Task 28: 规范条文链接字段（取首次出现的值）
+        clauseRef: typeof firstIssue.clauseRef === 'string' && firstIssue.clauseRef.trim() ? firstIssue.clauseRef.trim().substring(0, 200) : undefined,
+        clauseText: typeof firstIssue.clauseText === 'string' && firstIssue.clauseText.trim() ? firstIssue.clauseText.trim().substring(0, 2000) : undefined,
       });
     }
 

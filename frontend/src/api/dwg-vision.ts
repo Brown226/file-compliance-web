@@ -58,6 +58,10 @@ export interface ComplianceIssue extends ReasoningMixin {
   confidence?: number
   /** Task 21: SoM 区域标号（1=标题栏/2=图例表/3=标注/4=设计说明/5=图框/6=主体图形） */
   markId?: number
+  /** Task 28: 规范条文编号（如 "GB 50016-2014 第 5.5.3 条"） */
+  clauseRef?: string
+  /** Task 28: 规范条文原文（前端点击弹窗展示） */
+  clauseText?: string
 }
 
 export interface ComplianceResult {
