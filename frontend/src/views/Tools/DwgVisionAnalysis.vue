@@ -308,6 +308,77 @@
                   <div class="tb-cell"><span class="tb-label">单位</span><span class="tb-value">{{ result.titleBlock.company || '—' }}</span></div>
                 </div>
               </div>
+
+              <!-- Task 24: OCR + VLM 交叉验证结果 -->
+              <div v-if="result.ocrVerification" class="ocr-verification">
+                <div class="section-title">
+                  <el-icon><CircleCheck /></el-icon>OCR + VLM 交叉验证
+                  <el-tag
+                    size="small"
+                    :type="ocrVerificationTagType(result.ocrVerification)"
+                    style="margin-left: 8px"
+                  >{{ ocrVerificationStatusLabel(result.ocrVerification) }}</el-tag>
+                </div>
+                <div v-if="result.ocrVerification.status === 'success'" class="ocr-verif-body">
+                  <div v-if="result.ocrVerification.needsReview" class="ocr-needs-review">
+                    <el-icon><WarningFilled /></el-icon>
+                    OCR 与 VLM 在关键字段（图号/图名）存在不一致，建议人工复核
+                  </div>
+                  <div v-if="result.ocrVerification.mismatches.length" class="ocr-mismatches">
+                    <div class="mismatch-title">不一致字段（{{ result.ocrVerification.mismatches.length }} 项）：</div>
+                    <ul>
+                      <li v-for="(m, i) in result.ocrVerification.mismatches" :key="i">{{ m }}</li>
+                    </ul>
+                  </div>
+                  <div v-else-if="!result.ocrVerification.needsReview" class="ocr-consistent">
+                    <el-icon><CircleCheck /></el-icon>
+                    所有关键字段在 OCR 文本中均能匹配，识别结果可信
+                  </div>
+                  <el-collapse class="ocr-text-collapse">
+                    <el-collapse-item title="查看 OCR 提取的整图文本（截断 5000 字符）">
+                      <pre class="ocr-text-pre">{{ result.ocrVerification.ocrText }}</pre>
+                    </el-collapse-item>
+                  </el-collapse>
+                </div>
+                <div v-else class="ocr-verif-body ocr-degraded">
+                  <el-icon><InfoFilled /></el-icon>
+                  OCR 交叉验证不可用：{{ result.ocrVerification.reason || '未知原因' }}
+                </div>
+              </div>
+
+              <!-- Task 20: DWG 元数据双校验结果 -->
+              <div v-if="result.dwgMetadataVerification" class="ocr-verification">
+                <div class="section-title">
+                  <el-icon><DataAnalysis /></el-icon>DWG 元数据双校验
+                  <el-tag
+                    size="small"
+                    :type="dwgMetadataTagType(result.dwgMetadataVerification)"
+                    style="margin-left: 8px"
+                  >{{ dwgMetadataStatusLabel(result.dwgMetadataVerification) }}</el-tag>
+                </div>
+                <div v-if="result.dwgMetadataVerification.status === 'success'" class="ocr-verif-body">
+                  <div class="dwg-meta-stats">
+                    <el-tag size="small" type="info">WASM 图层 {{ result.dwgMetadataVerification.wasLayerCount }}</el-tag>
+                    <el-tag size="small" type="info">WASM 文本 {{ result.dwgMetadataVerification.wasTextCount }}</el-tag>
+                    <el-tag size="small" type="info">WASM 标注 {{ result.dwgMetadataVerification.wasDimensionCount }}</el-tag>
+                    <el-tag size="small" type="info">WASM 标准引用 {{ result.dwgMetadataVerification.wasStandardRefs.length }}</el-tag>
+                  </div>
+                  <div v-if="result.dwgMetadataVerification.needsReview" class="ocr-needs-review">
+                    <el-icon><WarningFilled /></el-icon>
+                    WASM 元数据与 VLM 识别结果存在关键不一致（疑似幻觉或漏识），建议人工复核
+                  </div>
+                  <div v-if="result.dwgMetadataVerification.mismatches.length" class="ocr-mismatches">
+                    <div class="mismatch-title">不一致项（{{ result.dwgMetadataVerification.mismatches.length }} 项）：</div>
+                    <ul>
+                      <li v-for="(m, i) in result.dwgMetadataVerification.mismatches" :key="i">{{ m }}</li>
+                    </ul>
+                  </div>
+                  <div v-else-if="!result.dwgMetadataVerification.needsReview" class="ocr-consistent">
+                    <el-icon><CircleCheck /></el-icon>
+                    WASM 元数据与 VLM 识别结果一致
+                  </div>
+                </div>
+              </div>
             </el-tab-pane>
 
             <!-- 图例符号 -->
@@ -396,6 +467,12 @@
                   <el-table-column prop="note" label="原文" width="200" show-overflow-tooltip />
                   <el-table-column prop="violation" label="问题" />
                   <el-table-column prop="suggestion" label="建议" />
+                  <el-table-column label="区域" width="100">
+                    <template #default="{ row }">
+                      <el-tag v-if="row.markId != null" size="small" type="info">{{ markIdLabel(row.markId) }}</el-tag>
+                      <span v-else>—</span>
+                    </template>
+                  </el-table-column>
                   <el-table-column prop="severity" label="严重度" width="90">
                     <template #default="{ row }">
                       <el-tag size="small" :type="severityTag(row.severity)">{{ severityLabel(row.severity) }}</el-tag>
@@ -502,10 +579,10 @@ import { ElMessage } from 'element-plus'
 import {
   UploadFilled, Loading, Document, View, SetUp, CircleCheckFilled, CircleCheck,
   VideoPlay, PictureFilled, Right, DataAnalysis, Clock, Grid, EditPen, Stamp,
-  Memo, WarningFilled, ArrowLeft,
+  Memo, WarningFilled, ArrowLeft, InfoFilled,
 } from '@element-plus/icons-vue'
-import { dwgToPng } from '@/utils/dwg-parser'
-import { analyzeDwgVision, getVisionStatus, getVisionHistory, type VisionAnalyzeResult, type VisionStatusResult, type VisionHistoryItem } from '@/api/dwg-vision'
+import { dwgToPng, parseDwgFile } from '@/utils/dwg-parser'
+import { analyzeDwgVision, getVisionStatus, getVisionHistory, type VisionAnalyzeResult, type VisionStatusResult, type VisionHistoryItem, type OcrVerificationResult, type DwgMetadata, type DwgMetadataVerification } from '@/api/dwg-vision'
 import { getKnowledgeBasesApi } from '@/api/maxkb'
 
 const router = useRouter()
@@ -744,6 +821,26 @@ async function startAnalysis() {
     ElMessage.info('正在渲染图纸为图片...')
     const imageBase64 = await dwgToPng(dwgFile.value)
 
+    // Task 20: 并行解析 DWG 提取元数据（layers/textEntities/dimensions/standardRefs）
+    // 失败不阻塞主流程，仅降级为不传元数据（后端 dwgMetadataVerification 字段为 undefined）
+    let dwgMetadata: DwgMetadata | undefined
+    try {
+      const parsed = await parseDwgFile(dwgFile.value)
+      dwgMetadata = {
+        layers: parsed.layers,
+        textEntities: parsed.textEntities.map(t => ({ text: t.text, layer: t.layer })),
+        dimensions: parsed.dimensions.map(d => ({ text: d.text, layer: d.layer })),
+        standardRefs: parsed.standardRefs.map(s => ({
+          standardNo: s.standardNo,
+          standardName: s.standardName,
+          fullMatch: s.fullMatch,
+        })),
+        metadata: parsed.metadata,
+      }
+    } catch (e: any) {
+      console.warn('[DWG Vision] WASM 元数据提取失败，降级跳过双校验:', e.message)
+    }
+
     // 2. 调用后端 Vision 分析
     const res = await analyzeDwgVision({
       imageBase64,
@@ -752,6 +849,7 @@ async function startAnalysis() {
       refText: refText.value || undefined,
       kbId: selectedKbId.value || undefined,
       query: ragQuery.value || undefined,
+      dwgMetadata,
     })
 
     if (res.code === 200) {
@@ -800,6 +898,41 @@ function severityTag(severity: string): string {
 
 function severityLabel(severity: string): string {
   return severity === 'error' ? '严重' : severity === 'warning' ? '警告' : '提示'
+}
+
+// Task 21: SoM 标号 → 区域名称
+const MARK_ID_LABELS: Record<number, string> = {
+  1: '标题栏',
+  2: '图例表',
+  3: '标注',
+  4: '设计说明',
+  5: '图框',
+  6: '主体图形',
+}
+function markIdLabel(markId: number): string {
+  return MARK_ID_LABELS[markId] || `标号${markId}`
+}
+
+// Task 24: OCR 交叉验证状态展示
+function ocrVerificationTagType(r: OcrVerificationResult): 'success' | 'warning' | 'info' | 'danger' {
+  if (r.status !== 'success') return 'info'
+  return r.needsReview ? 'danger' : 'success'
+}
+function ocrVerificationStatusLabel(r: OcrVerificationResult): string {
+  if (r.status === 'unavailable') return 'OCR 不可用'
+  if (r.status === 'failed') return 'OCR 失败'
+  return r.needsReview ? '需人工复核' : '一致'
+}
+
+// Task 20: DWG 元数据双校验状态展示
+function dwgMetadataTagType(r: DwgMetadataVerification): 'success' | 'warning' | 'info' | 'danger' {
+  if (r.status !== 'success') return 'info'
+  return r.needsReview ? 'danger' : 'success'
+}
+function dwgMetadataStatusLabel(r: DwgMetadataVerification): string {
+  if (r.status === 'unavailable') return '元数据未提供'
+  if (r.status === 'failed') return '校验失败'
+  return r.needsReview ? '需人工复核' : '一致'
 }
 
 function scoreColor(score: number): string {
@@ -1599,6 +1732,89 @@ function complianceRowClass(_row: any, rowIndex: number) {
   font-weight: 600;
   color: #334155;
   margin-bottom: 10px;
+}
+
+/* ===== Task 24: OCR + VLM 交叉验证 ===== */
+.ocr-verification {
+  margin-top: 16px;
+  padding: 12px;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 6px;
+}
+.ocr-verif-body {
+  margin-top: 8px;
+  font-size: 13px;
+  color: #475569;
+}
+.ocr-needs-review {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: #dc2626;
+  font-weight: 500;
+  margin-bottom: 8px;
+  padding: 6px 10px;
+  background: #fef2f2;
+  border-radius: 4px;
+}
+.ocr-consistent {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: #16a34a;
+  margin-bottom: 8px;
+  padding: 6px 10px;
+  background: #f0fdf4;
+  border-radius: 4px;
+}
+.ocr-mismatches {
+  margin-bottom: 8px;
+}
+.ocr-mismatches .mismatch-title {
+  font-weight: 500;
+  color: #dc2626;
+  margin-bottom: 4px;
+}
+.ocr-mismatches ul {
+  margin: 0;
+  padding-left: 20px;
+  color: #475569;
+}
+.ocr-mismatches li {
+  margin: 2px 0;
+}
+.ocr-text-collapse {
+  margin-top: 8px;
+}
+.ocr-text-pre {
+  margin: 0;
+  max-height: 200px;
+  overflow: auto;
+  background: #fff;
+  padding: 8px;
+  border-radius: 4px;
+  font-size: 12px;
+  color: #475569;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+.ocr-degraded {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: #64748b;
+  padding: 6px 10px;
+  background: #f1f5f9;
+  border-radius: 4px;
+}
+
+/* Task 20: DWG 元数据双校验 */
+.dwg-meta-stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 8px;
 }
 
 .design-notes {

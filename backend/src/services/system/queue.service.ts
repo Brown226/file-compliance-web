@@ -26,6 +26,8 @@ export interface DwgVisionJobData {
   fileName?: string;  // 原始图纸文件名（用于历史回放展示）
   kbId?: string;      // Task 15: MaxKB 知识库 ID（用于 compliance 维度的 RAG 注入）
   query?: string;     // Task 15: RAG 检索查询词（可选）
+  profession?: string; // Task 17: 专业类型（building/structural/plumbing/hvac/electrical/process/nuclear）
+  dwgMetadata?: any;  // Task 20: 前端 WASM 解析的 DWG 元数据（layers/textEntities/dimensions/standardRefs）
 }
 
 /** 内部持有的队列实例（延迟初始化） */
@@ -141,17 +143,21 @@ export async function initQueueProcessors(): Promise<void> {
   // ── DWG 视觉分析队列处理器 ──
   const dwgVisionQueue = getDwgVisionQueue();
   dwgVisionQueue.process('dwg-vision', 2, async (job) => {
-    const { imageBase64, analyses, refText, userId, fileName, jobKey, kbId, query } = job.data;
+    const { imageBase64, analyses, refText, userId, fileName, jobKey, kbId, query, profession, dwgMetadata } = job.data;
     console.log(`[Queue] 开始处理图纸视觉分析: ${jobKey} (attempt ${job.attemptsMade + 1})`);
 
     try {
       await job.progress(10);
-      const result = await DwgVisionService.analyze(imageBase64, analyses, refText, { userId, fileName, kbId, query });
+      // Task 16: 传 jobKey 给 analyze，用于 SSE 进度推送
+      // Task 20: 传 dwgMetadata 给 analyze，用于元数据双校验
+      const result = await DwgVisionService.analyze(imageBase64, analyses, refText, { userId, fileName, kbId, query, profession: profession as any, jobKey, dwgMetadata });
       await job.progress(100);
       console.log(`[Queue] 图纸视觉分析完成: ${jobKey}`);
       return result;
     } catch (err: any) {
       console.error(`[Queue] 图纸视觉分析失败: ${jobKey}`, err.message);
+      // Task 16: 失败时发布 error 事件（SSE）
+      DwgVisionService.publishProgress(jobKey, { type: 'error', jobKey, error: err.message, timestamp: Date.now() }).catch(() => { /* ignore */ });
       throw err;
     }
   });
@@ -232,8 +238,10 @@ export async function addDwgVisionJob(data: DwgVisionJobData): Promise<Bull.Job<
   // 降级模式：同步执行
   if ((globalThis as any).__QUEUE_DEGRADED) {
     console.warn('[Queue] 降级模式：同步执行图纸视觉分析', data.jobKey);
-    setImmediate(() => DwgVisionService.analyze(data.imageBase64, data.analyses, data.refText, { userId: data.userId, fileName: data.fileName, kbId: data.kbId, query: data.query }).catch((err: Error) => {
+    setImmediate(() => DwgVisionService.analyze(data.imageBase64, data.analyses, data.refText, { userId: data.userId, fileName: data.fileName, kbId: data.kbId, query: data.query, profession: data.profession as any, jobKey: data.jobKey, dwgMetadata: data.dwgMetadata }).catch((err: Error) => {
       console.error(`[Queue] 降级模式同步执行失败: ${data.jobKey}`, err.message);
+      // Task 16: 降级模式失败也发布 error 事件（SSE）
+      DwgVisionService.publishProgress(data.jobKey, { type: 'error', jobKey: data.jobKey, error: err.message, timestamp: Date.now() }).catch(() => { /* ignore */ });
     }));
     return { id: `sync:${data.jobKey}`, data } as any;
   }

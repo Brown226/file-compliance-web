@@ -4,7 +4,11 @@ import { redisClient } from '../utils/redis';
 import prisma from '../config/db';
 import { DwgVisionService } from '../services/file/dwg-vision.service';
 
-const VALID_ANALYSES = ['titleBlock', 'symbols', 'annotations', 'compliance'];
+// Task 16: SSE 进度推送的 Redis 频道前缀
+const SSE_CHANNEL_PREFIX = 'dwg-vision:progress:';
+
+// Task 17/18: 新增 profession（专业审查）和 frameCheck（图框规范检查）维度
+const VALID_ANALYSES = ['titleBlock', 'symbols', 'annotations', 'compliance', 'profession', 'frameCheck'];
 
 // ==================== 用户级配额管理 ====================
 
@@ -77,7 +81,7 @@ export const visionAnalyze = async (req: Request, res: Response): Promise<void> 
   let quotaAcquired = false;
 
   try {
-    const { imageBase64, fileName, analyses, refText, kbId, query } = req.body;
+    const { imageBase64, fileName, analyses, refText, kbId, query, profession, dwgMetadata } = req.body;
 
     // 参数校验
     if (!imageBase64 || typeof imageBase64 !== 'string') {
@@ -108,6 +112,17 @@ export const visionAnalyze = async (req: Request, res: Response): Promise<void> 
       return;
     }
 
+    // Task 17: profession 与 profession 维度的合理性校验
+    const VALID_PROFESSIONS = ['building', 'structural', 'plumbing', 'hvac', 'electrical', 'process', 'nuclear'];
+    if (profession && !VALID_PROFESSIONS.includes(profession)) {
+      res.status(400).json({ code: 400, message: `profession 参数无效，可选值: ${VALID_PROFESSIONS.join(', ')}` });
+      return;
+    }
+    if (selectedAnalyses.includes('profession') && !profession) {
+      res.status(400).json({ code: 400, message: '选择 profession 维度时必须指定 profession 参数' });
+      return;
+    }
+
     // 用户级配额检查
     const quota = await checkDwgVisionQuota(userId);
     if (!quota.ok) {
@@ -129,6 +144,8 @@ export const visionAnalyze = async (req: Request, res: Response): Promise<void> 
       fileName,
       kbId,
       query,
+      profession,
+      dwgMetadata,
     });
 
     // 任务完成后（成功或失败）释放并发计数
@@ -287,3 +304,109 @@ export const visionHistoryDetail = async (req: Request, res: Response): Promise<
     res.status(500).json({ code: 500, message: err.message });
   }
 };
+
+/**
+ * GET /api/dwg/vision-stream/:jobKey
+ * Task 16: SSE 流式推送图纸视觉分析进度
+ *
+ * 工作原理：
+ *   1. 前端 POST /vision-analyze 入队后拿到 jobKey
+ *   2. 前端用 EventSource 连接本端点，订阅该 jobKey 的进度
+ *   3. 本端点用 Redis SUBSCRIBE 订阅 dwg-vision:progress:{jobKey} 频道
+ *   4. analyze() 内部在各维度完成时 PUBLISH 事件到该频道
+ *   5. 本端点收到消息后用 res.write('event: xxx\ndata: xxx\n\n') 推送给前端
+ *   6. 收到 complete 或 error 事件后关闭连接
+ *
+ * 降级策略：
+ *   - Redis 不可用 → 立即推 error 事件并关闭
+ *   - 30 秒内无任何消息 → 推 progress 事件作为心跳（防止代理超时）
+ *   - 10 分钟总超时 → 强制关闭
+ *
+ * 注意：SSE 连接是长连接，不走 Vite 代理的 /api 路径（需在 vite.config.ts 单独代理）
+ */
+export const visionStream = async (req: Request, res: Response): Promise<void> => {
+  const jobKey = req.params.jobKey as string;
+  if (!jobKey) {
+    res.status(400).json({ code: 400, message: '缺少 jobKey 参数' });
+    return;
+  }
+
+  // SSE 响应头
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache, no-transform');
+  res.setHeader('Connection', 'keep-alive');
+  res.setHeader('X-Accel-Buffering', 'no');  // Nginx 不缓冲
+  res.flushHeaders?.();
+
+  const channel = `${SSE_CHANNEL_PREFIX}${jobKey}`;
+
+  // 心跳定时器（30 秒无消息推一次注释行，防止代理超时断开）
+  const heartbeatTimer = setInterval(() => {
+    try { res.write(': heartbeat\n\n'); } catch { /* ignore */ }
+  }, 30000);
+
+  // 总超时（10 分钟）
+  const totalTimeout = setTimeout(() => {
+    sendSseEvent(res, 'error', { jobKey, error: 'SSE 连接超时（10 分钟）', timestamp: Date.now() });
+    cleanup();
+  }, 10 * 60 * 1000);
+
+  // 清理函数
+  const cleanup = () => {
+    clearInterval(heartbeatTimer);
+    clearTimeout(totalTimeout);
+    if (subscriber) {
+      subscriber.unsubscribe(channel).catch(() => { /* ignore */ });
+      subscriber.quit().catch(() => { /* ignore */ });
+    }
+    try { res.end(); } catch { /* ignore */ }
+  };
+
+  // 监听客户端断开
+  req.on('close', () => {
+    cleanup();
+  });
+
+  let subscriber: any = null;
+
+  try {
+    // 创建独立订阅连接（不能用主连接，否则会阻塞其他操作）
+    const Redis = (await import('ioredis')).default;
+    subscriber = new Redis(process.env.REDIS_URL || 'redis://localhost:6379', {
+      maxRetriesPerRequest: null,
+      enableReadyCheck: false,
+    });
+
+    await subscriber.subscribe(channel);
+
+    subscriber.on('message', (_ch: string, message: string) => {
+      try {
+        const event = JSON.parse(message);
+        // 推送事件给前端
+        sendSseEvent(res, event.type, event);
+
+        // complete 或 error 事件后关闭连接
+        if (event.type === 'complete' || event.type === 'error') {
+          cleanup();
+        }
+      } catch (e: any) {
+        console.warn('[DWG Vision SSE] 消息解析失败:', e.message);
+      }
+    });
+  } catch (e: any) {
+    console.error('[DWG Vision SSE] 订阅失败:', e.message);
+    sendSseEvent(res, 'error', { jobKey, error: `SSE 订阅失败: ${e.message}`, timestamp: Date.now() });
+    cleanup();
+  }
+};
+
+/**
+ * Task 16: 发送 SSE 事件给前端
+ * 格式：event: <type>\ndata: <json>\n\n
+ */
+function sendSseEvent(res: Response, type: string, data: any): void {
+  try {
+    res.write(`event: ${type}\n`);
+    res.write(`data: ${JSON.stringify(data)}\n\n`);
+  } catch { /* ignore */ }
+}

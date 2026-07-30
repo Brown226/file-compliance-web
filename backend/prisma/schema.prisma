@@ -38,6 +38,7 @@ model User {
   createdAnnouncements SystemAnnouncement[]
   qaSessions   QASession[]
   chatSessions UserChatSession[]
+  agentMemories AgentMemory[]
   announcementReads    UserAnnouncementRead[]
   createdAt    DateTime    @default(now())
   updatedAt    DateTime    @updatedAt
@@ -840,6 +841,7 @@ model QASession {
   title           String?       // 会话标题（首条问题截取）
   taskId          String?       // 可选关联的审查任务
   messages        QAMessage[]
+  agentTraces     AgentTrace[]
   createdAt       DateTime      @default(now())
   updatedAt       DateTime      @updatedAt
 
@@ -943,4 +945,48 @@ model VisionAnalysis {
   @@index([createdAt], name: "idx_vision_analysis_created")
   @@index([imageHash], name: "idx_vision_analysis_image_hash")
   @@map("vision_analyses")
+}
+
+// ===== Agent 记忆与追踪（Task 2）=====
+
+// Agent 记忆 - 用户长期偏好/例行事项/反馈，用于个性化 Agent 行为
+// embedding 支持 pgvector 语义检索（与 VectorDocument.embedding 同类型）
+model AgentMemory {
+  id         String   @id @default(uuid())
+  userId     String
+  type       String   // preference / routine / feedback
+  key        String   // 记忆键，如 "preferred_review_focus"
+  value      String   // 记忆值
+  embedding  Unsupported("vector")?  // pgvector 向量，用于语义检索
+  confidence Float    @default(0.5)  // 置信度 0-1
+  source     String?  // 来源（sessionId 或 fileType）
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("agent_memories")
+}
+
+// Agent 执行追踪 - 每次 QASession 中 Agent 工具调用的步骤记录
+// traceId 关联 LlmCallLog.traceId（非外键，仅用于跨表关联查询）
+model AgentTrace {
+  id         String   @id @default(uuid())
+  sessionId  String   // 关联 QASession
+  stepIndex  Int      // 步骤序号
+  toolName   String   // 工具名
+  input      Json?    // 输入参数
+  output     Json?    // 输出结果
+  durationMs Int?     // 耗时毫秒
+  status     String   @default("success")  // success / failed / skipped
+  traceId    String?  // 关联 LlmCallLog 的 traceId
+  error      String?  // 错误信息（如果失败）
+  createdAt  DateTime @default(now())
+
+  qaSession  QASession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  @@index([sessionId])
+  @@index([traceId])
+  @@map("agent_traces")
 }

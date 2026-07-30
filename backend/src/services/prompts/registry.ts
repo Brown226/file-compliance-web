@@ -1358,6 +1358,7 @@ Please give a short succinct context to situate this chunk within the overall do
 6. 仪表是否有回路编号
 
 对每个发现的问题，输出：
+- reasoning: 推理过程（先思考为什么这是问题、依据什么规范或经验，再下结论。50-200 字）
 - item: 问题描述（如 "管线未标注管径"）
 - location: 位置描述（如 "图纸右侧主管线"）
 - severity: 严重程度（error=必须整改/warning=建议整改/info=提示）
@@ -1365,7 +1366,7 @@ Please give a short succinct context to situate this chunk within the overall do
 - confidence: 置信度（0-1，低于 0.6 将标记待人工复核）
 
 同时给出整体完整性评分（0-100分）。
-输出纯 JSON 对象，格式：{"missingItems":[{"item":"","location":"","severity":"","bbox":[x1,y1,x2,y2],"confidence":0.0}],"completenessScore":0,"summary":""}`,
+输出纯 JSON 对象，格式：{"missingItems":[{"reasoning":"","item":"","location":"","severity":"","bbox":[x1,y1,x2,y2],"confidence":0.0}],"completenessScore":0,"summary":""}`,
     placeholders: JSON.stringify([]),
     isBuiltin: true,
     enabled: true,
@@ -1389,8 +1390,19 @@ Please give a short succinct context to situate this chunk within the overall do
     role: 'user',
     variant: 'compliance',
     name: 'DWG视觉审查-设计说明合规-用户提示词',
-    description: 'DWG 视觉审查中设计说明合规审查维度的用户提示词，含 ${refSection} 占位符用于注入参照标准条文',
+    description: 'DWG 视觉审查中设计说明合规审查维度的用户提示词，含 ${refSection} 占位符用于注入参照标准条文；Task 21 增加区域标号（SoM）说明',
     content: `请审查这张工程图纸中的设计说明、技术要求、注释文字等内容，检查是否存在合规性问题。
+
+## 区域标号（Set-of-Mark，Task 21）
+为便于精确定位问题位置，本图纸按常规工程图布局划分 6 个标号区域：
+- markId=1：标题栏区域（图框右下角图签）
+- markId=2：图例/符号表区域（图纸边缘的图例表格）
+- markId=3：标注/尺寸标注区域（轴线、净距、标高、尺寸线等标注）
+- markId=4：设计说明/技术要求区域（图纸中的文字说明区块）
+- markId=5：图框/边界区域（图框线、幅面线、装订边）
+- markId=6：主体图形/管线区域（图纸中央的工艺流程、设备布置、管线等主体内容）
+
+每个问题输出时请在 markId 字段引用对应标号（1-6 整数），用于精确定位。无法判断时填 null。
 
 重点检查：
 1. 设计参数是否合理（温度、压力、流量等）
@@ -1401,16 +1413,403 @@ Please give a short succinct context to situate this chunk within the overall do
 \${refSection}
 
 对每个发现的问题，输出：
+- reasoning: 推理过程（先分析为什么违规、引用哪条规范或工程经验，再下结论。50-300 字）
 - note: 原文内容（图纸中的相关文字）
 - violation: 违规/问题描述
 - suggestion: 修改建议
 - severity: 严重程度（error/warning/info）
 - bbox: 对应文字区域的归一化坐标 [x1,y1,x2,y2]（0-1000 坐标系，无法定位时填 null）
+- markId: 区域标号（1-6 整数，引用上方标号；无法判断时填 null）
 - confidence: 置信度（0-1，低于 0.6 将标记待人工复核）
 
 同时提取图纸中所有可见的设计说明/技术要求文字。
-输出纯 JSON 对象，格式：{"designNotes":[""],"issues":[{"note":"","violation":"","suggestion":"","severity":"","bbox":[x1,y1,x2,y2],"confidence":0.0}],"summary":""}`,
+输出纯 JSON 对象，格式：{"designNotes":[""],"issues":[{"reasoning":"","note":"","violation":"","suggestion":"","severity":"","bbox":[x1,y1,x2,y2],"markId":1,"confidence":0.0}],"summary":""}`,
     placeholders: JSON.stringify(['${refSection}']),
+    isBuiltin: true,
+    enabled: true,
+  },
+
+  // ==========================================
+  // DWG 视觉审查 — 专业分流 prompt（Task 17）
+  // 7 套专业 prompt：建筑/结构/给排水/暖通/电气/工艺/核电
+  // variant 命名：prof_{profession}
+  // 由 analyzeProfession() 使用，用户选择专业后加载对应 prompt
+  // ==========================================
+
+  // ── 建筑专业 ──
+  {
+    key: 'dwg_vision_prof_building_system',
+    module: 'dwg_vision',
+    role: 'system',
+    variant: 'prof_building',
+    name: 'DWG视觉审查-建筑专业-系统提示词',
+    description: '建筑专业图纸审查系统提示词，覆盖标高/轴线/防火分区/疏散/净距/坡度（GB 50016）',
+    content: `你是一位资深建筑专业图纸审查专家，熟悉 GB 50016《建筑设计防火规范》、GB 50352《民用建筑设计统一标准》、GB 50096《住宅设计规范》等建筑标准。
+请从建筑专业角度审查工程图纸，重点关注标高、轴线/轴网、防火分区、疏散通道、净距、坡度等建筑核心要素。
+严格按照 JSON 格式输出，不要添加任何额外说明。`,
+    placeholders: JSON.stringify([]),
+    isBuiltin: true,
+    enabled: true,
+  },
+  {
+    key: 'dwg_vision_prof_building_user',
+    module: 'dwg_vision',
+    role: 'user',
+    variant: 'prof_building',
+    name: 'DWG视觉审查-建筑专业-用户提示词',
+    description: '建筑专业图纸审查用户提示词，检查标高/轴线/防火分区/疏散/净距/坡度',
+    content: `请从建筑专业角度审查这张工程图纸，重点检查以下方面：
+
+1. 标高系统：±0.000 标高基准是否明确，各层标高是否标注完整，卫生间/阳台/屋面标高关系是否合理
+2. 轴线/轴网：轴线编号是否连续完整（A/B/C... 横轴，1/2/3... 纵轴），轴线间距是否标注，是否有缺失轴线
+3. 防火分区（GB 50016）：每个防火分区面积是否超限，防火分区之间防火墙/防火卷帘是否完整，防火门等级是否标注
+4. 疏散通道/距离：疏散通道宽度是否满足规范（疏散门≥0.9m，楼梯≥1.1m），疏散距离是否超限，安全出口数量是否足够
+5. 净距：楼梯净宽、走廊净宽、房间净高是否满足最小要求，设备与墙的检修净距是否足够
+6. 坡度：屋面坡度、地面排水坡度、无障碍坡度是否标注且符合规范（无障碍坡度≤1:12）
+
+对每个发现的问题，输出：
+- reasoning: 推理过程（说明为什么这是问题、引用哪条规范，50-300 字）
+- item: 问题描述
+- location: 位置描述
+- severity: error/warning/info
+- bbox: 归一化坐标 [x1,y1,x2,y2]（0-1000，无法定位填 null）
+- confidence: 置信度（0-1）
+
+输出纯 JSON：{"issues":[{"reasoning":"","item":"","location":"","severity":"","bbox":[x1,y1,x2,y2],"confidence":0.0}],"summary":""}`,
+    placeholders: JSON.stringify([]),
+    isBuiltin: true,
+    enabled: true,
+  },
+
+  // ── 结构专业 ──
+  {
+    key: 'dwg_vision_prof_structural_system',
+    module: 'dwg_vision',
+    role: 'system',
+    variant: 'prof_structural',
+    name: 'DWG视觉审查-结构专业-系统提示词',
+    description: '结构专业图纸审查系统提示词，覆盖配筋/抗震等级（GB 50011）',
+    content: `你是一位资深结构专业图纸审查专家，熟悉 GB 50011《建筑抗震设计规范》、GB 50010《混凝土结构设计规范》、GB 50017《钢结构设计标准》等结构标准。
+请从结构专业角度审查工程图纸，重点关注配筋、抗震等级、构件尺寸、连接节点等结构核心要素。
+严格按照 JSON 格式输出，不要添加任何额外说明。`,
+    placeholders: JSON.stringify([]),
+    isBuiltin: true,
+    enabled: true,
+  },
+  {
+    key: 'dwg_vision_prof_structural_user',
+    module: 'dwg_vision',
+    role: 'user',
+    variant: 'prof_structural',
+    name: 'DWG视觉审查-结构专业-用户提示词',
+    description: '结构专业图纸审查用户提示词，检查配筋/抗震等级/构件尺寸/连接节点',
+    content: `请从结构专业角度审查这张工程图纸，重点检查以下方面：
+
+1. 配筋：梁/柱/板配筋率是否满足最小配筋率要求，箍筋加密区长度是否足够，纵筋直径/间距是否标注，配筋是否平衡对称
+2. 抗震等级（GB 50011）：抗震等级是否明确标注，抗震构造措施是否与抗震等级匹配（如轴压比限值、最小配筋率）
+3. 构件尺寸：梁柱截面尺寸是否标注完整，保护层厚度是否注明，是否有尺寸矛盾
+4. 连接节点：梁柱节点钢筋锚固长度是否满足，搭接长度是否足够，节点区箍筋是否加密
+5. 材料强度：混凝土强度等级、钢筋级别是否标注，是否符合抗震要求（如抗震等级一二级用 HRB400 及以上）
+
+对每个发现的问题，输出：
+- reasoning: 推理过程（说明为什么这是问题、引用哪条规范，50-300 字）
+- item: 问题描述
+- location: 位置描述
+- severity: error/warning/info
+- bbox: 归一化坐标 [x1,y1,x2,y2]（0-1000，无法定位填 null）
+- confidence: 置信度（0-1）
+
+输出纯 JSON：{"issues":[{"reasoning":"","item":"","location":"","severity":"","bbox":[x1,y1,x2,y2],"confidence":0.0}],"summary":""}`,
+    placeholders: JSON.stringify([]),
+    isBuiltin: true,
+    enabled: true,
+  },
+
+  // ── 给排水专业 ──
+  {
+    key: 'dwg_vision_prof_plumbing_system',
+    module: 'dwg_vision',
+    role: 'system',
+    variant: 'prof_plumbing',
+    name: 'DWG视觉审查-给排水专业-系统提示词',
+    description: '给排水专业图纸审查系统提示词，覆盖管线综合/标高碰撞/检修空间/管径/坡度',
+    content: `你是一位资深给排水专业图纸审查专家，熟悉 GB 50242《建筑给水排水及采暖工程施工质量验收规范》、GB 50015《建筑给水排水设计标准》等给排水标准。
+请从给排水专业角度审查工程图纸，重点关注管线综合、标高碰撞、检修空间、管径标注、坡度方向等给排水核心要素。
+严格按照 JSON 格式输出，不要添加任何额外说明。`,
+    placeholders: JSON.stringify([]),
+    isBuiltin: true,
+    enabled: true,
+  },
+  {
+    key: 'dwg_vision_prof_plumbing_user',
+    module: 'dwg_vision',
+    role: 'user',
+    variant: 'prof_plumbing',
+    name: 'DWG视觉审查-给排水专业-用户提示词',
+    description: '给排水专业图纸审查用户提示词，检查管线综合/标高/检修/管径/坡度/阀门',
+    content: `请从给排水专业角度审查这张工程图纸，重点检查以下方面：
+
+1. 管线综合：给水管/排水管/消防管是否标高区分，交叉处是否标高冲突，管线密集区是否有足够间距
+2. 标高碰撞：给排水管道与风管/桥架/结构梁是否碰撞，管道坡度方向与标高是否一致
+3. 检修空间：阀门/水表/计量装置前后是否有检修空间，吊顶内管道是否有检修口
+4. 管径标注：管径是否标注（DN/mm），管材是否注明，是否与系统图一致
+5. 坡度方向：排水管坡度是否标注且符合最小坡度要求（DN50≥3%，DN100≥2%），通气管道坡度方向是否正确
+6. 阀门设置：关键节点是否有阀门，消防系统阀门类型是否正确（信号阀/蝶阀/闸阀）
+
+对每个发现的问题，输出：
+- reasoning: 推理过程（说明为什么这是问题、引用哪条规范，50-300 字）
+- item: 问题描述
+- location: 位置描述
+- severity: error/warning/info
+- bbox: 归一化坐标 [x1,y1,x2,y2]（0-1000，无法定位填 null）
+- confidence: 置信度（0-1）
+
+输出纯 JSON：{"issues":[{"reasoning":"","item":"","location":"","severity":"","bbox":[x1,y1,x2,y2],"confidence":0.0}],"summary":""}`,
+    placeholders: JSON.stringify([]),
+    isBuiltin: true,
+    enabled: true,
+  },
+
+  // ── 暖通专业 ──
+  {
+    key: 'dwg_vision_prof_hvac_system',
+    module: 'dwg_vision',
+    role: 'system',
+    variant: 'prof_hvac',
+    name: 'DWG视觉审查-暖通专业-系统提示词',
+    description: '暖通专业图纸审查系统提示词，覆盖管线综合/标高碰撞/检修空间/风管/保温',
+    content: `你是一位资深暖通专业图纸审查专家，熟悉 GB 50736《民用建筑供暖通风与空气调节设计规范》、GB 50243《通风与空调工程施工质量验收规范》等暖通标准。
+请从暖通专业角度审查工程图纸，重点关注管线综合、标高碰撞、检修空间、风管尺寸、保温层、送风口等暖通核心要素。
+严格按照 JSON 格式输出，不要添加任何额外说明。`,
+    placeholders: JSON.stringify([]),
+    isBuiltin: true,
+    enabled: true,
+  },
+  {
+    key: 'dwg_vision_prof_hvac_user',
+    module: 'dwg_vision',
+    role: 'user',
+    variant: 'prof_hvac',
+    name: 'DWG视觉审查-暖通专业-用户提示词',
+    description: '暖通专业图纸审查用户提示词，检查管线综合/标高/检修/风管/保温/送风口',
+    content: `请从暖通专业角度审查这张工程图纸，重点检查以下方面：
+
+1. 管线综合：风管/水管/冷媒管是否标高区分，与给排水/电气管线是否冲突，管线密集区是否有足够间距
+2. 标高碰撞：风管与结构梁/其他管道是否碰撞，送回风管道标高是否合理，冷凝水排水管坡度是否足够
+3. 检修空间：风机盘管/空调箱/阀门前后是否有检修空间，吊顶内风管是否有检修口，VAV 末端是否可触及
+4. 风管尺寸：风管截面尺寸是否标注，风速是否在合理范围（主风管 6-10m/s，支风管 2-5m/s），风管法兰是否标注
+5. 保温层：冷媒管/冷水管/风管是否标注保温材料与厚度，防潮层是否注明，保温层厚度是否满足节能要求
+6. 送风口：送风口/回风口尺寸是否标注，风口位置是否合理，是否与灯具/喷淋头冲突
+
+对每个发现的问题，输出：
+- reasoning: 推理过程（说明为什么这是问题、引用哪条规范，50-300 字）
+- item: 问题描述
+- location: 位置描述
+- severity: error/warning/info
+- bbox: 归一化坐标 [x1,y1,x2,y2]（0-1000，无法定位填 null）
+- confidence: 置信度（0-1）
+
+输出纯 JSON：{"issues":[{"reasoning":"","item":"","location":"","severity":"","bbox":[x1,y1,x2,y2],"confidence":0.0}],"summary":""}`,
+    placeholders: JSON.stringify([]),
+    isBuiltin: true,
+    enabled: true,
+  },
+
+  // ── 电气专业 ──
+  {
+    key: 'dwg_vision_prof_electrical_system',
+    module: 'dwg_vision',
+    role: 'system',
+    variant: 'prof_electrical',
+    name: 'DWG视觉审查-电气专业-系统提示词',
+    description: '电气专业图纸审查系统提示词，覆盖管线综合/标高碰撞/检修空间/桥架/接地/配电',
+    content: `你是一位资深电气专业图纸审查专家，熟悉 GB 50054《低压配电设计规范》、GB 50057《建筑物防雷设计规范》、GB 50303《建筑电气工程施工质量验收规范》等电气标准。
+请从电气专业角度审查工程图纸，重点关注管线综合、标高碰撞、检修空间、电缆桥架、接地系统、配电箱等电气核心要素。
+严格按照 JSON 格式输出，不要添加任何额外说明。`,
+    placeholders: JSON.stringify([]),
+    isBuiltin: true,
+    enabled: true,
+  },
+  {
+    key: 'dwg_vision_prof_electrical_user',
+    module: 'dwg_vision',
+    role: 'user',
+    variant: 'prof_electrical',
+    name: 'DWG视觉审查-电气专业-用户提示词',
+    description: '电气专业图纸审查用户提示词，检查管线综合/标高/检修/桥架/接地/配电箱',
+    content: `请从电气专业角度审查这张工程图纸，重点检查以下方面：
+
+1. 管线综合：强电/弱电桥架是否分设，桥架与风管/水管是否冲突，管线密集区是否有足够间距
+2. 标高碰撞：电缆桥架与结构梁/其他管道是否碰撞，桥架标高是否标注，竖向桥架是否贯通
+3. 检修空间：配电箱/控制箱前后是否有检修空间（操作面≥1.2m），吊顶内接线盒是否可触及
+4. 电缆桥架：桥架规格是否标注（宽×高），填充率是否合理（电力电缆≤40%，控制电缆≤50%），桥架支架间距是否注明
+5. 接地：接地干线是否标注，接地电阻值是否注明（综合接地≤1Ω），等电位连接是否完整，防雷引下线是否连续
+6. 配电箱：配电箱编号/型号是否标注，回路编号是否完整，开关容量与负荷是否匹配，相序是否标注
+
+对每个发现的问题，输出：
+- reasoning: 推理过程（说明为什么这是问题、引用哪条规范，50-300 字）
+- item: 问题描述
+- location: 位置描述
+- severity: error/warning/info
+- bbox: 归一化坐标 [x1,y1,x2,y2]（0-1000，无法定位填 null）
+- confidence: 置信度（0-1）
+
+输出纯 JSON：{"issues":[{"reasoning":"","item":"","location":"","severity":"","bbox":[x1,y1,x2,y2],"confidence":0.0}],"summary":""}`,
+    placeholders: JSON.stringify([]),
+    isBuiltin: true,
+    enabled: true,
+  },
+
+  // ── 工艺专业 ──
+  {
+    key: 'dwg_vision_prof_process_system',
+    module: 'dwg_vision',
+    role: 'system',
+    variant: 'prof_process',
+    name: 'DWG视觉审查-工艺专业-系统提示词',
+    description: '工艺专业图纸审查系统提示词，覆盖管道支吊架/设备基础/流向坡度/管道标识',
+    content: `你是一位资深工艺专业图纸审查专家，熟悉 GB 50316《工业金属管道设计规范》、SH/T 3041《石油化工管道柔性设计规范》等工艺管道标准。
+请从工艺专业角度审查工程图纸，重点关注管道支吊架、设备基础、流向坡度、管道标识等工艺核心要素。
+严格按照 JSON 格式输出，不要添加任何额外说明。`,
+    placeholders: JSON.stringify([]),
+    isBuiltin: true,
+    enabled: true,
+  },
+  {
+    key: 'dwg_vision_prof_process_user',
+    module: 'dwg_vision',
+    role: 'user',
+    variant: 'prof_process',
+    name: 'DWG视觉审查-工艺专业-用户提示词',
+    description: '工艺专业图纸审查用户提示词，检查支吊架/设备基础/流向坡度/管道标识',
+    content: `请从工艺专业角度审查这张工程图纸，重点检查以下方面：
+
+1. 管道支吊架：支吊架位置是否标注，间距是否合理（按管径查表），固定支架与滑动支架是否区分，承重支架是否考虑保温层重量
+2. 设备基础：设备基础尺寸/标高是否标注，地脚螺栓位置是否标注，基础与设备接口是否匹配，检修空间是否预留
+3. 流向坡度：管道流向箭头是否标注，坡度方向与标高是否一致，工艺管道最小坡度是否满足（≥0.3%），特殊介质管道坡度要求是否注明
+4. 管道标识：管道编号/管径/材质/介质是否标注，流向箭头是否完整，管道等级代号是否注明
+5. 管道布置：管道与设备接口是否对齐，管道热膨胀是否考虑（自然补偿/波纹补偿器），管道间距是否满足检修要求
+6. 阀门布置：阀门安装位置是否便于操作（手轮间距≥100mm），阀门类型是否与 P&ID 一致，安全阀入口是否直管段
+
+对每个发现的问题，输出：
+- reasoning: 推理过程（说明为什么这是问题、引用哪条规范，50-300 字）
+- item: 问题描述
+- location: 位置描述
+- severity: error/warning/info
+- bbox: 归一化坐标 [x1,y1,x2,y2]（0-1000，无法定位填 null）
+- confidence: 置信度（0-1）
+
+输出纯 JSON：{"issues":[{"reasoning":"","item":"","location":"","severity":"","bbox":[x1,y1,x2,y2],"confidence":0.0}],"summary":""}`,
+    placeholders: JSON.stringify([]),
+    isBuiltin: true,
+    enabled: true,
+  },
+
+  // ── 核电专业 ──
+  {
+    key: 'dwg_vision_prof_nuclear_system',
+    module: 'dwg_vision',
+    role: 'system',
+    variant: 'prof_nuclear',
+    name: 'DWG视觉审查-核电专业-系统提示词',
+    description: '核电专业图纸审查系统提示词，覆盖焊缝符号/检验等级/NDT 比例/材料选用（HAF/BT）',
+    content: `你是一位资深核电工程图纸审查专家，熟悉 HAF《核安全法规》、NB/T 20003《核电厂机械设备焊接规范》、RCC-M《压水堆核岛机械设备设计建造规则》、ASME BPVC 第 III 卷《核设施构件建造规则》等核电标准。
+请从核电专业角度审查工程图纸，重点关注焊缝符号、检验等级、NDT 比例、材料选用等核电核心要素。
+严格按照 JSON 格式输出，不要添加任何额外说明。`,
+    placeholders: JSON.stringify([]),
+    isBuiltin: true,
+    enabled: true,
+  },
+  {
+    key: 'dwg_vision_prof_nuclear_user',
+    module: 'dwg_vision',
+    role: 'user',
+    variant: 'prof_nuclear',
+    name: 'DWG视觉审查-核电专业-用户提示词',
+    description: '核电专业图纸审查用户提示词，检查焊缝符号/检验等级/NDT 比例/材料选用/安全分级',
+    content: `请从核电专业角度审查这张工程图纸，重点检查以下方面：
+
+1. 焊缝符号：焊缝符号标注是否完整（基本符号/辅助符号/补充符号），坡口形式是否注明，焊缝尺寸是否标注，是否符合 NB/T 20003 或 ASME 第 III 卷
+2. 检验等级：焊缝检验等级是否标注（A/B/C 级或 1/2/3 级），检验等级与安全等级是否匹配，是否符合规范要求
+3. NDT 比例：无损检测比例是否注明（100%/25%/10%），NDT 方法是否标注（RT/UT/MT/PT/ET），比例是否与检验等级匹配
+4. 材料选用：材料牌号是否标注，是否为核电级材料（如 304NG/316NG 核级不锈钢），材料是否与安全等级匹配，是否标注材料追溯要求
+5. 安全分级：安全等级是否标注（安全 1/2/3 级或 SC-1/2/3），规范等级（Code Class 1/2/3），抗震分类（SL-1/SL-2），质量分组（QA1/QA2/QA3）
+6. 焊缝布置：焊缝位置是否避开高应力区，接管焊缝是否标注，焊缝间距是否满足规范（≥50mm），交叉焊缝是否避免
+
+对每个发现的问题，输出：
+- reasoning: 推理过程（说明为什么这是问题、引用哪条规范（HAF/NB&T/RCC-M/ASME），50-300 字）
+- item: 问题描述
+- location: 位置描述
+- severity: error/warning/info
+- bbox: 归一化坐标 [x1,y1,x2,y2]（0-1000，无法定位填 null）
+- confidence: 置信度（0-1）
+
+输出纯 JSON：{"issues":[{"reasoning":"","item":"","location":"","severity":"","bbox":[x1,y1,x2,y2],"confidence":0.0}],"summary":""}`,
+    placeholders: JSON.stringify([]),
+    isBuiltin: true,
+    enabled: true,
+  },
+
+  // ==========================================
+  // DWG 视觉审查 — 图框规范检查（Task 18）
+  // variant: frame_check
+  // 检查图框尺寸、幅面代号（A0/A1/A2/A3）、装订边
+  // ==========================================
+  {
+    key: 'dwg_vision_frame_check_system',
+    module: 'dwg_vision',
+    role: 'system',
+    variant: 'frame_check',
+    name: 'DWG视觉审查-图框规范-系统提示词',
+    description: '图框规范检查系统提示词，检查图框尺寸/幅面代号/装订边是否符合 GB/T 10609.1',
+    content: `你是一位工程图纸规范化审查专家，熟悉 GB/T 10609.1《技术制图 图纸幅面和格式》、GB/T 14689《技术制图 图纸幅面和格式》等制图标准。
+请检查图纸的图框是否符合规范，重点关注幅面尺寸、幅面代号、装订边、标题栏位置等。
+严格按照 JSON 格式输出，不要添加任何额外说明。`,
+    placeholders: JSON.stringify([]),
+    isBuiltin: true,
+    enabled: true,
+  },
+  {
+    key: 'dwg_vision_frame_check_user',
+    module: 'dwg_vision',
+    role: 'user',
+    variant: 'frame_check',
+    name: 'DWG视觉审查-图框规范-用户提示词',
+    description: '图框规范检查用户提示词，检查幅面代号/尺寸/装订边/标题栏位置',
+    content: `请检查这张工程图纸的图框规范性，重点检查以下方面：
+
+1. 幅面代号：图框是否有幅面代号标注（A0/A1/A2/A3/A4），代号是否与实际图框尺寸匹配
+2. 图框尺寸：图框外廓尺寸是否符合标准（A0: 841×1189, A1: 594×841, A2: 420×594, A3: 297×420, A4: 210×297mm）
+3. 装订边：装订边尺寸是否符合规范（a=25mm，c=10mm 或 A0/A1/A2 的 c=10mm，A3/A4 的 c=5mm）
+4. 标题栏位置：标题栏是否位于图框右下角，标题栏方向是否与看图方向一致
+5. 图框线宽：外框线/内框线线宽是否区分（外框粗实线，内框细实线）
+6. 对中符号：图框边缘是否有对中符号（可选，但图纸复制/缩微时应有）
+
+标准幅面尺寸参考（GB/T 14689）：
+- A0: 841×1189mm，面积 1m²
+- A1: 594×841mm
+- A2: 420×594mm
+- A3: 297×420mm
+- A4: 210×297mm
+装订边：a=25mm（左侧），c=10mm（A0/A1/A2）或 c=5mm（A3/A4）
+
+对每个发现的问题，输出：
+- reasoning: 推理过程（说明为什么不符合规范，50-200 字）
+- item: 问题描述
+- location: 位置描述
+- severity: error/warning/info
+- bbox: 归一化坐标 [x1,y1,x2,y2]（0-1000，无法定位填 null）
+- confidence: 置信度（0-1）
+
+同时输出图框信息：
+- frameSize: 识别到的幅面代号（A0/A1/A2/A3/A4/unknown）
+- frameWidth: 图框宽度（mm，识别到则填，否则 0）
+- frameHeight: 图框高度（mm，识别到则填，否则 0）
+- hasTitleBlock: 是否有标题栏（true/false）
+- hasBindingMargin: 是否有装订边（true/false）
+
+输出纯 JSON：{"frameSize":"","frameWidth":0,"frameHeight":0,"hasTitleBlock":false,"hasBindingMargin":false,"issues":[{"reasoning":"","item":"","location":"","severity":"","bbox":[x1,y1,x2,y2],"confidence":0.0}],"summary":""}`,
+    placeholders: JSON.stringify([]),
     isBuiltin: true,
     enabled: true,
   },
