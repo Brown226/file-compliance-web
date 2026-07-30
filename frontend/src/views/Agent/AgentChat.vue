@@ -47,13 +47,30 @@
               </div>
             </template>
 
-            <!-- 文本内容 -->
-            <div
-              v-if="message.role === 'assistant'"
-              class="markdown-content"
-              v-html="renderMarkdown(getMessageText(message))"
-            ></div>
-            <div v-else class="text-content">{{ getMessageText(message) }}</div>
+            <!-- Task 16：结构化审查结果卡片（检测 ReviewIssue[] JSON 代码块）-->
+            <template v-if="message.role === 'assistant' && hasIssues(message)">
+              <div
+                v-if="extractIssuesFromMessage(message).beforeText"
+                class="markdown-content"
+                v-html="renderMarkdown(extractIssuesFromMessage(message).beforeText)"
+              ></div>
+              <AgentIssueList :issues="extractIssuesFromMessage(message).issues" />
+              <div
+                v-if="extractIssuesFromMessage(message).afterText"
+                class="markdown-content"
+                v-html="renderMarkdown(extractIssuesFromMessage(message).afterText)"
+              ></div>
+            </template>
+
+            <!-- 普通文本内容（无结构化结果时） -->
+            <template v-else>
+              <div
+                v-if="message.role === 'assistant'"
+                class="markdown-content"
+                v-html="renderMarkdown(getMessageText(message))"
+              ></div>
+              <div v-else class="text-content">{{ getMessageText(message) }}</div>
+            </template>
           </div>
           <div
             v-if="
@@ -148,6 +165,7 @@ import { useAgentChat } from '@/composables/useAgentChat'
 import { useMarkdown } from '@/composables/useMarkdown'
 import { useUserStore } from '@/stores/user'
 import ToolCallChip from './components/ToolCallChip.vue'
+import AgentIssueList from './components/AgentIssueList.vue'
 
 const userStore = useUserStore()
 const { renderMarkdown } = useMarkdown()
@@ -174,6 +192,68 @@ function getMessageText(message: UIMessage): string {
  */
 function getToolCallParts(message: UIMessage): any[] {
   return message.parts.filter((p: any) => typeof p?.type === 'string' && p.type.startsWith('tool-'))
+}
+
+/**
+ * Task 16：从 assistant 消息文本中提取 ReviewIssue[] JSON
+ *
+ * 检测策略：
+ * 1. 扫描 ```json 代码块
+ * 2. 尝试 JSON.parse，判断是否为数组
+ * 3. 数组首项含 issueType/originalText/severity 等字段之一 → 视为审查结果
+ *
+ * 返回：{ issues, beforeText, afterText } — issues 为空数组时表示无结构化结果
+ */
+function extractIssuesFromMessage(message: UIMessage): {
+  issues: any[]
+  beforeText: string
+  afterText: string
+} {
+  if (message.role !== 'assistant') {
+    return { issues: [], beforeText: '', afterText: '' }
+  }
+
+  const text = getMessageText(message)
+  if (!text) return { issues: [], beforeText: '', afterText: '' }
+
+  // 匹配所有 ```json ... ``` 代码块
+  const jsonBlockRegex = /```json\s*\n([\s\S]*?)\n```/g
+  const matches: { content: string; index: number; endIndex: number }[] = []
+  let m: RegExpExecArray | null
+  while ((m = jsonBlockRegex.exec(text)) !== null) {
+    matches.push({
+      content: m[1],
+      index: m.index,
+      endIndex: m.index + m[0].length,
+    })
+  }
+
+  // 找到第一个能解析为 ReviewIssue[] 的 JSON 块
+  for (const match of matches) {
+    try {
+      const parsed = JSON.parse(match.content)
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        // 检测首项是否像 ReviewIssue（含 issueType 或 originalText 字段）
+        const first = parsed[0]
+        if (first && typeof first === 'object' && ('issueType' in first || 'originalText' in first || 'severity' in first)) {
+          return {
+            issues: parsed,
+            beforeText: text.slice(0, match.index).trim(),
+            afterText: text.slice(match.endIndex).trim(),
+          }
+        }
+      }
+    } catch {
+      // JSON 解析失败，继续尝试下一个块
+    }
+  }
+
+  return { issues: [], beforeText: text, afterText: '' }
+}
+
+/** 判断消息是否含结构化审查结果 */
+function hasIssues(message: UIMessage): boolean {
+  return extractIssuesFromMessage(message).issues.length > 0
 }
 
 /** 打字指示器：加载中且（无最后助手消息或其文本为空） */
