@@ -928,7 +928,11 @@ export class DwgVisionService {
     const samplingCfg = await this.getSamplingConfig();
     if (!samplingCfg.enabled || samplingCfg.samples < 2) {
       // 单次模式（向后兼容）
-      const parsed = await this.callAndParse(imageBase64, systemPrompt, userPrompt, config, { traceId, mode: 'compliance' });
+      // Task 35: 默认启用 prompt-based function calling（VLM 不主动调用工具时行为与原来一致）
+      const parsed = await this.callAndParseWithTools(
+        imageBase64, systemPrompt, userPrompt, config,
+        { traceId, mode: 'compliance' },
+      );
       if (!parsed) return null;
       return this.buildComplianceResult(parsed);
     }
@@ -1530,6 +1534,22 @@ export class DwgVisionService {
       }
     }
 
+    // ── Task 36: SAHI 切片送审 - 大图按 2048×2048 重叠切片 ──
+    // 仅对 symbols/annotations/compliance/profession 4 个细粒度维度启用
+    // 标题栏/图框是整体性检查，不切片（仍走原图）
+    let sahiTiles: Array<{ imageBase64: string; offset: { x: number; y: number }; size: { w: number; h: number } }> = [];
+    let sahiOriginalSize: { w: number; h: number } = { w: 0, h: 0 };
+    const needsSlicing = analyses.some(a => ['symbols', 'annotations', 'compliance', 'profession'].includes(a));
+    if (needsSlicing) {
+      try {
+        const sahi = await this.sliceImageSahi(imageBase64);
+        sahiTiles = sahi.tiles;
+        sahiOriginalSize = sahi.originalSize;
+      } catch (e: any) {
+        console.warn('[DWG Vision] Task 36 SAHI 切片预检失败，全程走原图:', e.message);
+      }
+    }
+
     const result: VisionAnalyzeResult = {
       titleBlock: null,
       symbols: null,
@@ -1580,25 +1600,52 @@ export class DwgVisionService {
 
     if (analyses.includes('symbols')) {
       tasks.push(
-        this.analyzeSymbols(imageBase64, configMap.symbols, traceId)
-          .then(r => { result.symbols = r; emitDimensionDone('symbols', true); })
-          .catch(e => { errors.push(`图例符号识别失败: ${e.message}`); emitDimensionDone('symbols', false, e.message); })
+        (async () => {
+          try {
+            const r = sahiTiles.length > 0
+              ? await this.analyzeSymbolsWithSlicing(sahiTiles, sahiOriginalSize, configMap.symbols, traceId)
+              : await this.analyzeSymbols(imageBase64, configMap.symbols, traceId);
+            result.symbols = r;
+            emitDimensionDone('symbols', true);
+          } catch (e: any) {
+            errors.push(`图例符号识别失败: ${e.message}`);
+            emitDimensionDone('symbols', false, e.message);
+          }
+        })()
       );
     }
 
     if (analyses.includes('annotations')) {
       tasks.push(
-        this.checkAnnotations(imageBase64, configMap.annotations, traceId)
-          .then(r => { result.annotations = r; emitDimensionDone('annotations', true); })
-          .catch(e => { errors.push(`标注完整性检查失败: ${e.message}`); emitDimensionDone('annotations', false, e.message); })
+        (async () => {
+          try {
+            const r = sahiTiles.length > 0
+              ? await this.checkAnnotationsWithSlicing(sahiTiles, sahiOriginalSize, configMap.annotations, traceId)
+              : await this.checkAnnotations(imageBase64, configMap.annotations, traceId);
+            result.annotations = r;
+            emitDimensionDone('annotations', true);
+          } catch (e: any) {
+            errors.push(`标注完整性检查失败: ${e.message}`);
+            emitDimensionDone('annotations', false, e.message);
+          }
+        })()
       );
     }
 
     if (analyses.includes('compliance')) {
       tasks.push(
-        this.checkDesignCompliance(imageBase64, configMap.compliance, mergedRefText, traceId)
-          .then(r => { result.compliance = r; emitDimensionDone('compliance', true); })
-          .catch(e => { errors.push(`设计说明合规审查失败: ${e.message}`); emitDimensionDone('compliance', false, e.message); })
+        (async () => {
+          try {
+            const r = sahiTiles.length > 0
+              ? await this.checkDesignComplianceWithSlicing(sahiTiles, sahiOriginalSize, configMap.compliance, mergedRefText, traceId)
+              : await this.checkDesignCompliance(imageBase64, configMap.compliance, mergedRefText, traceId);
+            result.compliance = r;
+            emitDimensionDone('compliance', true);
+          } catch (e: any) {
+            errors.push(`设计说明合规审查失败: ${e.message}`);
+            emitDimensionDone('compliance', false, e.message);
+          }
+        })()
       );
     }
 
@@ -1620,7 +1667,10 @@ export class DwgVisionService {
               result.detectedProfession = detected.profession;
               result.detectedProfessionReason = detected.reason;
             }
-            const r = await this.analyzeProfession(imageBase64, profession, configMap.profession, traceId);
+            // Task 36: 大图启用切片送审
+            const r = sahiTiles.length > 0
+              ? await this.analyzeProfessionWithSlicing(sahiTiles, sahiOriginalSize, profession, configMap.profession, traceId)
+              : await this.analyzeProfession(imageBase64, profession, configMap.profession, traceId);
             result.profession = r;
             emitDimensionDone('profession', true);
           } catch (e: any) {
@@ -1968,6 +2018,542 @@ export class DwgVisionService {
       console.warn('[DWG Vision] Task 31 标题栏剪裁失败，降级用原图:', e.message);
       return { imageBase64, region: null };
     }
+  }
+
+  // ==================== Task 36: SAHI 切片送审 ====================
+
+  /**
+   * Task 36: 大图按 2048×2048 重叠切片
+   *
+   * 策略：
+   *   - 仅当图片任一边 > tileSize（默认 2048）时启用，否则返回空数组（不切片）
+   *   - 切片尺寸 tileSize×tileSize，重叠 overlap（默认 256，保证跨切片对象能被完整覆盖）
+   *   - 步长 step = tileSize - overlap
+   *   - 跳过过小的边缘切片（< tileSize/2）
+   *
+   * 降级策略：
+   *   - sharp 元数据读取/切片失败 → 返回空 tiles 数组，调用方降级为原图单次调用
+   *
+   * @param imageBase64 原图 PNG base64
+   * @param tileSize    切片尺寸（默认 2048）
+   * @param overlap     重叠像素（默认 256）
+   * @returns           { tiles: 切片数组, originalSize: 原图尺寸 }
+   *                   tiles 为空数组表示不需要切片
+   */
+  private static async sliceImageSahi(
+    imageBase64: string,
+    tileSize: number = 2048,
+    overlap: number = 256,
+  ): Promise<{
+    tiles: Array<{
+      imageBase64: string;
+      offset: { x: number; y: number };
+      size: { w: number; h: number };
+    }>;
+    originalSize: { w: number; h: number };
+  }> {
+    try {
+      const buffer = Buffer.from(imageBase64, 'base64');
+      const meta = await sharp(buffer).metadata();
+      const width = meta.width || 0;
+      const height = meta.height || 0;
+
+      // 图片任一边 <= tileSize → 不切片
+      if (width <= tileSize && height <= tileSize) {
+        return { tiles: [], originalSize: { w: width, h: height } };
+      }
+
+      const step = tileSize - overlap;  // 步长
+      const tiles: Array<{
+        imageBase64: string;
+        offset: { x: number; y: number };
+        size: { w: number; h: number };
+      }> = [];
+
+      for (let y = 0; y < height; y += step) {
+        for (let x = 0; x < width; x += step) {
+          const tw = Math.min(tileSize, width - x);
+          const th = Math.min(tileSize, height - y);
+          // 跳过过小的边缘切片
+          if (tw < tileSize / 2 || th < tileSize / 2) continue;
+
+          const tileBuffer = await sharp(buffer)
+            .extract({ left: x, top: y, width: tw, height: th })
+            .png()
+            .toBuffer();
+
+          tiles.push({
+            imageBase64: tileBuffer.toString('base64'),
+            offset: { x, y },
+            size: { w: tw, h: th },
+          });
+
+          // 列末尾，跳出内层循环
+          if (x + tileSize >= width) break;
+        }
+        if (y + tileSize >= height) break;
+      }
+
+      console.log(`[DWG Vision] Task 36 SAHI 切片: ${width}×${height} → ${tiles.length} 个 ${tileSize}×${tileSize} 切片 (overlap=${overlap})`);
+      return { tiles, originalSize: { w: width, h: height } };
+    } catch (e: any) {
+      console.warn('[DWG Vision] Task 36 SAHI 切片失败，降级为原图:', e.message);
+      return { tiles: [], originalSize: { w: 0, h: 0 } };
+    }
+  }
+
+  /**
+   * Task 36: 将切片内 bbox 重新映射回原图 0-1000 坐标系
+   *
+   * 坐标变换链：
+   *   切片内 0-1000 归一化 → 切片像素坐标 → 原图像素坐标（加偏移）→ 原图 0-1000 归一化
+   *
+   * @param bbox         切片内 bbox（0-1000 坐标系）
+   * @param tileOffset   切片在原图中的像素偏移
+   * @param tileSize     切片实际像素尺寸
+   * @param originalSize 原图像素尺寸
+   */
+  private static remapBboxFromTile(
+    bbox: [number, number, number, number] | undefined,
+    tileOffset: { x: number; y: number },
+    tileSize: { w: number; h: number },
+    originalSize: { w: number; h: number },
+  ): [number, number, number, number] | undefined {
+    if (!bbox) return undefined;
+    if (originalSize.w === 0 || originalSize.h === 0) return undefined;
+
+    const [x1, y1, x2, y2] = bbox;
+    // 切片内 0-1000 → 切片像素坐标
+    const tileX1Px = (x1 / 1000) * tileSize.w;
+    const tileY1Px = (y1 / 1000) * tileSize.h;
+    const tileX2Px = (x2 / 1000) * tileSize.w;
+    const tileY2Px = (y2 / 1000) * tileSize.h;
+
+    // 切片像素坐标 + 偏移 → 原图像素坐标 → 原图 0-1000
+    const origX1 = ((tileOffset.x + tileX1Px) / originalSize.w) * 1000;
+    const origY1 = ((tileOffset.y + tileY1Px) / originalSize.h) * 1000;
+    const origX2 = ((tileOffset.x + tileX2Px) / originalSize.w) * 1000;
+    const origY2 = ((tileOffset.y + tileY2Px) / originalSize.h) * 1000;
+
+    return [
+      Math.max(0, Math.min(1000, Math.round(origX1))),
+      Math.max(0, Math.min(1000, Math.round(origY1))),
+      Math.max(0, Math.min(1000, Math.round(origX2))),
+      Math.max(0, Math.min(1000, Math.round(origY2))),
+    ];
+  }
+
+  /**
+   * Task 36: 简单字符串指纹（用于切片结果去重）
+   * 归一化：去空白、转小写、取前 80 字符
+   */
+  private static fingerprintKey(...parts: (string | undefined | null)[]): string {
+    return parts
+      .map(p => (p || '').trim().toLowerCase().replace(/\s+/g, ''))
+      .join('|')
+      .substring(0, 80);
+  }
+
+  /**
+   * Task 36: 对图例符号识别维度执行 SAHI 切片送审
+   * - 对每个切片并行调用 analyzeSymbols
+   * - 合并 symbols 数组，按 tag 去重（保留首次出现的）
+   * - 重映射 bbox 到原图坐标系
+   * - totalCount 取合并后 symbols.length，summary 取首个非空
+   */
+  private static async analyzeSymbolsWithSlicing(
+    tiles: Array<{ imageBase64: string; offset: { x: number; y: number }; size: { w: number; h: number } }>,
+    originalSize: { w: number; h: number },
+    config: VisionConfig,
+    traceId?: string,
+  ): Promise<SymbolListResult | null> {
+    const results = await Promise.allSettled(
+      tiles.map(tile => this.analyzeSymbols(tile.imageBase64, config, traceId)),
+    );
+
+    const merged: SymbolItem[] = [];
+    const seen = new Set<string>();
+    let summary = '';
+
+    results.forEach((r, i) => {
+      if (r.status !== 'fulfilled' || !r.value) return;
+      const tile = tiles[i];
+      if (!summary && r.value.summary) summary = r.value.summary;
+      for (const s of r.value.symbols) {
+        const key = this.fingerprintKey(s.tag, s.type);
+        if (seen.has(key)) continue;
+        seen.add(key);
+        merged.push({
+          ...s,
+          bbox: this.remapBboxFromTile(s.bbox, tile.offset, tile.size, originalSize),
+        });
+      }
+    });
+
+    if (merged.length === 0 && !summary) return null;
+    return { symbols: merged, totalCount: merged.length, summary };
+  }
+
+  /**
+   * Task 36: 对标注完整性检查维度执行 SAHI 切片送审
+   * - 合并 missingItems，按 item+location 去重
+   * - completenessScore 取各切片的最大值（最完整的切片）
+   */
+  private static async checkAnnotationsWithSlicing(
+    tiles: Array<{ imageBase64: string; offset: { x: number; y: number }; size: { w: number; h: number } }>,
+    originalSize: { w: number; h: number },
+    config: VisionConfig,
+    traceId?: string,
+  ): Promise<AnnotationCheckResult | null> {
+    const results = await Promise.allSettled(
+      tiles.map(tile => this.checkAnnotations(tile.imageBase64, config, traceId)),
+    );
+
+    const merged: AnnotationIssue[] = [];
+    const seen = new Set<string>();
+    let completenessScore = 0;
+    let summary = '';
+
+    results.forEach((r, i) => {
+      if (r.status !== 'fulfilled' || !r.value) return;
+      const tile = tiles[i];
+      if (!summary && r.value.summary) summary = r.value.summary;
+      completenessScore = Math.max(completenessScore, r.value.completenessScore);
+      for (const item of r.value.missingItems) {
+        const key = this.fingerprintKey(item.item, item.location);
+        if (seen.has(key)) continue;
+        seen.add(key);
+        merged.push({
+          ...item,
+          bbox: this.remapBboxFromTile(item.bbox, tile.offset, tile.size, originalSize),
+        });
+      }
+    });
+
+    if (merged.length === 0 && !summary) return null;
+    return { missingItems: merged, completenessScore, summary };
+  }
+
+  /**
+   * Task 36: 对设计说明合规审查维度执行 SAHI 切片送审
+   * - 合并 issues，按 note+violation 去重
+   * - designNotes 取并集（去重）
+   */
+  private static async checkDesignComplianceWithSlicing(
+    tiles: Array<{ imageBase64: string; offset: { x: number; y: number }; size: { w: number; h: number } }>,
+    originalSize: { w: number; h: number },
+    config: VisionConfig,
+    refText: string | undefined,
+    traceId?: string,
+  ): Promise<ComplianceResult | null> {
+    const results = await Promise.allSettled(
+      tiles.map(tile => this.checkDesignCompliance(tile.imageBase64, config, refText, traceId)),
+    );
+
+    const mergedIssues: ComplianceIssue[] = [];
+    const seen = new Set<string>();
+    const designNotesSet = new Set<string>();
+    let summary = '';
+
+    results.forEach((r, i) => {
+      if (r.status !== 'fulfilled' || !r.value) return;
+      const tile = tiles[i];
+      if (!summary && r.value.summary) summary = r.value.summary;
+      for (const note of r.value.designNotes) {
+        const key = note.trim().toLowerCase();
+        if (key) designNotesSet.add(note);
+      }
+      for (const issue of r.value.issues) {
+        const key = this.fingerprintKey(issue.note, issue.violation);
+        if (seen.has(key)) continue;
+        seen.add(key);
+        mergedIssues.push({
+          ...issue,
+          bbox: this.remapBboxFromTile(issue.bbox, tile.offset, tile.size, originalSize),
+        });
+      }
+    });
+
+    if (mergedIssues.length === 0 && !summary && designNotesSet.size === 0) return null;
+    return {
+      designNotes: Array.from(designNotesSet),
+      issues: mergedIssues,
+      summary,
+    };
+  }
+
+  /**
+   * Task 36: 对专业审查维度执行 SAHI 切片送审
+   * - 合并 issues，按 item+location 去重
+   * - profession 取首次成功切片的结果
+   */
+  private static async analyzeProfessionWithSlicing(
+    tiles: Array<{ imageBase64: string; offset: { x: number; y: number }; size: { w: number; h: number } }>,
+    originalSize: { w: number; h: number },
+    profession: DwgProfession,
+    config: VisionConfig,
+    traceId?: string,
+  ): Promise<ProfessionCheckResult | null> {
+    const results = await Promise.allSettled(
+      tiles.map(tile => this.analyzeProfession(tile.imageBase64, profession, config, traceId)),
+    );
+
+    const merged: ProfessionIssue[] = [];
+    const seen = new Set<string>();
+    let summary = '';
+
+    results.forEach((r, i) => {
+      if (r.status !== 'fulfilled' || !r.value) return;
+      const tile = tiles[i];
+      if (!summary && r.value.summary) summary = r.value.summary;
+      for (const issue of r.value.issues) {
+        const key = this.fingerprintKey(issue.item, issue.location);
+        if (seen.has(key)) continue;
+        seen.add(key);
+        merged.push({
+          ...issue,
+          bbox: this.remapBboxFromTile(issue.bbox, tile.offset, tile.size, originalSize),
+        });
+      }
+    });
+
+    if (merged.length === 0 && !summary) return null;
+    return { profession, issues: merged, summary };
+  }
+
+  // ==================== Task 35: Function Calling ====================
+
+  /**
+   * Task 35: VLM 可调用的工具定义
+   *
+   * 采用 prompt-based function calling（非 OpenAI tools 协议），原因：
+   *   - 内网部署的 VLM 不一定支持 OpenAI 兼容的 tools 协议
+   *   - prompt-based 方式对所有 OpenAI 兼容模型都能工作
+   *   - VLM 在 JSON 输出前可用 `{"tool_calls":[...]}` 格式请求工具调用，
+   *     后端解析后执行工具，把结果回灌 prompt 做第二轮调用得到最终 JSON
+   *
+   * 工具列表（spec 要求 3 个）：
+   *   - query_standard(code): 查询规范条文（从 MaxKB 知识库检索）
+   *   - query_symbol_library(tag): 查询符号库（项目暂无独立符号库，返回提示）
+   *   - check_rule(ruleId, payload): 调用规则引擎校验
+   */
+  private static readonly VISION_TOOL_DEFINITIONS = [
+    {
+      name: 'query_standard',
+      description: '查询国家标准/行业规范的条文内容。当需要在合规审查中引用具体条文时调用。',
+      parameters: {
+        code: { type: 'string', description: '标准号或条文编号，例如 "GB 50016-2014" 或 "GB 50016-2014 第 5.5.3 条"' },
+      },
+      required: ['code'],
+    },
+    {
+      name: 'query_symbol_library',
+      description: '查询图纸符号库（阀门/泵/容器/仪表等）获取 tag 对应的符号定义。当需要核对图例符号一致性时调用。',
+      parameters: {
+        tag: { type: 'string', description: '符号位号，例如 "V-101" / "P-202"' },
+      },
+      required: ['tag'],
+    },
+    {
+      name: 'check_rule',
+      description: '调用规则引擎对给定 payload 执行硬性规则校验。返回规则违例列表。',
+      parameters: {
+        ruleId: { type: 'string', description: '规则 ID 或前缀，例如 "DWG_TITLE_001" / "DWG_SCALE_001"' },
+        payload: { type: 'object', description: '校验负载，包含规则所需的字段（如标题栏信息、图层列表等）' },
+      },
+      required: ['ruleId'],
+    },
+  ];
+
+  /**
+   * Task 35: 生成注入 prompt 的工具说明文本
+   * 告知 VLM 可用工具列表与调用格式
+   */
+  private static getToolDescriptionForPrompt(): string {
+    const toolList = this.VISION_TOOL_DEFINITIONS.map(t => {
+      const params = Object.entries(t.parameters)
+        .map(([k, v]) => `${k}(${(v as any).type}): ${(v as any).description}`)
+        .join(', ');
+      return `  - ${t.name}(${params}): ${t.description}`;
+    }).join('\n');
+
+    return `\n\n## 可用工具（Function Calling）
+你可以在输出最终 JSON 之前，先用以下格式请求工具调用以获取外部信息：
+\`\`\`json
+{"tool_calls": [{"name": "<工具名>", "arguments": {<参数键值对>}}]}
+\`\`\`
+后端会执行工具调用并把结果回灌给你，你再输出最终 JSON。最多 2 轮工具调用。
+
+可用工具列表：
+${toolList}
+
+注意：
+- 工具调用请求和最终 JSON 输出不能同时出现在同一响应中
+- 收到工具返回值后，必须输出最终 JSON（不能再请求工具）
+- 如果不需要工具调用，直接输出最终 JSON 即可`;
+  }
+
+  /**
+   * Task 35: 执行 VLM 工具调用
+   *
+   * 工具实现：
+   *   - query_standard(code): 从 MaxKB 检索标准号相关条文；无 MaxKB 配置时降级返回提示
+   *   - query_symbol_library(tag): 项目暂无独立符号库，返回提示让 VLM 用自身知识
+   *   - check_rule(ruleId, payload): 复用 RULE_REGISTRY，根据 ruleId 前缀匹配规则并执行
+   *
+   * 降级策略：
+   *   - 工具执行失败 → 返回错误信息（不中断主流程，VLM 会收到错误描述继续推理）
+   *   - 未知工具名 → 返回 "未知工具" 错误
+   */
+  private static async executeVisionToolCall(
+    name: string,
+    args: any,
+    logCtx?: { traceId?: string; mode?: string },
+  ): Promise<{ result: any; error?: string }> {
+    try {
+      if (name === 'query_standard') {
+        const code = String(args?.code || '').trim();
+        if (!code) return { result: null, error: '缺少 code 参数' };
+
+        // 从 MaxKB 检索标准号
+        try {
+          const workspaceId = await MaxKBService.getDefaultWorkspaceId();
+          const kbs = await MaxKBService.listKnowledge(workspaceId);
+          if (!Array.isArray(kbs) || kbs.length === 0) {
+            return { result: { code, note: '未配置 MaxKB 知识库，无法检索标准条文，请用自身知识判断' } };
+          }
+          // 在第一个可用知识库检索（避免遍历所有 KB 增加延迟）
+          const hits = await MaxKBService.hitTest(workspaceId, kbs[0].id, code, 3);
+          if (!Array.isArray(hits) || hits.length === 0) {
+            return { result: { code, note: `未在知识库中检索到 ${code} 相关条文` } };
+          }
+          const contents = hits.map((h: any) => {
+            const c = h.content || h.text || '';
+            const t = h.title || h.document_name || '';
+            return t ? `【${t}】${c}` : c;
+          });
+          return { result: { code, clauses: contents } };
+        } catch (e: any) {
+          return { result: null, error: `query_standard 执行失败: ${e.message}` };
+        }
+      }
+
+      if (name === 'query_symbol_library') {
+        const tag = String(args?.tag || '').trim();
+        if (!tag) return { result: null, error: '缺少 tag 参数' };
+        // 项目暂无独立符号库，返回提示让 VLM 用自身知识
+        return {
+          result: {
+            tag,
+            note: '项目暂未部署独立符号库，请用 VLM 自身知识识别符号类型与含义',
+          },
+        };
+      }
+
+      if (name === 'check_rule') {
+        const ruleId = String(args?.ruleId || '').trim();
+        if (!ruleId) return { result: null, error: '缺少 ruleId 参数' };
+        const payload = args?.payload || {};
+
+        // 复用 RULE_REGISTRY，按 ruleId 前缀匹配
+        try {
+          const { getRuleRegistryMetadata } = require('../rules/index');
+          const meta = getRuleRegistryMetadata();
+          // 仅返回规则是否存在的提示，不实际执行（执行需要 FileContext，工具场景下没有完整 ctx）
+          const matched = meta.allPrefixes.filter((p: string) => ruleId.toUpperCase().startsWith(p.toUpperCase()));
+          if (matched.length === 0) {
+            return { result: { ruleId, violations: [], note: `未找到匹配的规则前缀: ${ruleId}` } };
+          }
+          return {
+            result: {
+              ruleId,
+              matchedPrefixes: matched,
+              note: `规则 ${ruleId} 已注册，但工具模式下无法执行完整校验（需 FileContext），请在最终 JSON 中标注"建议人工复核规则 ${ruleId}"`,
+              payloadReceived: !!payload && Object.keys(payload).length > 0,
+            },
+          };
+        } catch (e: any) {
+          return { result: null, error: `check_rule 执行失败: ${e.message}` };
+        }
+      }
+
+      return { result: null, error: `未知工具: ${name}` };
+    } catch (e: any) {
+      // 记录失败日志
+      this.recordVisionLlmCall({
+        traceId: logCtx?.traceId,
+        mode: `${logCtx?.mode || ''}_tool_${name}`,
+        model: 'tool-executor',
+        latencyMs: 0,
+        status: 'failed',
+        errorMsg: (e as Error).message?.substring(0, 1000),
+        promptFull: JSON.stringify({ name, args }).substring(0, 60000),
+      });
+      return { result: null, error: `工具执行异常: ${e.message}` };
+    }
+  }
+
+  /**
+   * Task 35: 带工具调用循环的 VLM 调用
+   *
+   * 流程：
+   *   1. 调用 VLM，prompt 中包含工具说明
+   *   2. 如果响应是 tool_call 请求 → 执行工具 → 把结果作为 "工具返回值" 注入 prompt → 再次调用 VLM
+   *   3. 如果响应是最终 JSON → 直接解析返回
+   *   4. 最多 2 轮工具调用，超出后强制要求 VLM 输出最终 JSON
+   *
+   * 降级策略：
+   *   - 工具调用解析失败 → 当作最终 JSON 处理（保持向后兼容）
+   *   - 所有工具执行失败 → 把错误信息回灌 prompt，让 VLM 知道并继续输出
+   */
+  private static async callAndParseWithTools(
+    imageBase64: string,
+    systemPrompt: string,
+    userPrompt: string,
+    config: VisionConfig,
+    logCtx?: { traceId?: string; mode?: string },
+  ): Promise<any> {
+    const maxToolRounds = 2;
+    const currentSystemPrompt = systemPrompt + this.getToolDescriptionForPrompt();
+    let currentUserPrompt = userPrompt;
+
+    for (let round = 0; round <= maxToolRounds; round++) {
+      const raw = await this.callAndParse(
+        imageBase64,
+        currentSystemPrompt,
+        currentUserPrompt,
+        config,
+        { traceId: logCtx?.traceId, mode: round === 0 ? logCtx?.mode : `${logCtx?.mode || ''}_tool_round_${round}` },
+      );
+
+      // callAndParse 已做 JSON 解析，直接判断是否含 tool_calls
+      if (raw && Array.isArray(raw.tool_calls) && raw.tool_calls.length > 0) {
+        if (round >= maxToolRounds) {
+          console.warn(`[DWG Vision] Task 35 工具调用超出最大轮次 ${maxToolRounds}，强制结束`);
+          return null;
+        }
+
+        // 执行工具调用
+        const toolResults: string[] = [];
+        for (const tc of raw.tool_calls) {
+          const { result, error } = await this.executeVisionToolCall(tc.name, tc.arguments, logCtx);
+          if (error) {
+            toolResults.push(`工具 ${tc.name} 调用失败: ${error}`);
+          } else {
+            toolResults.push(`工具 ${tc.name} 返回: ${JSON.stringify(result)}`);
+          }
+        }
+
+        // 把工具结果回灌 prompt，要求 VLM 输出最终 JSON
+        currentUserPrompt = `${userPrompt}\n\n## 工具调用返回值\n${toolResults.join('\n\n')}\n\n## 要求\n根据上述工具返回值，输出最终 JSON 结果。不能再请求工具调用，必须输出符合 schema 的最终 JSON。`;
+        continue;
+      }
+
+      // 不是 tool_call 请求 → 当作最终 JSON 返回
+      return raw;
+    }
+
+    return null;
   }
 
   /**

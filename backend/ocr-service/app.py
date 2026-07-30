@@ -611,6 +611,133 @@ async def ocr_table_base64(data: dict):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+# ==================== Batch Layout Analysis (Task 38) ====================
+
+def _do_layout_single(file_bytes: bytes, file_type: str | None, file_name: str | None) -> dict:
+    """单张图片的版面分析（复用 _do_layout 逻辑，错误时返回 error 字段而非抛异常）。
+
+    用于批量接口内部调用，避免单张失败影响整批。
+    """
+    try:
+        return _do_layout(file_bytes, file_type, file_name)
+    except HTTPException as e:
+        return {'error': e.detail if hasattr(e, 'detail') else str(e), 'fileName': file_name}
+    except Exception as e:
+        return {'error': str(e), 'fileName': file_name}
+
+
+@app.post('/api/layout/batch')
+async def layout_analysis_batch(files: List[UploadFile] = File(...)):
+    """
+    Task 38: 批量版面分析接口
+
+    接收多张图片（multipart/form-data，字段名 files），复用 PaddleOCR PPStructureV3 实例
+    串行批推理（PaddleOCR 实例非线程安全，避免并发调用），返回与输入顺序一致的结果数组。
+
+    - 单张失败不影响其他图片，失败项返回 { error, fileName }
+    - 全部失败时仍返回 200，结果数组中每项都含 error 字段
+    - 单次最多 20 张图片（防止内存爆炸）
+
+    返回格式: { results: [{ layout, markdown } | { error, fileName }, ...], total, succeeded, failed }
+    """
+    if not files:
+        raise HTTPException(status_code=400, detail='缺少图片文件')
+
+    BATCH_LIMIT = 20
+    if len(files) > BATCH_LIMIT:
+        raise HTTPException(status_code=400, detail=f'批量接口单次最多 {BATCH_LIMIT} 张图片，本次提交 {len(files)} 张')
+
+    # 一次性读取所有文件内容（避免 upload file 句柄在异步循环中过期）
+    payloads: List[tuple] = []
+    for f in files:
+        contents = await f.read()
+        payloads.append((contents, f.content_type or f.filename, f.filename))
+
+    # PaddleOCR 实例非线程安全，串行处理
+    results: List[dict] = []
+    succeeded = 0
+    failed = 0
+    for file_bytes, file_type, file_name in payloads:
+        if not file_bytes:
+            results.append({'error': '空文件', 'fileName': file_name})
+            failed += 1
+            continue
+        r = _do_layout_single(file_bytes, file_type, file_name)
+        if 'error' in r:
+            failed += 1
+        else:
+            succeeded += 1
+        if file_name:
+            r.setdefault('fileName', file_name)
+        results.append(r)
+
+    log_to_file(f'Batch layout: total={len(results)}, succeeded={succeeded}, failed={failed}')
+    return {
+        'results': results,
+        'total': len(results),
+        'succeeded': succeeded,
+        'failed': failed,
+    }
+
+
+@app.post('/api/layout/batch/base64')
+async def layout_analysis_batch_base64(data: dict):
+    """
+    Task 38: 批量版面分析接口（base64 输入版本）
+
+    请求体格式: { images: [{ image: '<base64>', fileType: 'png', fileName: 'x.png' }, ...] }
+    返回格式与 /api/layout/batch 一致
+
+    适用于前端已将图片转为 base64 的场景（如 DWG 渲染后的 PNG 直接送审）。
+    """
+    images = data.get('images', [])
+    if not images or not isinstance(images, list):
+        raise HTTPException(status_code=400, detail='缺少 images 数组')
+
+    BATCH_LIMIT = 20
+    if len(images) > BATCH_LIMIT:
+        raise HTTPException(status_code=400, detail=f'批量接口单次最多 {BATCH_LIMIT} 张图片，本次提交 {len(images)} 张')
+
+    results: List[dict] = []
+    succeeded = 0
+    failed = 0
+    for idx, item in enumerate(images):
+        if not isinstance(item, dict):
+            results.append({'error': f'第 {idx + 1} 项格式错误', 'fileName': None})
+            failed += 1
+            continue
+        base64_data = item.get('image', '')
+        file_type = item.get('fileType', 'png')
+        file_name = item.get('fileName', f'image_{idx + 1}')
+        if not base64_data:
+            results.append({'error': '缺少图片数据', 'fileName': file_name})
+            failed += 1
+            continue
+        try:
+            if 'data:image/' in base64_data:
+                base64_data = base64_data.split(',', 1)[1]
+            file_bytes = base64.b64decode(base64_data)
+        except Exception as e:
+            results.append({'error': f'base64 解码失败: {e}', 'fileName': file_name})
+            failed += 1
+            continue
+        r = _do_layout_single(file_bytes, file_type, file_name)
+        if 'error' in r:
+            failed += 1
+        else:
+            succeeded += 1
+        r.setdefault('fileName', file_name)
+        results.append(r)
+
+    log_to_file(f'Batch layout base64: total={len(results)}, succeeded={succeeded}, failed={failed}')
+    return {
+        'results': results,
+        'total': len(results),
+        'succeeded': succeeded,
+        'failed': failed,
+    }
+
+
 if __name__ == '__main__':
     import uvicorn
     uvicorn.run(app, host='0.0.0.0', port=8000)

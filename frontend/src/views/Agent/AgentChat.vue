@@ -1,5 +1,18 @@
 <template>
-  <div class="agent-chat">
+  <div class="agent-layout">
+    <!-- 左侧：会话列表（Task 17.1）-->
+    <aside class="layout-left">
+      <AgentSessionList
+        ref="sessionListRef"
+        :current-session-id="sessionId"
+        @select="handleSelectSession"
+        @new-chat="handleNewChat"
+      />
+    </aside>
+
+    <!-- 中间：对话区域 -->
+    <main class="layout-center">
+      <div class="agent-chat">
     <!-- 顶部标题栏 -->
     <header class="chat-header">
       <div class="header-title">
@@ -145,6 +158,13 @@
       </el-button>
     </footer>
   </div>
+    </main>
+
+    <!-- 右侧：执行追踪/文件面板（Task 17.2）-->
+    <aside class="layout-right">
+      <AgentSidePanel :current-session-id="sessionId" />
+    </aside>
+  </div>
 </template>
 
 <script setup lang="ts">
@@ -166,10 +186,27 @@ import { useMarkdown } from '@/composables/useMarkdown'
 import { useUserStore } from '@/stores/user'
 import ToolCallChip from './components/ToolCallChip.vue'
 import AgentIssueList from './components/AgentIssueList.vue'
+import AgentSessionList from './components/AgentSessionList.vue'
+import AgentSidePanel from './components/AgentSidePanel.vue'
 
 const userStore = useUserStore()
 const { renderMarkdown } = useMarkdown()
 const { messages, sendMessage, stop, regenerate, isLoading, sessionId } = useAgentChat()
+
+// Task 17：三栏布局 — 会话列表 ref + 切换/新建会话处理
+const sessionListRef = ref<InstanceType<typeof AgentSessionList> | null>(null)
+
+async function handleSelectSession(sid: string) {
+  // 切换到历史会话：刷新页面加载该会话的消息
+  // 当前 useAgentChat 不支持动态切换 sessionId，简化为跳转到带 sessionId 的路由
+  // Task 14 已实现消息持久化，未来可通过 useAgentChat.loadHistory(sid) 加载
+  ElMessage.info(`会话切换功能待集成（sessionId=${sid.slice(0, 8)}…）`)
+}
+
+function handleNewChat() {
+  // 清空当前对话状态，开始新会话
+  clearConversation()
+}
 
 const inputValue = ref('')
 const messagesContainer = ref<HTMLDivElement | null>(null)
@@ -354,6 +391,34 @@ watch(
 </script>
 
 <style scoped>
+/* ===== Task 17：三栏布局 ===== */
+.agent-layout {
+  display: flex;
+  height: 100%;
+  width: 100%;
+  background: #f3f4f6;
+  gap: 0;
+}
+
+.layout-left {
+  width: 260px;
+  flex-shrink: 0;
+  height: 100%;
+}
+
+.layout-center {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  padding: 8px;
+}
+
+.layout-right {
+  width: 320px;
+  flex-shrink: 0;
+  height: 100%;
+}
+
 .agent-chat {
   height: 100%;
   display: flex;
