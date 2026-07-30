@@ -529,7 +529,7 @@ watch(
 }
 
 .bubble-wrap {
-  max-width: 72%;
+  max-width: 85%;
   display: flex;
   flex-direction: column;
 }
@@ -540,21 +540,22 @@ watch(
 
 .bubble {
   padding: 12px 16px;
-  border-radius: 8px;
+  border-radius: 12px;
   font-size: 14px;
   line-height: 1.6;
   word-break: break-word;
 }
 
 .bubble.user {
-  background: #e6f0ff;
+  background: #f0f0f0;
   color: #1f2937;
+  border-bottom-right-radius: 4px;
 }
 
 .bubble.assistant {
-  background: #ffffff;
+  background: #fff;
   color: #1f2937;
-  border: 1px solid #ebeef5;
+  border-bottom-left-radius: 4px;
 }
 
 .text-content {
@@ -571,16 +572,17 @@ watch(
 }
 
 .markdown-content :deep(pre) {
-  background: #1f2937;
-  color: #e5e7eb;
-  padding: 10px 12px;
-  border-radius: 6px;
+  background: #1e1e1e;
+  color: #d4d4d4;
+  padding: 12px;
+  border-radius: 8px;
   overflow-x: auto;
   font-size: 13px;
+  line-height: 1.5;
 }
 
 .markdown-content :deep(code) {
-  font-family: 'Menlo', 'Consolas', monospace;
+  font-family: 'Cascadia Code', 'Fira Code', 'Menlo', 'Consolas', monospace;
   font-size: 13px;
 }
 

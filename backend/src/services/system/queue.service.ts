@@ -9,6 +9,7 @@ import Bull from 'bull';
 import { env } from '../../config/env';
 import { ReviewService } from '../review/review.service';
 import { DwgVisionService } from '../file/dwg-vision.service';
+import { CleanupService } from '../agent/cleanup/cleanup.service';
 import prisma from '../../config/db';
 import { getQueueConcurrency } from '../../utils/system-config';
 
@@ -24,8 +25,6 @@ export interface DwgVisionJobData {
   refText?: string;
   userId: string;
   fileName?: string;  // 原始图纸文件名（用于历史回放展示）
-  kbId?: string;      // Task 15: MaxKB 知识库 ID（用于 compliance 维度的 RAG 注入）
-  query?: string;     // Task 15: RAG 检索查询词（可选）
   profession?: string; // Task 17: 专业类型（building/structural/plumbing/hvac/electrical/process/nuclear）
   dwgMetadata?: any;  // Task 20: 前端 WASM 解析的 DWG 元数据（layers/textEntities/dimensions/standardRefs）
 }
@@ -33,6 +32,7 @@ export interface DwgVisionJobData {
 /** 内部持有的队列实例（延迟初始化） */
 let _reviewQueue: Bull.Queue<ReviewJobData> | null = null;
 let _dwgVisionQueue: Bull.Queue<DwgVisionJobData> | null = null;
+let _cleanupQueue: Bull.Queue | null = null;
 
 /** 全局降级标记 —— 在 __QUEUE_DEGRADED 为 true 时跳过所有 Redis 操作 */
 declare global {
@@ -143,14 +143,14 @@ export async function initQueueProcessors(): Promise<void> {
   // ── DWG 视觉分析队列处理器 ──
   const dwgVisionQueue = getDwgVisionQueue();
   dwgVisionQueue.process('dwg-vision', 2, async (job) => {
-    const { imageBase64, analyses, refText, userId, fileName, jobKey, kbId, query, profession, dwgMetadata } = job.data;
+    const { imageBase64, analyses, refText, userId, fileName, jobKey, profession, dwgMetadata } = job.data;
     console.log(`[Queue] 开始处理图纸视觉分析: ${jobKey} (attempt ${job.attemptsMade + 1})`);
 
     try {
       await job.progress(10);
       // Task 16: 传 jobKey 给 analyze，用于 SSE 进度推送
       // Task 20: 传 dwgMetadata 给 analyze，用于元数据双校验
-      const result = await DwgVisionService.analyze(imageBase64, analyses, refText, { userId, fileName, kbId, query, profession: profession as any, jobKey, dwgMetadata });
+      const result = await DwgVisionService.analyze(imageBase64, analyses, refText, { userId, fileName, profession: profession as any, jobKey, dwgMetadata });
       await job.progress(100);
       console.log(`[Queue] 图纸视觉分析完成: ${jobKey}`);
       return result;
@@ -175,6 +175,46 @@ export async function initQueueProcessors(): Promise<void> {
   });
 
   console.log('[Queue] 队列处理器已启动 (dwg-vision:2)');
+
+  // ── 临时文件清理定时任务 ──
+  // 每天凌晨 3:00 执行，清理超过 7 天的 agent_temp 文件
+  try {
+    _cleanupQueue = new Bull('cleanup', env.redisUrl, {
+      defaultJobOptions: {
+        removeOnComplete: { age: 86400 },
+        removeOnFail: { age: 86400 },
+      },
+    });
+    await _cleanupQueue.isReady();
+
+    // 清理已有重复任务避免重复注册
+    const existingJobs = await _cleanupQueue.getRepeatableJobs();
+    for (const job of existingJobs) {
+      if (job.name === 'clean-temp-files') {
+        await _cleanupQueue.removeRepeatableByKey(job.key);
+      }
+    }
+
+    await _cleanupQueue.add(
+      'clean-temp-files',
+      {},
+      {
+        repeat: { cron: '0 3 * * *' },
+        jobId: 'clean-temp-files',
+      },
+    );
+
+    _cleanupQueue.process('clean-temp-files', async () => {
+      console.log('[Cleanup] 开始清理临时文件...');
+      const result = await CleanupService.cleanOldTempFiles(7);
+      console.log(`[Cleanup] 清理完成: 删除 ${result.deleted} 个文件, ${result.errors} 个错误`);
+      return result;
+    });
+
+    console.log('[Queue] 临时文件清理定时任务已注册 (每天 03:00)');
+  } catch (e) {
+    console.warn('[Queue] 清理队列初始化失败（Redis 不可用或配置错误）:', e);
+  }
 }
 
 /** 添加审查任务到队列（增强版：细粒度状态检测 + 智能重入队） */
@@ -238,7 +278,7 @@ export async function addDwgVisionJob(data: DwgVisionJobData): Promise<Bull.Job<
   // 降级模式：同步执行
   if ((globalThis as any).__QUEUE_DEGRADED) {
     console.warn('[Queue] 降级模式：同步执行图纸视觉分析', data.jobKey);
-    setImmediate(() => DwgVisionService.analyze(data.imageBase64, data.analyses, data.refText, { userId: data.userId, fileName: data.fileName, kbId: data.kbId, query: data.query, profession: data.profession as any, jobKey: data.jobKey, dwgMetadata: data.dwgMetadata }).catch((err: Error) => {
+    setImmediate(() => DwgVisionService.analyze(data.imageBase64, data.analyses, data.refText, { userId: data.userId, fileName: data.fileName, profession: data.profession as any, jobKey: data.jobKey, dwgMetadata: data.dwgMetadata }).catch((err: Error) => {
       console.error(`[Queue] 降级模式同步执行失败: ${data.jobKey}`, err.message);
       // Task 16: 降级模式失败也发布 error 事件（SSE）
       DwgVisionService.publishProgress(data.jobKey, { type: 'error', jobKey: data.jobKey, error: err.message, timestamp: Date.now() }).catch(() => { /* ignore */ });
@@ -352,7 +392,11 @@ export async function closeQueue(): Promise<void> {
     await _dwgVisionQueue.close();
     console.log('[Queue] dwg-vision 队列已关闭');
   }
-  if (!_reviewQueue && !_dwgVisionQueue) {
+  if (_cleanupQueue) {
+    await _cleanupQueue.close();
+    console.log('[Queue] cleanup 队列已关闭');
+  }
+  if (!_reviewQueue && !_dwgVisionQueue && !_cleanupQueue) {
     console.log('[Queue] 队列未初始化，无需关闭');
   }
 }

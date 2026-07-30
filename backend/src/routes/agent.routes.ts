@@ -58,8 +58,22 @@ router.post('/chat/stream', async (req: AuthRequest, res: Response) => {
       return res.status(400).json({ success: false, message: 'messages 不能为空' });
     }
 
-    // sessionId 可选：未提供时传空串，AgentService 内部仍可工作（工具临时文件按 userId 隔离）
+    // Task 25：每用户单会话限制 — 新会话开始时自动结束旧会话
     const sessionId: string = req.body?.sessionId || '';
+    const isNewSession = !sessionId;
+    if (isNewSession) {
+      // 检查用户是否有 active 会话，有则自动结束
+      const activeSessions = await QASessionService.listSessions(userId, 1);
+      const stillActive = activeSessions.find((s: any) => s.status === 'active');
+      if (stillActive) {
+        const prisma = require('../config/db').default;
+        await prisma.qASession.update({
+          where: { id: stillActive.id },
+          data: { status: 'completed' },
+        });
+        console.log(`[Agent] 自动结束旧会话: ${stillActive.id}`);
+      }
+    }
 
     const result = await AgentService.chatStream({ messages, userId, sessionId });
 

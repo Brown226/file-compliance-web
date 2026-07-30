@@ -1,18 +1,27 @@
 <template>
   <div class="tool-call-chip" :class="{ expanded: isExpanded }">
-    <div class="chip-header" @click="toggleExpand">
-      <el-icon :size="14" class="chip-icon" :color="iconColor">
-        <component :is="statusIcon" />
-      </el-icon>
-      <span class="tool-name">{{ toolName }}</span>
-      <span v-if="durationText" class="tool-duration">{{ durationText }}</span>
-      <span v-if="resultCount !== null" class="tool-result-count">
-        {{ resultCount }} 项
-      </span>
-      <el-icon :size="12" class="expand-arrow" :class="{ rotated: isExpanded }">
-        <ArrowDown />
-      </el-icon>
-    </div>
+    <el-tag
+      :type="tagType"
+      :hit="false"
+      effect="light"
+      class="chip-tag"
+      @click="toggleExpand"
+    >
+      <div class="chip-header">
+        <el-icon :size="14" class="chip-icon" :color="iconColor">
+          <component :is="statusIcon" />
+        </el-icon>
+        <span class="tool-name">{{ toolName }}</span>
+        <span v-if="durationText" class="tool-duration">{{ durationText }}</span>
+        <template v-if="resultCount !== null">
+          <span class="tool-result-sep">|</span>
+          <span class="tool-result-count">{{ resultCount }} 项</span>
+        </template>
+        <el-icon :size="12" class="expand-arrow" :class="{ rotated: isExpanded }">
+          <ArrowDown />
+        </el-icon>
+      </div>
+    </el-tag>
 
     <transition name="expand">
       <div v-if="isExpanded" class="chip-body">
@@ -114,6 +123,17 @@ const TOOL_NAME_MAP: Record<string, string> = {
   extract_user_preferences: '提取偏好',
 }
 
+// 工具名到 el-tag type 的映射
+function getTagType(toolName: string): 'primary' | 'warning' | 'success' | 'danger' | 'info' {
+  if (toolName === 'extract_text') return 'primary'
+  if (toolName === 'llm_review_chunk') return 'warning'
+  if (toolName.startsWith('search_')) return 'success'
+  if (toolName.startsWith('write_')) return 'danger'
+  return 'info'
+}
+
+const tagType = computed(() => getTagType(props.part.toolName || ''))
+
 const toolName = computed(() => {
   const name = props.part.toolName || '未知工具'
   return TOOL_NAME_MAP[name] || name
@@ -205,27 +225,19 @@ const resultCount = computed<number | null>(() => {
   display: inline-flex;
   flex-direction: column;
   margin: 4px 0;
-  background: #f9fafb;
-  border: 1px solid #e5e7eb;
-  border-radius: 6px;
-  font-size: 12px;
-  color: #4b5563;
-  overflow: hidden;
   max-width: 100%;
+}
+
+.chip-tag {
+  cursor: pointer !important;
+  user-select: none;
+  white-space: nowrap;
 }
 
 .chip-header {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  padding: 4px 8px;
-  cursor: pointer;
-  user-select: none;
-  white-space: nowrap;
-}
-
-.chip-header:hover {
-  background: #f3f4f6;
+  gap: 4px;
 }
 
 .chip-icon.is-loading {
@@ -234,20 +246,28 @@ const resultCount = computed<number | null>(() => {
 
 .tool-name {
   font-weight: 500;
+  font-size: 12px;
 }
 
-.tool-duration,
-.tool-result-count {
-  color: #9ca3af;
+.tool-duration {
   font-size: 11px;
-  padding-left: 4px;
-  border-left: 1px solid #e5e7eb;
+  opacity: 0.75;
+}
+
+.tool-result-sep {
+  margin: 0 1px;
+  opacity: 0.4;
+}
+
+.tool-result-count {
+  font-size: 11px;
+  opacity: 0.75;
 }
 
 .expand-arrow {
   margin-left: 2px;
   transition: transform 0.2s;
-  color: #9ca3af;
+  font-size: 12px;
 }
 
 .expand-arrow.rotated {
@@ -255,7 +275,9 @@ const resultCount = computed<number | null>(() => {
 }
 
 .chip-body {
-  border-top: 1px solid #e5e7eb;
+  border: 1px solid #e5e7eb;
+  border-top: none;
+  border-radius: 0 0 6px 6px;
   padding: 8px;
   background: #ffffff;
   max-height: 320px;
