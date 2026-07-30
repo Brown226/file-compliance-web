@@ -656,6 +656,192 @@ async def convert_doc_to_docx_binary(
     )
 
 
+# ==================== Task 38: 批量扫描件 OCR（视觉模型） ====================
+
+def _do_ocr_scan_single(
+    content: bytes,
+    file_type: str,
+    filename: str,
+    config: Dict[str, Any],
+) -> Dict[str, Any]:
+    """单张文件的视觉 OCR 内部调用（错误时返回 error 字段而非抛异常）。
+
+    用于批量接口内部调用，避免单张失败影响整批。
+    """
+    try:
+        from vision_ocr import recognize_with_vision
+        text = recognize_with_vision(content, file_type, filename, config)
+        return {"text": text, "charCount": len(text), "fileName": filename}
+    except HTTPException as e:
+        return {"error": e.detail if hasattr(e, 'detail') else str(e), "fileName": filename}
+    except Exception as e:
+        return {"error": str(e), "fileName": filename}
+
+
+@app.post("/api/ocr/scan/batch", summary="Task 38: 批量扫描件 OCR（multipart 上传）")
+async def ocr_scan_batch(
+    files: List[UploadFile] = File(..., description="待识别的文件列表（PDF/图片）"),
+    apiBaseUrl: str = Form(..., description="视觉模型 API 地址"),
+    apiKey: str = Form(..., description="API Key"),
+    modelName: str = Form(..., description="模型名称"),
+    timeoutSec: int = Form(300, description="单张超时秒数"),
+):
+    """
+    Task 38: 批量扫描件 OCR（视觉模型路径）
+
+    接收多文件（multipart/form-data，字段名 files），复用 vision_ocr.recognize_with_vision
+    串行批推理（视觉模型 API 多为并发受限，串行更稳定），返回与输入顺序一致的结果数组。
+
+    - 单张失败不影响其他文件，失败项返回 { error, fileName }
+    - 全部失败时仍返回 200，结果数组中每项都含 error 字段
+    - 单次最多 20 个文件（防止 API 配额耗尽）
+
+    返回格式: { code, data: { results, total, succeeded, failed } }
+    """
+    if not files:
+        raise HTTPException(status_code=400, detail="缺少文件")
+
+    BATCH_LIMIT = 20
+    if len(files) > BATCH_LIMIT:
+        raise HTTPException(status_code=400, detail=f"批量接口单次最多 {BATCH_LIMIT} 个文件，本次提交 {len(files)} 个")
+
+    config = {
+        'apiBaseUrl': apiBaseUrl,
+        'apiKey': apiKey,
+        'modelName': modelName,
+        'timeoutSec': timeoutSec,
+    }
+
+    # 一次性读取所有文件内容（避免 upload file 句柄在异步循环中过期）
+    payloads: List[tuple] = []
+    for f in files:
+        contents = await f.read()
+        payloads.append((contents, f.filename or "unknown"))
+
+    # 串行处理（视觉模型 API 并发受限，串行更稳定）
+    results: List[dict] = []
+    succeeded = 0
+    failed = 0
+    for file_bytes, filename in payloads:
+        if not file_bytes:
+            results.append({"error": "空文件", "fileName": filename})
+            failed += 1
+            continue
+
+        ext = os.path.splitext(filename)[1].lower().lstrip('.')
+        file_type = ext if ext else 'pdf'
+
+        r = _do_ocr_scan_single(file_bytes, file_type, filename, config)
+        if 'error' in r:
+            failed += 1
+        else:
+            succeeded += 1
+        results.append(r)
+
+    logger.info(f"Batch OCR scan: total={len(results)}, succeeded={succeeded}, failed={failed}")
+    return {
+        "code": 200,
+        "message": "success",
+        "data": {
+            "results": results,
+            "total": len(results),
+            "succeeded": succeeded,
+            "failed": failed,
+        },
+    }
+
+
+@app.post("/api/ocr/scan/batch/base64", summary="Task 38: 批量扫描件 OCR（base64 输入）")
+async def ocr_scan_batch_base64(data: dict):
+    """
+    Task 38: 批量扫描件 OCR（base64 输入版本）
+
+    请求体格式:
+    {
+      "apiBaseUrl": "https://...",
+      "apiKey": "sk-...",
+      "modelName": "qwen-vl-max",
+      "timeoutSec": 300,
+      "images": [
+        { "image": "<base64>", "fileType": "pdf", "fileName": "a.pdf" },
+        { "image": "<base64>", "fileType": "png", "fileName": "b.png" }
+      ]
+    }
+
+    返回格式与 /api/ocr/scan/batch 一致。
+
+    适用于前端已将图片转为 base64 的场景（如 DWG 渲染后的 PNG 直接送审）。
+    """
+    images = data.get('images', [])
+    if not images or not isinstance(images, list):
+        raise HTTPException(status_code=400, detail="缺少 images 数组")
+
+    BATCH_LIMIT = 20
+    if len(images) > BATCH_LIMIT:
+        raise HTTPException(status_code=400, detail=f"批量接口单次最多 {BATCH_LIMIT} 个文件，本次提交 {len(images)} 个")
+
+    apiBaseUrl = data.get('apiBaseUrl', '')
+    apiKey = data.get('apiKey', '')
+    modelName = data.get('modelName', '')
+    timeoutSec = data.get('timeoutSec', 300)
+
+    if not apiBaseUrl or not apiKey or not modelName:
+        raise HTTPException(status_code=400, detail="缺少 apiBaseUrl / apiKey / modelName 参数")
+
+    config = {
+        'apiBaseUrl': apiBaseUrl,
+        'apiKey': apiKey,
+        'modelName': modelName,
+        'timeoutSec': timeoutSec,
+    }
+
+    results: List[dict] = []
+    succeeded = 0
+    failed = 0
+    for idx, item in enumerate(images):
+        if not isinstance(item, dict):
+            results.append({"error": f"第 {idx + 1} 项格式错误", "fileName": None})
+            failed += 1
+            continue
+
+        base64_data = item.get('image', '')
+        file_type = item.get('fileType', 'pdf')
+        file_name = item.get('fileName', f'file_{idx + 1}')
+
+        if not base64_data:
+            results.append({"error": "缺少图片数据", "fileName": file_name})
+            failed += 1
+            continue
+
+        try:
+            if 'data:image/' in base64_data or 'data:application/' in base64_data:
+                base64_data = base64_data.split(',', 1)[1]
+            file_bytes = base64.b64decode(base64_data)
+        except Exception as e:
+            results.append({"error": f"base64 解码失败: {e}", "fileName": file_name})
+            failed += 1
+            continue
+
+        r = _do_ocr_scan_single(file_bytes, file_type, file_name, config)
+        if 'error' in r:
+            failed += 1
+        else:
+            succeeded += 1
+        results.append(r)
+
+    logger.info(f"Batch OCR scan base64: total={len(results)}, succeeded={succeeded}, failed={failed}")
+    return {
+        "code": 200,
+        "message": "success",
+        "data": {
+            "results": results,
+            "total": len(results),
+            "succeeded": succeeded,
+            "failed": failed,
+        },
+    }
+
+
 # ==================== 启动事件 ====================
 
 @app.on_event("startup")
