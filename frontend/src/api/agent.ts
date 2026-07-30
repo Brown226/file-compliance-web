@@ -101,3 +101,33 @@ export function listTracesApi(sessionId: string) {
 export function getTraceApi(traceId: string) {
   return request.get<TraceWithLlmCallLog>(`/agent/traces/trace/${traceId}`)
 }
+
+// ===== 记忆管理（Task 18）=====
+
+export interface MemoryItem {
+  id: string
+  userId: string
+  type: string  // preference / routine / feedback
+  key: string
+  value: string
+  confidence: number
+  source: string | null
+  scope: string  // global / project / session
+  createdAt: string
+  updatedAt: string
+}
+
+/** 列出用户记忆（支持 type/scope 过滤） */
+export function listMemoriesApi(params?: { type?: string; scope?: string }) {
+  return request.get<MemoryItem[]>('/agent/memory', { params })
+}
+
+/** 更新记忆（value 和/或 confidence，value 变化时自动重新生成 embedding） */
+export function updateMemoryApi(memoryId: string, data: { value?: string; confidence?: number }) {
+  return request.put<{ success: boolean; message: string }>(`/agent/memory/${memoryId}`, data)
+}
+
+/** 删除记忆 */
+export function deleteMemoryApi(memoryId: string) {
+  return request.delete<{ success: boolean; message: string }>(`/agent/memory/${memoryId}`)
+}

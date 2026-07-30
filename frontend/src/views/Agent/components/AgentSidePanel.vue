@@ -38,12 +38,9 @@
         </div>
       </el-tab-pane>
 
-      <el-tab-pane label="文件" name="files">
+      <el-tab-pane label="记忆" name="memory">
         <div class="tab-body">
-          <div class="empty-state">
-            <el-icon :size="32" color="#9ca3af"><FolderOpened /></el-icon>
-            <p>文件管理面板待 Task 18 补充</p>
-          </div>
+          <AgentMemoryPanel />
         </div>
       </el-tab-pane>
     </el-tabs>
@@ -52,8 +49,9 @@
 
 <script setup lang="ts">
 import { ref, watch } from 'vue'
-import { Loading, InfoFilled, Clock, FolderOpened } from '@element-plus/icons-vue'
+import { Loading, InfoFilled, Clock } from '@element-plus/icons-vue'
 import { listTracesApi, type TraceItem } from '@/api/agent'
+import AgentMemoryPanel from './AgentMemoryPanel.vue'
 
 /**
  * 右侧面板（Task 17.2）
@@ -68,7 +66,7 @@ const props = defineProps<{
   currentSessionId?: string
 }>()
 
-const activeTab = ref<'traces' | 'files'>('traces')
+const activeTab = ref<'traces' | 'memory'>('traces')
 const traces = ref<TraceItem[]>([])
 const tracesLoading = ref(false)
 
