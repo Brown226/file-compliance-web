@@ -340,6 +340,17 @@
                   <el-icon style="margin-right:3px"><Memo /></el-icon>
                   推理回放
                 </el-button>
+                <!-- Task 41: 导出 PDF 报告（浏览器原生打印） -->
+                <el-button
+                  v-if="result"
+                  size="small"
+                  type="success"
+                  plain
+                  @click="startPrintReport"
+                >
+                  <el-icon style="margin-right:3px"><Document /></el-icon>
+                  导出 PDF
+                </el-button>
               </div>
             </div>
           </template>
@@ -535,10 +546,128 @@
       :traceId="currentTraceId"
     />
   </div>
+
+  <!-- Task 41: PDF 报告打印布局（浏览器原生打印，平时隐藏，打印时显示） -->
+  <div v-if="reportPrinting && result" class="dwg-report-print-root">
+    <!-- 报告头部 -->
+    <header class="report-header">
+      <h1>图纸视觉智能分析报告</h1>
+      <div class="report-meta-grid">
+        <div><span class="lbl">文件名</span><span class="val">{{ dwgFile?.name || '—' }}</span></div>
+        <div><span class="lbl">分析时间</span><span class="val">{{ new Date().toLocaleString('zh-CN') }}</span></div>
+        <div><span class="lbl">耗时</span><span class="val">{{ (result.duration_ms / 1000).toFixed(1) }}s</span></div>
+        <div v-if="result.modelInfo"><span class="lbl">模型</span><span class="val">{{ result.modelInfo.model }} · {{ result.modelInfo.modelType }}</span></div>
+        <div v-if="result.detectedProfession"><span class="lbl">自动判定专业</span><span class="val">{{ professionLabelMap[result.detectedProfession] || result.detectedProfession }}</span></div>
+        <div v-if="result.detectedProfessionReason"><span class="lbl">判定依据</span><span class="val">{{ result.detectedProfessionReason }}</span></div>
+      </div>
+    </header>
+
+    <!-- 1. 图纸 + SVG 叠框（仅显示有 bbox 的 issue） -->
+    <section v-if="printableImageBase64" class="report-section report-image-section">
+      <h2>一、图纸与问题叠框</h2>
+      <div class="report-image-wrapper">
+        <img :src="`data:image/png;base64,${printableImageBase64}`" class="report-image" alt="图纸" />
+        <!-- SVG 叠框层（与主预览页一致：归一化 0-1000 坐标系，按 severity 着色） -->
+        <svg
+          v-if="printIssuesWithBbox.length"
+          class="report-image-overlay"
+          viewBox="0 0 1000 1000"
+          preserveAspectRatio="none"
+          xmlns="http://www.w3.org/2000/svg"
+        >
+          <rect
+            v-for="(issue, i) in printIssuesWithBbox"
+            :key="`print-rect-${i}`"
+            :x="issue.bbox![0]"
+            :y="issue.bbox![1]"
+            :width="rectWidth(issue.bbox!)"
+            :height="rectHeight(issue.bbox!)"
+            :class="`print-rect print-rect-${issue.severity}`"
+          />
+        </svg>
+      </div>
+      <div class="report-legend">
+        <span class="legend-item"><span class="legend-box print-rect-error"></span>错误</span>
+        <span class="legend-item"><span class="legend-box print-rect-warning"></span>警告</span>
+        <span class="legend-item"><span class="legend-box print-rect-info"></span>提示</span>
+      </div>
+    </section>
+
+    <!-- 2. 问题汇总表 -->
+    <section v-if="visionIssues.length" class="report-section">
+      <h2>二、问题汇总（共 {{ visionIssues.length }} 项）</h2>
+      <table class="report-table">
+        <thead>
+          <tr>
+            <th style="width: 40px">#</th>
+            <th style="width: 60px">严重度</th>
+            <th style="width: 90px">类型</th>
+            <th>问题描述</th>
+            <th style="width: 120px">位置/标注</th>
+            <th style="width: 140px">规范依据</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr v-for="(issue, i) in visionIssues" :key="`print-issue-${i}`">
+            <td>{{ i + 1 }}</td>
+            <td><span :class="`sev-tag sev-${issue.severity}`">{{ severityLabel(issue.severity) }}</span></td>
+            <td>{{ issueTypeLabel(issue.issueType) }}</td>
+            <td class="cell-desc">{{ issue.description || '—' }}</td>
+            <td class="cell-loc">{{ issue.originalText || '—' }}</td>
+            <td class="cell-clause">{{ issue.clauseRef || '—' }}</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <!-- 3. 标题栏信息 -->
+    <section v-if="result.titleBlock" class="report-section">
+      <h2>三、标题栏信息</h2>
+      <table class="report-table report-table-kv">
+        <tbody>
+          <tr><td class="lbl-cell">图号</td><td>{{ result.titleBlock.drawingNo || '—' }}</td><td class="lbl-cell">版本</td><td>{{ result.titleBlock.revision || '—' }}</td><td class="lbl-cell">比例</td><td>{{ result.titleBlock.scale || '—' }}</td></tr>
+          <tr><td class="lbl-cell">图名</td><td colspan="5">{{ result.titleBlock.title || '—' }}</td></tr>
+          <tr><td class="lbl-cell">设计</td><td>{{ result.titleBlock.designer || '—' }}</td><td class="lbl-cell">校核</td><td>{{ result.titleBlock.checker || '—' }}</td><td class="lbl-cell">审核</td><td>{{ result.titleBlock.reviewer || '—' }}</td></tr>
+          <tr><td class="lbl-cell">批准</td><td>{{ result.titleBlock.approver || '—' }}</td><td class="lbl-cell">日期</td><td>{{ result.titleBlock.date || '—' }}</td><td class="lbl-cell">单位</td><td>{{ result.titleBlock.company || '—' }}</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <!-- 4. 各维度摘要 -->
+    <section class="report-section">
+      <h2>四、各维度审查摘要</h2>
+      <table class="report-table report-table-summary">
+        <thead>
+          <tr><th style="width: 120px">维度</th><th>摘要</th></tr>
+        </thead>
+        <tbody>
+          <tr v-if="result.symbols"><td>图例符号</td><td>{{ result.symbols.summary }}（共 {{ result.symbols.totalCount }} 个）</td></tr>
+          <tr v-if="result.annotations"><td>标注完整性</td><td>{{ result.annotations.summary }}（完整度 {{ result.annotations.completenessScore }}）</td></tr>
+          <tr v-if="result.compliance"><td>合规审查</td><td>{{ result.compliance.summary }}</td></tr>
+          <tr v-if="result.profession"><td>{{ professionLabelMap[result.profession.profession] || result.profession.profession }}专业审查</td><td>{{ result.profession.summary }}</td></tr>
+          <tr v-if="result.frameCheck"><td>图框规范</td><td>{{ result.frameCheck.summary }}（幅面 {{ result.frameCheck.frameSize }}，{{ result.frameCheck.frameWidth }}×{{ result.frameCheck.frameHeight }}mm）</td></tr>
+          <tr v-if="result.ruleIssues?.length"><td>规则校验</td><td>共 {{ result.ruleIssues.length }} 条规则 issue</td></tr>
+          <tr v-if="result.crossDimensionIssues?.length"><td>跨维度校验</td><td>共 {{ result.crossDimensionIssues.length }} 条一致性 issue</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <!-- 5. 错误与降级记录 -->
+    <section v-if="result.errors.length > 0" class="report-section">
+      <h2>五、错误与降级记录</h2>
+      <ul class="report-error-list">
+        <li v-for="(err, i) in result.errors" :key="`print-err-${i}`">{{ err }}</li>
+      </ul>
+    </section>
+
+    <footer class="report-footer">
+      <span>本报告由图纸视觉智能分析系统自动生成 · 仅供审查参考，最终结论以人工复核为准</span>
+    </footer>
+  </div>
 </template>
 
 <script setup lang="ts">
-import { ref, computed, nextTick, onMounted } from 'vue'
+import { ref, computed, nextTick, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import {
@@ -622,6 +751,12 @@ const loadingKnowledgeBases = ref(false)
 
 // Task 33: 专业选择（'auto' = 自动判定；其余为 7 个专业之一）
 const selectedProfession = ref<DwgProfession | 'auto'>('auto')
+
+// Task 41: PDF 报告导出（浏览器原生打印）
+// - printableImageBase64: 最近一次分析的 PNG base64，供打印布局显示原图
+// - reportPrinting: 是否处于打印模式（控制打印块显示/隐藏）
+const printableImageBase64 = ref<string>('')
+const reportPrinting = ref(false)
 
 // Task 25: 历史记录相关状态
 const historyVisible = ref(false)
@@ -942,6 +1077,8 @@ async function startAnalysis() {
     // 1. DWG → PNG
     ElMessage.info('正在渲染图纸为图片...')
     const imageBase64 = await dwgToPng(dwgFile.value)
+    // Task 41: 缓存本次分析的 PNG base64，供打印报告使用
+    printableImageBase64.value = imageBase64
 
     // Task 20: 并行解析 DWG 提取元数据（layers/textEntities/dimensions/standardRefs）
     // 失败不阻塞主流程，仅降级为不传元数据（后端 dwgMetadataVerification 字段为 undefined）
@@ -1059,6 +1196,52 @@ function dwgMetadataStatusLabel(r: DwgMetadataVerification): string {
   if (r.status === 'failed') return '校验失败'
   return r.needsReview ? '需人工复核' : '一致'
 }
+
+// ==================== Task 41: PDF 报告导出 ====================
+
+/** issue 类型中文标签（打印报告用） */
+function issueTypeLabel(type: IssueType): string {
+  const map: Record<IssueType, string> = {
+    VIOLATION: '违规',
+    CONSISTENCY: '一致性',
+    COMPLETENESS: '完整性',
+    TYPO: '错别字',
+    NAMING: '命名',
+  }
+  return map[type] || type
+}
+
+/** 打印布局用：仅含有 bbox 的 issue（用于 SVG 叠框渲染） */
+const printIssuesWithBbox = computed(() => {
+  return visionIssues.value.filter(i => i.bbox)
+})
+
+/** 触发浏览器原生打印（用户在打印对话框选「另存为 PDF」即可导出） */
+async function startPrintReport() {
+  if (!result.value) return
+  if (!printableImageBase64.value) {
+    ElMessage.warning('无可打印的图纸图片，请先完成一次分析')
+    return
+  }
+  reportPrinting.value = true
+  // 等待打印布局 DOM 渲染完成
+  await nextTick()
+  // 给浏览器额外一帧确保图片加载完
+  await new Promise(resolve => setTimeout(resolve, 100))
+  window.print()
+}
+
+/** afterprint 事件：打印对话框关闭后清理打印布局 */
+function handleAfterPrint() {
+  reportPrinting.value = false
+}
+
+onMounted(() => {
+  window.addEventListener('afterprint', handleAfterPrint)
+})
+onUnmounted(() => {
+  window.removeEventListener('afterprint', handleAfterPrint)
+})
 
 function scoreColor(score: number): string {
   if (score >= 80) return '#16a34a'
@@ -2141,5 +2324,210 @@ function handleOpenClause(detail: IssueDetail) {
     flex-direction: column;
     align-items: flex-start;
   }
+}
+
+/* ==================== Task 41: PDF 报告打印样式 ==================== */
+
+/* 平时隐藏打印布局 */
+.dwg-report-print-root {
+  display: none;
+}
+
+/* 打印时：隐藏主页面，显示打印布局 */
+@media print {
+  .dwg-vision-page {
+    display: none !important;
+  }
+  .dwg-report-print-root {
+    display: block !important;
+    padding: 0;
+    color: #000;
+    background: #fff;
+    font-family: 'Microsoft YaHei', 'PingFang SC', sans-serif;
+    font-size: 12px;
+    line-height: 1.6;
+  }
+  /* A3 横向，适合图纸展示；边距 10mm */
+  @page {
+    size: A3 landscape;
+    margin: 10mm;
+  }
+  /* 避免表格行被截断 */
+  tr, .report-section, .report-image-wrapper {
+    page-break-inside: avoid;
+  }
+  h2 {
+    page-break-after: avoid;
+  }
+}
+
+/* 报告头部 */
+.report-header {
+  border-bottom: 2px solid #333;
+  padding-bottom: 10px;
+  margin-bottom: 16px;
+}
+.report-header h1 {
+  font-size: 22px;
+  margin: 0 0 10px 0;
+  color: #000;
+}
+.report-meta-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 6px 16px;
+  font-size: 12px;
+}
+.report-meta-grid .lbl {
+  display: inline-block;
+  width: 80px;
+  color: #666;
+}
+.report-meta-grid .val {
+  color: #000;
+  font-weight: 500;
+}
+
+/* 报告分区 */
+.report-section {
+  margin-top: 16px;
+  page-break-inside: avoid;
+}
+.report-section h2 {
+  font-size: 15px;
+  margin: 0 0 8px 0;
+  padding: 4px 8px;
+  background: #f0f0f0;
+  border-left: 3px solid #333;
+  color: #000;
+}
+
+/* 图纸 + 叠框 */
+.report-image-section {
+  page-break-after: always;
+}
+.report-image-wrapper {
+  position: relative;
+  width: 100%;
+  border: 1px solid #ccc;
+  background: #fafafa;
+}
+.report-image {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+.report-image-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+.print-rect {
+  fill: none;
+  stroke-width: 2;
+}
+.print-rect-error {
+  stroke: #dc2626;
+}
+.print-rect-warning {
+  stroke: #d97706;
+}
+.print-rect-info {
+  stroke: #2563eb;
+}
+.report-legend {
+  margin-top: 6px;
+  font-size: 11px;
+  display: flex;
+  gap: 16px;
+}
+.legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.legend-box {
+  display: inline-block;
+  width: 16px;
+  height: 10px;
+  border: 2px solid;
+}
+
+/* 报告表格 */
+.report-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 11px;
+  margin-top: 4px;
+}
+.report-table th,
+.report-table td {
+  border: 1px solid #999;
+  padding: 4px 6px;
+  text-align: left;
+  vertical-align: top;
+  word-break: break-word;
+}
+.report-table th {
+  background: #f5f5f5;
+  font-weight: 600;
+  color: #000;
+}
+.report-table-kv .lbl-cell {
+  background: #f9f9f9;
+  color: #666;
+  width: 60px;
+  font-weight: 500;
+}
+.cell-desc {
+  min-width: 200px;
+}
+.cell-clause {
+  font-family: 'Consolas', monospace;
+  font-size: 10px;
+  color: #555;
+}
+
+/* 严重度标签 */
+.sev-tag {
+  display: inline-block;
+  padding: 1px 6px;
+  border-radius: 2px;
+  font-size: 10px;
+  color: #fff;
+  font-weight: 500;
+}
+.sev-error {
+  background: #dc2626;
+}
+.sev-warning {
+  background: #d97706;
+}
+.sev-info {
+  background: #2563eb;
+}
+
+/* 错误列表 */
+.report-error-list {
+  margin: 4px 0 0 16px;
+  padding: 0;
+  font-size: 11px;
+  color: #555;
+}
+.report-error-list li {
+  margin-bottom: 2px;
+}
+
+/* 报告页脚 */
+.report-footer {
+  margin-top: 24px;
+  padding-top: 8px;
+  border-top: 1px solid #ccc;
+  text-align: center;
+  font-size: 10px;
+  color: #888;
 }
 </style>
