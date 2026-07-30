@@ -36,6 +36,10 @@
           <el-icon><ChatDotRound /></el-icon>
           <template #title><span>AI 工作台</span></template>
         </el-menu-item>
+        <el-menu-item index="/agent">
+          <el-icon><MagicStick /></el-icon>
+          <template #title><span>Agent 审查助手</span></template>
+        </el-menu-item>
         <!-- 图纸视觉分析入口已下沉到「新建审查 → 专项审查」，不在侧边栏重复暴露 -->
         <!-- 反馈意见（所有角色可见，用户区低频入口） -->
         <el-menu-item index="/feedback">

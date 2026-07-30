@@ -191,21 +191,26 @@ import AgentSidePanel from './components/AgentSidePanel.vue'
 
 const userStore = useUserStore()
 const { renderMarkdown } = useMarkdown()
-const { messages, sendMessage, stop, regenerate, isLoading, sessionId } = useAgentChat()
+const { messages, sendMessage, stop, regenerate, isLoading, sessionId, loadHistory, clearSession } = useAgentChat()
 
 // Task 17：三栏布局 — 会话列表 ref + 切换/新建会话处理
 const sessionListRef = ref<InstanceType<typeof AgentSessionList> | null>(null)
 
 async function handleSelectSession(sid: string) {
-  // 切换到历史会话：刷新页面加载该会话的消息
-  // 当前 useAgentChat 不支持动态切换 sessionId，简化为跳转到带 sessionId 的路由
-  // Task 14 已实现消息持久化，未来可通过 useAgentChat.loadHistory(sid) 加载
-  ElMessage.info(`会话切换功能待集成（sessionId=${sid.slice(0, 8)}…）`)
+  // 加载历史会话消息并切换
+  try {
+    await loadHistory(sid)
+    uploadedFiles.value = [] // 清空已上传文件展示（历史会话的临时文件已不在）
+    ElMessage.success('已切换到历史会话')
+  } catch (e) {
+    ElMessage.error('加载会话历史失败：' + (e as Error).message)
+  }
 }
 
 function handleNewChat() {
   // 清空当前对话状态，开始新会话
-  clearConversation()
+  clearSession()
+  uploadedFiles.value = []
 }
 
 const inputValue = ref('')
@@ -366,8 +371,7 @@ async function customUpload(options: { file: File }) {
 }
 
 function clearConversation() {
-  messages.value = []
-  sessionId.value = null
+  clearSession()
   uploadedFiles.value = []
 }
 

@@ -2,6 +2,7 @@ import { useChat } from '@ai-sdk/vue'
 import { DefaultChatTransport } from 'ai'
 import { computed, ref } from 'vue'
 import { useUserStore } from '@/stores/user'
+import { listMessagesApi, type MessageItem } from '@/api/agent'
 
 /**
  * Agent 对话 Composable
@@ -28,5 +29,33 @@ export function useAgentChat() {
     () => status.value === 'submitted' || status.value === 'streaming',
   )
 
-  return { messages, status, error, sendMessage, stop, regenerate, isLoading, sessionId }
+  /**
+   * 加载历史会话消息并切换到该会话
+   *
+   * Task 17 遗留 TODO 补齐：把后端 MessageItem[] 转成 UIMessage 格式
+   * （UIMessage 的 parts 是 [{ type: 'text', text: string }]），
+   * 直接赋值给 messages.value 替换当前消息列表，同时绑定 sessionId。
+   */
+  async function loadHistory(sid: string): Promise<void> {
+    const res = await listMessagesApi(sid)
+    const historyMessages = (res as any as MessageItem[]).map(m => ({
+      id: m.id,
+      role: m.role === 'user' ? 'user' : 'assistant',
+      parts: [{ type: 'text', text: m.content || '' }],
+    }))
+    messages.value = historyMessages as any
+    sessionId.value = sid
+  }
+
+  /** 清空当前对话（开新会话） */
+  function clearSession(): void {
+    messages.value = [] as any
+    sessionId.value = null
+  }
+
+  return {
+    messages, status, error, sendMessage, stop, regenerate,
+    isLoading, sessionId,
+    loadHistory, clearSession,
+  }
 }
