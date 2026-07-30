@@ -67,6 +67,12 @@ const routes: Array<RouteRecordRaw> = [
         component: () => import('../views/Tools/DwgVisionAnalysis.vue'),
         meta: { title: '图纸视觉分析' }
       },
+      {
+        path: 'agent',
+        name: 'AgentChat',
+        component: () => import('@/views/Agent/AgentChat.vue'),
+        meta: { title: 'Agent 审查助手' }
+      },
       // ===== 知识中心 =====
       {
         path: 'knowledge',
