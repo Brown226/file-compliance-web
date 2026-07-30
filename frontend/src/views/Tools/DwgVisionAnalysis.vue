@@ -517,8 +517,10 @@
       :total="historyTotal"
       :pageSize="historyPageSize"
       :analysisLabels="analysisLabelMap"
+      :comparing="crossCompareLoading"
       @replay="replayHistoryItem"
       @page-change="loadHistory"
+      @cross-compare="handleCrossCompare"
     />
 
     <!-- Task 28: 规范条文原文弹窗 -->
@@ -545,6 +547,86 @@
       v-model="replayDrawerVisible"
       :traceId="currentTraceId"
     />
+
+    <!-- Task 39: 跨文件轴线对齐比对结果弹窗 -->
+    <el-dialog
+      v-model="crossCompareDialogVisible"
+      title="跨文件轴线对齐比对结果"
+      width="720px"
+      :close-on-click-modal="false"
+    >
+      <div v-if="crossCompareResult" class="cross-compare-result">
+        <!-- 比对概览 -->
+        <el-alert
+          :type="crossCompareAlertType"
+          :title="crossCompareAlertTitle"
+          :description="`共比对 ${crossCompareResult.items.length} 张图纸，发现 ${crossCompareResult.issues.length} 项问题`"
+          :closable="false"
+          show-icon
+          style="margin-bottom: 16px"
+        />
+
+        <!-- 各图纸轴线提取结果 -->
+        <h4 style="margin: 16px 0 8px">各图纸轴线编号提取结果</h4>
+        <el-table :data="crossCompareResult.items" border size="small" style="margin-bottom: 16px">
+          <el-table-column label="文件名" prop="fileName" min-width="180" show-overflow-tooltip />
+          <el-table-column label="横轴（字母）" min-width="120">
+            <template #default="{ row }">
+              <div v-if="row.letterAxes.length" class="axis-tags">
+                <el-tag v-for="a in row.letterAxes" :key="a" size="small" type="warning" effect="plain">{{ a }}</el-tag>
+              </div>
+              <span v-else class="axis-empty">—</span>
+            </template>
+          </el-table-column>
+          <el-table-column label="纵轴（数字）" min-width="120">
+            <template #default="{ row }">
+              <div v-if="row.numberAxes.length" class="axis-tags">
+                <el-tag v-for="a in row.numberAxes" :key="a" size="small" type="success" effect="plain">{{ a }}</el-tag>
+              </div>
+              <span v-else class="axis-empty">—</span>
+            </template>
+          </el-table-column>
+          <el-table-column label="提取来源" prop="extractedFrom" width="140" show-overflow-tooltip />
+        </el-table>
+
+        <!-- 比对 issue 列表 -->
+        <h4 style="margin: 16px 0 8px">比对结果</h4>
+        <div v-if="crossCompareResult.issues.length === 0" class="cross-empty">
+          <el-empty description="无比对结果" :image-size="60" />
+        </div>
+        <div v-else class="cross-issues">
+          <div
+            v-for="(issue, i) in crossCompareResult.issues"
+            :key="`cross-issue-${i}`"
+            :class="['cross-issue', `cross-issue-${issue.severity}`]"
+          >
+            <el-tag :type="crossSeverityTagType(issue.severity)" size="small" effect="dark">
+              {{ severityLabel(issue.severity) }}
+            </el-tag>
+            <span class="cross-issue-code">{{ issue.code }}</span>
+            <span class="cross-issue-msg">{{ issue.message }}</span>
+          </div>
+        </div>
+
+        <!-- 说明 -->
+        <el-alert
+          type="info"
+          :closable="false"
+          style="margin-top: 16px"
+        >
+          <template #title>
+            <span style="font-size: 12px">
+              轴线编号从 OCR 文本、设计说明、标注检查项中正则提取。
+              横轴为字母（A/B/C），纵轴为数字（1/2/3）。
+              提取结果仅供参考，最终一致性以人工复核为准。
+            </span>
+          </template>
+        </el-alert>
+      </div>
+      <template #footer>
+        <el-button @click="crossCompareDialogVisible = false">关闭</el-button>
+      </template>
+    </el-dialog>
   </div>
 
   <!-- Task 41: PDF 报告打印布局（浏览器原生打印，平时隐藏，打印时显示） -->
@@ -676,7 +758,7 @@ import {
   Memo, WarningFilled, ArrowLeft, InfoFilled,
 } from '@element-plus/icons-vue'
 import { dwgToPng, parseDwgFile } from '@/utils/dwg-parser'
-import { analyzeDwgVision, getVisionStatus, getVisionHistory, type VisionAnalyzeResult, type VisionStatusResult, type VisionHistoryItem, type OcrVerificationResult, type DwgMetadata, type DwgMetadataVerification, type DwgProfession } from '@/api/dwg-vision'
+import { analyzeDwgVision, getVisionStatus, getVisionHistory, crossFileCompare, type VisionAnalyzeResult, type VisionStatusResult, type VisionHistoryItem, type OcrVerificationResult, type DwgMetadata, type DwgMetadataVerification, type DwgProfession, type CrossFileCompareResult } from '@/api/dwg-vision'
 import DwgVisionHistoryDrawer from './DwgVisionHistoryDrawer.vue'
 import DwgVisionPreviewPanel from './DwgVisionPreviewPanel.vue'
 import LlmReplayDrawer from '@/views/TaskDetails/LlmReplayDrawer.vue'
@@ -757,6 +839,11 @@ const selectedProfession = ref<DwgProfession | 'auto'>('auto')
 // - reportPrinting: 是否处于打印模式（控制打印块显示/隐藏）
 const printableImageBase64 = ref<string>('')
 const reportPrinting = ref(false)
+
+// Task 39: 跨文件比对相关状态
+const crossCompareLoading = ref(false)
+const crossCompareDialogVisible = ref(false)
+const crossCompareResult = ref<CrossFileCompareResult | null>(null)
 
 // Task 25: 历史记录相关状态
 const historyVisible = ref(false)
@@ -1234,6 +1321,57 @@ async function startPrintReport() {
 /** afterprint 事件：打印对话框关闭后清理打印布局 */
 function handleAfterPrint() {
   reportPrinting.value = false
+}
+
+// ==================== Task 39: 跨文件轴线对齐比对 ====================
+
+/** 处理历史抽屉的 cross-compare 事件 */
+async function handleCrossCompare(recordIds: string[]) {
+  if (recordIds.length < 2) {
+    ElMessage.warning('请至少选择 2 条记录进行比对')
+    return
+  }
+  crossCompareLoading.value = true
+  try {
+    const res = await crossFileCompare(recordIds)
+    crossCompareResult.value = res.data
+    crossCompareDialogVisible.value = true
+  } catch (err: any) {
+    ElMessage.error('跨文件比对失败: ' + (err?.message || '未知错误'))
+  } finally {
+    crossCompareLoading.value = false
+  }
+}
+
+/** 比对结果概览 alert 类型 */
+const crossCompareAlertType = computed<'success' | 'warning' | 'error' | 'info'>(() => {
+  if (!crossCompareResult.value) return 'info'
+  const issues = crossCompareResult.value.issues
+  if (issues.some(i => i.severity === 'error')) return 'error'
+  if (issues.some(i => i.severity === 'warning')) return 'warning'
+  return 'success'
+})
+
+/** 比对结果概览标题 */
+const crossCompareAlertTitle = computed(() => {
+  if (!crossCompareResult.value) return ''
+  const issues = crossCompareResult.value.issues
+  if (issues.length === 0) return '未发现问题'
+  const errors = issues.filter(i => i.severity === 'error').length
+  const warnings = issues.filter(i => i.severity === 'warning').length
+  const infos = issues.filter(i => i.severity === 'info').length
+  const parts: string[] = []
+  if (errors > 0) parts.push(`${errors} 项错误`)
+  if (warnings > 0) parts.push(`${warnings} 项警告`)
+  if (infos > 0) parts.push(`${infos} 项提示`)
+  return parts.join('，')
+})
+
+/** severity → el-tag type 映射（跨文件比对弹窗用） */
+function crossSeverityTagType(sev: 'error' | 'warning' | 'info'): 'danger' | 'warning' | 'info' {
+  if (sev === 'error') return 'danger'
+  if (sev === 'warning') return 'warning'
+  return 'info'
 }
 
 onMounted(() => {
@@ -2324,6 +2462,70 @@ function handleOpenClause(detail: IssueDetail) {
     flex-direction: column;
     align-items: flex-start;
   }
+}
+
+/* ==================== Task 39: 跨文件比对弹窗样式 ==================== */
+
+.cross-compare-result h4 {
+  color: #1e293b;
+  font-size: 14px;
+}
+
+.axis-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 3px;
+}
+
+.axis-empty {
+  color: #cbd5e1;
+}
+
+.cross-issues {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.cross-issue {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 8px 12px;
+  border-radius: 6px;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.cross-issue-error {
+  background: #fef2f2;
+  border-left: 3px solid #dc2626;
+}
+
+.cross-issue-warning {
+  background: #fffbeb;
+  border-left: 3px solid #d97706;
+}
+
+.cross-issue-info {
+  background: #eff6ff;
+  border-left: 3px solid #2563eb;
+}
+
+.cross-issue-code {
+  font-family: 'Consolas', monospace;
+  font-size: 11px;
+  color: #64748b;
+  white-space: nowrap;
+}
+
+.cross-issue-msg {
+  flex: 1;
+  color: #1e293b;
+}
+
+.cross-empty {
+  padding: 16px 0;
 }
 
 /* ==================== Task 41: PDF 报告打印样式 ==================== */

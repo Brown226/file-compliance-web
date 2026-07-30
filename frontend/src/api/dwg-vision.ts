@@ -314,3 +314,42 @@ export function getVisionLlmLogs(traceId: string) {
     `/dwg/vision-llm-logs/${traceId}`
   )
 }
+
+// ==================== Task 39: 跨文件轴线对齐比对 ====================
+
+/** 跨文件比对：单条记录的轴线提取结果 */
+export interface CrossFileCompareItem {
+  recordId: string
+  fileName: string
+  /** 横轴编号（字母，如 A/B/C） */
+  letterAxes: string[]
+  /** 纵轴编号（数字，如 1/2/3） */
+  numberAxes: string[]
+  /** 提取来源说明（如 "OCR文本 + 设计说明"） */
+  extractedFrom: string
+}
+
+/** 跨文件比对 issue */
+export interface CrossFileCompareIssue {
+  severity: 'error' | 'warning' | 'info'
+  code: string
+  message: string
+}
+
+/** 跨文件比对结果 */
+export interface CrossFileCompareResult {
+  items: CrossFileCompareItem[]
+  issues: CrossFileCompareIssue[]
+}
+
+/**
+ * Task 39: 跨文件轴线对齐比对
+ * 从历史记录中选 ≥2 条记录，提取轴线编号做交叉一致性检查
+ */
+export function crossFileCompare(recordIds: string[]) {
+  return request.post<any, { code: number; data: CrossFileCompareResult; message?: string }>(
+    '/dwg/vision-cross-compare',
+    { recordIds },
+    { timeout: 30000 }
+  )
+}

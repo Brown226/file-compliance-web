@@ -146,7 +146,7 @@ ${JSON.stringify(items, null, 2)}
     return { issues: keepIssues, removed };
   } catch (e) {
     // LLM 失败时保留所有问题（降级策略）
-    console.error('[llm_cross_check] LLM 交叉核验失败，保留原始结果:', (e as Error).message);
+    console.error('[Agent:llm_cross_check] LLM 交叉核验失败，保留原始结果:', (e as Error).message);
     return { issues, removed: [] };
   }
 }
@@ -158,7 +158,16 @@ export function createLlmCrossCheckTool(_context: ToolContext) {
   return tool({
     description: '对已发现的问题做交叉验证：精确去重（originalText 完全相同）→ 归一化去重（去除空白标点后相同）→ LLM 交叉核验（检测矛盾如"缺失"vs"存在"和语义重复）。LLM 核验失败时保留去重结果，不丢弃问题。返回核验后的 ReviewIssue[] 和每一步的统计数字。',
     inputSchema: z.object({
-      issues: z.array(z.any()).describe('待交叉核验的问题列表（ReviewIssue[] 格式）'),
+      issues: z.array(z.object({
+        issueType: z.string(),
+        originalText: z.string(),
+        suggestedText: z.string().optional(),
+        description: z.string().optional(),
+        severity: z.string().optional(),
+        riskLevel: z.string().optional(),
+        ruleCode: z.string().optional(),
+        standardRef: z.string().optional(),
+      }).passthrough()).describe('待交叉核验的问题列表（ReviewIssue[] 格式，至少含 issueType + originalText）'),
       batchSize: z.number().int().min(5).max(30).optional().default(15).describe('每批 LLM 核验的问题数（默认 15）'),
     }),
     execute: async ({ issues, batchSize }): Promise<CrossCheckResult> => {

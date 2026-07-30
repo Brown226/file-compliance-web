@@ -112,6 +112,8 @@ export function createSearchStandardCheckpointsTool(_context: ToolContext) {
           standardStatus: s.standardStatus,
         }));
 
+        console.log(`[Agent:search_standard_checkpoints] 列出现行标准: ${standardInfos.length} 个`);
+
         return {
           mode: 'list_standards',
           standards: standardInfos,
@@ -127,6 +129,8 @@ export function createSearchStandardCheckpointsTool(_context: ToolContext) {
       // 查所有审点
       const allCheckpoints = await CheckpointService.listByStandard(standardId);
 
+      console.log(`[Agent:search_standard_checkpoints] 查标准 ${standardId} (${standardTitle}): 原始 ${allCheckpoints.length} 个审点`);
+
       // 过滤
       const filtered = allCheckpoints.filter((cp: any) => {
         if (auditDimension && cp.auditDimension !== auditDimension) return false;
@@ -137,6 +141,8 @@ export function createSearchStandardCheckpointsTool(_context: ToolContext) {
 
       // 限制数量
       const trimmed = filtered.slice(0, topNumber);
+
+      console.log(`[Agent:search_standard_checkpoints] 过滤后 ${filtered.length} 个，返回 ${trimmed.length} 个 (keyword=${keyword || '-'}, dim=${auditDimension || '-'}, mandatory=${mandatory || '-'})`);
 
       const checkpoints: CheckpointInfo[] = trimmed.map((cp: any) => ({
         id: cp.id,

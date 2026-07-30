@@ -2113,4 +2113,215 @@ export class DwgVisionService {
       .digest('hex');
     return `dwg_vision:cache:${hash}`;
   }
+
+  // ==================== Task 39: 跨文件轴线对齐比对 ====================
+
+  /**
+   * Task 39: 跨文件轴线对齐比对（最小闭环）
+   *
+   * 从多条历史记录的 VisionAnalyzeResult 中提取轴线编号，比对一致性：
+   *   1. 对每条记录，从 ocrText / designNotes / annotations 文本中正则提取轴线编号
+   *   2. 分为横轴（字母 A-Z）和纵轴（数字 1-99）两个集合
+   *   3. 比对多张图的轴线集合：
+   *      - 仅在某张图出现的轴线 → warning issue（可能漏标）
+   *      - 轴线体系完全不一致（一张图全是字母，另一张全是数字）→ error issue
+   *
+   * @param recordIds  VisionAnalysis 记录 ID 数组（≥2 条）
+   * @returns          比对结果（每张图的轴线集合 + 跨文件 issue 列表）
+   */
+  static async crossFileCompare(
+    recordIds: string[],
+  ): Promise<{
+    items: Array<{
+      recordId: string;
+      fileName: string;
+      letterAxes: string[];   // 横轴（字母）
+      numberAxes: string[];   // 纵轴（数字）
+      extractedFrom: string;  // 提取来源说明
+    }>;
+    issues: Array<{
+      severity: 'error' | 'warning' | 'info';
+      code: string;
+      message: string;
+    }>;
+  }> {
+    if (recordIds.length < 2) {
+      throw new Error('跨文件比对至少需要 2 条记录');
+    }
+    if (recordIds.length > 10) {
+      throw new Error('跨文件比对最多支持 10 条记录');
+    }
+
+    // 1. 查询记录
+    const records = await prisma.visionAnalysis.findMany({
+      where: { id: { in: recordIds } },
+      orderBy: { createdAt: 'asc' },
+    });
+
+    if (records.length < 2) {
+      throw new Error(`仅找到 ${records.length} 条记录，跨文件比对至少需要 2 条`);
+    }
+
+    // 2. 逐条提取轴线编号
+    const items = records.map(r => {
+      const result = r.result as unknown as VisionAnalyzeResult;
+      const extracted = DwgVisionService.extractAxisNumbers(result);
+      return {
+        recordId: r.id,
+        fileName: r.fileName || '未命名',
+        letterAxes: extracted.letters,
+        numberAxes: extracted.numbers,
+        extractedFrom: extracted.source,
+      };
+    });
+
+    // 3. 比对一致性
+    const issues: Array<{ severity: 'error' | 'warning' | 'info'; code: string; message: string }> = [];
+
+    // 3a. 找出每张图独有的轴线编号（其他图都没有的）
+    for (let i = 0; i < items.length; i++) {
+      const cur = items[i];
+      const others = items.filter((_, j) => j !== i);
+      const otherLetters = new Set(others.flatMap(o => o.letterAxes));
+      const otherNumbers = new Set(others.flatMap(o => o.numberAxes));
+
+      const uniqueLetters = cur.letterAxes.filter(l => !otherLetters.has(l));
+      const uniqueNumbers = cur.numberAxes.filter(n => !otherNumbers.has(n));
+
+      if (uniqueLetters.length > 0) {
+        issues.push({
+          severity: 'warning',
+          code: 'DWG_CROSS_AXIS_LETTER_UNIQUE',
+          message: `「${cur.fileName}」含横轴编号 ${uniqueLetters.join('、')}，其他图纸均未出现，可能漏标`,
+        });
+      }
+      if (uniqueNumbers.length > 0) {
+        issues.push({
+          severity: 'warning',
+          code: 'DWG_CROSS_AXIS_NUMBER_UNIQUE',
+          message: `「${cur.fileName}」含纵轴编号 ${uniqueNumbers.join('、')}，其他图纸均未出现，可能漏标`,
+        });
+      }
+    }
+
+    // 3b. 轴线体系不一致（一张图全是字母无数字，另一张全是数字无字母）
+    const hasLetters = items.filter(i => i.letterAxes.length > 0);
+    const hasNumbers = items.filter(i => i.numberAxes.length > 0);
+    const onlyLetters = items.filter(i => i.letterAxes.length > 0 && i.numberAxes.length === 0);
+    const onlyNumbers = items.filter(i => i.numberAxes.length > 0 && i.letterAxes.length === 0);
+
+    if (onlyLetters.length > 0 && onlyNumbers.length > 0) {
+      const letterFiles = onlyLetters.map(i => `「${i.fileName}」`).join('、');
+      const numberFiles = onlyNumbers.map(i => `「${i.fileName}」`).join('、');
+      issues.push({
+        severity: 'error',
+        code: 'DWG_CROSS_AXIS_SYSTEM_MISMATCH',
+        message: `轴线编号体系不一致：${letterFiles} 仅含字母横轴，${numberFiles} 仅含数字纵轴，可能图纸类型不匹配或提取遗漏`,
+      });
+    }
+
+    // 3c. 全部一致时输出 info
+    if (issues.length === 0 && hasLetters.length >= 2) {
+      issues.push({
+        severity: 'info',
+        code: 'DWG_CROSS_AXIS_CONSISTENT',
+        message: `${items.length} 张图纸的轴线编号一致，未发现不一致项`,
+      });
+    }
+
+    // 3d. 全部未提取到轴线
+    if (hasLetters.length === 0 && hasNumbers.length === 0) {
+      issues.push({
+        severity: 'info',
+        code: 'DWG_CROSS_AXIS_NO_DATA',
+        message: '所有图纸均未提取到轴线编号，可能未启用 OCR 交叉验证或图纸不含轴线标注',
+      });
+    }
+
+    return { items, issues };
+  }
+
+  /**
+   * Task 39: 从 VisionAnalyzeResult 的文本字段中正则提取轴线编号
+   *
+   * 提取来源（按优先级）：
+   *   1. ocrVerification.ocrText（OCR 整图文本，覆盖面最广）
+   *   2. compliance.designNotes（设计说明，可能含轴线引用）
+   *   3. annotations.missingItems[].item + location（标注检查项）
+   *
+   * 轴线编号格式：
+   *   - 字母横轴：A / B / C / ... / Z / AA / AB（1-2 个大写字母）
+   *   - 数字纵轴：1 / 2 / 3 / ... / 99
+   *   - 匹配模式：
+   *     "轴线 A" / "A轴" / "(A)" / "轴线①"（圆圈数字）
+   *     "轴线 1" / "1轴" / "(1)"
+   *     "A-1" 网格交叉点（同时提取 A 和 1）
+   */
+  private static extractAxisNumbers(
+    result: VisionAnalyzeResult,
+  ): { letters: string[]; numbers: string[]; source: string } {
+    // 收集所有可用文本
+    const texts: string[] = [];
+    const sources: string[] = [];
+
+    if (result.ocrVerification?.ocrText) {
+      texts.push(result.ocrVerification.ocrText);
+      sources.push('OCR文本');
+    }
+    if (result.compliance?.designNotes?.length) {
+      texts.push(result.compliance.designNotes.join('\n'));
+      sources.push('设计说明');
+    }
+    if (result.annotations?.missingItems?.length) {
+      const annText = result.annotations.missingItems
+        .map(i => `${i.item || ''} ${i.location || ''}`)
+        .join('\n');
+      texts.push(annText);
+      sources.push('标注检查');
+    }
+
+    const fullText = texts.join('\n');
+    const letterSet = new Set<string>();
+    const numberSet = new Set<string>();
+
+    // 模式 1：中文"轴线 A" / "A轴"
+    // 匹配 "轴线 A" "轴线 1" "A轴" "1轴" "(A)" "(1)"
+    const axisPatterns = [
+      /轴线\s*([A-Z]{1,2})\b/g,           // 轴线 A
+      /轴线\s*(\d{1,2})\b/g,               // 轴线 1
+      /\b([A-Z]{1,2})\s*轴\b/g,            // A轴
+      /\b(\d{1,2})\s*轴\b/g,               // 1轴
+      /\(([A-Z]{1,2})\)/g,                  // (A)
+      /\((\d{1,2})\)/g,                     // (1)
+    ];
+
+    for (const pattern of axisPatterns) {
+      let match: RegExpExecArray | null;
+      while ((match = pattern.exec(fullText)) !== null) {
+        const val = match[1];
+        if (/^[A-Z]{1,2}$/.test(val)) {
+          letterSet.add(val);
+        } else if (/^\d{1,2}$/.test(val)) {
+          numberSet.add(val);
+        }
+      }
+    }
+
+    // 模式 2：网格交叉点 "A-1" → 同时提取 A 和 1
+    const crossPattern = /\b([A-Z]{1,2})\s*[-—]\s*(\d{1,2})\b/g;
+    let crossMatch: RegExpExecArray | null;
+    while ((crossMatch = crossPattern.exec(fullText)) !== null) {
+      letterSet.add(crossMatch[1]);
+      numberSet.add(crossMatch[2]);
+    }
+
+    // 过滤明显误匹配：单字母 A/I 可能是英文冠词误匹配，但"轴线 A"/"A轴"上下文已足够区分
+    // 不过滤，保留所有匹配结果（前端可标注"提取来源"供人工复核）
+
+    return {
+      letters: Array.from(letterSet).sort((a, b) => a.localeCompare(b)),
+      numbers: Array.from(numberSet).sort((a, b) => Number(a) - Number(b)),
+      source: sources.length > 0 ? sources.join(' + ') : '无可用文本',
+    };
+  }
 }

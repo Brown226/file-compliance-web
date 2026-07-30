@@ -2,8 +2,8 @@
  * list_available_rules 工具 — 列出可用规则
  *
  * 工作方式：
- * 1. 从 RULE_REGISTRY 获取全量规则元数据（getRuleRegistryMetadata）
- * 2. 从 prisma.reviewRule 获取数据库中的启用/参数配置
+ * 1. 从 RULE_REGISTRY 获取全量规则元数据（getRuleRegistryMetadata，含 category 字段）
+ * 2. 从 prisma.reviewRule 获取数据库中的启用/参数配置（复用 loadRuleConfigsFromDB，带 60s 缓存）
  * 3. 合并后按 category 筛选返回
  *
  * 参数：
@@ -16,8 +16,7 @@
  * - categories: 可用分类列表（含计数）
  */
 import { z } from 'zod';
-import prisma from '../../../../config/db';
-import { getRuleRegistryMetadata } from '../../../rules';
+import { getRuleRegistryMetadata, loadRuleConfigsFromDB } from '../../../rules';
 import type { ToolContext } from '../file/upload_file';
 
 const { tool } = require('@ai-sdk/provider-utils') as typeof import('@ai-sdk/provider-utils');
@@ -42,33 +41,6 @@ interface ListRulesResult {
 }
 
 /**
- * 规则前缀 → category 映射（与 RULE_REGISTRY 中的 category 字段一致）
- * issueType: NAMING/ENCODING/ATTRIBUTE/HEADER/PAGE/FORMAT/COMPLETENESS/CONSISTENCY/LAYOUT/TYPO/PUNCTUATION/DWG/VIOLATION
- */
-const PREFIX_CATEGORY_MAP: Record<string, string> = {
-  NAME: 'NAMING',
-  CODE: 'ENCODING',
-  UNIT: 'ENCODING',
-  ATTR: 'ATTRIBUTE',
-  HEADER: 'HEADER',
-  PAGE: 'PAGE',
-  FORMAT: 'FORMAT',
-  COMPL: 'COMPLETENESS',
-  CONSIST: 'CONSISTENCY',
-  LAYOUT: 'LAYOUT',
-  TYPO: 'TYPO',
-  PUNCT: 'PUNCTUATION',
-  INTERNAL_CODE: 'ENCODING',
-  DWG_TITLE: 'DWG',
-  DWG_LAYER: 'DWG',
-  DWG_DIM: 'DWG',
-  DWG_STDREF: 'DWG',
-  DWG_SCALE: 'DWG',
-  DWG_OVERLAP: 'DWG',
-  CONTRACT: 'VIOLATION',
-};
-
-/**
  * 创建 list_available_rules 工具
  */
 export function createListAvailableRulesTool(_context: ToolContext) {
@@ -80,49 +52,33 @@ export function createListAvailableRulesTool(_context: ToolContext) {
       ),
     }),
     execute: async ({ category }): Promise<ListRulesResult> => {
-      // 1. 从注册表获取全量元数据
+      // 1. 从注册表获取全量元数据（含 category 字段，由 RULE_REGISTRY 直接提供）
       const metadata = getRuleRegistryMetadata();
       const allItems = metadata.groups.flatMap(g => g.items);
 
-      // 2. 从数据库加载规则配置（读取 enabled/severity）
+      // 2. 从数据库加载规则配置（复用 loadRuleConfigsFromDB，带 60s 缓存，避免重复查询）
       let dbConfigMap = new Map<string, { enabled: boolean; severity: string }>();
       try {
-        const dbRules = await prisma.reviewRule.findMany({
-          select: { ruleCode: true, enabled: true, severity: true },
-        });
-        for (const r of dbRules) {
-          const prefix = r.ruleCode.replace(/_\d+$/, '');
-          // 同名规则：任一启用即启用，取最严重 severity
-          const existing = dbConfigMap.get(prefix);
-          if (existing) {
-            if (!r.enabled) existing.enabled = false;
-            const sevOrder = ['info', 'warning', 'error'];
-            if (sevOrder.indexOf(r.severity) > sevOrder.indexOf(existing.severity)) {
-              existing.severity = r.severity;
-            }
-          } else {
-            dbConfigMap.set(prefix, {
-              enabled: r.enabled,
-              severity: r.severity || 'warning',
-            });
-          }
+        const fullConfigMap = await loadRuleConfigsFromDB();
+        // 转换为只含 enabled/severity 的 Map（config 字段本工具不需要）
+        for (const [prefix, cfg] of fullConfigMap.entries()) {
+          dbConfigMap.set(prefix, { enabled: cfg.enabled, severity: cfg.severity });
         }
       } catch (e) {
-        console.warn('[list_available_rules] 加载数据库规则配置失败，使用默认值:', e);
+        console.warn('[Agent:list_available_rules] 加载数据库规则配置失败，使用默认值:', e);
       }
 
-      // 3. 合并元数据 + 数据库配置
+      // 3. 合并元数据 + 数据库配置（无 DB 记录时默认启用 + warning）
       let rules: RuleDetail[] = allItems.map(item => {
         const dbCfg = dbConfigMap.get(item.prefix);
-        const category_ = PREFIX_CATEGORY_MAP[item.prefix] || 'UNKNOWN';
         return {
           prefix: item.prefix,
           label: item.label,
           description: item.description,
           group: item.group,
           icon: item.icon,
-          category: category_,
-          enabled: dbCfg?.enabled ?? true,  // 无 DB 记录时默认启用
+          category: item.category,  // 直接用 RULE_REGISTRY 的 category，不再硬编码映射
+          enabled: dbCfg?.enabled ?? true,
           severity: dbCfg?.severity ?? 'warning',
         };
       });

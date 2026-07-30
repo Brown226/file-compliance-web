@@ -28,6 +28,7 @@ interface ApplyRuleResult {
   total: number;
   appliedPrefixes: string[];
   skippedPrefixes: string[];
+  error?: string;  // 规则引擎执行失败时填充，Agent 可据此决定是否重试
 }
 
 /**
@@ -68,15 +69,16 @@ export function createApplyRuleTool(_context: ToolContext) {
         ? rulePrefixes.map(p => p.toUpperCase()).filter(p => !allPrefixes.includes(p))
         : [];
 
-      // 3. 执行规则引擎
+      // 3. 执行规则引擎（失败时降级返回空 issues + error 字段，不 throw 中断 Agent 流程）
       let issues: RuleIssue[] = [];
+      let errorMsg: string | undefined;
       try {
         issues = await runAllRules(ctx, {
           enabledRulePrefixes: new Set(requestedPrefixes),
         });
       } catch (e) {
-        console.error('[apply_rule] 规则引擎执行失败:', e);
-        throw new Error(`规则引擎执行失败: ${(e as Error).message}`);
+        console.error('[Agent:apply_rule] 规则引擎执行失败，返回空结果:', e);
+        errorMsg = (e as Error).message;
       }
 
       return {
@@ -84,6 +86,7 @@ export function createApplyRuleTool(_context: ToolContext) {
         total: issues.length,
         appliedPrefixes: requestedPrefixes,
         skippedPrefixes,
+        error: errorMsg,
       };
     },
   });

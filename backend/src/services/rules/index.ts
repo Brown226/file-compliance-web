@@ -213,7 +213,7 @@ const RULE_REGISTRY: RuleEntry[] = [
  * 从数据库加载规则配置（带缓存，60秒TTL）
  * 返回 Map<ruleCode前缀, { enabled, severity, config }>
  */
-async function loadRuleConfigsFromDB(): Promise<Map<string, { enabled: boolean; severity: string; config?: any }>> {
+export async function loadRuleConfigsFromDB(): Promise<Map<string, { enabled: boolean; severity: string; config?: any }>> {
   const now = Date.now();
   if (ruleConfigCache && (now - ruleConfigCacheTimestamp) < RULE_CONFIG_CACHE_TTL_MS) {
     return ruleConfigCache;
@@ -332,6 +332,7 @@ export interface RuleMetaItem {
   description: string;
   group: string;
   icon: string;
+  category: string;  // issueType 分类（NAMING/ENCODING/ATTRIBUTE/HEADER/PAGE/FORMAT/COMPLETENESS/CONSISTENCY/LAYOUT/TYPO/PUNCTUATION/DWG/VIOLATION）
 }
 
 export interface RuleGroupMeta {
@@ -353,6 +354,7 @@ export function getRuleRegistryMetadata(): { groups: RuleGroupMeta[]; total: num
       description: rule.meta.description,
       group: g,
       icon: rule.meta.icon,
+      category: rule.category,
     });
   }
   const groups: RuleGroupMeta[] = Array.from(groupMap.entries()).map(([title, val]) => ({

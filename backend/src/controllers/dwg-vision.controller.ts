@@ -454,3 +454,26 @@ export const visionLlmLogs = async (req: Request, res: Response): Promise<void> 
     res.status(500).json({ code: 500, message: err.message });
   }
 };
+
+/**
+ * POST /api/dwg/vision-cross-compare
+ * Task 39: 跨文件轴线对齐比对
+ * 从历史记录中选 ≥2 条记录，提取轴线编号做交叉一致性检查
+ *
+ * body: { recordIds: string[] }
+ */
+export const visionCrossFileCompare = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { recordIds } = req.body || {};
+    if (!Array.isArray(recordIds) || recordIds.length < 2) {
+      res.status(400).json({ code: 400, message: 'recordIds 参数需为 ≥2 个记录 ID 数组' });
+      return;
+    }
+
+    const result = await DwgVisionService.crossFileCompare(recordIds);
+    res.json({ code: 200, message: 'success', data: result });
+  } catch (err: any) {
+    console.error('[DWG Vision] 跨文件比对失败:', err);
+    res.status(500).json({ code: 500, message: err.message });
+  }
+};
