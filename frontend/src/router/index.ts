@@ -68,6 +68,12 @@ const routes: Array<RouteRecordRaw> = [
         meta: { title: '图纸视觉分析' }
       },
       {
+        path: 'dwg-batch',
+        name: 'BatchDwgAnalysis',
+        component: () => import('../views/Tools/BatchDwgAnalysis.vue'),
+        meta: { title: '图纸批量分析' }
+      },
+      {
         path: 'agent',
         name: 'AgentChat',
         component: () => import('@/views/Agent/AgentChat.vue'),

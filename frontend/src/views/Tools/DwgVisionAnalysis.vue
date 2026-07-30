@@ -12,6 +12,10 @@
         </div>
       </div>
       <div class="hero-right">
+        <el-button plain @click="goBatchAnalysis">
+          <el-icon><Files /></el-icon>
+          批量分析
+        </el-button>
         <el-button plain @click="goBackToEntry">
           <el-icon><ArrowLeft /></el-icon>
           重新选择模块
@@ -750,15 +754,15 @@
 
 <script setup lang="ts">
 import { ref, computed, nextTick, onMounted, onUnmounted } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRouter, useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import {
   UploadFilled, Loading, Document, View, SetUp, CircleCheckFilled, CircleCheck,
   VideoPlay, PictureFilled, Right, DataAnalysis, Clock, Grid, EditPen, Stamp,
-  Memo, WarningFilled, ArrowLeft, InfoFilled,
+  Memo, WarningFilled, ArrowLeft, InfoFilled, Files,
 } from '@element-plus/icons-vue'
 import { dwgToPng, parseDwgFile } from '@/utils/dwg-parser'
-import { analyzeDwgVision, getVisionStatus, getVisionHistory, crossFileCompare, type VisionAnalyzeResult, type VisionStatusResult, type VisionHistoryItem, type OcrVerificationResult, type DwgMetadata, type DwgMetadataVerification, type DwgProfession, type CrossFileCompareResult } from '@/api/dwg-vision'
+import { analyzeDwgVision, getVisionStatus, getVisionHistory, getVisionHistoryDetail, crossFileCompare, type VisionAnalyzeResult, type VisionStatusResult, type VisionHistoryItem, type OcrVerificationResult, type DwgMetadata, type DwgMetadataVerification, type DwgProfession, type CrossFileCompareResult } from '@/api/dwg-vision'
 import DwgVisionHistoryDrawer from './DwgVisionHistoryDrawer.vue'
 import DwgVisionPreviewPanel from './DwgVisionPreviewPanel.vue'
 import LlmReplayDrawer from '@/views/TaskDetails/LlmReplayDrawer.vue'
@@ -768,10 +772,16 @@ import type { BboxOverlay } from '@/composables/useSvgZoomPan'
 import { getKnowledgeBasesApi } from '@/api/maxkb'
 
 const router = useRouter()
+const route = useRoute()
 
 /** 返回审查模块选择页（与其他审查模式入口体验一致） */
 function goBackToEntry() {
   router.push('/review')
+}
+
+/** Task 40: 跳转批量分析页 */
+function goBatchAnalysis() {
+  router.push('/dwg-batch')
 }
 
 // 分析选项配置
@@ -1374,8 +1384,21 @@ function crossSeverityTagType(sev: 'error' | 'warning' | 'info'): 'danger' | 'wa
   return 'info'
 }
 
-onMounted(() => {
+onMounted(async () => {
   window.addEventListener('afterprint', handleAfterPrint)
+
+  // Task 40: 支持 recordId 查询参数回放历史记录（从批量分析页跳转来）
+  const recordId = route.query.recordId as string | undefined
+  if (recordId) {
+    try {
+      const res = await getVisionHistoryDetail(recordId)
+      if (res.code === 200 && res.data) {
+        replayHistoryItem(res.data)
+      }
+    } catch (err: any) {
+      ElMessage.warning(`加载指定历史记录失败: ${err?.message || '未知错误'}`)
+    }
+  }
 })
 onUnmounted(() => {
   window.removeEventListener('afterprint', handleAfterPrint)
