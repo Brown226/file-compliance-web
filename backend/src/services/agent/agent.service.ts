@@ -25,6 +25,7 @@ import { Prisma } from '@prisma/client';
 import { LlmService } from '../llm/llm.service';
 import { createAllTools } from './tools';
 import { TraceService } from './trace/trace.service';
+import { QASessionService } from './qa-session.service';
 import { getUploadDir } from '../../config/upload';
 
 // require ESM-only SDK（Node 22.12+ 支持），同时保留类型
@@ -230,6 +231,24 @@ export class AgentService {
     // streamText 的步骤是顺序执行的，简单的递增计数器即可
     let toolStepCounter = 0;
 
+    // Task 14.3：持久化最后一条用户消息到 QAMessage（fire-and-forget）
+    // - 从 messages 数组中找最后一条 role=user 的消息
+    // - sessionId 为空时跳过（与 TraceService 一致的 best-effort 策略）
+    if (sessionId) {
+      const lastUserMsg = [...messages].reverse().find((m: any) => m?.role === 'user');
+      if (lastUserMsg) {
+        // 提取纯文本（兼容 parts 数组和 string content 两种格式）
+        const userText = Array.isArray(lastUserMsg?.parts)
+          ? lastUserMsg.parts.filter((p: any) => p.type === 'text').map((p: any) => p.text).join('')
+          : (typeof lastUserMsg?.content === 'string' ? lastUserMsg.content : '');
+        if (userText) {
+          QASessionService.persistUserMessage(sessionId, userId, userText).catch((e: Error) => {
+            console.warn(`[Agent:QASession] 持久化用户消息失败: sessionId=${sessionId}`, (e as Error).message);
+          });
+        }
+      }
+    }
+
     // 9. 启动流式调用
     //    - system: Agent 系统提示词（定义工作流/行为准则/安全约束）+ 已上传文件列表
     //    - messages: ModelMessage 数组（Task 7.5：已用 convertToModelMessages 转换）
@@ -357,6 +376,21 @@ export class AgentService {
           .catch((e: Error) => {
             console.warn('[Agent] 写入 LlmCallLog 失败:', (e as Error).message);
           });
+
+        // Task 14.3：持久化 assistant 消息到 QAMessage（fire-and-forget）
+        // - 用 text 作为 content（Vercel AI SDK v7 的最终文本输出）
+        // - finishReason 为 'error' 时记 failed，否则 completed
+        // - sessionId 为空时跳过
+        if (sessionId && text) {
+          QASessionService.persistAssistantMessage(
+            sessionId,
+            userId,
+            text,
+            finishReason === 'error' ? 'failed' : 'completed',
+          ).catch((e: Error) => {
+            console.warn(`[Agent:QASession] 持久化 assistant 消息失败: sessionId=${sessionId}`, (e as Error).message);
+          });
+        }
       },
     });
 
@@ -464,6 +498,18 @@ export class AgentService {
     const toolNames = result.steps?.flatMap((s: any) => (s.toolCalls ?? []).map((tc: any) => tc.toolName)) ?? [];
     console.log(`[Agent] generateText 完成: finishReason=${result.finishReason} ` +
       `steps=${result.steps?.length} toolCalls=[${toolNames.join(',')}] textLen=${result.text?.length ?? 0}`);
+
+    // Task 14.3：兜底模式也持久化 assistant 消息（fire-and-forget）
+    if (sessionId && result.text) {
+      QASessionService.persistAssistantMessage(
+        sessionId,
+        userId,
+        result.text,
+        result.finishReason === 'error' ? 'failed' : 'completed',
+      ).catch((e: Error) => {
+        console.warn(`[Agent:QASession] 兜底模式持久化 assistant 消息失败: sessionId=${sessionId}`, (e as Error).message);
+      });
+    }
 
     // 把 generateText 的最终 text 包装成 UIMessageStream（与 streamText 的 toUIMessageStreamResponse 兼容）
     // 前端 useChat 会收到：start → text-start → text-delta(全文) → text-end → finish

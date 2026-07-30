@@ -23,6 +23,7 @@ import crypto from 'crypto';
 import { authenticate, AuthRequest } from '../middlewares/auth.middleware';
 import { AgentService } from '../services/agent/agent.service';
 import { TraceService } from '../services/agent/trace/trace.service';
+import { QASessionService } from '../services/agent/qa-session.service';
 import { getUploadDir } from '../config/upload';
 
 const router = Router();
@@ -240,6 +241,160 @@ router.get('/traces/trace/:traceId', async (req: AuthRequest, res: Response) => 
   } catch (e: any) {
     console.error('[Agent] 查询 trace 详情失败:', e?.message || e);
     return res.status(500).json({ success: false, message: `查询失败: ${e?.message || e}` });
+  }
+});
+
+// ===== 会话历史管理（Task 14） =====
+
+/**
+ * GET /api/agent/sessions — 列出用户的会话
+ *
+ * Task 14.2：返回用户的所有会话（按 updatedAt 倒序），含最近一条消息预览。
+ *
+ * Query:
+ *   - limit: 返回数量上限（默认 50，最大 200）
+ *
+ * 返回：{ success, data: SessionListItem[] }
+ */
+router.get('/sessions', async (req: AuthRequest, res: Response) => {
+  try {
+    const userId = req.user?.id;
+    if (!userId) {
+      return res.status(401).json({ success: false, message: '未认证' });
+    }
+
+    const limit = Math.min(parseInt(String(req.query?.limit ?? '50'), 10) || 50, 200);
+    const sessions = await QASessionService.listSessions(userId, limit);
+    return res.json({ success: true, data: sessions });
+  } catch (e: any) {
+    console.error('[Agent] 查询会话列表失败:', e?.message || e);
+    return res.status(500).json({ success: false, message: `查询失败: ${e?.message || e}` });
+  }
+});
+
+/**
+ * GET /api/agent/sessions/:sessionId — 查询单个会话详情
+ *
+ * 返回：{ success, data: SessionDetail }
+ */
+router.get('/sessions/:sessionId', async (req: AuthRequest, res: Response) => {
+  try {
+    const userId = req.user?.id;
+    if (!userId) {
+      return res.status(401).json({ success: false, message: '未认证' });
+    }
+
+    const sessionId = String(req.params.sessionId || '');
+    if (!sessionId) {
+      return res.status(400).json({ success: false, message: 'sessionId 不能为空' });
+    }
+
+    const session = await QASessionService.getSession(sessionId, userId);
+    if (!session) {
+      return res.status(404).json({ success: false, message: '会话不存在或无权访问' });
+    }
+
+    return res.json({ success: true, data: session });
+  } catch (e: any) {
+    console.error('[Agent] 查询会话详情失败:', e?.message || e);
+    return res.status(500).json({ success: false, message: `查询失败: ${e?.message || e}` });
+  }
+});
+
+/**
+ * GET /api/agent/sessions/:sessionId/messages — 查询会话的消息列表
+ *
+ * Task 14.2：返回会话的所有消息（按 createdAt 升序），用于前端历史对话回放。
+ *
+ * 返回：{ success, data: MessageItem[] }
+ */
+router.get('/sessions/:sessionId/messages', async (req: AuthRequest, res: Response) => {
+  try {
+    const userId = req.user?.id;
+    if (!userId) {
+      return res.status(401).json({ success: false, message: '未认证' });
+    }
+
+    const sessionId = String(req.params.sessionId || '');
+    if (!sessionId) {
+      return res.status(400).json({ success: false, message: 'sessionId 不能为空' });
+    }
+
+    const messages = await QASessionService.listMessages(sessionId, userId);
+    return res.json({ success: true, data: messages });
+  } catch (e: any) {
+    if (e?.message?.includes('不存在或无权访问')) {
+      return res.status(404).json({ success: false, message: e.message });
+    }
+    console.error('[Agent] 查询消息列表失败:', e?.message || e);
+    return res.status(500).json({ success: false, message: `查询失败: ${e?.message || e}` });
+  }
+});
+
+/**
+ * PATCH /api/agent/sessions/:sessionId — 重命名会话
+ *
+ * Body: { title: string }
+ *
+ * 返回：{ success, data: SessionDetail }
+ */
+router.patch('/sessions/:sessionId', async (req: AuthRequest, res: Response) => {
+  try {
+    const userId = req.user?.id;
+    if (!userId) {
+      return res.status(401).json({ success: false, message: '未认证' });
+    }
+
+    const sessionId = String(req.params.sessionId || '');
+    const title = String(req.body?.title ?? '').trim();
+    if (!sessionId) {
+      return res.status(400).json({ success: false, message: 'sessionId 不能为空' });
+    }
+    if (!title) {
+      return res.status(400).json({ success: false, message: 'title 不能为空' });
+    }
+    if (title.length > 100) {
+      return res.status(400).json({ success: false, message: 'title 长度不能超过 100 字符' });
+    }
+
+    const session = await QASessionService.renameSession(sessionId, userId, title);
+    return res.json({ success: true, data: session });
+  } catch (e: any) {
+    if (e?.message?.includes('不存在或无权访问')) {
+      return res.status(404).json({ success: false, message: e.message });
+    }
+    console.error('[Agent] 重命名会话失败:', e?.message || e);
+    return res.status(500).json({ success: false, message: `重命名失败: ${e?.message || e}` });
+  }
+});
+
+/**
+ * DELETE /api/agent/sessions/:sessionId — 删除会话
+ *
+ * 级联删除 messages + agentTraces（schema 已配置 onDelete: Cascade）
+ *
+ * 返回：{ success, message }
+ */
+router.delete('/sessions/:sessionId', async (req: AuthRequest, res: Response) => {
+  try {
+    const userId = req.user?.id;
+    if (!userId) {
+      return res.status(401).json({ success: false, message: '未认证' });
+    }
+
+    const sessionId = String(req.params.sessionId || '');
+    if (!sessionId) {
+      return res.status(400).json({ success: false, message: 'sessionId 不能为空' });
+    }
+
+    await QASessionService.deleteSession(sessionId, userId);
+    return res.json({ success: true, message: '会话已删除' });
+  } catch (e: any) {
+    if (e?.message?.includes('不存在或无权访问')) {
+      return res.status(404).json({ success: false, message: e.message });
+    }
+    console.error('[Agent] 删除会话失败:', e?.message || e);
+    return res.status(500).json({ success: false, message: `删除失败: ${e?.message || e}` });
   }
 });
 
