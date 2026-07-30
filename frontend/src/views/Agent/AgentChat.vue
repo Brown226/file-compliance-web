@@ -36,6 +36,18 @@
         </div>
         <div class="bubble-wrap">
           <div class="bubble" :class="message.role">
+            <!-- Task 15：工具调用 chip（按顺序渲染 tool-* parts）-->
+            <template v-if="message.role === 'assistant'">
+              <div
+                v-for="part in getToolCallParts(message)"
+                :key="(part as any).toolCallId || (part as any).id"
+                class="tool-call-wrap"
+              >
+                <ToolCallChip :part="part as any" />
+              </div>
+            </template>
+
+            <!-- 文本内容 -->
             <div
               v-if="message.role === 'assistant'"
               class="markdown-content"
@@ -135,6 +147,7 @@ import type { UIMessage } from 'ai'
 import { useAgentChat } from '@/composables/useAgentChat'
 import { useMarkdown } from '@/composables/useMarkdown'
 import { useUserStore } from '@/stores/user'
+import ToolCallChip from './components/ToolCallChip.vue'
 
 const userStore = useUserStore()
 const { renderMarkdown } = useMarkdown()
@@ -152,6 +165,15 @@ function getMessageText(message: UIMessage): string {
     .filter(p => p.type === 'text')
     .map(p => (p as { text: string }).text)
     .join('')
+}
+
+/**
+ * Task 15：提取 message.parts 中的工具调用部分
+ * Vercel AI SDK v7 的 tool-* part 类型：'tool-input-streaming' / 'tool-input-available' / 'tool-output-available' / 'tool-output-error'
+ * 统一通过 type 前缀 'tool-' 匹配
+ */
+function getToolCallParts(message: UIMessage): any[] {
+  return message.parts.filter((p: any) => typeof p?.type === 'string' && p.type.startsWith('tool-'))
 }
 
 /** 打字指示器：加载中且（无最后助手消息或其文本为空） */
@@ -457,6 +479,15 @@ watch(
 
 .message-actions {
   margin-top: 4px;
+}
+
+/* ===== Task 15：工具调用 chip ===== */
+.tool-call-wrap {
+  margin-bottom: 6px;
+}
+
+.tool-call-wrap:last-child {
+  margin-bottom: 8px;
 }
 
 /* ===== 打字指示器 ===== */
