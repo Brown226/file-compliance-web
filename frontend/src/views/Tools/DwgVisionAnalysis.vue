@@ -23,10 +23,57 @@
       </div>
     </div>
 
-    <div class="page-body">
-      <!-- ===== 左侧：上传与控制 ===== -->
-      <div class="left-panel">
-        <!-- 上传图纸 -->
+    <div class="page-body" :class="{ 'split-mode': splitView && result }">
+      <!-- Task 27: 分屏模式切换按钮（分析完成后显示） -->
+      <div v-if="result && previewSvg" class="split-toggle-bar">
+        <el-button
+          size="small"
+          :type="splitView ? 'primary' : 'default'"
+          @click="splitView = !splitView"
+        >
+          <el-icon style="margin-right: 4px"><Grid /></el-icon>
+          {{ splitView ? '退出分屏' : '分屏对比' }}
+        </el-button>
+      </div>
+
+      <!-- ===== 左侧：上传与控制（分屏模式下仅显示 SVG 预览） ===== -->
+      <div class="left-panel" :class="{ 'split-left': splitView && result }">
+        <!-- 分屏模式：仅显示 SVG 预览 + 叠框 -->
+        <div v-if="splitView && result" class="split-preview-container">
+          <div class="preview-label">
+            <el-icon><View /></el-icon>
+            <span>图纸预览（分屏）</span>
+            <el-tag v-if="bboxIssues.length" size="small" type="danger" effect="plain">
+              {{ bboxIssues.length }} 个标注
+            </el-tag>
+          </div>
+          <div class="preview-canvas split-canvas">
+            <div class="preview-wrapper">
+              <div class="preview-content" v-html="previewSvg"></div>
+              <svg
+                v-if="bboxIssues.length"
+                class="overlay-svg"
+                viewBox="0 0 1000 1000"
+                preserveAspectRatio="none"
+              >
+                <rect
+                  v-for="issue in bboxIssues"
+                  :key="issue.id"
+                  :ref="el => setRectRef(el, issue.id)"
+                  :x="issue.bbox![0]"
+                  :y="issue.bbox![1]"
+                  :width="rectWidth(issue.bbox!)"
+                  :height="rectHeight(issue.bbox!)"
+                  :class="['issue-rect', `issue-rect-${issue.severity}`, { 'issue-rect-active': activeIssueId === issue.id }]"
+                  @click.stop="handleRectClick(issue)"
+                />
+              </svg>
+            </div>
+          </div>
+        </div>
+
+        <!-- 正常模式：上传图纸 + SVG 预览 + 分析选项 -->
+        <template v-else>
         <el-card shadow="never" class="panel-card">
           <template #header>
             <div class="card-title">
@@ -219,6 +266,7 @@
             description="请在 系统管理 → AI配置 中配置视觉模型后再使用此功能"
           />
         </el-card>
+        </template>
       </div>
 
       <!-- ===== 右侧：分析结果 ===== -->
@@ -513,62 +561,18 @@
       </div>
     </div>
 
-    <!-- Task 25: 历史记录抽屉 -->
-    <el-drawer
-      v-model="historyVisible"
-      title="图纸视觉分析历史记录"
-      direction="rtl"
-      size="480px"
-    >
-      <div v-loading="historyLoading" class="history-list">
-        <el-empty v-if="!historyLoading && historyItems.length === 0" description="暂无历史记录" />
-        <div
-          v-for="item in historyItems"
-          :key="item.id"
-          class="history-item"
-          @click="replayHistoryItem(item)"
-        >
-          <div class="history-item-header">
-            <el-icon><Document /></el-icon>
-            <span class="history-filename" :title="item.fileName || '未命名'">
-              {{ item.fileName || '未命名' }}
-            </span>
-            <el-tag size="small" type="info">{{ (item.durationMs / 1000).toFixed(1) }}s</el-tag>
-          </div>
-          <div class="history-item-meta">
-            <span>{{ new Date(item.createdAt).toLocaleString('zh-CN') }}</span>
-            <span v-if="item.modelInfo?.model" class="history-model">{{ item.modelInfo.model }}</span>
-          </div>
-          <div class="history-item-analyses">
-            <el-tag
-              v-for="a in item.analyses"
-              :key="a"
-              size="small"
-              effect="plain"
-            >
-              {{ analysisOptions.find(o => o.key === a)?.label || a }}
-            </el-tag>
-          </div>
-          <div v-if="item.errors && item.errors.length > 0" class="history-item-errors">
-            <el-icon><WarningFilled /></el-icon>
-            <span>{{ item.errors.length }} 项错误</span>
-          </div>
-        </div>
-      </div>
-
-      <template #footer>
-        <el-pagination
-          v-if="historyTotal > historyPageSize"
-          small
-          background
-          layout="prev, pager, next"
-          :total="historyTotal"
-          :page-size="historyPageSize"
-          v-model:current-page="historyPage"
-          @current-change="loadHistory"
-        />
-      </template>
-    </el-drawer>
+    <!-- Task 25/26: 历史记录抽屉（已拆分为子组件） -->
+    <DwgVisionHistoryDrawer
+      v-model:visible="historyVisible"
+      v-model:currentPage="historyPage"
+      :loading="historyLoading"
+      :items="historyItems"
+      :total="historyTotal"
+      :pageSize="historyPageSize"
+      :analysisLabels="analysisLabelMap"
+      @replay="replayHistoryItem"
+      @page-change="loadHistory"
+    />
   </div>
 </template>
 
@@ -583,6 +587,7 @@ import {
 } from '@element-plus/icons-vue'
 import { dwgToPng, parseDwgFile } from '@/utils/dwg-parser'
 import { analyzeDwgVision, getVisionStatus, getVisionHistory, type VisionAnalyzeResult, type VisionStatusResult, type VisionHistoryItem, type OcrVerificationResult, type DwgMetadata, type DwgMetadataVerification } from '@/api/dwg-vision'
+import DwgVisionHistoryDrawer from './DwgVisionHistoryDrawer.vue'
 import { getKnowledgeBasesApi } from '@/api/maxkb'
 
 const router = useRouter()
@@ -599,6 +604,13 @@ const analysisOptions = [
   { key: 'annotations', label: '标注完整性', desc: '检查尺寸标注与技术要求完整性', icon: EditPen, bg: '#fffbeb', color: '#d97706' },
   { key: 'compliance', label: '合规审查', desc: '对照标准条文检查设计说明', icon: Stamp, bg: '#fef2f2', color: '#dc2626' },
 ]
+
+// Task 26: 分析项 label 映射（传给历史抽屉子组件）
+const analysisLabelMap = computed(() => {
+  const map: Record<string, string> = {}
+  for (const opt of analysisOptions) map[opt.key] = opt.label
+  return map
+})
 
 // 状态
 const dwgFile = ref<File | null>(null)
@@ -619,6 +631,7 @@ const loadingKnowledgeBases = ref(false)
 
 // Task 25: 历史记录相关状态
 const historyVisible = ref(false)
+const splitView = ref(false)  // Task 27: 分屏对比模式
 const historyLoading = ref(false)
 const historyItems = ref<VisionHistoryItem[]>([])
 const historyTotal = ref(0)
@@ -751,12 +764,18 @@ function openHistory() {
   loadHistory()
 }
 
-/** Task 25: 回放历史记录 */
+/** Task 25/29: 回放历史记录（增强：自动退出分屏 + 提示预览恢复） */
 function replayHistoryItem(item: VisionHistoryItem) {
   result.value = item.result
   activeTab.value = 'titleBlock'
   historyVisible.value = false
-  ElMessage.success(`已加载历史记录：${item.fileName || '未命名'}（${new Date(item.createdAt).toLocaleString('zh-CN')}）`)
+  splitView.value = false  // Task 27: 回放时退出分屏
+  // Task 29: 历史记录不含 SVG 预览，提示用户需重新上传恢复预览
+  if (!previewSvg.value) {
+    ElMessage.info(`已加载历史结果：${item.fileName || '未命名'}。如需分屏对比，请重新上传同名文件恢复预览`)
+  } else {
+    ElMessage.success(`已加载历史记录：${item.fileName || '未命名'}（${new Date(item.createdAt).toLocaleString('zh-CN')}）`)
+  }
 }
 
 // 切换分析项
@@ -1067,6 +1086,63 @@ function complianceRowClass(_row: any, rowIndex: number) {
   min-width: 0;
 }
 
+/* ===== Task 27: 分屏对比模式 ===== */
+.split-toggle-bar {
+  position: absolute;
+  top: 12px;
+  right: 20px;
+  z-index: 10;
+}
+
+.page-body.split-mode {
+  position: relative;
+}
+
+.page-body.split-mode .left-panel.split-left {
+  width: 50%;
+  max-width: 800px;
+  position: sticky;
+  top: 20px;
+}
+
+.page-body.split-mode .right-panel {
+  width: 50%;
+}
+
+.split-preview-container {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  background: #fff;
+  border: 1px solid #e5e7eb;
+  border-radius: 12px;
+  padding: 12px;
+}
+
+.split-canvas {
+  flex: 1;
+  min-height: 500px;
+  max-height: calc(100vh - 200px);
+}
+
+.split-canvas .preview-wrapper {
+  height: 100%;
+}
+
+.split-canvas .preview-content {
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.split-canvas .preview-content :deep(svg) {
+  max-width: 100%;
+  max-height: 100%;
+  width: auto;
+  height: auto;
+}
+
 /* ===== 卡片通用 ===== */
 .panel-card {
   border-radius: 12px;
@@ -1262,6 +1338,13 @@ function complianceRowClass(_row: any, rowIndex: number) {
 .issue-rect-active {
   stroke-width: 5;
   fill-opacity: 0.4;
+  /* Task 28: 闪烁高亮动画 */
+  animation: rect-pulse 1s ease-in-out 3;
+}
+
+@keyframes rect-pulse {
+  0%, 100% { stroke-opacity: 1; fill-opacity: 0.4; }
+  50% { stroke-opacity: 0.4; fill-opacity: 0.15; }
 }
 
 /* ===== 分析选项 ===== */
@@ -1829,9 +1912,15 @@ function complianceRowClass(_row: any, rowIndex: number) {
   line-height: 1.6;
 }
 
-/* ===== 联动行高亮（el-table 行） ===== */
+/* ===== 联动行高亮（el-table 行）Task 28: 增强闪烁 ===== */
 .result-tabs :deep(.issue-row-active td.el-table__cell) {
   background-color: #dbeafe !important;
+  animation: row-pulse 1s ease-in-out 3;
+}
+
+@keyframes row-pulse {
+  0%, 100% { background-color: #dbeafe !important; }
+  50% { background-color: #bfdbfe !important; }
 }
 
 /* ===== 规则检查列表 ===== */
