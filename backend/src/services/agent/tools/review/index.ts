@@ -8,9 +8,19 @@
 import { createLlmReviewChunkTool } from './llm_review_chunk';
 import { createSummarizeIssuesTool } from './summarize_issues';
 import { createFormatIssuesTool } from './format_issues';
+import { createListAvailableRulesTool } from './list_available_rules';
+import { createApplyRuleTool } from './apply_rule';
+import { createLlmCrossCheckTool } from './llm_cross_check';
 import type { ToolContext } from '../file/upload_file';
 
-export { createLlmReviewChunkTool, createSummarizeIssuesTool, createFormatIssuesTool };
+export {
+  createLlmReviewChunkTool,
+  createSummarizeIssuesTool,
+  createFormatIssuesTool,
+  createListAvailableRulesTool,
+  createApplyRuleTool,
+  createLlmCrossCheckTool,
+};
 
 /**
  * 创建审查相关工具集
@@ -22,5 +32,8 @@ export function createReviewTools(context: ToolContext) {
     llm_review_chunk: createLlmReviewChunkTool(context),
     summarize_issues: createSummarizeIssuesTool(context),
     format_issues: createFormatIssuesTool(context),
+    list_available_rules: createListAvailableRulesTool(context),
+    apply_rule: createApplyRuleTool(context),
+    llm_cross_check: createLlmCrossCheckTool(context),
   };
 }
