@@ -4,33 +4,39 @@
       <el-tab-pane label="执行追踪" name="traces">
         <div class="tab-body">
           <div v-if="!currentSessionId" class="empty-state">
-            <el-icon :size="32" color="#9ca3af"><InfoFilled /></el-icon>
+            <el-icon :size="28" color="#c0c4cc"><InfoFilled /></el-icon>
             <p>选择会话后查看执行追踪</p>
           </div>
           <div v-else-if="tracesLoading" class="loading-state">
-            <el-icon class="is-loading" :size="24"><Loading /></el-icon>
+            <el-icon class="is-loading" :size="20"><Loading /></el-icon>
             <span>加载追踪…</span>
           </div>
           <div v-else-if="traces.length === 0" class="empty-state">
-            <el-icon :size="32" color="#9ca3af"><Clock /></el-icon>
+            <el-icon :size="28" color="#c0c4cc"><Clock /></el-icon>
             <p>暂无工具调用记录</p>
+            <p class="empty-sub">开始审查后这里将展示 Agent 的每一步决策</p>
           </div>
           <div v-else class="trace-list">
             <div
-              v-for="(trace, idx) in traces"
+              v-for="trace in traces"
               :key="trace.id"
               class="trace-item"
               :class="`status-${trace.status}`"
             >
-              <div class="trace-header">
-                <span class="trace-step">#{{ trace.stepIndex }}</span>
-                <span class="trace-tool">{{ toolNameMap[trace.toolName] || trace.toolName }}</span>
+              <div class="trace-top">
+                <div class="trace-left">
+                  <span class="trace-tool">{{ toolNameMap[trace.toolName] || trace.toolName }}</span>
+                  <el-tag size="small" :type="traceStatusType(trace.status)" effect="light">
+                    {{ traceStatusLabel(trace.status) }}
+                  </el-tag>
+                </div>
                 <span v-if="trace.durationMs" class="trace-duration">
                   {{ trace.durationMs < 1000 ? `${trace.durationMs}ms` : `${(trace.durationMs / 1000).toFixed(1)}s` }}
                 </span>
-                <el-tag size="small" :type="traceStatusType(trace.status)" effect="plain">
-                  {{ traceStatusLabel(trace.status) }}
-                </el-tag>
+              </div>
+              <div class="trace-step">
+                <span>Step {{ trace.stepIndex }}</span>
+                <span class="trace-time">{{ formatTraceTime(trace.createdAt) }}</span>
               </div>
               <div v-if="trace.error" class="trace-error">{{ trace.error }}</div>
             </div>
@@ -53,24 +59,14 @@ import { Loading, InfoFilled, Clock } from '@element-plus/icons-vue'
 import { listTracesApi, type TraceItem } from '@/api/agent'
 import AgentMemoryPanel from './AgentMemoryPanel.vue'
 
-/**
- * 右侧面板（Task 17.2）
- *
- * Tab 1：执行追踪（调 /api/agent/traces/:sessionId，展示工具调用序列）
- * Tab 2：文件（占位，Task 18 补充）
- *
- * 当 currentSessionId 变化时自动刷新追踪列表
- */
-
 const props = defineProps<{
-  currentSessionId?: string
+  currentSessionId?: string | null
 }>()
 
 const activeTab = ref<'traces' | 'memory'>('traces')
 const traces = ref<TraceItem[]>([])
 const tracesLoading = ref(false)
 
-// 工具名中文映射（与 ToolCallChip 保持一致）
 const toolNameMap: Record<string, string> = {
   upload_file: '上传文件',
   extract_text: '提取文本',
@@ -110,11 +106,13 @@ function traceStatusLabel(s: string): string {
   return s
 }
 
+function formatTraceTime(iso: string): string {
+  if (!iso) return ''
+  const d = new Date(iso)
+  return d.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+}
+
 async function loadTraces(sessionId: string) {
-  if (!sessionId) {
-    traces.value = []
-    return
-  }
   tracesLoading.value = true
   try {
     const res = await listTracesApi(sessionId)
@@ -140,8 +138,7 @@ watch(
 <style scoped>
 .side-panel {
   height: 100%;
-  background: #ffffff;
-  border-left: 1px solid #e5e7eb;
+  background: #fafbfc;
   display: flex;
   flex-direction: column;
 }
@@ -155,7 +152,26 @@ watch(
 
 .panel-tabs :deep(.el-tabs__header) {
   margin: 0;
-  padding: 0 12px;
+  padding: 0 16px;
+  background: transparent;
+}
+
+.panel-tabs :deep(.el-tabs__nav-wrap::after) {
+  height: 1px;
+  background: #eeeef2;
+}
+
+.panel-tabs :deep(.el-tabs__item) {
+  font-size: 13px;
+  color: #8c8c9e;
+  padding: 0 16px;
+  height: 40px;
+  line-height: 40px;
+}
+
+.panel-tabs :deep(.el-tabs__item.is-active) {
+  color: #4f6ef7;
+  font-weight: 500;
 }
 
 .panel-tabs :deep(.el-tabs__content) {
@@ -170,7 +186,7 @@ watch(
 .tab-body {
   height: 100%;
   overflow-y: auto;
-  padding: 8px 12px;
+  padding: 12px;
 }
 
 .loading-state,
@@ -179,62 +195,100 @@ watch(
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  padding: 40px 16px;
-  color: #9ca3af;
+  padding: 48px 16px;
+  color: #a0a0b0;
   gap: 8px;
-  font-size: 12px;
+  font-size: 13px;
+}
+
+.empty-sub {
+  font-size: 11px;
+  color: #c0c0d0;
+  max-width: 200px;
+  text-align: center;
+  line-height: 1.4;
 }
 
 .trace-list {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 6px;
 }
 
 .trace-item {
-  padding: 6px 8px;
-  background: #f9fafb;
-  border-radius: 4px;
-  border-left: 3px solid #10b981;
-  font-size: 12px;
+  padding: 10px 12px;
+  background: #fff;
+  border-radius: 8px;
+  border: 1px solid #eeeef2;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+
+.trace-item:hover {
+  border-color: #dddde8;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
 }
 
 .trace-item.status-failed {
-  border-left-color: #ef4444;
-  background: #fef2f2;
+  border-color: #fecaca;
+  background: #fefafafa;
 }
 
-.trace-item.status-skipped {
-  border-left-color: #f59e0b;
+.trace-item.status-failed:hover {
+  border-color: #fca5a5;
 }
 
-.trace-header {
+.trace-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 5px;
+}
+
+.trace-left {
   display: flex;
   align-items: center;
   gap: 6px;
-  flex-wrap: wrap;
-}
-
-.trace-step {
-  font-size: 10px;
-  color: #9ca3af;
-  font-family: monospace;
+  min-width: 0;
 }
 
 .trace-tool {
+  font-size: 12.5px;
   font-weight: 500;
-  color: #1f2937;
+  color: #1a1a2e;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .trace-duration {
   font-size: 11px;
-  color: #6b7280;
+  color: #8c8c9e;
+  font-variant-numeric: tabular-nums;
+  flex-shrink: 0;
+}
+
+.trace-step {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11px;
+  color: #b0b0c0;
+}
+
+.trace-time {
+  color: #ccc;
 }
 
 .trace-error {
-  margin-top: 4px;
+  margin-top: 5px;
+  padding: 6px 8px;
+  background: #fef2f2;
+  border-radius: 4px;
   font-size: 11px;
   color: #b91c1c;
+  font-family: 'Menlo', 'Consolas', monospace;
   word-break: break-all;
+  line-height: 1.3;
 }
 </style>

@@ -2,20 +2,21 @@
   <div class="session-list-panel">
     <div class="panel-header">
       <span class="panel-title">会话历史</span>
-      <el-button size="small" type="primary" plain @click="$emit('new-chat')">
-        <el-icon><Plus /></el-icon> 新会话
+      <el-button size="small" type="primary" @click="$emit('new-chat')">
+        <el-icon><Plus /></el-icon>
+        <span>新建</span>
       </el-button>
     </div>
 
     <div class="panel-body">
       <div v-if="loading" class="loading-state">
-        <el-icon class="is-loading" :size="24"><Loading /></el-icon>
+        <el-icon class="is-loading" :size="20"><Loading /></el-icon>
         <span>加载中…</span>
       </div>
 
       <div v-else-if="sessions.length === 0" class="empty-state">
-        <el-icon :size="32" color="#9ca3af"><ChatDotRound /></el-icon>
-        <p>暂无会话</p>
+        <el-icon :size="28" color="#c0c4cc"><ChatDotRound /></el-icon>
+        <p>暂无历史会话</p>
       </div>
 
       <div v-else class="session-list">
@@ -26,20 +27,18 @@
           :class="{ active: session.id === currentSessionId }"
           @click="$emit('select', session.id)"
         >
-          <div class="session-main">
-            <div class="session-title">{{ session.title || '（未命名会话）' }}</div>
-            <div class="session-preview">{{ session.lastMessagePreview || '暂无消息' }}</div>
+          <div class="item-content">
+            <div class="item-title">{{ session.title || '未命名会话' }}</div>
+            <div class="item-preview">{{ session.lastMessagePreview || '暂无消息' }}</div>
+            <div class="item-meta">
+              <span>{{ formatTime(session.updatedAt) }}</span>
+              <span class="meta-sep">·</span>
+              <span>{{ session.messageCount }} 条消息</span>
+            </div>
           </div>
-          <div class="session-meta">
-            <span class="session-time">{{ formatTime(session.updatedAt) }}</span>
-            <span class="session-count">{{ session.messageCount }} 条</span>
-          </div>
-          <el-icon
-            class="session-delete"
-            @click.stop="handleDelete(session.id)"
-          >
-            <Delete />
-          </el-icon>
+          <button class="item-delete" @click.stop="handleDelete(session.id)" title="删除会话">
+            <el-icon :size="14"><Delete /></el-icon>
+          </button>
         </div>
       </div>
     </div>
@@ -52,17 +51,8 @@ import { ElMessageBox, ElMessage } from 'element-plus'
 import { Plus, Loading, ChatDotRound, Delete } from '@element-plus/icons-vue'
 import { listSessionsApi, deleteSessionApi, type SessionListItem } from '@/api/agent'
 
-/**
- * 左侧会话列表面板（Task 17.1）
- *
- * - 启动时调 listSessionsApi 加载会话列表
- * - 点击会话项 → emit('select', sessionId)
- * - 删除按钮 → 确认后调 deleteSessionApi，本地同步移除
- * - 新会话按钮 → emit('new-chat')
- */
-
 const props = defineProps<{
-  currentSessionId?: string
+  currentSessionId?: string | null
 }>()
 
 const emit = defineEmits<{
@@ -114,15 +104,12 @@ function formatTime(iso: string): string {
   if (diffMin < 60) return `${diffMin} 分钟前`
   if (diffHour < 24) return `${diffHour} 小时前`
   if (diffDay < 7) return `${diffDay} 天前`
-  // 超过 7 天显示日期
   const m = d.getMonth() + 1
   const day = d.getDate()
   return `${m}/${day}`
 }
 
 onMounted(loadSessions)
-
-// 暴露刷新方法供父组件调用
 defineExpose({ refresh: loadSessions })
 </script>
 
@@ -131,27 +118,28 @@ defineExpose({ refresh: loadSessions })
   display: flex;
   flex-direction: column;
   height: 100%;
-  background: #ffffff;
-  border-right: 1px solid #e5e7eb;
+  background: #fafbfc;
 }
 
 .panel-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 12px 16px;
-  border-bottom: 1px solid #e5e7eb;
+  padding: 16px;
+  flex-shrink: 0;
 }
 
 .panel-title {
-  font-weight: 600;
   font-size: 14px;
-  color: #1f2937;
+  font-weight: 600;
+  color: #1a1a2e;
+  letter-spacing: -0.01em;
 }
 
 .panel-body {
   flex: 1;
   overflow-y: auto;
+  padding: 0 8px 8px;
 }
 
 .loading-state,
@@ -160,83 +148,111 @@ defineExpose({ refresh: loadSessions })
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  padding: 40px 16px;
-  color: #9ca3af;
+  padding: 48px 16px;
+  color: #a0a0b0;
   gap: 8px;
-  font-size: 12px;
+  font-size: 13px;
 }
 
 .session-list {
-  padding: 4px 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
 }
 
 .session-item {
   display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 10px 16px;
+  align-items: flex-start;
+  padding: 12px;
+  border-radius: 8px;
   cursor: pointer;
-  border-bottom: 1px solid #f3f4f6;
-  transition: background 0.15s;
+  transition: background 0.15s ease;
   position: relative;
 }
 
 .session-item:hover {
-  background: #f9fafb;
+  background: #f0f2f5;
 }
 
 .session-item.active {
-  background: #eff6ff;
-  border-left: 3px solid #3b82f6;
-  padding-left: 13px;
+  background: #eef2ff;
 }
 
-.session-main {
+.session-item.active::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 6px;
+  bottom: 6px;
+  width: 3px;
+  background: #4f6ef7;
+  border-radius: 0 2px 2px 0;
+}
+
+.item-content {
   flex: 1;
   min-width: 0;
 }
 
-.session-title {
+.item-title {
   font-size: 13px;
   font-weight: 500;
-  color: #1f2937;
+  color: #1a1a2e;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  margin-bottom: 2px;
+  margin-bottom: 3px;
 }
 
-.session-preview {
-  font-size: 11px;
-  color: #6b7280;
+.session-item.active .item-title {
+  color: #4f6ef7;
+}
+
+.item-preview {
+  font-size: 12px;
+  color: #8c8c9e;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  margin-bottom: 4px;
+  line-height: 1.3;
 }
 
-.session-meta {
+.item-meta {
   display: flex;
-  flex-direction: column;
-  align-items: flex-end;
+  align-items: center;
   gap: 2px;
+  font-size: 11px;
+  color: #b0b0c0;
+}
+
+.meta-sep {
   font-size: 10px;
-  color: #9ca3af;
-  flex-shrink: 0;
 }
 
-.session-delete {
-  opacity: 0;
-  color: #9ca3af;
-  transition: opacity 0.15s, color 0.15s;
+.item-delete {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border: none;
+  background: transparent;
+  color: #c0c0d0;
+  border-radius: 6px;
   cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.15s, color 0.15s, background 0.15s;
   flex-shrink: 0;
+  margin-top: -1px;
 }
 
-.session-item:hover .session-delete {
+.session-item:hover .item-delete {
   opacity: 1;
 }
 
-.session-delete:hover {
-  color: #ef4444;
+.item-delete:hover {
+  color: #e5484d;
+  background: #fff0f0;
 }
 </style>
