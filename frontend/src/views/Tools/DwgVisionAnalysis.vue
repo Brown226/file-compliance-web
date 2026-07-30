@@ -167,40 +167,44 @@
                 placeholder="粘贴需要对照的标准条文 / 规范要求，用于合规性比对"
               />
 
-              <!-- Task 15: 知识库 RAG 注入 -->
+              <!-- 参照文件上传（替代原 MaxKB RAG） -->
               <div class="kb-section">
                 <div class="kb-label">
-                  <span>从知识库检索标准条文（可选）</span>
+                  <span>上传参照文件（可选）</span>
                   <el-tooltip
-                    content="选择知识库后，系统会自动检索与图纸相关的标准条文，注入到合规审查提示词中。检索失败时降级为仅使用上方手动输入的条文。"
+                    content="上传 Word/Excel/PDF/PPT/TXT 参照文件，系统解析后注入合规审查提示词。适用于：①参照表格数据与图纸表格比对 ②说明书注意事项提炼后结合图纸审查。"
                     placement="top"
                   >
                     <el-icon class="kb-help"><WarningFilled /></el-icon>
                   </el-tooltip>
                 </div>
-                <el-select
-                  v-model="selectedKbId"
-                  placeholder="选择知识库（留空则不启用 RAG）"
-                  :loading="loadingKnowledgeBases"
-                  clearable
-                  style="width: 100%"
-                  size="default"
+                <el-upload
+                  :auto-upload="true"
+                  :show-file-list="false"
+                  :before-upload="beforeReferenceUpload"
+                  :http-request="handleReferenceUpload"
+                  accept=".docx,.doc,.xlsx,.xls,.pdf,.pptx,.txt"
                 >
-                  <el-option
-                    v-for="kb in knowledgeBases"
-                    :key="kb.id"
-                    :label="kb.name + (kb.desc ? ` — ${kb.desc}` : '')"
-                    :value="kb.id"
+                  <el-button :loading="uploadingReference" :disabled="!!referenceText">
+                    <el-icon style="margin-right:4px"><UploadFilled /></el-icon>
+                    {{ referenceText ? '已上传参照文件' : '选择参照文件' }}
+                  </el-button>
+                </el-upload>
+                <div v-if="referenceFileName" class="ref-file-info">
+                  <el-icon><Document /></el-icon>
+                  <span class="ref-file-name">{{ referenceFileName }}</span>
+                  <el-tag size="small" type="success" effect="plain">{{ referenceCharCount }} 字符</el-tag>
+                  <el-button text size="small" type="danger" @click="clearReferenceFile">移除</el-button>
+                </div>
+                <div v-if="referenceText" class="ref-preview">
+                  <el-input
+                    v-model="referenceText"
+                    type="textarea"
+                    :rows="4"
+                    readonly
+                    placeholder="参照文件解析结果（可查看但不可编辑，如需修改请重新上传）"
                   />
-                </el-select>
-                <el-input
-                  v-if="selectedKbId"
-                  v-model="ragQuery"
-                  type="textarea"
-                  :rows="2"
-                  placeholder="检索查询词（可选，留空使用默认关键词：核电工程图纸设计说明 安全 材料 焊接 检验 标准引用）"
-                  style="margin-top: 8px"
-                />
+                </div>
               </div>
             </div>
           </transition>
@@ -762,14 +766,13 @@ import {
   Memo, WarningFilled, ArrowLeft, InfoFilled, Files,
 } from '@element-plus/icons-vue'
 import { dwgToPng, parseDwgFile } from '@/utils/dwg-parser'
-import { analyzeDwgVision, getVisionStatus, getVisionHistory, getVisionHistoryDetail, crossFileCompare, type VisionAnalyzeResult, type VisionStatusResult, type VisionHistoryItem, type OcrVerificationResult, type DwgMetadata, type DwgMetadataVerification, type DwgProfession, type CrossFileCompareResult } from '@/api/dwg-vision'
+import { analyzeDwgVision, uploadReferenceFile, getVisionStatus, getVisionHistory, getVisionHistoryDetail, crossFileCompare, type VisionAnalyzeResult, type VisionStatusResult, type VisionHistoryItem, type OcrVerificationResult, type DwgMetadata, type DwgMetadataVerification, type DwgProfession, type CrossFileCompareResult } from '@/api/dwg-vision'
 import DwgVisionHistoryDrawer from './DwgVisionHistoryDrawer.vue'
 import DwgVisionPreviewPanel from './DwgVisionPreviewPanel.vue'
 import LlmReplayDrawer from '@/views/TaskDetails/LlmReplayDrawer.vue'
 import IssueCardList from '@/views/TaskDetails/IssueCardList.vue'
 import type { IssueDetail, IssueType } from '@/views/TaskDetails/types/issue'
 import type { BboxOverlay } from '@/composables/useSvgZoomPan'
-import { getKnowledgeBasesApi } from '@/api/maxkb'
 
 const router = useRouter()
 const route = useRoute()
@@ -835,11 +838,11 @@ const activeTab = ref('titleBlock')
 const visionStatus = ref<VisionStatusResult | null>(null)
 const uploadRef = ref()
 
-// Task 15: 知识库 RAG 注入相关状态
-const knowledgeBases = ref<Array<{ id: string; name: string; desc?: string }>>([])
-const selectedKbId = ref<string>('')
-const ragQuery = ref<string>('')
-const loadingKnowledgeBases = ref(false)
+// 参照文件上传相关状态（替代原 MaxKB RAG）
+const referenceText = ref<string>('')
+const referenceFileName = ref<string>('')
+const referenceCharCount = ref<number>(0)
+const uploadingReference = ref(false)
 
 // Task 33: 专业选择（'auto' = 自动判定；其余为 7 个专业之一）
 const selectedProfession = ref<DwgProfession | 'auto'>('auto')
@@ -1052,23 +1055,48 @@ onMounted(async () => {
       visionStatus.value = res.data
     }
   } catch { /* ignore */ }
-
-  // Task 15: 加载可用知识库列表（用于 compliance 维度的 RAG 注入）
-  loadKnowledgeBases()
 })
 
-/** 加载 MaxKB 知识库列表 */
-async function loadKnowledgeBases() {
-  loadingKnowledgeBases.value = true
-  try {
-    const list = await getKnowledgeBasesApi()
-    knowledgeBases.value = Array.isArray(list) ? list : []
-  } catch (e: any) {
-    console.warn('[DWG Vision] 加载知识库列表失败:', e?.message)
-    knowledgeBases.value = []
-  } finally {
-    loadingKnowledgeBases.value = false
+/** 参照文件上传前校验 */
+function beforeReferenceUpload(file: File): boolean {
+  const allowed = ['.docx', '.doc', '.xlsx', '.xls', '.pdf', '.pptx', '.txt']
+  const ext = '.' + (file.name.split('.').pop() || '').toLowerCase()
+  if (!allowed.includes(ext)) {
+    ElMessage.warning(`不支持的格式: ${ext}，支持: ${allowed.join(', ')}`)
+    return false
   }
+  if (file.size > 20 * 1024 * 1024) {
+    ElMessage.warning('参照文件不能超过 20MB')
+    return false
+  }
+  return true
+}
+
+/** 自定义上传：调用 uploadReferenceFile API */
+async function handleReferenceUpload(options: { file: File }) {
+  uploadingReference.value = true
+  try {
+    const res = await uploadReferenceFile(options.file)
+    if (res.code === 200 && res.data) {
+      referenceText.value = res.data.text
+      referenceFileName.value = res.data.fileName
+      referenceCharCount.value = res.data.charCount
+      ElMessage.success(`参照文件解析成功: ${res.data.fileName} (${res.data.charCount} 字符)${res.data.truncated ? '，已截断' : ''}`)
+    } else {
+      ElMessage.error(res.message || '参照文件解析失败')
+    }
+  } catch (e: any) {
+    ElMessage.error(`参照文件解析失败: ${e?.message || '未知错误'}`)
+  } finally {
+    uploadingReference.value = false
+  }
+}
+
+/** 移除已上传的参照文件 */
+function clearReferenceFile() {
+  referenceText.value = ''
+  referenceFileName.value = ''
+  referenceCharCount.value = 0
 }
 
 /** Task 25: 加载历史记录 */
@@ -1205,8 +1233,7 @@ async function startAnalysis() {
       fileName: dwgFile.value.name,
       analyses: selectedAnalyses.value,
       refText: refText.value || undefined,
-      kbId: selectedKbId.value || undefined,
-      query: ragQuery.value || undefined,
+      referenceText: referenceText.value || undefined,
       profession: selectedProfession.value === 'auto' ? undefined : selectedProfession.value,
       dwgMetadata,
     })
@@ -1925,7 +1952,7 @@ function handleOpenClause(detail: IssueDetail) {
   margin-bottom: 6px;
 }
 
-/* Task 15: 知识库 RAG 注入区块 */
+/* 参照文件上传区块（替代原 MaxKB RAG） */
 .kb-section {
   margin-top: 12px;
   padding-top: 12px;
@@ -1946,6 +1973,31 @@ function handleOpenClause(detail: IssueDetail) {
   color: #9ca3af;
   cursor: help;
   font-size: 14px;
+}
+
+.ref-file-info {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+  padding: 8px 12px;
+  background: #f0fdf4;
+  border: 1px solid #bbf7d0;
+  border-radius: 6px;
+  font-size: 13px;
+}
+
+.ref-file-name {
+  flex: 1;
+  color: #166534;
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ref-preview {
+  margin-top: 8px;
 }
 
 /* 按钮行（分析 + 历史） */

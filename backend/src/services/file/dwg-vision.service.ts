@@ -1435,13 +1435,11 @@ export class DwgVisionService {
    * options:
    *   - userId:    触发分析的用户 ID（用于历史回放筛选）
    *   - fileName:  原始图纸文件名（用于历史回放展示）
-   *   - kbId:      MaxKB 知识库 ID（Task 15，用于 compliance 维度的 RAG 注入）
-   *   - query:     RAG 检索查询词（可选，默认用图纸合规通用关键词）
    *
-   * RAG 注入策略（Task 15）：
-   *   - 仅当 analyses 包含 'compliance' 且 kbId 存在时触发检索
-   *   - 检索结果与手动 refText 合并（手动在前，RAG 在后，用换行分隔）
-   *   - 检索失败降级为仅使用手动 refText，不中断主流程
+   * 参照文本注入策略（改造自 Task 15，原 MaxKB RAG 已移除）：
+   *   - refText 由调用方传入（controller 层已合并手动 refText + 参照文件解析文本）
+   *   - 仅当 analyses 包含 'compliance' 时 refText 才会被注入 prompt
+   *   - refText 为空时合规审查仍可执行，VLM 用自身知识判断
    *
    * 落库策略：分析完成后将结果写入 vision_analyses 表（失败不中断主流程），
    * 前端可通过历史查询端点回放。
@@ -1471,10 +1469,10 @@ export class DwgVisionService {
     imageBase64: string,
     analyses: string[],
     refText?: string,
-    options?: { userId?: string; fileName?: string; kbId?: string; query?: string; profession?: DwgProfession; jobKey?: string; dwgMetadata?: DwgMetadata },
+    options?: { userId?: string; fileName?: string; profession?: DwgProfession; jobKey?: string; dwgMetadata?: DwgMetadata },
   ): Promise<VisionAnalyzeResult> {
     // 缓存检查：相同输入直接返回历史结果
-    const cacheKey = this.buildCacheKey(imageBase64, analyses, refText, options?.kbId, options?.query, options?.profession);
+    const cacheKey = this.buildCacheKey(imageBase64, analyses, refText, options?.profession);
     try {
       const cached = await redisClient.get<VisionAnalyzeResult>(cacheKey);
       if (cached) {
@@ -1517,22 +1515,9 @@ export class DwgVisionService {
       });
     }
 
-    // ── Task 15: MaxKB RAG 注入（仅 compliance 维度需要）──
-    let mergedRefText = refText;
-    if (analyses.includes('compliance') && options?.kbId) {
-      try {
-        const ragText = await this.fetchRagContext(options.kbId, options.query);
-        if (ragText) {
-          mergedRefText = mergedRefText
-            ? `${mergedRefText}\n---\n${ragText}`
-            : ragText;
-          console.log('[DWG Vision] MaxKB RAG 注入成功，refText 长度:', mergedRefText.length);
-        }
-      } catch (e: any) {
-        console.warn('[DWG Vision] MaxKB RAG 注入失败，降级为手动 refText:', e.message);
-        errors.push(`知识库检索失败: ${e.message}`);
-      }
-    }
+    // 参照文本注入：refText 由 controller 层合并（手动条文 + 参照文件解析文本）
+    // 仅当 analyses 包含 'compliance' 时才会被 checkDesignCompliance 注入 prompt
+    const mergedRefText = refText;
 
     // ── Task 36: SAHI 切片送审 - 大图按 2048×2048 重叠切片 ──
     // 仅对 symbols/annotations/compliance/profession 4 个细粒度维度启用
@@ -1747,36 +1732,6 @@ export class DwgVisionService {
     }
 
     return result;
-  }
-
-  /**
-   * MaxKB RAG 检索（Task 15）
-   * 用 query 在指定知识库中检索相关条文，格式化为 refText 片段
-   *
-   * @param kbId  MaxKB 知识库 ID
-   * @param query 检索查询词（可选，默认用图纸合规通用关键词）
-   * @returns     格式化的条文文本（空字符串表示无结果）
-   */
-  private static async fetchRagContext(kbId: string, query?: string): Promise<string> {
-    const searchQuery = query?.trim() || '核电工程图纸设计说明 安全 材料 焊接 检验 标准引用';
-    const workspaceId = await MaxKBService.getDefaultWorkspaceId();
-
-    const hits = await MaxKBService.hitTest(workspaceId, kbId, searchQuery, 5);
-    if (!Array.isArray(hits) || hits.length === 0) {
-      console.log('[DWG Vision] MaxKB 检索无结果');
-      return '';
-    }
-
-    const chunks: string[] = [];
-    for (const hit of hits) {
-      const content = (hit as any).content || (hit as any).text || '';
-      if (content) {
-        const title = (hit as any).title || (hit as any).document_name || '';
-        chunks.push(title ? `【${title}】\n${content}` : content);
-      }
-    }
-
-    return chunks.join('\n---\n');
   }
 
   /**
@@ -2678,23 +2633,19 @@ ${toolList}
    * 构建缓存 key：基于图片+分析项+参考文本+知识库+查询词的 sha256
    * 分析项排序以保证不同顺序但相同内容命中缓存
    *
-   * Task 15: kbId 和 query 纳入 cache key，避免不同知识库/查询词的结果误命中
+   * refText 纳入 cache key，避免不同参照文本的结果误命中
    * Task 17: profession 纳入 cache key，避免不同专业审查结果误命中
    */
   private static buildCacheKey(
     imageBase64: string,
     analyses: string[],
     refText?: string,
-    kbId?: string,
-    query?: string,
     profession?: string,
   ): string {
     const hash = crypto.createHash('sha256')
       .update(imageBase64)
       .update(analyses.slice().sort().join(','))
       .update(refText || '')
-      .update(kbId || '')
-      .update(query || '')
       .update(profession || '')
       .digest('hex');
     return `dwg_vision:cache:${hash}`;

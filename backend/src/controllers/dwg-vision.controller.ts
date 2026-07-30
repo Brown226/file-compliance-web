@@ -1,8 +1,30 @@
 import { Request, Response } from 'express';
+import multer from 'multer';
+import path from 'path';
 import { addDwgVisionJob, getDwgVisionJobStatus } from '../services/system/queue.service';
 import { redisClient } from '../utils/redis';
 import prisma from '../config/db';
 import { DwgVisionService } from '../services/file/dwg-vision.service';
+import { PythonParserService } from '../services/file/python-parser.service';
+import { FileTypeService } from '../services/file/file-type.service';
+
+// 参照文件上传：memoryStorage（文件小，直接 buffer 处理），限制 20MB
+const refUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 20 * 1024 * 1024 },
+  fileFilter: (_req, file, cb) => {
+    const ext = path.extname(file.originalname).toLowerCase();
+    const allowed = ['.docx', '.doc', '.xlsx', '.xls', '.pdf', '.pptx', '.txt'];
+    if (!allowed.includes(ext)) {
+      cb(new Error(`不支持的参照文件格式: ${ext}。支持: ${allowed.join(', ')}`));
+      return;
+    }
+    cb(null, true);
+  },
+});
+
+// 参照文件上传中间件（单文件，字段名 file）
+export const uploadReferenceFileMiddleware = refUpload.single('file');
 
 // Task 16: SSE 进度推送的 Redis 频道前缀
 const SSE_CHANNEL_PREFIX = 'dwg-vision:progress:';
@@ -81,7 +103,7 @@ export const visionAnalyze = async (req: Request, res: Response): Promise<void> 
   let quotaAcquired = false;
 
   try {
-    const { imageBase64, fileName, analyses, refText, kbId, query, profession, dwgMetadata } = req.body;
+    const { imageBase64, fileName, analyses, refText, referenceText, profession, dwgMetadata } = req.body;
 
     // 参数校验
     if (!imageBase64 || typeof imageBase64 !== 'string') {
@@ -106,9 +128,11 @@ export const visionAnalyze = async (req: Request, res: Response): Promise<void> 
       return;
     }
 
-    // Task 15: kbId 与 compliance 维度的合理性校验
-    if (kbId && !selectedAnalyses.includes('compliance')) {
-      res.status(400).json({ code: 400, message: '知识库 ID 仅在 compliance 维度被选中时有效' });
+    // 参照文本与 compliance 维度的合理性校验
+    // referenceText（参照文件解析文本）和 refText（手动输入条文）都仅对 compliance 维度有效
+    const mergedRef = [refText, referenceText].filter(t => t && typeof t === 'string' && t.trim()).join('\n---\n');
+    if (mergedRef && !selectedAnalyses.includes('compliance')) {
+      res.status(400).json({ code: 400, message: '参照文本/标准条文仅在 compliance 维度被选中时有效' });
       return;
     }
 
@@ -133,17 +157,15 @@ export const visionAnalyze = async (req: Request, res: Response): Promise<void> 
 
     // 生成 jobKey 并入队
     const jobKey = `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
-    console.log(`[DWG Vision] 入队: ${fileName || 'unknown'}, 分析项: ${selectedAnalyses.join(', ')}, kbId=${kbId || 'none'}, jobKey=${jobKey}`);
+    console.log(`[DWG Vision] 入队: ${fileName || 'unknown'}, 分析项: ${selectedAnalyses.join(', ')}, hasRef=${!!mergedRef}, jobKey=${jobKey}`);
 
     const job = await addDwgVisionJob({
       jobKey,
       imageBase64,
       analyses: selectedAnalyses,
-      refText,
+      refText: mergedRef || undefined,
       userId,
       fileName,
-      kbId,
-      query,
       profession,
       dwgMetadata,
     });
@@ -167,6 +189,84 @@ export const visionAnalyze = async (req: Request, res: Response): Promise<void> 
     const message = err.message || '图纸视觉分析失败';
     const statusCode = message.includes('未配置') ? 400 : 500;
     res.status(statusCode).json({ code: statusCode, message });
+  }
+};
+
+/**
+ * POST /api/dwg/vision-upload-ref
+ * 上传参照文件（Word/Excel/PDF/PPT/TXT），解析为文本后返回给前端，前端再随 vision-analyze 一起提交
+ *
+ * 使用场景：
+ *   - 用户上传参照表格（Excel），系统解析表格数据，供 AI 与图纸表格数据比对
+ *   - 用户上传说明书（Word/PDF），系统提炼注意事项，结合图纸合规审查
+ *
+ * 流程：
+ *   1. multer memoryStorage 接收文件（限 20MB，限 docx/doc/xlsx/xls/pdf/pptx/txt）
+ *   2. 写入临时文件（PythonParserService 需文件路径）
+ *   3. 调用 doc-parser /api/parse 解析为 markdown
+ *   4. 返回 { text, charCount, fileName, fileType }
+ *   5. 前端拿到 text 后，作为 referenceText 参数传给 vision-analyze
+ */
+export const visionUploadReference = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const file = (req as any).file as Express.Multer.File | undefined;
+    if (!file) {
+      res.status(400).json({ code: 400, message: '缺少上传文件（字段名 file）' });
+      return;
+    }
+
+    const fileName = file.originalname;
+    const ext = path.extname(fileName).toLowerCase().slice(1);
+    const fileType = FileTypeService.extractFromFileName(fileName) || ext || 'unknown';
+
+    console.log(`[DWG Vision] 参照文件上传: ${fileName}, ${file.size} bytes, type=${fileType}`);
+
+    // 写入临时文件（PythonParserService 需文件路径）
+    const fs = await import('fs');
+    const os = await import('os');
+    const tmpDir = os.tmpdir();
+    const tmpPath = path.join(tmpDir, `dwg-ref-${Date.now()}-${Math.random().toString(36).slice(2, 8)}-${fileName}`);
+
+    try {
+      await fs.promises.writeFile(tmpPath, file.buffer);
+
+      // 调用 doc-parser 解析
+      const parseResult = await PythonParserService.parseFile(tmpPath, fileType);
+
+      // 提取文本（优先 markdown，其次 text）
+      const text = (parseResult.markdown || parseResult.text || '').trim();
+      if (!text) {
+        res.status(422).json({
+          code: 422,
+          message: `参照文件解析结果为空：${fileName}（可能是空文件或扫描件未启用 OCR）`,
+        });
+        return;
+      }
+
+      // 截断至 60000 字符（避免 prompt 过长）
+      const truncated = text.length > 60000 ? text.substring(0, 60000) + '\n\n[... 文档过长，已截断 ...]' : text;
+
+      console.log(`[DWG Vision] 参照文件解析完成: ${fileName}, ${text.length} 字符`);
+
+      res.json({
+        code: 200,
+        message: 'success',
+        data: {
+          text: truncated,
+          charCount: truncated.length,
+          truncated: text.length > 60000,
+          fileName,
+          fileType,
+        },
+      });
+    } finally {
+      // 清理临时文件
+      try { await fs.promises.unlink(tmpPath); } catch { /* ignore */ }
+    }
+  } catch (err: any) {
+    console.error('[DWG Vision] 参照文件解析失败:', err);
+    const message = err.message || '参照文件解析失败';
+    res.status(500).json({ code: 500, message });
   }
 };
 

@@ -1,11 +1,14 @@
 import { Router } from 'express';
-import { visionAnalyze, visionStatus, visionJobStatus, visionHistory, visionHistoryDetail, visionStream, visionLlmLogs, visionCrossFileCompare } from '../controllers/dwg-vision.controller';
+import { visionAnalyze, visionStatus, visionJobStatus, visionHistory, visionHistoryDetail, visionStream, visionLlmLogs, visionCrossFileCompare, visionUploadReference, uploadReferenceFileMiddleware } from '../controllers/dwg-vision.controller';
 import { authenticate } from '../middlewares/auth.middleware';
 
 const router = Router();
 
 // 图纸视觉智能分析（入队）
 router.post('/vision-analyze', authenticate, visionAnalyze);
+
+// 参照文件上传解析（Word/Excel/PDF/PPT/TXT → 文本，供合规审查注入）
+router.post('/vision-upload-ref', authenticate, uploadReferenceFileMiddleware, visionUploadReference);
 
 // Task 16: SSE 流式推送分析进度（长连接，需在 vite.config.ts 单独代理）
 router.get('/vision-stream/:jobKey', authenticate, visionStream);

@@ -202,11 +202,34 @@ export interface VisionStatusResult {
 // ==================== API 方法 ====================
 
 /**
+ * 上传参照文件（Word/Excel/PDF/PPT/TXT）
+ *
+ * 后端调用 doc-parser 解析为文本，返回 text 供前端作为 referenceText 传给 vision-analyze
+ * 使用场景：
+ *   - 上传参照表格（Excel），解析表格数据供 AI 与图纸表格数据比对
+ *   - 上传说明书（Word/PDF），提炼注意事项结合图纸合规审查
+ */
+export function uploadReferenceFile(file: File) {
+  const formData = new FormData()
+  formData.append('file', file)
+  return request.post<any, {
+    code: number
+    data: { text: string; charCount: number; truncated: boolean; fileName: string; fileType: string }
+    message?: string
+  }>('/dwg/vision-upload-ref', formData, {
+    timeout: 120000, // 2 分钟（doc-parser 解析大文件可能较慢）
+    headers: { 'Content-Type': 'multipart/form-data' },
+  })
+}
+
+/**
  * 图纸视觉智能分析
  *
- * Task 15: kbId / query 用于 compliance 维度的 MaxKB RAG 注入
- *   - kbId:  MaxKB 知识库 ID（可选，仅在 analyses 包含 'compliance' 时生效）
- *   - query: RAG 检索查询词（可选，为空时后端使用默认关键词）
+ * 参照文本注入（改造自 Task 15，原 MaxKB RAG 已移除）：
+ *   - refText:        手动输入的标准条文（可选）
+ *   - referenceText:  参照文件解析后的文本（可选，由 uploadReferenceFile 获得）
+ *   - 后端 controller 会合并两者注入 compliance 维度的 prompt
+ *
  * Task 17: profession 用于 profession 维度的专业分流审查
  *   - profession: 专业类型（可选，仅在 analyses 包含 'profession' 时生效）
  *   - 可选值: building/structural/plumbing/hvac/electrical/process/nuclear
@@ -216,8 +239,7 @@ export function analyzeDwgVision(data: {
   fileName: string
   analyses: string[]
   refText?: string
-  kbId?: string
-  query?: string
+  referenceText?: string
   profession?: DwgProfession
   /** Task 20: 前端 WASM 解析的 DWG 元数据（可选，传给后端做交叉验证） */
   dwgMetadata?: DwgMetadata
