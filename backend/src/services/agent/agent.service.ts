@@ -27,6 +27,8 @@ import { createAllTools } from './tools';
 import { TraceService } from './trace/trace.service';
 import { QASessionService } from './qa-session.service';
 import { getUploadDir } from '../../config/upload';
+import { SteeringService } from './steering/steering.service';
+import { CompactionService } from './context-compaction/compaction.service';
 
 // require ESM-only SDK（Node 22.12+ 支持），同时保留类型
 // 注意：Vercel AI SDK v7 用 stopWhen + isStepCount 替代了旧版的 maxSteps 参数
@@ -188,7 +190,17 @@ export class AgentService {
     //    查 uploads/agent_temp/{userId}/{sessionId}/ 目录，把文件路径告知 Agent，
     //    让 Agent 知道用户已上传哪些文件，可直接用 extract_text 工具提取文本。
     const filesSection = AgentService.buildUploadedFilesSection(userId, sessionId || '');
-    const systemPrompt = filesSection ? `${AGENT_SYSTEM_PROMPT}\n\n${filesSection}` : AGENT_SYSTEM_PROMPT;
+
+    // Task 13.6：注入 steering 指令到 systemPrompt
+    let pendingSteering: any[] = [];
+    if (sessionId) {
+      pendingSteering = await SteeringService.getPending(sessionId).catch(() => []);
+    }
+    const steeringSection = SteeringService.buildSystemPromptSection(pendingSteering);
+
+    let systemPrompt = AGENT_SYSTEM_PROMPT;
+    if (filesSection) systemPrompt += '\n\n' + filesSection;
+    if (steeringSection) systemPrompt += '\n\n' + steeringSection;
 
     // 6. 消息格式兼容：UIMessage（前端 useChat v4，有 parts 数组）或 ModelMessage（curl 测试，有 content）
     //    Vercel AI SDK v7 的 streamText 需要 ModelMessage 格式。
@@ -245,6 +257,23 @@ export class AgentService {
           QASessionService.persistUserMessage(sessionId, userId, userText).catch((e: Error) => {
             console.warn(`[Agent:QASession] 持久化用户消息失败: sessionId=${sessionId}`, (e as Error).message);
           });
+        }
+      }
+    }
+
+    // Task 13.7：上下文压缩 — 超 84k token 时对早期消息做 LLM 摘要
+    // 仅在超过 3 轮对话时检查（避免单轮审查触发无意义压缩）
+    if (modelMessages.length > 6) {
+      const systemLen = systemPrompt.length;
+      if (CompactionService.needsCompaction(modelMessages, systemLen)) {
+        console.log(`[Agent] 触发上下文压缩: messages=${modelMessages.length} tokens≈${CompactionService.estimateTokens(modelMessages)}`);
+        const compaction = await CompactionService.compact(modelMessages);
+        if (compaction.truncatedMessages && compaction.truncatedMessages > 0) {
+          if (compaction.summary) {
+            systemPrompt = systemPrompt + '\n\n## 历史对话摘要\n' + compaction.summary;
+          }
+          modelMessages = compaction.compacted;
+          console.log(`[Agent] 压缩完成: ${compaction.truncatedMessages} 条消息 → ${compaction.estimatedTokens} tokens`);
         }
       }
     }
@@ -390,6 +419,11 @@ export class AgentService {
           ).catch((e: Error) => {
             console.warn(`[Agent:QASession] 持久化 assistant 消息失败: sessionId=${sessionId}`, (e as Error).message);
           });
+        }
+
+        // Task 13.6：标记已处理的 steering 指令为已消费
+        if (sessionId && pendingSteering.length > 0) {
+          SteeringService.markConsumed(sessionId).catch(() => {});
         }
       },
     });

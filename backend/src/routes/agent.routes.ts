@@ -25,6 +25,9 @@ import { AgentService } from '../services/agent/agent.service';
 import { TraceService } from '../services/agent/trace/trace.service';
 import { QASessionService } from '../services/agent/qa-session.service';
 import { MemoryService } from '../services/agent/memory/memory.service';
+import { SteeringService } from '../services/agent/steering/steering.service';
+import { ReplayService } from '../services/agent/replay/replay.service';
+import { SummaryService } from '../services/agent/summary/summary.service';
 import { getUploadDir } from '../config/upload';
 
 const router = Router();
@@ -506,6 +509,138 @@ router.delete('/memory/:memoryId', async (req: AuthRequest, res: Response) => {
   } catch (e: any) {
     console.error('[Agent] 删除记忆失败:', e?.message || e);
     return res.status(500).json({ success: false, message: `删除失败: ${e?.message || e}` });
+  }
+});
+
+// ===== Steering 机制（Task 13.6）=====
+
+/**
+ * POST /api/agent/steer — 审查中途注入指令
+ *
+ * 用户在审查过程中发现 Agent 方向有误时，通过此端点注入纠正指令。
+ * 指令存入 Redis（agent:steer:{sessionId}），TTL 10min，
+ * Agent 在下一轮 chatStream 的 systemPrompt 中看到并响应。
+ *
+ * Body: { sessionId: string, message: string }
+ *
+ * 返回：{ success, data: { id } }
+ */
+router.post('/steer', async (req: AuthRequest, res: Response) => {
+  try {
+    const userId = req.user?.id;
+    if (!userId) {
+      return res.status(401).json({ success: false, message: '未认证' });
+    }
+
+    const { sessionId, message } = req.body || {};
+    if (!sessionId || typeof sessionId !== 'string') {
+      return res.status(400).json({ success: false, message: 'sessionId 不能为空' });
+    }
+    if (!message || typeof message !== 'string' || !message.trim()) {
+      return res.status(400).json({ success: false, message: 'message 不能为空' });
+    }
+    if (message.length > 5000) {
+      return res.status(400).json({ success: false, message: 'message 长度不能超过 5000 字符' });
+    }
+
+    // 权限：确保会话属于该用户
+    const session = await QASessionService.getSession(sessionId, userId);
+    if (!session) {
+      return res.status(404).json({ success: false, message: '会话不存在或无权访问' });
+    }
+
+    const id = await SteeringService.inject(sessionId, message.trim());
+    return res.json({ success: true, data: { id } });
+  } catch (e: any) {
+    console.error('[Agent] steering 注入失败:', e?.message || e);
+    return res.status(500).json({ success: false, message: `注入失败: ${e?.message || e}` });
+  }
+});
+
+// ===== 会话回放（Task 13.14）=====
+
+/**
+ * GET /api/agent/replay/:sessionId — 审查会话回放
+ *
+ * 基于 AgentTrace 记录重现 Agent 的每一步决策、工具调用和中间结果。
+ * 返回完整的 messages + steps + summary 统计。
+ */
+router.get('/replay/:sessionId', async (req: AuthRequest, res: Response) => {
+  try {
+    const userId = req.user?.id;
+    if (!userId) return res.status(401).json({ success: false, message: '未认证' });
+
+    const sessionId = String(req.params.sessionId || '');
+    if (!sessionId) {
+      return res.status(400).json({ success: false, message: 'sessionId 不能为空' });
+    }
+
+    const replay = await ReplayService.getReplay(sessionId, userId);
+    return res.json({ success: true, data: replay });
+  } catch (e: any) {
+    if (e?.message?.includes('不存在或无权访问')) {
+      return res.status(404).json({ success: false, message: e.message });
+    }
+    console.error('[Agent] 回放查询失败:', e?.message || e);
+    return res.status(500).json({ success: false, message: `回放查询失败: ${e?.message || e}` });
+  }
+});
+
+/**
+ * GET /api/agent/replay/:sessionId/root-cause/:issueIndex — 审查问题根因分析
+ *
+ * 追溯某个审查发现（ReviewIssue）的触发来源：
+ * 从哪步工具调用产生 → 原始输入是什么 → LLM 调用详情。
+ */
+router.get('/replay/:sessionId/root-cause/:issueIndex', async (req: AuthRequest, res: Response) => {
+  try {
+    const userId = req.user?.id;
+    if (!userId) return res.status(401).json({ success: false, message: '未认证' });
+
+    const sessionId = String(req.params.sessionId || '');
+    const issueIndex = parseInt(String(req.params.issueIndex), 10);
+    if (isNaN(issueIndex) || issueIndex < 0) {
+      return res.status(400).json({ success: false, message: 'issueIndex 必须为非负整数' });
+    }
+
+    const trace = await ReplayService.traceRootCause(sessionId, userId, issueIndex);
+    return res.json({ success: true, data: trace });
+  } catch (e: any) {
+    console.error('[Agent] 根因分析失败:', e?.message || e);
+    return res.status(500).json({ success: false, message: `根因分析失败: ${e?.message || e}` });
+  }
+});
+
+// ===== 智能摘要（Task 13.16）=====
+
+/**
+ * POST /api/agent/summary — 生成审查结果智能摘要
+ *
+ * 基于 ReviewIssue[] 生成三种粒度的摘要：
+ * - quick: 纯统计（不调 LLM）
+ * - detailed: LLM 生成详细报告（控制在 1000 字）
+ * - executive: LLM 生成管理层汇报（控制在 500 字）
+ *
+ * Body: { issues: ReviewIssue[], level?: 'quick'|'detailed'|'executive', context?: string }
+ */
+router.post('/summary', async (req: AuthRequest, res: Response) => {
+  try {
+    const userId = req.user?.id;
+    if (!userId) return res.status(401).json({ success: false, message: '未认证' });
+
+    const { issues, level = 'quick', context } = req.body || {};
+    if (!Array.isArray(issues) || issues.length === 0) {
+      return res.status(400).json({ success: false, message: 'issues 必须为非空数组' });
+    }
+    if (!['quick', 'detailed', 'executive'].includes(level)) {
+      return res.status(400).json({ success: false, message: 'level 必须是 quick/detailed/executive 之一' });
+    }
+
+    const summary = await SummaryService.generate(issues, level, context);
+    return res.json({ success: true, data: summary });
+  } catch (e: any) {
+    console.error('[Agent] 摘要生成失败:', e?.message || e);
+    return res.status(500).json({ success: false, message: `摘要生成失败: ${e?.message || e}` });
   }
 });
 
