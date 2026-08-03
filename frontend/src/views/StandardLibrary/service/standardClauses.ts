@@ -58,12 +58,14 @@ export const PROFESSION_OPTIONS = [
 // Java Backend API 调用（对应 /api/v1/standards, /api/v1/clauses, /api/v1/checkpoints）
 // =====================================================================
 
-import { getAuthorization } from '@openspec/utils/auth'
+import { useUserStore } from '@/stores/user'
 
 function getApiHeaders(): HeadersInit {
   const headers: HeadersInit = { 'Content-Type': 'application/json' }
-  const authorization = getAuthorization()
-  if (authorization) headers['Authorization'] = authorization
+  // 2026-08-03：原 @openspec/utils/auth 的 getAuthorization（openspec 登录体系）已随 OpenSpec 清理，
+  // 改从主项目 userStore 取 token（/api/v1 为 Java 后端，需自行确认其认 Bearer 格式）
+  const token = useUserStore().token
+  if (token) headers['Authorization'] = `Bearer ${token}`
   return headers
 }
 

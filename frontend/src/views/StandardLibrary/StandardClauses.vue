@@ -279,7 +279,7 @@ import {
   type Checkpoint,
   type StandardTreeNode,
   type ClauseTreeNode,
-} from '../service/standardClauses'
+} from './service/standardClauses'
 
 const route = useRoute()
 

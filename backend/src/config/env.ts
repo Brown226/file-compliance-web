@@ -24,7 +24,6 @@ export const env = {
   redisUrl: process.env.REDIS_URL as string,
   jwtSecret: process.env.JWT_SECRET as string,
   jwtExpiresIn: process.env.JWT_EXPIRES_IN || '1d',
-  openspecAgentUrl: process.env.OPENSPEC_AGENT_URL || 'http://localhost:5000',
   // 进程角色：'all'（默认，单进程同时跑 API+Worker）/ 'api'（仅 HTTP+WS，不消费审查队列）/ 'worker'（仅消费队列+定时任务）
   processRole: ((): 'all' | 'api' | 'worker' => {
     const r = (process.env.PROCESS_ROLE || 'all').toLowerCase();

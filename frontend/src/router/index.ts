@@ -251,78 +251,33 @@ const routes: Array<RouteRecordRaw> = [
       { path: 'regex-tool', redirect: '/admin/rules' },
       { path: 'tasks/:id', redirect: to => ({ path: `/review/${to.params.id}` }) },
 
-      // ===== OpenSpec 高级功能（文档生成 + 长期记忆 + 智能审查）=====
+      // ===== OpenSpec 遗留路由清理（2026-08-03：唯一 Agent = Node Agent）=====
+      // 文档生成已作为 Node Agent 内置 skill（对话触发），入口指向 /agent；
+      // 长期记忆/问答分别走 /ai?tab=memory、/ai?tab=qa（均已改接 Node 侧）
       {
         path: 'openspec',
-        redirect: '/openspec/create',
+        redirect: '/agent',
         meta: { title: 'OpenSpec', hidden: true }
       },
       {
         path: 'openspec/create',
-        name: 'OpenSpecCreate',
-        component: () => import('@/views/openspec/CreateDocument.vue'),
-        meta: { title: '文档生成', icon: 'DocumentAdd' }
+        redirect: '/agent'
       },
       {
         path: 'openspec/editor/:id?',
-        name: 'OpenSpecEditor',
-        component: () => import('@/views/openspec/Editor.vue'),
-        meta: { title: '文档编辑', hidden: true }
+        redirect: '/agent'
       },
       {
         path: 'openspec/memory',
         redirect: '/ai?tab=memory'
       },
       {
-        path: 'openspec/review',
-        name: 'OpenSpecReview',
-        component: () => import('@/views/openspec/ReviewList.vue'),
-        meta: { title: 'OpenSpec审查', icon: 'Search' }
-      },
-      {
-        path: 'openspec/review/:id',
-        name: 'OpenSpecReviewResult',
-        component: () => import('@/views/openspec/ReviewResult.vue'),
-        meta: { title: '审查结果', hidden: true }
-      },
-      {
-        path: 'openspec/standards',
-        name: 'OpenSpecStandards',
-        component: () => import('@/views/openspec/StandardReview.vue'),
-        meta: { title: '标准条文', icon: 'Reading' }
-      },
-      {
-        path: 'openspec/clauses',
-        name: 'OpenSpecClauses',
-        component: () => import('@/views/openspec/StandardClauses.vue'),
-        meta: { title: '条文库', icon: 'Collection' }
-      },
-      // ===== OpenSpec 扩展页面 =====
-      {
-        path: 'openspec/home',
-        name: 'OpenSpecHome',
-        component: () => import('@/views/openspec/Home.vue'),
-        meta: { title: 'OpenSpec 首页', icon: 'HomeFilled', hidden: true }
-      },
-      {
-        path: 'openspec/wizard',
-        redirect: '/ai?tab=generate'
-      },
-      {
         path: 'openspec/qa',
         redirect: '/ai?tab=qa'
       },
       {
-        path: 'openspec/templates/:id',
-        name: 'OpenSpecTemplateDetail',
-        component: () => import('@/views/openspec/TemplateDetail.vue'),
-        meta: { title: '模板详情', hidden: true }
-      },
-      {
-        path: 'openspec/settings',
-        name: 'OpenSpecSettings',
-        component: () => import('@/views/openspec/Settings.vue'),
-        meta: { title: 'OpenSpec 设置', icon: 'Setting' }
+        path: 'openspec/wizard',
+        redirect: '/ai'
       },
     ]
   }

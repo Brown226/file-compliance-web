@@ -228,7 +228,7 @@ const resultCount = computed<number | null>(() => {
   display: flex;
   align-items: center;
   gap: 6px;
-  color: #4f6ef7;
+  color: var(--accent);
   font-size: 12px;
 }
 

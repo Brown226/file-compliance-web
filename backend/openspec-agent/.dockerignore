@@ -1,8 +1,0 @@
-__pycache__
-venv
-.env
-.git
-.vscode
-.idea
-*.pyc
-logs

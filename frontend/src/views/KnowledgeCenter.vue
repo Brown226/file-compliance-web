@@ -34,7 +34,7 @@ import LocalStandardTab from '@/views/StandardLibrary/LocalStandardTab.vue'
 import MaxKBTab from '@/views/StandardLibrary/MaxKBTab.vue'
 import TerminologyTab from '@/views/StandardLibrary/TerminologyTab.vue'
 import FalsePositiveLibraryTab from '@/views/StandardLibrary/FalsePositiveLibraryTab.vue'
-import StandardClauses from '@/views/openspec/StandardClauses.vue'
+import StandardClauses from '@/views/StandardLibrary/StandardClauses.vue'
 import RuleLibraries from '@/views/admin/RuleLibraries.vue'
 
 const route = useRoute()
