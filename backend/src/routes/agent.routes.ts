@@ -106,8 +106,91 @@ router.post('/chat/stream', async (req: AuthRequest, res: Response) => {
     return;
   } catch (e: any) {
     console.error('[Agent] 流式调用失败:', e?.message || e);
+
+    // Task 21.2：LLM 整体失败降级 — 流未开始时（headersSent=false），
+    // 降级到非流式 LlmService.chat() 重试一次，把结果包成 UIMessageStream 返回
     if (!res.headersSent) {
-      res.status(500).json({ success: false, message: `流式调用失败: ${e?.message || e}` });
+      try {
+        const userId = req.user?.id || 'unknown';
+        const sessionId: string = req.body?.sessionId || '';
+        const messages: any[] = req.body?.messages || [];
+
+        // 从 messages 提取最后一条用户消息作为 prompt（降级模式无法支持工具调用）
+        const lastUserMsg = [...messages].reverse().find((m: any) => m?.role === 'user');
+        const userText = lastUserMsg
+          ? (Array.isArray(lastUserMsg.parts)
+            ? lastUserMsg.parts.filter((p: any) => p?.type === 'text').map((p: any) => p.text).join('')
+            : typeof lastUserMsg.content === 'string' ? lastUserMsg.content : '')
+          : '';
+
+        if (!userText) {
+          throw new Error('无法从 messages 提取用户消息');
+        }
+
+        console.warn(`[Agent:Fallback] 降级到 LlmService.chat()，sessionId=${sessionId || 'none'}`);
+
+        // 调非流式 LLM
+        const { LlmService } = require('../services/llm/llm.service');
+        const fallbackText = await LlmService.chat(userText, {
+          systemPrompt: '你是文件合规审查助手。由于流式调用失败，请直接基于用户消息回复（无法调用工具）。',
+          mode: 'agent',
+          traceId: sessionId || undefined,
+        });
+
+        // 把降级结果包成 UIMessageStream 格式（前端 useChat 能正常消费）
+        const { createUIMessageStream } = require('ai');
+        const fallbackStream = createUIMessageStream({
+          execute: async ({ writer }: { writer: any }) => {
+            writer.write({ type: 'text-start', id: 'fallback-text' });
+            writer.write({ type: 'text-delta', id: 'fallback-text', delta: fallbackText });
+            writer.write({ type: 'text-end', id: 'fallback-text' });
+            writer.write({ type: 'finish', finishReason: 'stop' });
+          },
+        });
+
+        const uiResp = fallbackStream.toUIMessageStreamResponse();
+        res.status(uiResp.status);
+        uiResp.headers.forEach((value: string, key: string) => {
+          if (key.toLowerCase() === 'transfer-encoding') return;
+          res.setHeader(key, value);
+        });
+        const reader = uiResp.body!.getReader();
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          res.write(value);
+        }
+        res.end();
+        console.log('[Agent:Fallback] 降级成功');
+
+        // Task 21.3：在 AgentTrace 中记录 LLM 级降级事件
+        if (sessionId) {
+          try {
+            const { TraceService } = require('../services/agent/trace/trace.service');
+            await TraceService.recordTrace({
+              sessionId,
+              userId,
+              stepIndex: 999,  // 约定 999 = LLM 级降级事件
+              toolName: '__llm_fallback__',
+              input: { reason: (e as Error)?.message || String(e) },
+              output: { fallbackTextLength: fallbackText.length, preview: fallbackText.slice(0, 200) },
+              durationMs: 0,
+              status: 'success',
+              traceId: sessionId,
+              error: `LLM 流式失败，降级到 LlmService.chat() 成功：${(e as Error)?.message || ''}`,
+            });
+          } catch {
+            // trace 写入失败不影响主流程
+          }
+        }
+        return;
+      } catch (fallbackErr) {
+        console.error('[Agent:Fallback] 降级也失败:', (fallbackErr as Error).message);
+        res.status(500).json({
+          success: false,
+          message: `流式调用失败且降级也失败：${(fallbackErr as Error).message}`,
+        });
+      }
     } else {
       // 头已发送，只能结束连接（前端会看到流中断）
       res.end();
@@ -413,6 +496,189 @@ router.delete('/sessions/:sessionId', async (req: AuthRequest, res: Response) =>
     }
     console.error('[Agent] 删除会话失败:', e?.message || e);
     return res.status(500).json({ success: false, message: `删除失败: ${e?.message || e}` });
+  }
+});
+
+/**
+ * GET /api/agent/sessions/:sessionId/stats — 会话 token 用量统计
+ *
+ * 聚合该会话的消息计数（user/assistant/total）+ 工具调用计数（AgentTrace）+
+ * LLM token 用量（通过 AgentTrace.traceId 关联 LlmCallLog 聚合）。
+ *
+ * 注意：
+ * - cacheRead/cacheWrite 在当前 LlmCallLog schema 中无对应字段，固定返回 0
+ * - cost 暂无数据来源，固定返回 0
+ * - contextUsage 暂占位返回，待后端具备上下文窗口能力后补全
+ *
+ * 返回：{ success, data: SessionStats }
+ */
+router.get('/sessions/:sessionId/stats', async (req: AuthRequest, res: Response) => {
+  try {
+    const userId = req.user?.id;
+    if (!userId) {
+      return res.status(401).json({ success: false, message: '未认证' });
+    }
+
+    const sessionId = String(req.params.sessionId || '');
+    if (!sessionId) {
+      return res.status(400).json({ success: false, message: 'sessionId 不能为空' });
+    }
+
+    // 权限校验：会话必须属于当前用户
+    const session = await QASessionService.getSession(sessionId, userId);
+    if (!session) {
+      return res.status(404).json({ success: false, message: '会话不存在或无权访问' });
+    }
+
+    const prisma = require('../config/db').default;
+
+    // 消息计数（按 role 分组）
+    const messageCounts = await prisma.qAMessage.groupBy({
+      by: ['role'],
+      where: { sessionId },
+      _count: { _all: true },
+    });
+    let userMessages = 0;
+    let assistantMessages = 0;
+    let totalMessages = 0;
+    for (const g of messageCounts) {
+      const n = g._count._all;
+      totalMessages += n;
+      if (g.role === 'user') userMessages = n;
+      else if (g.role === 'assistant') assistantMessages = n;
+    }
+
+    // 工具调用统计：AgentTrace 即工具调用记录
+    const traces = await prisma.agentTrace.findMany({
+      where: { sessionId },
+      select: { status: true, traceId: true },
+    });
+    const toolCalls = traces.length;
+    const toolResults = traces.filter((t: any) => t.status === 'success').length;
+
+    // token 聚合：LlmCallLog.traceId 关联 AgentTrace.traceId；
+    // 部分 LLM 调用直接用 sessionId 作为 traceId（见 chat/stream 降级路径），一并纳入
+    const traceIds = Array.from(
+      new Set(traces.map((t: any) => t.traceId).filter(Boolean))
+    );
+    const allTraceIds = Array.from(new Set([...traceIds, sessionId]));
+
+    let inputTokens = 0;
+    let outputTokens = 0;
+    let totalTokensSum = 0;
+    if (allTraceIds.length > 0) {
+      const agg = await prisma.llmCallLog.aggregate({
+        where: { traceId: { in: allTraceIds } },
+        _sum: {
+          promptTokens: true,
+          completionTokens: true,
+          totalTokens: true,
+        },
+      });
+      inputTokens = agg._sum.promptTokens ?? 0;
+      outputTokens = agg._sum.completionTokens ?? 0;
+      totalTokensSum = agg._sum.totalTokens ?? 0;
+    }
+
+    return res.json({
+      success: true,
+      data: {
+        sessionId,
+        sessionName: session.title,
+        userMessages,
+        assistantMessages,
+        toolCalls,
+        toolResults,
+        totalMessages,
+        tokens: {
+          input: inputTokens,
+          output: outputTokens,
+          cacheRead: 0,    // 当前 schema 无对应字段
+          cacheWrite: 0,   // 当前 schema 无对应字段
+          total: totalTokensSum,
+        },
+        cost: 0,
+        contextUsage: {
+          percent: null,
+          contextWindow: 0,
+          tokens: null,
+        },
+      },
+    });
+  } catch (e: any) {
+    console.error('[Agent] 查询会话统计失败:', e?.message || e);
+    return res.status(500).json({ success: false, message: `查询失败: ${e?.message || e}` });
+  }
+});
+
+/**
+ * POST /api/agent/sessions/:sessionId/auto-name — 自动生成会话标题
+ *
+ * 取会话前 4 条 user/assistant 消息作为上下文，调 LlmService.chat() 生成简短标题，
+ * 写回 QASession.title。
+ *
+ * 返回：{ success, data: { title } }
+ * LLM 调用失败返回 500。
+ */
+router.post('/sessions/:sessionId/auto-name', async (req: AuthRequest, res: Response) => {
+  try {
+    const userId = req.user?.id;
+    if (!userId) {
+      return res.status(401).json({ success: false, message: '未认证' });
+    }
+
+    const sessionId = String(req.params.sessionId || '');
+    if (!sessionId) {
+      return res.status(400).json({ success: false, message: 'sessionId 不能为空' });
+    }
+
+    // 权限校验
+    const session = await QASessionService.getSession(sessionId, userId);
+    if (!session) {
+      return res.status(404).json({ success: false, message: '会话不存在或无权访问' });
+    }
+
+    // 取前 4 条 user/assistant 消息作为上下文
+    const messages = await QASessionService.listMessages(sessionId, userId);
+    const dialogueMessages = messages
+      .filter((m: any) => m.role === 'user' || m.role === 'assistant')
+      .slice(0, 4);
+    if (dialogueMessages.length === 0) {
+      return res.status(400).json({ success: false, message: '会话尚无消息，无法生成标题' });
+    }
+
+    const dialogue = dialogueMessages
+      .map((m: any) => `${m.role === 'user' ? '用户' : '助手'}：${m.content}`)
+      .join('\n');
+    const prompt = `根据以下对话内容，生成一个简短的会话标题（不超过20个中文字符，不要加引号、不要加句号）。只返回标题文本。\n\n${dialogue}`;
+
+    const { LlmService } = require('../services/llm/llm.service');
+    const titleRaw = await LlmService.chat(prompt, {
+      systemPrompt: '你是一个会话标题生成助手。请根据对话内容生成简短的中文标题。',
+      temperature: 0.3,
+      maxTokens: 60,
+      timeout: 30,
+      traceId: sessionId,
+    });
+
+    // 清理：去首尾引号、去末尾句号/感叹号/问号、限制长度
+    const cleanedTitle = String(titleRaw || '')
+      .trim()
+      .replace(/^["“”''「]+|["“”''」]+$/g, '')
+      .replace(/[。.！!？?]+$/g, '')
+      .slice(0, 100)
+      .trim();
+    if (!cleanedTitle) {
+      return res.status(500).json({ success: false, message: 'LLM 返回空标题' });
+    }
+
+    // 写回 QASession.title（复用 renameSession 保持权限校验一致）
+    await QASessionService.renameSession(sessionId, userId, cleanedTitle);
+
+    return res.json({ success: true, data: { title: cleanedTitle } });
+  } catch (e: any) {
+    console.error('[Agent] 自动命名失败:', e?.message || e);
+    return res.status(500).json({ success: false, message: `自动命名失败: ${e?.message || e}` });
   }
 });
 

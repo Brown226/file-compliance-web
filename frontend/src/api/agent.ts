@@ -131,3 +131,38 @@ export function updateMemoryApi(memoryId: string, data: { value?: string; confid
 export function deleteMemoryApi(memoryId: string) {
   return request.delete<{ success: boolean; message: string }>(`/agent/memory/${memoryId}`)
 }
+
+// ===== 会话统计 + 自动命名 =====
+
+export interface SessionStats {
+  sessionId: string
+  sessionName: string | null
+  userMessages: number
+  assistantMessages: number
+  toolCalls: number
+  toolResults: number
+  totalMessages: number
+  tokens: {
+    input: number
+    output: number
+    cacheRead: number
+    cacheWrite: number
+    total: number
+  }
+  cost: number
+  contextUsage: {
+    percent: number | null
+    contextWindow: number
+    tokens: number | null
+  }
+}
+
+/** 查询会话 token 用量统计 */
+export function getSessionStatsApi(sessionId: string) {
+  return request.get<SessionStats>(`/agent/sessions/${sessionId}/stats`)
+}
+
+/** 自动生成会话标题 */
+export function autoNameSessionApi(sessionId: string) {
+  return request.post<{ title: string }>(`/agent/sessions/${sessionId}/auto-name`)
+}

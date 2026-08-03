@@ -118,21 +118,21 @@ defineExpose({ refresh: loadSessions })
   display: flex;
   flex-direction: column;
   height: 100%;
-  background: #fafbfc;
+  background: var(--bg-panel);
 }
 
 .panel-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 16px;
+  padding: 14px 14px 10px;
   flex-shrink: 0;
 }
 
 .panel-title {
-  font-size: 14px;
+  font-size: 13px;
   font-weight: 600;
-  color: #1a1a2e;
+  color: var(--text);
   letter-spacing: -0.01em;
 }
 
@@ -149,7 +149,7 @@ defineExpose({ refresh: loadSessions })
   align-items: center;
   justify-content: center;
   padding: 48px 16px;
-  color: #a0a0b0;
+  color: var(--text-dim);
   gap: 8px;
   font-size: 13px;
 }
@@ -163,19 +163,19 @@ defineExpose({ refresh: loadSessions })
 .session-item {
   display: flex;
   align-items: flex-start;
-  padding: 12px;
-  border-radius: 8px;
+  padding: 10px 10px;
+  border-radius: 7px;
   cursor: pointer;
-  transition: background 0.15s ease;
+  transition: background 0.12s ease;
   position: relative;
 }
 
 .session-item:hover {
-  background: #f0f2f5;
+  background: var(--bg-hover);
 }
 
 .session-item.active {
-  background: #eef2ff;
+  background: var(--bg-selected);
 }
 
 .session-item.active::before {
@@ -185,7 +185,7 @@ defineExpose({ refresh: loadSessions })
   top: 6px;
   bottom: 6px;
   width: 3px;
-  background: #4f6ef7;
+  background: var(--accent);
   border-radius: 0 2px 2px 0;
 }
 
@@ -197,7 +197,7 @@ defineExpose({ refresh: loadSessions })
 .item-title {
   font-size: 13px;
   font-weight: 500;
-  color: #1a1a2e;
+  color: var(--text);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -205,12 +205,12 @@ defineExpose({ refresh: loadSessions })
 }
 
 .session-item.active .item-title {
-  color: #4f6ef7;
+  color: var(--accent);
 }
 
 .item-preview {
   font-size: 12px;
-  color: #8c8c9e;
+  color: var(--text-muted);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -223,7 +223,7 @@ defineExpose({ refresh: loadSessions })
   align-items: center;
   gap: 2px;
   font-size: 11px;
-  color: #b0b0c0;
+  color: var(--text-dim);
 }
 
 .meta-sep {
@@ -234,15 +234,15 @@ defineExpose({ refresh: loadSessions })
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 28px;
-  height: 28px;
+  width: 26px;
+  height: 26px;
   border: none;
   background: transparent;
-  color: #c0c0d0;
-  border-radius: 6px;
+  color: var(--text-dim);
+  border-radius: 5px;
   cursor: pointer;
   opacity: 0;
-  transition: opacity 0.15s, color 0.15s, background 0.15s;
+  transition: opacity 0.12s, color 0.12s, background 0.12s;
   flex-shrink: 0;
   margin-top: -1px;
 }
@@ -252,7 +252,7 @@ defineExpose({ refresh: loadSessions })
 }
 
 .item-delete:hover {
-  color: #e5484d;
-  background: #fff0f0;
+  color: var(--danger);
+  background: color-mix(in srgb, var(--danger) 10%, var(--bg));
 }
 </style>

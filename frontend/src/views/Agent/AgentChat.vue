@@ -1,7 +1,11 @@
 <template>
-  <div class="agent-layout">
-    <!-- 左侧：会话列表 -->
-    <aside class="layout-left">
+  <div class="agent-layout" @dragover.prevent="onDragOver" @dragleave.prevent="onDragLeave" @drop.prevent="onDrop">
+    <!-- 左侧：会话列表（可拖拽宽度） -->
+    <aside
+      ref="sidebarContainerRef"
+      class="sidebar-container"
+      :class="[sidebarOpen ? 'sidebar-open' : 'sidebar-closed', sidebarIsResizing ? 'sidebar-resizing' : '']"
+    >
       <AgentSessionList
         ref="sessionListRef"
         :current-session-id="sessionId"
@@ -10,28 +14,63 @@
       />
     </aside>
 
-    <!-- 中间：对话区域 -->
-    <main class="layout-center">
-      <div class="agent-chat">
-        <!-- 顶部标题栏 -->
-        <header class="chat-header">
-          <div class="header-left">
-            <div class="header-icon">
-              <el-icon :size="18"><ChatDotRound /></el-icon>
-            </div>
-            <div class="header-text">
-              <h3>Agent 审查助手</h3>
-              <span v-if="sessionId" class="session-tag">会话已绑定</span>
-            </div>
-          </div>
-          <div class="header-actions">
-            <el-button text size="small" :disabled="isLoading || messages.length === 0" @click="clearConversation">
-              <el-icon :size="14"><Delete /></el-icon>
-              <span>清空对话</span>
-            </el-button>
-          </div>
-        </header>
+    <!-- 左侧拖拽分隔条 -->
+    <div
+      v-if="sidebarOpen"
+      ref="sidebarSeparatorRef"
+      class="panel-resize-handle"
+      :class="{ 'is-resizing': sidebarIsResizing }"
+      v-bind="sidebarSeparatorProps"
+    />
 
+    <!-- 中间：对话区域 -->
+    <main class="center-column">
+      <!-- 顶部工具栏（36px） -->
+      <header class="top-toolbar">
+        <div class="toolbar-left">
+          <button class="toolbar-icon-btn" :title="sidebarOpen ? '收起侧边栏' : '展开侧边栏'" @click="sidebarOpen = !sidebarOpen">
+            <el-icon :size="15"><Fold v-if="sidebarOpen" /><Expand v-else /></el-icon>
+          </button>
+          <button class="toolbar-icon-btn" :title="rightPanelOpen ? '收起追踪面板' : '展开追踪面板'" @click="rightPanelOpen = !rightPanelOpen">
+            <el-icon :size="15"><Grid /></el-icon>
+          </button>
+          <div class="toolbar-title">
+            <span class="title-text">Agent 审查助手</span>
+            <span v-if="sessionId" class="session-badge">会话已绑定</span>
+          </div>
+        </div>
+        <div class="toolbar-right">
+          <!-- token 统计 -->
+          <div v-if="stats" class="token-stats">
+            <span class="stat-item" title="输入 token">
+              <span class="stat-label">↑</span>{{ formatToken(stats.tokens.input) }}
+            </span>
+            <span class="stat-item" title="输出 token">
+              <span class="stat-label">↓</span>{{ formatToken(stats.tokens.output) }}
+            </span>
+            <span v-if="stats.tokens.total" class="stat-item stat-total" :class="contextUsageClass" title="总 token">
+              <span class="stat-label">Σ</span>{{ formatToken(stats.tokens.total) }}
+            </span>
+          </div>
+          <!-- 自动命名按钮 -->
+          <button
+            class="toolbar-icon-btn auto-name-btn"
+            :disabled="autoNameStatus === 'loading' || !sessionId || messages.length === 0"
+            :title="'自动生成会话标题'"
+            @click="handleAutoName"
+          >
+            <el-icon :size="15" v-if="autoNameStatus === 'loading'" class="is-loading"><Loading /></el-icon>
+            <el-icon :size="15" v-else-if="autoNameStatus === 'success'"><Check /></el-icon>
+            <el-icon :size="15" v-else><MagicStick /></el-icon>
+          </button>
+          <button class="toolbar-icon-btn" :disabled="isLoading || messages.length === 0" title="清空对话" @click="clearConversation">
+            <el-icon :size="15"><Delete /></el-icon>
+          </button>
+        </div>
+      </header>
+
+      <!-- 聊天内容区 -->
+      <div class="chat-content">
         <!-- 消息列表 -->
         <div ref="messagesContainer" class="messages-container">
           <div v-if="messages.length === 0" class="empty-state">
@@ -41,8 +80,8 @@
             <p class="empty-title">开始新的审查</p>
             <p class="empty-desc">上传待审文件，或直接描述你想要审查的内容</p>
             <div class="empty-hints">
-              <span>💡 试试：帮我审查这份合同的付款条款</span>
-              <span>💡 试试：检查这份规章是否符合 GB/T 标准</span>
+              <span>试试：帮我审查这份合同的付款条款</span>
+              <span>试试：检查这份规章是否符合 GB/T 标准</span>
             </div>
           </div>
 
@@ -52,14 +91,27 @@
             class="message-row"
             :class="message.role"
           >
-            <div class="avatar">
-              <el-avatar :size="34" :class="message.role === 'user' ? 'avatar-user' : 'avatar-assistant'">
-                {{ message.role === 'user' ? '我' : 'AI' }}
-              </el-avatar>
+            <div class="avatar" :class="message.role">
+              <span>{{ message.role === 'user' ? '我' : 'AI' }}</span>
             </div>
             <div class="bubble-wrap">
               <div class="bubble" :class="message.role">
-                <!-- 工具调用 chip -->
+                <!-- thinking / reasoning 折叠块（assistant） -->
+                <template v-if="message.role === 'assistant'">
+                  <div
+                    v-for="(think, ti) in getThinkingParts(message)"
+                    :key="'think-' + ti"
+                    class="thinking-block"
+                  >
+                    <button class="thinking-toggle" @click="toggleThinking(message.id + '-t' + ti)">
+                      <el-icon :size="12"><ArrowRight v-if="!thinkingOpen[message.id + '-t' + ti]" /><ArrowDown v-else /></el-icon>
+                      <span>思考过程</span>
+                    </button>
+                    <div v-if="thinkingOpen[message.id + '-t' + ti]" class="thinking-text">{{ think.text }}</div>
+                  </div>
+                </template>
+
+                <!-- 工具调用 chip（assistant） -->
                 <template v-if="message.role === 'assistant'">
                   <div
                     v-for="part in getToolCallParts(message)"
@@ -74,13 +126,13 @@
                 <template v-if="message.role === 'assistant' && hasIssues(message)">
                   <div
                     v-if="extractIssuesFromMessage(message).beforeText"
-                    class="markdown-content"
+                    class="markdown-body markdown-content"
                     v-html="renderMarkdown(extractIssuesFromMessage(message).beforeText)"
                   />
                   <AgentIssueList :issues="extractIssuesFromMessage(message).issues" />
                   <div
                     v-if="extractIssuesFromMessage(message).afterText"
-                    class="markdown-content"
+                    class="markdown-body markdown-content"
                     v-html="renderMarkdown(extractIssuesFromMessage(message).afterText)"
                   />
                 </template>
@@ -89,7 +141,7 @@
                 <template v-else>
                   <div
                     v-if="message.role === 'assistant'"
-                    class="markdown-content"
+                    class="markdown-body markdown-content"
                     v-html="renderMarkdown(getMessageText(message))"
                   />
                   <div v-else class="text-content">{{ getMessageText(message) }}</div>
@@ -122,9 +174,7 @@
 
           <!-- 打字指示器 -->
           <div v-if="showTypingIndicator" class="message-row assistant">
-            <div class="avatar">
-              <el-avatar :size="34" class="avatar-assistant">AI</el-avatar>
-            </div>
+            <div class="avatar assistant"><span>AI</span></div>
             <div class="bubble assistant typing">
               <span class="dot" />
               <span class="dot" />
@@ -145,7 +195,7 @@
           </div>
         </div>
 
-        <!-- 输入区 -->
+        <!-- 输入栏 -->
         <footer class="input-area">
           <el-upload
             :http-request="customUpload"
@@ -163,9 +213,10 @@
               class="input-box"
               type="textarea"
               :autosize="{ minRows: 1, maxRows: 4 }"
-              placeholder="输入问题或审查要求…"
+              placeholder="输入问题或审查要求…（Enter 发送，Shift+Enter 换行）"
               resize="none"
               @keydown.enter.exact.prevent="handleSend"
+              @keydown.shift.enter.exact="() => {}"
             />
             <el-button
               v-if="!isLoading"
@@ -182,25 +233,44 @@
               :icon="VideoPause"
               @click="handleStop"
             >
-              停止生成
+              停止
             </el-button>
           </div>
         </footer>
+
+        <!-- 拖拽上传遮罩 -->
+        <div v-if="isDragOver" class="drop-zone-overlay">
+          <div class="drop-zone-icon">
+            <el-icon :size="28"><Upload /></el-icon>
+          </div>
+        </div>
       </div>
     </main>
 
-    <!-- 右侧：执行追踪面板 -->
-    <aside class="layout-right">
+    <!-- 右侧拖拽分隔条 -->
+    <div
+      v-if="rightPanelOpen"
+      ref="rightSeparatorRef"
+      class="panel-resize-handle"
+      :class="{ 'is-resizing': rightIsResizing }"
+      v-bind="rightSeparatorProps"
+    />
+
+    <!-- 右侧：执行追踪面板（可拖拽宽度） -->
+    <aside
+      ref="rightContainerRef"
+      class="right-panel-container"
+      :class="[rightPanelOpen ? 'right-panel-open' : 'right-panel-closed', rightIsResizing ? 'right-panel-resizing' : '']"
+    >
       <AgentSidePanel :current-session-id="sessionId" />
     </aside>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, computed, watch, nextTick } from 'vue'
+import { ref, computed, watch, nextTick, reactive } from 'vue'
 import { ElMessage } from 'element-plus'
 import {
-  ChatDotRound,
   ChatLineRound,
   Delete,
   Document,
@@ -211,15 +281,26 @@ import {
   Download,
   Printer,
   Close,
+  Fold,
+  Expand,
+  Grid,
+  Loading,
+  Check,
+  MagicStick,
+  ArrowRight,
+  ArrowDown,
 } from '@element-plus/icons-vue'
 import type { UIMessage } from 'ai'
 import { useAgentChat } from '@/composables/useAgentChat'
 import { useMarkdown } from '@/composables/useMarkdown'
+import { useResizablePanel } from '@/composables/useResizablePanel'
 import { useUserStore } from '@/stores/user'
+import { getSessionStatsApi, autoNameSessionApi, type SessionStats } from '@/api/agent'
 import ToolCallChip from './components/ToolCallChip.vue'
 import AgentIssueList from './components/AgentIssueList.vue'
 import AgentSessionList from './components/AgentSessionList.vue'
 import AgentSidePanel from './components/AgentSidePanel.vue'
+import './agent-theme.css'
 
 const userStore = useUserStore()
 const { renderMarkdown } = useMarkdown()
@@ -227,10 +308,118 @@ const { messages, sendMessage, stop, regenerate, isLoading, sessionId, loadHisto
 
 const sessionListRef = ref<InstanceType<typeof AgentSessionList> | null>(null)
 
+// ===== 可拖拽面板 =====
+const sidebarContainerRef = ref<HTMLElement | null>(null)
+const rightContainerRef = ref<HTMLElement | null>(null)
+const sidebarOpen = ref(true)
+const rightPanelOpen = ref(true)
+
+const sidebarPanel = useResizablePanel({
+  cssVariable: '--sidebar-width',
+  defaultWidth: 260,
+  minWidth: 200,
+  maxWidth: 480,
+  storageKey: 'agent-sidebar-width',
+  growthDirection: 'right',
+  containerRef: sidebarContainerRef,
+})
+const rightPanel = useResizablePanel({
+  cssVariable: '--right-panel-width',
+  defaultWidth: 320,
+  minWidth: 300,
+  maxWidth: 900,
+  storageKey: 'agent-right-panel-width',
+  growthDirection: 'left',
+  containerRef: rightContainerRef,
+})
+// 注意：separatorProps 里的事件是 onPointerdown 形式，Vue 模板 v-bind 需要小写
+// 这里手动映射为 v-bind 兼容的 props
+const sidebarSeparatorProps = computed(() => remapSeparatorProps(sidebarPanel.separatorProps, sidebarPanel.isResizing.value))
+const rightSeparatorProps = computed(() => remapSeparatorProps(rightPanel.separatorProps, rightPanel.isResizing.value))
+const sidebarIsResizing = sidebarPanel.isResizing
+const rightIsResizing = rightPanel.isResizing
+
+function remapSeparatorProps(p: any, resizing: boolean): any {
+  return {
+    role: p.role,
+    'aria-orientation': p['aria-orientation'],
+    'aria-label': p['aria-label'],
+    'aria-valuemin': p['aria-valuemin'],
+    'aria-valuemax': p['aria-valuemax'],
+    'aria-valuenow': p['aria-valuenow'],
+    'aria-valuetext': p['aria-valuetext'],
+    tabindex: p.tabindex,
+    onPointerdown: p.onPointerdown,
+    onPointermove: p.onPointermove,
+    onPointerup: p.onPointerup,
+    onPointercancel: p.onPointercancel,
+    onLostpointercapture: p.onLostpointercapture,
+    onKeydown: p.onKeydown,
+    onDblclick: p.onDblclick,
+    class: resizing ? 'is-resizing' : '',
+  }
+}
+
+// ===== thinking 折叠状态 =====
+const thinkingOpen = reactive<Record<string, boolean>>({})
+function toggleThinking(key: string) {
+  thinkingOpen[key] = !thinkingOpen[key]
+}
+function getThinkingParts(message: UIMessage): Array<{ text: string }> {
+  // ai-sdk v4 的 thinking part 类型可能是 'reasoning' 或 'thinking'
+  return message.parts
+    .filter((p: any) => p?.type === 'reasoning' || p?.type === 'thinking')
+    .map((p: any) => ({ text: p.text || p.reasoning || p.reasoningTextDetail || '' }))
+}
+
+// ===== token 统计 + 自动命名 =====
+const stats = ref<SessionStats | null>(null)
+const autoNameStatus = ref<'idle' | 'loading' | 'success' | 'error'>('idle')
+
+const contextUsageClass = computed(() => {
+  if (!stats.value?.contextUsage?.percent) return ''
+  const p = stats.value.contextUsage.percent
+  if (p > 90) return 'stat-danger'
+  if (p > 70) return 'stat-warning'
+  return ''
+})
+
+async function refreshStats() {
+  if (!sessionId.value) { stats.value = null; return }
+  try {
+    const res = await getSessionStatsApi(sessionId.value)
+    stats.value = res.data
+  } catch { /* 静默失败 */ }
+}
+
+async function handleAutoName() {
+  if (!sessionId.value || autoNameStatus.value === 'loading') return
+  autoNameStatus.value = 'loading'
+  try {
+    await autoNameSessionApi(sessionId.value)
+    autoNameStatus.value = 'success'
+    ElMessage.success('会话标题已更新')
+    sessionListRef.value?.refresh?.()
+    setTimeout(() => { autoNameStatus.value = 'idle' }, 2000)
+  } catch (e) {
+    autoNameStatus.value = 'error'
+    ElMessage.error('自动命名失败：' + (e as Error).message)
+    setTimeout(() => { autoNameStatus.value = 'idle' }, 2000)
+  }
+}
+
+function formatToken(n: number | null | undefined): string {
+  if (!n) return '0'
+  if (n >= 1000) return (n / 1000).toFixed(1) + 'k'
+  return String(n)
+}
+
+// ===== 会话切换 =====
 async function handleSelectSession(sid: string) {
   try {
     await loadHistory(sid)
     uploadedFiles.value = []
+    refreshStats()
     ElMessage.success('已切换到历史会话')
   } catch (e) {
     ElMessage.error('加载会话历史失败：' + (e as Error).message)
@@ -240,6 +429,7 @@ async function handleSelectSession(sid: string) {
 function handleNewChat() {
   clearSession()
   uploadedFiles.value = []
+  stats.value = null
 }
 
 const inputValue = ref('')
@@ -328,6 +518,8 @@ async function handleSend() {
     finalText = `[已上传文件：${filesInfo}]\n\n${text}`
   }
   await sendMessage({ text: finalText })
+  // 发送后刷新会话列表（修复原有 bug：新会话不立即出现）
+  sessionListRef.value?.refresh?.()
 }
 
 function handleStop() { stop() }
@@ -350,116 +542,168 @@ async function customUpload(options: { file: File }) {
   } finally { uploading.value = false }
 }
 
-function clearConversation() { clearSession(); uploadedFiles.value = [] }
+function clearConversation() { clearSession(); uploadedFiles.value = []; stats.value = null }
 function formatSize(bytes: number): string {
   if (bytes < 1024) return bytes + 'B'
   if (bytes < 1048576) return (bytes / 1024).toFixed(1) + 'KB'
   return (bytes / 1048576).toFixed(1) + 'MB'
 }
 
-watch(messages, () => nextTick(() => {
-  const el = messagesContainer.value
-  if (el) el.scrollTop = el.scrollHeight
-}), { flush: 'post' })
+// ===== 拖拽上传 =====
+const isDragOver = ref(false)
+let dragCounter = 0
+function onDragOver() { /* dragover 需要 preventDefault 才能触发 drop */ }
+function onDragLeave(e: DragEvent) {
+  // 只有离开整个容器才隐藏遮罩
+  if (e.relatedTarget === null) {
+    dragCounter = 0
+    isDragOver.value = false
+  }
+}
+function onDrop(e: DragEvent) {
+  dragCounter = 0
+  isDragOver.value = false
+  const files = e.dataTransfer?.files
+  if (!files || files.length === 0) return
+  for (const file of Array.from(files)) {
+    customUpload({ file })
+  }
+}
+
+// 消息变化时自动滚动到底部 + 完成后刷新统计
+watch(messages, () => {
+  nextTick(() => {
+    const el = messagesContainer.value
+    if (el) el.scrollTop = el.scrollHeight
+  })
+}, { flush: 'post', deep: false })
+
+// 流式结束时刷新 token 统计
+watch(isLoading, (now, prev) => {
+  if (prev && !now) {
+    refreshStats()
+    sessionListRef.value?.refresh?.()
+  }
+})
+
+// 会话变化时刷新统计
+watch(sessionId, () => { refreshStats() })
 </script>
 
 <style scoped>
-/* ===== 三栏布局 ===== */
+/* ===== 主布局 ===== */
 .agent-layout {
   display: flex;
   height: 100%;
   width: 100%;
-  background: #f5f6f8;
-  gap: 0;
+  background: var(--bg);
+  position: relative;
+  overflow: hidden;
 }
 
-.layout-left {
-  width: 260px;
-  flex-shrink: 0;
-  height: 100%;
-  background: #fafbfc;
-  border-right: 1px solid #e8eaf0;
-}
-
-.layout-center {
+/* ===== 中间列 ===== */
+.center-column {
   flex: 1;
   min-width: 0;
   height: 100%;
   display: flex;
-  justify-content: center;
-}
-
-.layout-right {
-  width: 300px;
-  flex-shrink: 0;
-  height: 100%;
-  border-left: 1px solid #e8eaf0;
-}
-
-/* ===== 对话框容器 ===== */
-.agent-chat {
-  width: 100%;
-  max-width: 800px;
-  height: 100%;
-  display: flex;
   flex-direction: column;
-  background: #fff;
+  background: var(--bg);
 }
 
-/* ===== 顶部标题栏 ===== */
-.chat-header {
+/* ===== 顶部工具栏 ===== */
+.top-toolbar {
+  height: var(--toolbar-height, 36px);
+  flex-shrink: 0;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 14px 20px;
-  border-bottom: 1px solid #f0f0f4;
-  flex-shrink: 0;
-}
-
-.header-left {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-
-.header-icon {
-  width: 34px;
-  height: 34px;
-  border-radius: 8px;
-  background: linear-gradient(135deg, #4f6ef7 0%, #6c8cff 100%);
-  color: #fff;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.header-text {
-  display: flex;
-  align-items: center;
+  padding: 0 8px;
+  background: var(--bg-panel);
+  border-bottom: 1px solid var(--border);
   gap: 8px;
 }
-
-.header-text h3 {
-  margin: 0;
-  font-size: 15px;
-  font-weight: 600;
-  color: #1a1a2e;
-  letter-spacing: -0.01em;
+.toolbar-left, .toolbar-right {
+  display: flex;
+  align-items: center;
+  gap: 4px;
 }
-
-.session-tag {
-  padding: 2px 8px;
-  font-size: 11px;
-  color: #059669;
-  background: #ecfdf5;
-  border: 1px solid #a7f3d0;
-  border-radius: 10px;
+.toolbar-icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  border-radius: 5px;
+  padding: 0;
+  transition: background 0.12s, color 0.12s;
+}
+.toolbar-icon-btn:hover:not(:disabled) {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+.toolbar-icon-btn:disabled {
+  color: var(--text-dim);
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+.toolbar-icon-btn.is-loading .el-icon {
+  animation: agent-spin 0.9s linear infinite;
+}
+.toolbar-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: 4px;
+}
+.title-text {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+}
+.session-badge {
+  padding: 1px 6px;
+  font-size: 10px;
+  color: var(--success);
+  background: color-mix(in srgb, var(--success) 12%, var(--bg));
+  border-radius: 8px;
   font-weight: 500;
 }
 
-.header-actions {
+/* token 统计 */
+.token-stats {
   display: flex;
-  gap: 4px;
+  align-items: center;
+  gap: 8px;
+  padding: 0 6px;
+  font-size: 11px;
+  font-family: var(--font-mono);
+  color: var(--text-muted);
+}
+.stat-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+.stat-label {
+  color: var(--text-dim);
+  font-size: 10px;
+}
+.stat-total { color: var(--text); font-weight: 600; }
+.stat-warning { color: var(--warning); }
+.stat-danger { color: var(--danger); }
+
+/* ===== 聊天内容区 ===== */
+.chat-content {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  position: relative;
 }
 
 /* ===== 消息列表 ===== */
@@ -467,8 +711,8 @@ watch(messages, () => nextTick(() => {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
-  padding: 20px 20px 8px;
-  background: #fff;
+  padding: 16px 20px 8px;
+  background: var(--bg);
 }
 
 /* ===== 空状态 ===== */
@@ -481,83 +725,75 @@ watch(messages, () => nextTick(() => {
   gap: 4px;
   padding-bottom: 80px;
 }
-
 .empty-icon {
-  width: 72px;
-  height: 72px;
-  border-radius: 20px;
-  background: linear-gradient(135deg, #f0f2ff 0%, #e8ecff 100%);
-  color: #7c8dfc;
+  width: 64px;
+  height: 64px;
+  border-radius: 16px;
+  background: color-mix(in srgb, var(--accent) 8%, var(--bg));
+  color: var(--accent);
   display: flex;
   align-items: center;
   justify-content: center;
-  margin-bottom: 12px;
+  margin-bottom: 10px;
 }
-
 .empty-title {
   margin: 0;
-  font-size: 17px;
+  font-size: 16px;
   font-weight: 600;
-  color: #2a2a3e;
+  color: var(--text);
 }
-
 .empty-desc {
-  margin: 4px 0 16px;
+  margin: 4px 0 14px;
   font-size: 13px;
-  color: #9a9aae;
+  color: var(--text-muted);
 }
-
 .empty-hints {
   display: flex;
   flex-direction: column;
   gap: 6px;
 }
-
 .empty-hints span {
   font-size: 12px;
-  color: #b0b0c0;
+  color: var(--text-dim);
   padding: 6px 12px;
-  background: #f8f9fc;
+  background: var(--bg-subtle);
   border-radius: 6px;
-  border: 1px dashed #e0e0ec;
+  border: 1px dashed var(--border);
 }
 
 /* ===== 消息行 ===== */
 .message-row {
   display: flex;
   gap: 10px;
-  margin-bottom: 20px;
+  margin-bottom: 16px;
   align-items: flex-start;
 }
-
 .message-row.user {
   flex-direction: row-reverse;
 }
-
 .avatar {
   flex-shrink: 0;
-  padding-top: 1px;
-}
-
-.avatar-user {
-  background: linear-gradient(135deg, #4f6ef7 0%, #6c8cff 100%);
-  color: #fff;
+  width: 30px;
+  height: 30px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
   font-weight: 600;
-  font-size: 13px;
-}
-
-.avatar-assistant {
-  background: linear-gradient(135deg, #1e293b 0%, #334155 100%);
   color: #fff;
-  font-weight: 600;
-  font-size: 13px;
+}
+.avatar.user {
+  background: var(--accent);
+}
+.avatar.assistant {
+  background: color-mix(in srgb, var(--text) 80%, #555);
 }
 
 .bubble-wrap {
-  max-width: calc(100% - 60px);
+  max-width: calc(100% - 50px);
   min-width: 0;
 }
-
 .message-row.user .bubble-wrap {
   display: flex;
   flex-direction: column;
@@ -565,62 +801,59 @@ watch(messages, () => nextTick(() => {
 }
 
 .bubble {
-  padding: 12px 16px;
-  border-radius: 14px;
+  padding: 10px 14px;
+  border-radius: 12px;
   font-size: 14px;
   line-height: 1.65;
   word-break: break-word;
 }
-
 .bubble.user {
-  background: #f0f2f5;
-  color: #1a1a2e;
+  background: var(--user-bg);
+  color: var(--text);
   border-bottom-right-radius: 4px;
 }
-
 .bubble.assistant {
-  color: #1a1a2e;
+  background: var(--assistant-bg);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-top-left-radius: 4px;
 }
-
 .text-content {
   white-space: pre-wrap;
 }
 
-/* ===== Markdown ===== */
-.markdown-content :deep(p) { margin: 0 0 8px; }
-.markdown-content :deep(p:last-child) { margin-bottom: 0; }
-.markdown-content :deep(pre) {
-  background: #1a1b26;
-  color: #c0caf5;
-  padding: 14px 16px;
-  border-radius: 10px;
-  overflow-x: auto;
-  font-size: 13px;
-  line-height: 1.55;
-  margin: 8px 0;
+/* ===== thinking 折叠块 ===== */
+.thinking-block {
+  margin-bottom: 8px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow: hidden;
+  background: var(--bg-subtle);
 }
-.markdown-content :deep(code) {
-  font-family: 'Cascadia Code', 'Fira Code', 'JetBrains Mono', 'Menlo', 'Consolas', monospace;
-  font-size: 13px;
+.thinking-toggle {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  width: 100%;
+  border: none;
+  background: transparent;
+  padding: 6px 10px;
+  font-size: 12px;
+  color: var(--text-muted);
+  cursor: pointer;
+  text-align: left;
 }
-.markdown-content :deep(:not(pre) > code) {
-  background: #f0f2f5;
-  padding: 2px 6px;
-  border-radius: 4px;
-  color: #e5484d;
+.thinking-toggle:hover { color: var(--text); }
+.thinking-text {
+  padding: 6px 12px 10px;
   font-size: 12.5px;
+  color: var(--text-muted);
+  white-space: pre-wrap;
+  border-top: 1px solid var(--border);
 }
-.markdown-content :deep(ul), .markdown-content :deep(ol) { margin: 0 0 8px; padding-left: 22px; }
-.markdown-content :deep(li) { margin: 3px 0; }
-.markdown-content :deep(a) { color: #4f6ef7; text-decoration: none; }
-.markdown-content :deep(a:hover) { text-decoration: underline; }
-.markdown-content :deep(table) { border-collapse: collapse; margin: 8px 0; font-size: 13px; }
-.markdown-content :deep(th), .markdown-content :deep(td) { border: 1px solid #e8eaf0; padding: 7px 12px; }
-.markdown-content :deep(th) { background: #fafbfc; font-weight: 600; }
-.markdown-content :deep(h1), .markdown-content :deep(h2), .markdown-content :deep(h3) { margin: 12px 0 6px; }
-.markdown-content :deep(h1) { font-size: 17px; }
-.markdown-content :deep(h2) { font-size: 15px; }
-.markdown-content :deep(h3) { font-size: 14px; }
+
+/* ===== Markdown 内容（主体样式在 agent-theme.css）===== */
+.markdown-content { font-size: 14px; line-height: 1.7; }
 
 /* ===== 消息操作 ===== */
 .message-actions {
@@ -630,9 +863,9 @@ watch(messages, () => nextTick(() => {
 
 /* ===== 报告操作 ===== */
 .report-actions {
-  margin-top: 12px;
-  padding-top: 10px;
-  border-top: 1px solid #f0f0f4;
+  margin-top: 10px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border);
   display: flex;
   gap: 8px;
   flex-wrap: wrap;
@@ -651,71 +884,67 @@ watch(messages, () => nextTick(() => {
   display: flex;
   align-items: center;
   gap: 5px;
-  padding: 16px 20px;
-  background: #f8f9fc;
+  padding: 14px 18px;
+  background: var(--bg-subtle);
 }
 .dot {
-  width: 7px;
-  height: 7px;
+  width: 6px;
+  height: 6px;
   border-radius: 50%;
-  background: #c0c0d0;
-  animation: typing-bounce 1.3s infinite ease-in-out;
+  background: var(--text-dim);
+  animation: agent-typing-bounce 1.3s infinite ease-in-out;
 }
 .dot:nth-child(2) { animation-delay: 0.15s; }
 .dot:nth-child(3) { animation-delay: 0.3s; }
-@keyframes typing-bounce {
-  0%, 60%, 100% { transform: translateY(0); opacity: 0.4; }
-  30% { transform: translateY(-5px); opacity: 1; }
-}
 
 /* ===== 已上传文件 ===== */
 .uploaded-files {
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
-  padding: 10px 20px;
-  border-top: 1px solid #f0f0f4;
-  background: #fafbfc;
+  padding: 8px 20px;
+  border-top: 1px solid var(--border);
+  background: var(--bg-panel);
   flex-shrink: 0;
 }
 .file-chip {
   display: inline-flex;
   align-items: center;
   gap: 5px;
-  padding: 4px 8px 4px 10px;
-  background: #fff;
-  border: 1px solid #e0e0ec;
-  border-radius: 8px;
+  padding: 3px 8px 3px 10px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
   font-size: 12px;
-  color: #4a4a5e;
+  color: var(--text);
   transition: border-color 0.15s;
 }
-.file-chip:hover { border-color: #c0c0d0; }
-.file-chip .el-icon { color: #4f6ef7; flex-shrink: 0; }
+.file-chip:hover { border-color: var(--text-dim); }
+.file-chip .el-icon { color: var(--accent); flex-shrink: 0; }
 .file-name { max-width: 160px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.file-size { color: #a0a0b0; font-size: 11px; }
+.file-size { color: var(--text-dim); font-size: 11px; }
 .file-remove {
   display: flex;
   align-items: center;
   justify-content: center;
   border: none;
   background: none;
-  color: #c0c0d0;
+  color: var(--text-dim);
   cursor: pointer;
   padding: 1px;
   border-radius: 3px;
 }
-.file-remove:hover { color: #e5484d; background: #fef0f0; }
+.file-remove:hover { color: var(--danger); background: color-mix(in srgb, var(--danger) 10%, var(--bg)); }
 
 /* ===== 输入区 ===== */
 .input-area {
-  padding: 12px 20px;
-  border-top: 1px solid #f0f0f4;
-  background: #fff;
+  padding: 10px 20px 14px;
+  border-top: 1px solid var(--border);
+  background: var(--bg);
   flex-shrink: 0;
 }
 .upload-btn {
-  margin-bottom: 8px;
+  margin-bottom: 6px;
 }
 .input-row {
   display: flex;
@@ -726,30 +955,36 @@ watch(messages, () => nextTick(() => {
   flex: 1;
 }
 .input-box :deep(.el-textarea__inner) {
-  border-radius: 12px;
-  padding: 10px 14px;
-  background: #f8f9fc;
-  border: 1px solid #e8eaf0;
+  border-radius: 10px;
+  padding: 9px 13px;
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
   font-size: 14px;
   line-height: 1.5;
-  transition: border-color 0.2s, box-shadow 0.2s;
+  transition: border-color 0.15s, box-shadow 0.15s;
 }
 .input-box :deep(.el-textarea__inner:focus) {
-  border-color: #4f6ef7;
-  box-shadow: 0 0 0 3px rgba(79, 110, 247, 0.1);
-  background: #fff;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 12%, transparent);
+  background: var(--bg);
 }
 .send-btn {
-  width: 38px;
-  height: 38px;
+  width: 36px;
+  height: 36px;
   border-radius: 10px;
   flex-shrink: 0;
+  background: var(--accent);
+  border-color: var(--accent);
 }
-.send-btn :deep(.el-icon) {
-  margin: 0;
+.send-btn:hover {
+  background: var(--accent-hover);
+  border-color: var(--accent-hover);
 }
+.send-btn :deep(.el-icon) { margin: 0; }
 .stop-btn {
   flex-shrink: 0;
   border-radius: 10px;
+  background: var(--danger);
+  border-color: var(--danger);
 }
 </style>
