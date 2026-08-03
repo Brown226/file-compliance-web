@@ -272,12 +272,12 @@ export function useResizablePanel(options: UseResizablePanelOptions): UseResizab
     'aria-valuenow': width.value,
     'aria-valuetext': `${width.value} px`,
     tabindex: 0,
-    onPointerdown,
-    onPointermove,
-    onPointerup,
-    onPointercancel,
-    onLostpointercapture,
-    onKeydown,
+    onPointerdown: onPointerDown,
+    onPointermove: onPointerMove,
+    onPointerup: onPointerUp,
+    onPointercancel: onPointerCancel,
+    onLostpointercapture: onLostPointerCapture,
+    onKeydown: onKeyDown,
     onDblclick: resetWidth,
   }
 
