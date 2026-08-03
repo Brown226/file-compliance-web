@@ -919,17 +919,19 @@ const fileContexts = task.files.map(file => {
         }
 
         // ===== 学习闭环：审查完成后写入用户偏好到长期记忆 =====
+        // 迁移自 OpenSpecAgentService.saveMemory（2026-08-03，统一到 Node MemoryService/agent_memories 表）
         try {
-          const { OpenSpecAgentService } = await import('../llm/openspec-agent.service');
+          const { MemoryService } = await import('../agent/memory/memory.service');
           const fileNames = task.files.map((f: any) => f.fileName).join('、').slice(0, 100);
-          await OpenSpecAgentService.saveMemory(
-            task.creatorId,
-            `用户完成审查任务「${task.title}」，涉及文件：${fileNames}；审查模式：${task.reviewMode}；成功 ${successCount} 个文件，失败 ${failedCount} 个。`,
-            {
-              sourceType: 'review_behavior',
-              category: 'other',
-            },
-          );
+          await MemoryService.saveMemory({
+            userId: task.creatorId,
+            key: `review_behavior:${task.id}`,
+            value: `用户完成审查任务「${task.title}」，涉及文件：${fileNames}；审查模式：${task.reviewMode}；成功 ${successCount} 个文件，失败 ${failedCount} 个。`,
+            type: 'preference',
+            scope: 'global',
+            confidence: 0.7,
+            source: 'review_behavior',
+          });
         } catch (e) {
           console.warn('[Memory] 学习闭环写入失败（不影响主流程）:', (e as Error).message);
         }

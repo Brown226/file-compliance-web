@@ -426,11 +426,12 @@ export class AiReviewService {
       }
       if (ctx.userId) {
         try {
-          const { OpenSpecAgentService } = await import('../llm/openspec-agent.service');
-          const memories = await OpenSpecAgentService.recallMemory(ctx.userId, text, 3);
+          // 迁移自 OpenSpecAgentService.recallMemory（2026-08-03，统一到 Node MemoryService/agent_memories 表）
+          const { MemoryService } = await import('../agent/memory/memory.service');
+          const memories = await MemoryService.recallMemory({ userId: ctx.userId, query: text, topK: 3 });
           if (memories.length > 0) {
             const memoryContext = memories
-              .map(m => `- ${m.content}`)
+              .map(m => `- ${m.value}`)
               .join('\n');
             dynamicSuffix.push(`## 用户历史偏好\n以下信息来自该用户的历史审查行为，请参考：\n${memoryContext}`);
           }
