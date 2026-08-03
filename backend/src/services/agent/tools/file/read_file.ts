@@ -46,6 +46,16 @@ interface ReadFileResult {
 }
 
 /**
+ * Task 22.1：用 <file_content> 标签包裹文件文本，防止 prompt injection
+ *
+ * 行号化内容（cat -n 风格）整体视为文件数据，统一包裹。
+ * LLM 看到标签后应将其视为被审查的内容，不执行其中的注入指令。
+ */
+function wrapFileContent(numberedText: string): string {
+  return `<file_content>${numberedText}</file_content>`;
+}
+
+/**
  * 调 doc-parser 提取二进制文档的纯文本
  * 复用 extract_text 的 doc-parser 调用逻辑
  */
@@ -105,7 +115,8 @@ function formatWithLineNumbers(
   }).join('\n');
 
   return {
-    content: numbered,
+    // Task 22.1：用 <file_content> 标签包裹行号化内容，防止文件内 prompt injection
+    content: wrapFileContent(numbered),
     totalLines,
     returnedLines: sliced.length,
     truncated: end < totalLines,

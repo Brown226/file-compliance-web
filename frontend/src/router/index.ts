@@ -18,6 +18,13 @@ const routes: Array<RouteRecordRaw> = [
     meta: { title: '修改密码', requiresAuth: true }
   },
   {
+    // Task 20：Agent 报告打印页（独立路由，不嵌套 AppLayout，打印时无侧边栏干扰）
+    path: '/agent/report-print',
+    name: 'AgentReportPrint',
+    component: () => import('@/views/Agent/ReportPrint.vue'),
+    meta: { title: '报告打印', requiresAuth: true }
+  },
+  {
     path: '/',
     component: AppLayout,
     redirect: '/review-center',

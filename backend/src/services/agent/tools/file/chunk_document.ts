@@ -50,6 +50,16 @@ interface DocumentChunk {
   pageRange?: string;
 }
 
+/**
+ * Task 22.1：用 <file_content> 标签包裹 chunk 文本，防止 prompt injection
+ *
+ * 每个 chunk 的 text 字段都是文件原文的切片，属于"数据"而非"指令"。
+ * 统一在 execute 返回前对所有 chunks 的 text 字段包裹标签。
+ */
+function wrapChunkTexts(chunks: DocumentChunk[]): DocumentChunk[] {
+  return chunks.map(c => ({ ...c, text: `<file_content>${c.text}</file_content>` }));
+}
+
 /** 分块结果 */
 interface ChunkResult {
   chunks: DocumentChunk[];
@@ -298,7 +308,8 @@ export function createChunkDocumentTool(_context: ToolContext) {
       }
 
       return {
-        chunks,
+        // Task 22.1：对每个 chunk 的 text 字段用 <file_content> 标签包裹，防 prompt injection
+        chunks: wrapChunkTexts(chunks),
         total: chunks.length,
         strategy: actualStrategy,
       };
