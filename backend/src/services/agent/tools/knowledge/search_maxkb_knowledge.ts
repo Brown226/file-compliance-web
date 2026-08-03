@@ -1,5 +1,5 @@
 /**
- * search_maxkb_knowledge 工具 — 调 MaxKB 知识库做 RAG 检索
+ * search_knowledge 工具 — 调 MaxKB/RAGFlow 双源知识库做 RAG 检索
  *
  * 复用 RAGService.retrieve()，它内部调 MaxKB 的 hit_test API，
  * 支持 embedding / blend / keywords 三种检索模式。
@@ -42,11 +42,11 @@ interface SearchKnowledgeResult {
 }
 
 /**
- * 创建 search_maxkb_knowledge 工具
+ * 创建 search_knowledge 工具（注册名；内部函数名保留 createSearchMaxkbKnowledgeTool 兼容 import）
  */
 export function createSearchMaxkbKnowledgeTool(_context: ToolContext) {
   return tool({
-    description: '从 MaxKB 知识库检索相关标准规范、法规条文、技术要点。不传 knowledgeId 时自动跨所有可用知识库联合检索（合并结果按相似度排序）。返回每条结果的 content/document_name/similarity，可作为审查依据注入 prompt。',
+    description: '从 MaxKB/RAGFlow 知识库检索相关标准规范、法规条文、技术要点。不传 knowledgeId 时自动跨所有可用知识库联合检索（合并结果按相似度排序）。返回每条结果的 content/document_name/similarity，可作为审查依据注入 prompt。',
     inputSchema: z.object({
       query: z.string().min(1).describe('检索查询文本（如条款关键词、审查要点、规范编号）'),
       knowledgeId: z.string().optional().describe('指定知识库 ID（不传时跨所有可用知识库联合检索）'),

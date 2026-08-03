@@ -75,7 +75,7 @@ import { useMarkdown } from '@/composables/useMarkdown'
  *
  * 2026-08-03：替代 OpenSpec 的 ProjectQA（原调 Python Agent /agent/workflow/chat/stream）。
  * 现在直接走 Node Agent 的 /api/agent/chat/stream，Agent 通过内置工具
- * search_maxkb_knowledge 检索知识库后生成回答。无 sessionId 时后端自动建会话。
+ * search_knowledge 检索知识库后生成回答。无 sessionId 时后端自动建会话。
  */
 
 const userStore = useUserStore()

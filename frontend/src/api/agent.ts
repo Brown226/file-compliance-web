@@ -166,3 +166,68 @@ export function getSessionStatsApi(sessionId: string) {
 export function autoNameSessionApi(sessionId: string) {
   return request.post<{ title: string }>(`/agent/sessions/${sessionId}/auto-name`)
 }
+
+// ===== Skills 管理（2026-08-03 新增：场景化能力 = SKILL.md）=====
+
+export interface AgentSkill {
+  name: string
+  description: string
+  disabled: boolean
+  fileName: string
+  content: string
+  updatedAt: string
+}
+
+/** 列出全部 skills（含禁用） */
+export function listSkillsApi() {
+  return request.get<AgentSkill[]>('/agent/skills')
+}
+
+/** 读取单个 skill */
+export function getSkillApi(name: string) {
+  return request.get<AgentSkill>(`/agent/skills/${name}`)
+}
+
+/** 新建 skill */
+export function createSkillApi(data: { name: string; description: string; content: string }) {
+  return request.post<AgentSkill>('/agent/skills', data)
+}
+
+/** 更新 skill（description/content 至少一个） */
+export function updateSkillApi(name: string, data: { description?: string; content?: string }) {
+  return request.put<AgentSkill>(`/agent/skills/${name}`, data)
+}
+
+/** 启用/禁用 skill */
+export function setSkillEnabledApi(name: string, enabled: boolean) {
+  return request.patch<AgentSkill>(`/agent/skills/${name}`, { enabled })
+}
+
+/** 删除 skill */
+export function deleteSkillApi(name: string) {
+  return request.delete(`/agent/skills/${name}`)
+}
+
+// ===== Worktree 管理（2026-08-03 新增：Agent 多任务规划工作区）=====
+
+export interface WorktreeInfo {
+  path: string
+  branch: string
+  head: string
+  isMain: boolean
+}
+
+/** 列出全部 worktree */
+export function listWorktreesApi() {
+  return request.get<WorktreeInfo[]>('/agent/worktrees')
+}
+
+/** 新建 worktree（新分支） */
+export function createWorktreeApi(branch: string) {
+  return request.post<WorktreeInfo>('/agent/worktrees', { branch })
+}
+
+/** 删除 worktree（仅非主工作区） */
+export function deleteWorktreeApi(path: string) {
+  return request.delete(`/agent/worktrees?path=${encodeURIComponent(path)}`)
+}

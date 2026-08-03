@@ -28,6 +28,7 @@ import { TraceService } from './trace/trace.service';
 import { QASessionService } from './qa-session.service';
 import { getUploadDir } from '../../config/upload';
 import { SteeringService } from './steering/steering.service';
+import { SkillsService } from './skills/skills.service';
 import { CompactionService } from './context-compaction/compaction.service';
 
 // require ESM-only SDK（Node 22.12+ 支持），同时保留类型
@@ -52,7 +53,7 @@ export const AGENT_SYSTEM_PROMPT = `你是文件合规审查专家，熟悉合�
 2. 分块处理（chunk_document）— 大文件才需要；PDF 用 by_page / DOCX 用 by_section / 纯文本用 fixed_4000
 3. 列出可用规则（list_available_rules）— 查看当前启用了哪些规则，了解覆盖范围
 4. 跑规则检查（apply_rule）— 用指定规则前缀数组执行机械性规则检查
-5. 检索相关知识（search_maxkb_knowledge / search_rule_library / search_standard_checkpoints）— 获取参考依据
+5. 检索相关知识（search_knowledge / search_rule_library / search_standard_checkpoints）— 获取参考依据
 6. LLM 审查（llm_review_chunk，支持 focus 参数聚焦特定维度，可注入检索到的标准条文作为依据）
 7. 交叉验证（llm_cross_check，对已发现问题做精确去重→归一化去重→LLM交叉核验）
 8. 汇总输出（summarize_issues + format_issues，输出结构化 ReviewIssue[]）
@@ -75,14 +76,14 @@ export const AGENT_SYSTEM_PROMPT = `你是文件合规审查专家，熟悉合�
 - download_report: 读取报告文件返回下载 URL
 
 ## 知识检索工具使用指南（Task 9 已实现 3 个）
-- search_maxkb_knowledge: 调 MaxKB 知识库做 RAG 检索（不传 knowledgeId 跨所有库联合检索，返回 content/document_name/similarity）
+- search_knowledge: 调 MaxKB 知识库做 RAG 检索（不传 knowledgeId 跨所有库联合检索，返回 content/document_name/similarity）
 - search_rule_library: 查询已发布规则库的可执行规则项（含 ruleCode/ruleName/category/checkPrompt，支持 keyword + category 过滤）
 - search_standard_checkpoints: 查询审点库（不传 standardId 列出现行标准，传 standardId 查该标准下的审点，含 clauseCode/clauseText/checkPrompt）
 
 ## 知识检索使用时机
 - 审查合同/规章时，先 search_rule_library 查相关规则，再用规则项的 checkPrompt 补充 llm_review_chunk 的 focus
 - 审查技术文档时，先 search_standard_checkpoints 列出相关标准，再查审点获取条文依据
-- 不确定某个条款是否符合规范时，用 search_maxkb_knowledge 检索知识库找参考
+- 不确定某个条款是否符合规范时，用 search_knowledge 检索知识库找参考
 - 检索结果可作为 llm_review_chunk 的 focus 参数上下文（如"依据 GB/T 50001 第 5.2.3 条：..."）
 
 ## 任务委托工具使用指南（Task 11 已实现 3 个）
@@ -122,27 +123,8 @@ export const AGENT_SYSTEM_PROMPT = `你是文件合规审查专家，熟悉合�
 
 ## 通用问答模式
 - 用户询问知识/规范/概念类问题（不涉及具体文件审查）时，不强制走上面的审查工作流
-- 直接回答；需要依据时用 search_maxkb_knowledge 检索知识库，引用检索结果回答
+- 直接回答；需要依据时用 search_knowledge 检索知识库，引用检索结果回答
 - 输出为自然语言回答，不需要 ReviewIssue[] 格式
-
-## 文档生成 Skill（施工文档/方案章节生成，2026-08-03 集成）
-当用户要求生成、编写或续写施工文档、施工方案、技术方案等文档章节时，按以下流程执行：
-
-### 触发条件
-- 用户说"生成施工方案/技术方案/文档/章节/初稿"等，或要求按某标准/规范编写文档内容
-
-### 执行流程
-1. 明确需求：确认文档类型、目标章节、专业领域（如不清楚先询问）
-2. 检索依据：用 search_maxkb_knowledge 检索相关规范/标准/相似文档（关键词：文档类型 + 专业 + 章节名）；用 search_standard_checkpoints 查审点库相关标准条文
-3. 规划大纲：基于检索结果列出章节结构（Markdown 标题层级，序号规范）
-4. 逐章生成：每章内容要求有依据、术语规范、结构完整；引用检索到的条文时标注依据来源
-5. 自查校验：对照检索到的标准条文检查生成内容（术语是否规范、数据/参数是否有据、章节是否完整）
-6. 输出：默认在对话中直接输出 Markdown 文档；用户要求保存时调 write_report 保存并返回 download_report 下载链接
-
-### 生成质量要求
-- 内容必须基于检索到的知识库/标准依据，**不得编造规范条文编号**（如 GB/T 50001 第 x 条）
-- 检索结果不足时明确告知"知识库中未检索到相关依据"，而不是猜测
-- 章节标题层级清晰、序号规范，内容与目标专业领域匹配
 
 ## 安全约束（Prompt Injection 防护 — Task 22）
 
@@ -249,6 +231,8 @@ export class AgentService {
     let systemPrompt = AGENT_SYSTEM_PROMPT;
     if (filesSection) systemPrompt += '\n\n' + filesSection;
     if (steeringSection) systemPrompt += '\n\n' + steeringSection;
+    const skillsSection = AgentService.buildSkillsSection();
+    if (skillsSection) systemPrompt += '\n\n' + skillsSection;
 
     // 6. 消息格式兼容：UIMessage（前端 useChat v4，有 parts 数组）或 ModelMessage（curl 测试，有 content）
     //    Vercel AI SDK v7 的 streamText 需要 ModelMessage 格式。
@@ -605,6 +589,28 @@ export class AgentService {
         writer.write({ type: 'text-end', id: '0' });
       },
     });
+  }
+
+  /**
+   * 构建可用 Skills 段落，注入到 systemPrompt 末尾
+   *
+   * 场景化能力以 backend/skills/*.md 形式存在（SKILL.md，frontmatter 含
+   * name/description/disabled）。这里只注入 name + description，让 LLM 知道
+   * 可用技能；skill 正文为提示词，由模型在对话中按需执行（模型调用式 skill）。
+   *
+   * @returns skills 列表段落；无可用 skill 时返回空串
+   */
+  private static buildSkillsSection(): string {
+    try {
+      const skills = SkillsService.listEnabledSkills();
+      if (skills.length === 0) return '';
+      const lines = skills.map((s) => `- ${s.name}：${s.description}`);
+      return `## 可用 Skills（场景化能力）\n当用户需求匹配以下技能时，按对应 skill 的流程执行：\n${lines.join('\n')}`;
+    } catch (e) {
+      // skills 读取失败不阻塞主流程（防御性写法，与 buildUploadedFilesSection 一致）
+      console.warn('[Agent] 读取 skills 失败:', (e as Error).message);
+      return '';
+    }
   }
 
   /**

@@ -14,7 +14,7 @@ import { redisClient } from '../../../utils/redis';
 /** 可缓存的工具名集合（幂等 + 结果稳定的工具） */
 export const CACHEABLE_TOOLS = new Set([
   'extract_text',
-  'search_maxkb_knowledge',
+  'search_knowledge',
   'search_rule_library',
   'search_standard_checkpoints',
   'list_available_rules',

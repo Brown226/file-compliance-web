@@ -49,6 +49,18 @@
           <AgentMemoryPanel />
         </div>
       </el-tab-pane>
+
+      <el-tab-pane label="技能" name="skills">
+        <div class="tab-body">
+          <SkillsPanel />
+        </div>
+      </el-tab-pane>
+
+      <el-tab-pane label="工作区" name="worktrees">
+        <div class="tab-body">
+          <WorktreesPanel />
+        </div>
+      </el-tab-pane>
     </el-tabs>
   </div>
 </template>
@@ -58,6 +70,8 @@ import { ref, watch } from 'vue'
 import { Loading, InfoFilled, Clock } from '@element-plus/icons-vue'
 import { listTracesApi, type TraceItem } from '@/api/agent'
 import AgentMemoryPanel from './AgentMemoryPanel.vue'
+import SkillsPanel from './SkillsPanel.vue'
+import WorktreesPanel from './WorktreesPanel.vue'
 
 const props = defineProps<{
   currentSessionId?: string | null
@@ -82,7 +96,7 @@ const toolNameMap: Record<string, string> = {
   llm_cross_check: '交叉核验',
   summarize_issues: '问题汇总',
   format_issues: '格式化结果',
-  search_maxkb_knowledge: '知识检索',
+  search_knowledge: '知识检索',
   search_rule_library: '规则库检索',
   search_standard_checkpoints: '审点检索',
   create_pipeline_task: '委托任务',
