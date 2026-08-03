@@ -64,43 +64,8 @@ export function deleteSessionApi(sessionId: string) {
   return request.delete<{ success: boolean; message: string }>(`/agent/sessions/${sessionId}`)
 }
 
-// ===== Trace 可观测性（Task 13）=====
-
-export interface TraceItem {
-  id: string
-  sessionId: string
-  stepIndex: number
-  toolName: string
-  input: any
-  output: any
-  durationMs: number | null
-  status: string
-  traceId: string | null
-  error: string | null
-  createdAt: string
-}
-
-export interface TraceWithLlmCallLog extends TraceItem {
-  llmCallLog?: {
-    id: number
-    model: string
-    promptTokens: number
-    completionTokens: number
-    totalTokens: number
-    latencyMs: number
-    status: string
-  } | null
-}
-
-/** 查询会话 trace 列表 */
-export function listTracesApi(sessionId: string) {
-  return request.get<TraceItem[]>(`/agent/traces/${sessionId}`)
-}
-
-/** 查询单条 trace + LlmCallLog */
-export function getTraceApi(traceId: string) {
-  return request.get<TraceWithLlmCallLog>(`/agent/traces/trace/${traceId}`)
-}
+// 注：Trace 可观测性 API 已随 AgentTrace 链路移除（2026-08-03），
+// 工具执行过程由 QAMessage 承载，token 统计见 getSessionStatsApi
 
 // ===== 记忆管理（Task 18）=====
 

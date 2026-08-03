@@ -841,7 +841,9 @@ model QASession {
   title           String?       // 会话标题（首条问题截取）
   taskId          String?       // 可选关联的审查任务
   messages        QAMessage[]
-  agentTraces     AgentTrace[]
+  modelKey        String?       // 会话选用的模型（格式：<providerId>::<modelName>，空 = 系统默认）
+  toolPreset      String?       @default("default") // none / default / full（工具预设）
+  thinkingLevel   String?       // low / medium / high（推理强度，模型不支持时忽略）
   createdAt       DateTime      @default(now())
   updatedAt       DateTime      @updatedAt
 
@@ -974,22 +976,5 @@ model AgentMemory {
 
 // Agent 执行追踪 - 每次 QASession 中 Agent 工具调用的步骤记录
 // traceId 关联 LlmCallLog.traceId（非外键，仅用于跨表关联查询）
-model AgentTrace {
-  id         String   @id @default(uuid())
-  sessionId  String   // 关联 QASession
-  stepIndex  Int      // 步骤序号
-  toolName   String   // 工具名
-  input      Json?    // 输入参数
-  output     Json?    // 输出结果
-  durationMs Int?     // 耗时毫秒
-  status     String   @default("success")  // success / failed / skipped
-  traceId    String?  // 关联 LlmCallLog 的 traceId
-  error      String?  // 错误信息（如果失败）
-  createdAt  DateTime @default(now())
-
-  qaSession  QASession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
-
-  @@index([sessionId])
-  @@index([traceId])
-  @@map("agent_traces")
-}
+// 2026-08-03：AgentTrace 链路已移除（执行追踪 UI 与数据链路一并下线），
+// 工具执行过程改由 QAMessage.parts（tool-call/tool-result）承载，见 chat/stream 保存逻辑

@@ -161,6 +161,7 @@ export class QASessionService {
     sessionId: string,
     userId: string,
     title?: string,
+    settings?: { modelKey?: string; toolPreset?: string; thinkingLevel?: string },
   ): Promise<void> {
     const exists = await prisma.qASession.findUnique({
       where: { id: sessionId },
@@ -173,6 +174,9 @@ export class QASessionService {
           id: sessionId,
           userId,
           title: title ?? null,
+          modelKey: settings?.modelKey ?? null,
+          toolPreset: settings?.toolPreset ?? 'default',
+          thinkingLevel: settings?.thinkingLevel ?? null,
         },
       });
     } else if (title && !exists.title) {
@@ -181,6 +185,29 @@ export class QASessionService {
         where: { id: sessionId },
         data: { title },
       });
+    }
+  }
+
+  /**
+   * 更新会话设置（模型/工具预设/推理强度）
+   * 仅允许会话所有者操作；不存在的字段不更新
+   */
+  static async updateSessionSettings(
+    sessionId: string,
+    userId: string,
+    settings: { modelKey?: string | null; toolPreset?: string; thinkingLevel?: string | null },
+  ): Promise<void> {
+    const exists = await prisma.qASession.findUnique({
+      where: { id: sessionId },
+      select: { id: true, userId: true },
+    });
+    if (!exists || exists.userId !== userId) return;
+    const data: any = {};
+    if (settings.modelKey !== undefined) data.modelKey = settings.modelKey;
+    if (settings.toolPreset !== undefined) data.toolPreset = settings.toolPreset;
+    if (settings.thinkingLevel !== undefined) data.thinkingLevel = settings.thinkingLevel;
+    if (Object.keys(data).length > 0) {
+      await prisma.qASession.update({ where: { id: sessionId }, data });
     }
   }
 
@@ -195,9 +222,10 @@ export class QASessionService {
     sessionId: string,
     userId: string,
     content: string,
+    settings?: { modelKey?: string; toolPreset?: string; thinkingLevel?: string },
   ): Promise<string | null> {
     try {
-      await QASessionService.ensureSession(sessionId, userId);
+      await QASessionService.ensureSession(sessionId, userId, undefined, settings);
 
       // 检查是否需要更新 title（首条用户消息）
       const session = await prisma.qASession.findUnique({

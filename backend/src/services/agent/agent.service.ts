@@ -24,7 +24,6 @@ import prisma from '../../config/db';
 import { Prisma } from '@prisma/client';
 import { LlmService } from '../llm/llm.service';
 import { createAllTools } from './tools';
-import { TraceService } from './trace/trace.service';
 import { QASessionService } from './qa-session.service';
 import { getUploadDir } from '../../config/upload';
 import { SteeringService } from './steering/steering.service';
@@ -188,8 +187,16 @@ export class AgentService {
     messages: any[];
     userId: string;
     sessionId?: string;
+    /** 会话模型：<providerId>::<modelName>，空 = 系统默认 */
+    modelKey?: string;
+    /** 工具预设：none / default / full（与 toolNames 互斥，toolNames 优先） */
+    toolPreset?: string;
+    /** 显式工具白名单 */
+    toolNames?: string[];
+    /** 推理强度：low / medium / high（模型不支持时忽略） */
+    thinkingLevel?: string;
   }): Promise<any> {
-    const { messages, userId, sessionId } = params;
+    const { messages, userId, sessionId, modelKey, toolPreset, toolNames, thinkingLevel } = params;
 
     // 1. 读取 LLM 配置（LlmService.getLlmConfig 是静态方法，带 5 分钟缓存）
     const config = await LlmService.getLlmConfig();
@@ -197,11 +204,32 @@ export class AgentService {
       throw new Error('LLM 未配置，请先在系统设置中配置 LLM 引擎');
     }
 
+    // 1.5 会话模型 override：modelKey 格式 <providerId>::<modelName>
+    //     从 system_configs.llm_profiles 找 provider，未找到/未传时用系统默认
+    let effConfig = config;
+    if (modelKey) {
+      const sepIdx = modelKey.indexOf('::');
+      const providerId = sepIdx > 0 ? modelKey.slice(0, sepIdx) : '';
+      const modelName = sepIdx > 0 ? modelKey.slice(sepIdx + 2) : '';
+      if (providerId && modelName) {
+        const profile = await AgentService.findLlmProfile(providerId).catch(() => null);
+        if (profile && profile.apiKey && profile.model) {
+          effConfig = {
+            ...config,
+            apiBaseUrl: profile.apiBase || config.apiBaseUrl,
+            apiKey: profile.apiKey,
+            modelName,
+          };
+          console.log(`[Agent] 会话模型 override: ${modelKey}`);
+        }
+      }
+    }
+
     // 2. 创建 OpenAI 兼容 provider（项目用的是 OpenAI 兼容协议）
     //    name 固定为 'review-agent'，便于日志区分 Agent 调用与普通 LLM 调用
     const provider = createOpenAI({
-      baseURL: config.apiBaseUrl,
-      apiKey: config.apiKey,
+      baseURL: effConfig.apiBaseUrl,
+      apiKey: effConfig.apiKey,
       name: 'review-agent',
     });
 
@@ -209,12 +237,15 @@ export class AgentService {
     //    Vercel AI SDK v7 的 createOpenAI()() 默认走 Responses API (/v1/responses)，
     //    但 CNPE 网关只支持 Chat Completions API (/v1/chat/completions)。
     //    必须用 provider.chat(modelName) 显式指定，否则工具调用解析失败。
-    const model = provider.chat(config.modelName);
-    console.log('[Agent] 模型: ' + config.modelName + ' baseURL=' + config.apiBaseUrl + ' (使用 .chat())');
+    //    thinkingLevel 通过 streamText 的 providerOptions.openai.reasoningEffort 透传
+    const model = provider.chat(effConfig.modelName);
+    console.log('[Agent] 模型: ' + effConfig.modelName + ' baseURL=' + effConfig.apiBaseUrl + ' (使用 .chat())');
 
-    // 4. 创建工具集（Task 4：工厂模式，注入 userId/sessionId 到每个工具）
-    //    包含 5 个核心工具：upload_file / extract_text / llm_review_chunk / summarize_issues / format_issues
-    const tools = createAllTools({ userId, sessionId: sessionId || '' });
+    // 4. 创建工具集 + 按 toolNames/toolPreset 过滤（Task 25：预设开关）
+    //    toolNames 显式白名单优先；否则按 preset 展开；都不传 = 全部工具（兼容旧行为）
+    const allTools = createAllTools({ userId, sessionId: sessionId || '' });
+    const filterList = toolNames && toolNames.length > 0 ? toolNames : AgentService.presetToToolNames(toolPreset);
+    const tools = filterList ? AgentService.filterTools(allTools, filterList) : allTools;
 
     // 5. Task 7.6：注入已上传文件列表到 systemPrompt
     //    查 uploads/agent_temp/{userId}/{sessionId}/ 目录，把文件路径告知 Agent，
@@ -271,10 +302,6 @@ export class AgentService {
     let needFallback = false;
     let firstStepLogged = false;
 
-    // Task 13.2：工具执行步骤计数器（用于 AgentTrace.stepIndex）
-    // streamText 的步骤是顺序执行的，简单的递增计数器即可
-    let toolStepCounter = 0;
-
     // Task 14.3：持久化最后一条用户消息到 QAMessage（fire-and-forget）
     // - 从 messages 数组中找最后一条 role=user 的消息
     // - sessionId 为空时跳过（与 TraceService 一致的 best-effort 策略）
@@ -286,7 +313,11 @@ export class AgentService {
           ? lastUserMsg.parts.filter((p: any) => p.type === 'text').map((p: any) => p.text).join('')
           : (typeof lastUserMsg?.content === 'string' ? lastUserMsg.content : '');
         if (userText) {
-          QASessionService.persistUserMessage(sessionId, userId, userText).catch((e: Error) => {
+          QASessionService.persistUserMessage(sessionId, userId, userText, {
+            modelKey: modelKey || undefined,
+            toolPreset: toolPreset || 'default',
+            thinkingLevel: thinkingLevel || undefined,
+          }).catch((e: Error) => {
             console.warn(`[Agent:QASession] 持久化用户消息失败: sessionId=${sessionId}`, (e as Error).message);
           });
         }
@@ -324,6 +355,7 @@ export class AgentService {
       system: systemPrompt,
       messages: modelMessages,
       tools,
+      providerOptions: thinkingLevel ? { openai: { reasoningEffort: thinkingLevel } } : undefined,
       stopWhen: isStepCount(10),
       onStepFinish: (event: any) => {
         // Task 7.5：诊断日志 — 记录每步的 finishReason 和工具调用情况
@@ -359,30 +391,8 @@ export class AgentService {
         console.log(`[Agent] tool#${toolCall.toolCallId} end: ${toolCall.toolName} ` +
           `(${toolExecutionMs}ms) ${outputType} ${preview}`);
 
-        // Task 13.2：记录 AgentTrace（fire-and-forget，不阻塞流）
-        const traceStepIndex = toolStepCounter++;
-        const traceStatus: 'success' | 'failed' =
-          toolOutput?.type === 'tool-error' ? 'failed' : 'success';
-        const traceError: string | undefined =
-          toolOutput?.type === 'tool-error' ? String(toolOutput.error ?? '') : undefined;
-        const traceInput = toolCall?.args ?? toolCall?.input;
-        const traceOutput = toolOutput?.type === 'tool-result' ? toolOutput.output : undefined;
-
-        // fire-and-forget：失败仅 warn 不 throw（与 onFinish 里 LlmCallLog 写入模式一致）
-        TraceService.recordTrace({
-          sessionId: sessionId || '',
-          userId,
-          stepIndex: traceStepIndex,
-          toolName: toolCall.toolName,
-          input: traceInput,
-          output: traceOutput,
-          durationMs: toolExecutionMs,
-          status: traceStatus,
-          traceId: sessionId || undefined,  // 用 sessionId 作为 traceId 关联 LlmCallLog
-          error: traceError,
-        }).catch((e: Error) => {
-          console.warn(`[Agent:Trace] 记录失败: ${toolCall.toolName}`, (e as Error).message);
-        });
+        // Task 13.2：工具执行过程已由 QAMessage.parts（tool-call/tool-result）承载，
+        // AgentTrace 数据链路已移除（2026-08-03），此处不再写 trace
       },
       onError: ({ error }: any) => {
         console.error('[Agent] streamText onError:', (error as Error)?.message || error);
@@ -527,9 +537,6 @@ export class AgentService {
 
     console.log('[Agent] generateText 兜底启动，model=' + config.modelName);
 
-    // Task 13.2：兜底模式也记录 trace（与 chatStream 一致）
-    let fallbackToolStepCounter = 0;
-
     // generateText 会自动执行工具调用循环（与 streamText 的循环逻辑一致，但非流式）
     const result = await generateText({
       model,
@@ -538,26 +545,13 @@ export class AgentService {
       tools,
       stopWhen: isStepCount(10),
       onToolExecutionEnd: ({ toolCall, toolOutput, toolExecutionMs }: any) => {
-        const traceStepIndex = fallbackToolStepCounter++;
-        const traceStatus: 'success' | 'failed' =
-          toolOutput?.type === 'tool-error' ? 'failed' : 'success';
-        const traceError: string | undefined =
-          toolOutput?.type === 'tool-error' ? String(toolOutput.error ?? '') : undefined;
-
-        TraceService.recordTrace({
-          sessionId: sessionId || '',
-          userId,
-          stepIndex: traceStepIndex,
-          toolName: toolCall.toolName,
-          input: toolCall?.args ?? toolCall?.input,
-          output: toolOutput?.type === 'tool-result' ? toolOutput.output : undefined,
-          durationMs: toolExecutionMs,
-          status: traceStatus,
-          traceId: sessionId || undefined,
-          error: traceError,
-        }).catch((e: Error) => {
-          console.warn(`[Agent:Trace] 兜底模式记录失败: ${toolCall.toolName}`, (e as Error).message);
-        });
+        // 工具执行过程由 QAMessage.parts 承载，AgentTrace 链路已移除（2026-08-03）
+        const outputType = toolOutput?.type === 'tool-error' ? 'error' : 'ok';
+        const preview = String(toolOutput?.type === 'tool-result' ? toolOutput.output : toolOutput?.error ?? '')
+          .slice(0, 120)
+          .replace(/\s+/g, ' ');
+        console.log(`[Agent] fallback tool#${toolCall.toolCallId} end: ${toolCall.toolName} ` +
+          `(${toolExecutionMs}ms) ${outputType} ${preview}`);
       },
     });
 
@@ -589,6 +583,56 @@ export class AgentService {
         writer.write({ type: 'text-end', id: '0' });
       },
     });
+  }
+
+  /**
+   * 按 providerId 从 system_configs.llm_profiles 读取 LLM 供应商配置
+   */
+  private static async findLlmProfile(providerId: string): Promise<{ apiBase?: string; apiKey?: string; model?: string; provider?: string; timeout?: number } | null> {
+    const { default: prisma } = await import('../../config/db');
+    const cfg = await prisma.systemConfig.findUnique({ where: { key: 'llm_profiles' } });
+    if (!cfg?.value) return null;
+    const raw = typeof cfg.value === 'string' ? JSON.parse(cfg.value) : cfg.value;
+    const profiles = Array.isArray(raw) ? raw : [];
+    return profiles.find((p: any) => p.id === providerId) || null;
+  }
+
+  /**
+   * 工具预设 → 工具名单（返回 null 表示不过滤 = 全部工具）
+   *   none    → []（纯对话，禁用全部工具）
+   *   default → 排除 3 个 pipeline 委托类工具（日常对话/知识问答/审查常用）
+   *   full    → null（全部 23 个工具）
+   *   未传/未知 → null（兼容旧行为）
+   */
+  private static presetToToolNames(preset?: string): string[] | null {
+    if (!preset || preset === 'full') return null;
+    if (preset === 'none') return [];
+    if (preset === 'default') {
+      return [
+        // file（8）
+        'upload_file', 'read_file', 'write_report', 'delete_file', 'extract_text',
+        'chunk_document', 'download_report', 'list_uploads',
+        // knowledge（3）
+        'search_knowledge', 'search_rule_library', 'search_standard_checkpoints',
+        // memory（3）
+        'extract_user_preferences', 'recall_memory', 'save_memory',
+        // review（6）
+        'apply_rule', 'format_issues', 'list_available_rules', 'llm_cross_check',
+        'llm_review_chunk', 'summarize_issues',
+      ];
+    }
+    return null;
+  }
+
+  /**
+   * 按白名单过滤工具集（pick 指定工具名）
+   */
+  private static filterTools(allTools: Record<string, any>, names: string[]): Record<string, any> {
+    const out: Record<string, any> = {};
+    for (const n of names) {
+      if (allTools[n]) out[n] = allTools[n];
+    }
+    return out;
   }
 
   /**

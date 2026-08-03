@@ -22,14 +22,12 @@ import fs from 'fs';
 import crypto from 'crypto';
 import { authenticate, AuthRequest } from '../middlewares/auth.middleware';
 import { AgentService } from '../services/agent/agent.service';
-import { TraceService } from '../services/agent/trace/trace.service';
 import { QASessionService } from '../services/agent/qa-session.service';
 import { SessionStatsService } from '../services/agent/session-stats.service';
 import { MemoryService } from '../services/agent/memory/memory.service';
 import { SkillsService } from '../services/agent/skills/skills.service';
 import { WorktreeService } from '../services/agent/worktree/worktree.service';
 import { SteeringService } from '../services/agent/steering/steering.service';
-import { ReplayService } from '../services/agent/replay/replay.service';
 import { SummaryService } from '../services/agent/summary/summary.service';
 import { getUploadDir } from '../config/upload';
 
@@ -78,7 +76,15 @@ router.post('/chat/stream', async (req: AuthRequest, res: Response) => {
       }
     }
 
-    const result = await AgentService.chatStream({ messages, userId, sessionId });
+    const result = await AgentService.chatStream({
+      messages,
+      userId,
+      sessionId,
+      modelKey: req.body?.modelKey || undefined,
+      toolPreset: req.body?.toolPreset || undefined,
+      toolNames: Array.isArray(req.body?.toolNames) ? req.body.toolNames : undefined,
+      thinkingLevel: req.body?.thinkingLevel || undefined,
+    });
 
     // Express 5 不直接接受 Web Response，手动转换（Task 1 验证过的写法）：
     // 1) 复制 status / headers（含 SSE 必需的 Content-Type: text/event-stream 等）
@@ -114,7 +120,6 @@ router.post('/chat/stream', async (req: AuthRequest, res: Response) => {
     // 降级到非流式 LlmService.chat() 重试一次，把结果包成 UIMessageStream 返回
     if (!res.headersSent) {
       try {
-        const userId = req.user?.id || 'unknown';
         const sessionId: string = req.body?.sessionId || '';
         const messages: any[] = req.body?.messages || [];
 
@@ -166,25 +171,9 @@ router.post('/chat/stream', async (req: AuthRequest, res: Response) => {
         res.end();
         console.log('[Agent:Fallback] 降级成功');
 
-        // Task 21.3：在 AgentTrace 中记录 LLM 级降级事件
+        // Task 21.3：降级事件记入后端日志（AgentTrace 链路已移除，2026-08-03）
         if (sessionId) {
-          try {
-            const { TraceService } = require('../services/agent/trace/trace.service');
-            await TraceService.recordTrace({
-              sessionId,
-              userId,
-              stepIndex: 999,  // 约定 999 = LLM 级降级事件
-              toolName: '__llm_fallback__',
-              input: { reason: (e as Error)?.message || String(e) },
-              output: { fallbackTextLength: fallbackText.length, preview: fallbackText.slice(0, 200) },
-              durationMs: 0,
-              status: 'success',
-              traceId: sessionId,
-              error: `LLM 流式失败，降级到 LlmService.chat() 成功：${(e as Error)?.message || ''}`,
-            });
-          } catch {
-            // trace 写入失败不影响主流程
-          }
+          console.warn(`[Agent:Fallback] LLM 流式失败降级: sessionId=${sessionId} reason=${(e as Error)?.message || e} fallbackLen=${fallbackText.length}`);
         }
         return;
       } catch (fallbackErr) {
@@ -282,73 +271,9 @@ router.post('/upload', agentUpload.single('file'), (req: AuthRequest, res: Respo
   }
 });
 
-/**
- * GET /api/agent/traces/:sessionId — 查询会话的 Agent 执行追踪列表
- *
- * Task 13.3：返回该会话所有工具调用的 trace（按 stepIndex 排序），
- * 供前端调试面板展示 Agent 的决策过程。
- *
- * 权限：只能查自己的会话（TraceService.listTraces 内部校验 userId）
- *
- * 返回：{ success, data: TraceItem[] }
- */
-router.get('/traces/:sessionId', async (req: AuthRequest, res: Response) => {
-  try {
-    const userId = req.user?.id;
-    if (!userId) {
-      return res.status(401).json({ success: false, message: '未认证' });
-    }
-
-    const sessionId = String(req.params.sessionId || '');
-    if (!sessionId) {
-      return res.status(400).json({ success: false, message: 'sessionId 不能为空' });
-    }
-
-    const traces = await TraceService.listTraces(sessionId, userId);
-    return res.json({ success: true, data: traces });
-  } catch (e: any) {
-    // 会话不存在或无权访问时返回 404
-    if (e?.message?.includes('不存在或无权访问')) {
-      return res.status(404).json({ success: false, message: e.message });
-    }
-    console.error('[Agent] 查询 trace 列表失败:', e?.message || e);
-    return res.status(500).json({ success: false, message: `查询失败: ${e?.message || e}` });
-  }
-});
-
-/**
- * GET /api/agent/traces/trace/:traceId — 查询单条 trace + 关联的 LlmCallLog
- *
- * Task 13.4：通过 traceId 关联 LlmCallLog，展示工具调用对应的 LLM 调用详情
- * （token 用量 / 耗时 / 模型 / 状态）。
- *
- * 返回：{ success, data: TraceWithLlmCallLog }
- */
-router.get('/traces/trace/:traceId', async (req: AuthRequest, res: Response) => {
-  try {
-    const userId = req.user?.id;
-    if (!userId) {
-      return res.status(401).json({ success: false, message: '未认证' });
-    }
-
-    const traceId = String(req.params.traceId || '');
-    if (!traceId) {
-      return res.status(400).json({ success: false, message: 'traceId 不能为空' });
-    }
-
-    const trace = await TraceService.getTraceWithLlmCallLog(traceId);
-    if (!trace) {
-      return res.status(404).json({ success: false, message: 'trace 不存在' });
-    }
-
-    return res.json({ success: true, data: trace });
-  } catch (e: any) {
-    console.error('[Agent] 查询 trace 详情失败:', e?.message || e);
-    return res.status(500).json({ success: false, message: `查询失败: ${e?.message || e}` });
-  }
-});
-
 // ===== 会话历史管理（Task 14） =====
+// 注：/api/agent/traces/* 端点已随 AgentTrace 链路移除（2026-08-03），
+// 工具执行过程由 QAMessage.parts 承载，token 统计见 /sessions/:id/stats
 
 /**
  * GET /api/agent/sessions — 列出用户的会话
@@ -766,61 +691,9 @@ router.post('/steer', async (req: AuthRequest, res: Response) => {
   }
 });
 
-// ===== 会话回放（Task 13.14）=====
-
-/**
- * GET /api/agent/replay/:sessionId — 审查会话回放
- *
- * 基于 AgentTrace 记录重现 Agent 的每一步决策、工具调用和中间结果。
- * 返回完整的 messages + steps + summary 统计。
- */
-router.get('/replay/:sessionId', async (req: AuthRequest, res: Response) => {
-  try {
-    const userId = req.user?.id;
-    if (!userId) return res.status(401).json({ success: false, message: '未认证' });
-
-    const sessionId = String(req.params.sessionId || '');
-    if (!sessionId) {
-      return res.status(400).json({ success: false, message: 'sessionId 不能为空' });
-    }
-
-    const replay = await ReplayService.getReplay(sessionId, userId);
-    return res.json({ success: true, data: replay });
-  } catch (e: any) {
-    if (e?.message?.includes('不存在或无权访问')) {
-      return res.status(404).json({ success: false, message: e.message });
-    }
-    console.error('[Agent] 回放查询失败:', e?.message || e);
-    return res.status(500).json({ success: false, message: `回放查询失败: ${e?.message || e}` });
-  }
-});
-
-/**
- * GET /api/agent/replay/:sessionId/root-cause/:issueIndex — 审查问题根因分析
- *
- * 追溯某个审查发现（ReviewIssue）的触发来源：
- * 从哪步工具调用产生 → 原始输入是什么 → LLM 调用详情。
- */
-router.get('/replay/:sessionId/root-cause/:issueIndex', async (req: AuthRequest, res: Response) => {
-  try {
-    const userId = req.user?.id;
-    if (!userId) return res.status(401).json({ success: false, message: '未认证' });
-
-    const sessionId = String(req.params.sessionId || '');
-    const issueIndex = parseInt(String(req.params.issueIndex), 10);
-    if (isNaN(issueIndex) || issueIndex < 0) {
-      return res.status(400).json({ success: false, message: 'issueIndex 必须为非负整数' });
-    }
-
-    const trace = await ReplayService.traceRootCause(sessionId, userId, issueIndex);
-    return res.json({ success: true, data: trace });
-  } catch (e: any) {
-    console.error('[Agent] 根因分析失败:', e?.message || e);
-    return res.status(500).json({ success: false, message: `根因分析失败: ${e?.message || e}` });
-  }
-});
-
 // ===== 智能摘要（Task 13.16）=====
+// 注：/api/agent/replay/* 端点已随 AgentTrace 链路移除（2026-08-03），
+// 会话过程由 QAMessage 承载，摘要功能保留
 
 /**
  * POST /api/agent/summary — 生成审查结果智能摘要
@@ -993,6 +866,177 @@ router.delete('/worktrees', async (req: AuthRequest, res: Response) => {
   } catch (e: any) {
     console.error('[Agent] 删除 worktree 失败:', e?.message || e);
     return res.status(400).json({ success: false, message: `删除 worktree 失败: ${e?.message || e}` });
+  }
+});
+
+// ===== 会话压缩（手动 compact，2026-08-03 新增）=====
+
+/**
+ * POST /api/agent/sessions/:id/compact — 手动触发上下文压缩
+ *
+ * 对会话早期消息生成 LLM 摘要并替换（阻塞操作，可能耗时数秒）。
+ * 与自动压缩共用 CompactionService.compact。
+ */
+router.post('/sessions/:id/compact', async (req: AuthRequest, res: Response) => {
+  try {
+    const userId = req.user?.id;
+    if (!userId) return res.status(401).json({ success: false, message: '未认证' });
+
+    const sessionId = String(req.params.id || '');
+    const session = await QASessionService.getSession(sessionId, userId);
+    if (!session) {
+      return res.status(404).json({ success: false, message: '会话不存在或无权访问' });
+    }
+
+    const messages = await QASessionService.listMessages(sessionId, userId);
+    const chatMessages = messages
+      .filter((m: any) => m.role === 'user' || m.role === 'assistant')
+      .map((m: any) => ({ role: m.role, content: typeof m.content === 'string' ? m.content : JSON.stringify(m.content ?? '') }));
+
+    const { CompactionService } = require('../services/agent/context-compaction/compaction.service');
+    const result = await CompactionService.compact(chatMessages);
+
+    if (result.truncatedMessages && result.truncatedMessages > 0) {
+      const prisma = require('../config/db').default;
+      // 删除被压缩的早期消息（按时间正序取前 N 条），插入摘要 system 消息
+      const ordered = [...messages].sort((a: any, b: any) =>
+        new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
+      const toDelete = ordered.slice(0, result.truncatedMessages).map((m: any) => m.id);
+      if (toDelete.length > 0) {
+        await prisma.qAMessage.deleteMany({
+          where: { id: { in: toDelete }, sessionId },
+        });
+      }
+      if (result.summary) {
+        await prisma.qAMessage.create({
+          data: {
+            sessionId,
+            role: 'system',
+            content: `[上下文摘要]\n${result.summary}`,
+            status: 'completed',
+          },
+        });
+      }
+    }
+
+    return res.json({
+      success: true,
+      data: {
+        truncatedMessages: result.truncatedMessages || 0,
+        estimatedTokens: result.estimatedTokens,
+        hasSummary: Boolean(result.summary),
+      },
+    });
+  } catch (e: any) {
+    console.error('[Agent] 手动压缩失败:', e?.message || e);
+    return res.status(500).json({ success: false, message: `压缩失败: ${e?.message || e}` });
+  }
+});
+
+// ===== 模型与 Provider 管理（2026-08-03 新增）=====
+
+/**
+ * GET /api/agent/models — 可用模型列表
+ *
+ * 从 system_configs.llm_profiles 展平所有 provider 的模型，
+ * 附带系统默认模型（llm_chat_model 当前配置）。
+ *
+ * 返回：{ success, data: { defaultKey: string|null, models: [{ key, label }] } }
+ *   key 格式：<providerId>::<modelName>（null 表示系统默认）
+ */
+router.get('/models', async (_req: AuthRequest, res: Response) => {
+  try {
+    const prisma = require('../config/db').default;
+    const { LlmService } = require('../services/llm/llm.service');
+
+    const defaultCfg = await LlmService.getLlmConfig();
+    const models: Array<{ key: string | null; label: string }> = [];
+    if (defaultCfg?.modelName) {
+      models.push({ key: null, label: `${defaultCfg.modelName}（系统默认）` });
+    }
+
+    const profilesCfg = await prisma.systemConfig.findUnique({ where: { key: 'llm_profiles' } });
+    if (profilesCfg?.value) {
+      const raw = typeof profilesCfg.value === 'string' ? JSON.parse(profilesCfg.value) : profilesCfg.value;
+      const profiles = Array.isArray(raw) ? raw : [];
+      for (const p of profiles) {
+        if (p?.id && p?.model) {
+          models.push({
+            key: `${p.id}::${p.model}`,
+            label: `${p.name || p.id} · ${p.model}`,
+          });
+        }
+      }
+    }
+
+    return res.json({ success: true, data: { defaultKey: null, models } });
+  } catch (e: any) {
+    console.error('[Agent] 列出模型失败:', e?.message || e);
+    return res.status(500).json({ success: false, message: `列出模型失败: ${e?.message || e}` });
+  }
+});
+
+/**
+ * GET /api/agent/providers — LLM 供应商配置列表（llm_profiles）
+ */
+router.get('/providers', async (_req: AuthRequest, res: Response) => {
+  try {
+    const prisma = require('../config/db').default;
+    const cfg = await prisma.systemConfig.findUnique({ where: { key: 'llm_profiles' } });
+    const raw = cfg?.value
+      ? (typeof cfg.value === 'string' ? JSON.parse(cfg.value) : cfg.value)
+      : [];
+    return res.json({ success: true, data: Array.isArray(raw) ? raw : [] });
+  } catch (e: any) {
+    console.error('[Agent] 读取 providers 失败:', e?.message || e);
+    return res.status(500).json({ success: false, message: `读取 providers 失败: ${e?.message || e}` });
+  }
+});
+
+/**
+ * PUT /api/agent/providers — 保存 LLM 供应商配置
+ * Body: { profiles: Array<{ id, name, apiBase, apiKey, model, provider?, timeout? }> }
+ */
+router.put('/providers', async (req: AuthRequest, res: Response) => {
+  try {
+    const { profiles } = req.body || {};
+    if (!Array.isArray(profiles)) {
+      return res.status(400).json({ success: false, message: 'profiles 必须为数组' });
+    }
+    const prisma = require('../config/db').default;
+    await prisma.systemConfig.upsert({
+      where: { key: 'llm_profiles' },
+      update: { value: JSON.stringify(profiles) },
+      create: { key: 'llm_profiles', value: JSON.stringify(profiles) },
+    });
+    return res.json({ success: true, data: profiles });
+  } catch (e: any) {
+    console.error('[Agent] 保存 providers 失败:', e?.message || e);
+    return res.status(500).json({ success: false, message: `保存 providers 失败: ${e?.message || e}` });
+  }
+});
+
+/**
+ * POST /api/agent/models/test — 模型连通性测试
+ * Body: { apiBase, apiKey, model }
+ */
+router.post('/models/test', async (req: AuthRequest, res: Response) => {
+  try {
+    const { apiBase, apiKey, model } = req.body || {};
+    if (!apiBase || !apiKey || !model) {
+      return res.status(400).json({ success: false, message: 'apiBase/apiKey/model 必填' });
+    }
+    const { LlmService } = require('../services/llm/llm.service');
+    const caps = await LlmService.probeModelCapabilities(apiBase, apiKey, model);
+    return res.json({
+      success: true,
+      data: caps
+        ? { ok: true, contextWindow: caps.contextWindow, maxOutput: caps.maxOutput, reasoning: caps.reasoning }
+        : { ok: false, message: '模型不可达或未识别（请检查 apiBase/apiKey/model）' },
+    });
+  } catch (e: any) {
+    console.error('[Agent] 模型测试失败:', e?.message || e);
+    return res.status(500).json({ success: false, message: `模型测试失败: ${e?.message || e}` });
   }
 });
 

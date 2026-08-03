@@ -61,45 +61,34 @@ export class SessionStatsService {
       else if (g.role === 'assistant') assistantMessages = n;
     }
 
-    // 工具调用统计：AgentTrace 即工具调用记录
-    const traces = await prisma.agentTrace.findMany({
-      where: { sessionId },
-      select: { status: true, traceId: true },
+    // 工具/调用统计：AgentTrace 链路已移除（2026-08-03），
+    // 改为统计 LlmCallLog 中本会话（sessionId 作 traceId）的 LLM 调用次数
+    const tokenAgg = await prisma.llmCallLog.aggregate({
+      where: { traceId: sessionId },
+      _count: { _all: true },
+      _sum: {
+        promptTokens: true,
+        completionTokens: true,
+        totalTokens: true,
+      },
     });
-    const toolCalls = traces.length;
-    const toolResults = traces.filter((t: any) => t.status === 'success').length;
+    const llmCalls = tokenAgg._count._all;
 
-    // token 聚合：LlmCallLog.traceId 关联 AgentTrace.traceId；
-    // 部分 LLM 调用直接用 sessionId 作为 traceId（见 chat/stream 降级路径），一并纳入
-    const traceIds = Array.from(
-      new Set(traces.map((t: any) => t.traceId).filter(Boolean)),
-    );
-    const allTraceIds = Array.from(new Set([...traceIds, sessionId]));
-
+    // token 聚合：Agent 调用以 sessionId 作为 traceId 写入 LlmCallLog（见 chatStream onFinish）
     let inputTokens = 0;
     let outputTokens = 0;
     let totalTokensSum = 0;
-    if (allTraceIds.length > 0) {
-      const agg = await prisma.llmCallLog.aggregate({
-        where: { traceId: { in: allTraceIds } },
-        _sum: {
-          promptTokens: true,
-          completionTokens: true,
-          totalTokens: true,
-        },
-      });
-      inputTokens = agg._sum.promptTokens ?? 0;
-      outputTokens = agg._sum.completionTokens ?? 0;
-      totalTokensSum = agg._sum.totalTokens ?? 0;
-    }
+    inputTokens = tokenAgg._sum.promptTokens ?? 0;
+    outputTokens = tokenAgg._sum.completionTokens ?? 0;
+    totalTokensSum = tokenAgg._sum.totalTokens ?? 0;
 
     return {
       sessionId,
       sessionName: session.title,
       userMessages,
       assistantMessages,
-      toolCalls,
-      toolResults,
+      toolCalls: llmCalls,
+      toolResults: llmCalls,
       totalMessages,
       tokens: {
         input: inputTokens,

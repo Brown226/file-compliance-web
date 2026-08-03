@@ -6,11 +6,8 @@
  *
  * 设计要点：
  * - 核心函数为纯函数（无副作用），便于测试
- * - recordRetryTrace 是唯一的副作用函数，采用 fire-and-forget
  * - 错误格式兼容 axios/fetch/自定义等常见风格
  */
-
-import { TraceService } from '../trace/trace.service';
 
 // ──────────────────────────────── 常量 ────────────────────────────────
 
@@ -30,17 +27,6 @@ export interface RetryDecision {
   shouldRetry: boolean;
   delayMs: number;
   isLastRetry: boolean;
-}
-
-/** recordRetryTrace 参数 */
-export interface RetryTraceParams {
-  sessionId: string;
-  userId: string;
-  toolName: string;
-  attemptNumber: number;
-  error: unknown;
-  delayMs: number;
-  decidedToRetry: boolean;
 }
 
 // ────────────────────────── 私有函数 ──────────────────────────
@@ -195,45 +181,5 @@ export function decideRetry(
 
   // 正常重试
   const delayMs = calcBackoff(attemptNumber);
-  return {
-    shouldRetry: true,
-    delayMs,
-    isLastRetry: attemptNumber + 1 >= MAX_RETRIES,
-  };
-}
-
-/**
- * 记录重试事件到 AgentTrace（fire-and-forget）
- *
- * 调用 TraceService.recordTrace 写入 trace，不等待完成、
- * 不抛异常，适合在 retry 循环中调用。
- *
- * @param params RetryTraceParams
- */
-export function recordRetryTrace(params: RetryTraceParams): void {
-  const { sessionId, userId, toolName, attemptNumber, error, delayMs, decidedToRetry } = params;
-
-  // 无 sessionId 时跳过
-  if (!sessionId) return;
-
-  const status = extractHttpStatus(error);
-
-  TraceService.recordTrace({
-    sessionId,
-    userId,
-    stepIndex: -1, // retry trace 使用 -1 标识，区别于工具调用
-    toolName: `retry:${toolName}`,
-    input: {
-      attemptNumber,
-      httpStatus: status,
-      delayMs,
-      decidedToRetry,
-    },
-    output: null,
-    status: decidedToRetry ? 'success' : 'failed',
-    error: decidedToRetry ? undefined : (typeof error === 'string' ? error : (error as Error)?.message ?? 'Unknown error'),
-  }).catch((e: any) => {
-    // fire-and-forget：写入失败仅 warn 不 throw
-    console.warn(`[RetryStrategy] recordRetryTrace 失败: ${e?.message ?? e}`);
-  });
+  return { shouldRetry: true, delayMs, isLastRetry: attemptNumber + 1 >= MAX_RETRIES };
 }
