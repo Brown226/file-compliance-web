@@ -24,6 +24,7 @@ import { authenticate, AuthRequest } from '../middlewares/auth.middleware';
 import { AgentService } from '../services/agent/agent.service';
 import { TraceService } from '../services/agent/trace/trace.service';
 import { QASessionService } from '../services/agent/qa-session.service';
+import { SessionStatsService } from '../services/agent/session-stats.service';
 import { MemoryService } from '../services/agent/memory/memory.service';
 import { SteeringService } from '../services/agent/steering/steering.service';
 import { ReplayService } from '../services/agent/replay/replay.service';
@@ -524,87 +525,13 @@ router.get('/sessions/:sessionId/stats', async (req: AuthRequest, res: Response)
       return res.status(400).json({ success: false, message: 'sessionId 不能为空' });
     }
 
-    // 权限校验：会话必须属于当前用户
-    const session = await QASessionService.getSession(sessionId, userId);
-    if (!session) {
+    // 聚合逻辑在 SessionStatsService（权限校验 + 消息计数 + 工具统计 + token 聚合）
+    const data = await SessionStatsService.getSessionStats(sessionId, userId);
+    if (!data) {
       return res.status(404).json({ success: false, message: '会话不存在或无权访问' });
     }
 
-    const prisma = require('../config/db').default;
-
-    // 消息计数（按 role 分组）
-    const messageCounts = await prisma.qAMessage.groupBy({
-      by: ['role'],
-      where: { sessionId },
-      _count: { _all: true },
-    });
-    let userMessages = 0;
-    let assistantMessages = 0;
-    let totalMessages = 0;
-    for (const g of messageCounts) {
-      const n = g._count._all;
-      totalMessages += n;
-      if (g.role === 'user') userMessages = n;
-      else if (g.role === 'assistant') assistantMessages = n;
-    }
-
-    // 工具调用统计：AgentTrace 即工具调用记录
-    const traces = await prisma.agentTrace.findMany({
-      where: { sessionId },
-      select: { status: true, traceId: true },
-    });
-    const toolCalls = traces.length;
-    const toolResults = traces.filter((t: any) => t.status === 'success').length;
-
-    // token 聚合：LlmCallLog.traceId 关联 AgentTrace.traceId；
-    // 部分 LLM 调用直接用 sessionId 作为 traceId（见 chat/stream 降级路径），一并纳入
-    const traceIds = Array.from(
-      new Set(traces.map((t: any) => t.traceId).filter(Boolean))
-    );
-    const allTraceIds = Array.from(new Set([...traceIds, sessionId]));
-
-    let inputTokens = 0;
-    let outputTokens = 0;
-    let totalTokensSum = 0;
-    if (allTraceIds.length > 0) {
-      const agg = await prisma.llmCallLog.aggregate({
-        where: { traceId: { in: allTraceIds } },
-        _sum: {
-          promptTokens: true,
-          completionTokens: true,
-          totalTokens: true,
-        },
-      });
-      inputTokens = agg._sum.promptTokens ?? 0;
-      outputTokens = agg._sum.completionTokens ?? 0;
-      totalTokensSum = agg._sum.totalTokens ?? 0;
-    }
-
-    return res.json({
-      success: true,
-      data: {
-        sessionId,
-        sessionName: session.title,
-        userMessages,
-        assistantMessages,
-        toolCalls,
-        toolResults,
-        totalMessages,
-        tokens: {
-          input: inputTokens,
-          output: outputTokens,
-          cacheRead: 0,    // 当前 schema 无对应字段
-          cacheWrite: 0,   // 当前 schema 无对应字段
-          total: totalTokensSum,
-        },
-        cost: 0,
-        contextUsage: {
-          percent: null,
-          contextWindow: 0,
-          tokens: null,
-        },
-      },
-    });
+    return res.json({ success: true, data });
   } catch (e: any) {
     console.error('[Agent] 查询会话统计失败:', e?.message || e);
     return res.status(500).json({ success: false, message: `查询失败: ${e?.message || e}` });

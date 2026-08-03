@@ -18,8 +18,8 @@
     <div class="ai-content">
       <AiAssistant v-show="activeTab === 'chat'" />
       <PolishTool v-show="activeTab === 'polish'" />
-      <ProjectQA v-if="activeTab === 'qa'" />
-      <MemoryManagement v-if="activeTab === 'memory'" />
+      <KnowledgeQA v-if="activeTab === 'qa'" />
+      <AgentMemoryPanel v-if="activeTab === 'memory'" />
     </div>
   </div>
 </template>
@@ -30,8 +30,8 @@ import { useRoute, useRouter } from 'vue-router'
 import { ChatDotRound, Brush, ChatLineSquare, Memo } from '@element-plus/icons-vue'
 import AiAssistant from '@/views/ai-assistant/AiAssistant.vue'
 import PolishTool from '@/views/Tools/PolishTool.vue'
-import ProjectQA from '@/views/openspec/ProjectQA.vue'
-import MemoryManagement from '@/views/openspec/MemoryManagement.vue'
+import KnowledgeQA from '@/views/Agent/components/KnowledgeQA.vue'
+import AgentMemoryPanel from '@/views/Agent/components/AgentMemoryPanel.vue'
 
 const route = useRoute()
 const router = useRouter()
