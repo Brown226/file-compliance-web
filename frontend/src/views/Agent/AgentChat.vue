@@ -38,6 +38,10 @@
             <span class="title-text">Agent 审查助手</span>
             <span v-if="sessionId" class="session-badge">会话已绑定</span>
           </div>
+          <div class="mode-switch">
+            <button :class="{ active: viewMode === 'chat' }" title="对话模式：审查 + 工具调用" @click="viewMode = 'chat'">对话</button>
+            <button :class="{ active: viewMode === 'qa' }" title="知识问答模式：Agent 检索知识库（MaxKB）后回答" @click="viewMode = 'qa'">知识问答</button>
+          </div>
         </div>
         <div class="toolbar-right">
           <!-- token 统计 -->
@@ -71,6 +75,8 @@
 
       <!-- 聊天内容区 -->
       <div class="chat-content">
+        <!-- ===== 对话模式（默认）===== -->
+        <template v-if="viewMode === 'chat'">
         <!-- 消息列表 -->
         <div ref="messagesContainer" class="messages-container">
           <div v-if="messages.length === 0" class="empty-state">
@@ -244,6 +250,9 @@
             <el-icon :size="28"><Upload /></el-icon>
           </div>
         </div>
+        </template>
+        <!-- ===== 知识问答模式 ===== -->
+        <KnowledgeQA v-else class="qa-mode" />
       </div>
     </main>
 
@@ -300,11 +309,15 @@ import ToolCallChip from './components/ToolCallChip.vue'
 import AgentIssueList from './components/AgentIssueList.vue'
 import AgentSessionList from './components/AgentSessionList.vue'
 import AgentSidePanel from './components/AgentSidePanel.vue'
+import KnowledgeQA from './components/KnowledgeQA.vue'
 import './agent-theme.css'
 
 const userStore = useUserStore()
 const { renderMarkdown } = useMarkdown()
 const { messages, sendMessage, stop, regenerate, isLoading, sessionId, loadHistory, clearSession } = useAgentChat()
+
+// 视图模式：chat=对话 / qa=知识问答（统一入口收敛到 /agent）
+const viewMode = ref<'chat' | 'qa'>('chat')
 
 const sessionListRef = ref<InstanceType<typeof AgentSessionList> | null>(null)
 
@@ -704,6 +717,39 @@ watch(sessionId, () => { refreshStats() })
   display: flex;
   flex-direction: column;
   position: relative;
+}
+
+/* 知识问答模式填满对话区 */
+.chat-content :deep(.qa-mode) {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+}
+
+/* ===== 模式切换 ===== */
+.mode-switch {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  margin-left: 8px;
+  padding: 2px;
+  background: var(--bg-hover);
+  border-radius: 6px;
+}
+.mode-switch button {
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1;
+  padding: 4px 10px;
+  border-radius: 4px;
+  cursor: pointer;
+}
+.mode-switch button.active {
+  background: var(--bg-selected);
+  color: var(--text);
+  font-weight: 600;
 }
 
 /* ===== 消息列表 ===== */

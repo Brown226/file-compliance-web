@@ -126,12 +126,12 @@
                 <span class="link-desc">查看审查规则配置</span>
               </div>
             </div>
-            <div class="sidebar-link-item" @click="$router.push('/ai')">
+            <div class="sidebar-link-item" @click="$router.push('/agent')">
               <div class="link-icon qna-icon">
                 <el-icon :size="18"><ChatLineSquare /></el-icon>
               </div>
               <div class="link-info">
-                <span class="link-label">AI问答</span>
+                <span class="link-label">Agent 问答</span>
                 <span class="link-desc">智能问答与知识检索</span>
               </div>
             </div>

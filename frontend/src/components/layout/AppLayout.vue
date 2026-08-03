@@ -32,10 +32,6 @@
           <el-icon><Collection /></el-icon>
           <template #title><span>知识中心</span></template>
         </el-menu-item>
-        <el-menu-item index="/ai">
-          <el-icon><ChatDotRound /></el-icon>
-          <template #title><span>AI 工作台</span></template>
-        </el-menu-item>
         <el-menu-item index="/agent">
           <el-icon><MagicStick /></el-icon>
           <template #title><span>Agent 审查助手</span></template>

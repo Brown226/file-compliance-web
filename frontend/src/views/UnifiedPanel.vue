@@ -58,9 +58,9 @@
             <el-icon :size="20"><Collection /></el-icon>
             <span>知识中心</span>
           </div>
-          <div class="quick-link" @click="$router.push('/ai')">
-            <el-icon :size="20"><ChatDotRound /></el-icon>
-            <span>AI 工作台</span>
+          <div class="quick-link" @click="$router.push('/agent')">
+            <el-icon :size="20"><MagicStick /></el-icon>
+            <span>Agent 助手</span>
           </div>
           <div class="quick-link" @click="$router.push('/review-center')">
             <el-icon :size="20"><DataBoard /></el-icon>

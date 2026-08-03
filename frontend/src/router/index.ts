@@ -61,14 +61,6 @@ const routes: Array<RouteRecordRaw> = [
         redirect: to => ({ path: `/review/${to.params.id}` })
       },
       {
-        path: 'ai',
-        name: 'AiWorkspace',
-        component: () => import('../views/AiWorkspace.vue'),
-        meta: { title: 'AI 工作台' }
-      },
-      { path: 'ai-assistant', redirect: '/ai?tab=chat' },
-      { path: 'polish', redirect: '/ai?tab=polish' },
-      {
         path: 'dwg-vision',
         name: 'DwgVisionAnalysis',
         component: () => import('../views/Tools/DwgVisionAnalysis.vue'),
@@ -253,7 +245,7 @@ const routes: Array<RouteRecordRaw> = [
 
       // ===== OpenSpec 遗留路由清理（2026-08-03：唯一 Agent = Node Agent）=====
       // 文档生成已作为 Node Agent 内置 skill（对话触发），入口指向 /agent；
-      // 长期记忆/问答分别走 /ai?tab=memory、/ai?tab=qa（均已改接 Node 侧）
+      // 长期记忆/问答入口统一收敛到 /agent（/ai 页面已删除）
       {
         path: 'openspec',
         redirect: '/agent',
@@ -269,15 +261,15 @@ const routes: Array<RouteRecordRaw> = [
       },
       {
         path: 'openspec/memory',
-        redirect: '/ai?tab=memory'
+        redirect: '/agent'
       },
       {
         path: 'openspec/qa',
-        redirect: '/ai?tab=qa'
+        redirect: '/agent'
       },
       {
         path: 'openspec/wizard',
-        redirect: '/ai'
+        redirect: '/agent'
       },
     ]
   }
