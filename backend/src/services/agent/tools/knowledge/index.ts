@@ -10,21 +10,27 @@
 import { createSearchMaxkbKnowledgeTool } from './search_maxkb_knowledge';
 import { createSearchRuleLibraryTool } from './search_rule_library';
 import { createSearchStandardCheckpointsTool } from './search_standard_checkpoints';
+import { createCompareKnowledgeTool } from './compare_knowledge';
+import { createKbUpsertTool } from './kb_upsert';
 import type { ToolContext } from '../file/upload_file';
 
 export {
   createSearchMaxkbKnowledgeTool,
   createSearchRuleLibraryTool,
   createSearchStandardCheckpointsTool,
+  createCompareKnowledgeTool,
+  createKbUpsertTool,
 };
 
 /**
- * 创建知识检索工具集（3 个工具）
+ * 创建知识检索工具集（5 个工具）
  */
 export function createKnowledgeTools(context: ToolContext) {
   return {
     search_knowledge: createSearchMaxkbKnowledgeTool(context),
     search_rule_library: createSearchRuleLibraryTool(context),
     search_standard_checkpoints: createSearchStandardCheckpointsTool(context),
+    compare_knowledge: createCompareKnowledgeTool(context),
+    kb_upsert: createKbUpsertTool(context),
   };
 }

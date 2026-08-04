@@ -16,6 +16,10 @@
         <pre v-if="hasInput" class="input-pre">{{ formattedInput }}</pre>
         <!-- compare_documents 专用 diff 视图（P0-①）：结构化变更块 + 统计 + 摘要 -->
         <DiffResultView v-if="isDiffResult" :result="resultObj" />
+        <!-- extract_tables 专用表格视图（P1-③）：结构化表格列表 -->
+        <TableView v-else-if="isTableResult" :result="resultObj" />
+        <!-- compare_knowledge 专用对比视图（P2-⑩）：主题级一致性表格 -->
+        <CompareResultView v-else-if="isCompareResult" :result="resultObj" />
         <div v-else-if="resultText !== null" class="paired-result" :class="{ 'is-error': isError, 'is-empty': resultIsEmpty }">
           <pre>{{ resultIsEmpty ? '(no output)' : resultText }}</pre>
         </div>
@@ -31,6 +35,8 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue'
 import DiffResultView from './DiffResultView.vue'
+import TableView from './TableView.vue'
+import CompareResultView from './CompareResultView.vue'
 
 interface ToolCallPart {
   type: string
@@ -49,7 +55,8 @@ function toggleExpand() { isExpanded.value = !isExpanded.value }
 const TOOL_NAME_MAP: Record<string, string> = {
   upload_file: '上传文件', extract_text: '提取文本', chunk_document: '分块',
   read_file: '读取文件', list_uploads: '列出文件', delete_file: '删除文件',
-  write_report: '生成报告', download_report: '下载报告', compare_documents: '文档对比',
+  write_report: '生成报告', download_report: '下载报告', compare_documents: '文档对比', extract_tables: '表格提取',
+  compare_knowledge: '文档比对问答',
   list_available_rules: '列出规则', apply_rule: '执行规则',
   llm_review_chunk: 'LLM 审查', llm_cross_check: '交叉核验',
   summarize_issues: '汇总', format_issues: '格式化',
@@ -109,6 +116,20 @@ const isDiffResult = computed(() => {
   if (rawToolName.value !== 'compare_documents') return false
   const out = resultObj.value
   return !!out && (Array.isArray(out.changes) || typeof out.stats === 'object' || typeof out.totalChanges === 'number')
+})
+
+// extract_tables 专用：识别表格提取结果（含 tables 数组）
+const isTableResult = computed(() => {
+  if (rawToolName.value !== 'extract_tables') return false
+  const out = resultObj.value
+  return !!out && Array.isArray(out.tables)
+})
+
+// compare_knowledge 专用：识别多文档对比结果（含 items 数组）
+const isCompareResult = computed(() => {
+  if (rawToolName.value !== 'compare_knowledge') return false
+  const out = resultObj.value
+  return !!out && (Array.isArray(out.items) || typeof out.conclusion === 'string')
 })
 
 // 预览文本（对齐参考 getToolPreview：取 input 常见字段）
