@@ -271,3 +271,6 @@ PSAR知识库分析/
 # DEC_REVIEW 阶段0评估临时产物（含真实规范样本/切分JSON，不入库）
 backend/eval/
 backend/maxkb-chunks-eval-*.json
+
+# ===== Agent UI 验证产物（截图/Playwright 脚本，不入库）=====
+artifacts/
