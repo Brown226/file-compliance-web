@@ -12,12 +12,24 @@ export function useAgentChat() {
   const userStore = useUserStore()
   const sessionId = ref<string | null>(null)
 
+  // 会话设置（模型 / 工具预设 / 推理强度）
+  // - 随 chat/stream 请求体透传，后端按需覆盖 LlmConfig / 工具过滤 / reasoningEffort
+  // - 持久化由调用方负责（有 sessionId 时 PATCH /sessions/:id 的 settings）
+  const modelKey = ref<string | null>(null)
+  const toolPreset = ref<string>('full')
+  const thinkingLevel = ref<string | null>(null)
+
   // transport 的 headers/body 支持 getter 函数，每次请求都会重新求值，
   // 因此 token 与 sessionId 的变化会被自动带入。
   const transport = new DefaultChatTransport({
     api: '/api/agent/chat/stream',
     headers: () => ({ Authorization: `Bearer ${userStore.token}` }),
-    body: () => ({ sessionId: sessionId.value }),
+    body: () => ({
+      sessionId: sessionId.value,
+      modelKey: modelKey.value,
+      toolPreset: toolPreset.value,
+      thinkingLevel: thinkingLevel.value,
+    }),
     credentials: 'include',
   })
 
@@ -38,11 +50,29 @@ export function useAgentChat() {
    */
   async function loadHistory(sid: string): Promise<void> {
     const res = await listMessagesApi(sid)
-    const historyMessages = (res.data as MessageItem[]).map(m => ({
-      id: m.id,
-      role: m.role === 'user' ? 'user' : 'assistant',
-      parts: [{ type: 'text', text: m.content || '' }],
-    }))
+    const historyMessages = (res.data as MessageItem[]).map(m => {
+      // 先放文本 part，再从 debug.toolCalls 还原工具调用 part（历史回看显示 ToolCallChip）
+      const parts: any[] = [{ type: 'text', text: m.content || '' }]
+      const toolCalls = m.debug?.toolCalls
+      if (Array.isArray(toolCalls) && toolCalls.length > 0) {
+        for (const tc of toolCalls) {
+          parts.push({
+            type: `tool-${tc.toolName}`,
+            toolCallId: tc.toolCallId,
+            toolName: tc.toolName,
+            input: tc.input,
+            output: tc.output,
+            state: tc.isError ? 'output-error' : 'output-available',
+          })
+        }
+      }
+      return {
+        id: m.id,
+        role: m.role === 'user' ? 'user' : 'assistant',
+        parts,
+        createdAt: m.createdAt || undefined,
+      }
+    })
     messages.value = historyMessages as any
     sessionId.value = sid
   }
@@ -53,9 +83,31 @@ export function useAgentChat() {
     sessionId.value = null
   }
 
+  /**
+   * 新建会话：生成新的 sessionId（UUID）并清空消息。
+   * 关键：不再把 sessionId 置 null——否则发送首条消息时后端因无 sessionId 无法持久化，
+   * 导致左侧会话列表不产生历史记录。前端先生成 UUID，后端 ensureSession 会自动创建会话。
+   */
+  function startNewSession(): void {
+    messages.value = [] as any
+    sessionId.value = crypto.randomUUID()
+  }
+
+  /** 批量设置会话设置（切换会话/新建会话时同步 UI 状态） */
+  function setSettings(settings: {
+    modelKey?: string | null
+    toolPreset?: string
+    thinkingLevel?: string | null
+  }): void {
+    if (settings.modelKey !== undefined) modelKey.value = settings.modelKey
+    if (settings.toolPreset !== undefined) toolPreset.value = settings.toolPreset
+    if (settings.thinkingLevel !== undefined) thinkingLevel.value = settings.thinkingLevel
+  }
+
   return {
     messages, status, error, sendMessage, stop, regenerate,
     isLoading, sessionId,
-    loadHistory, clearSession,
+    modelKey, toolPreset, thinkingLevel, setSettings,
+    loadHistory, clearSession, startNewSession,
   }
 }

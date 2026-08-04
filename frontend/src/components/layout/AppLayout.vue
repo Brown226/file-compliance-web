@@ -71,7 +71,7 @@
     </el-aside>
 
     <el-container>
-      <el-header class="header">
+      <el-header v-if="!hideHeader" class="header">
         <div class="header-left">
           <div class="header-toggle" @click="sidebarOpen = !sidebarOpen" v-show="isMobile">
             <el-icon :size="20"><Fold /></el-icon>
@@ -160,7 +160,7 @@
         </div>
       </el-header>
 
-      <el-main class="main-content">
+      <el-main class="main-content" :class="{ 'header-hidden': hideHeader }">
         <router-view v-slot="{ Component }">
           <transition name="fade-slide" mode="out-in" appear>
             <component :is="Component" />
@@ -268,13 +268,16 @@ const router = useRouter()
 const userStore = useUserStore()
 const systemConfigStore = useSystemConfigStore()
 const activeMenu = computed(() => route.path)
+// 隐藏顶栏的页面（如 Agent 工作台：自身带顶栏，避免双层顶部栏堆叠）
+const hideHeader = computed(() => !!route.meta.hideHeader)
 const isAdminSubRoute = computed(() => route.path.startsWith('/admin/') && route.path !== '/admin')
 const roleDisplayText = computed(() => {
   const role = userStore.userInfo?.role
   const map: Record<string, string> = { ADMIN: '系统管理员', MANAGER: '部门管理员', USER: '普通用户' }
   return map[role || ''] || userStore.userInfo?.departmentName || role || '普通用户'
 })
-const sidebarCollapsed = ref(localStorage.getItem('sidebar_collapsed') === 'true')
+// 全局默认折叠主侧栏：未设置过任何偏好时默认收起；用户手动切换后以 localStorage 记忆为准
+const sidebarCollapsed = ref(localStorage.getItem('sidebar_collapsed') !== 'false')
 const sidebarOpen = ref(false)
 const warningDismissed = ref(false)
 
@@ -1019,6 +1022,11 @@ const submitUsernameChange = async () => {
   .main-content {
     padding: 12px;
   }
+}
+
+/* ===== 隐藏顶栏的页面（Agent 工作台等）：移除主内容区 padding，让页面满宽撑满 ===== */
+.main-content.header-hidden {
+  padding: 0 !important;
 }
 
 .text-danger.text-danger {

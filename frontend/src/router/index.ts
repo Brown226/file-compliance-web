@@ -76,7 +76,7 @@ const routes: Array<RouteRecordRaw> = [
         path: 'agent',
         name: 'AgentChat',
         component: () => import('@/views/Agent/AgentChat.vue'),
-        meta: { title: 'Agent 审查助手' }
+        meta: { title: 'Agent 审查助手', hideHeader: true }
       },
       // ===== 知识中心 =====
       {
