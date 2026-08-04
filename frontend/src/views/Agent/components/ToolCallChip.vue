@@ -14,7 +14,9 @@
     <transition name="expand">
       <div v-if="isExpanded" class="tool-call-body">
         <pre v-if="hasInput" class="input-pre">{{ formattedInput }}</pre>
-        <div v-if="resultText !== null" class="paired-result" :class="{ 'is-error': isError, 'is-empty': resultIsEmpty }">
+        <!-- compare_documents 专用 diff 视图（P0-①）：结构化变更块 + 统计 + 摘要 -->
+        <DiffResultView v-if="isDiffResult" :result="resultObj" />
+        <div v-else-if="resultText !== null" class="paired-result" :class="{ 'is-error': isError, 'is-empty': resultIsEmpty }">
           <pre>{{ resultIsEmpty ? '(no output)' : resultText }}</pre>
         </div>
         <div v-if="errorText && !isError" class="error-pre">{{ errorText }}</div>
@@ -28,6 +30,7 @@
 
 <script setup lang="ts">
 import { ref, computed } from 'vue'
+import DiffResultView from './DiffResultView.vue'
 
 interface ToolCallPart {
   type: string
@@ -46,7 +49,7 @@ function toggleExpand() { isExpanded.value = !isExpanded.value }
 const TOOL_NAME_MAP: Record<string, string> = {
   upload_file: '上传文件', extract_text: '提取文本', chunk_document: '分块',
   read_file: '读取文件', list_uploads: '列出文件', delete_file: '删除文件',
-  write_report: '生成报告', download_report: '下载报告',
+  write_report: '生成报告', download_report: '下载报告', compare_documents: '文档对比',
   list_available_rules: '列出规则', apply_rule: '执行规则',
   llm_review_chunk: 'LLM 审查', llm_cross_check: '交叉核验',
   summarize_issues: '汇总', format_issues: '格式化',
@@ -96,6 +99,17 @@ const resultText = computed<string | null>(() => {
 })
 const resultIsEmpty = computed(() => resultText.value !== null && (resultText.value.trim() === '' || resultText.value.trim() === '(no output)'))
 const errorText = computed(() => props.part.errorText || '')
+
+// compare_documents 专用：识别结构化 diff 结果（含 changes/stats 的对象）
+const resultObj = computed<any>(() => {
+  const out = props.part.output
+  return out && typeof out === 'object' ? out : null
+})
+const isDiffResult = computed(() => {
+  if (rawToolName.value !== 'compare_documents') return false
+  const out = resultObj.value
+  return !!out && (Array.isArray(out.changes) || typeof out.stats === 'object' || typeof out.totalChanges === 'number')
+})
 
 // 预览文本（对齐参考 getToolPreview：取 input 常见字段）
 const toolPreview = computed(() => {

@@ -32,6 +32,9 @@ interface KnowledgeSearchResult {
   knowledge_name: string;
   similarity: number;
   comprehensive_score: number;
+  /** P0-⑨ 知识引用溯源：定位元数据（页码/章节，来自 RAGRetrievedChunk） */
+  page?: number;
+  section?: string;
 }
 
 /** 检索结果 */
@@ -106,6 +109,9 @@ export function createSearchMaxkbKnowledgeTool(_context: ToolContext) {
             knowledge_name: chunk.knowledge_name || '',
             similarity: chunk.similarity ?? 0,
             comprehensive_score: chunk.comprehensive_score ?? 0,
+            // P0-⑨：透传定位元数据（无则省略，保持旧结构完全兼容）
+            ...(chunk.page !== undefined ? { page: chunk.page } : {}),
+            ...(chunk.section !== undefined ? { section: chunk.section } : {}),
           });
         }
       }

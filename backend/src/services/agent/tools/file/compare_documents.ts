@@ -21,10 +21,9 @@
  */
 
 import * as fs from 'fs';
-import * as path from 'path';
 import { z } from 'zod';
 import type { ToolContext } from './upload_file';
-import { parseDocument, isPlainTextExt } from './parse-document';
+import { parseDocument } from './parse-document';
 
 const { tool } = require('@ai-sdk/provider-utils') as typeof import('@ai-sdk/provider-utils');
 

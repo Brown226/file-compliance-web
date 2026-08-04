@@ -5,10 +5,13 @@
  * 1. 确定 module：mode || 'doc_review'（默认用 doc_review 模板）
  * 2. 通过 PromptLoader.resolve 加载 system 模板（DB → Registry → 兜底）
  * 3. 如果有 focus，在 systemPrompt 末尾追加「当前审查关注点」段
- * 4. 如果有 context（如 RAG 检索结果），在 systemPrompt 末尾追加「参考知识」段
+ * 4. 如果有 context（如 RAG 检索结果），在 systemPrompt 末尾追加「参考知识」段 + standardRef 约束
+ *    （无 context 时不追加约束，避免 LLM 编造条文引用）
  * 5. 调 LlmService.reviewText(text, { systemPrompt, mode, skipUserTemplate: true })
  *    skipUserTemplate=true 表示调用方已自行组装 user 内容（直接用 text）
- * 6. 返回 ReviewIssue[]
+ * 6. 后处理：ruleCode 存在但 standardRef 为空的 issue，用 search_standard_checkpoints 反查审点库回填
+ *    （查不到保持空，绝不覆盖 LLM 已填的 standardRef）
+ * 7. 返回 ReviewIssue[]
  *
  * 注意：工具场景下没有完整 PipelineContext，不能用 AiReviewService.injectSemanticContext
  * （它需要 taskId/fileId/extractedText 等完整字段），改为直接拼接 focus 到 systemPrompt。
@@ -18,12 +21,117 @@ import { z } from 'zod';
 import { PromptLoader } from '../../../prompts';
 import { LlmService, type ReviewIssue } from '../../../llm/llm.service';
 import type { ToolContext } from '../file/upload_file';
+import { createSearchStandardCheckpointsTool } from '../knowledge/search_standard_checkpoints';
 
 const { tool } = require('@ai-sdk/provider-utils') as typeof import('@ai-sdk/provider-utils');
 
 /** 系统提示词最终兜底（PromptLoader.resolve 的 fallback 参数） */
 const SYSTEM_PROMPT_FALLBACK =
   '你是文件审查专家，请按规范输出问题列表。每个问题必须包含 issueType 和 originalText 字段，严格按照 JSON 数组格式输出。';
+
+/**
+ * 有参考知识（context）注入时的 standardRef 约束段。
+ * 仅在 context 注入时追加：要求引用审点必须带 standardRef，且禁止编造条文；
+ * 无 context 时不追加，避免 LLM 幻觉编造不存在的标准引用。
+ */
+const STANDARD_REF_CONSTRAINT =
+  '\n\n## 审查依据要求\n' +
+  '每个问题必须填写 standardRef 字段（审查依据的标准条文引用），格式为「标准编号 + 条文编号 + 标准名称」，' +
+  '例如 "GB/T 50265-2010 第5.2.1条"。依据只能来自上方「参考知识」中的审点条文，禁止编造不存在的标准或条文；' +
+  '若参考知识中没有对应条文，standardRef 可省略。';
+
+/** search_standard_checkpoints 结果的最小类型（回填用，与工具实现字段保持一致） */
+interface BackfillStandard {
+  id: string;
+  title: string;
+  standardNo: string | null;
+  standardName: string | null;
+}
+
+interface BackfillCheckpoint {
+  id: string;
+  clauseCode: string | null;
+  clauseText: string;
+}
+
+type BackfillSearchResult =
+  | { mode: 'list_standards'; standards: BackfillStandard[] }
+  | { mode: 'list_checkpoints'; checkpoints: BackfillCheckpoint[] };
+
+/**
+ * standardRef 后处理回填（P1-⑦ 审查依据条文可解释）
+ *
+ * 对 ruleCode 存在但 standardRef 为空的 issue：
+ * 1. 用 search_standard_checkpoints 列出现行标准
+ * 2. 逐个标准按 ruleCode 关键词反查审点（clauseCode/clauseText/checkPrompt 模糊匹配）
+ * 3. 优先 clauseCode 精确匹配的审点，拼装「标准编号 + 标准名称 + 第X条」回填
+ * 4. 查不到保持空；**绝不覆盖 LLM 已填的 standardRef**
+ *
+ * 反查失败仅告警，不影响审查结果返回。
+ */
+async function backfillStandardRefs(
+  issues: ReviewIssue[],
+  searchTool: ReturnType<typeof createSearchStandardCheckpointsTool>,
+): Promise<ReviewIssue[]> {
+  const missing = issues.filter((i) => !i.standardRef && i.ruleCode);
+  if (missing.length === 0) return issues;
+
+  try {
+    // 1. 列出所有现行标准
+    const listResult = (await searchTool.execute({ topNumber: 50 }, { toolCallId: "llm_review_backfill", messages: [], context: {} })) as BackfillSearchResult;
+    if (listResult.mode !== 'list_standards' || listResult.standards.length === 0) {
+      return issues;
+    }
+
+    // 2. 按 ruleCode 去重反查，找到即停（逐标准早退）
+    const refByRuleCode = new Map<string, string | null>();
+    for (const issue of missing) {
+      const ruleCode = String(issue.ruleCode).trim();
+      if (!ruleCode || refByRuleCode.has(ruleCode)) continue;
+
+      let ref: string | null = null;
+      for (const std of listResult.standards) {
+        if (ref) break;
+        const cpRes = (await searchTool.execute(
+          {
+            standardId: std.id,
+            keyword: ruleCode,
+            topNumber: 50,
+          },
+          { toolCallId: "llm_review_backfill", messages: [], context: {} },
+        )) as BackfillSearchResult;
+        if (cpRes.mode !== 'list_checkpoints' || cpRes.checkpoints.length === 0) continue;
+
+        // 优先 clauseCode 精确匹配，其次取第一个模糊命中
+        const lower = ruleCode.toLowerCase();
+        const exact = cpRes.checkpoints.find(
+          (cp) => cp.clauseCode && cp.clauseCode.trim().toLowerCase() === lower,
+        );
+        const hit = exact || cpRes.checkpoints[0];
+        if (hit) {
+          const stdNo = std.standardNo || '';
+          const stdName = std.standardName || std.title || '';
+          const clause = hit.clauseCode ? `第${hit.clauseCode}条` : '';
+          ref = [stdNo, stdName, clause].filter(Boolean).join(' ');
+        }
+      }
+      refByRuleCode.set(ruleCode, ref);
+    }
+
+    // 3. 回填（仅当仍为空，绝不覆盖）
+    for (const issue of missing) {
+      const ruleCode = String(issue.ruleCode).trim();
+      const ref = refByRuleCode.get(ruleCode);
+      if (ref && !issue.standardRef) {
+        issue.standardRef = ref;
+      }
+    }
+  } catch (e) {
+    console.warn('[llm_review_chunk] standardRef 反查回填失败（不影响审查结果）:', e);
+  }
+
+  return issues;
+}
 
 /**
  * 创建 llm_review_chunk 工具
@@ -60,9 +168,12 @@ export function createLlmReviewChunkTool(_context: ToolContext) {
         systemPrompt += `\n\n## 当前审查关注点\n请重点关注：${focus}`;
       }
 
-      // 4. 追加参考知识（如 RAG 检索结果）
+      // 4. 追加参考知识（如 RAG 检索结果）+ standardRef 约束
+      //    有 context（审点/知识库上下文）注入时，要求 issue 带 standardRef（条文编号+名称）；
+      //    无 context 时不追加约束，避免 LLM 编造不存在的条文引用
       if (context) {
         systemPrompt += `\n\n## 参考知识\n${context}`;
+        systemPrompt += STANDARD_REF_CONSTRAINT;
       }
 
       // 5. 调 LlmService.reviewText
@@ -73,6 +184,10 @@ export function createLlmReviewChunkTool(_context: ToolContext) {
         mode: module,
         skipUserTemplate: true,
       });
+
+      // 6. 后处理：ruleCode 存在但 standardRef 为空时，反查审点库回填（查不到保持空，不覆盖已有引用）
+      const searchTool = createSearchStandardCheckpointsTool(_context);
+      await backfillStandardRefs(issues, searchTool);
 
       return issues;
     },

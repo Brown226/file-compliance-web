@@ -31,6 +31,9 @@ export interface RAGRetrievedChunk {
   knowledge_name?: string;
   similarity: number;
   comprehensive_score: number;
+  /** P0-⑨ 知识引用溯源：定位元数据（doc-parser 分块时保留 pageRange，解析后透传） */
+  page?: number;
+  section?: string;
 }
 
 /** 知识库树节点 */
@@ -62,6 +65,57 @@ export interface RAGReviewOptions {
   taskId?: string;
   /** 可观测性：审查模式 */
   mode?: string;
+}
+
+// ==================== 定位元数据解析（P0-⑨ 知识引用溯源）====================
+
+/**
+ * 从 MaxKB 原始命中记录 + chunk 文本中解析定位元数据（页码/章节）
+ *
+ * 优先级：
+ * 1. 显式字段（raw.page / raw.metadata.page 等，MaxKB 分段元数据）
+ * 2. chunk 文本开头的页码标记（doc-parser 分块时保留的 pageRange，如 "p3" / "第3页" / "【第3页】"）
+ * 3. 章节：文本开头的 markdown 标题（# 标题）或 【标题】 标记
+ */
+function parseChunkLocator(raw: any, content: string): { page?: number; section?: string } {
+  const locator: { page?: number; section?: string } = {};
+
+  // 1. 显式字段优先
+  const meta = raw?.metadata ?? raw?.meta_data ?? raw?.meta ?? {};
+  const pageField = raw?.page ?? raw?.page_number ?? raw?.pageNumber ?? meta?.page ?? meta?.page_number ?? meta?.pageNumber;
+  if (typeof pageField === 'number' && pageField > 0) {
+    locator.page = pageField;
+  } else if (typeof pageField === 'string') {
+    const n = parseInt(pageField, 10);
+    if (!Number.isNaN(n) && n > 0) locator.page = n;
+  }
+  const sectionField = raw?.section ?? raw?.section_title ?? meta?.section ?? meta?.section_title;
+  if (typeof sectionField === 'string' && sectionField.trim()) {
+    locator.section = sectionField.trim();
+  }
+
+  // 2. 从 chunk 文本开头解析页码标记（仅匹配明确的标记形式，避免误伤正文数字）
+  if (locator.page === undefined && typeof content === 'string' && content) {
+    const pageMarker =
+      content.match(/^(?:\[|【|\(|（)?(?:p|page|第)\s*(\d+)\s*(?:页|page)?(?:\]|】|\)|）)?(?:\s*[:：]?\s*)/i) ||
+      content.match(/^(?:\[|【|\(|（)?\s*(\d+)\s*页(?:\]|】|\)|）)?(?:\s*[:：]?\s*)/i);
+    if (pageMarker) {
+      const n = parseInt(pageMarker[1], 10);
+      if (n > 0) locator.page = n;
+    }
+  }
+
+  // 3. 章节：文本开头 markdown 标题或【标题】块标记
+  if (locator.section === undefined && typeof content === 'string' && content) {
+    const sectionMarker =
+      content.match(/^#+\s*([^\n]{1,80})/) ||
+      content.match(/^【([^】]{1,80})】\s*\n/);
+    if (sectionMarker) {
+      locator.section = sectionMarker[1].trim();
+    }
+  }
+
+  return locator;
 }
 
 // ==================== RAG 检索服务 ====================
@@ -118,14 +172,20 @@ export class RAGService {
       return [];
     }
 
-    const chunks: RAGRetrievedChunk[] = results.map((r: any) => ({
-      id: r.id || '',
-      content: r.content || '',
-      document_name: r.document_name || '未知文档',
-      knowledge_name: r.knowledge_name || '',
-      similarity: r.similarity ?? 0,
-      comprehensive_score: r.comprehensive_score ?? 0,
-    }));
+    const chunks: RAGRetrievedChunk[] = results.map((r: any) => {
+      // P0-⑨：解析定位元数据（显式字段 / chunk 文本标记），供前端来源卡片展示 + 定位
+      const locator = parseChunkLocator(r, r.content);
+      return {
+        id: r.id || '',
+        content: r.content || '',
+        document_name: r.document_name || '未知文档',
+        knowledge_name: r.knowledge_name || '',
+        similarity: r.similarity ?? 0,
+        comprehensive_score: r.comprehensive_score ?? 0,
+        ...(locator.page !== undefined ? { page: locator.page } : {}),
+        ...(locator.section !== undefined ? { section: locator.section } : {}),
+      };
+    });
 
     // 缓存结果
     CacheService.set(cacheKey, chunks, CACHE_TTL);
