@@ -65,6 +65,9 @@
               </div>
             </div>
             <div v-if="hoveredId === session.id" class="item-actions">
+              <button class="action-btn" title="复制会话" @click.stop="doDuplicate(session)">
+                <el-icon :size="13"><CopyDocument /></el-icon>
+              </button>
               <button class="action-btn" title="重命名" @click.stop="startRename(session)">
                 <el-icon :size="13"><EditPen /></el-icon>
               </button>
@@ -98,8 +101,8 @@
 <script setup lang="ts">
 import { ref, nextTick, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
-import { Plus, Refresh, Check, Loading, ChatDotRound, Delete, EditPen } from '@element-plus/icons-vue'
-import { listSessionsApi, deleteSessionApi, renameSessionApi, type SessionListItem } from '@/api/agent'
+import { Plus, Refresh, Check, Loading, ChatDotRound, Delete, EditPen, CopyDocument } from '@element-plus/icons-vue'
+import { listSessionsApi, deleteSessionApi, renameSessionApi, duplicateSessionApi, type SessionListItem } from '@/api/agent'
 
 const props = defineProps<{
   currentSessionId?: string | null
@@ -147,6 +150,18 @@ async function doDelete(sessionId: string) {
   } catch (e: any) {
     ElMessage.error(`删除失败: ${e?.message || e}`)
     confirmDeleteId.value = null
+  }
+}
+
+async function doDuplicate(session: SessionListItem) {
+  try {
+    const res = await duplicateSessionApi(session.id)
+    ElMessage.success(`已复制会话：${res.data?.title || '副本'}`)
+    await loadSessions()
+    // 复制后自动切换到新会话（多方案并行对比入口）
+    emit('select', res.data.id)
+  } catch (e: any) {
+    ElMessage.error(`复制会话失败: ${e?.message || e}`)
   }
 }
 

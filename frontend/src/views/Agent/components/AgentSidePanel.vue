@@ -1,6 +1,17 @@
 <template>
   <div class="side-panel">
     <div class="panel-tabs">
+      <!-- 文件树 tab（任务 8：浏览授权目录） -->
+      <button
+        class="panel-tab"
+        :class="{ active: activeTab === '__explorer__' }"
+        @click="activeTab = '__explorer__'"
+      >
+        <span class="file-tab-icon">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z" /></svg>
+        </span>
+        <span class="file-tab-label">文件树</span>
+      </button>
       <!-- 文件 tab（查看器，对齐参考 TabBar：图标 + 文件名 + 关闭按钮） -->
       <button
         v-for="tab in fileTabs"
@@ -25,11 +36,17 @@
     </div>
 
     <div class="tab-body">
+      <!-- 文件树（任务 8）：点文件 → 打开文件查看器 -->
+      <FileExplorer
+        v-if="activeTab === '__explorer__'"
+        @select-file="handleExplorerSelect"
+      />
       <!-- 文件查看器 -->
       <AgentFileViewer
-        v-if="activeFileTab"
+        v-else-if="activeFileTab"
         :key="activeFileTab.id"
         :file-path="activeFileTab.filePath"
+        :locate="locate"
       />
       <!-- 未打开文件（初始） -->
       <div v-else class="tab-empty">
@@ -42,6 +59,7 @@
 <script setup lang="ts">
 import { ref, computed, watch } from 'vue'
 import AgentFileViewer from './AgentFileViewer.vue'
+import FileExplorer from './FileExplorer.vue'
 
 const props = defineProps<{
   currentSessionId?: string | null
@@ -49,6 +67,8 @@ const props = defineProps<{
   uploadedFiles?: Array<{ name: string; size: number; path?: string }>
   // 主动打开文件（由父组件/会话消息触发）
   openFilePath?: string | null
+  // P0-⑨ 知识引用溯源：来源锚点定位目标（透传给 AgentFileViewer）
+  locate?: { filePath: string; page?: number; section?: string; highlight?: string } | null
 }>()
 
 const emit = defineEmits<{
@@ -99,6 +119,11 @@ function closeFileTab(id: string) {
       ? fileTabs.value[fileTabs.value.length - 1].id
       : ''
   }
+}
+
+// 任务 8：文件树点击文件 → 打开文件查看器（并切换到该文件 tab）
+function handleExplorerSelect(filePath: string, fileName: string) {
+  openFile(filePath, fileName)
 }
 
 // 父组件触发的文件打开
