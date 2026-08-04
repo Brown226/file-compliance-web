@@ -27,9 +27,7 @@
           <el-option label="项目" value="project" />
           <el-option label="会话" value="session" />
         </el-select>
-        <el-button size="small" plain @click="loadMemories" :icon="Refresh">
-          刷新
-        </el-button>
+        <button class="btn-refresh" @click="loadMemories">刷新</button>
       </div>
     </div>
 
@@ -52,16 +50,10 @@
           class="memory-item"
         >
           <div class="memory-header">
-            <el-tag size="small" :type="typeTagType(memory.type)" effect="plain">
-              {{ typeLabel(memory.type) }}
-            </el-tag>
+            <span class="type-label" :class="memory.type">{{ typeLabel(memory.type) }}</span>
             <span class="memory-key">{{ memory.key }}</span>
-            <el-tag size="small" :type="scopeTagType(memory.scope)" effect="plain">
-              {{ scopeLabel(memory.scope) }}
-            </el-tag>
-            <span class="memory-confidence">
-              置信度 {{ (memory.confidence * 100).toFixed(0) }}%
-            </span>
+            <span class="scope-label">{{ scopeLabel(memory.scope) }}</span>
+            <span class="memory-confidence">{{ (memory.confidence * 100).toFixed(0) }}%</span>
             <div class="memory-actions">
               <el-icon class="action-icon" @click="startEdit(memory)"><Edit /></el-icon>
               <el-icon class="action-icon danger" @click="handleDelete(memory)"><Delete /></el-icon>
@@ -111,7 +103,7 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Loading, Collection, Edit, Delete, Refresh } from '@element-plus/icons-vue'
+import { Loading, Collection, Edit, Delete } from '@element-plus/icons-vue'
 import {
   listMemoriesApi,
   updateMemoryApi,
@@ -206,23 +198,11 @@ function typeLabel(t: string): string {
   return t
 }
 
-function typeTagType(t: string): 'primary' | 'success' | 'warning' {
-  if (t === 'preference') return 'primary'
-  if (t === 'routine') return 'success'
-  return 'warning'
-}
-
 function scopeLabel(s: string): string {
   if (s === 'global') return '全局'
   if (s === 'project') return '项目'
   if (s === 'session') return '会话'
   return s
-}
-
-function scopeTagType(s: string): 'info' | 'warning' | 'danger' {
-  if (s === 'global') return 'info'
-  if (s === 'project') return 'warning'
-  return 'danger'
 }
 
 onMounted(loadMemories)
@@ -240,8 +220,8 @@ defineExpose({ refresh: loadMemories })
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 8px 12px;
-  border-bottom: 1px solid #e5e7eb;
+  padding: 8px 4px;
+  border-bottom: 1px solid var(--border);
   flex-wrap: wrap;
   gap: 4px;
 }
@@ -249,13 +229,30 @@ defineExpose({ refresh: loadMemories })
 .panel-title {
   font-weight: 600;
   font-size: 13px;
-  color: #1f2937;
+  color: var(--text);
 }
 
 .panel-filters {
   display: flex;
   gap: 4px;
   align-items: center;
+}
+
+/* 刷新按钮（对齐参考：6px 12px、1px 边框、圆角 6） */
+.btn-refresh {
+  padding: 4px 10px;
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 12px;
+  transition: background 0.12s, color 0.12s;
+}
+
+.btn-refresh:hover {
+  background: var(--bg-hover);
+  color: var(--text);
 }
 
 .panel-body {
@@ -271,14 +268,14 @@ defineExpose({ refresh: loadMemories })
   align-items: center;
   justify-content: center;
   padding: 32px 16px;
-  color: #9ca3af;
+  color: var(--text-dim);
   gap: 6px;
   font-size: 12px;
 }
 
 .empty-hint {
   font-size: 11px;
-  color: #d1d5db;
+  color: var(--text-dim);
   margin-top: 4px;
 }
 
@@ -289,30 +286,57 @@ defineExpose({ refresh: loadMemories })
 }
 
 .memory-item {
-  padding: 8px;
-  background: #f9fafb;
-  border-radius: 6px;
-  border: 1px solid #f3f4f6;
-  transition: border-color 0.15s;
+  padding: 8px 4px;
+  background: transparent;
+  border-bottom: 1px solid var(--border);
+  transition: background 0.15s;
+}
+
+.memory-item:last-child {
+  border-bottom: none;
 }
 
 .memory-item:hover {
-  border-color: #e5e7eb;
+  background: var(--bg-hover);
 }
 
 .memory-header {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 7px;
   flex-wrap: wrap;
   margin-bottom: 4px;
+}
+
+/* 类型标签（对齐参考 scope 标签：10px、1px 5px、圆角 3、半透明） */
+.type-label {
+  font-size: 10px;
+  padding: 1px 5px;
+  border-radius: 3px;
+  flex-shrink: 0;
+  font-weight: 500;
+}
+
+.type-label.preference {
+  background: rgba(99, 102, 241, 0.12);
+  color: rgba(99, 102, 241, 0.8);
+}
+
+.type-label.routine {
+  background: rgba(34, 197, 94, 0.12);
+  color: rgba(34, 197, 94, 0.8);
+}
+
+.type-label.feedback {
+  background: rgba(245, 158, 11, 0.14);
+  color: rgba(217, 119, 6, 0.9);
 }
 
 .memory-key {
   font-size: 12px;
   font-weight: 600;
-  color: #1f2937;
-  font-family: monospace;
+  color: var(--text);
+  font-family: var(--font-mono);
   flex: 1;
   min-width: 0;
   overflow: hidden;
@@ -320,9 +344,18 @@ defineExpose({ refresh: loadMemories })
   white-space: nowrap;
 }
 
+.scope-label {
+  font-size: 10px;
+  color: var(--text-dim);
+  flex-shrink: 0;
+}
+
 .memory-confidence {
   font-size: 10px;
-  color: #6b7280;
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  flex-shrink: 0;
 }
 
 .memory-actions {
@@ -338,21 +371,21 @@ defineExpose({ refresh: loadMemories })
 
 .action-icon {
   cursor: pointer;
-  color: #6b7280;
+  color: var(--text-muted);
   font-size: 14px;
 }
 
 .action-icon:hover {
-  color: #3b82f6;
+  color: var(--accent);
 }
 
 .action-icon.danger:hover {
-  color: #ef4444;
+  color: var(--danger);
 }
 
 .memory-value {
   font-size: 12px;
-  color: #374151;
+  color: var(--text);
   line-height: 1.5;
   word-break: break-all;
 }
@@ -360,12 +393,12 @@ defineExpose({ refresh: loadMemories })
 .memory-source {
   margin-top: 4px;
   font-size: 10px;
-  color: #9ca3af;
+  color: var(--text-dim);
 }
 
 .edit-key {
-  font-family: monospace;
+  font-family: var(--font-mono);
   font-size: 13px;
-  color: #6b7280;
+  color: var(--text-muted);
 }
 </style>

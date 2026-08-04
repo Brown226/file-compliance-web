@@ -24,10 +24,55 @@
   --warning: #ea580c;
   --success: #16a34a;
 
-  /* 布局变量 */
+  /* 布局变量（对齐参考：右面板默认 clamp(360,42vw,640)，min 300 / max 1200） */
   --sidebar-width: 260px;
-  --right-panel-width: 320px;
+  --right-panel-width: clamp(360px, 42vw, 640px);
   --toolbar-height: 36px;
+}
+
+/* === 暗色主题（对齐参考项目 html.dark 变量值）===
+   通过给 .agent-layout 加 .dark 类切换；持久化在 localStorage。 */
+.agent-layout.dark {
+  --bg: #1a1a1a;
+  --bg-panel: #242424;
+  --bg-hover: #2e2e2e;
+  --bg-selected: #383838;
+  --border: #3a3a3a;
+  --text: #e8e8e8;
+  --text-muted: #9ca3af;
+  --text-dim: #6b7280;
+  --accent: #60a5fa;
+  --accent-hover: #93c5fd;
+  --user-bg: #1e293b;
+  --assistant-bg: #1a1a1a;
+  --tool-bg: #1f2937;
+  --bg-subtle: rgba(255, 255, 255, 0.04);
+
+  /* Element Plus 组件暗色适配（配合 el-select :teleported=false 局部渲染） */
+  --el-bg-color: var(--bg);
+  --el-bg-color-overlay: var(--bg-panel);
+  --el-bg-color-page: var(--bg);
+  --el-text-color-primary: var(--text);
+  --el-text-color-regular: var(--text);
+  --el-text-color-secondary: var(--text-muted);
+  --el-text-color-placeholder: var(--text-dim);
+  --el-border-color: var(--border);
+  --el-border-color-light: var(--border);
+  --el-border-color-lighter: var(--border);
+  --el-border-color-extra-light: var(--border);
+  --el-fill-color-blank: var(--bg);
+  --el-fill-color-light: var(--bg-hover);
+  --el-fill-color: var(--bg-selected);
+  --el-fill-color-dark: var(--bg-selected);
+  --el-fill-color-darker: var(--bg-selected);
+  --el-fill-color-extra-light: var(--bg-hover);
+  --el-box-shadow: 0 0 12px rgba(0, 0, 0, 0.3);
+  --el-border-color-hover: var(--border);
+  --el-text-color-disabled: var(--text-dim);
+  --el-mask-color: rgba(0, 0, 0, 0.5);
+  --el-mask-color-extra-light: rgba(0, 0, 0, 0.3);
+  --el-dialog-bg-color: var(--bg);
+  --el-overlay-color-lighter: rgba(0, 0, 0, 0.35);
 }
 
 .agent-layout * {
@@ -131,7 +176,14 @@
   min-width: 100%;
   font-size: 13px;
   margin: 8px 0;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  overflow: hidden;
 }
+.agent-layout .markdown-body thead th:first-child { border-top-left-radius: 6px; }
+.agent-layout .markdown-body thead th:last-child { border-top-right-radius: 6px; }
+.agent-layout .markdown-body tbody tr:last-child td:first-child { border-bottom-left-radius: 6px; }
+.agent-layout .markdown-body tbody tr:last-child td:last-child { border-bottom-right-radius: 6px; }
 .agent-layout .markdown-body th,
 .agent-layout .markdown-body td {
   border: 0;
@@ -152,6 +204,42 @@
   height: 1px;
   margin: 12px 0;
   background: linear-gradient(90deg, transparent, var(--border), transparent);
+}
+.agent-layout .markdown-body .contains-task-list {
+  padding-left: 0;
+  list-style: none;
+}
+.agent-layout .markdown-body .task-list-item {
+  display: block;
+  position: relative;
+  padding-left: 25px;
+}
+.agent-layout .markdown-body .task-list-item::marker { content: ""; }
+.agent-layout .markdown-body .task-list-item > input[type="checkbox"] {
+  appearance: none;
+  position: absolute;
+  left: 0;
+  top: 0.35em;
+  width: 14px;
+  height: 14px;
+  margin: 0;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--bg);
+  display: inline-grid;
+  place-content: center;
+}
+.agent-layout .markdown-body .task-list-item > input[type="checkbox"]:checked {
+  border-color: color-mix(in srgb, var(--accent) 55%, var(--border));
+  background: color-mix(in srgb, var(--accent) 10%, var(--bg));
+}
+.agent-layout .markdown-body .task-list-item > input[type="checkbox"]:checked::before {
+  content: "";
+  width: 4px;
+  height: 8px;
+  border: solid var(--accent);
+  border-width: 0 1.5px 1.5px 0;
+  transform: rotate(45deg) translateY(-1px);
 }
 
 /* === 代码块（header + 复制按钮）=== */
@@ -253,11 +341,13 @@
   background: color-mix(in srgb, var(--text-muted) 70%, var(--border));
 }
 
-/* === 侧边栏容器（桌面端 width 动画）=== */
+/* === 侧边栏容器（桌面端 width 动画）===
+   空闲分界线 = border-right（对齐参考 sidebar-container） */
 .agent-layout .sidebar-container {
   position: relative;
   overflow: hidden;
   transition: width 0.2s ease, min-width 0.2s ease;
+  border-right: 1px solid var(--border);
 }
 .agent-layout .sidebar-container.sidebar-open {
   width: var(--sidebar-width);
@@ -277,11 +367,13 @@
   transition: none !important;
 }
 
-/* === 右侧面板容器 === */
+/* === 右侧面板容器 ===
+   空闲分界线 = border-left（对齐参考 right-panel-container） */
 .agent-layout .right-panel-container {
   overflow: hidden;
   transition: width 0.2s ease, min-width 0.2s ease;
   flex-shrink: 0;
+  border-left: 1px solid var(--border);
 }
 .agent-layout .right-panel-container.right-panel-open {
   width: var(--right-panel-width);
@@ -322,6 +414,11 @@
   to { opacity: 1; transform: scale(1); }
 }
 
+@keyframes agent-drop-ripple {
+  0% { transform: scale(0); opacity: 0.6; }
+  100% { transform: scale(1); opacity: 0; }
+}
+
 @keyframes agent-drop-icon-float {
   0%, 100% { transform: translateY(0px); }
   50% { transform: translateY(-6px); }
@@ -343,7 +440,7 @@
   30% { transform: translateY(-5px); opacity: 1; }
 }
 
-/* === 拖拽上传遮罩 === */
+/* === 拖拽上传遮罩（对齐参考：蓝涟漪 + 中央插图 + blur）=== */
 .agent-layout .drop-zone-overlay {
   position: absolute;
   inset: 0;
@@ -351,20 +448,145 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  background: color-mix(in srgb, var(--accent) 8%, var(--bg));
-  border: 2px dashed var(--accent);
-  border-radius: 8px;
-  animation: agent-drop-zone-in 0.2s ease-out;
+  background: rgba(37, 99, 235, 0.06);
+  backdrop-filter: blur(1px);
+  animation: agent-drop-zone-in 0.15s ease both;
   pointer-events: none;
 }
-.agent-layout .drop-zone-icon {
-  width: 56px;
-  height: 56px;
+.agent-layout .drop-ripple {
+  position: absolute;
+  width: 720px;
+  height: 720px;
   border-radius: 50%;
-  background: color-mix(in srgb, var(--accent) 12%, var(--bg));
-  color: var(--accent);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  animation: agent-drop-icon-float 1.8s ease-in-out infinite;
+  border: 1.5px solid rgba(37, 99, 235, 0.5);
+  animation: agent-drop-ripple 2.4s ease-out infinite backwards;
+  transform-origin: center;
+  pointer-events: none;
+}
+
+/* =====================================================================
+   === 响应式断点（对齐参考项目 globals.css 640/960 规则）===
+   ===================================================================== */
+
+/* 移动端右侧面板遮罩 */
+.agent-layout .right-panel-overlay-backdrop {
+  display: none;
+}
+
+/* 移动端侧栏抽屉遮罩 */
+.agent-layout .sidebar-overlay-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 199;
+  background: rgba(0, 0, 0, 0.4);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.25s ease;
+}
+.agent-layout .sidebar-overlay-backdrop.is-open {
+  opacity: 1;
+  pointer-events: auto;
+}
+@media (min-width: 641px) {
+  .agent-layout .sidebar-overlay-backdrop {
+    display: none !important;
+  }
+}
+
+/* --- 桌面 ≥960：三栏并排，右侧面板参与分栏 --- */
+@media (min-width: 960px) {
+  .agent-layout .right-panel-resize-handle {
+    display: block;
+  }
+}
+
+/* --- 紧凑桌面 641–959：右侧面板变覆盖层（遮罩 + 固定浮层）--- */
+@media (min-width: 641px) and (max-width: 959px) {
+  .agent-layout .right-panel-resize-handle {
+    display: none;
+  }
+  .agent-layout .right-panel-overlay-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 240;
+    display: block;
+    background: rgba(0, 0, 0, 0.24);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.2s ease;
+  }
+  .agent-layout .right-panel-overlay-backdrop.is-open {
+    opacity: 1;
+    pointer-events: auto;
+  }
+  .agent-layout .right-panel-container {
+    position: fixed;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 250;
+    width: min(560px, calc(100vw - 48px));
+    min-width: 300px;
+    overflow: hidden;
+    box-shadow: -12px 0 32px rgba(0, 0, 0, 0.18);
+    transition: transform 0.2s ease;
+  }
+  .agent-layout .right-panel-container.right-panel-open {
+    transform: translateX(0);
+  }
+  .agent-layout .right-panel-container.right-panel-closed {
+    transform: translateX(100%);
+    pointer-events: none;
+  }
+  .agent-layout .right-panel-container > * {
+    width: 100%;
+    min-width: 0;
+  }
+}
+
+/* --- 移动端 ≤640：侧栏/右栏变抽屉 --- */
+@media (max-width: 640px) {
+  .agent-layout .sidebar-container {
+    position: fixed !important;
+    top: 0;
+    left: 0;
+    bottom: 0;
+    width: 280px;
+    max-width: 85vw;
+    transition: transform 0.25s ease, box-shadow 0.25s ease;
+    box-shadow: 4px 0 20px rgba(0, 0, 0, 0.15);
+  }
+  .agent-layout .sidebar-container.sidebar-open {
+    transform: translateX(0);
+  }
+  .agent-layout .sidebar-container.sidebar-closed {
+    transform: translateX(-100%);
+    box-shadow: none;
+  }
+  .agent-layout .right-panel-container {
+    position: fixed;
+    inset: 0;
+    z-index: 250;
+    overflow: hidden;
+    transition: transform 0.2s ease;
+  }
+  .agent-layout .right-panel-container.right-panel-open {
+    width: 100%;
+    min-width: 0;
+    transform: translateX(0);
+  }
+  .agent-layout .right-panel-container.right-panel-closed {
+    width: 0 !important;
+    min-width: 0 !important;
+    border-left: none !important;
+    display: none !important;
+  }
+  .agent-layout .right-panel-container > * {
+    width: 100%;
+    min-width: 0;
+  }
+  .agent-layout .panel-resize-handle,
+  .agent-layout .right-panel-overlay-backdrop {
+    display: none !important;
+  }
 }

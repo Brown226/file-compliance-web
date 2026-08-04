@@ -1,45 +1,25 @@
 <template>
-  <div class="tool-call-chip" :class="{ expanded: isExpanded }">
-    <el-tag
-      :type="tagType"
-      :hit="false"
-      effect="light"
-      class="chip-tag"
-      @click="toggleExpand"
-    >
-      <div class="chip-header">
-        <el-icon :size="13" class="chip-icon" :class="{ 'is-loading': isRunning }">
-          <component :is="statusIcon" />
-        </el-icon>
-        <span class="tool-name">{{ toolName }}</span>
-        <span v-if="durationText" class="tool-duration">{{ durationText }}</span>
-        <template v-if="resultCount !== null">
-          <span class="tool-sep">·</span>
-          <span class="tool-count">{{ resultCount }}</span>
-        </template>
-        <el-icon :size="12" class="expand-arrow" :class="{ rotated: isExpanded }">
-          <ArrowDown />
-        </el-icon>
-      </div>
-    </el-tag>
+  <div class="tool-call-block" :data-status="status" :class="{ expanded: isExpanded }">
+    <!-- 折叠头：toolName(等宽/状态色) + 预览文本 + duration + chevron（对齐参考 ToolCallBlock） -->
+    <button class="tool-call-header" :title="isExpanded ? '收起详情' : '展开详情'" @click="toggleExpand">
+      <span class="tool-name">{{ toolName }}</span>
+      <span class="tool-preview">{{ toolPreview }}</span>
+      <span v-if="durationText" class="tool-duration">{{ durationText }}</span>
+      <svg class="expand-arrow" :class="{ rotated: isExpanded }" width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+        <polyline points="2 3.5 5 6.5 8 3.5" />
+      </svg>
+    </button>
 
+    <!-- 展开体：输入参数 pre（bg-subtle + borderTop）+ 配对 result 一体显示（对齐参考 PairedResult） -->
     <transition name="expand">
-      <div v-if="isExpanded" class="chip-body">
-        <div v-if="hasInput" class="section">
-          <div class="section-title">入参</div>
-          <pre class="section-content">{{ formattedInput }}</pre>
+      <div v-if="isExpanded" class="tool-call-body">
+        <pre v-if="hasInput" class="input-pre">{{ formattedInput }}</pre>
+        <div v-if="resultText !== null" class="paired-result" :class="{ 'is-error': isError, 'is-empty': resultIsEmpty }">
+          <pre>{{ resultIsEmpty ? '(no output)' : resultText }}</pre>
         </div>
-        <div v-if="hasOutput" class="section">
-          <div class="section-title">出参</div>
-          <pre class="section-content">{{ formattedOutput }}</pre>
-        </div>
-        <div v-if="errorText" class="section section-error">
-          <div class="section-title">错误</div>
-          <pre class="section-content">{{ errorText }}</pre>
-        </div>
-        <div v-if="isRunning" class="section section-running">
-          <el-icon class="is-loading"><Loading /></el-icon>
-          <span>执行中…</span>
+        <div v-if="errorText && !isError" class="error-pre">{{ errorText }}</div>
+        <div v-if="isRunning" class="running-hint">
+          <span class="spinner" /> 执行中…
         </div>
       </div>
     </transition>
@@ -48,14 +28,13 @@
 
 <script setup lang="ts">
 import { ref, computed } from 'vue'
-import { ArrowDown, Loading, Check, Close, Clock } from '@element-plus/icons-vue'
 
 interface ToolCallPart {
   type: string
   toolCallId?: string
   toolName?: string
   input?: any
-  state?: 'input-streaming' | 'input-available' | 'output-available' | 'output-error'
+  state?: 'input-streaming' | 'input-available' | 'output-available' | 'output-error' | string
   output?: any
   errorText?: string
 }
@@ -76,16 +55,15 @@ const TOOL_NAME_MAP: Record<string, string> = {
   recall_memory: '召回记忆', save_memory: '保存记忆', extract_user_preferences: '提取偏好',
 }
 
-function getTagType(name: string): 'primary' | 'warning' | 'success' | 'danger' | 'info' {
-  if (name === 'extract_text' || name === 'read_file') return 'primary'
-  if (name === 'llm_review_chunk') return 'warning'
-  if (name.startsWith('search_') || name === 'recall_memory') return 'success'
-  if (name.startsWith('write_') || name.startsWith('delete_')) return 'danger'
-  return 'info'
-}
-
-const tagType = computed(() => getTagType(props.part.toolName || ''))
-const toolName = computed(() => TOOL_NAME_MAP[props.part.toolName || ''] || props.part.toolName || '未知')
+// 静态 tool part 没有独立 toolName 字段，工具名嵌在 type（如 'tool-search_knowledge'）；
+// dynamic-tool part 才有独立 toolName 字段。两者都要兼容。
+const rawToolName = computed(() => {
+  if (props.part.toolName) return props.part.toolName
+  const t = props.part.type || ''
+  if (t.startsWith('tool-')) return t.slice(5)
+  return ''
+})
+const toolName = computed(() => TOOL_NAME_MAP[rawToolName.value] || rawToolName.value || '未知')
 
 type ToolStatus = 'running' | 'success' | 'error'
 const status = computed<ToolStatus>(() => {
@@ -94,13 +72,45 @@ const status = computed<ToolStatus>(() => {
   return 'running'
 })
 const isRunning = computed(() => status.value === 'running')
-const statusIcon = computed(() => status.value === 'running' ? Loading : status.value === 'error' ? Close : Check)
+const isError = computed(() => status.value === 'error')
 
 const hasInput = computed(() => props.part.input !== undefined && props.part.input !== null && Object.keys(props.part.input || {}).length > 0)
-const hasOutput = computed(() => props.part.output !== undefined && props.part.output !== null)
 const formattedInput = computed(() => formatJson(props.part.input))
-const formattedOutput = computed(() => formatJson(props.part.output))
+
+// 结果文本（对齐参考 PairedResult：从 toolResult 提取 text，空则 italic no output）
+const resultText = computed<string | null>(() => {
+  const out = props.part.output
+  if (out === undefined || out === null) return null
+  if (typeof out === 'string') return out
+  if (typeof out === 'object') {
+    const keys = Object.keys(out)
+    if (keys.length === 0) return ''
+    if ('total' in out && 'issues' in out) return `共 ${(out as any).total} 条结果`
+    if (Array.isArray(out.issues)) return `共 ${out.issues.length} 条问题`
+    if (Array.isArray(out.memories)) return `共 ${out.memories.length} 条记忆`
+    if (Array.isArray(out.rules)) return `共 ${out.rules.length} 条规则`
+    if (Array.isArray(out.items)) return `共 ${out.items.length} 条`
+    try { return JSON.stringify(out, null, 2) } catch { return '' }
+  }
+  return String(out)
+})
+const resultIsEmpty = computed(() => resultText.value !== null && (resultText.value.trim() === '' || resultText.value.trim() === '(no output)'))
 const errorText = computed(() => props.part.errorText || '')
+
+// 预览文本（对齐参考 getToolPreview：取 input 常见字段）
+const toolPreview = computed(() => {
+  const input = props.part.input
+  if (!input || typeof input !== 'object') return ''
+  const keys = Object.keys(input)
+  if (keys.length === 0) return ''
+  if ('command' in input) return String((input as any).command).slice(0, 120)
+  if ('path' in input) return String((input as any).path).slice(0, 120)
+  if ('file_path' in input) return String((input as any).file_path).slice(0, 120)
+  if ('pattern' in input) return String((input as any).pattern).slice(0, 120)
+  if ('query' in input) return String((input as any).query).slice(0, 120)
+  const first = input[keys[0]]
+  return String(first).slice(0, 120)
+})
 
 function formatJson(v: any): string {
   if (v === undefined || v === null) return ''
@@ -113,132 +123,168 @@ const durationText = computed(() => {
   const ms = props.part.output?.durationMs
   return typeof ms === 'number' && ms > 0 ? (ms < 1000 ? `${ms}ms` : `${(ms / 1000).toFixed(1)}s`) : ''
 })
-
-const resultCount = computed<number | null>(() => {
-  if (!hasOutput.value) return null
-  const out = props.part.output
-  if (out == null) return null
-  if (typeof out.total === 'number') return out.total
-  if (Array.isArray(out.issues)) return out.issues.length
-  if (Array.isArray(out.memories)) return out.memories.length
-  if (Array.isArray(out.rules)) return out.rules.length
-  if (Array.isArray(out.items)) return out.items.length
-  if (Array.isArray(out.chunks)) return out.chunks.length
-  return null
-})
 </script>
 
 <style scoped>
-.tool-call-chip {
-  display: inline-flex;
-  flex-direction: column;
+/* 对齐参考项目 ToolCallBlock：整体圆角块 + 状态色边框 */
+.tool-call-block {
+  display: block;
   max-width: 100%;
-}
-
-.chip-tag {
-  cursor: pointer !important;
-  user-select: none;
-  white-space: nowrap;
-  border-radius: 6px !important;
-  padding: 2px 8px !important;
-}
-
-.chip-header {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-}
-
-.chip-icon.is-loading {
-  animation: spin 1s linear infinite;
-}
-
-.tool-name {
-  font-weight: 500;
+  border-radius: 7px;
+  overflow: hidden;
   font-size: 12px;
+  border: 1px solid rgba(34, 197, 94, 0.22);
+  background: rgba(34, 197, 94, 0.03);
+}
+.tool-call-block[data-status='running'] {
+  border-color: rgba(34, 197, 94, 0.22);
+  background: rgba(34, 197, 94, 0.03);
+}
+.tool-call-block[data-status='error'] {
+  border-color: rgba(248, 113, 113, 0.45);
+  background: rgba(248, 113, 113, 0.05);
+}
+
+/* 折叠头（对齐参考：flex gap 7 padding 6px 10px，无背景） */
+.tool-call-header {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  width: 100%;
+  padding: 6px 10px;
+  border: none;
+  background: none;
+  color: var(--text-muted);
+  font-size: 12px;
+  text-align: left;
+  cursor: pointer;
+  min-width: 0;
+}
+.tool-call-header:hover { color: var(--text); }
+
+/* toolName：等宽字体 + 状态色（成功绿/错误红） */
+.tool-name {
+  font-family: var(--font-mono);
+  font-weight: 600;
+  font-size: 11px;
+  color: #16a34a;
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+.tool-call-block[data-status='error'] .tool-name { color: #f87171; }
+
+/* 预览文本（对齐参考：等宽 11px text-dim ellipsis 占满剩余） */
+.tool-preview {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-dim);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
+  min-width: 0;
 }
 
 .tool-duration {
   font-size: 11px;
-  opacity: 0.65;
+  color: var(--text-dim);
   font-variant-numeric: tabular-nums;
-}
-
-.tool-sep {
-  font-size: 10px;
-  opacity: 0.3;
-}
-
-.tool-count {
-  font-size: 11px;
-  opacity: 0.65;
-  font-weight: 500;
+  flex-shrink: 0;
 }
 
 .expand-arrow {
-  font-size: 11px;
-  transition: transform 0.2s ease;
+  flex-shrink: 0;
+  color: var(--text-dim);
+  transition: transform 0.15s;
 }
 .expand-arrow.rotated { transform: rotate(180deg); }
 
-.chip-body {
-  border: 1px solid #e8eaf0;
-  border-top: none;
-  border-radius: 0 0 8px 8px;
-  padding: 10px 12px;
-  background: #fff;
-  max-height: 300px;
-  overflow-y: auto;
-  box-shadow: 0 2px 6px rgba(0,0,0,0.04);
+/* 展开体 */
+.tool-call-body {
+  background: var(--bg-subtle);
 }
-
-.section { margin-bottom: 10px; }
-.section:last-child { margin-bottom: 0; }
-
-.section-title {
-  font-size: 11px;
-  color: #8c8c9e;
-  margin-bottom: 4px;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-}
-
-.section-content {
+.input-pre {
   margin: 0;
   padding: 8px 10px;
-  background: #f8f9fc;
-  border-radius: 6px;
-  font-family: 'Menlo', 'Consolas', monospace;
-  font-size: 11px;
-  color: #2a2a3e;
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1.5;
+  overflow: auto;
+  max-height: 300px;
+  background: var(--bg-subtle);
+  border-top: 1px solid rgba(34, 197, 94, 0.2);
   white-space: pre-wrap;
   word-break: break-all;
-  max-height: 180px;
-  overflow-y: auto;
-  line-height: 1.4;
+}
+.tool-call-block[data-status='error'] .input-pre {
+  border-top-color: rgba(248, 113, 113, 0.25);
 }
 
-.section-error .section-content {
-  background: #fef2f2;
-  color: #b91c1c;
+/* 配对 result（对齐参考 PairedResult：淡绿底 + pre + 空态 italic） */
+.paired-result {
+  border-top: 1px solid rgba(34, 197, 94, 0.15);
+  background: var(--bg-subtle);
+}
+.paired-result.is-error {
+  border-top-color: rgba(248, 113, 113, 0.3);
+  background: rgba(248, 113, 113, 0.04);
+}
+.paired-result pre {
+  margin: 0;
+  padding: 8px 10px;
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1.5;
+  overflow: auto;
+  max-height: 400px;
+  background: var(--bg);
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+.paired-result.is-empty pre {
+  color: var(--text-dim);
+  font-style: italic;
+  opacity: 0.6;
+}
+.paired-result.is-error pre {
+  color: #f87171;
 }
 
-.section-running {
+.error-pre {
+  margin: 0;
+  padding: 8px 10px;
+  border-top: 1px solid rgba(248, 113, 113, 0.25);
+  color: #f87171;
+  font-size: 12px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-all;
+  background: rgba(248, 113, 113, 0.04);
+}
+
+.running-hint {
   display: flex;
   align-items: center;
   gap: 6px;
-  color: var(--accent);
+  padding: 8px 10px;
+  border-top: 1px solid var(--border);
+  color: var(--text-muted);
   font-size: 12px;
+}
+.spinner {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  border: 1.5px solid var(--border);
+  border-top-color: var(--accent);
+  animation: spin 0.8s linear infinite;
 }
 
 .expand-enter-active, .expand-leave-active {
-  transition: all 0.2s ease;
-  max-height: 300px;
+  transition: opacity 0.15s;
 }
 .expand-enter-from, .expand-leave-to {
   opacity: 0;
-  max-height: 0;
 }
 
 @keyframes spin { to { transform: rotate(360deg); } }

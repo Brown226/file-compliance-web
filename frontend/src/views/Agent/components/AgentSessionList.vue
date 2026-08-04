@@ -1,21 +1,27 @@
 <template>
   <div class="session-list-panel">
     <div class="panel-header">
-      <span class="panel-title">会话历史</span>
-      <el-button size="small" type="primary" @click="$emit('new-chat')">
-        <el-icon><Plus /></el-icon>
-        <span>新建</span>
-      </el-button>
+      <span class="panel-title">Agent 审查助手</span>
+      <div class="header-actions">
+        <button class="header-btn primary" title="新建会话" @click="$emit('new-chat')">
+          <el-icon :size="12"><Plus /></el-icon>
+          <span>新建</span>
+        </button>
+        <button class="header-btn icon" :title="refreshDone ? '已刷新' : '刷新会话列表'" @click="handleRefresh">
+          <el-icon :size="14" v-if="refreshDone"><Check /></el-icon>
+          <el-icon :size="14" v-else><Refresh /></el-icon>
+        </button>
+      </div>
     </div>
 
     <div class="panel-body">
       <div v-if="loading" class="loading-state">
-        <el-icon class="is-loading" :size="20"><Loading /></el-icon>
+        <el-icon class="is-loading" :size="18"><Loading /></el-icon>
         <span>加载中…</span>
       </div>
 
       <div v-else-if="sessions.length === 0" class="empty-state">
-        <el-icon :size="28" color="#c0c4cc"><ChatDotRound /></el-icon>
+        <el-icon :size="26" color="#c0c4cc"><ChatDotRound /></el-icon>
         <p>暂无历史会话</p>
       </div>
 
@@ -25,31 +31,75 @@
           :key="session.id"
           class="session-item"
           :class="{ active: session.id === currentSessionId }"
-          @click="$emit('select', session.id)"
+          @click="confirmDeleteId === session.id || renamingId === session.id ? null : $emit('select', session.id)"
+          @mouseenter="hoveredId = session.id"
+          @mouseleave="hoveredId = null"
         >
-          <div class="item-content">
-            <div class="item-title">{{ session.title || '未命名会话' }}</div>
-            <div class="item-preview">{{ session.lastMessagePreview || '暂无消息' }}</div>
-            <div class="item-meta">
-              <span>{{ formatTime(session.updatedAt) }}</span>
-              <span class="meta-sep">·</span>
-              <span>{{ session.messageCount }} 条消息</span>
+          <!-- 删除确认（行内，对齐参考） -->
+          <template v-if="confirmDeleteId === session.id">
+            <span class="delete-hint">{{ (session.title || '未命名会话').slice(0, 18) }}</span>
+            <button class="confirm-btn danger" @click.stop="doDelete(session.id)">删除</button>
+            <button class="confirm-btn" @click.stop="confirmDeleteId = null">取消</button>
+          </template>
+
+          <!-- 重命名输入（行内，对齐参考） -->
+          <template v-else-if="renamingId === session.id">
+            <input
+              ref="renameInputRef"
+              v-model="renameValue"
+              class="rename-input"
+              @keydown.enter="commitRename(session)"
+              @keydown.esc="cancelRename"
+              @blur="commitRename(session)"
+            />
+          </template>
+
+          <!-- 正常展示 -->
+          <template v-else>
+            <div class="item-content">
+              <div class="item-title" :title="session.title || '未命名会话'">{{ session.title || '未命名会话' }}</div>
+              <div class="item-meta">
+                <span>{{ formatTime(session.updatedAt) }}</span>
+                <span class="meta-sep">·</span>
+                <span>{{ session.messageCount }} 条消息</span>
+              </div>
             </div>
-          </div>
-          <button class="item-delete" @click.stop="handleDelete(session.id)" title="删除会话">
-            <el-icon :size="14"><Delete /></el-icon>
-          </button>
+            <div v-if="hoveredId === session.id" class="item-actions">
+              <button class="action-btn" title="重命名" @click.stop="startRename(session)">
+                <el-icon :size="13"><EditPen /></el-icon>
+              </button>
+              <button class="action-btn danger" title="删除" @click.stop="confirmDeleteId = session.id">
+                <el-icon :size="13"><Delete /></el-icon>
+              </button>
+            </div>
+          </template>
         </div>
       </div>
+    </div>
+
+    <!-- 底部工具栏（对齐参考项目：等分按钮，置底展示；Plugins 替换为「记忆」） -->
+    <div class="panel-footer">
+      <button class="footer-btn" title="模型配置" @click="emit('open-config', 'models')">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="16" rx="2" /><rect x="9" y="9" width="6" height="6" /><line x1="9" y1="1" x2="9" y2="4" /><line x1="15" y1="1" x2="15" y2="4" /><line x1="9" y1="20" x2="9" y2="23" /><line x1="15" y1="20" x2="15" y2="23" /><line x1="20" y1="9" x2="23" y2="9" /><line x1="20" y1="14" x2="23" y2="14" /><line x1="1" y1="9" x2="4" y2="9" /><line x1="1" y1="14" x2="4" y2="14" /></svg>
+        <span>模型</span>
+      </button>
+      <button class="footer-btn" title="技能配置" @click="emit('open-config', 'skills')">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2L2 7l10 5 10-5-10-5z" /><path d="M2 17l10 5 10-5" /><path d="M2 12l10 5 10-5" /></svg>
+        <span>技能</span>
+      </button>
+      <button class="footer-btn" title="记忆" @click="emit('open-config', 'memory')">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1 0-5H20" /></svg>
+        <span>记忆</span>
+      </button>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
-import { ElMessageBox, ElMessage } from 'element-plus'
-import { Plus, Loading, ChatDotRound, Delete } from '@element-plus/icons-vue'
-import { listSessionsApi, deleteSessionApi, type SessionListItem } from '@/api/agent'
+import { ref, nextTick, onMounted } from 'vue'
+import { ElMessage } from 'element-plus'
+import { Plus, Refresh, Check, Loading, ChatDotRound, Delete, EditPen } from '@element-plus/icons-vue'
+import { listSessionsApi, deleteSessionApi, renameSessionApi, type SessionListItem } from '@/api/agent'
 
 const props = defineProps<{
   currentSessionId?: string | null
@@ -58,10 +108,17 @@ const props = defineProps<{
 const emit = defineEmits<{
   select: [sessionId: string]
   'new-chat': []
+  'open-config': [type: 'models' | 'skills' | 'memory']
 }>()
 
 const sessions = ref<SessionListItem[]>([])
 const loading = ref(false)
+const refreshDone = ref(false)
+const hoveredId = ref<string | null>(null)
+const confirmDeleteId = ref<string | null>(null)
+const renamingId = ref<string | null>(null)
+const renameValue = ref('')
+const renameInputRef = ref<HTMLInputElement | null>(null)
 
 async function loadSessions() {
   loading.value = true
@@ -75,31 +132,56 @@ async function loadSessions() {
   }
 }
 
-async function handleDelete(sessionId: string) {
+async function handleRefresh() {
+  await loadSessions()
+  refreshDone.value = true
+  setTimeout(() => { refreshDone.value = false }, 2000)
+}
+
+async function doDelete(sessionId: string) {
   try {
-    await ElMessageBox.confirm('确定删除该会话？删除后无法恢复。', '删除会话', {
-      type: 'warning',
-      confirmButtonText: '删除',
-      cancelButtonText: '取消',
-    })
     await deleteSessionApi(sessionId)
     sessions.value = sessions.value.filter(s => s.id !== sessionId)
+    confirmDeleteId.value = null
     ElMessage.success('会话已删除')
   } catch (e: any) {
-    if (e !== 'cancel' && e?.message !== 'cancel') {
-      ElMessage.error(`删除失败: ${e?.message || e}`)
-    }
+    ElMessage.error(`删除失败: ${e?.message || e}`)
+    confirmDeleteId.value = null
   }
+}
+
+function startRename(session: SessionListItem) {
+  renamingId.value = session.id
+  renameValue.value = session.title || ''
+  nextTick(() => {
+    renameInputRef.value?.select()
+  })
+}
+
+async function commitRename(session: SessionListItem) {
+  if (renamingId.value !== session.id) return
+  const name = renameValue.value.trim()
+  renamingId.value = null
+  if (!name || name === (session.title || '')) return
+  try {
+    await renameSessionApi(session.id, name)
+    session.title = name
+    ElMessage.success('已重命名')
+  } catch (e: any) {
+    ElMessage.error(`重命名失败: ${e?.message || e}`)
+  }
+}
+
+function cancelRename() {
+  renamingId.value = null
 }
 
 function formatTime(iso: string): string {
   const d = new Date(iso)
   const now = new Date()
-  const diffMs = now.getTime() - d.getTime()
-  const diffMin = Math.floor(diffMs / 60000)
-  const diffHour = Math.floor(diffMs / 3600000)
-  const diffDay = Math.floor(diffMs / 86400000)
-
+  const diffMin = Math.floor((now.getTime() - d.getTime()) / 60000)
+  const diffHour = Math.floor(diffMin / 60)
+  const diffDay = Math.floor(diffHour / 24)
   if (diffMin < 1) return '刚刚'
   if (diffMin < 60) return `${diffMin} 分钟前`
   if (diffHour < 24) return `${diffHour} 小时前`
@@ -121,25 +203,96 @@ defineExpose({ refresh: loadSessions })
   background: var(--bg-panel);
 }
 
+/* 头部：品牌名 + 新建/刷新（对齐参考轻量按钮） */
 .panel-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 14px 14px 10px;
+  padding: 12px 10px 10px;
+  border-bottom: 1px solid var(--border);
   flex-shrink: 0;
 }
-
 .panel-title {
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--text);
+  font-size: 15px;
+  font-weight: 700;
   letter-spacing: -0.01em;
+  color: var(--text);
+  font-family: var(--font-mono);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.header-actions {
+  display: flex;
+  gap: 6px;
+  flex-shrink: 0;
+}
+.header-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  background: var(--bg-hover);
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+  cursor: pointer;
+  height: 32px;
+  padding: 0 10px 0 12px;
+  border-radius: 7px;
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: -0.01em;
+  transition: background 0.12s, color 0.12s, border-color 0.12s;
+}
+.header-btn.primary:hover {
+  background: var(--bg-selected);
+  color: var(--accent);
+  border-color: rgba(37, 99, 235, 0.35);
+}
+.header-btn.icon {
+  width: 32px;
+  padding: 0;
+}
+.header-btn.icon:hover {
+  background: var(--bg-selected);
+  color: var(--accent);
+  border-color: rgba(37, 99, 235, 0.35);
 }
 
 .panel-body {
   flex: 1;
   overflow-y: auto;
-  padding: 0 8px 8px;
+  padding: 0;
+  min-height: 80px;
+}
+
+/* 底部工具栏（对齐参考：三个等分图标+文字按钮，32px 高） */
+.panel-footer {
+  display: flex;
+  gap: 4px;
+  padding: 8px;
+  border-top: 1px solid var(--border);
+  flex-shrink: 0;
+}
+.footer-btn {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  height: 32px;
+  padding: 0;
+  background: none;
+  border: none;
+  border-radius: 9px;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 12px;
+  transition: background 0.12s, color 0.12s;
+}
+.footer-btn:hover {
+  background: var(--bg-hover);
+  color: var(--text);
 }
 
 .loading-state,
@@ -157,102 +310,130 @@ defineExpose({ refresh: loadSessions })
 .session-list {
   display: flex;
   flex-direction: column;
-  gap: 2px;
 }
 
+/* 会话项：54px 高 + 2px accent 竖条（对齐参考） */
 .session-item {
+  height: 54px;
   display: flex;
-  align-items: flex-start;
-  padding: 10px 10px;
-  border-radius: 7px;
+  align-items: center;
+  padding-left: 14px;
+  padding-right: 8px;
   cursor: pointer;
-  transition: background 0.12s ease;
-  position: relative;
+  border-left: 2px solid transparent;
+  background: transparent;
+  transition: background 0.1s;
+  gap: 6px;
+  overflow: hidden;
 }
-
 .session-item:hover {
   background: var(--bg-hover);
 }
-
 .session-item.active {
   background: var(--bg-selected);
-}
-
-.session-item.active::before {
-  content: '';
-  position: absolute;
-  left: 0;
-  top: 6px;
-  bottom: 6px;
-  width: 3px;
-  background: var(--accent);
-  border-radius: 0 2px 2px 0;
+  border-left-color: var(--accent);
 }
 
 .item-content {
   flex: 1;
   min-width: 0;
 }
-
 .item-title {
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 500;
   color: var(--text);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  margin-bottom: 3px;
+  line-height: 1.4;
 }
-
-.session-item.active .item-title {
-  color: var(--accent);
-}
-
-.item-preview {
-  font-size: 12px;
-  color: var(--text-muted);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  margin-bottom: 4px;
-  line-height: 1.3;
-}
-
 .item-meta {
   display: flex;
   align-items: center;
-  gap: 2px;
+  gap: 8px;
   font-size: 11px;
   color: var(--text-dim);
+  margin-top: 2px;
 }
-
 .meta-sep {
   font-size: 10px;
 }
 
-.item-delete {
+.item-actions {
+  display: flex;
+  gap: 4px;
+  flex-shrink: 0;
+}
+.action-btn {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 26px;
-  height: 26px;
-  border: none;
-  background: transparent;
-  color: var(--text-dim);
-  border-radius: 5px;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  background: var(--bg-hover);
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  color: var(--text-muted);
   cursor: pointer;
-  opacity: 0;
-  transition: opacity 0.12s, color 0.12s, background 0.12s;
   flex-shrink: 0;
-  margin-top: -1px;
+  transition: background 0.12s, color 0.12s, border-color 0.12s;
+}
+.action-btn:hover {
+  background: var(--bg-selected);
+  color: var(--accent);
+  border-color: rgba(37, 99, 235, 0.35);
+}
+.action-btn.danger:hover {
+  background: rgba(239, 68, 68, 0.08);
+  color: #ef4444;
+  border-color: rgba(239, 68, 68, 0.35);
 }
 
-.session-item:hover .item-delete {
-  opacity: 1;
+/* 行内删除确认 */
+.delete-hint {
+  flex: 1;
+  min-width: 0;
+  font-size: 12px;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.confirm-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 30px;
+  padding: 0 11px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 500;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.confirm-btn.danger {
+  background: #ef4444;
+  border-color: #ef4444;
+  color: #fff;
+  font-weight: 600;
 }
 
-.item-delete:hover {
-  color: var(--danger);
-  background: color-mix(in srgb, var(--danger) 10%, var(--bg));
+/* 行内重命名输入 */
+.rename-input {
+  flex: 1;
+  font-size: 12px;
+  padding: 5px 8px;
+  border: 1px solid var(--accent);
+  border-radius: 5px;
+  outline: none;
+  background: var(--bg);
+  color: var(--text);
+  height: 30px;
+  min-width: 0;
 }
 </style>

@@ -196,9 +196,9 @@ function riskTagType(r?: string): 'danger' | 'warning' | 'info' {
 
 <style scoped>
 .agent-issue-list {
-  border: 1px solid #e5e7eb;
+  border: 1px solid var(--border);
   border-radius: 8px;
-  background: #ffffff;
+  background: var(--bg);
   overflow: hidden;
   margin: 8px 0;
 }
@@ -208,20 +208,20 @@ function riskTagType(r?: string): 'danger' | 'warning' | 'info' {
   align-items: center;
   gap: 8px;
   padding: 8px 12px;
-  background: #f9fafb;
-  border-bottom: 1px solid #e5e7eb;
+  background: var(--bg-panel);
+  border-bottom: 1px solid var(--border);
   flex-wrap: wrap;
 }
 
 .list-title {
   font-weight: 600;
   font-size: 13px;
-  color: #1f2937;
+  color: var(--text);
 }
 
 .list-count {
   font-size: 12px;
-  color: #6b7280;
+  color: var(--text-muted);
 }
 
 .list-filters {
@@ -235,7 +235,7 @@ function riskTagType(r?: string): 'danger' | 'warning' | 'info' {
   flex-direction: column;
   align-items: center;
   padding: 32px;
-  color: #9ca3af;
+  color: var(--text-dim);
 }
 
 .empty-state p {
@@ -249,7 +249,7 @@ function riskTagType(r?: string): 'danger' | 'warning' | 'info' {
 }
 
 .issue-card {
-  border-bottom: 1px solid #f3f4f6;
+  border-bottom: 1px solid var(--border);
   transition: background 0.15s;
 }
 
@@ -258,7 +258,7 @@ function riskTagType(r?: string): 'danger' | 'warning' | 'info' {
 }
 
 .issue-card:hover {
-  background: #f9fafb;
+  background: var(--bg-hover);
 }
 
 .card-header {
@@ -277,9 +277,9 @@ function riskTagType(r?: string): 'danger' | 'warning' | 'info' {
   flex-shrink: 0;
 }
 
-.dot-error { background: #ef4444; }
-.dot-warning { background: #f59e0b; }
-.dot-info { background: #3b82f6; }
+.dot-error { background: var(--danger); }
+.dot-warning { background: var(--warning); }
+.dot-info { background: var(--accent); }
 
 .issue-type {
   flex-shrink: 0;
@@ -288,7 +288,7 @@ function riskTagType(r?: string): 'danger' | 'warning' | 'info' {
 .issue-desc {
   flex: 1;
   font-size: 12px;
-  color: #374151;
+  color: var(--text);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -296,15 +296,15 @@ function riskTagType(r?: string): 'danger' | 'warning' | 'info' {
 
 .issue-rule {
   font-size: 11px;
-  color: #6b7280;
-  background: #f3f4f6;
+  color: var(--text-muted);
+  background: var(--bg-hover);
   padding: 1px 6px;
   border-radius: 3px;
   flex-shrink: 0;
 }
 
 .expand-icon {
-  color: #9ca3af;
+  color: var(--text-dim);
   transition: transform 0.2s;
   flex-shrink: 0;
 }
@@ -315,8 +315,8 @@ function riskTagType(r?: string): 'danger' | 'warning' | 'info' {
 
 .card-body {
   padding: 8px 12px 12px;
-  background: #ffffff;
-  border-top: 1px solid #f3f4f6;
+  background: var(--bg);
+  border-top: 1px solid var(--border);
 }
 
 .section {
@@ -329,27 +329,27 @@ function riskTagType(r?: string): 'danger' | 'warning' | 'info' {
 
 .section-label {
   font-size: 11px;
-  color: #6b7280;
+  color: var(--text-muted);
   margin-bottom: 3px;
   font-weight: 600;
 }
 
 .section-content {
   font-size: 12px;
-  color: #1f2937;
+  color: var(--text);
   line-height: 1.5;
   padding: 6px 8px;
-  background: #f9fafb;
+  background: var(--bg-subtle);
   border-radius: 4px;
   word-break: break-all;
 }
 
 .section-content.original {
-  border-left: 2px solid #ef4444;
+  border-left: 2px solid var(--danger);
 }
 
 .section-content.suggested {
-  border-left: 2px solid #10b981;
+  border-left: 2px solid var(--success);
 }
 
 .meta-row {
@@ -358,9 +358,9 @@ function riskTagType(r?: string): 'danger' | 'warning' | 'info' {
   gap: 12px;
   margin-top: 8px;
   padding-top: 8px;
-  border-top: 1px dashed #f3f4f6;
+  border-top: 1px dashed var(--border);
   font-size: 11px;
-  color: #6b7280;
+  color: var(--text-muted);
 }
 
 .meta-item {
