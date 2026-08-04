@@ -267,6 +267,7 @@ wechat-article.md
 # 非源码外部文件
 PSAR知识库分析/
 交付文件/
+Agent模块对比分析-pi引擎与pi-web.md
 
 # DEC_REVIEW 阶段0评估临时产物（含真实规范样本/切分JSON，不入库）
 backend/eval/
