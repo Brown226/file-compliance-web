@@ -70,13 +70,24 @@ router.post('/chat/stream', async (req: AuthRequest, res: Response) => {
 
     // Task 25：每用户单会话限制 — 新会话开始时自动结束旧会话（真实约束）
     // P0 #1 修复：改为调用 QASessionService.completeActiveSessions（service 内按 status 过滤）
-    const sessionId: string = req.body?.sessionId || '';
+    // 2026-08-04 修复：无 sessionId 时必须创建新会话并返回 sessionId，
+    //   否则 chatStream 不会持久化消息、前端拿不到会话 id（单活跃会话死循环）
+    let sessionId: string = req.body?.sessionId || '';
     const isNewSession = !sessionId;
     if (isNewSession) {
       const closedCount = await QASessionService.completeActiveSessions(userId);
       if (closedCount > 0) {
         console.log(`[Agent] 自动结束旧会话: ${closedCount} 个`);
       }
+      // 生成新会话 id 并创建（status=active），让本次对话进入真实会话
+      const crypto = require('crypto');
+      sessionId = crypto.randomUUID();
+      await QASessionService.ensureSession(sessionId, userId, undefined, {
+        modelKey: req.body?.modelKey || undefined,
+        toolPreset: req.body?.toolPreset || undefined,
+        thinkingLevel: req.body?.thinkingLevel || undefined,
+      });
+      console.log(`[Agent] 创建新会话: ${sessionId.slice(0, 8)}`);
     }
 
     const result = await AgentService.chatStream({
@@ -109,6 +120,11 @@ router.post('/chat/stream', async (req: AuthRequest, res: Response) => {
     }
 
     const reader = webBody.getReader();
+    // 首帧注入 sessionId（前端用它建立会话上下文；未创建新会话时也透传原 sessionId）
+    if (sessionId) {
+      const meta = `data: ${JSON.stringify({ type: 'session-init', sessionId })}\n\n`;
+      res.write(meta);
+    }
     while (true) {
       const { done, value } = await reader.read();
       if (done) break;
