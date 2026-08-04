@@ -146,7 +146,7 @@ async function doDelete(sessionId: string) {
     await deleteSessionApi(sessionId)
     sessions.value = sessions.value.filter(s => s.id !== sessionId)
     confirmDeleteId.value = null
-    ElMessage.success('会话已删除')
+    // [无弹窗] 成功提示已移除：ElMessage.success('会话已删除')
   } catch (e: any) {
     ElMessage.error(`删除失败: ${e?.message || e}`)
     confirmDeleteId.value = null
@@ -156,7 +156,7 @@ async function doDelete(sessionId: string) {
 async function doDuplicate(session: SessionListItem) {
   try {
     const res = await duplicateSessionApi(session.id)
-    ElMessage.success(`已复制会话：${res.data?.title || '副本'}`)
+    // [无弹窗] 成功提示已移除：ElMessage.success(`已复制会话：${res.data?.title || '副本'}`)
     await loadSessions()
     // 复制后自动切换到新会话（多方案并行对比入口）
     emit('select', res.data.id)
@@ -181,7 +181,7 @@ async function commitRename(session: SessionListItem) {
   try {
     await renameSessionApi(session.id, name)
     session.title = name
-    ElMessage.success('已重命名')
+    // [无弹窗] 成功提示已移除：ElMessage.success('已重命名')
   } catch (e: any) {
     ElMessage.error(`重命名失败: ${e?.message || e}`)
   }

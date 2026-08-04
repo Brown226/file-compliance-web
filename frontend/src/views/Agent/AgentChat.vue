@@ -309,8 +309,23 @@
                 <template v-if="message.role === 'assistant' && extractReportLinks(message).length > 0">
                   <div class="report-actions">
                     <template v-for="(link, i) in extractReportLinks(message)" :key="i">
-                      <el-button v-if="link.kind === 'md'" type="primary" size="small" :icon="Download" @click="downloadMd(link.url, link.fileName)">
-                        下载 {{ link.fileName }}
+                      <!-- 预览：联动右侧面板（filePath 打开右栏查看器） -->
+                      <el-button
+                        v-if="link.filePath"
+                        type="primary"
+                        size="small"
+                        :icon="View"
+                        @click="openFileInPanel(link.filePath, link.fileName)"
+                      >
+                        预览 {{ link.fileName }}
+                      </el-button>
+                      <el-button
+                        v-if="link.kind === 'md' && link.url"
+                        size="small"
+                        :icon="Download"
+                        @click="downloadMd(link.url, link.fileName)"
+                      >
+                        下载
                       </el-button>
                       <el-button v-else-if="link.kind === 'pdf'" type="success" size="small" :icon="Printer" @click="openPrintPage(link.url)">
                         打印为 PDF
@@ -513,6 +528,7 @@ import {
   Sunny,
   Star,
   Files,
+  View,
 } from '@element-plus/icons-vue'
 import type { UIMessage } from 'ai'
 import { useAgentChat } from '@/composables/useAgentChat'
@@ -564,7 +580,8 @@ const sessionListRef = ref<InstanceType<typeof AgentSessionList> | null>(null)
 const sidebarContainerRef = ref<HTMLElement | null>(null)
 const rightContainerRef = ref<HTMLElement | null>(null)
 const sidebarOpen = ref(true)
-const rightPanelOpen = ref(true)
+// 右侧面板默认关闭（大王 2026-08-04：每次自动打开体验不佳）
+const rightPanelOpen = ref(false)
 
 const sidebarPanel = useResizablePanel({
   cssVariable: '--sidebar-width',
@@ -774,7 +791,7 @@ async function saveMessage(message: UIMessage) {
       sourceMessageId: message.id,
     })
     msgSaved[message.id] = true
-    ElMessage.success('已收藏')
+    // [无弹窗] 成功提示已移除：ElMessage.success('已收藏')
   } catch (e: any) {
     ElMessage.error(`收藏失败：${e?.message || '未知错误'}`)
   }
@@ -863,7 +880,7 @@ async function handleAutoName() {
   try {
     await autoNameSessionApi(sessionId.value)
     autoNameStatus.value = 'success'
-    ElMessage.success('会话标题已更新')
+    // [无弹窗] 成功提示已移除：ElMessage.success('会话标题已更新')
     sessionListRef.value?.refresh?.()
     setTimeout(() => { autoNameStatus.value = 'idle' }, 2000)
   } catch (e) {
@@ -929,7 +946,7 @@ async function handleCompact() {
   try {
     const d = (await compactSessionApi(sessionId.value)).data
     if (d.truncatedMessages > 0) {
-      ElMessage.success(`已压缩 ${d.truncatedMessages} 条早期消息，约省 ${formatToken(d.estimatedTokens)} token`)
+      // [无弹窗] 成功提示已移除：ElMessage.success(`已压缩 ${d.truncatedMessages} 条早期消息，约省 ${for
     } else {
       ElMessage.info('当前消息量未达压缩阈值，无需压缩')
     }
@@ -958,7 +975,7 @@ async function handleSelectSession(sid: string) {
         thinkingLevel: detail.thinkingLevel,
       })
     } catch { /* 设置加载失败不阻断 */ }
-    ElMessage.success('已切换到历史会话')
+    // [无弹窗] 成功提示已移除：ElMessage.success('已切换到历史会话')
   } catch (e) {
     ElMessage.error('加载会话历史失败：' + (e as Error).message)
   }
@@ -1066,23 +1083,64 @@ function hasIssues(message: UIMessage): boolean {
   return extractIssuesFromMessage(message).issues.length > 0
 }
 
-interface ReportLink { kind: 'md' | 'pdf'; url: string; fileName?: string }
+interface ReportLink { kind: 'md' | 'pdf'; url: string; fileName?: string; filePath?: string }
 function extractReportLinks(message: UIMessage): ReportLink[] {
   if (message.role !== 'assistant') return []
-  const text = getMessageText(message)
-  if (!text) return []
   const links: ReportLink[] = []
-  const jsonBlockRegex = /```json\s*\n([\s\S]*?)\n```/g
-  let m: RegExpExecArray | null
-  while ((m = jsonBlockRegex.exec(text)) !== null) {
-    try {
-      const parsed = JSON.parse(m[1])
-      const objs = Array.isArray(parsed) ? parsed : [parsed]
-      for (const obj of objs) {
-        if (obj && typeof obj === 'object') {
-          if (obj.pdfPrintUrl) links.push({ kind: 'pdf', url: obj.pdfPrintUrl, fileName: obj.fileName })
-          else if (obj.downloadUrl) links.push({ kind: 'md', url: obj.downloadUrl, fileName: obj.fileName })
+  const seen = new Set<string>()
+
+  // 1) 从消息文本的 JSON 块提取（旧逻辑，兼容 LLM 文本输出）
+  const text = getMessageText(message)
+  if (text) {
+    const jsonBlockRegex = /```json\s*\n([\s\S]*?)\n```/g
+    let m: RegExpExecArray | null
+    while ((m = jsonBlockRegex.exec(text)) !== null) {
+      try {
+        const parsed = JSON.parse(m[1])
+        const objs = Array.isArray(parsed) ? parsed : [parsed]
+        for (const obj of objs) {
+          if (obj && typeof obj === 'object') {
+            if (obj.pdfPrintUrl) {
+              links.push({ kind: 'pdf', url: obj.pdfPrintUrl, fileName: obj.fileName, filePath: obj.filePath })
+            } else if (obj.downloadUrl || obj.filePath) {
+              links.push({ kind: 'md', url: obj.downloadUrl || '', fileName: obj.fileName, filePath: obj.filePath })
+            }
+          }
         }
+      } catch { /* ignore */ }
+    }
+  }
+
+  // 2) 从消息 parts 的工具输出提取（download_report / write_report 的 <tool_result>）
+  //    这是主要来源——LLM 常不把 downloadUrl 转述进文本，但工具结果一定在 parts 里
+  for (const p of (message.parts as any[])) {
+    const rawName = typeof p?.toolName === 'string' ? p.toolName : ''
+    if (rawName !== 'download_report' && rawName !== 'write_report') continue
+    const out = p?.output
+    if (typeof out !== 'string') continue
+    const jsonMatch = out.match(/\{[\s\S]*\}/)
+    if (!jsonMatch) continue
+    try {
+      const obj = JSON.parse(jsonMatch[0])
+      const filePath = obj.filePath
+      if (typeof filePath !== 'string' || !filePath) continue
+      const fileName = obj.fileName || filePath.split(/[\\/]/).pop() || 'report'
+      const downloadUrl = obj.downloadUrl || ''
+      const isPdf = !!obj.pdfPrintUrl
+      // 兼容：downloadUrl 可能是相对路径，直接用（后端静态服务）
+      const key = filePath + (isPdf ? '|pdf' : '')
+      // 同一报告 write_report 与 download_report 各返回一次（同 filePath）。
+      // 去重：保留「有 downloadUrl/pdfPrintUrl」的那条（download_report 完整），
+      //   若已存在同 key 且当前更完整则替换（保证「下载」按钮可用）
+      const existingIdx = links.findIndex((l) => (l.filePath === filePath) && (isPdf ? l.kind === 'pdf' : l.kind === 'md'))
+      const candidate = isPdf ? { kind: 'pdf' as const, url: obj.pdfPrintUrl, fileName, filePath } : { kind: 'md' as const, url: downloadUrl, fileName, filePath }
+      if (existingIdx === -1) {
+        links.push(candidate)
+        seen.add(key)
+      } else {
+        // 已存在：若现有条目 url 为空而当前有 url → 用当前替换（优先 download_report）
+        const existing = links[existingIdx]
+        if (!existing.url && candidate.url) links[existingIdx] = candidate
       }
     } catch { /* ignore */ }
   }
@@ -1161,7 +1219,7 @@ async function customUpload(options: { file: File }) {
     const data = await res.json()
     if (data?.data?.sessionId) sessionId.value = data.data.sessionId
     uploadedFiles.value.push({ name: file.name, size: file.size, path: data?.data?.filePath })
-    ElMessage.success(`${file.name} 上传成功`)
+    // [无弹窗] 成功提示已移除：ElMessage.success(`${file.name} 上传成功`)
   } catch (e) {
     ElMessage.error((e as Error)?.message || '上传失败')
   } finally { uploading.value = false }
