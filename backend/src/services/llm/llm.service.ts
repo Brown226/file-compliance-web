@@ -1183,8 +1183,8 @@ export class LlmService {
     // 可观测性埋点（P2）：记录本次 LLM 调用的耗时/Token/状态
     const _callStart = Date.now();
     let _callError: string | null = null;
-    let _usage: { promptTokens: number; completionTokens: number; totalTokens: number } = {
-      promptTokens: 0, completionTokens: 0, totalTokens: 0,
+    let _usage: { promptTokens: number; completionTokens: number; totalTokens: number; cacheRead: number; cacheWrite: number } = {
+      promptTokens: 0, completionTokens: 0, totalTokens: 0, cacheRead: 0, cacheWrite: 0,
     };
 
     // 从数据库获取 LLM 配置
@@ -1345,6 +1345,9 @@ export class LlmService {
           promptTokens: data.usage.prompt_tokens || 0,
           completionTokens: data.usage.completion_tokens || 0,
           totalTokens: data.usage.total_tokens || 0,
+          // 缓存统计：兼容 OpenAI prompt_tokens_details.cached_tokens / DeepSeek prompt_cache_hit_tokens
+          cacheRead: data.usage.prompt_tokens_details?.cached_tokens ?? data.usage.prompt_cache_hit_tokens ?? 0,
+          cacheWrite: data.usage.prompt_tokens_details?.cache_creation ?? data.usage.prompt_cache_miss_tokens ?? 0,
         };
       }
       LlmService.recordLlmCall({
@@ -1437,7 +1440,7 @@ export class LlmService {
     provider?: string;
     latencyMs: number;
     status: 'success' | 'failed' | 'cache' | 'retry';
-    usage?: { promptTokens: number; completionTokens: number; totalTokens: number };
+    usage?: { promptTokens: number; completionTokens: number; totalTokens: number; cacheRead?: number; cacheWrite?: number };
     errorMsg?: string | null;
     promptFull?: string;
     completionFull?: string;
@@ -1454,6 +1457,8 @@ export class LlmService {
           promptTokens: params.usage?.promptTokens ?? 0,
           completionTokens: params.usage?.completionTokens ?? 0,
           totalTokens: params.usage?.totalTokens ?? 0,
+          cacheReadTokens: params.usage?.cacheRead ?? 0,
+          cacheWriteTokens: params.usage?.cacheWrite ?? 0,
           latencyMs: params.latencyMs,
           status: params.status,
           errorMsg: params.errorMsg ?? null,
@@ -1900,6 +1905,8 @@ export class LlmService {
         promptTokens: data.usage.prompt_tokens || 0,
         completionTokens: data.usage.completion_tokens || 0,
         totalTokens: data.usage.total_tokens || 0,
+        cacheRead: data.usage.prompt_tokens_details?.cached_tokens ?? data.usage.prompt_cache_hit_tokens ?? 0,
+        cacheWrite: data.usage.prompt_tokens_details?.cache_creation ?? data.usage.prompt_cache_miss_tokens ?? 0,
       } : undefined;
       LlmService.recordLlmCall({
         taskId: options?.taskId,

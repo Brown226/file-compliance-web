@@ -73,6 +73,7 @@ export const AGENT_SYSTEM_PROMPT = `你是文件合规审查专家，熟悉合�
 - delete_file: 删除临时文件（幂等，文件不存在也返回成功）
 - write_report: 生成 Markdown 审查报告（含元信息/摘要/明细），存到 reports/ 子目录
 - download_report: 读取报告文件返回下载 URL
+- compare_documents: 对比两份文档（旧版 vs 新版）输出段落级差异 + 变更统计 + LLM 摘要，用于修订版核对/版本比对
 
 ## 知识检索工具使用指南（Task 9 已实现 3 个）
 - search_knowledge: 调 MaxKB 知识库做 RAG 检索（不传 knowledgeId 跨所有库联合检索，返回 content/document_name/similarity）
@@ -315,7 +316,7 @@ export class AgentService {
         if (userText) {
           QASessionService.persistUserMessage(sessionId, userId, userText, {
             modelKey: modelKey || undefined,
-            toolPreset: toolPreset || 'default',
+            toolPreset: toolPreset || 'full',
             thinkingLevel: thinkingLevel || undefined,
           }).catch((e: Error) => {
             console.warn(`[Agent:QASession] 持久化用户消息失败: sessionId=${sessionId}`, (e as Error).message);
@@ -404,6 +405,9 @@ export class AgentService {
         const promptTokens = usage?.inputTokens ?? 0;
         const completionTokens = usage?.outputTokens ?? 0;
         const totalTokens = usage?.totalTokens ?? 0;
+        // 缓存统计：Vercel AI SDK 部分 provider 返回 inputCacheReadTokens / inputCacheCreationTokens
+        const cacheReadTokens = usage?.inputCacheReadTokens ?? 0;
+        const cacheWriteTokens = usage?.inputCacheCreationTokens ?? 0;
         // finishReason 为 'error' 时记 failed，其余记 success
         const status = finishReason === 'error' ? 'failed' : 'success';
 
@@ -431,6 +435,8 @@ export class AgentService {
               promptTokens,
               completionTokens,
               totalTokens,
+              cacheReadTokens,
+              cacheWriteTokens,
               latencyMs: Date.now() - startTime,
               status,
               errorMsg: status === 'failed'
@@ -452,12 +458,16 @@ export class AgentService {
         // - 用 text 作为 content（Vercel AI SDK v7 的最终文本输出）
         // - finishReason 为 'error' 时记 failed，否则 completed
         // - sessionId 为空时跳过
+        // - debug 存工具调用过程（toolCalls），供前端历史回看渲染 ToolCallChip
         if (sessionId && text) {
+          const toolCalls = AgentService.extractToolCallsFromSteps(steps);
           QASessionService.persistAssistantMessage(
             sessionId,
             userId,
             text,
             finishReason === 'error' ? 'failed' : 'completed',
+            undefined,
+            toolCalls.length > 0 ? { toolCalls } : undefined,
           ).catch((e: Error) => {
             console.warn(`[Agent:QASession] 持久化 assistant 消息失败: sessionId=${sessionId}`, (e as Error).message);
           });
@@ -561,26 +571,62 @@ export class AgentService {
 
     // Task 14.3：兜底模式也持久化 assistant 消息（fire-and-forget）
     if (sessionId && result.text) {
+      const toolCalls = AgentService.extractToolCallsFromSteps(result.steps);
       QASessionService.persistAssistantMessage(
         sessionId,
         userId,
         result.text,
         result.finishReason === 'error' ? 'failed' : 'completed',
+        undefined,
+        toolCalls.length > 0 ? { toolCalls } : undefined,
       ).catch((e: Error) => {
         console.warn(`[Agent:QASession] 兜底模式持久化 assistant 消息失败: sessionId=${sessionId}`, (e as Error).message);
       });
     }
 
     // 把 generateText 的最终 text 包装成 UIMessageStream（与 streamText 的 toUIMessageStreamResponse 兼容）
-    // 前端 useChat 会收到：start → text-start → text-delta(全文) → text-end → finish
+    // 前端 useChat 会收到：start → start-step → [tool-input/output 事件] → finish-step → text-start → text-delta(全文) → text-end → finish
+    // 补充：把工具调用过程（result.steps）也写进流，前端 ToolCallChip 才能显示兜底模式的工具调用
     const finalText = result.text || '';
+    const steps: any[] = result.steps || [];
     return createUIMessageStream({
       execute: async ({ writer }: any) => {
+        writer.write({ type: 'start' });
+        writer.write({ type: 'start-step' });
+        for (const step of steps) {
+          const calls: any[] = step?.toolCalls ?? [];
+          const results: any[] = step?.toolResults ?? [];
+          for (const tc of calls) {
+            writer.write({
+              type: 'tool-input-available',
+              toolCallId: tc.toolCallId,
+              toolName: tc.toolName,
+              input: tc.input ?? tc.args ?? undefined,
+            });
+          }
+          for (const tr of results) {
+            if (tr.isError) {
+              writer.write({
+                type: 'tool-output-error',
+                toolCallId: tr.toolCallId,
+                errorText: typeof tr.error === 'string' ? tr.error : (tr.error?.message ?? '工具执行失败'),
+              });
+            } else {
+              writer.write({
+                type: 'tool-output-available',
+                toolCallId: tr.toolCallId,
+                output: tr.output,
+              });
+            }
+          }
+        }
+        writer.write({ type: 'finish-step' });
         writer.write({ type: 'text-start', id: '0' });
         if (finalText) {
           writer.write({ type: 'text-delta', id: '0', delta: finalText });
         }
         writer.write({ type: 'text-end', id: '0' });
+        writer.write({ type: 'finish', finishReason: result.finishReason ?? 'stop' });
       },
     });
   }
@@ -598,15 +644,45 @@ export class AgentService {
   }
 
   /**
+   * 从 ai-sdk 的 steps（step 数组）提取工具调用过程，供前端历史回看渲染 ToolCallChip
+   *
+   * steps 结构：Array<{ toolCalls?: Array<{ toolCallId, toolName, input }>,
+   *                   toolResults?: Array<{ toolCallId, output, isError }> }>
+   * 按 toolCallId 关联 call 与 result，输出：
+   *   [{ toolCallId, toolName, input, output, isError }]
+   */
+  private static extractToolCallsFromSteps(steps?: any[]): any[] {
+    if (!Array.isArray(steps)) return [];
+    const parts: any[] = [];
+    for (const step of steps) {
+      const calls: any[] = step?.toolCalls ?? [];
+      const results: any[] = step?.toolResults ?? [];
+      for (const tc of calls) {
+        const result = results.find((r: any) => r.toolCallId === tc.toolCallId);
+        parts.push({
+          toolCallId: tc.toolCallId,
+          toolName: tc.toolName,
+          input: tc.input ?? tc.args ?? null,
+          output: result?.output ?? null,
+          isError: result?.isError ?? false,
+        });
+      }
+    }
+    return parts;
+  }
+
+  /**
    * 工具预设 → 工具名单（返回 null 表示不过滤 = 全部工具）
    *   none    → []（纯对话，禁用全部工具）
    *   default → 排除 3 个 pipeline 委托类工具（日常对话/知识问答/审查常用）
+   *   qa      → ['search_knowledge']（纯知识库问答，收敛原独立知识问答模式）
    *   full    → null（全部 23 个工具）
    *   未传/未知 → null（兼容旧行为）
    */
   private static presetToToolNames(preset?: string): string[] | null {
     if (!preset || preset === 'full') return null;
     if (preset === 'none') return [];
+    if (preset === 'qa') return ['search_knowledge'];
     if (preset === 'default') {
       return [
         // file（8）

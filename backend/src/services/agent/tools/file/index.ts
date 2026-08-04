@@ -17,6 +17,7 @@ import { createListUploadsTool } from './list_uploads';
 import { createDeleteFileTool } from './delete_file';
 import { createWriteReportTool } from './write_report';
 import { createDownloadReportTool } from './download_report';
+import { createCompareDocumentsTool } from './compare_documents';
 import type { ToolContext } from './upload_file';
 
 export {
@@ -28,13 +29,14 @@ export {
   createDeleteFileTool,
   createWriteReportTool,
   createDownloadReportTool,
+  createCompareDocumentsTool,
 };
 export type { ToolContext };
 
 /**
- * 创建文件相关工具集（8 个工具）
+ * 创建文件相关工具集（9 个工具）
  * @param context userId / sessionId
- * @returns { upload_file, extract_text, chunk_document, read_file, list_uploads, delete_file, write_report, download_report }
+ * @returns { upload_file, extract_text, chunk_document, read_file, list_uploads, delete_file, write_report, download_report, compare_documents }
  */
 export function createFileTools(context: ToolContext) {
   return {
@@ -46,5 +48,6 @@ export function createFileTools(context: ToolContext) {
     delete_file: createDeleteFileTool(context),
     write_report: createWriteReportTool(context),
     download_report: createDownloadReportTool(context),
+    compare_documents: createCompareDocumentsTool(context),
   };
 }

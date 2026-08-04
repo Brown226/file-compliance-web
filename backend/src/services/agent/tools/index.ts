@@ -151,7 +151,7 @@ function injectionGuardWrapper(
  * @param context userId / sessionId，注入到每个工具
  * @returns 合并后的工具对象，key 为工具名
  *
- * 当前工具总数：8（file）+ 6（review）+ 3（knowledge）+ 3（pipeline）+ 3（memory）= 23
+ * 当前工具总数：9（file）+ 6（review）+ 3（knowledge）+ 3（pipeline）+ 3（memory）= 24
  *
  * 包装顺序（外到内）：injectionGuardWrapper → retryWrapper → cacheWrapper → 原始 execute
  * - 最外层 injectionGuardWrapper（Task 22.2）：把结果序列化为 <tool_result> 标签字符串

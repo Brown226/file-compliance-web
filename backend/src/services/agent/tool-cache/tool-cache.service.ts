@@ -20,6 +20,7 @@ export const CACHEABLE_TOOLS = new Set([
   'list_available_rules',
   'read_file',
   'list_uploads',
+  'compare_documents',
 ]);
 
 /** 缓存 TTL：24 小时 */

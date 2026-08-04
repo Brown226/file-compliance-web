@@ -30,6 +30,7 @@ import { WorktreeService } from '../services/agent/worktree/worktree.service';
 import { SteeringService } from '../services/agent/steering/steering.service';
 import { SummaryService } from '../services/agent/summary/summary.service';
 import { getUploadDir } from '../config/upload';
+import { lookupCapabilities } from '../services/llm/model-capabilities.registry';
 
 const router = Router();
 
@@ -146,7 +147,10 @@ router.post('/chat/stream', async (req: AuthRequest, res: Response) => {
         });
 
         // 把降级结果包成 UIMessageStream 格式（前端 useChat 能正常消费）
-        const { createUIMessageStream } = require('ai');
+        // 注意：createUIMessageStream 返回裸 ReadableStream（UI message chunk 流），
+        // 不能用 toUIMessageStreamResponse（那只存在于 streamText 的 result 上）。
+        // 用 ai 包官方 pipeUIMessageStreamToResponse 直接把流写到 Express res（处理 SSE headers + 编码）。
+        const { createUIMessageStream, pipeUIMessageStreamToResponse } = require('ai');
         const fallbackStream = createUIMessageStream({
           execute: async ({ writer }: { writer: any }) => {
             writer.write({ type: 'text-start', id: 'fallback-text' });
@@ -156,19 +160,7 @@ router.post('/chat/stream', async (req: AuthRequest, res: Response) => {
           },
         });
 
-        const uiResp = fallbackStream.toUIMessageStreamResponse();
-        res.status(uiResp.status);
-        uiResp.headers.forEach((value: string, key: string) => {
-          if (key.toLowerCase() === 'transfer-encoding') return;
-          res.setHeader(key, value);
-        });
-        const reader = uiResp.body!.getReader();
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) break;
-          res.write(value);
-        }
-        res.end();
+        await pipeUIMessageStreamToResponse({ response: res, stream: fallbackStream });
         console.log('[Agent:Fallback] 降级成功');
 
         // Task 21.3：降级事件记入后端日志（AgentTrace 链路已移除，2026-08-03）
@@ -268,6 +260,88 @@ router.post('/upload', agentUpload.single('file'), (req: AuthRequest, res: Respo
   } catch (e: any) {
     console.error('[Agent] 文件上传失败:', e?.message || e);
     return res.status(500).json({ success: false, message: `文件上传失败: ${e?.message || e}` });
+  }
+});
+
+/**
+ * GET /api/agent/files/read — 读取当前用户上传的临时文件内容（供右栏文件查看器预览）
+ *
+ * Query:
+ *   - filePath: 上传接口返回的绝对路径（必须是当前用户 agent_temp 目录下的文件）
+ *   - source?: 'auto'（默认）| 'text' | 'base64' —— 文本类直接返回文本；图片/PDF 返回 base64
+ *
+ * 安全约束：
+ *   - 仅允许读取 backend/uploads/agent_temp/{userId}/ 前缀内的文件，杜绝目录穿越
+ *   - 非当前用户目录 / 不存在 / 超大文件均拒绝
+ *
+ * 返回：{ success, data: { filePath, fileName, ext, size, kind, content?, base64?, mime } }
+ *   - kind: 'text'（utf-8 文本/markdown/json 等）| 'image' | 'pdf' | 'binary'
+ */
+const MAX_PREVIEW_TEXT_BYTES = 1024 * 1024; // 文本预览上限 1MB
+const MAX_PREVIEW_BASE64_BYTES = 8 * 1024 * 1024; // base64 预览上限 8MB（图片/PDF）
+
+router.get('/files/read', async (req: AuthRequest, res: Response) => {
+  try {
+    const userId = req.user?.id;
+    if (!userId) {
+      return res.status(401).json({ success: false, message: '未认证' });
+    }
+
+    const filePath = (req.query.filePath as string) || '';
+    if (!filePath) {
+      return res.status(400).json({ success: false, message: '缺少 filePath 参数' });
+    }
+
+    const resolved = path.resolve(filePath);
+    const userDir = path.resolve(path.join(getUploadDir(), 'agent_temp', userId));
+    // 必须位于当前用户 agent_temp 目录内（允许子目录如 sessionId）
+    if (resolved !== userDir && !resolved.startsWith(userDir + path.sep)) {
+      return res.status(403).json({ success: false, message: '无权读取该文件' });
+    }
+
+    if (!fs.existsSync(resolved) || !fs.statSync(resolved).isFile()) {
+      return res.status(404).json({ success: false, message: '文件不存在' });
+    }
+
+    const stat = fs.statSync(resolved);
+    const ext = path.extname(resolved).toLowerCase().replace('.', '');
+    const fileName = path.basename(resolved);
+
+    const TEXT_EXTS = new Set(['txt', 'md', 'markdown', 'json', 'csv', 'tsv', 'log', 'js', 'ts', 'tsx', 'jsx', 'vue', 'css', 'html', 'xml', 'yaml', 'yml', 'toml', 'sh', 'py', 'sql', 'ini', 'conf', 'env']);
+    const IMAGE_EXTS = new Set(['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'svg', 'ico']);
+
+    // 图片/PDF：返回 base64（前端 img 直接展示 / iframe 预览）
+    if (IMAGE_EXTS.has(ext) || ext === 'pdf') {
+      if (stat.size > MAX_PREVIEW_BASE64_BYTES) {
+        return res.status(413).json({ success: false, message: '文件过大，无法预览' });
+      }
+      const base64 = fs.readFileSync(resolved).toString('base64');
+      const mime = ext === 'pdf'
+        ? 'application/pdf'
+        : `image/${ext === 'jpg' ? 'jpeg' : ext}`;
+      return res.json({
+        success: true,
+        data: { filePath: resolved, fileName, ext, size: stat.size, kind: ext === 'pdf' ? 'pdf' : 'image', base64, mime },
+      });
+    }
+
+    // 文本类：返回 utf-8 文本
+    if (TEXT_EXTS.has(ext)) {
+      if (stat.size > MAX_PREVIEW_TEXT_BYTES) {
+        return res.status(413).json({ success: false, message: '文本文件过大，仅支持预览 1MB 以内' });
+      }
+      const content = fs.readFileSync(resolved, 'utf-8');
+      return res.json({
+        success: true,
+        data: { filePath: resolved, fileName, ext, size: stat.size, kind: 'text', content, mime: 'text/plain' },
+      });
+    }
+
+    // 其他二进制：拒绝预览（避免前端渲染乱码）
+    return res.status(415).json({ success: false, message: `暂不支持预览 .${ext} 类型文件` });
+  } catch (e: any) {
+    console.error('[Agent] 文件读取失败:', e?.message || e);
+    return res.status(500).json({ success: false, message: `文件读取失败: ${e?.message || e}` });
   }
 });
 
@@ -375,25 +449,58 @@ router.patch('/sessions/:sessionId', async (req: AuthRequest, res: Response) => 
     }
 
     const sessionId = String(req.params.sessionId || '');
-    const title = String(req.body?.title ?? '').trim();
     if (!sessionId) {
       return res.status(400).json({ success: false, message: 'sessionId 不能为空' });
     }
-    if (!title) {
+
+    // title 与 settings 至少提供其一（title 若提供仍必须非空）
+    const rawTitle = req.body?.title;
+    const title = rawTitle !== undefined ? String(rawTitle).trim() : undefined;
+    const settings = req.body?.settings;
+    if (title === undefined && !settings) {
+      return res.status(400).json({ success: false, message: 'title 或 settings 至少提供一个' });
+    }
+    if (rawTitle !== undefined && !title) {
       return res.status(400).json({ success: false, message: 'title 不能为空' });
     }
-    if (title.length > 100) {
+    if (title !== undefined && title.length > 100) {
       return res.status(400).json({ success: false, message: 'title 长度不能超过 100 字符' });
     }
 
-    const session = await QASessionService.renameSession(sessionId, userId, title);
+    // 会话设置更新（模型 / 工具预设 / 推理强度，per-session 持久化）
+    if (settings && typeof settings === 'object') {
+      const patch: { modelKey?: string | null; toolPreset?: string; thinkingLevel?: string | null } = {};
+      if (settings.modelKey !== undefined) {
+        patch.modelKey = settings.modelKey === null ? null : String(settings.modelKey);
+      }
+      if (settings.toolPreset !== undefined) {
+        const preset = String(settings.toolPreset);
+        if (!['none', 'default', 'full', 'qa'].includes(preset)) {
+          return res.status(400).json({ success: false, message: 'toolPreset 只能是 none / default / full / qa' });
+        }
+        patch.toolPreset = preset;
+      }
+      if (settings.thinkingLevel !== undefined) {
+        patch.thinkingLevel = settings.thinkingLevel === null ? null : String(settings.thinkingLevel);
+      }
+      await QASessionService.updateSessionSettings(sessionId, userId, patch);
+    }
+
+    if (title) {
+      await QASessionService.renameSession(sessionId, userId, title);
+    }
+
+    const session = await QASessionService.getSession(sessionId, userId);
+    if (!session) {
+      return res.status(404).json({ success: false, message: '会话不存在或无权访问' });
+    }
     return res.json({ success: true, data: session });
   } catch (e: any) {
     if (e?.message?.includes('不存在或无权访问')) {
       return res.status(404).json({ success: false, message: e.message });
     }
-    console.error('[Agent] 重命名会话失败:', e?.message || e);
-    return res.status(500).json({ success: false, message: `重命名失败: ${e?.message || e}` });
+    console.error('[Agent] 更新会话失败:', e?.message || e);
+    return res.status(500).json({ success: false, message: `更新失败: ${e?.message || e}` });
   }
 });
 
@@ -1037,6 +1144,211 @@ router.post('/models/test', async (req: AuthRequest, res: Response) => {
   } catch (e: any) {
     console.error('[Agent] 模型测试失败:', e?.message || e);
     return res.status(500).json({ success: false, message: `模型测试失败: ${e?.message || e}` });
+  }
+});
+
+// ===== Provider 模型发现与目录填充（参考项目 pi 的 discover/catalog 能力适配）=====
+
+/** 判断 API Key 是否为脱敏值（系统脱敏格式：前4后4中间 ****） */
+function isMaskedApiKey(key: string): boolean {
+  return key.includes('***');
+}
+
+/**
+ * 构建模型列表接口 URL（适配 OpenAI 兼容 / Anthropic / Google 三种协议）
+ * 参考 pi-web model-discovery.ts buildModelsListUrl
+ */
+function buildModelsListUrl(baseUrl: string, api: string): URL {
+  const url = new URL(baseUrl.trim());
+  const trimmedPath = url.pathname.replace(/\/+$/, '');
+  if (!/\/models$/i.test(trimmedPath)) {
+    let path = trimmedPath;
+    if (api === 'anthropic-messages' && !/\/v\d+(?:beta)?$/i.test(path)) path += '/v1';
+    if (api === 'google-generative-ai' && !/\/v\d+(?:beta)?$/i.test(path)) path += '/v1beta';
+    url.pathname = `${path}/models`.replace(/\/+/g, '/');
+  }
+  return url;
+}
+
+/** 解析 /models 上游响应为模型列表（兼容 string[] / {id,model,name}[] / data/models/results/items 包裹）
+ *  同时解析能力信息（capabilities.contextWindow/maxOutput/reasoning/inputModalities），
+ *  供前端添加模型时自动回填上下文窗口 / 最大输出 / 推理 / 图片输入。 */
+function parseDiscoveredModels(value: any): Array<{
+  id: string;
+  name?: string;
+  contextWindow?: number;
+  maxTokens?: number;
+  reasoning?: boolean;
+  inputModalities?: string[];
+}> {
+  const seen = new Set<string>();
+  const models: Array<{
+    id: string;
+    name?: string;
+    contextWindow?: number;
+    maxTokens?: number;
+    reasoning?: boolean;
+    inputModalities?: string[];
+  }> = [];
+  const list = Array.isArray(value)
+    ? value
+    : (value?.data ?? value?.models ?? value?.results ?? value?.items ?? []);
+  for (const item of list) {
+    if (!item || typeof item !== 'object') continue;
+    const rawId = String(item.id ?? item.model ?? item.name ?? '').trim();
+    if (!rawId) continue;
+    const id = rawId.startsWith('models/') ? rawId.slice('models/'.length) : rawId;
+    if (!id || seen.has(id)) continue;
+    seen.add(id);
+
+    const name = String(item.display_name ?? item.displayName ?? '').trim() || undefined;
+    // 能力解析：兼容 cbcn 网关 capabilities 字段与 OpenRouter/vLLM 的 context_length/max_model_len
+    const c = item.capabilities || {};
+    const contextWindow = Number(c.contextWindow ?? item.context_length ?? item.max_model_len ?? 0) || undefined;
+    const maxTokens = Number(c.maxOutput ?? c.max_output_tokens ?? item.max_completion_tokens ?? 0) || undefined;
+    const reasoning = c.reasoning === true ? true : undefined;
+    const inputModalities = Array.isArray(c.inputModalities) && c.inputModalities.length
+      ? c.inputModalities
+      : undefined;
+
+    const m: {
+      id: string;
+      name?: string;
+      contextWindow?: number;
+      maxTokens?: number;
+      reasoning?: boolean;
+      inputModalities?: string[];
+    } = { id };
+    if (name && name !== id) m.name = name;
+    if (contextWindow) m.contextWindow = contextWindow;
+    if (maxTokens) m.maxTokens = maxTokens;
+    if (reasoning) m.reasoning = true;
+    if (inputModalities) m.inputModalities = inputModalities;
+    models.push(m);
+  }
+  return models.sort((a, b) => (a.name ?? a.id).localeCompare(b.name ?? b.id));
+}
+
+/**
+ * POST /api/agent/providers/discover — 从 Provider 的 /models 接口拉取模型列表
+ * Body: { providerName, provider: { baseUrl, api, apiKey } }
+ * apiKey 为空或为脱敏值时，从 llm_profiles 按 providerName 匹配真实凭证。
+ */
+router.post('/providers/discover', async (req: AuthRequest, res: Response) => {
+  try {
+    const { providerName, provider } = req.body || {};
+    if (!providerName || typeof providerName !== 'string') {
+      return res.status(400).json({ success: false, message: 'providerName 必填' });
+    }
+    if (!provider || typeof provider !== 'object') {
+      return res.status(400).json({ success: false, message: 'provider 必填' });
+    }
+
+    const baseUrl = String(provider.baseUrl || '').trim();
+    if (!baseUrl) {
+      return res.status(400).json({ success: false, message: 'Base URL 必填' });
+    }
+    const api = String(provider.api || 'openai-completions');
+    let apiKey = String(provider.apiKey || '').trim();
+
+    // 脱敏/空 key 时从 llm_profiles 匹配真实凭证
+    if (!apiKey || isMaskedApiKey(apiKey)) {
+      const prisma = require('../config/db').default;
+      const cfg = await prisma.systemConfig.findUnique({ where: { key: 'llm_profiles' } });
+      if (cfg?.value) {
+        const raw = typeof cfg.value === 'string' ? JSON.parse(cfg.value) : cfg.value;
+        const profiles = Array.isArray(raw) ? raw : [];
+        const matched = profiles.find((p: any) => (p.name || p.id) === providerName);
+        if (matched?.apiKey) apiKey = String(matched.apiKey);
+      }
+    }
+
+    let endpoint: URL;
+    try {
+      endpoint = buildModelsListUrl(baseUrl, api);
+    } catch {
+      return res.status(400).json({ success: false, message: 'Base URL 无效' });
+    }
+
+    const headers: Record<string, string> = { Accept: 'application/json' };
+    if (apiKey) {
+      if (api === 'anthropic-messages') {
+        headers['x-api-key'] = apiKey;
+        headers['anthropic-version'] = '2023-06-01';
+      } else if (api === 'google-generative-ai') {
+        headers['x-goog-api-key'] = apiKey;
+      } else if (!headers['Authorization']) {
+        headers['Authorization'] = `Bearer ${apiKey}`;
+      }
+    }
+
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 20000);
+    // 显式用全局 fetch 响应类型，避免与 express 的 Response 冲突
+    let response: Awaited<ReturnType<typeof fetch>>;
+    try {
+      response = await fetch(endpoint, { headers, signal: controller.signal });
+    } finally {
+      clearTimeout(timeoutId);
+    }
+
+    if (!response.ok) {
+      const errText = (await response.text()).slice(0, 500);
+      return res.status(502).json({
+        success: false,
+        message: errText || `上游返回 HTTP ${response.status}`,
+      });
+    }
+
+    const payload = await response.json();
+    const models = parseDiscoveredModels(payload);
+    if (models.length === 0) {
+      return res.status(502).json({ success: false, message: '上游响应中没有可用模型' });
+    }
+
+    return res.json({ success: true, data: { models, endpoint: endpoint.toString() } });
+  } catch (e: any) {
+    console.error('[Agent] 模型发现失败:', e?.message || e);
+    const message = e?.name === 'AbortError' ? '拉取模型列表超时（20s）' : (e?.message || '拉取失败');
+    return res.status(500).json({ success: false, message });
+  }
+});
+
+/**
+ * POST /api/agent/providers/catalog — 本地模型目录填充（替代参考项目的 models.dev）
+ * Body: { model }
+ * 用本地预置能力库 lookupCapabilities 返回模型元数据建议，供前端回填空字段。
+ */
+router.post('/providers/catalog', async (req: AuthRequest, res: Response) => {
+  try {
+    const { model } = req.body || {};
+    const modelName = String(model || '').trim();
+    if (!modelName) {
+      return res.status(400).json({ success: false, message: 'model 必填' });
+    }
+    const caps = lookupCapabilities(modelName);
+    if (!caps) {
+      return res.json({
+        success: true,
+        data: { matched: false, recommendation: null },
+      });
+    }
+    return res.json({
+      success: true,
+      data: {
+        matched: true,
+        recommendation: {
+          name: modelName,
+          reasoning: /reasoner|thinking|r1|o1|o3/i.test(modelName) || undefined,
+          input: caps.inputModalities,
+          contextWindow: caps.contextWindowTokens || undefined,
+          maxTokens: caps.maxOutputTokens || undefined,
+        },
+      },
+    });
+  } catch (e: any) {
+    console.error('[Agent] 目录填充失败:', e?.message || e);
+    return res.status(500).json({ success: false, message: `目录填充失败: ${e?.message || e}` });
   }
 });
 

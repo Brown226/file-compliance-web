@@ -894,6 +894,8 @@ model LlmCallLog {
   promptTokens     Int      @default(0) @map("prompt_tokens")
   completionTokens Int      @default(0) @map("completion_tokens")
   totalTokens      Int      @default(0) @map("total_tokens")
+  cacheReadTokens  Int      @default(0) @map("cache_read_tokens")   // 缓存读取（命中缓存的 prompt token）
+  cacheWriteTokens Int      @default(0) @map("cache_write_tokens")  // 缓存写入（新写入缓存的 prompt token）
   latencyMs        Int      @default(0) @map("latency_ms")    // 耗时（毫秒）
   status           String   @default("success") @db.VarChar(20)  // success/failed/cache
   errorMsg         String?  @map("error_msg") @db.Text

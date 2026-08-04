@@ -39,6 +39,12 @@ export interface SessionDetail {
   title: string | null;
   taskId: string | null;
   userId: string;
+  /** 会话选用的模型（<providerId>::<modelName>，null = 系统默认） */
+  modelKey: string | null;
+  /** 工具预设：none / default / full */
+  toolPreset: string;
+  /** 推理强度：low / medium / high（模型不支持时忽略） */
+  thinkingLevel: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -113,6 +119,9 @@ export class QASessionService {
       title: session.title,
       taskId: session.taskId,
       userId: session.userId,
+      modelKey: session.modelKey,
+      toolPreset: session.toolPreset ?? 'full',
+      thinkingLevel: session.thinkingLevel,
       createdAt: session.createdAt.toISOString(),
       updatedAt: session.updatedAt.toISOString(),
     };
@@ -175,7 +184,7 @@ export class QASessionService {
           userId,
           title: title ?? null,
           modelKey: settings?.modelKey ?? null,
-          toolPreset: settings?.toolPreset ?? 'default',
+          toolPreset: settings?.toolPreset ?? 'full',
           thinkingLevel: settings?.thinkingLevel ?? null,
         },
       });
@@ -260,6 +269,8 @@ export class QASessionService {
    * 持久化 assistant 消息（流式开始时创建占位，流式结束时更新）
    *
    * @param status 消息状态：processing（流式进行中）/ completed / failed
+   * @param sources 引用来源（可选）
+   * @param debug 调试/过程信息（可选）：存工具调用过程（toolCalls 数组），供前端历史回看渲染
    * @returns 消息 ID（失败返回 null）
    */
   static async persistAssistantMessage(
@@ -268,6 +279,7 @@ export class QASessionService {
     content: string,
     status: 'processing' | 'completed' | 'failed' = 'completed',
     sources?: any,
+    debug?: any,
   ): Promise<string | null> {
     try {
       await QASessionService.ensureSession(sessionId, userId);
@@ -279,6 +291,7 @@ export class QASessionService {
           content,
           status,
           sources: sources ?? undefined,
+          debug: debug ?? undefined,
         },
       });
 
@@ -296,12 +309,14 @@ export class QASessionService {
    * @param content 完整内容
    * @param status 最终状态
    * @param sources 引用来源（可选）
+   * @param debug 调试/过程信息（可选）
    */
   static async updateAssistantMessage(
     messageId: string,
     content: string,
     status: 'completed' | 'failed',
     sources?: any,
+    debug?: any,
   ): Promise<boolean> {
     try {
       await prisma.qAMessage.update({
@@ -310,6 +325,7 @@ export class QASessionService {
           content,
           status,
           ...(sources !== undefined ? { sources } : {}),
+          ...(debug !== undefined ? { debug } : {}),
         },
       });
       return true;
@@ -364,6 +380,9 @@ export class QASessionService {
       title: updated.title,
       taskId: updated.taskId,
       userId: updated.userId,
+      modelKey: updated.modelKey,
+      toolPreset: updated.toolPreset ?? 'full',
+      thinkingLevel: updated.thinkingLevel,
       createdAt: updated.createdAt.toISOString(),
       updatedAt: updated.updatedAt.toISOString(),
     };
