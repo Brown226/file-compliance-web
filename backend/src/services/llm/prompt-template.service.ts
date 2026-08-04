@@ -54,6 +54,7 @@ const MODULE_LABELS: Record<string, string> = {
   polish: 'AI润色',
   semantic_spec: '语义规范库审查',
   dwg_vision: 'DWG视觉审查',
+  agent: 'Agent办公模板',
 };
 
 // ==================== 服务类 ====================

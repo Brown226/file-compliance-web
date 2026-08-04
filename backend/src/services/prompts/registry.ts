@@ -1815,6 +1815,80 @@ Please give a short succinct context to situate this chunk within the overall do
     isBuiltin: true,
     enabled: true,
   },
+
+  // ==========================================
+  // Agent 办公模板（agent）— 追加到 Agent 顶层 systemPrompt
+  // 由 AgentService 按 AGENT_TEMPLATE_KEYS 配置加载为追加段落（见 agent.service.ts）
+  // role 统一用 system，variant 用模板 key（含 office_ 前缀避免与场景模块冲突）
+  // ==========================================
+  {
+    key: 'office_contract_review',
+    module: 'agent',
+    role: 'system',
+    variant: 'office_contract_review',
+    name: 'Agent办公模板-合同审查',
+    description: 'Agent 对话时追加的合同审查约束（审查重点/输出格式），管理员可在模板管理页编辑',
+    content: `## 办公模板：合同审查
+用户涉及合同审查时，请遵循以下约定：
+- 优先审查：付款条款、违约责任、质保期、知识产权归属、争议解决、不可抗力
+- 站在中立审查立场，同时指出对合同双方的风险，不偏向任一方
+- 发现风险条款时给出具体修改建议（suggestedText），不只报问题
+- 引用合同原文时必须逐字复制（originalText 用于定位），不得改写`,
+    placeholders: JSON.stringify([]),
+    isBuiltin: true,
+    enabled: true,
+  },
+  {
+    key: 'office_bid_review',
+    module: 'agent',
+    role: 'system',
+    variant: 'office_bid_review',
+    name: 'Agent办公模板-标书审查',
+    description: 'Agent 对话时追加的标书审查约束（响应性/实质性/格式），管理员可在模板管理页编辑',
+    content: `## 办公模板：标书审查
+用户涉及标书审查时，请遵循以下约定：
+- 优先核对：投标响应性（是否逐条响应招标文件）、资格条件、报价合理性、工期/质量承诺
+- 检查投标文件是否实质性偏离招标要求（标注偏离项及风险）
+- 对无效投标风险项（如密封/签章/格式）单独提示
+- 输出按「响应性 → 实质性 → 格式合规」三层组织，标注严重度`,
+    placeholders: JSON.stringify([]),
+    isBuiltin: true,
+    enabled: true,
+  },
+  {
+    key: 'office_report_format',
+    module: 'agent',
+    role: 'system',
+    variant: 'office_report_format',
+    name: 'Agent办公模板-报告格式约定',
+    description: 'Agent 对话时追加的报告生成格式约定（write_report 输出结构），管理员可在模板管理页编辑',
+    content: `## 办公模板：报告格式约定
+用户要求生成审查报告时，请遵循以下格式约定：
+- 结构：标题 → 审查范围与方法 → 结论摘要 → 问题明细（按严重度排序）→ 整改建议 → 附录
+- 问题明细每条含：位置定位（文件名/页码/段落）、问题描述、建议修改、依据
+- 报告语言规范书面，避免口语；数字用半角，单位统一
+- 报告导出优先用 write_report（md/docx/xlsx 三格式，用户指定格式）`,
+    placeholders: JSON.stringify([]),
+    isBuiltin: true,
+    enabled: true,
+  },
+  {
+    key: 'office_terminology',
+    module: 'agent',
+    role: 'system',
+    variant: 'office_terminology',
+    name: 'Agent办公模板-术语统一',
+    description: 'Agent 对话时追加的术语统一约束（专有名词/缩写/单位），管理员可在模板管理页编辑',
+    content: `## 办公模板：术语统一
+用户在文档审查/起草中要求术语统一时，请遵循以下约定：
+- 专有名词、设备名称、技术缩写全篇必须统一，发现混用（如"设计温度"vs"运行温度"指向同一概念）时报告
+- 首次出现缩写时给出全称（如"RCC-M（压水堆核岛机械设备设计建造规则）"）
+- 单位符号使用规范写法（kW、MPa、m³/h），数值与单位之间留空格
+- 中英文术语对照保持一致，同一术语不得中英混用`,
+    placeholders: JSON.stringify([]),
+    isBuiltin: true,
+    enabled: true,
+  },
 ];
 
 // ============================================================
