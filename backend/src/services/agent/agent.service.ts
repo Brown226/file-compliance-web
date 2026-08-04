@@ -29,6 +29,8 @@ import { getUploadDir } from '../../config/upload';
 import { SteeringService } from './steering/steering.service';
 import { SkillsService } from './skills/skills.service';
 import { CompactionService } from './context-compaction/compaction.service';
+import { scrubSensitive } from './security/scrub-sensitive';
+import { acquireLlmToken } from '../../utils/llm-rate-limiter';
 
 // require ESM-only SDK（Node 22.12+ 支持），同时保留类型
 // 注意：Vercel AI SDK v7 用 stopWhen + isStepCount 替代了旧版的 maxSteps 参数
@@ -343,6 +345,11 @@ export class AgentService {
     }
 
     // 9. 启动流式调用
+    //    P0 #1（接通纸面能力）：调 LLM 前接入全局 QPS 限流（按 model 分桶，Redis 不可用自动降级）
+    await acquireLlmToken(effConfig.modelName).catch((e: any) => {
+      console.warn('[Agent] QPS 限流调用异常（继续）:', (e as Error)?.message || e);
+    });
+
     //    - system: Agent 系统提示词（定义工作流/行为准则/安全约束）+ 已上传文件列表
     //    - messages: ModelMessage 数组（Task 7.5：已用 convertToModelMessages 转换）
     //    - tools: 工具集，空对象时 SDK 退化为普通聊天（不会报错）
@@ -415,8 +422,9 @@ export class AgentService {
         const messagesSummary = (modelMessages ?? [])
           .map((m: any) => `[${m.role}] ${typeof m.content === 'string' ? m.content : JSON.stringify(m.content ?? '')}`)
           .join('\n');
-        const promptFull = `${systemPrompt}\n\n--- messages ---\n${messagesSummary}`.slice(0, 60000);
-        const completionFull = (text ?? '').slice(0, 60000);
+        // P0 #1（接通纸面能力）：写入日志前脱敏，避免敏感信息（路径/token/密钥/邮箱）落库
+        const promptFull = scrubSensitive(`${systemPrompt}\n\n--- messages ---\n${messagesSummary}`).slice(0, 60000);
+        const completionFull = scrubSensitive(text ?? '').slice(0, 60000);
 
         // Task 7.5：汇总工具调用情况到 errorMsg（便于从 LlmCallLog 排查工具调用问题）
         const totalSteps = steps?.length ?? 0;

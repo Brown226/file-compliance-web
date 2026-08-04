@@ -15,6 +15,7 @@ import { validateSeverity } from '../review/severity-rules';
 import * as crypto from 'crypto';
 import { retryWithBackoff } from '../../utils/retry';
 import { acquireLlmToken } from '../../utils/llm-rate-limiter';
+import { scrubSensitive } from '../agent/security/scrub-sensitive';
 import { RiskItemSchema } from '../review-pipeline/contract-review.schema';
 import fs from 'fs';
 import path from 'path';
@@ -1448,6 +1449,7 @@ export class LlmService {
     traceId?: string;
   }): void {
     try {
+      // P0 #1（接通纸面能力）：写入前统一脱敏，避免敏感信息（路径/token/密钥/邮箱）落库
       prisma.llmCallLog.create({
         data: {
           taskId: params.taskId ?? null,
@@ -1461,9 +1463,9 @@ export class LlmService {
           cacheWriteTokens: params.usage?.cacheWrite ?? 0,
           latencyMs: params.latencyMs,
           status: params.status,
-          errorMsg: params.errorMsg ?? null,
-          promptFull: params.promptFull ?? null,
-          completionFull: params.completionFull ?? null,
+          errorMsg: params.errorMsg ? scrubSensitive(params.errorMsg) : null,
+          promptFull: params.promptFull ? scrubSensitive(params.promptFull) : null,
+          completionFull: params.completionFull ? scrubSensitive(params.completionFull) : null,
           // 无检索片段时写 SQL NULL（DbNull）而非 JSON null，便于 SQL 层区分
           ragChunks: params.ragChunks ?? Prisma.DbNull,
           traceId: params.traceId ?? null,
