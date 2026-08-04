@@ -20,7 +20,10 @@
     <section class="engine-panel">
       <ModelConfigPage v-if="activeTab === 'models'" />
       <KnowledgeConfigPage v-else-if="activeTab === 'knowledge'" />
-      <LlmProfilesTab v-else-if="activeTab === 'profiles'" />
+      <!-- Provider 配置：统一使用公共组件（参考项目 pi 两级树风格，内嵌形态） -->
+      <div v-else-if="activeTab === 'profiles'" class="provider-panel-wrap">
+        <ProviderConfigPanel mode="inline" />
+      </div>
     </section>
   </div>
 </template>
@@ -29,7 +32,7 @@
 import { computed, ref } from 'vue'
 import ModelConfigPage from '@/views/LLMConfig/ModelConfigPage.vue'
 import KnowledgeConfigPage from '@/views/LLMConfig/KnowledgeConfigPage.vue'
-import LlmProfilesTab from '@/views/admin/LlmProfiles.vue'
+import ProviderConfigPanel from '@/components/provider-config/ProviderConfigPanel.vue'
 
 const tabs = [
   {
@@ -124,6 +127,14 @@ const currentTab = computed(() => tabs.find(item => item.key === activeTab.value
   min-height: 0;
   overflow-y: auto;
   background: #f8fafc;
+}
+
+/* === Provider 配置：公共组件内嵌形态 === */
+.provider-panel-wrap {
+  height: 100%;
+  min-height: 560px;
+  padding: 16px 20px 20px;
+  box-sizing: border-box;
 }
 
 @media (max-width: 768px) {
