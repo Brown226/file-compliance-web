@@ -13,6 +13,7 @@ import { authenticate } from '../middlewares/auth.middleware';
 import { requireRole } from '../middlewares/rbac.middleware';
 import { success, error } from '../utils/response';
 import { CheckpointService, CheckpointExtractorService } from '../services/standard/checkpoint';
+import { StandardService } from '../services/standard/standard.service';
 
 const router = Router();
 
@@ -40,6 +41,67 @@ router.get('/standards/:id/checkpoints', async (req, res) => {
     const stats = await CheckpointService.getStats(id);
     success(res, { checkpoints, stats });
   } catch (e) {
+    error(res, (e as Error).message, 500);
+  }
+});
+
+// 跨标准检索审点条文（前端「查看条文」用）
+// 语义与 agent 工具 search_standard_checkpoints 对齐：不传 standardId 时遍历现行标准，
+// 按 keyword 在 clauseCode/clauseText/checkPrompt 中模糊匹配；传 standardId 时只查该标准。
+router.get('/search', async (req, res) => {
+  try {
+    const keyword = String(req.query.keyword || '').trim();
+    const standardId = req.query.standardId ? String(req.query.standardId) : undefined;
+    const topNumber = Math.min(
+      Math.max(parseInt(String(req.query.topNumber || '20'), 10) || 20, 1),
+      100,
+    );
+    if (!keyword && !standardId) {
+      return error(res, '参数缺失：keyword 或 standardId 至少提供一个', 400);
+    }
+
+    // 确定检索的标准范围
+    let standards: any[];
+    if (standardId) {
+      const std = await StandardService.getStandardById(standardId);
+      standards = std ? [std] : [];
+    } else {
+      const list = await StandardService.getStandards({ standardStatus: 'CURRENT', take: 100 });
+      standards = list.standards;
+    }
+
+    const kw = keyword.toLowerCase();
+    const results: any[] = [];
+    for (const std of standards) {
+      const checkpoints = await CheckpointService.listByStandard(std.id);
+      const hits = checkpoints.filter((cp: any) => {
+        if (!kw) return true;
+        return [cp.clauseCode, cp.clauseText, cp.checkPrompt]
+          .filter(Boolean)
+          .map((s: any) => String(s).toLowerCase())
+          .some((s: string) => s.includes(kw));
+      });
+      for (const cp of hits) {
+        results.push({
+          id: cp.id,
+          standardId: std.id,
+          standardNo: std.standardNo || null,
+          standardName: std.standardName || null,
+          standardTitle: std.title || null,
+          clauseCode: cp.clauseCode || null,
+          clauseText: cp.clauseText,
+          checkPrompt: cp.checkPrompt || null,
+          auditDimension: cp.auditDimension || 'compliance',
+          mandatory: cp.mandatory || 'mandatory',
+        });
+        if (results.length >= topNumber) break;
+      }
+      if (results.length >= topNumber) break;
+    }
+
+    success(res, { results, total: results.length });
+  } catch (e) {
+    console.error('[Checkpoint Route] 检索审点失败:', e);
     error(res, (e as Error).message, 500);
   }
 });

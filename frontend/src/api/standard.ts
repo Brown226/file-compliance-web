@@ -265,3 +265,22 @@ export function updateCheckpointApi(id: string, data: {
 export function deleteCheckpointApi(id: string) {
   return request.delete<{ message: string }>(`/checkpoint/checkpoints/${id}`)
 }
+
+/** 跨标准检索审点条文（keyword 模糊匹配 clauseCode/clauseText/checkPrompt；传 standardId 时只查该标准） */
+export function searchCheckpointsApi(params: { keyword?: string; standardId?: string; topNumber?: number }) {
+  return request.get<{ results: CrossStandardCheckpointHit[]; total: number }>('/checkpoint/search', { params })
+}
+
+/** 跨标准检索审点命中项 */
+export interface CrossStandardCheckpointHit {
+  id: string
+  standardId: string
+  standardNo: string | null
+  standardName: string | null
+  standardTitle: string | null
+  clauseCode: string | null
+  clauseText: string | null
+  checkPrompt: string | null
+  auditDimension: string
+  mandatory: string
+}

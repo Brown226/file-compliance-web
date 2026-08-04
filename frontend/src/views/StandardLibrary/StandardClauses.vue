@@ -82,6 +82,7 @@
           <!-- 条文操作栏 -->
           <div class="main-actions">
             <el-button size="small" :icon="Plus" @click="openClauseDialog()">新增条文</el-button>
+            <el-button size="small" :icon="Search" @click="openCrossSearch()">跨标准检索</el-button>
           </div>
 
           <!-- 条文列表 -->
@@ -252,6 +253,40 @@
         <el-button type="primary" :loading="saving" @click="handleSaveCheckpoint">{{ cpEditingId ? '保存' : '新增' }}</el-button>
       </template>
     </el-dialog>
+
+    <!-- ===== 跨标准检索审点条文对话框 ===== -->
+    <el-dialog v-model="crossSearchVisible" title="跨标准检索审点" width="720px" :close-on-click-modal="false">
+      <div class="cross-search-box">
+        <el-input
+          v-model="crossKeyword"
+          placeholder="输入条文关键词，如：双电源、消防、负荷等级…（不填则列出所有现行标准审点）"
+          clearable
+          :prefix-icon="Search"
+          @keyup.enter="handleCrossSearch"
+        />
+        <el-button type="primary" :loading="crossSearching" @click="handleCrossSearch">检索</el-button>
+      </div>
+
+      <div v-if="crossSearching" class="cross-search-tip">正在跨标准检索审点…</div>
+      <div v-else-if="crossResults.length === 0 && crossSearched" class="cross-search-tip">未命中任何审点，换个关键词试试</div>
+
+      <el-scrollbar v-else-if="crossResults.length > 0" max-height="420px">
+        <div class="cross-result-list">
+          <div v-for="hit in crossResults" :key="hit.id" class="cross-result-card" @click="jumpToHit(hit)">
+            <div class="cross-result-top">
+              <span class="cross-result-no">{{ hit.standardNo || hit.standardName || '标准' }}</span>
+              <span class="cross-result-clause">{{ hit.clauseCode ? `第${hit.clauseCode}条` : '' }}</span>
+              <span class="cross-result-dim">{{ auditDimensionLabel(hit.auditDimension) }}</span>
+              <el-tag v-if="hit.mandatory === 'mandatory'" size="small" type="danger" effect="plain">强制</el-tag>
+              <el-tag v-else size="small" type="info" effect="plain">引导</el-tag>
+            </div>
+            <div class="cross-result-text">{{ hit.clauseText || '（无条文内容）' }}</div>
+            <div v-if="hit.checkPrompt" class="cross-result-prompt">审点：{{ hit.checkPrompt }}</div>
+            <div class="cross-result-hint">点击跳转到该标准条文详情</div>
+          </div>
+        </div>
+      </el-scrollbar>
+    </el-dialog>
   </div>
 </template>
 
@@ -260,6 +295,7 @@ import { ref, computed, onMounted, nextTick } from 'vue'
 import { useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus, Search, ArrowRight } from '@element-plus/icons-vue'
+import { searchCheckpointsApi, type CrossStandardCheckpointHit } from '@/api/standard'
 import type { FormInstance } from 'element-plus'
 import {
   getStandardTreeApi as getStandardTree,
@@ -537,6 +573,71 @@ function scrollToClause(clauseId: string) {
       setTimeout(() => el.classList.remove('clause-highlight'), 2000)
     }
   })
+}
+
+// ===== 跨标准检索审点条文 =====
+
+const crossSearchVisible = ref(false)
+const crossKeyword = ref('')
+const crossSearching = ref(false)
+const crossSearched = ref(false)
+const crossResults = ref<CrossStandardCheckpointHit[]>([])
+
+function openCrossSearch() {
+  crossSearchVisible.value = true
+  crossSearched.value = false
+  crossResults.value = []
+  // 自动填入当前标准号作为检索提示，可清空
+  if (!crossKeyword.value && selectedStandard.value) {
+    crossKeyword.value = selectedStandard.value.number || ''
+  }
+}
+
+async function handleCrossSearch() {
+  const kw = crossKeyword.value.trim()
+  if (!kw) {
+    ElMessage.warning('请输入检索关键词')
+    return
+  }
+  crossSearching.value = true
+  crossSearched.value = false
+  try {
+    const { results } = await searchCheckpointsApi({ keyword: kw, topNumber: 50 })
+    crossResults.value = results
+  } catch (e) {
+    ElMessage.error('跨标准检索失败：' + ((e as Error).message || '未知错误'))
+    crossResults.value = []
+  } finally {
+    crossSearching.value = false
+    crossSearched.value = true
+  }
+}
+
+function auditDimensionLabel(dim: string): string {
+  return { compliance: '合规', fact: '事实', text: '文本' }[dim] || dim
+}
+
+function jumpToHit(hit: CrossStandardCheckpointHit) {
+  // 切换到命中标准并定位条文，然后关闭对话框
+  crossSearchVisible.value = false
+  selectStandard(hit.standardId)
+  const clauseNumber = hit.clauseCode || ''
+  const tryScroll = () => {
+    const node = standardClauses.value.find(c => c.clause.clauseNumber === clauseNumber)
+    if (node) {
+      node.expanded = true
+      scrollToClause(node.clause.id)
+      return true
+    }
+    return false
+  }
+  // 条文可能在当前标准已加载（立即滚动），否则等加载完成后定位
+  if (!tryScroll()) {
+    const t = window.setInterval(() => {
+      if (tryScroll()) window.clearInterval(t)
+    }, 150)
+    window.setTimeout(() => window.clearInterval(t), 5000)
+  }
 }
 
 onMounted(async () => {
@@ -955,5 +1056,87 @@ onMounted(async () => {
 @keyframes clause-flash {
   0% { box-shadow: 0 0 0 3px var(--primary-color); background: var(--primary-light); }
   100% { box-shadow: 0 0 0 0 transparent; background: transparent; }
+}
+
+/* ===== 跨标准检索审点 ===== */
+.cross-search-box {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+.cross-search-box .el-input {
+  flex: 1;
+}
+.cross-search-tip {
+  color: var(--gray-500);
+  font-size: 13px;
+  text-align: center;
+  padding: 32px 0;
+}
+.cross-result-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding-right: 4px;
+}
+.cross-result-card {
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  padding: 12px 14px;
+  cursor: pointer;
+  transition: border-color 0.15s, box-shadow 0.15s;
+  background: var(--bg-white, #fff);
+}
+.cross-result-card:hover {
+  border-color: var(--primary-color);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+}
+.cross-result-top {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+  flex-wrap: wrap;
+}
+.cross-result-no {
+  font-weight: 600;
+  font-size: 13px;
+  color: var(--primary-color);
+  background: var(--primary-light, #ecf5ff);
+  padding: 1px 8px;
+  border-radius: 4px;
+}
+.cross-result-clause {
+  font-size: 13px;
+  color: var(--gray-800);
+  font-weight: 600;
+}
+.cross-result-dim {
+  font-size: 12px;
+  color: var(--gray-500);
+  margin-left: auto;
+}
+.cross-result-text {
+  font-size: 13px;
+  color: var(--gray-800);
+  line-height: 1.6;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.cross-result-prompt {
+  margin-top: 6px;
+  font-size: 12px;
+  color: var(--gray-600);
+  background: var(--bg-subtle, #f5f7fa);
+  border-radius: 4px;
+  padding: 4px 8px;
+}
+.cross-result-hint {
+  margin-top: 6px;
+  font-size: 12px;
+  color: var(--primary-color);
+  opacity: 0.75;
 }
 </style>
