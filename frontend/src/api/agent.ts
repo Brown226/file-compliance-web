@@ -90,8 +90,8 @@ export interface AgentModelsResponse {
 }
 
 /** 可用模型列表（含系统默认） */
-export function listAgentModelsApi() {
-  return request.get<AgentModelsResponse>('/agent/models')
+export function listAgentModelsApi(scope?: string) {
+  return request.get<AgentModelsResponse>('/agent/models', { params: scope ? { scope } : {} })
 }
 
 // ===== LLM 供应商配置（ModelsConfig 弹窗数据源，2026-08-04 新增）=====
@@ -183,6 +183,11 @@ export function compactSessionApi(sessionId: string) {
 /** 删除会话 */
 export function deleteSessionApi(sessionId: string) {
   return request.delete<{ success: boolean; message: string }>(`/agent/sessions/${sessionId}`)
+}
+
+/** 复制会话（简化版分支：多方案并行对比） */
+export function duplicateSessionApi(sessionId: string) {
+  return request.post<SessionDetail>(`/agent/sessions/${sessionId}/duplicate`)
 }
 
 // ===== 上传文件内容读取（右栏文件查看器数据源，2026-08-04 新增）=====
@@ -341,4 +346,127 @@ export function createWorktreeApi(branch: string) {
 /** 删除 worktree（仅非主工作区） */
 export function deleteWorktreeApi(path: string) {
   return request.delete(`/agent/worktrees?path=${encodeURIComponent(path)}`)
+}
+
+/** P2-⑧：Agent 审查结果标记误报（写入误报标记库） */
+export function markAgentIssueFalsePositiveApi(data: {
+  originalText: string
+  reason?: string
+  issueType?: string
+  ruleCode?: string
+  severity?: string
+}) {
+  return request.post<{ added: boolean; count: number | string }>('/agent/issues/false-positive', data)
+}
+
+// ===== P2-⑭ 结果沉淀：收藏 / 搜索 =====
+
+export interface SavedItem {
+  id: string
+  userId: string
+  type: string
+  title: string
+  content: string
+  sourceSessionId: string | null
+  sourceMessageId: string | null
+  createdAt: string
+}
+
+export interface SearchHit {
+  id: string
+  role: string
+  content: string
+  sessionId: string
+  sessionTitle: string | null
+  createdAt: string
+}
+
+/** 收藏一条结果 */
+export function saveAgentItemApi(data: { type: string; title: string; content: string; sourceSessionId?: string; sourceMessageId?: string }) {
+  return request.post<SavedItem>('/agent/saves', data)
+}
+
+/** 收藏列表 */
+export function listAgentSavesApi(type?: string) {
+  return request.get<SavedItem[]>('/agent/saves', { params: type ? { type } : {} })
+}
+
+/** 删除收藏 */
+export function deleteAgentSaveApi(id: string) {
+  return request.delete(`/agent/saves/${id}`)
+}
+
+/** 全文搜索会话消息 */
+export function searchAgentMessagesApi(q: string) {
+  return request.get<SearchHit[]>('/agent/search', { params: { q } })
+}
+
+// ===== P1-② 批量文档处理 =====
+
+export type BatchTaskName = 'extract' | 'chunk' | 'summarize' | 'review' | 'knowledge'
+
+export interface BatchFileInput {
+  filePath: string
+  tasks: BatchTaskName[]
+}
+
+export interface BatchJobRecord {
+  id: string
+  userId: string
+  status: string // PENDING / PROCESSING / COMPLETED / FAILED / CANCELLED
+  taskType: string
+  fileCount: number
+  progress: number
+  total: number
+  succeeded: number
+  failed: number
+  input: Array<{ filePath: string; tasks: BatchTaskName[] }>
+  result: { total: number; succeeded: number; failed: number; results: Array<Record<string, unknown>> } | null
+  error: string | null
+  createdAt: string
+  updatedAt: string
+  queueState?: string | null
+}
+
+/** 提交批量任务 */
+export function submitBatchApi(files: BatchFileInput[]) {
+  return request.post<{ id: string; status: string }>('/agent/batch', { files })
+}
+
+/** 查询批量任务 */
+export function getBatchApi(id: string) {
+  return request.get<BatchJobRecord>(`/agent/batch/${id}`)
+}
+
+/** 批量任务列表 */
+export function listBatchApi(params?: { page?: number; pageSize?: number }) {
+  return request.get<{ records: BatchJobRecord[]; total: number; page: number; pageSize: number }>('/agent/batch', { params })
+}
+
+/** 取消批量任务 */
+export function cancelBatchApi(id: string) {
+  return request.post(`/agent/batch/${id}/cancel`)
+}
+
+// ===== 文件树/目录浏览（任务 8）=====
+
+export interface DirectoryEntry {
+  name: string
+  path: string
+  type: 'dir' | 'file'
+  size: number
+  mtime: string
+}
+
+export interface BrowseDirectoriesResult {
+  roots: Array<{ name: string; path: string }>
+  root: string | null
+  entries: DirectoryEntry[]
+}
+
+/** 浏览授权目录（path 缺省返回白名单根目录列表） */
+export function browseDirectoriesApi(path?: string) {
+  return request.get<BrowseDirectoriesResult>('/agent/directories/browse', {
+    params: path ? { path } : {},
+  })
 }

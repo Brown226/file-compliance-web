@@ -38,6 +38,13 @@
 
     <!-- 内容区 -->
     <div v-else-if="data" class="fv-content" :class="{ 'is-wrapped': wrapped }">
+      <!-- P0-⑨ 定位提示条（点击来源卡片触发锚点定位时显示） -->
+      <div v-if="locateNotice" class="fv-locate-notice" :class="{ 'is-miss': locateMiss }">
+        <span>{{ locateNotice }}</span>
+        <button class="fv-locate-close" title="关闭" @click="locateNotice = ''">
+          <svg width="11" height="11" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><line x1="2" y1="2" x2="8" y2="8" /><line x1="8" y1="2" x2="2" y2="8" /></svg>
+        </button>
+      </div>
       <!-- 文本 / markdown -->
       <div v-if="data.kind === 'text'" class="fv-text-body markdown-body" v-html="rendered" />
       <!-- 图片 -->
@@ -64,6 +71,15 @@ import { useMarkdown } from '@/composables/useMarkdown'
 
 const props = defineProps<{
   filePath: string
+  // P0-⑨ 知识引用溯源：来源锚点定位目标（点击来源卡片时由父组件传入）
+  // P2-⑬ 行级批注：highlight 指定原文文本关键字；highlightLines 指定 [start, end] 行号区间
+  locate?: {
+    filePath: string
+    page?: number
+    section?: string
+    highlight?: string
+    highlightLines?: [number, number]
+  } | null
 }>()
 
 const { renderMarkdown } = useMarkdown()
@@ -71,6 +87,10 @@ const data = ref<AgentFileReadResult | null>(null)
 const loading = ref(false)
 const error = ref<string | null>(null)
 const wrapped = ref(false)
+// P0-⑨ 定位提示条状态
+const locateNotice = ref('')
+const locateMiss = ref(false)
+let flashTimer: ReturnType<typeof setTimeout> | null = null
 
 const displayPath = computed(() => {
   const p = props.filePath
@@ -128,6 +148,194 @@ function openExternal() {
   win.document.write(`<iframe src="data:${data.value.mime};base64,${data.value.base64}" style="width:100%;height:100%;border:none"></iframe>`)
   win.document.close()
 }
+
+/**
+ * P0-⑨ 知识引用溯源：在文本预览中定位到指定页码
+ *
+ * doc-parser 分块会在文本中保留页码标记（如 "p3" / "第3页" / "【第3页】" 等，
+ * 与后端 rag.service.ts parseChunkLocator 的匹配模式一致）。策略：
+ * 1. 遍历渲染后的 DOM 文本节点，找包含页码标记的块元素，scrollIntoView + 短暂高亮
+ * 2. 找不到标记 → 显示提示条（不静默失败）
+ */
+function locateInText(page: number) {
+  locateMiss.value = false
+  const container = document.querySelector('.fv-content')
+  if (!container) return
+  const markerRegex = new RegExp(
+    `(?:\\[|【|\\(|（)?(?:p|page|第)\\s*${page}\\s*(?:页|page)?(?:\\]|】|\\)|）)?`,
+    'i',
+  )
+  const blocks = container.querySelectorAll<HTMLElement>('.fv-text-body p, .fv-text-body h1, .fv-text-body h2, .fv-text-body h3, .fv-text-body h4, .fv-text-body h5, .fv-text-body h6, .fv-text-body div')
+  let target: HTMLElement | null = null
+  for (const el of blocks) {
+    const txt = (el as HTMLElement).textContent || ''
+    if (markerRegex.test(txt)) {
+      target = el
+      break
+    }
+  }
+  if (target) {
+    target.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    target.classList.add('fv-flash-target')
+    if (flashTimer) clearTimeout(flashTimer)
+    flashTimer = setTimeout(() => target?.classList.remove('fv-flash-target'), 1500)
+    locateNotice.value = `已定位到第 ${page} 页`
+  } else {
+    locateMiss.value = true
+    locateNotice.value = `未找到第 ${page} 页的页码标记`
+  }
+}
+
+/**
+ * P2-⑬ 行级批注：在文本预览中按原文关键字定位并高亮
+ *
+ * 策略：遍历渲染后的 DOM 文本节点，找包含目标文本的块元素，
+ * scrollIntoView + 临时高亮类；若找到了具体文本节点，用 <mark> 包裹高亮。
+ * 找不到 → 显示提示条（不静默失败）。
+ */
+function locateByText(keyword: string) {
+  locateMiss.value = false
+  const container = document.querySelector('.fv-content')
+  if (!container) return
+  const blocks = container.querySelectorAll<HTMLElement>('.fv-text-body p, .fv-text-body h1, .fv-text-body h2, .fv-text-body h3, .fv-text-body h4, .fv-text-body h5, .fv-text-body h6, .fv-text-body div, .fv-text-body li')
+  const needle = keyword.trim()
+  if (!needle) return
+  let target: HTMLElement | null = null
+  for (const el of blocks) {
+    const txt = (el as HTMLElement).textContent || ''
+    if (txt.includes(needle)) {
+      target = el
+      break
+    }
+  }
+  if (target) {
+    target.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    // 用 <mark> 高亮命中文本（首次命中即可）
+    if (target.dataset.hlDone !== '1') {
+      const walker = document.createTreeWalker(target, NodeFilter.SHOW_TEXT)
+      let node: Node | null = null
+      while ((node = walker.nextNode())) {
+        const text = node.textContent || ''
+        const idx = text.indexOf(needle)
+        if (idx >= 0) {
+          const span = document.createElement('mark')
+          span.className = 'fv-hl-mark'
+          span.textContent = text.slice(idx, idx + needle.length)
+          const rest = document.createTextNode(text.slice(idx + needle.length))
+          node.textContent = text.slice(0, idx)
+          node.parentNode?.insertBefore(span, node.nextSibling)
+          node.parentNode?.insertBefore(rest, span.nextSibling)
+          target.dataset.hlDone = '1'
+          break
+        }
+      }
+    }
+    target.classList.add('fv-flash-target')
+    if (flashTimer) clearTimeout(flashTimer)
+    flashTimer = setTimeout(() => {
+      target?.classList.remove('fv-flash-target')
+      target?.querySelectorAll('.fv-hl-mark').forEach(m => m.classList.add('fv-hl-done'))
+    }, 2500)
+    locateNotice.value = `已定位到「${needle.slice(0, 20)}${needle.length > 20 ? '…' : ''}」`
+  } else {
+    locateMiss.value = true
+    locateNotice.value = `未找到文本「${needle.slice(0, 30)}${needle.length > 30 ? '…' : ''}」`
+  }
+}
+
+/**
+ * P2-⑬ 行级批注：按行号区间 [start, end] 定位并高亮
+ *
+ * 策略：读取原始文本按行切分，把目标行号范围内的行作为独立块
+ * 高亮（行背景 + 侧边竖线），并滚动到起始行。纯文本可靠；PDF 退化到页码提示。
+ */
+function locateByLines(start: number, end: number) {
+  locateMiss.value = false
+  const raw = data.value?.content
+  if (typeof raw !== 'string' || !raw) {
+    locateMiss.value = true
+    locateNotice.value = '当前文件无文本内容，无法按行号定位'
+    return
+  }
+  const lines = raw.split('\n')
+  const s = Math.max(1, start)
+  const e = Math.min(lines.length, Math.max(s, end))
+  if (s > lines.length) {
+    locateMiss.value = true
+    locateNotice.value = `文件共 ${lines.length} 行，行号 ${s} 超出范围`
+    return
+  }
+  const container = document.querySelector('.fv-content')
+  const blocks = container?.querySelectorAll<HTMLElement>('.fv-text-body p, .fv-text-body h1, .fv-text-body h2, .fv-text-body h3, .fv-text-body h4, .fv-text-body h5, .fv-text-body h6, .fv-text-body div, .fv-text-body li')
+  if (!container || !blocks) return
+
+  // 给每个块标注起始行号（近似：块文本第一个非空行的累计行号）
+  let lineCursor = 1
+  let target: HTMLElement | null = null
+  let targetStartLine = 0
+  for (const el of blocks) {
+    const txt = (el as HTMLElement).textContent || ''
+    if (!txt.trim()) continue
+    const elLines = txt.split('\n').length
+    const elEndLine = lineCursor + elLines - 1
+    // 命中：块内任意一行落在 [s, e] 区间
+    if (elEndLine >= s && lineCursor <= e) {
+      target = el
+      targetStartLine = lineCursor
+      break
+    }
+    lineCursor = elEndLine + 1
+  }
+
+  if (target) {
+    target.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    target.classList.add('fv-flash-target', 'fv-lines-highlight')
+    if (flashTimer) clearTimeout(flashTimer)
+    flashTimer = setTimeout(() => {
+      target?.classList.remove('fv-flash-target', 'fv-lines-highlight')
+    }, 3000)
+    locateNotice.value = `已定位到第 ${s}${e > s ? `–${e}` : ''} 行`
+  } else {
+    locateMiss.value = true
+    locateNotice.value = `未定位到第 ${s} 行（文件共 ${lines.length} 行）`
+  }
+}
+
+// P0-⑨：监听来源锚点定位目标
+watch(
+  () => props.locate,
+  (target) => {
+    if (!target || target.filePath !== props.filePath) return
+    // 文件未加载时先等待加载完成再定位
+    if (!data.value) {
+      const unwatch = watch(
+        () => data.value,
+        (d) => {
+          if (d?.kind === 'text' && (target.page || target.highlight || target.highlightLines)) {
+            if (target.highlightLines) locateByLines(target.highlightLines[0], target.highlightLines[1])
+            else if (target.highlight) locateByText(target.highlight)
+            else locateInText(target.page as number)
+            unwatch()
+          }
+        },
+      )
+      return
+    }
+    if (data.value.kind === 'text') {
+      if (target.highlightLines) {
+        locateByLines(target.highlightLines[0], target.highlightLines[1])
+      } else if (target.highlight) {
+        locateByText(target.highlight)
+      } else if (target.page) {
+        locateInText(target.page)
+      }
+    } else if (data.value.kind === 'pdf' && target.page) {
+      // PDF 用 iframe 预览，无法精确跳页；提示页码供参考
+      locateMiss.value = false
+      locateNotice.value = `PDF 预览：请跳转到第 ${target.page} 页`
+    }
+  },
+)
 
 watch(() => props.filePath, load, { immediate: true })
 </script>
@@ -237,6 +445,63 @@ watch(() => props.filePath, load, { immediate: true })
   gap: 8px;
   color: var(--text-dim);
   font-size: 12px;
+}
+
+/* ===== P0-⑨ 来源锚点定位 ===== */
+.fv-locate-notice {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin: 8px 12px 0;
+  padding: 5px 10px;
+  border-radius: 6px;
+  background: var(--accent);
+  color: #fff;
+  font-size: 11px;
+}
+.fv-locate-notice.is-miss {
+  background: var(--warning, #e6a23c);
+}
+.fv-locate-close {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  background: transparent;
+  border: none;
+  border-radius: 4px;
+  color: inherit;
+  cursor: pointer;
+}
+.fv-locate-close:hover { background: rgba(255, 255, 255, 0.2); }
+.fv-flash-target {
+  animation: fv-flash 1.5s ease-out;
+}
+@keyframes fv-flash {
+  0% { background-color: rgba(var(--accent-rgb, 64, 158, 255), 0.25); }
+  100% { background-color: transparent; }
+}
+/* P2-⑬ 行级批注：原文命中高亮 */
+.fv-hl-mark {
+  background-color: rgba(255, 213, 79, 0.7);
+  border-radius: 2px;
+  padding: 0 1px;
+  box-shadow: 0 0 0 1px rgba(255, 200, 0, 0.4);
+}
+.fv-hl-mark.fv-hl-done {
+  background-color: rgba(255, 213, 79, 0.35);
+}
+/* P2-⑬ 行级批注：行号定位高亮（背景 + 左侧竖线，3s 后自动清除） */
+.fv-lines-highlight {
+  background-color: rgba(var(--accent-rgb, 64, 158, 255), 0.12);
+  box-shadow: inset 3px 0 0 var(--accent, #409eff);
+  border-radius: 2px;
 }
 .fv-dim-text { color: var(--text-dim); }
 .fv-error-text { color: var(--danger); }

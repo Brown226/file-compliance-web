@@ -68,7 +68,20 @@
             </div>
             <div v-if="issue.standardRef" class="section">
               <div class="section-label">标准引用</div>
-              <div class="section-content">{{ issue.standardRef }}</div>
+              <div class="section-content ref-row">
+                <span class="ref-text">{{ issue.standardRef }}</span>
+                <el-button
+                  v-if="refResolvable(issue.standardRef)"
+                  size="small"
+                  text
+                  type="primary"
+                  class="ref-jump-btn"
+                  :loading="refJumping"
+                  @click.stop="viewClause(issue.standardRef)"
+                >
+                  查看条文
+                </el-button>
+              </div>
             </div>
             <div v-if="issue.recommendation" class="section">
               <div class="section-label">修改建议</div>
@@ -86,6 +99,31 @@
               <span v-if="issue.clauseType" class="meta-item">条款：{{ issue.clauseType }}</span>
               <span v-if="issue.fileName" class="meta-item">文件：{{ issue.fileName }}</span>
             </div>
+
+            <!-- P2-⑧ 误报反馈 / P2-⑬ 定位原文 -->
+            <div class="fp-action-row">
+              <el-button
+                v-if="issue.originalText"
+                size="small"
+                text
+                :icon="Aim"
+                class="locate-btn"
+                @click.stop="emit('locate-issue', issue)"
+              >
+                定位原文
+              </el-button>
+              <el-button
+                size="small"
+                text
+                :icon="CircleClose"
+                class="fp-btn"
+                :loading="fpMarking.has(fpKey(issue))"
+                @click.stop="markFalsePositive(issue)"
+              >
+                标记误报
+              </el-button>
+              <span v-if="fpDone.has(fpKey(issue))" class="fp-done">已反馈误报库</span>
+            </div>
           </div>
         </transition>
       </div>
@@ -95,7 +133,11 @@
 
 <script setup lang="ts">
 import { ref, computed } from 'vue'
-import { Search, ArrowDown, Document } from '@element-plus/icons-vue'
+import { useRouter } from 'vue-router'
+import { ElMessage, ElMessageBox } from 'element-plus'
+import { Search, ArrowDown, Document, CircleClose, Aim } from '@element-plus/icons-vue'
+import { getStandardTreeApi, getClausesByStandardApi } from '@/views/StandardLibrary/service/standardClauses'
+import { markAgentIssueFalsePositiveApi } from '@/api/agent'
 import type { IssueDetail } from '@/views/TaskDetails/types/issue'
 
 /**
@@ -131,9 +173,139 @@ const props = defineProps<{
   issues: AgentIssue[] | IssueDetail[]
 }>()
 
+// P2-⑬ 行级批注：向父组件请求定位原文（父组件负责打开文件 + 传 highlight 给 AgentFileViewer）
+const emit = defineEmits<{
+  (e: 'locate-issue', issue: AgentIssue): void
+}>()
+
+const router = useRouter()
+
 const filterSeverity = ref<'error' | 'warning' | 'info' | ''>('')
 const searchText = ref('')
 const expandedIds = ref<Set<string>>(new Set())
+
+// ===== P1-⑦ 查看条文跳转 =====
+// standardRef 形如「GB 50052-2009 供配电系统设计规范 · 3.0.2」或「GB/T 50001-2017 第3.0.2条」。
+// 跳转目标：/knowledge?tab=clauses&standardId={id}&clauseId={id}（StandardClauses 按 query 定位展开条文）
+// 用模块级缓存避免重复拉取标准树（Agent 会话中多个 issue 共享同一批标准）。
+let treeCache: StandardTreeNode[] | null = null
+let treeCachePromise: Promise<StandardTreeNode[]> | null = null
+const refJumping = ref(false)
+
+async function getTreeOnce(): Promise<StandardTreeNode[]> {
+  if (treeCache) return treeCache
+  if (!treeCachePromise) {
+    treeCachePromise = getStandardTreeApi().then(t => {
+      treeCache = t
+      return t
+    })
+  }
+  return treeCachePromise
+}
+
+/** 从 standardRef 中提取标准编号（如 GB/T 50001-2017），未识别返回 null */
+function extractStandardNumber(ref: string): string | null {
+  // 匹配「GB/T 50001-2017」「GB 50052-2009」「JGJ 102-2003」等编号
+  const m = ref.match(/([A-Za-z]+(?:[\/-][A-Za-z]+)*\s*\d+(?:\.\d+)*[-–]\s*\d{4})/)
+  return m ? m[1].replace(/\s+/g, ' ').trim() : null
+}
+
+/** 从 standardRef 中提取条文号（如 3.0.2），未识别返回 null */
+function extractClauseNumber(ref: string): string | null {
+  // 优先「第X条」形式，其次裸数字编号 3.0.2 / 5.1
+  const m1 = ref.match(/第\s*([\d.]+)\s*条/)
+  if (m1) return m1[1].trim()
+  // 排除已作为标准编号一部分的数字（编号年份 4 位），找条文号
+  const m2 = ref.match(/(?:^|[\s·,，、··])(\d+(?:\.\d+){1,2})\b/)
+  return m2 ? m2[1] : null
+}
+
+function normalizeNo(s: string): string {
+  return s.replace(/\s+/g, '').replace(/–/g, '-').toLowerCase()
+}
+
+/** 判断 standardRef 是否可能解析出可跳转的标准+条文（有编号形如标准+条文，才显示按钮） */
+function refResolvable(ref: string): boolean {
+  if (!ref) return false
+  return !!extractStandardNumber(ref) && !!extractClauseNumber(ref)
+}
+
+async function viewClause(ref: string) {
+  const standardNo = extractStandardNumber(ref)
+  const clauseNo = extractClauseNumber(ref)
+  if (!standardNo || !clauseNo) return
+  refJumping.value = true
+  try {
+    const tree = await getTreeOnce()
+    const norm = normalizeNo(standardNo)
+    const node = tree.find(n => normalizeNo(n.standard.number) === norm)
+    if (!node) {
+      ElMessage.warning(`未找到标准「${standardNo}」，请到知识库确认标准编号`)
+      return
+    }
+    // 条文可能在标准树未含 clauses（树默认不含），需要按标准查条文
+    let clause = node.clauses?.find(c => normalizeNo(c.clause.clauseNumber) === normalizeNo(clauseNo))
+    if (!clause) {
+      const clauses = await getClausesByStandardApi(node.standard.id)
+      clause = clauses.find(c => normalizeNo(c.clause.clauseNumber) === normalizeNo(clauseNo)) || null
+    }
+    if (!clause) {
+      ElMessage.warning(`未找到标准「${standardNo}」中的条文「${clauseNo}」`)
+      return
+    }
+    router.push({
+      path: '/knowledge',
+      query: { tab: 'clauses', standardId: node.standard.id, clauseId: clause.clause.id },
+    })
+  } finally {
+    refJumping.value = false
+  }
+}
+
+// ===== P2-⑧ 误报反馈闭环 =====
+// 用 issue 关键字段拼唯一键，避免同一 issue 重复反馈；Set 持久记录已反馈。
+const fpMarking = ref<Set<string>>(new Set())
+const fpDone = ref<Set<string>>(new Set())
+
+function fpKey(issue: AgentIssue): string {
+  return `${(issue as any).id || ''}:${(issue.originalText || '').slice(0, 40)}`
+}
+
+async function markFalsePositive(issue: AgentIssue) {
+  const key = fpKey(issue)
+  const originalText = issue.originalText || issue.description || ''
+  if (!originalText) {
+    ElMessage.warning('该问题无原文，无法标记误报')
+    return
+  }
+  try {
+    await ElMessageBox.confirm(
+      `确认将该问题标记为误报？\n原文：${originalText.slice(0, 60)}${originalText.length > 60 ? '…' : ''}`,
+      '标记误报',
+      { confirmButtonText: '确认标记', cancelButtonText: '取消', type: 'warning' },
+    )
+  } catch {
+    return // 用户取消
+  }
+
+  if (fpMarking.value.has(key)) return
+  fpMarking.value.add(key)
+  try {
+    const res = await markAgentIssueFalsePositiveApi({
+      originalText,
+      issueType: issue.issueType,
+      ruleCode: issue.ruleCode,
+      severity: issue.severity,
+      reason: 'Agent 审查结果误报反馈',
+    })
+    fpDone.value.add(key)
+    ElMessage.success(res?.added ? '已加入误报库' : '误报库已更新（该原文此前已被标记）')
+  } catch (e: any) {
+    ElMessage.error(`标记失败：${e?.message || '未知错误'}`)
+  } finally {
+    fpMarking.value.delete(key)
+  }
+}
 
 const filteredIssues = computed(() => {
   let result = props.issues as AgentIssue[]
@@ -350,6 +522,45 @@ function riskTagType(r?: string): 'danger' | 'warning' | 'info' {
 
 .section-content.suggested {
   border-left: 2px solid var(--success);
+}
+
+.ref-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.ref-text {
+  flex: 1;
+  word-break: break-all;
+}
+
+.ref-jump-btn {
+  flex-shrink: 0;
+}
+
+.fp-action-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+  padding-top: 6px;
+  border-top: 1px dashed var(--border);
+}
+
+.fp-btn {
+  color: var(--warning);
+  font-size: 12px;
+}
+
+.locate-btn {
+  color: var(--accent);
+  font-size: 12px;
+}
+
+.fp-done {
+  font-size: 11px;
+  color: var(--success);
 }
 
 .meta-row {

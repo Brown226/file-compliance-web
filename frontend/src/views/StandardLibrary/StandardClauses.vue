@@ -647,8 +647,23 @@ onMounted(async () => {
     selectedStandardId.value = route.query.standardId as string
     await loadClausesForStandard()
     if (route.query.clauseId) {
-      await nextTick()
-      scrollToClause(route.query.clauseId as string)
+      // P1-⑦ 增强：从外部跳转定位条文时，展开条文卡片再滚动（与 jumpToHit 行为一致）
+      const clauseId = route.query.clauseId as string
+      const tryScroll = () => {
+        const node = standardClauses.value.find(c => c.clause.id === clauseId)
+        if (node) {
+          node.expanded = true
+          scrollToClause(node.clause.id)
+          return true
+        }
+        return false
+      }
+      if (!tryScroll()) {
+        const t = window.setInterval(() => {
+          if (tryScroll()) window.clearInterval(t)
+        }, 150)
+        window.setTimeout(() => window.clearInterval(t), 5000)
+      }
     }
   }
 })

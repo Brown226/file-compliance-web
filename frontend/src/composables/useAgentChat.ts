@@ -70,6 +70,8 @@ export function useAgentChat() {
         id: m.id,
         role: m.role === 'user' ? 'user' : 'assistant',
         parts,
+        // P0-⑨ 知识引用溯源：保留后端写入的 sources（来源卡片渲染依赖此字段）
+        sources: m.sources ?? undefined,
         createdAt: m.createdAt || undefined,
       }
     })

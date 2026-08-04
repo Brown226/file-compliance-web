@@ -61,6 +61,24 @@
           </div>
         </div>
         <div class="toolbar-right">
+          <!-- P1-② 批量文档处理按钮 -->
+          <button
+            class="toolbar-icon-btn batch-btn"
+            :class="{ 'is-open': batchOpen }"
+            :title="'批量文档处理'"
+            @click="batchOpen = !batchOpen"
+          >
+            <el-icon :size="15"><Files /></el-icon>
+          </button>
+          <!-- P2-⑭ 收藏与全局搜索按钮 -->
+          <button
+            class="toolbar-icon-btn library-btn"
+            :class="{ 'is-open': libraryOpen }"
+            :title="'收藏与全局搜索'"
+            @click="libraryOpen = !libraryOpen"
+          >
+            <el-icon :size="15"><Star /></el-icon>
+          </button>
           <!-- token 统计按钮（对齐参考：可点击，悬停 tooltip 明细，点击展开会话信息面板） -->
           <button
             v-if="stats"
@@ -234,6 +252,30 @@
                   </div>
                 </template>
 
+                <!-- P0-⑨ 知识来源卡片（assistant，展示 RAG 检索来源 + 点击锚点定位） -->
+                <template v-if="message.role === 'assistant' && getSources(message).length > 0">
+                  <div class="kb-source-group">
+                    <div class="kb-source-header">
+                      <span>📎 知识来源</span>
+                      <span class="kb-source-count">{{ getSources(message).length }}</span>
+                    </div>
+                    <div class="kb-source-list">
+                      <button
+                        v-for="(src, si) in getSources(message)"
+                        :key="si"
+                        class="kb-source-item"
+                        :title="src.excerpt || src.documentName"
+                        @click="locateSource(message, src)"
+                      >
+                        <span class="kb-source-doc">{{ src.documentName }}</span>
+                        <span v-if="src.section" class="kb-source-tag">§{{ src.section }}</span>
+                        <span v-if="src.page" class="kb-source-tag">P{{ src.page }}</span>
+                        <span class="kb-source-sim">{{ formatSimilarity(src.similarity) }}</span>
+                      </button>
+                    </div>
+                  </div>
+                </template>
+
                 <!-- 结构化审查结果 -->
                 <template v-if="message.role === 'assistant' && hasIssues(message)">
                   <div
@@ -241,7 +283,10 @@
                     class="markdown-body markdown-content"
                     v-html="renderMarkdown(extractIssuesFromMessage(message).beforeText)"
                   />
-                  <AgentIssueList :issues="extractIssuesFromMessage(message).issues" />
+                  <AgentIssueList
+                    :issues="extractIssuesFromMessage(message).issues"
+                    @locate-issue="locateIssue(message, $event)"
+                  />
                   <div
                     v-if="extractIssuesFromMessage(message).afterText"
                     class="markdown-body markdown-content"
@@ -294,6 +339,13 @@
                     </svg>
                     <span>{{ msgCopied[message.id] ? '已复制' : '复制' }}</span>
                   </button>
+                  <button
+                    v-if="getMessageText(message)"
+                    class="msg-action"
+                    :class="{ 'is-active': msgSaved[message.id] }"
+                    :title="'收藏'"
+                    @click="saveMessage(message)"
+                  >{{ msgSaved[message.id] ? '已收藏' : '收藏' }}</button>
                   <button
                     v-if="message.role === 'assistant' && idx === messages.length - 1 && !isLoading && messages.length > 0"
                     class="msg-action"
@@ -406,6 +458,7 @@
         :current-session-id="sessionId"
         :uploaded-files="uploadedFiles"
         :open-file-path="openingFilePath"
+        :locate="locateTarget"
         @close-file="handleCloseFile"
       />
     </aside>
@@ -416,6 +469,19 @@
       v-model:skills-visible="configDialogs.skills"
       v-model:memory-visible="configDialogs.memory"
       @models-saved="loadModelOptions"
+    />
+
+    <!-- P2-⑭ 收藏与全局搜索面板 -->
+    <AgentLibraryPanel
+      v-model="libraryOpen"
+      :current-session-id="sessionId"
+      @jump-to-session="handleJumpToSession"
+    />
+
+    <!-- P1-② 批量文档处理面板 -->
+    <AgentBatchPanel
+      v-model="batchOpen"
+      :uploaded-files="uploadedFiles"
     />
 
     <!-- 右上角固定浮动按钮：右面板开关（对齐参考项目；图标与左侧栏开关同系列 panel-right） -->
@@ -445,6 +511,8 @@ import {
   MagicStick,
   Moon,
   Sunny,
+  Star,
+  Files,
 } from '@element-plus/icons-vue'
 import type { UIMessage } from 'ai'
 import { useAgentChat } from '@/composables/useAgentChat'
@@ -458,6 +526,7 @@ import {
   updateSessionSettingsApi,
   listAgentModelsApi,
   compactSessionApi,
+  saveAgentItemApi,
   type SessionStats,
   type AgentModelOption,
 } from '@/api/agent'
@@ -466,6 +535,8 @@ import AgentIssueList from './components/AgentIssueList.vue'
 import AgentSessionList from './components/AgentSessionList.vue'
 import AgentSidePanel from './components/AgentSidePanel.vue'
 import AgentConfigDialogs from './components/AgentConfigDialogs.vue'
+import AgentLibraryPanel from './components/AgentLibraryPanel.vue'
+import AgentBatchPanel from './components/AgentBatchPanel.vue'
 import ChatInputArea from './components/ChatInputArea.vue'
 import ChatMinimap from './components/ChatMinimap.vue'
 import './agent-theme.css'
@@ -567,6 +638,83 @@ function hasAnswerText(message: UIMessage): boolean {
   return getMessageText(message).length > 0
 }
 
+// ===== P0-⑨ 知识引用溯源：来源卡片 =====
+interface KnowledgeSource {
+  type?: string
+  documentName: string
+  knowledgeName?: string
+  similarity?: number
+  page?: number
+  section?: string
+  excerpt?: string
+}
+function getSources(message: UIMessage): KnowledgeSource[] {
+  if (message.role !== 'assistant') return []
+  const raw = (message as any).sources
+  if (!Array.isArray(raw)) return []
+  return raw.filter((s: any) => s && typeof s === 'object' && s.documentName)
+}
+function formatSimilarity(v: number | undefined): string {
+  if (v === undefined || typeof v !== 'number') return ''
+  const pct = Math.round(v * 100)
+  return pct >= 0 ? `${pct}%` : ''
+}
+/** 点击来源：在右栏打开对应文件并传页码锚点给 AgentFileViewer */
+function locateSource(message: UIMessage, src: KnowledgeSource) {
+  // 从消息的 tool-call part 里找 filePath（search_knowledge 前通常有 read_file / extract_text）
+  let filePath = ''
+  for (const p of (message.parts as any[])) {
+    const input = p?.input
+    if (input && typeof input === 'object' && typeof input.filePath === 'string') {
+      filePath = input.filePath
+      break
+    }
+  }
+  if (!filePath) {
+    // 找不到文件路径则退化为仅提示（不打断）
+    return
+  }
+  openFileInPanel(filePath, filePath.split(/[\\/]/).pop() || filePath)
+  locateTarget.value = { filePath, page: src.page, section: src.section }
+  void src // 保持签名稳定
+}
+
+/**
+ * P2-⑬ 行级批注：从消息的 tool-call part 里找 filePath，打开文件并把 issue 定位信息
+ * 传给 AgentFileViewer。优先用 locateMeta 的行号区间（highlightLines），
+ * 其次退化为原文文本命中（highlight）。
+ */
+function locateIssue(message: UIMessage, issue: any) {
+  let filePath = ''
+  for (const p of (message.parts as any[])) {
+    const input = p?.input
+    if (input && typeof input === 'object' && typeof input.filePath === 'string') {
+      filePath = input.filePath
+      break
+    }
+  }
+  if (!filePath) {
+    ElMessage.warning('未找到关联文件，无法定位原文')
+    return
+  }
+  openFileInPanel(filePath, filePath.split(/[\\/]/).pop() || filePath)
+
+  // 1) 优先：locateMeta 行号区间（后端 enrichLocateMeta 已补 lineHint/lineHintEnd）
+  const lm = issue?.locateMeta
+  const lineHint = lm?.hint?.lineHint
+  if (typeof lineHint === 'number' && lineHint > 0) {
+    const endHint = lm?.hint?.lineHintEnd
+    const start = lineHint
+    const end = typeof endHint === 'number' && endHint > start ? endHint : start
+    locateTarget.value = { filePath, highlightLines: [start, end] as [number, number] }
+    return
+  }
+
+  // 2) 退化：用 issue 原文片段做文本命中高亮（截前 60 字符）
+  const hl = (issue?.originalText || '').trim().slice(0, 60)
+  locateTarget.value = hl ? { filePath, highlight: hl } : { filePath }
+}
+
 // ===== thinking 折叠状态 =====
 const thinkingOpen = reactive<Record<string, boolean>>({})
 function toggleThinking(key: string) {
@@ -590,6 +738,45 @@ async function copyMessageText(message: UIMessage) {
     setTimeout(() => { msgCopied[message.id] = false }, 1500)
   } catch {
     /* 剪贴板不可用时静默失败 */
+  }
+}
+
+// ===== P2-⑭ 结果沉淀：收藏 / 搜索面板 =====
+const libraryOpen = ref(false)
+// P1-② 批量文档处理面板
+const batchOpen = ref(false)
+
+// 跳转到搜索结果对应会话
+function handleJumpToSession(targetSessionId: string) {
+  if (targetSessionId && targetSessionId !== sessionId.value) {
+    handleSelectSession(targetSessionId)
+  }
+  // 会话切换后由 watch(sessionId) 加载消息；这里聚焦到消息区
+  nextTick(() => {
+    const el = document.querySelector('.chat-messages-container')
+    if (el) el.scrollTop = el.scrollHeight
+  })
+}
+
+// ===== P2-⑭ 结果沉淀：收藏 =====
+const msgSaved = reactive<Record<string, boolean>>({})
+async function saveMessage(message: UIMessage) {
+  const text = getMessageText(message)
+  if (!text) return
+  if (msgSaved[message.id]) return
+  try {
+    const title = text.slice(0, 30).replace(/\s+/g, ' ') || '收藏'
+    await saveAgentItemApi({
+      type: message.role === 'assistant' ? 'qa' : 'question',
+      title: title + (message.role === 'assistant' ? '' : '…'),
+      content: text,
+      sourceSessionId: sessionId.value || undefined,
+      sourceMessageId: message.id,
+    })
+    msgSaved[message.id] = true
+    ElMessage.success('已收藏')
+  } catch (e: any) {
+    ElMessage.error(`收藏失败：${e?.message || '未知错误'}`)
   }
 }
 
@@ -798,6 +985,8 @@ const uploadedFiles = ref<Array<{ name: string; size: number; path?: string }>>(
 const attachedImages = ref<Array<{ dataUrl: string; previewUrl: string; fileName?: string }>>([])
 // 右栏文件查看器：待打开文件路径（传给 AgentSidePanel，触发文件 tab）
 const openingFilePath = ref<string | null>(null)
+// P0-⑨ 知识引用溯源：来源锚点定位目标（传给 AgentSidePanel → AgentFileViewer）
+const locateTarget = ref<{ filePath: string; page?: number; section?: string; highlight?: string; highlightLines?: [number, number] } | null>(null)
 /** 在右侧面板打开文件预览（对齐参考：点击上传文件 → 右栏 TabBar + 查看器） */
 function openFileInPanel(filePath: string, fileName?: string) {
   openingFilePath.value = null
@@ -1660,5 +1849,77 @@ watch(sessionId, () => { refreshStats() })
 /* 侧边栏开关：打开态高亮（与右面板开关 is-open 一致的激活色） */
 .top-toolbar .toolbar-side-btn.is-open {
   color: var(--text);
+}
+
+/* ===== P0-⑨ 知识来源卡片 ===== */
+.kb-source-group {
+  margin-top: 8px;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-panel);
+}
+.kb-source-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-dim);
+  margin-bottom: 6px;
+}
+.kb-source-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 9px;
+  background: var(--bg-selected);
+  color: var(--text);
+  font-size: 10px;
+}
+.kb-source-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.kb-source-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 5px 8px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text);
+  font-size: 12px;
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.12s;
+}
+.kb-source-item:hover { background: var(--bg-hover); }
+.kb-source-doc {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.kb-source-tag {
+  flex-shrink: 0;
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: var(--bg-selected);
+  color: var(--text-muted);
+  font-size: 10px;
+  font-family: var(--font-mono);
+}
+.kb-source-sim {
+  flex-shrink: 0;
+  font-size: 10px;
+  color: var(--accent);
 }
 </style>
