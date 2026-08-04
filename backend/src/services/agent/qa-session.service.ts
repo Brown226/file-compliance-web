@@ -108,6 +108,22 @@ export class QASessionService {
   }
 
   /**
+   * 关闭用户的全部 active 会话（单活跃会话约束：新建会话时调用）
+   *
+   * 把该用户所有 status='active' 的会话置为 'completed'，
+   * 确保每用户同一时刻只有一个活跃会话。
+   *
+   * @returns 被关闭的会话数量
+   */
+  static async completeActiveSessions(userId: string): Promise<number> {
+    const res = await prisma.qASession.updateMany({
+      where: { userId, status: 'active' },
+      data: { status: 'completed' },
+    });
+    return res.count;
+  }
+
+  /**
    * 查询单个会话（含权限校验）
    */
   static async getSession(sessionId: string, userId: string): Promise<SessionDetail | null> {
@@ -185,6 +201,7 @@ export class QASessionService {
           id: sessionId,
           userId,
           title: title ?? null,
+          status: 'active', // 显式声明（不依赖 DB 默认值），保证单活跃会话约束语义明确
           modelKey: settings?.modelKey ?? null,
           toolPreset: settings?.toolPreset ?? 'full',
           thinkingLevel: settings?.thinkingLevel ?? null,
@@ -354,6 +371,79 @@ export class QASessionService {
       where: { id: sessionId },
     });
     return true;
+  }
+
+  /**
+   * 复制会话（简化版分支：多方案并行）
+   *
+   * 复制会话全部字段 + 全部消息（按 createdAt 升序）到新会话：
+   * - 新会话 title 加「（副本）」后缀
+   * - status 强制 'active'（新会话可继续对话）
+   * - modelKey/toolPreset/thinkingLevel 复制原值（保持相同模型/预设）
+   * - 消息的 role/content/status/sources/debug 原样复制，createdAt 保留原值（保证时序保真）
+   *
+   * @param sessionId 源会话 ID
+   * @param userId 当前用户（权限校验：只能复制自己的会话）
+   * @returns 新会话详情（SessionDetail）
+   */
+  static async duplicateSession(sessionId: string, userId: string): Promise<SessionDetail> {
+    // 权限校验 + 读取源会话
+    const source = await prisma.qASession.findFirst({
+      where: { id: sessionId, userId },
+    });
+    if (!source) {
+      throw new Error('会话不存在或无权访问');
+    }
+
+    // 读取全部消息（按 createdAt 升序，保证复制后顺序一致）
+    const messages = await prisma.qAMessage.findMany({
+      where: { sessionId },
+      orderBy: { createdAt: 'asc' },
+    });
+
+    // 事务：创建新会话 + 批量复制消息（任一失败整体回滚）
+    const newSessionId = require('crypto').randomUUID();
+    const newSession = await prisma.$transaction(async (tx) => {
+      const created = await tx.qASession.create({
+        data: {
+          id: newSessionId,
+          userId,
+          title: source.title ? `${source.title}（副本）` : '未命名会话（副本）',
+          status: 'active',
+          modelKey: source.modelKey,
+          toolPreset: source.toolPreset ?? 'full',
+          thinkingLevel: source.thinkingLevel,
+        },
+      });
+      if (messages.length > 0) {
+        // 注：QAMessage.updatedAt 是 @updatedAt 字段，createMany 不允许显式传值（由 DB 自动生成），
+        // 只复制 createdAt 保证时序保真
+        await tx.qAMessage.createMany({
+          data: messages.map((m) => ({
+            sessionId: newSessionId,
+            role: m.role,
+            content: m.content,
+            status: m.status,
+            sources: m.sources ?? undefined,
+            debug: m.debug ?? undefined,
+            createdAt: m.createdAt,
+          })),
+        });
+      }
+      return created;
+    });
+
+    return {
+      id: newSession.id,
+      title: newSession.title,
+      taskId: newSession.taskId,
+      userId: newSession.userId,
+      modelKey: newSession.modelKey,
+      toolPreset: newSession.toolPreset ?? 'full',
+      thinkingLevel: newSession.thinkingLevel,
+      createdAt: newSession.createdAt.toISOString(),
+      updatedAt: newSession.updatedAt.toISOString(),
+    };
   }
 
   /**

@@ -4,6 +4,7 @@ import { TerminologyService } from './services/standard/terminology.service';
 import { PromptTemplateService } from './services/llm/prompt-template.service';
 import { WebSocketService } from './services/system/websocket.service';
 import { initQueueProcessors, closeQueue } from './services/system/queue.service';
+import { initAgentBatchQueue } from './services/system/agent-batch-queue.service';
 import { startScheduler } from './services/system/scheduler.service';
 import { presenceService } from './services/system/presence.service';
 import prisma from './config/db';
@@ -59,8 +60,9 @@ const startServer = async () => {
     // ===== Worker 角色：启动审查队列处理器 + 定时清理 =====
     if (runWorker) {
       await initQueueProcessors().catch((e) => console.error('[Queue] 初始化失败:', e));
+      await initAgentBatchQueue().catch((e) => console.error('[AgentBatch] 批量队列初始化失败:', e));
       startScheduler();
-      console.log('[Bootstrap] worker 已启动：审查队列处理器 + 定时清理');
+      console.log('[Bootstrap] worker 已启动：审查队列处理器 + 批量队列 + 定时清理');
     } else {
       console.log('[Bootstrap] api 角色：不消费审查队列（仅入队）');
     }

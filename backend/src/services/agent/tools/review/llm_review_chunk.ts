@@ -13,6 +13,10 @@
  *    （查不到保持空，绝不覆盖 LLM 已填的 standardRef）
  * 7. 返回 ReviewIssue[]
  *
+ * 注意：结果去重（同一问题跨 chunk 只上报一次）由 P1-⑫ 工具钩子完成——
+ * register-tool-hooks.ts 注册的 afterToolCall 钩子对 llm_review_chunk 结果
+ * 经 issue-dedup 过滤，本工具内部不重复去重（保持工具职责单一）。
+ *
  * 注意：工具场景下没有完整 PipelineContext，不能用 AiReviewService.injectSemanticContext
  * （它需要 taskId/fileId/extractedText 等完整字段），改为直接拼接 focus 到 systemPrompt。
  */
@@ -22,6 +26,7 @@ import { PromptLoader } from '../../../prompts';
 import { LlmService, type ReviewIssue } from '../../../llm/llm.service';
 import type { ToolContext } from '../file/upload_file';
 import { createSearchStandardCheckpointsTool } from '../knowledge/search_standard_checkpoints';
+import FalsePositiveLibraryService from '../../../review/falsePositiveLibrary.service';
 
 const { tool } = require('@ai-sdk/provider-utils') as typeof import('@ai-sdk/provider-utils');
 
@@ -134,6 +139,83 @@ async function backfillStandardRefs(
 }
 
 /**
+ * P2-⑧ 误报过滤 — 与 review-pipeline 行为一致
+ *
+ * 用误报库（falsePositiveLibrary）中的原文归一化集合过滤 LLM 产出的 issue：
+ * - 一次 batchCheck 全量加载误报库到内存，归一化匹配（去空白标点/NFKC/小写）
+ * - 与 review.service.ts 的 fpLibrarySet.has(normalizeText(issue.originalText)) 同一语义
+ * - 误报库加载失败仅告警，不影响审查结果返回
+ */
+export async function filterFalsePositives(issues: ReviewIssue[]): Promise<ReviewIssue[]> {
+  if (issues.length === 0) return issues;
+  try {
+    const texts = issues.map((i) => i.originalText || '');
+    const fpMap = await FalsePositiveLibraryService.batchCheck(texts);
+    const filtered = issues.filter((i) => !fpMap.get(i.originalText));
+    const removed = issues.length - filtered.length;
+    if (removed > 0) {
+      console.log(`[llm_review_chunk] 误报库过滤 ${removed} 条 (${issues.length} → ${filtered.length})`);
+    }
+    return filtered;
+  } catch (e) {
+    console.warn('[llm_review_chunk] 误报库过滤失败（不影响审查结果）:', e);
+    return issues;
+  }
+}
+
+/**
+ * P2-⑬ 行号定位补充 — 为 issue 生成 locateMeta
+ *
+ * 用待审查文本 text 与 issue.originalText 定位：
+ * - 精确/归一化匹配文本区间（buildLocateMeta 内部处理 exact/trimmed/normalized）
+ * - 优先用 lineHint 转成「行号」：原文本中绝对偏移 → 行号
+ * - 命中则带 chunk.index；无 absolute 定位（如纯 CAD handle）时保留 fallback hint
+ */
+export function enrichLocateMeta(issues: ReviewIssue[], text: string): ReviewIssue[] {
+  const lineStarts: number[] = [];
+  {
+    let idx = 0;
+    lineStarts.push(0);
+    while ((idx = text.indexOf('\n', idx)) !== -1) {
+      idx += 1;
+      lineStarts.push(idx);
+    }
+  }
+  const offsetToLine = (off: number): number => {
+    // 二分：最后一个 <= off 的行起点，行号 = 其索引 + 1
+    let lo = 0;
+    let hi = lineStarts.length - 1;
+    let ans = 0;
+    while (lo <= hi) {
+      const mid = (lo + hi) >> 1;
+      if (lineStarts[mid] <= off) {
+        ans = mid;
+        lo = mid + 1;
+      } else {
+        hi = mid - 1;
+      }
+    }
+    return ans + 1;
+  };
+
+  for (const issue of issues) {
+    if (!issue.originalText) continue;
+    const loc = LlmService.buildLocateMeta(text, issue.originalText, {});
+    if (!loc) continue;
+    if (loc.absolute) {
+      const startLine = offsetToLine(loc.absolute.start);
+      const endLine = offsetToLine(loc.absolute.end);
+      loc.hint = loc.hint || {};
+      loc.hint.lineHint = startLine;
+      // 行号区间（起止行相同则只填 start）
+      (loc.hint as any).lineHintEnd = endLine > startLine ? endLine : undefined;
+    }
+    issue.locateMeta = loc;
+  }
+  return issues;
+}
+
+/**
  * 创建 llm_review_chunk 工具
  *
  * 参数：
@@ -179,7 +261,7 @@ export function createLlmReviewChunkTool(_context: ToolContext) {
       // 5. 调 LlmService.reviewText
       //    skipUserTemplate=true：直接用 text 作为 user content（调用方已自行组装）
       //    mode=module：用于 LlmCallLog 可观测性关联
-      const issues = await LlmService.reviewText(text, {
+      let issues = await LlmService.reviewText(text, {
         systemPrompt,
         mode: module,
         skipUserTemplate: true,
@@ -188,6 +270,12 @@ export function createLlmReviewChunkTool(_context: ToolContext) {
       // 6. 后处理：ruleCode 存在但 standardRef 为空时，反查审点库回填（查不到保持空，不覆盖已有引用）
       const searchTool = createSearchStandardCheckpointsTool(_context);
       await backfillStandardRefs(issues, searchTool);
+
+      // 7. 后处理：P2-⑧ 误报库过滤（与 review-pipeline 的 fpLibrarySet 归一化匹配同一语义）
+      issues = await filterFalsePositives(issues);
+
+      // 8. 后处理：P2-⑬ 为 issue 补充 locateMeta 行号定位（文本绝对偏移 → 行号）
+      issues = enrichLocateMeta(issues, text);
 
       return issues;
     },

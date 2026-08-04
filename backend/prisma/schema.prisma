@@ -40,6 +40,8 @@ model User {
   chatSessions UserChatSession[]
   agentMemories AgentMemory[]
   announcementReads    UserAnnouncementRead[]
+  savedItems           SavedItem[]
+  agentBatchJobs       AgentBatchJob[]
   createdAt    DateTime    @default(now())
   updatedAt    DateTime    @updatedAt
 
@@ -981,3 +983,44 @@ model AgentMemory {
 // traceId 关联 LlmCallLog.traceId（非外键，仅用于跨表关联查询）
 // 2026-08-03：AgentTrace 链路已移除（执行追踪 UI 与数据链路一并下线），
 // 工具执行过程改由 QAMessage.parts（tool-call/tool-result）承载，见 chat/stream 保存逻辑
+
+
+// P2-⑭ 结果沉淀：收藏的审查/问答结果
+model SavedItem {
+  id              String    @id @default(uuid())
+  userId          String
+  user            User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type            String    // review / qa / report / document
+  title           String    // 收藏标题
+  content         String    @db.Text // 收藏内容（Markdown/JSON 序列化）
+  sourceSessionId String?   // 来源会话 ID（Agent 会话）
+  sourceMessageId String?   // 来源消息 ID
+  createdAt       DateTime  @default(now())
+
+  @@index([userId])
+  @@index([userId, type])
+  @@map("saved_items")
+}
+
+// P1-② 批量文档处理：异步批次任务落库（Bull 队列 + 状态追踪）
+model AgentBatchJob {
+  id         String    @id @default(uuid())
+  userId     String
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  status     String    @default("PENDING") // PENDING / PROCESSING / COMPLETED / FAILED / CANCELLED
+  taskType   String    // extract / chunk / summarize / review / knowledge（本批次的子任务）
+  fileCount  Int       @default(0) // 提交的文件数
+  progress   Int       @default(0) // 0-100
+  total      Int       @default(0) // 处理结果总数
+  succeeded  Int       @default(0)
+  failed     Int       @default(0)
+  input      Json      // 提交时的 files 数组快照
+  result     Json?     // 处理结果（runBatchProcess 返回）
+  error      String?   @db.Text // 失败原因
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+
+  @@index([userId])
+  @@index([userId, status])
+  @@map("agent_batch_jobs")
+}

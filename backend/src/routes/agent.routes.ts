@@ -31,6 +31,14 @@ import { SteeringService } from '../services/agent/steering/steering.service';
 import { SummaryService } from '../services/agent/summary/summary.service';
 import { getUploadDir } from '../config/upload';
 import { lookupCapabilities } from '../services/llm/model-capabilities.registry';
+import FalsePositiveLibraryService from '../services/review/falsePositiveLibrary.service';
+import {
+  submitBatchJob,
+  getBatchJob,
+  listBatchJobs,
+  cancelBatchJob,
+} from '../services/system/agent-batch-queue.service';
+import type { BatchTask } from '../services/agent/tools/batch/batch_process';
 
 const router = Router();
 
@@ -60,21 +68,14 @@ router.post('/chat/stream', async (req: AuthRequest, res: Response) => {
       return res.status(400).json({ success: false, message: 'messages 不能为空' });
     }
 
-    // Task 25：每用户单会话限制 — 新会话开始时自动结束旧会话
-    // P0 #1 修复：QASession 增加 status 字段后此逻辑生效；结束该用户全部 active 旧会话
+    // Task 25：每用户单会话限制 — 新会话开始时自动结束旧会话（真实约束）
+    // P0 #1 修复：改为调用 QASessionService.completeActiveSessions（service 内按 status 过滤）
     const sessionId: string = req.body?.sessionId || '';
     const isNewSession = !sessionId;
     if (isNewSession) {
-      // 检查用户是否有 active 会话，有则自动结束（全部，不只最近一条）
-      const activeSessions = await QASessionService.listSessions(userId, 20);
-      const stillActive = activeSessions.filter((s: any) => s.status === 'active');
-      if (stillActive.length > 0) {
-        const prisma = require('../config/db').default;
-        await prisma.qASession.updateMany({
-          where: { id: { in: stillActive.map((s: any) => s.id) } },
-          data: { status: 'completed' },
-        });
-        console.log(`[Agent] 自动结束旧会话: ${stillActive.map((s: any) => s.id).join(', ')}`);
+      const closedCount = await QASessionService.completeActiveSessions(userId);
+      if (closedCount > 0) {
+        console.log(`[Agent] 自动结束旧会话: ${closedCount} 个`);
       }
     }
 
@@ -602,6 +603,33 @@ router.delete('/sessions/:sessionId', async (req: AuthRequest, res: Response) =>
 });
 
 /**
+ * POST /api/agent/sessions/:sessionId/duplicate — 复制会话（简化版分支）
+ *
+ * 复制源会话全部消息到新会话（title 加「（副本）」后缀，status=active，
+ * modelKey/toolPreset/thinkingLevel 原值保留），用于多方案并行对比。
+ *
+ * 返回：{ success, data: SessionDetail }
+ */
+router.post('/sessions/:sessionId/duplicate', async (req: AuthRequest, res: Response) => {
+  try {
+    const userId = req.user?.id;
+    if (!userId) return res.status(401).json({ success: false, message: '未认证' });
+
+    const sessionId = String(req.params.sessionId || '');
+    if (!sessionId) return res.status(400).json({ success: false, message: 'sessionId 不能为空' });
+
+    const newSession = await QASessionService.duplicateSession(sessionId, userId);
+    return res.json({ success: true, data: newSession });
+  } catch (e: any) {
+    if (e?.message?.includes('不存在或无权访问')) {
+      return res.status(404).json({ success: false, message: e.message });
+    }
+    console.error('[Agent] 复制会话失败:', e?.message || e);
+    return res.status(500).json({ success: false, message: `复制失败: ${e?.message || e}` });
+  }
+});
+
+/**
  * GET /api/agent/sessions/:sessionId/stats — 会话 token 用量统计
  *
  * 聚合该会话的消息计数（user/assistant/total）+ 工具调用计数（AgentTrace）+
@@ -1118,7 +1146,7 @@ router.post('/sessions/:id/compact', async (req: AuthRequest, res: Response) => 
  * 返回：{ success, data: { defaultKey: string|null, models: [{ key, label }] } }
  *   key 格式：<providerId>::<modelName>（null 表示系统默认）
  */
-router.get('/models', async (_req: AuthRequest, res: Response) => {
+router.get('/models', async (req: AuthRequest, res: Response) => {
   try {
     const prisma = require('../config/db').default;
     const { LlmService } = require('../services/llm/llm.service');
@@ -1140,6 +1168,22 @@ router.get('/models', async (_req: AuthRequest, res: Response) => {
             label: `${p.name || p.id} · ${p.model}`,
           });
         }
+      }
+    }
+
+    // P2-㉑ 模型范围 scopedModels：?scope=a*,b* 用 minimatch glob 过滤可见模型
+    const scopeRaw = req.query.scope;
+    if (typeof scopeRaw === 'string' && scopeRaw.trim()) {
+      const patterns = scopeRaw.split(',').map(s => s.trim()).filter(Boolean);
+      if (patterns.length > 0) {
+        const { minimatch } = require('minimatch');
+        const filtered = models.filter(m => {
+          const target = m.key || m.label;
+          return patterns.some(p => minimatch(target, p, { nocase: true }))
+            // 保留系统默认（key=null）当 scope 未显式排除
+            || (m.key === null && !patterns.some(p => p.startsWith('!') && minimatch(m.label, p.slice(1), { nocase: true })));
+        });
+        return res.json({ success: true, data: { defaultKey: null, models: filtered } });
       }
     }
 
@@ -1416,6 +1460,382 @@ router.post('/providers/catalog', async (req: AuthRequest, res: Response) => {
   } catch (e: any) {
     console.error('[Agent] 目录填充失败:', e?.message || e);
     return res.status(500).json({ success: false, message: `目录填充失败: ${e?.message || e}` });
+  }
+});
+
+/**
+ * POST /api/agent/issues/false-positive — Agent 审查结果标记误报（P2-⑧）
+ *
+ * 把 Agent 审查出的某条 issue 写入误报标记库（FalsePositiveLibrary），
+ * 供「误报反馈闭环」沉淀：同文本再次出现时可在误报库中检索并跳过。
+ *
+ * Body:
+ *   - originalText: string（必填，被标记为误报的原文）
+ *   - reason?: string（误报原因）
+ *   - issueType?: string（问题分类，如 VIOLATION）
+ *   - ruleCode?: string（规则代码）
+ *   - severity?: string（严重度，error/warning/info）
+ *
+ * 响应：{ success: true, data: { added: boolean, count: number } }
+ *   added=true 表示新增记录，false 表示已存在（累加 count）。
+ */
+router.post('/issues/false-positive', async (req: AuthRequest, res: Response) => {
+  try {
+    const userId = req.user?.id;
+    if (!userId) {
+      return res.status(401).json({ success: false, message: '未认证' });
+    }
+
+    const { originalText, reason, issueType, ruleCode, severity } = req.body || {};
+    if (typeof originalText !== 'string' || originalText.trim().length === 0) {
+      return res.status(400).json({ success: false, message: 'originalText 必填' });
+    }
+
+    const trimmed = originalText.trim();
+    const existing = await FalsePositiveLibraryService.isInLibrary(trimmed);
+    await FalsePositiveLibraryService.syncFromTaskDetail({
+      originalText: trimmed,
+      fpReason: typeof reason === 'string' && reason ? reason : undefined,
+      issueType: typeof issueType === 'string' && issueType ? issueType : undefined,
+      ruleCode: typeof ruleCode === 'string' && ruleCode ? ruleCode : undefined,
+      severity: typeof severity === 'string' && severity ? severity : undefined,
+      markedById: userId,
+    });
+
+    return res.json({
+      success: true,
+      data: { added: !existing, count: existing ? 'increment' : 1 },
+    });
+  } catch (e: any) {
+    console.error('[Agent] 标记误报失败:', e?.message || e);
+    return res.status(500).json({ success: false, message: `标记误报失败: ${e?.message || e}` });
+  }
+});
+
+
+/**
+ * P2-⑭ 结果沉淀：收藏 / 搜索
+ *
+ * POST   /api/agent/saves           — 收藏一条结果（type/title/content/sourceSessionId）
+ * GET    /api/agent/saves           — 收藏列表（可按 type 过滤）
+ * DELETE /api/agent/saves/:id       — 删除收藏
+ * GET    /api/agent/search?q=       — 全文搜索会话消息（QAMessage.content ILIKE）
+ *
+ * 依赖 saved_items 表（prisma db push 后生效）
+ */
+router.post('/saves', async (req: AuthRequest, res: Response) => {
+  try {
+    const userId = req.user?.id;
+    if (!userId) return res.status(401).json({ success: false, message: '未认证' });
+    const { type, title, content, sourceSessionId, sourceMessageId } = req.body || {};
+    if (!title || typeof title !== 'string' || !content || typeof content !== 'string') {
+      return res.status(400).json({ success: false, message: 'title 和 content 必填' });
+    }
+    const prisma = require('../config/db').default;
+    const item = await prisma.savedItem.create({
+      data: {
+        userId,
+        type: String(type || 'qa'),
+        title: String(title).slice(0, 200),
+        content,
+        sourceSessionId: sourceSessionId ? String(sourceSessionId) : null,
+        sourceMessageId: sourceMessageId ? String(sourceMessageId) : null,
+      },
+    });
+    return res.json({ success: true, data: item });
+  } catch (e: any) {
+    console.error('[Agent] 收藏失败:', e?.message || e);
+    // 表不存在时给出明确提示
+    if (/does not exist|relation/i.test(e?.message || '')) {
+      return res.status(500).json({ success: false, message: 'saved_items 表未创建，请先执行 prisma db push' });
+    }
+    return res.status(500).json({ success: false, message: `收藏失败: ${e?.message || e}` });
+  }
+});
+
+router.get('/saves', async (req: AuthRequest, res: Response) => {
+  try {
+    const userId = req.user?.id;
+    if (!userId) return res.status(401).json({ success: false, message: '未认证' });
+    const type = req.query.type;
+    const prisma = require('../config/db').default;
+    const items = await prisma.savedItem.findMany({
+      where: { userId, ...(type ? { type: String(type) } : {}) },
+      orderBy: { createdAt: 'desc' },
+      take: 200,
+    });
+    return res.json({ success: true, data: items });
+  } catch (e: any) {
+    console.error('[Agent] 收藏列表失败:', e?.message || e);
+    if (/does not exist|relation/i.test(e?.message || '')) {
+      return res.status(500).json({ success: false, message: 'saved_items 表未创建，请先执行 prisma db push' });
+    }
+    return res.status(500).json({ success: false, message: `收藏列表失败: ${e?.message || e}` });
+  }
+});
+
+router.delete('/saves/:id', async (req: AuthRequest, res: Response) => {
+  try {
+    const userId = req.user?.id;
+    if (!userId) return res.status(401).json({ success: false, message: '未认证' });
+    const prisma = require('../config/db').default;
+    const result = await prisma.savedItem.deleteMany({ where: { id: req.params.id, userId } });
+    if (result.count === 0) return res.status(404).json({ success: false, message: '收藏不存在' });
+    return res.json({ success: true, data: { deleted: result.count } });
+  } catch (e: any) {
+    console.error('[Agent] 删除收藏失败:', e?.message || e);
+    return res.status(500).json({ success: false, message: `删除收藏失败: ${e?.message || e}` });
+  }
+});
+
+router.get('/search', async (req: AuthRequest, res: Response) => {
+  try {
+    const userId = req.user?.id;
+    if (!userId) return res.status(401).json({ success: false, message: '未认证' });
+    const q = String(req.query.q || '').trim();
+    if (!q) return res.json({ success: true, data: [] });
+    const prisma = require('../config/db').default;
+    // 全文搜索会话消息（ILIKE 关键词）
+    const messages = await prisma.qAMessage.findMany({
+      where: {
+        session: { userId },
+        content: { contains: q, mode: 'insensitive' },
+      },
+      include: { session: { select: { id: true, title: true } } },
+      orderBy: { createdAt: 'desc' },
+      take: 50,
+    });
+    return res.json({
+      success: true,
+      data: messages.map((m: any) => ({
+        id: m.id,
+        role: m.role,
+        content: m.content.slice(0, 500),
+        sessionId: m.sessionId,
+        sessionTitle: m.session?.title || null,
+        createdAt: m.createdAt,
+      })),
+    });
+  } catch (e: any) {
+    console.error('[Agent] 搜索失败:', e?.message || e);
+    return res.status(500).json({ success: false, message: `搜索失败: ${e?.message || e}` });
+  }
+});
+
+// ===== 文件树/目录浏览（任务 8）=====
+
+/**
+ * 目录白名单（AGENT_ALLOWED_DIRS，逗号分隔的绝对路径，支持 ~ 展开主目录）
+ * 未配置时回退到 backend/uploads/agent_temp/{userId}（当前用户临时目录）
+ */
+const IGNORED_DIR_NAMES = new Set([
+  'node_modules', '.git', '.next', '.nuxt', '.venv', 'venv', 'env',
+  'dist', 'build', 'out', 'coverage', '.cache', '__pycache__', '.idea', '.vscode',
+]);
+
+/** 解析 AGENT_ALLOWED_DIRS 环境变量为规范化绝对路径数组 */
+function getAllowedDirRoots(userId: string): string[] {
+  const raw = process.env.AGENT_ALLOWED_DIRS;
+  const list: string[] = [];
+  if (raw && raw.trim()) {
+    for (const item of raw.split(',')) {
+      const t = item.trim();
+      if (!t) continue;
+      const expanded = t.startsWith('~/')
+        ? path.join(process.env.HOME || process.env.USERPROFILE || '', t.slice(2))
+        : t;
+      list.push(path.resolve(expanded));
+    }
+  }
+  // 回退：当前用户 agent_temp 目录
+  if (list.length === 0) {
+    list.push(path.resolve(path.join(getUploadDir(), 'agent_temp', userId)));
+  }
+  return list;
+}
+
+/** 判断路径是否在某个允许根目录内（严格前缀 + path.sep，防路径穿越） */
+function isWithinAllowedRoot(resolvedPath: string, roots: string[]): boolean {
+  return roots.some((root) => {
+    const normalizedRoot = path.resolve(root);
+    return resolvedPath === normalizedRoot || resolvedPath.startsWith(normalizedRoot + path.sep);
+  });
+}
+
+/**
+ * GET /api/agent/directories/browse — 浏览授权目录（受白名单约束）
+ *
+ * Query:
+ *   - path?: string — 要列出的目录绝对路径；缺省返回白名单根目录列表
+ *
+ * 返回：{ success, data: { roots: [...], root: string|null, entries: [...] } }
+ *   - roots: 白名单根目录列表（[{ name, path }]）
+ *   - root: 当前浏览的根目录路径（path 缺省时为 null）
+ *   - entries: 目录条目列表（[{ name, path, type: 'dir'|'file', size, mtime }]）
+ *
+ * 安全约束：
+ *   - path 必须位于某个允许根目录内（AGENT_ALLOWED_DIRS 或 agent_temp/{userId}）
+ *   - 忽略 node_modules/.git/.next 等目录
+ *   - 目录不存在/越权返回 404/403
+ */
+router.get('/directories/browse', async (req: AuthRequest, res: Response) => {
+  try {
+    const userId = req.user?.id;
+    if (!userId) return res.status(401).json({ success: false, message: '未认证' });
+
+    const roots = getAllowedDirRoots(userId);
+    // 缺省 path → 返回白名单根目录列表
+    const rawPath = (req.query.path as string) || '';
+    if (!rawPath) {
+      const rootEntries = roots.map((root) => ({
+        name: path.basename(root) || root,
+        path: root,
+      }));
+      return res.json({ success: true, data: { roots: rootEntries, root: null, entries: [] } });
+    }
+
+    const resolved = path.resolve(rawPath);
+    // 越权校验：必须在某个允许根目录内
+    if (!isWithinAllowedRoot(resolved, roots)) {
+      return res.status(403).json({ success: false, message: '无权浏览该目录（不在白名单内）' });
+    }
+
+    if (!fs.existsSync(resolved) || !fs.statSync(resolved).isDirectory()) {
+      return res.status(404).json({ success: false, message: '目录不存在' });
+    }
+
+    let names: string[] = [];
+    try {
+      names = fs.readdirSync(resolved);
+    } catch (e: any) {
+      return res.status(500).json({ success: false, message: `读取目录失败: ${e?.message || e}` });
+    }
+
+    // 排序：目录在前，文件在后，各自按名称字母序
+    const entries: Array<{ name: string; path: string; type: 'dir' | 'file'; size: number; mtime: string }> = [];
+    for (const name of names) {
+      const full = path.join(resolved, name);
+      let stat: fs.Stats;
+      try {
+        stat = fs.statSync(full);
+      } catch {
+        continue; // 单个条目 stat 失败（如权限）跳过
+      }
+      if (stat.isDirectory()) {
+        if (IGNORED_DIR_NAMES.has(name)) continue; // 忽略 node_modules/.git 等
+        entries.push({ name, path: full, type: 'dir', size: 0, mtime: stat.mtime.toISOString() });
+      } else if (stat.isFile()) {
+        entries.push({ name, path: full, type: 'file', size: stat.size, mtime: stat.mtime.toISOString() });
+      }
+    }
+    entries.sort((a, b) => (a.type === b.type ? a.name.localeCompare(b.name) : a.type === 'dir' ? -1 : 1));
+
+    return res.json({
+      success: true,
+      data: {
+        roots: roots.map((root) => ({ name: path.basename(root) || root, path: root })),
+        root: resolved,
+        entries,
+      },
+    });
+  } catch (e: any) {
+    console.error('[Agent] 目录浏览失败:', e?.message || e);
+    return res.status(500).json({ success: false, message: `目录浏览失败: ${e?.message || e}` });
+  }
+});
+
+// ===== 批量文档处理（P1-② 异步化）=====
+
+const BATCH_TASKS: BatchTask[] = ['extract', 'chunk', 'summarize', 'review', 'knowledge'];
+
+/**
+ * POST /api/agent/batch — 提交批量文档处理任务（异步）
+ *
+ * Body: { files: [{ filePath, tasks: string[] }] }
+ *   - filePath 必须是已上传到 agent_temp 的绝对路径（upload_file 返回值）
+ *   - tasks ∈ { extract, chunk, summarize, review, knowledge }
+ *
+ * 返回：{ success, data: { id, status } } —— 客户端用 GET /batch/:id 轮询结果
+ */
+router.post('/batch', async (req: AuthRequest, res: Response) => {
+  try {
+    const userId = req.user?.id;
+    if (!userId) return res.status(401).json({ success: false, message: '未认证' });
+
+    const files = (req.body || {}).files;
+    if (!Array.isArray(files) || files.length === 0 || files.length > 10) {
+      return res.status(400).json({ success: false, message: 'files 必须是 1-10 个文件数组' });
+    }
+    for (const f of files) {
+      if (!f || typeof f.filePath !== 'string' || !Array.isArray(f.tasks) || f.tasks.length === 0) {
+        return res.status(400).json({ success: false, message: '每个文件必须包含 filePath 和 tasks' });
+      }
+      for (const t of f.tasks) {
+        if (!BATCH_TASKS.includes(t)) {
+          return res.status(400).json({ success: false, message: `不支持的子任务: ${t}（可选 ${BATCH_TASKS.join('/')}）` });
+        }
+      }
+    }
+
+    const data = await submitBatchJob(userId, files as Array<{ filePath: string; tasks: BatchTask[] }>);
+    return res.json({ success: true, data });
+  } catch (e: any) {
+    console.error('[Agent] 提交批量任务失败:', e?.message || e);
+    if (/does not exist|relation/i.test(e?.message || '')) {
+      return res.status(500).json({ success: false, message: 'agent_batch_jobs 表未创建，请先执行 prisma db push' });
+    }
+    return res.status(500).json({ success: false, message: `提交批量任务失败: ${e?.message || e}` });
+  }
+});
+
+/**
+ * GET /api/agent/batch/:jobId — 查询批量任务状态/结果
+ */
+router.get('/batch/:jobId', async (req: AuthRequest, res: Response) => {
+  try {
+    const userId = req.user?.id;
+    if (!userId) return res.status(401).json({ success: false, message: '未认证' });
+    const record = await getBatchJob(String(req.params.jobId), userId);
+    if (!record) return res.status(404).json({ success: false, message: '批次不存在' });
+    return res.json({ success: true, data: record });
+  } catch (e: any) {
+    console.error('[Agent] 查询批量任务失败:', e?.message || e);
+    return res.status(500).json({ success: false, message: `查询批量任务失败: ${e?.message || e}` });
+  }
+});
+
+/**
+ * GET /api/agent/batch — 批量任务列表
+ *
+ * Query: page / pageSize
+ */
+router.get('/batch', async (req: AuthRequest, res: Response) => {
+  try {
+    const userId = req.user?.id;
+    if (!userId) return res.status(401).json({ success: false, message: '未认证' });
+    const page = Math.max(1, parseInt(String(req.query.page || '1'), 10) || 1);
+    const pageSize = Math.min(50, Math.max(1, parseInt(String(req.query.pageSize || '20'), 10) || 20));
+    const data = await listBatchJobs(userId, page, pageSize);
+    return res.json({ success: true, data });
+  } catch (e: any) {
+    console.error('[Agent] 批量任务列表失败:', e?.message || e);
+    return res.status(500).json({ success: false, message: `批量任务列表失败: ${e?.message || e}` });
+  }
+});
+
+/**
+ * POST /api/agent/batch/:jobId/cancel — 取消批量任务
+ */
+router.post('/batch/:jobId/cancel', async (req: AuthRequest, res: Response) => {
+  try {
+    const userId = req.user?.id;
+    if (!userId) return res.status(401).json({ success: false, message: '未认证' });
+    const ok = await cancelBatchJob(String(req.params.jobId), userId);
+    if (!ok) return res.status(404).json({ success: false, message: '批次不存在' });
+    return res.json({ success: true, data: { cancelled: true } });
+  } catch (e: any) {
+    console.error('[Agent] 取消批量任务失败:', e?.message || e);
+    return res.status(500).json({ success: false, message: `取消批量任务失败: ${e?.message || e}` });
   }
 });
 

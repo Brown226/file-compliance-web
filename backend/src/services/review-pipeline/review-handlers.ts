@@ -234,6 +234,45 @@ const handleDocReview: ReviewHandler = async (ctx) => {
 
   const scene = ctx.scene || getModeScene('DOC_REVIEW');
   const config = getEffectiveConfig(ctx);
+
+  // 二期 B：aiEngine 为 'rag' 时走条目级对齐 Agent（治本），失败自动降级旧策略
+  if (ctx.pipelineConfig?.aiEngine === 'rag' && ctx.refFileGroup?.refFiles?.length) {
+    try {
+      const { runRefCompareAgent } = await import('./doc-review-agent.service');
+      // 组装参照文本（复用 refFileGroup 已解析内容，缺失时即时提取）
+      const { TextExtractionService } = await import('./text-extraction.service');
+      const refTexts: Array<{ fileName: string; content: string }> = [];
+      for (const refFile of ctx.refFileGroup.refFiles) {
+        let content = refFile.extractedText || null;
+        if (!content) {
+          content = await TextExtractionService.extractFileText(refFile.filePath, refFile.fileType, refFile.fileName);
+        }
+        if (content) refTexts.push({ fileName: refFile.fileName, content });
+      }
+      if (refTexts.length > 0) {
+        const agentResult = await runRefCompareAgent(text, refTexts, {
+          fileId: ctx.fileId,
+          taskId: ctx.taskId,
+          mode: ctx.reviewMode,
+          traceId: ctx.traceId,
+        }, { llmMaxTokens: config.llmMaxTokens, llmTimeout: config.llmTimeout });
+        // 降级：条目抽取为空或完全失败 → 回退旧策略
+        if (agentResult.degraded && agentResult.issues.length === 0 && agentResult.itemCount === 0) {
+          console.warn(`[Handler] DOC_REVIEW 条目级对齐降级（${agentResult.degradedReason}），回退旧策略`);
+          const fallback = await AiReviewService.runRefCompareStrategy(text, ctx, scene, config);
+          return {
+            aiIssues: fallback.issues,
+            usedEngine: `${fallback.engine}(degraded-from-agent)`,
+            sources: fallback.sources,
+          };
+        }
+        return { aiIssues: agentResult.issues, usedEngine: `doc-review-agent(${agentResult.alignedCount}/${agentResult.itemCount})` };
+      }
+    } catch (e: any) {
+      console.warn(`[Handler] DOC_REVIEW 条目级对齐失败，降级旧策略: ${e.message}`);
+    }
+  }
+
   const result = await AiReviewService.runRefCompareStrategy(text, ctx, scene, config);
   return { aiIssues: result.issues, usedEngine: result.engine, sources: result.sources };
 };

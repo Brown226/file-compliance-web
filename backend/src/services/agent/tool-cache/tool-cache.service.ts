@@ -29,6 +29,7 @@ export const CACHEABLE_TOOLS = new Set([
   'read_file',
   'list_uploads',
   'compare_documents',
+  'extract_tables',
 ]);
 
 /**
@@ -36,7 +37,7 @@ export const CACHEABLE_TOOLS = new Set([
  * 这些工具的结果只依赖文件内容 + 参数（如 chunk_document 的 strategy），
  * 与参数里的 filePath 字符串本身无关，因此 key 必须包含文件内容指纹。
  */
-const FILE_CONTENT_KEY_TOOLS = new Set(['extract_text', 'chunk_document']);
+const FILE_CONTENT_KEY_TOOLS = new Set(['extract_text', 'chunk_document', 'extract_tables']);
 
 /** 内容 hash 计算的文件大小上限（字节）：超过该大小只取 stat（size+mtime），避免读大文件拖慢缓存 */
 const CONTENT_HASH_MAX_BYTES = 10 * 1024 * 1024; // 10MB

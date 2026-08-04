@@ -31,6 +31,8 @@ import { SkillsService } from './skills/skills.service';
 import { CompactionService } from './context-compaction/compaction.service';
 import { scrubSensitive } from './security/scrub-sensitive';
 import { acquireLlmToken } from '../../utils/llm-rate-limiter';
+import { decideRetry } from './retry/retry-strategy';
+import { PromptLoader } from '../prompts';
 
 // require ESM-only SDK（Node 22.12+ 支持），同时保留类型
 // 注意：Vercel AI SDK v7 用 stopWhen + isStepCount 替代了旧版的 maxSteps 参数
@@ -43,6 +45,29 @@ const {
   createUIMessageStream,
 } = require('ai') as typeof import('ai');
 const { createOpenAI } = require('@ai-sdk/openai') as typeof import('@ai-sdk/openai');
+
+/**
+ * 流式调用重试包装：仅重试「调用创建阶段」的失败（await streamText 抛错）。
+ * 流已开始后的错误由 onError 回调记录，不重试（数据已流出，无法安全回滚）。
+ * 重试决策复用 retry-strategy 的 decideRetry（401 特殊处理 + 指数退避，最多 3 次尝试）。
+ */
+async function callStreamWithRetry<T>(fn: () => T): Promise<Awaited<T>> {
+  let attemptNumber = 1;
+  for (;;) {
+    try {
+      return await fn();
+    } catch (e) {
+      const decision = decideRetry(e, attemptNumber, false);
+      if (!decision.shouldRetry) throw e;
+      console.warn(
+        `[Agent] streamText 调用失败，第 ${attemptNumber} 次重试（${decision.delayMs}ms 后）: ` +
+          `${(e as Error)?.message || e}`,
+      );
+      await new Promise((r) => setTimeout(r, decision.delayMs));
+      attemptNumber += 1;
+    }
+  }
+}
 
 /**
  * Agent 系统提示词 — 定义 Agent 的工作流、行为准则、输出要求和安全约束
@@ -60,6 +85,7 @@ export const AGENT_SYSTEM_PROMPT = `你是文件合规审查专家，熟悉合�
 8. 汇总输出（summarize_issues + format_issues，输出结构化 ReviewIssue[]）
 9. 生成报告（write_report，可选）— 把审查发现写成 Markdown 报告存到服务端
 10. 下载报告（download_report，可选）— 返回报告下载 URL 给用户
+11. 修改文档（edit_document，可选）— 用户要求修改文档内容时，按指定替换文本或补丁更新原文件（replace 精确替换 / patch unified diff，支持纯文本与 DOCX 受控替换）；编辑前先用 read_file 确认原内容，编辑后返回变更摘要
 
 ## 审查规则工具使用指南（Task 10 已实现）
 - list_available_rules: 列出所有可用规则及其状态（enabled/severity），可按 category 筛选
@@ -76,6 +102,7 @@ export const AGENT_SYSTEM_PROMPT = `你是文件合规审查专家，熟悉合�
 - write_report: 生成 Markdown 审查报告（含元信息/摘要/明细），存到 reports/ 子目录
 - download_report: 读取报告文件返回下载 URL
 - compare_documents: 对比两份文档（旧版 vs 新版）输出段落级差异 + 变更统计 + LLM 摘要，用于修订版核对/版本比对
+- edit_document: 修改已上传文档的指定内容（工作流第 11 步）。replace 模式把 oldText 精确替换为 newText（occurrence 指定第几次出现，replaceAll 全量）；patch 模式应用 unified diff 补丁（仅纯文本）。支持 txt/md/csv/log/json/xml/yaml/yml 与 DOCX（受控替换保留格式）。编辑前先 read_file 查看原文件
 
 ## 知识检索工具使用指南（Task 9 已实现 3 个）
 - search_knowledge: 调 MaxKB 知识库做 RAG 检索（不传 knowledgeId 跨所有库联合检索，返回 content/document_name/similarity）
@@ -268,6 +295,11 @@ export class AgentService {
     const skillsSection = AgentService.buildSkillsSection();
     if (skillsSection) systemPrompt += '\n\n' + skillsSection;
 
+    // Task 7（Prompt 模板化）：加载 Agent 办公模板段落（AGENT_TEMPLATE_KEYS 配置）
+    // 模板作为追加段落注入，不改动 AGENT_SYSTEM_PROMPT 本体；加载失败静默跳过
+    const officeTemplateSection = await AgentService.buildOfficeTemplateSection();
+    if (officeTemplateSection) systemPrompt += '\n\n' + officeTemplateSection;
+
     // 6. 消息格式兼容：UIMessage（前端 useChat v4，有 parts 数组）或 ModelMessage（curl 测试，有 content）
     //    Vercel AI SDK v7 的 streamText 需要 ModelMessage 格式。
     //    - 如果消息有 parts 字段（UIMessage），用 convertToModelMessages 转换
@@ -358,7 +390,7 @@ export class AgentService {
     //    - onToolExecutionStart/End: Task 7.5 工具执行追踪
     //    - onError: Task 7.5 错误日志（默认只 console.error，这里显式记录便于排查）
     //    - onFinish: Task 7.7 补写 LlmCallLog（Agent 绕过了 LlmService，需在此补写调用日志）
-    const result = streamText({
+    const result = await callStreamWithRetry(() => streamText({
       model,
       system: systemPrompt,
       messages: modelMessages,
@@ -474,7 +506,7 @@ export class AgentService {
             userId,
             text,
             finishReason === 'error' ? 'failed' : 'completed',
-            undefined,
+            AgentService.extractSourcesFromSteps(steps),
             toolCalls.length > 0 ? { toolCalls } : undefined,
           ).catch((e: Error) => {
             console.warn(`[Agent:QASession] 持久化 assistant 消息失败: sessionId=${sessionId}`, (e as Error).message);
@@ -486,7 +518,7 @@ export class AgentService {
           SteeringService.markConsumed(sessionId).catch(() => {});
         }
       },
-    });
+    }));
 
     // 10. 返回 result 对象（不在这里调 toUIMessageStreamResponse，留给路由层处理）
     //     Task 7.5：如果首步异常 needFallback=true，路由层会在流结束后检测到
@@ -585,7 +617,7 @@ export class AgentService {
         userId,
         result.text,
         result.finishReason === 'error' ? 'failed' : 'completed',
-        undefined,
+        AgentService.extractSourcesFromSteps(result.steps),
         toolCalls.length > 0 ? { toolCalls } : undefined,
       ).catch((e: Error) => {
         console.warn(`[Agent:QASession] 兜底模式持久化 assistant 消息失败: sessionId=${sessionId}`, (e as Error).message);
@@ -680,6 +712,67 @@ export class AgentService {
   }
 
   /**
+   * P0-⑨ 知识引用溯源：从工具调用步骤汇总知识来源，写入 QAMessage.sources
+   *
+   * 只收集 search_knowledge 工具的 tool-result（toolName 匹配），解析其输出：
+   * - output 可能是对象或 JSON 字符串（ai-sdk tool 返回对象，兜底链路可能序列化过）
+   * - 取 output.results 数组，映射为来源条目 { type, documentName, knowledgeName, similarity, page?, section?, excerpt }
+   * - 多个检索调用合并去重（按 documentName + page + section 判重，保留 similarity 最高的一条）
+   * - 无任何来源时返回 undefined（与 persistAssistantMessage 的 sources ?? undefined 语义一致，避免存空数组）
+   *
+   * @param steps ai-sdk 的 steps 数组（与 extractToolCallsFromSteps 输入同构）
+   * @returns 来源数组或 undefined
+   */
+  private static extractSourcesFromSteps(steps?: any[]): any[] | undefined {
+    if (!Array.isArray(steps)) return undefined;
+    const toolParts = AgentService.extractToolCallsFromSteps(steps);
+    const sources: any[] = [];
+    const seen = new Set<string>();
+
+    for (const part of toolParts) {
+      if (part.toolName !== 'search_knowledge' || part.isError) continue;
+      let output: any = part.output;
+      if (typeof output === 'string') {
+        try {
+          output = JSON.parse(output);
+        } catch {
+          continue; // 解析失败跳过该条，不中断主流程
+        }
+      }
+      const results: any[] = Array.isArray(output?.results) ? output.results : [];
+      for (const r of results) {
+        const documentName = r?.document_name || r?.documentName || '未知文档';
+        const page = r?.page;
+        const section = r?.section;
+        const dedupKey = `${documentName}|${page ?? ''}|${section ?? ''}`;
+        const candidate = {
+          type: 'knowledge',
+          documentName,
+          knowledgeName: r?.knowledge_name || r?.knowledgeName || '',
+          similarity: r?.similarity ?? 0,
+          ...(page !== undefined ? { page } : {}),
+          ...(section !== undefined ? { section } : {}),
+          excerpt: String(r?.content ?? '').slice(0, 200),
+        };
+        if (seen.has(dedupKey)) {
+          const idx = sources.findIndex(
+            (s: any) =>
+              `${s.documentName}|${s.page ?? ''}|${s.section ?? ''}` === dedupKey,
+          );
+          if (idx >= 0 && (candidate.similarity ?? 0) > (sources[idx].similarity ?? 0)) {
+            sources[idx] = candidate; // 保留相似度更高的条目
+          }
+          continue;
+        }
+        seen.add(dedupKey);
+        sources.push(candidate);
+      }
+    }
+
+    return sources.length > 0 ? sources : undefined;
+  }
+
+  /**
    * 工具预设 → 工具名单（返回 null 表示不过滤 = 全部工具）
    *   none    → []（纯对话，禁用全部工具）
    *   default → 排除 3 个 pipeline 委托类工具（日常对话/知识问答/审查常用）
@@ -717,6 +810,50 @@ export class AgentService {
       if (allTools[n]) out[n] = allTools[n];
     }
     return out;
+  }
+
+  /**
+   * Task 7（Prompt 模板化）：构建 Agent 办公模板段落，注入到 systemPrompt 末尾
+   *
+   * 配置来源：system_configs 表 `agent_template_keys`（逗号分隔的模板 key 列表，
+   * 如 "office_contract_review,office_report_format"）。未配置/为空 → 返回空串（行为与现状一致）。
+   *
+   * 加载逻辑：
+   * - 对每个模板 key，用 PromptLoader.resolve('agent', 'system', key, '') 加载
+   *   （DB → registry fallback → 空兜底；模板加载失败静默跳过，不阻塞主流程）
+   * - 加载成功且非空 → 以「## 办公模板：xxx」段落追加，标注来源让 LLM 知道是用户配置的约束
+   *
+   * @returns 模板段落拼接串；无可用模板时返回空串
+   */
+  private static async buildOfficeTemplateSection(): Promise<string> {
+    try {
+      const prisma = (await import('../../config/db')).default;
+      const cfg = await prisma.systemConfig.findUnique({ where: { key: 'agent_template_keys' } });
+      const raw = cfg?.value
+        ? (typeof cfg.value === 'string' ? cfg.value : '')
+        : '';
+      const keys = raw.split(',').map((k) => k.trim()).filter(Boolean);
+      if (keys.length === 0) return '';
+
+      const sections: string[] = [];
+      for (const key of keys) {
+        try {
+          // module='agent'，variant=模板 key（与 registry.ts 中 agent 模块模板的 variant 一致）
+          const content = await PromptLoader.resolve('agent', 'system', key, '');
+          if (content && content.trim()) {
+            sections.push(content);
+          }
+        } catch (e) {
+          // 单个模板加载失败不阻塞（与 buildSkillsSection 的防御性写法一致）
+          console.warn(`[Agent] 办公模板 ${key} 加载失败（跳过）:`, (e as Error).message);
+        }
+      }
+      return sections.length > 0 ? sections.join('\n\n') : '';
+    } catch (e) {
+      // 配置读取失败静默降级（不阻塞主流程）
+      console.warn('[Agent] 读取办公模板配置失败（跳过）:', (e as Error).message);
+      return '';
+    }
   }
 
   /**
