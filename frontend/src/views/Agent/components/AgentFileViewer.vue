@@ -54,6 +54,40 @@
       </div>
       <!-- PDF -->
       <iframe v-else-if="data.kind === 'pdf'" class="fv-pdf" :src="dataSrc" title="PDF 预览" />
+      <!-- docx：mammoth 渲染 HTML -->
+      <div v-else-if="data.kind === 'docx'" class="fv-office-body" v-html="docxHtml" />
+      <!-- xlsx：表格渲染 -->
+      <div v-else-if="data.kind === 'xlsx'" class="fv-office-body">
+        <div v-if="xlsxLoading" class="fv-center"><span class="fv-dim-text">加载中…</span></div>
+        <div v-else-if="xlsxError" class="fv-center"><span class="fv-error-text">{{ xlsxError }}</span></div>
+        <template v-else>
+          <div v-if="sheetNames.length > 1" class="fv-sheet-tabs">
+            <button
+              v-for="name in sheetNames"
+              :key="name"
+              class="fv-sheet-tab"
+              :class="{ active: activeSheet === name }"
+              @click="activeSheet = name"
+            >{{ name }}</button>
+          </div>
+          <div class="fv-xlsx-table-wrap">
+            <table class="fv-xlsx-table">
+              <thead>
+                <tr>
+                  <th class="fv-xlsx-rownum">#</th>
+                  <th v-for="(h, hi) in currentHeaders" :key="hi">{{ h }}</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="(row, ri) in currentRows" :key="ri">
+                  <td class="fv-xlsx-rownum">{{ ri + 1 }}</td>
+                  <td v-for="(cell, ci) in row" :key="ci">{{ cell }}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </template>
+      </div>
     </div>
 
     <!-- 空态 -->
@@ -68,6 +102,9 @@ import { ref, computed, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import { readAgentFileApi, type AgentFileReadResult } from '@/api/agent'
 import { useMarkdown } from '@/composables/useMarkdown'
+// docx / xlsx 预览（参考传统审查 TaskDetails 的 DocxPreviewPanel / ExcelPreviewPanel 方案）
+import mammoth from 'mammoth'
+import * as XLSX from 'xlsx'
 
 const props = defineProps<{
   filePath: string
@@ -118,6 +155,67 @@ const dataSrc = computed(() => {
   return `data:${data.value.mime};base64,${data.value.base64}`
 })
 
+// ===== docx / xlsx 预览（2026-08-04 新增，参考传统审查 TaskDetails 方案）=====
+const docxHtml = ref('')
+const xlsxLoading = ref(false)
+const xlsxError = ref('')
+const sheetNames = ref<string[]>([])
+const activeSheet = ref('')
+const xlsxSheets = ref<Record<string, string[][]>>({})
+
+const currentHeaders = computed<string[]>(() => {
+  const rows = xlsxSheets.value[activeSheet.value] || []
+  return rows.length > 0 ? rows[0] : []
+})
+const currentRows = computed<string[][]>(() => {
+  const rows = xlsxSheets.value[activeSheet.value] || []
+  return rows.length > 1 ? rows.slice(1) : []
+})
+
+/** 解析 docx：mammoth 转 HTML */
+async function parseDocx(base64: string) {
+  docxHtml.value = ''
+  try {
+    const bin = atob(base64)
+    const bytes = new Uint8Array(bin.length)
+    for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i)
+    const result = await mammoth.convertToHtml({ arrayBuffer: bytes.buffer })
+    docxHtml.value = result.value
+  } catch (e: any) {
+    console.error('[AgentFileViewer] docx 渲染失败:', e)
+    ElMessage.error(`Word 渲染失败：${e?.message || '未知错误'}`)
+  }
+}
+
+/** 解析 xlsx：SheetJS 读表格 */
+async function parseXlsx(base64: string) {
+  xlsxLoading.value = true
+  xlsxError.value = ''
+  sheetNames.value = []
+  activeSheet.value = ''
+  xlsxSheets.value = {}
+  try {
+    const bin = atob(base64)
+    const bytes = new Uint8Array(bin.length)
+    for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i)
+    const wb = XLSX.read(bytes.buffer, { type: 'array' })
+    const names = wb.SheetNames || []
+    sheetNames.value = names
+    const sheets: Record<string, string[][]> = {}
+    for (const name of names) {
+      const ws = wb.Sheets[name]
+      sheets[name] = XLSX.utils.sheet_to_json<string[]>(ws, { header: 1, defval: '' })
+    }
+    xlsxSheets.value = sheets
+    if (names.length > 0) activeSheet.value = names[0]
+  } catch (e: any) {
+    xlsxError.value = e?.message || 'Excel 解析失败'
+    console.error('[AgentFileViewer] xlsx 解析失败:', e)
+  } finally {
+    xlsxLoading.value = false
+  }
+}
+
 function formatSize(bytes: number): string {
   if (bytes < 1024) return `${bytes}B`
   if (bytes < 1048576) return `${(bytes / 1024).toFixed(1)}KB`
@@ -133,6 +231,11 @@ async function load() {
   try {
     const res = await readAgentFileApi(props.filePath)
     data.value = res.data
+    // 2026-08-04：docx/xlsx 预览解析（mammoth / xlsx 库）
+    const kind = res.data?.kind
+    const b64 = res.data?.base64
+    if (kind === 'docx' && b64) await parseDocx(b64)
+    else if (kind === 'xlsx' && b64) await parseXlsx(b64)
   } catch (e: any) {
     error.value = e?.response?.data?.message || e?.message || '读取文件失败'
     ElMessage.error(error.value)
@@ -514,4 +617,51 @@ watch(() => props.filePath, load, { immediate: true })
   animation: agent-file-spin 0.9s linear infinite;
 }
 @keyframes agent-file-spin { to { transform: rotate(360deg); } }
+
+/* ===== docx / xlsx 预览样式（2026-08-04）===== */
+.fv-office-body {
+  flex: 1;
+  overflow: auto;
+  padding: 16px 24px;
+  font-size: 14px;
+  line-height: 1.8;
+  color: var(--text);
+}
+.fv-office-body :deep(h1) { font-size: 1.7em; font-weight: 700; margin: 16px 0 10px; }
+.fv-office-body :deep(h2) { font-size: 1.4em; font-weight: 650; margin: 14px 0 8px; }
+.fv-office-body :deep(h3) { font-size: 1.15em; font-weight: 600; margin: 12px 0 6px; }
+.fv-office-body :deep(p) { margin: 0 0 10px; }
+.fv-office-body :deep(table) {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 10px 0;
+  font-size: 13px;
+}
+.fv-office-body :deep(th),
+.fv-office-body :deep(td) {
+  border: 1px solid var(--border);
+  padding: 6px 10px;
+  text-align: left;
+}
+.fv-office-body :deep(th) { background: var(--bg-subtle); font-weight: 600; }
+.fv-office-body :deep(img) { max-width: 100%; height: auto; }
+.fv-office-body :deep(ul),
+.fv-office-body :deep(ol) { padding-left: 1.5em; margin: 8px 0; }
+.fv-sheet-tabs { display: flex; gap: 6px; margin-bottom: 10px; flex-wrap: wrap; }
+.fv-sheet-tab {
+  padding: 3px 12px;
+  font-size: 12px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: none;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+.fv-sheet-tab.active { background: var(--accent); color: #fff; border-color: var(--accent); }
+.fv-xlsx-table-wrap { overflow: auto; max-height: 100%; }
+.fv-xlsx-table { border-collapse: collapse; font-size: 12px; width: 100%; }
+.fv-xlsx-table th,
+.fv-xlsx-table td { border: 1px solid var(--border); padding: 4px 8px; text-align: left; white-space: nowrap; }
+.fv-xlsx-table th { background: var(--bg-subtle); font-weight: 600; position: sticky; top: 0; }
+.fv-xlsx-rownum { color: var(--text-dim); background: var(--bg-subtle); text-align: center; width: 40px; }
 </style>

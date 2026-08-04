@@ -421,6 +421,27 @@ router.get('/files/read', async (req: AuthRequest, res: Response) => {
       return res.json({ success: true, data });
     }
 
+    // 2026-08-04：docx/xlsx 支持预览（前端用 mammoth/xlsx 库渲染，参考传统审查 TaskDetails 方案）
+    // - docx → 返回 base64（前端 mammoth.convertToHtml 渲染）
+    // - xlsx → 返回 base64（前端 xlsx 库解析渲染）
+    if (ext === 'docx' || ext === 'xlsx' || ext === 'xls') {
+      if (stat.size > MAX_PREVIEW_BASE64_BYTES) {
+        return res.status(413).json({ success: false, message: 'Office 文件过大，仅支持预览 20MB 以内' });
+      }
+      const base64 = fs.readFileSync(resolved).toString('base64');
+      const mime = ext === 'docx'
+        ? 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+        : 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+      return res.json({
+        success: true,
+        data: {
+          filePath: resolved, fileName, ext, size: stat.size,
+          kind: ext === 'docx' ? 'docx' : 'xlsx',
+          base64, mime,
+        },
+      });
+    }
+
     // 其他二进制：拒绝预览（避免前端渲染乱码）
     return res.status(415).json({ success: false, message: `暂不支持预览 .${ext} 类型文件` });
   } catch (e: any) {
