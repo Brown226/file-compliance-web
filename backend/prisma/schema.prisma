@@ -840,6 +840,7 @@ model QASession {
   user            User          @relation(fields: [userId], references: [id])
   title           String?       // 会话标题（首条问题截取）
   taskId          String?       // 可选关联的审查任务
+  status          String        @default("active") // P0 #1：会话状态 active/completed（每用户单活跃会话限制用）
   messages        QAMessage[]
   modelKey        String?       // 会话选用的模型（格式：<providerId>::<modelName>，空 = 系统默认）
   toolPreset      String?       @default("default") // none / default / full（工具预设）

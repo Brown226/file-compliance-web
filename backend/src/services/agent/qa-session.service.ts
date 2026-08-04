@@ -26,6 +26,7 @@ export interface SessionListItem {
   id: string;
   title: string | null;
   taskId: string | null;
+  status: string; // P0 #1：会话状态 active/completed（每用户单活跃会话限制用）
   messageCount: number;
   lastMessagePreview: string | null;
   lastMessageAt: string | null;
@@ -96,6 +97,7 @@ export class QASessionService {
         id: s.id,
         title: s.title,
         taskId: s.taskId,
+        status: s.status ?? 'active',
         messageCount: s._count.messages,
         lastMessagePreview,
         lastMessageAt: lastMsg?.createdAt?.toISOString() ?? null,

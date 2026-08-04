@@ -61,19 +61,20 @@ router.post('/chat/stream', async (req: AuthRequest, res: Response) => {
     }
 
     // Task 25：每用户单会话限制 — 新会话开始时自动结束旧会话
+    // P0 #1 修复：QASession 增加 status 字段后此逻辑生效；结束该用户全部 active 旧会话
     const sessionId: string = req.body?.sessionId || '';
     const isNewSession = !sessionId;
     if (isNewSession) {
-      // 检查用户是否有 active 会话，有则自动结束
-      const activeSessions = await QASessionService.listSessions(userId, 1);
-      const stillActive = activeSessions.find((s: any) => s.status === 'active');
-      if (stillActive) {
+      // 检查用户是否有 active 会话，有则自动结束（全部，不只最近一条）
+      const activeSessions = await QASessionService.listSessions(userId, 20);
+      const stillActive = activeSessions.filter((s: any) => s.status === 'active');
+      if (stillActive.length > 0) {
         const prisma = require('../config/db').default;
-        await prisma.qASession.update({
-          where: { id: stillActive.id },
+        await prisma.qASession.updateMany({
+          where: { id: { in: stillActive.map((s: any) => s.id) } },
           data: { status: 'completed' },
         });
-        console.log(`[Agent] 自动结束旧会话: ${stillActive.id}`);
+        console.log(`[Agent] 自动结束旧会话: ${stillActive.map((s: any) => s.id).join(', ')}`);
       }
     }
 
@@ -118,33 +119,53 @@ router.post('/chat/stream', async (req: AuthRequest, res: Response) => {
     console.error('[Agent] 流式调用失败:', e?.message || e);
 
     // Task 21.2：LLM 整体失败降级 — 流未开始时（headersSent=false），
-    // 降级到非流式 LlmService.chat() 重试一次，把结果包成 UIMessageStream 返回
+    // 降级重试。P0 #1（接通纸面能力）：先降级到 AgentService.chatWithGenerateText()
+    // （非流式但保留工具调用循环，generateText 兜底），再失败才降级到纯文本 LlmService.chat()。
     if (!res.headersSent) {
       try {
         const sessionId: string = req.body?.sessionId || '';
         const messages: any[] = req.body?.messages || [];
 
-        // 从 messages 提取最后一条用户消息作为 prompt（降级模式无法支持工具调用）
-        const lastUserMsg = [...messages].reverse().find((m: any) => m?.role === 'user');
-        const userText = lastUserMsg
-          ? (Array.isArray(lastUserMsg.parts)
-            ? lastUserMsg.parts.filter((p: any) => p?.type === 'text').map((p: any) => p.text).join('')
-            : typeof lastUserMsg.content === 'string' ? lastUserMsg.content : '')
-          : '';
+        let fallbackText = '';
+        let fallbackMode = '';
 
-        if (!userText) {
-          throw new Error('无法从 messages 提取用户消息');
+        // 第一级兜底：chatWithGenerateText（保留工具调用能力，能处理上传文件/检索/规则）
+        try {
+          const { AgentService } = require('../services/agent/agent.service');
+          // catch 块内 try 无法访问外层 try 的 userId（块级作用域），重新取
+          const uid = (req as any).user?.id || '';
+          const generateResult = await AgentService.chatWithGenerateText({ messages, userId: uid, sessionId });
+          // generateText result 的 text 字段为最终文本
+          fallbackText = typeof generateResult?.text === 'string' ? generateResult.text : '';
+          fallbackMode = 'generateText';
+          console.warn(`[Agent:Fallback] 降级到 chatWithGenerateText()，sessionId=${sessionId || 'none'}`);
+        } catch (genErr: any) {
+          console.error('[Agent:Fallback] generateText 兜底失败，继续降级到 LlmService.chat():', (genErr as Error)?.message || genErr);
         }
 
-        console.warn(`[Agent:Fallback] 降级到 LlmService.chat()，sessionId=${sessionId || 'none'}`);
+        // 第二级兜底：纯文本 LlmService.chat()（generateText 也失败时）
+        if (!fallbackText) {
+          // 从 messages 提取最后一条用户消息作为 prompt
+          const lastUserMsg = [...messages].reverse().find((m: any) => m?.role === 'user');
+          const userText = lastUserMsg
+            ? (Array.isArray(lastUserMsg.parts)
+              ? lastUserMsg.parts.filter((p: any) => p?.type === 'text').map((p: any) => p.text).join('')
+              : typeof lastUserMsg.content === 'string' ? lastUserMsg.content : '')
+            : '';
 
-        // 调非流式 LLM
-        const { LlmService } = require('../services/llm/llm.service');
-        const fallbackText = await LlmService.chat(userText, {
-          systemPrompt: '你是文件合规审查助手。由于流式调用失败，请直接基于用户消息回复（无法调用工具）。',
-          mode: 'agent',
-          traceId: sessionId || undefined,
-        });
+          if (!userText) {
+            throw new Error('无法从 messages 提取用户消息');
+          }
+
+          // 调非流式 LLM
+          const { LlmService } = require('../services/llm/llm.service');
+          fallbackText = await LlmService.chat(userText, {
+            systemPrompt: '你是文件合规审查助手。由于流式调用失败，请直接基于用户消息回复（无法调用工具）。',
+            mode: 'agent',
+            traceId: sessionId || undefined,
+          });
+          fallbackMode = 'LlmService.chat';
+        }
 
         // 把降级结果包成 UIMessageStream 格式（前端 useChat 能正常消费）
         // 注意：createUIMessageStream 返回裸 ReadableStream（UI message chunk 流），
@@ -161,11 +182,11 @@ router.post('/chat/stream', async (req: AuthRequest, res: Response) => {
         });
 
         await pipeUIMessageStreamToResponse({ response: res, stream: fallbackStream });
-        console.log('[Agent:Fallback] 降级成功');
+        console.log(`[Agent:Fallback] 降级成功（${fallbackMode}）`);
 
         // Task 21.3：降级事件记入后端日志（AgentTrace 链路已移除，2026-08-03）
         if (sessionId) {
-          console.warn(`[Agent:Fallback] LLM 流式失败降级: sessionId=${sessionId} reason=${(e as Error)?.message || e} fallbackLen=${fallbackText.length}`);
+          console.warn(`[Agent:Fallback] LLM 流式失败降级: sessionId=${sessionId} reason=${(e as Error)?.message || e} mode=${fallbackMode} fallbackLen=${fallbackText.length}`);
         }
         return;
       } catch (fallbackErr) {
@@ -269,16 +290,47 @@ router.post('/upload', agentUpload.single('file'), (req: AuthRequest, res: Respo
  * Query:
  *   - filePath: 上传接口返回的绝对路径（必须是当前用户 agent_temp 目录下的文件）
  *   - source?: 'auto'（默认）| 'text' | 'base64' —— 文本类直接返回文本；图片/PDF 返回 base64
+ *   - chunkIndex?: number（P0-⑨ 知识引用溯源，0-based，可选）—— 按 chunk 定位：
+ *       文本类 → 返回该分段的 chunkText/totalChunks/charOffset（fixed_4000 分块，与 chunk_document 一致）；
+ *       PDF → 返回 pageNumber = chunkIndex + 1（chunk 按页分块）；不传时行为完全不变。
  *
  * 安全约束：
  *   - 仅允许读取 backend/uploads/agent_temp/{userId}/ 前缀内的文件，杜绝目录穿越
  *   - 非当前用户目录 / 不存在 / 超大文件均拒绝
  *
- * 返回：{ success, data: { filePath, fileName, ext, size, kind, content?, base64?, mime } }
+ * 返回：{ success, data: { filePath, fileName, ext, size, kind, content?, base64?, mime, chunkIndex?, totalChunks?, chunkText?, charOffset?, pageNumber? } }
  *   - kind: 'text'（utf-8 文本/markdown/json 等）| 'image' | 'pdf' | 'binary'
  */
 const MAX_PREVIEW_TEXT_BYTES = 1024 * 1024; // 文本预览上限 1MB
 const MAX_PREVIEW_BASE64_BYTES = 8 * 1024 * 1024; // base64 预览上限 8MB（图片/PDF）
+
+/**
+ * P0-⑨ 知识引用溯源：fixed 策略分块（4000 字符 + 200 重叠，与 chunk_document 的 fixed_4000 一致）
+ * 用于 files/read?chunkIndex=N 按 chunk 定位文本文件（返回 { text, offset }）
+ */
+function splitFixedChunks(text: string): Array<{ text: string; offset: number }> {
+  const CHUNK_SIZE = 4000;
+  const OVERLAP = 200;
+  if (!text) return [];
+  if (text.length <= CHUNK_SIZE) return [{ text, offset: 0 }];
+  const chunks: Array<{ text: string; offset: number }> = [];
+  let start = 0;
+  while (start < text.length) {
+    chunks.push({ text: text.slice(start, start + CHUNK_SIZE), offset: start });
+    start += CHUNK_SIZE - OVERLAP;
+  }
+  return chunks;
+}
+
+/**
+ * P0-⑨ 知识引用溯源：解析可选 chunkIndex 查询参数（非法值返回 null 表示不启用定位）
+ */
+function parseChunkIndexQuery(raw: unknown): number | null {
+  if (raw === undefined || raw === null || raw === '') return null;
+  const n = parseInt(String(raw), 10);
+  if (Number.isNaN(n) || n < 0) return null;
+  return n;
+}
 
 router.get('/files/read', async (req: AuthRequest, res: Response) => {
   try {
@@ -307,6 +359,9 @@ router.get('/files/read', async (req: AuthRequest, res: Response) => {
     const ext = path.extname(resolved).toLowerCase().replace('.', '');
     const fileName = path.basename(resolved);
 
+    // P0-⑨ 知识引用溯源：可选 chunkIndex（0-based），按 chunk 定位返回上下文片段
+    const chunkIndex = parseChunkIndexQuery(req.query.chunkIndex);
+
     const TEXT_EXTS = new Set(['txt', 'md', 'markdown', 'json', 'csv', 'tsv', 'log', 'js', 'ts', 'tsx', 'jsx', 'vue', 'css', 'html', 'xml', 'yaml', 'yml', 'toml', 'sh', 'py', 'sql', 'ini', 'conf', 'env']);
     const IMAGE_EXTS = new Set(['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'svg', 'ico']);
 
@@ -319,10 +374,12 @@ router.get('/files/read', async (req: AuthRequest, res: Response) => {
       const mime = ext === 'pdf'
         ? 'application/pdf'
         : `image/${ext === 'jpg' ? 'jpeg' : ext}`;
-      return res.json({
-        success: true,
-        data: { filePath: resolved, fileName, ext, size: stat.size, kind: ext === 'pdf' ? 'pdf' : 'image', base64, mime },
-      });
+      const data: any = { filePath: resolved, fileName, ext, size: stat.size, kind: ext === 'pdf' ? 'pdf' : 'image', base64, mime };
+      // PDF：chunkIndex → 页码（chunk 按页分块，0-based 转 1-based），前端 iframe #page=N 定位
+      if (ext === 'pdf' && chunkIndex !== null) {
+        data.pageNumber = chunkIndex + 1;
+      }
+      return res.json({ success: true, data });
     }
 
     // 文本类：返回 utf-8 文本
@@ -331,10 +388,20 @@ router.get('/files/read', async (req: AuthRequest, res: Response) => {
         return res.status(413).json({ success: false, message: '文本文件过大，仅支持预览 1MB 以内' });
       }
       const content = fs.readFileSync(resolved, 'utf-8');
-      return res.json({
-        success: true,
-        data: { filePath: resolved, fileName, ext, size: stat.size, kind: 'text', content, mime: 'text/plain' },
-      });
+      const data: any = { filePath: resolved, fileName, ext, size: stat.size, kind: 'text', content, mime: 'text/plain' };
+      // chunkIndex 定位：fixed_4000 分块，返回目标分段（content 保持全文，兼容旧调用方）
+      if (chunkIndex !== null) {
+        const chunks = splitFixedChunks(content);
+        if (chunkIndex >= chunks.length) {
+          return res.status(400).json({ success: false, message: `chunkIndex 越界：共 ${chunks.length} 个分段，请求索引 ${chunkIndex}` });
+        }
+        const target = chunks[chunkIndex];
+        data.chunkIndex = chunkIndex;
+        data.totalChunks = chunks.length;
+        data.chunkText = target.text;
+        data.charOffset = target.offset;
+      }
+      return res.json({ success: true, data });
     }
 
     // 其他二进制：拒绝预览（避免前端渲染乱码）
