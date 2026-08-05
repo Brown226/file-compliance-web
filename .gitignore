@@ -32,6 +32,7 @@ backend/.env
 .idea/
 .qoder/
 .claude/
+.zcode/
 CLAUDE.md
 
 # Legacy .NET project (not part of current system)
