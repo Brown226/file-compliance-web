@@ -26,5 +26,10 @@ export default defineConfig({
     environment: 'jsdom',
     include: ['src/**/*.test.ts'],
     testTimeout: 10000,
+    coverage: {
+      provider: 'v8',
+      reporter: ['text', 'html', 'lcov'],
+      include: ['src/views/Agent/**', 'src/composables/**'],
+    },
   },
 })
