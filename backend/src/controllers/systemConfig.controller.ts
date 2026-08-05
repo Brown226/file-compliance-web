@@ -354,12 +354,6 @@ export const sendLlmTest = async (req: AuthRequest, res: Response): Promise<void
 
 // ==================== LLM Profiles 管理 ====================
 
-/** 密钥脱敏工具函数 */
-function maskApiKey(key: string): string {
-  if (!key || key.length <= 8) return '****';
-  return key.slice(0, 4) + '****' + key.slice(-4);
-}
-
 /**
  * GET /api/system-config/llm-profiles
  * 获取所有 LLM 配置（密钥脱敏）
@@ -376,13 +370,8 @@ export const getLlmProfiles = async (_req: AuthRequest, res: Response): Promise<
       profiles = Array.isArray(raw) ? raw : [];
     }
 
-    // 密钥脱敏
-    const masked = profiles.map((p: any) => ({
-      ...p,
-      apiKey: p.apiKey ? maskApiKey(p.apiKey) : undefined,
-    }));
-
-    success(res, masked);
+    // 明文返回 apiKey（密码输入框展示，小眼睛切换显示原始值）
+    success(res, profiles);
   } catch (err: any) {
     console.error('Get LLM Profiles Error:', err);
     error(res, `服务器内部错误: ${err.message || '未知错误'}`, 500);
