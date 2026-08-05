@@ -35,7 +35,7 @@ function mountPanel() {
     global: {
       stubs: {
         'el-icon': true,
-        'el-dialog': { template: '<div class="el-dialog-stub"><slot /></div>' },
+        'el-dialog': { template: '<div class="el-dialog-stub"><slot /><slot name="footer" /></div>' },
         'el-select': { template: '<div class="el-select-stub" />' },
         'el-input': {
           props: ['modelValue'],

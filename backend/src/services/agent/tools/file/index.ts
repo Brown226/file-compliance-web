@@ -21,6 +21,7 @@ import { createCompareDocumentsTool } from './compare_documents';
 import { createExtractTablesTool } from './extract_tables';
 import { createEditFileTool } from './edit_file';
 import { createEditDocumentTool } from './edit_document';
+import { createOcrScanTool } from './ocr_scan';
 import type { ToolContext } from './upload_file';
 
 export {
@@ -36,13 +37,14 @@ export {
   createExtractTablesTool,
   createEditFileTool,
   createEditDocumentTool,
+  createOcrScanTool,
 };
 export type { ToolContext };
 
 /**
- * 创建文件相关工具集（12 个工具）
+ * 创建文件相关工具集（13 个工具）
  * @param context userId / sessionId
- * @returns { upload_file, extract_text, chunk_document, read_file, list_uploads, delete_file, write_report, download_report, compare_documents, extract_tables, edit_file, edit_document }
+ * @returns { upload_file, extract_text, chunk_document, read_file, list_uploads, delete_file, write_report, download_report, compare_documents, extract_tables, edit_file, edit_document, ocr_scan }
  */
 export function createFileTools(context: ToolContext) {
   return {
@@ -58,5 +60,6 @@ export function createFileTools(context: ToolContext) {
     extract_tables: createExtractTablesTool(context),
     edit_file: createEditFileTool(context),
     edit_document: createEditDocumentTool(context),
+    ocr_scan: createOcrScanTool(context),
   };
 }

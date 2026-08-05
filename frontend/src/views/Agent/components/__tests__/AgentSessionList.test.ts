@@ -41,7 +41,19 @@ function mountList(props: Record<string, any> = {}) {
   })
 }
 
+
+/** 展开所有已折叠的会话分组（新版本按 今天/最近7天/更早 分组） */
+async function expandGroups(wrapper: ReturnType<typeof mountList>) {
+  for (const header of wrapper.findAll('.group-header')) {
+    if (header.find('.group-chevron.is-collapsed').exists()) {
+      await header.trigger('click')
+    }
+  }
+  await flushPromises()
+}
+
 beforeEach(() => {
+  localStorage.clear()
   for (const fn of Object.values(apiMock)) fn.mockReset()
   elMessageMock.error.mockReset()
   apiMock.listSessionsApi.mockResolvedValue({ data: sessions })
@@ -54,6 +66,7 @@ describe('加载', () => {
   it('onMounted 调用 listSessionsApi(50) 并渲染列表', async () => {
     const wrapper = mountList()
     await flushPromises()
+    await expandGroups(wrapper)
     expect(apiMock.listSessionsApi).toHaveBeenCalledWith(50)
     expect(wrapper.text()).toContain('合同审查')
     expect(wrapper.text()).toContain('标书核对')
@@ -79,6 +92,7 @@ describe('复制会话', () => {
   it('hover 出现复制按钮 → 复制成功刷新列表并 emit select 新会话', async () => {
     const wrapper = mountList()
     await flushPromises()
+    await expandGroups(wrapper)
     // hover 第一个会话 → 出现操作按钮
     await wrapper.findAll('.session-item')[0].trigger('mouseenter')
     const duplicateBtn = wrapper.find('button[title="复制会话"]')
@@ -96,6 +110,7 @@ describe('复制会话', () => {
     apiMock.duplicateSessionApi.mockRejectedValue(new Error('dup failed'))
     const wrapper = mountList()
     await flushPromises()
+    await expandGroups(wrapper)
     await wrapper.findAll('.session-item')[0].trigger('mouseenter')
     await wrapper.find('button[title="复制会话"]').trigger('click')
     expect(elMessageMock.error).toHaveBeenCalledWith(expect.stringContaining('复制会话失败'))
@@ -106,6 +121,7 @@ describe('删除会话', () => {
   it('点击删除 → 确认按钮 → 确认后删除并移除列表项', async () => {
     const wrapper = mountList()
     await flushPromises()
+    await expandGroups(wrapper)
     await wrapper.findAll('.session-item')[0].trigger('mouseenter')
     await wrapper.find('button[title="删除"]').trigger('click')
     // 确认态出现
@@ -121,6 +137,7 @@ describe('删除会话', () => {
     apiMock.deleteSessionApi.mockRejectedValue(new Error('del failed'))
     const wrapper = mountList()
     await flushPromises()
+    await expandGroups(wrapper)
     await wrapper.findAll('.session-item')[0].trigger('mouseenter')
     await wrapper.find('button[title="删除"]').trigger('click')
     await wrapper.find('.confirm-btn.danger').trigger('click')
@@ -132,6 +149,7 @@ describe('重命名', () => {
   it('点击重命名 → 输入新名回车 → renameSessionApi 并更新标题', async () => {
     const wrapper = mountList()
     await flushPromises()
+    await expandGroups(wrapper)
     await wrapper.findAll('.session-item')[0].trigger('mouseenter')
     await wrapper.find('button[title="重命名"]').trigger('click')
     const input = wrapper.find('.rename-input')
@@ -163,6 +181,7 @@ describe('事件', () => {
   it('点击会话项 emit select(sessionId)', async () => {
     const wrapper = mountList()
     await flushPromises()
+    await expandGroups(wrapper)
     await wrapper.findAll('.session-item')[1].trigger('click')
     expect(wrapper.emitted('select')?.[0]).toEqual(['s2'])
   })
