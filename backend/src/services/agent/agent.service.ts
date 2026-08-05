@@ -34,6 +34,7 @@ import { scrubSensitive } from './security/scrub-sensitive';
 import { acquireLlmToken } from '../../utils/llm-rate-limiter';
 import { decideRetry } from './retry/retry-strategy';
 import { PromptLoader } from '../prompts';
+import { AskUserService } from './ask-user/ask-user.service';
 
 // require ESM-only SDK（Node 22.12+ 支持），同时保留类型
 // 注意：Vercel AI SDK v7 用 stopWhen + isStepCount 替代了旧版的 maxSteps 参数
@@ -104,6 +105,7 @@ export const AGENT_SYSTEM_PROMPT = `你是文件合规审查专家，熟悉合�
 - download_report: 读取报告文件返回下载 URL
 - compare_documents: 对比两份文档（旧版 vs 新版）输出段落级差异 + 变更统计 + LLM 摘要，用于修订版核对/版本比对
 - edit_document: 修改已上传文档的指定内容（工作流第 11 步）。replace 模式把 oldText 精确替换为 newText（occurrence 指定第几次出现，replaceAll 全量）；patch 模式应用 unified diff 补丁（仅纯文本）。支持 txt/md/csv/log/json/xml/yaml/yml 与 DOCX（受控替换保留格式）。编辑前先 read_file 查看原文件
+- ask_user: 向用户主动提问并等待回复（信息不足 / 多义 / 破坏性操作前确认时用）。method=confirm 用于编辑/写入/删除前二次确认，method=select 用于多义时让用户选一个，method=input 用于缺一个参数值，method=editor 用于让用户补充多行说明。调用后工作流会挂起等待用户回复
 
 ## 知识检索工具使用指南（Task 9 已实现 3 个）
 - search_knowledge: 调 MaxKB 知识库做 RAG 检索（不传 knowledgeId 跨所有库联合检索，返回 content/document_name/similarity）
@@ -144,6 +146,7 @@ export const AGENT_SYSTEM_PROMPT = `你是文件合规审查专家，熟悉合�
 - 简单文件可跳过 chunk_document 和交叉验证，复杂文件可多次审查不同维度
 - 每一步结果都会反馈给你，你可以根据结果调整下一步策略
 - 遇到不确定的情况，优先向用户确认而不是猜测
+- 修改 / 写入 / 删除类操作（edit_document、kb_upsert、delete_file）执行前，必须先调 ask_user(method=confirm) 向用户明确说明将要做的改动并获得用户的"确认"回复，再执行实际改动；不要直接对原文件做不可逆修改
 - 用户明确要求"出报告"/"导出报告"时才调 write_report + download_report
 
 ## 输出要求
@@ -226,8 +229,10 @@ export class AgentService {
     toolNames?: string[];
     /** 推理强度：low / medium / high（模型不支持时忽略） */
     thinkingLevel?: string;
+    /** Task 44：ask_user 恢复注入 — 用户已回复挂起问题时的答案透传 */
+    pendingAskAnswer?: { requestId: string; answer: string } | null;
   }): Promise<any> {
-    const { messages, userId, sessionId, modelKey, toolPreset, toolNames, thinkingLevel } = params;
+    const { messages, userId, sessionId, modelKey, toolPreset, toolNames, thinkingLevel, pendingAskAnswer } = params;
 
     // 1. 读取 LLM 配置（LlmService.getLlmConfig 是静态方法，带 5 分钟缓存）
     const config = await LlmService.getLlmConfig();
@@ -329,6 +334,54 @@ export class AgentService {
       modelMessages = messages as any;
     }
 
+    // Task 44：ask_user 恢复注入
+    // 前端在用户回复挂起问题后，带 pendingAskAnswer 重发 chat/stream。
+    // 这里把「ask_user 工具调用（assistant）+ 用户回复（tool-result）」注入消息序列末端，
+    // 让 streamText 续跑——LLM 视 ask_user 已被回答，继续后续步骤。
+    if (pendingAskAnswer && sessionId) {
+      const ask = AskUserService.resolvePendingById(sessionId, pendingAskAnswer.requestId);
+      if (ask) {
+        const rid = ask.requestId;
+        // assistant 步：声明调了 ask_user（含原始问题）
+        modelMessages.push({
+          role: 'assistant',
+          content: [{ type: 'text', text: '（已向用户提问，等待用户回复）' }],
+          toolCalls: [
+            {
+              type: 'tool-call',
+              toolCallId: rid,
+              toolName: 'ask_user',
+              args: {
+                question: ask.question,
+                method: ask.method,
+                options: ask.options,
+              },
+            },
+          ],
+        } as any);
+        // user 步：把用户回复作为 ask_user 的 tool-result 回填
+        modelMessages.push({
+          role: 'user',
+          content: [{ type: 'text', text: `用户已回复：${pendingAskAnswer.answer}` }],
+          toolResults: [
+            {
+              type: 'tool-result',
+              toolCallId: rid,
+              toolName: 'ask_user',
+              output: {
+                status: 'answered',
+                requestId: rid,
+                answer: pendingAskAnswer.answer,
+              },
+            },
+          ],
+        } as any);
+        console.log(`[Agent] ask_user 恢复注入: requestId=${rid} answer=${pendingAskAnswer.answer.slice(0, 50)}`);
+      } else {
+        console.warn(`[Agent] pendingAskAnswer 无匹配的挂起项（requestId=${pendingAskAnswer.requestId}），忽略恢复注入`);
+      }
+    }
+
     // 7. Task 7.7：记录调用起始时间，供 onFinish 回调计算 latencyMs
     const startTime = Date.now();
 
@@ -397,7 +450,10 @@ export class AgentService {
       messages: modelMessages,
       tools,
       providerOptions: thinkingLevel ? { openai: { reasoningEffort: thinkingLevel } } : undefined,
-      stopWhen: isStepCount(10),
+      stopWhen: (o: any) =>
+        isStepCount(10)(o) ||
+        (((o?.steps ?? []) as any[]).some((s: any) =>
+          ((s?.toolCalls ?? []) as any[]).some((tc: any) => tc.toolName === 'ask_user'))),
       onStepFinish: (event: any) => {
         // Task 7.5：诊断日志 — 记录每步的 finishReason 和工具调用情况
         const { stepNumber, finishReason, toolCalls, toolResults, text } = event;

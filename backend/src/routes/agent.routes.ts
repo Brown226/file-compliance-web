@@ -20,6 +20,7 @@ import multer from 'multer';
 import path from 'path';
 import fs from 'fs';
 import { authenticate, AuthRequest } from '../middlewares/auth.middleware';
+import { requireRole } from '../middlewares/rbac.middleware';
 import { AgentService } from '../services/agent/agent.service';
 import { QASessionService } from '../services/agent/qa-session.service';
 import { SessionStatsService } from '../services/agent/session-stats.service';
@@ -34,6 +35,7 @@ import { getTodayDir } from '../services/agent/tools/file/paths';
 import { lookupCapabilities } from '../services/llm/model-capabilities.registry';
 import FalsePositiveLibraryService from '../services/review/falsePositiveLibrary.service';
 import prisma from '../config/db';
+import { AskUserService } from '../services/agent/ask-user/ask-user.service';
 import {
   submitBatchJob,
   getBatchJob,
@@ -100,6 +102,7 @@ router.post('/chat/stream', async (req: AuthRequest, res: Response) => {
       toolPreset: req.body?.toolPreset || undefined,
       toolNames: Array.isArray(req.body?.toolNames) ? req.body.toolNames : undefined,
       thinkingLevel: req.body?.thinkingLevel || undefined,
+      pendingAskAnswer: req.body?.pendingAskAnswer || null,
     });
 
     // Express 5 不直接接受 Web Response，手动转换（Task 1 验证过的写法）：
@@ -1250,8 +1253,9 @@ router.get('/models', async (req: AuthRequest, res: Response) => {
 
 /**
  * GET /api/agent/providers — LLM 供应商配置列表（llm_profiles）
+ * 仅管理员可读（含 apiKey 敏感信息）
  */
-router.get('/providers', async (_req: AuthRequest, res: Response) => {
+router.get('/providers', requireRole('ADMIN'), async (_req: AuthRequest, res: Response) => {
   try {
     
     const cfg = await prisma.systemConfig.findUnique({ where: { key: 'llm_profiles' } });
@@ -1268,8 +1272,9 @@ router.get('/providers', async (_req: AuthRequest, res: Response) => {
 /**
  * PUT /api/agent/providers — 保存 LLM 供应商配置
  * Body: { profiles: Array<{ id, name, apiBase, apiKey, model, provider?, timeout? }> }
+ * 仅管理员可写
  */
-router.put('/providers', async (req: AuthRequest, res: Response) => {
+router.put('/providers', requireRole('ADMIN'), async (req: AuthRequest, res: Response) => {
   try {
     const { profiles } = req.body || {};
     if (!Array.isArray(profiles)) {
@@ -1291,8 +1296,9 @@ router.put('/providers', async (req: AuthRequest, res: Response) => {
 /**
  * POST /api/agent/models/test — 模型连通性测试
  * Body: { apiBase, apiKey, model }
+ * 仅管理员可调
  */
-router.post('/models/test', async (req: AuthRequest, res: Response) => {
+router.post('/models/test', requireRole('ADMIN'), async (req: AuthRequest, res: Response) => {
   try {
     const { apiBase, apiKey, model } = req.body || {};
     if (!apiBase || !apiKey || !model) {
@@ -1398,8 +1404,9 @@ function parseDiscoveredModels(value: any): Array<{
  * POST /api/agent/providers/discover — 从 Provider 的 /models 接口拉取模型列表
  * Body: { providerName, provider: { baseUrl, api, apiKey } }
  * apiKey 为空或为脱敏值时，从 llm_profiles 按 providerName 匹配真实凭证。
+ * 仅管理员可调
  */
-router.post('/providers/discover', async (req: AuthRequest, res: Response) => {
+router.post('/providers/discover', requireRole('ADMIN'), async (req: AuthRequest, res: Response) => {
   try {
     const { providerName, provider } = req.body || {};
     if (!providerName || typeof providerName !== 'string') {
@@ -1483,8 +1490,9 @@ router.post('/providers/discover', async (req: AuthRequest, res: Response) => {
  * POST /api/agent/providers/catalog — 本地模型目录填充（替代参考项目的 models.dev）
  * Body: { model }
  * 用本地预置能力库 lookupCapabilities 返回模型元数据建议，供前端回填空字段。
+ * 仅管理员可调
  */
-router.post('/providers/catalog', async (req: AuthRequest, res: Response) => {
+router.post('/providers/catalog', requireRole('ADMIN'), async (req: AuthRequest, res: Response) => {
   try {
     const { model } = req.body || {};
     const modelName = String(model || '').trim();
@@ -1890,6 +1898,34 @@ router.post('/batch/:jobId/cancel', async (req: AuthRequest, res: Response) => {
   } catch (e: any) {
     console.error('[Agent] 取消批量任务失败:', e?.message || e);
     return res.status(500).json({ success: false, message: `取消批量任务失败: ${e?.message || e}` });
+  }
+});
+
+/**
+ * GET /api/agent/sessions/:id/pending-ask — 查询会话是否被 Agent 挂起等待用户回复
+ *
+ * Task 44（ask_user 主动提问）：流式结束后前端轮询此端点，若返回非 null 则弹提问对话框。
+ * 返回 { success, data: { requestId, question, method, options?, timeoutSec } | null }
+ */
+router.get('/sessions/:id/pending-ask', async (req: AuthRequest, res: Response) => {
+  try {
+    const sid = String(req.params.id || '');
+    const ask = AskUserService.getPending(sid);
+    return res.json({
+      success: true,
+      data: ask
+        ? {
+            requestId: ask.requestId,
+            question: ask.question,
+            method: ask.method,
+            options: ask.options || undefined,
+            timeoutSec: ask.timeoutSec,
+          }
+        : null,
+    });
+  } catch (e: any) {
+    console.error('[Agent] 查询挂起提问失败:', e?.message || e);
+    return res.status(500).json({ success: false, message: `查询挂起提问失败: ${e?.message || e}` });
   }
 });
 
