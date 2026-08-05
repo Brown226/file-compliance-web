@@ -51,7 +51,8 @@ export function createApplyRuleTool(_context: ToolContext) {
       // 1. 构建 FileContext
       const ctx: FileContext = {
         fileName: fileName || 'agent_review.txt',
-        filePath: `agent_temp/${_context.userId}/${_context.sessionId}/${fileName || 'agent_review.txt'}`,
+        // 日期目录存储：agent_temp/{userId}/{YYYY-MM-DD}/（filePath 仅用于规则上下文，无需真实落盘）
+        filePath: `agent_temp/${_context.userId}/${new Date().toISOString().slice(0, 10)}/${fileName || 'agent_review.txt'}`,
         fileType: (fileType || 'txt').toLowerCase(),
         extractedText: text,
         reviewMode,

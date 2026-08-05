@@ -17,7 +17,9 @@
 import * as path from 'path';
 import { z } from 'zod';
 import type { ToolContext } from '../file/upload_file';
+import { getTodayDir } from '../file/paths';
 import { LlmService } from '../../../llm/llm.service';
+import { FileWriteQueueService } from '../../file-queue/file-write-queue.service';
 
 const { tool } = require('@ai-sdk/provider-utils') as typeof import('@ai-sdk/provider-utils');
 
@@ -75,11 +77,10 @@ export function createDraftDocumentTool(context: ToolContext) {
           .replace(/\.md$/i, '')
           .replace(/[^a-zA-Z0-9_\-一-龥]/g, '_')
           .slice(0, 100) || 'draft';
-        const reportsDir = path.join(__dirname, '../../../../../uploads/agent_temp', context.userId, context.sessionId, 'reports');
+        const reportsDir = path.join(getTodayDir(context.userId), 'reports');
         const normalizedDir = path.resolve(reportsDir);
         await (await import('fs')).promises.mkdir(normalizedDir, { recursive: true });
         const fp = path.join(normalizedDir, `${safeName}.md`);
-        const { FileWriteQueueService } = require('../../file-queue/file-write-queue.service');
         await FileWriteQueueService.enqueue(fp, async () => {
           await (await import('fs')).promises.writeFile(fp, content, 'utf-8');
         });

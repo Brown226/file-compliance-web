@@ -882,21 +882,42 @@ export class AgentService {
   /**
    * Task 7.6：构建已上传文件列表段落，注入到 systemPrompt 末尾
    *
-   * 查 uploads/agent_temp/{userId}/{sessionId}/ 目录下的文件，返回形如：
+   * 查 uploads/agent_temp/{userId}/{YYYY-MM-DD}/ 目录下（最近 7 天内）的文件，返回形如：
    *   ## 已上传文件
    *   用户已上传以下文件，你可以用 extract_text 工具提取文本：
    *   - /path/to/file1.pdf
    *   - /path/to/file2.docx
    *
+   * 设计：按用户 + 日期划分，跨会话共享。列出当前用户最近 7 天所有日期目录下的文件，
+   * 解决「同一批上传文件因 sessionId 不一致散落不同会话目录」导致 Agent 找不到文件的问题。
+   *
    * @returns 文件列表段落；无文件时返回空串
    */
-  private static buildUploadedFilesSection(userId: string, sessionId: string): string {
-    if (!userId || !sessionId) return '';
-    const dir = path.join(getUploadDir(), 'agent_temp', userId, sessionId);
-    if (!fs.existsSync(dir)) return '';
+  private static buildUploadedFilesSection(userId: string, _sessionId: string): string {
+    void _sessionId; // sessionId 不再作为存储目录维度，仅保留参数签名兼容调用方
+    if (!userId) return '';
+    const userDir = path.join(getUploadDir(), 'agent_temp', userId);
+    if (!fs.existsSync(userDir)) return '';
     let files: string[] = [];
     try {
-      files = fs.readdirSync(dir).map(f => path.join(dir, f)).filter(f => fs.statSync(f).isFile());
+      // 聚合最近 7 天日期目录下的所有文件（含子目录如 reports/ 内的文件一并列出）
+      const now = Date.now();
+      const cutoff = now - 7 * 24 * 60 * 60 * 1000;
+      const dateDirs = fs.readdirSync(userDir, { withFileTypes: true })
+        .filter(d => d.isDirectory() && /^\d{4}-\d{2}-\d{2}$/.test(d.name))
+        .filter(d => {
+          const mtime = fs.statSync(path.join(userDir, d.name)).mtimeMs;
+          return mtime >= cutoff;
+        })
+        .map(d => path.join(userDir, d.name));
+      for (const dir of dateDirs) {
+        const walk = (p: string): string[] =>
+          fs.readdirSync(p, { withFileTypes: true }).flatMap(e => {
+            const full = path.join(p, e.name);
+            return e.isDirectory() ? walk(full) : (e.isFile() ? [full] : []);
+          });
+        files = files.concat(walk(dir));
+      }
     } catch (e) {
       // 目录读取失败不阻塞主流程（与 recordLlmCall 防御性写法一致）
       console.warn('[Agent] 读取已上传文件目录失败:', (e as Error).message);

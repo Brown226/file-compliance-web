@@ -19,7 +19,6 @@ import { Router, Response } from 'express';
 import multer from 'multer';
 import path from 'path';
 import fs from 'fs';
-import crypto from 'crypto';
 import { authenticate, AuthRequest } from '../middlewares/auth.middleware';
 import { AgentService } from '../services/agent/agent.service';
 import { QASessionService } from '../services/agent/qa-session.service';
@@ -31,6 +30,7 @@ import { SteeringService } from '../services/agent/steering/steering.service';
 import { SummaryService } from '../services/agent/summary/summary.service';
 import { getUploadDir } from '../config/upload';
 import { fixMojibake } from '../services/agent/tools/file/filename';
+import { getTodayDir } from '../services/agent/tools/file/paths';
 import { lookupCapabilities } from '../services/llm/model-capabilities.registry';
 import FalsePositiveLibraryService from '../services/review/falsePositiveLibrary.service';
 import {
@@ -244,13 +244,9 @@ router.post('/chat/stream', async (req: AuthRequest, res: Response) => {
 const agentUploadStorage = multer.diskStorage({
   destination: (req: AuthRequest, _file, cb) => {
     const userId = req.user?.id || 'anonymous';
-    // sessionId 来自 form field；未提供时生成新 UUID 并暂存到 req，供后续 handler 返回
-    let sessionId = (req.body?.sessionId as string) || '';
-    if (!sessionId) {
-      sessionId = crypto.randomUUID();
-      (req as any).__agentGeneratedSessionId = sessionId;
-    }
-    const targetDir = path.join(getUploadDir(), 'agent_temp', userId, sessionId);
+    // 按用户 + 日期划分存储：agent_temp/{userId}/{YYYY-MM-DD}/
+    // 不再按 sessionId 分区（避免同一批上传因会话不一致散落不同目录）
+    const targetDir = getTodayDir(userId);
     // 同步创建目录（与 task.routes.ts 的 getUserUploadDir 模式一致）
     if (!fs.existsSync(targetDir)) {
       fs.mkdirSync(targetDir, { recursive: true });

@@ -1,28 +1,52 @@
 /**
  * Agent 临时文件清理服务
  *
- * 扫描 `uploads/agent_temp/` 目录，递归遍历 userId/sessionId/ 子目录，
- * 删除超过 maxAgeDays 天的旧文件，并清理空目录结构。
+ * 存储结构（按用户 + 按日期划分）：
+ *   uploads/agent_temp/{userId}/{YYYY-MM-DD}/...
+ *
+ * 清理策略：
+ * - 日期目录（YYYY-MM-DD）：按目录名解析日期，超过 maxAgeDays 天的目录整目录删除
+ * - 存量非日期目录（旧 sessionId 目录）：按目录 mtime 判断，超过 maxAgeDays 天整目录删除
+ * - 删除后清理空目录结构
  *
  * 安全约束：
- * - 只操作 agent_temp 目录下的文件，不碰同级其他目录
- * - 文件删除失败不中断，累计 errors 后返回
+ * - 只操作 agent_temp 目录下的内容，不碰同级其他目录
+ * - 目录删除失败不中断，累计 errors 后返回
  */
 
 import * as fs from 'fs';
 import * as path from 'path';
+import { getAgentTempRoot, parseDateDirName } from '../tools/file/paths';
 
-/** agent_temp 相对于本项目根目录的路径 */
-const AGENT_TEMP_REL = '../../../../uploads/agent_temp';
+/** 递归删除目录（含内部所有文件与子目录） */
+function rmrf(dirPath: string): boolean {
+  try {
+    fs.rmSync(dirPath, { recursive: true, force: true });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** 判断目录是否为空（目录不存在视为空） */
+function isEmptyDir(dirPath: string): boolean {
+  try {
+    const entries = fs.readdirSync(dirPath);
+    return entries.length === 0;
+  } catch {
+    return true;
+  }
+}
 
 export class CleanupService {
   /**
    * 清理过期临时文件
-   * @param maxAgeDays 文件最长存活天数，默认 7 天
-   * @returns { deleted: 成功删除的文件数, errors: 删除失败的文件数 }
+   *
+   * @param maxAgeDays 文件/目录最长存活天数，默认 7 天
+   * @returns { deleted: 成功删除的目录数, errors: 删除失败的目录数 }
    */
   static async cleanOldTempFiles(maxAgeDays: number = 7): Promise<{ deleted: number; errors: number }> {
-    const agentTempDir = path.resolve(__dirname, AGENT_TEMP_REL);
+    const agentTempDir = getAgentTempRoot();
     let deleted = 0;
     let errors = 0;
 
@@ -49,121 +73,63 @@ export class CleanupService {
 
       const userIdPath = path.join(agentTempDir, userIdEntry.name);
 
-      // 读取 sessionId 列表（第二层子目录）
-      let sessionIdEntries: fs.Dirent[];
+      // 读取第二层子目录（日期目录 或 存量 sessionId 目录）
+      let subEntries: fs.Dirent[];
       try {
-        sessionIdEntries = fs.readdirSync(userIdPath, { withFileTypes: true });
+        subEntries = fs.readdirSync(userIdPath, { withFileTypes: true });
       } catch (err) {
-        // 无法读取该用户目录，跳过并计数
         console.error(`[Cleanup] 读取用户目录失败: ${userIdPath}`, err);
         errors++;
         continue;
       }
 
-      let userDirEmpty = true; // 标记 userId 下是否所有 session 目录都为空
+      for (const subEntry of subEntries) {
+        if (!subEntry.isDirectory()) continue;
 
-      for (const sessionEntry of sessionIdEntries) {
-        if (!sessionEntry.isDirectory()) continue;
+        const subPath = path.join(userIdPath, subEntry.name);
+        let expired = false;
 
-        const sessionPath = path.join(userIdPath, sessionEntry.name);
-
-        // 递归收集该 session 目录下的所有文件
-        const files = collectFiles(sessionPath);
-
-        let sessionEmpty = true; // 标记当前 session 目录下是否还有文件残留
-
-        for (const filePath of files) {
+        // 日期目录：按目录名解析日期判断是否超期
+        const dateTs = parseDateDirName(subEntry.name);
+        if (dateTs !== null) {
+          // 日期目录以当天 00:00 为基准；超过 (maxAgeDays) 天的 00:00 即视为过期
+          const today = new Date();
+          today.setHours(0, 0, 0, 0);
+          const cutoff = today.getTime() - maxAgeMs;
+          expired = dateTs < cutoff;
+        } else {
+          // 存量非日期目录（旧 sessionId）：按 mtime 判断
           try {
-            const stat = fs.statSync(filePath);
-            const ageMs = now - stat.mtimeMs;
-
-            if (ageMs > maxAgeMs) {
-              // 文件超过 maxAgeDays，删除
-              fs.unlinkSync(filePath);
-              deleted++;
-            } else {
-              // 文件未过期，该 session 目录非空
-              sessionEmpty = false;
-            }
-          } catch (err) {
-            // 删除失败不中断，计入 errors
-            console.error(`[Cleanup] 删除文件失败: ${filePath}`, err);
+            const stat = fs.statSync(subPath);
+            expired = now - stat.mtimeMs > maxAgeMs;
+          } catch {
             errors++;
-            // 无法确定文件是否还在，保守认为该 session 非空
-            sessionEmpty = false;
+            continue;
           }
         }
 
-        // 如果 session 目录下所有文件都被删了，尝试删除空目录
-        if (sessionEmpty) {
-          try {
-            // 递归删除空子目录（如 reports/ 等）
-            removeEmptyDirs(sessionPath);
-            // 尝试删除 session 目录本身
-            fs.rmdirSync(sessionPath);
-          } catch (err) {
-            // 目录不为空或删除失败，则不处理
-          }
+        if (!expired) continue;
+
+        // 超期：整目录删除（含内部所有文件与 reports/ 子目录）
+        if (rmrf(subPath)) {
+          deleted++;
+          console.log(`[Cleanup] 已删除过期目录: ${path.relative(agentTempDir, subPath)}`);
         } else {
-          userDirEmpty = false;
+          console.error(`[Cleanup] 删除目录失败: ${subPath}`);
+          errors++;
         }
       }
 
-      // 如果 userId 下所有 session 目录都为空，尝试删除 userId 目录
-      if (userDirEmpty) {
+      // 用户目录下已无任何子目录时，尝试删除用户目录
+      if (isEmptyDir(userIdPath)) {
         try {
           fs.rmdirSync(userIdPath);
-        } catch (err) {
-          // 目录不为空或删除失败，则不处理
+        } catch {
+          // 目录不为空或删除失败，不处理
         }
       }
     }
 
     return { deleted, errors };
-  }
-}
-
-/**
- * 递归收集目录下的所有文件路径（不包含目录自身）
- */
-function collectFiles(dirPath: string): string[] {
-  const result: string[] = [];
-
-  try {
-    const entries = fs.readdirSync(dirPath, { withFileTypes: true });
-    for (const entry of entries) {
-      const fullPath = path.join(dirPath, entry.name);
-      if (entry.isDirectory()) {
-        result.push(...collectFiles(fullPath));
-      } else if (entry.isFile()) {
-        result.push(fullPath);
-      }
-    }
-  } catch {
-    // 忽略无法读取的目录
-  }
-
-  return result;
-}
-
-/**
- * 递归删除空目录（从最深层开始向上删除空目录）
- */
-function removeEmptyDirs(dirPath: string): void {
-  try {
-    const entries = fs.readdirSync(dirPath, { withFileTypes: true });
-    for (const entry of entries) {
-      if (entry.isDirectory()) {
-        const subPath = path.join(dirPath, entry.name);
-        removeEmptyDirs(subPath);
-        try {
-          fs.rmdirSync(subPath);
-        } catch {
-          // 子目录非空，跳过
-        }
-      }
-    }
-  } catch {
-    // 忽略无法读取的目录
   }
 }

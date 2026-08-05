@@ -36,6 +36,8 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { z } from 'zod';
 import type { ToolContext } from './upload_file';
+import { getTodayDir } from './paths';
+import { FileWriteQueueService } from '../../file-queue/file-write-queue.service';
 
 const { tool } = require('@ai-sdk/provider-utils') as typeof import('@ai-sdk/provider-utils');
 
@@ -398,14 +400,10 @@ export function createWriteReportTool(context: ToolContext) {
       const ext = format === 'xlsx' ? '.xlsx' : format === 'docx' ? '.docx' : '.md';
       const fileName = `${safeName}${ext}`;
 
-      // 报告目录：uploads/agent_temp/{userId}/{sessionId}/reports/
-      const sessionDir = path.join(
-        __dirname,
-        '../../../../../uploads/agent_temp',
-        context.userId,
-        context.sessionId,
-      );
-      const reportsDir = path.join(sessionDir, 'reports');
+      // 报告目录：uploads/agent_temp/{userId}/{YYYY-MM-DD}/reports/
+      // 按日期划分（跨会话共享当天目录），不再按 sessionId 分区
+      const dateDir = getTodayDir(context.userId);
+      const reportsDir = path.join(dateDir, 'reports');
       const normalizedReportsDir = path.resolve(reportsDir);
 
       // 创建目录
@@ -413,7 +411,6 @@ export function createWriteReportTool(context: ToolContext) {
 
       // 生成报告内容（P1-④⑤：支持 md / xlsx 两种格式）
       const filePath = path.join(normalizedReportsDir, fileName);
-      const { FileWriteQueueService } = require('../../file-queue/file-write-queue.service');
       if (format === 'xlsx') {
         await FileWriteQueueService.enqueue(filePath, async () => {
           await writeXlsxReport(filePath, issues);

@@ -30,6 +30,7 @@ import * as path from 'path';
 import { z } from 'zod';
 import type { ToolContext } from './upload_file';
 import { DocxReplaceService } from '../../../file/docx-replace.service';
+import { FileWriteQueueService } from '../../file-queue/file-write-queue.service';
 
 const { tool } = require('@ai-sdk/provider-utils') as typeof import('@ai-sdk/provider-utils');
 
@@ -50,7 +51,7 @@ interface ChangeRecord {
 
 /** 编辑结果（由 execute 返回对象字面量，无需接口声明） */
 
-/** 校验路径在 Agent 临时目录且属于当前用户/会话 */
+/** 校验路径在 Agent 临时目录且属于当前用户（按日期目录存储，跨会话共享） */
 function assertEditablePath(context: ToolContext, filePath: string): string {
   const uploadsRoot = path.join(__dirname, '../../../../../uploads/agent_temp');
   const normalizedRoot = path.resolve(uploadsRoot);
@@ -61,11 +62,6 @@ function assertEditablePath(context: ToolContext, filePath: string): string {
   const expectedUserDir = path.join(normalizedRoot, context.userId);
   if (!normalizedPath.startsWith(expectedUserDir + path.sep) && normalizedPath !== expectedUserDir) {
     throw new Error('路径越权：只能编辑当前用户上传的文件');
-  }
-  // 会话隔离：必须在该用户下、当前会话目录内（或用户级共享目录）
-  const expectedSessionDir = path.join(normalizedRoot, context.userId, context.sessionId);
-  if (!normalizedPath.startsWith(expectedSessionDir + path.sep) && normalizedPath !== expectedSessionDir) {
-    throw new Error('路径越权：只能编辑当前会话上传的文件');
   }
   return normalizedPath;
 }
@@ -120,12 +116,16 @@ function lineDiffSummary(oldLines: string[], newLines: string[]): ChangeRecord[]
   while (i > 0) { changes.unshift({ type: 'delete', oldLine: i, oldText: a[i - 1] }); i--; }
   while (j > 0) { changes.unshift({ type: 'insert', newLine: j, newText: b[j - 1] }); j--; }
   // 合并相邻 delete+insert 为 replace（同一位置替换）
+  // 注意：unshift 使变更数组呈逆序（insert 常在 delete 前），两种顺序都要合并
   const merged: ChangeRecord[] = [];
   for (let k = 0; k < changes.length; k++) {
     const c = changes[k];
     const next = changes[k + 1];
     if (c.type === 'delete' && next && next.type === 'insert' && next.newLine === c.oldLine) {
       merged.push({ type: 'replace', oldLine: c.oldLine, oldText: c.oldText, newText: next.newText });
+      k++;
+    } else if (c.type === 'insert' && next && next.type === 'delete' && next.oldLine === c.newLine) {
+      merged.push({ type: 'replace', oldLine: next.oldLine, oldText: next.oldText, newText: c.newText });
       k++;
     } else {
       merged.push(c);
@@ -251,7 +251,6 @@ export function createEditFileTool(context: ToolContext, descriptionOverride?: s
         }
         const newValue = typeof newText === 'string' ? newText : '';
         // 写队列串行化（P2-⑲ 防并发写冲突），内部执行受控替换
-        const { FileWriteQueueService } = require('../../file-queue/file-write-queue.service');
         const replacements = await FileWriteQueueService.enqueue(normalizedPath, async () => {
           try {
             return DocxReplaceService.replaceText(normalizedPath, oldText, newValue);
@@ -331,7 +330,6 @@ export function createEditFileTool(context: ToolContext, descriptionOverride?: s
 
       // 原子写入：先写临时文件再 rename，避免写一半崩溃留下损坏文件
       // P2-⑲：经文件写队列串行化，同一文件的并发写操作排队执行（防写冲突）
-      const { FileWriteQueueService } = require('../../file-queue/file-write-queue.service');
       await FileWriteQueueService.enqueue(normalizedPath, async () => {
         const tmpPath = `${normalizedPath}.edit.tmp`;
         await fs.promises.writeFile(tmpPath, after, 'utf-8');

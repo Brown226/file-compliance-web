@@ -11,6 +11,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { z } from 'zod';
+import { getTodayDir } from './paths';
 
 // require ESM-only 包，类型通过 typeof import 断言保留
 const { tool } = require('@ai-sdk/provider-utils') as typeof import('@ai-sdk/provider-utils');
@@ -49,10 +50,9 @@ export function createUploadFileTool(context: ToolContext) {
         : fileBase64;
       const buffer = Buffer.from(base64Data, 'base64');
 
-      // 计算存储路径：backend/uploads/agent_temp/{userId}/{sessionId}/{fileName}
-      // __dirname 在 CommonJS（module:commonjs）下可用，指向 tools/file/
-      const uploadsRoot = path.join(__dirname, '../../../../../uploads/agent_temp');
-      const targetDir = path.join(uploadsRoot, context.userId, context.sessionId);
+      // 计算存储路径：backend/uploads/agent_temp/{userId}/{YYYY-MM-DD}/{fileName}
+      // 按日期划分（跨会话共享当天目录），不再按 sessionId 分区
+      const targetDir = getTodayDir(context.userId);
       const filePath = path.join(targetDir, fileName);
 
       // 创建目录（recursive: true 不会因目录已存在而报错）
