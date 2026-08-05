@@ -27,6 +27,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { z } from 'zod';
+import { fixMojibakePath } from './filename';
 import type { ToolContext } from './upload_file';
 
 const { tool } = require('@ai-sdk/provider-utils') as typeof import('@ai-sdk/provider-utils');
@@ -135,8 +136,15 @@ export function createReadFileTool(context: ToolContext) {
       endLine: z.number().int().min(1).optional().describe('结束行号（默认 startLine + 1999，最大 2000 行窗口）'),
     }),
     execute: async ({ filePath, startLine, endLine }): Promise<ReadFileResult> => {
+      // 兼容历史乱码路径：multer 曾把中文文件名按 latin1 存盘，若给定路径不存在，
+      // 尝试把路径中各段乱码名修复为 UTF-8 后再访问
       if (!fs.existsSync(filePath)) {
-        throw new Error(`文件不存在: ${filePath}`);
+        const fixed = fixMojibakePath(filePath);
+        if (fixed !== filePath && fs.existsSync(fixed)) {
+          filePath = fixed;
+        } else {
+          throw new Error(`文件不存在: ${filePath}`);
+        }
       }
 
       // 路径安全校验：只能读 Agent 临时目录下的文件

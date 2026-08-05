@@ -24,6 +24,7 @@ import prisma from '../../config/db';
 import { Prisma } from '@prisma/client';
 import { LlmService } from '../llm/llm.service';
 import { createAllTools } from './tools';
+import { fixMojibake } from './tools/file/filename';
 import { QASessionService } from './qa-session.service';
 import { getUploadDir } from '../../config/upload';
 import { SteeringService } from './steering/steering.service';
@@ -902,7 +903,15 @@ export class AgentService {
       return '';
     }
     if (files.length === 0) return '';
-    const fileList = files.map(f => `- ${f}`).join('\n');
+    // 修复历史乱码文件名（UTF-8 被 latin1 误解码的存量文件），并同时列出原始文件名，
+    // 让 Agent 即使拿到旧乱码路径也能通过修复后的文件名识别
+    const fileList = files
+      .map(f => {
+        const base = path.basename(f);
+        const fixed = fixMojibake(base);
+        return fixed !== base ? `- ${f}（文件名：${fixed}）` : `- ${f}`;
+      })
+      .join('\n');
     return `## 已上传文件\n用户已上传以下文件，你可以用 extract_text 工具提取文本：\n${fileList}`;
   }
 }

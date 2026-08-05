@@ -11,6 +11,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { z } from 'zod';
+import { fixMojibakePath } from './filename';
 import type { ToolContext } from './upload_file';
 
 const { tool } = require('@ai-sdk/provider-utils') as typeof import('@ai-sdk/provider-utils');
@@ -58,9 +59,15 @@ export function createExtractTextTool(_context: ToolContext) {
       filePath: z.string().describe('服务端文件绝对路径（由 upload_file 返回）'),
     }),
     execute: async ({ filePath }): Promise<ParseResult> => {
-      // 校验文件存在
+      // 兼容历史乱码路径：multer 曾把中文文件名按 latin1 存盘，若给定路径不存在，
+      // 尝试把路径中各段乱码名修复为 UTF-8 后再访问
       if (!fs.existsSync(filePath)) {
-        throw new Error(`文件不存在: ${filePath}`);
+        const fixed = fixMojibakePath(filePath);
+        if (fixed !== filePath && fs.existsSync(fixed)) {
+          filePath = fixed;
+        } else {
+          throw new Error(`文件不存在: ${filePath}`);
+        }
       }
 
       const fileName = path.basename(filePath);

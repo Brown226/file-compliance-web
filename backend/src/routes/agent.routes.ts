@@ -30,6 +30,7 @@ import { WorktreeService } from '../services/agent/worktree/worktree.service';
 import { SteeringService } from '../services/agent/steering/steering.service';
 import { SummaryService } from '../services/agent/summary/summary.service';
 import { getUploadDir } from '../config/upload';
+import { fixMojibake } from '../services/agent/tools/file/filename';
 import { lookupCapabilities } from '../services/llm/model-capabilities.registry';
 import FalsePositiveLibraryService from '../services/review/falsePositiveLibrary.service';
 import {
@@ -120,11 +121,11 @@ router.post('/chat/stream', async (req: AuthRequest, res: Response) => {
     }
 
     const reader = webBody.getReader();
-    // 首帧注入 sessionId（前端用它建立会话上下文；未创建新会话时也透传原 sessionId）
-    if (sessionId) {
-      const meta = `data: ${JSON.stringify({ type: 'session-init', sessionId })}\n\n`;
-      res.write(meta);
-    }
+    // 注意：不能在这里注入自定义 `data:` 首帧（如 session-init）。
+    // AI SDK 前端（@ai-sdk/vue useChat）的 processUIMessageStream 只认识标准
+    // UIMessageStream 事件，未知类型会被原样 enqueue 导致流解析失败、请求中止，
+    // assistant 消息不渲染。前端 sessionId 由 useAgentChat 用 crypto.randomUUID()
+    // 自行生成并随请求体传入，无需后端回传。
     while (true) {
       const { done, value } = await reader.read();
       if (done) break;
@@ -257,9 +258,20 @@ const agentUploadStorage = multer.diskStorage({
     cb(null, targetDir);
   },
   filename: (_req, file, cb) => {
+    // 修复中文文件名乱码：multer 在 Windows 上会把 multipart 的 UTF-8 文件名
+    // 按 latin1 解码（"先初始化" → "åå§ååäºè§£..."），导致 Agent 无法按路径访问。
+    // 这里把 latin1 字节序列反向解码回原始 UTF-8 字符串，再存盘。
+    let originalName = file.originalname;
+    try {
+      const utf8 = Buffer.from(originalName, 'latin1').toString('utf8');
+      // 仅当解码后仍可逆（无 U+FFFD 替换符）且含中文时才采用，避免破坏本就正常的 ASCII 文件名
+      if (!utf8.includes('�')) originalName = utf8;
+    } catch {
+      // 忽略解码失败，保持原样
+    }
     // 保留原始扩展名，加时间戳防同名冲突
-    const ext = path.extname(file.originalname);
-    const base = path.basename(file.originalname, ext);
+    const ext = path.extname(originalName);
+    const base = path.basename(originalName, ext);
     cb(null, `${base}_${Date.now()}${ext}`);
   },
 });
@@ -290,7 +302,8 @@ router.post('/upload', agentUpload.single('file'), (req: AuthRequest, res: Respo
       success: true,
       data: {
         filePath: file.path,
-        fileName: file.originalname,
+        // 修复 latin1 误解码的中文文件名（multer 在 Windows 上的历史问题）
+        fileName: fixMojibake(file.originalname),
         size: file.size,
         sessionId,
       },
@@ -374,7 +387,8 @@ router.get('/files/read', async (req: AuthRequest, res: Response) => {
 
     const stat = fs.statSync(resolved);
     const ext = path.extname(resolved).toLowerCase().replace('.', '');
-    const fileName = path.basename(resolved);
+    // 修复 latin1 误解码的中文文件名（multer 在 Windows 上的历史问题）
+    const fileName = fixMojibake(path.basename(resolved));
 
     // P0-⑨ 知识引用溯源：可选 chunkIndex（0-based），按 chunk 定位返回上下文片段
     const chunkIndex = parseChunkIndexQuery(req.query.chunkIndex);

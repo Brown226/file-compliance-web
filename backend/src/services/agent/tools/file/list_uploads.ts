@@ -17,6 +17,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { z } from 'zod';
+import { fixMojibake } from './filename';
 import type { ToolContext } from './upload_file';
 
 const { tool } = require('@ai-sdk/provider-utils') as typeof import('@ai-sdk/provider-utils');
@@ -69,7 +70,8 @@ export function createListUploadsTool(context: ToolContext) {
         const stat = await fs.promises.stat(filePath);
 
         files.push({
-          fileName: entry.name,
+          // 修复历史乱码文件名（UTF-8 被 latin1 误解码的存量文件）
+          fileName: fixMojibake(entry.name),
           filePath,
           size: stat.size,
           mtime: stat.mtime.toISOString(),
