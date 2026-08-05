@@ -21,9 +21,11 @@
  */
 
 import * as fs from 'fs';
+import * as path from 'path';
 import { z } from 'zod';
 import type { ToolContext } from './upload_file';
 import { parseDocument } from './parse-document';
+import { LlmService } from '../../../llm/llm.service';
 
 const { tool } = require('@ai-sdk/provider-utils') as typeof import('@ai-sdk/provider-utils');
 
@@ -133,26 +135,16 @@ function diffParagraphs(oldParas: Array<{ text: string; sectionTitle?: string }>
   const dp = lcsTable(a, b);
   const changes: ParagraphDiff[] = [];
 
-  const pickSection = (oldP: any, newP: any) => oldP?.sectionTitle || newP?.sectionTitle;
-
   let i = oldParas.length;
   let j = newParas.length;
   while (i > 0 && j > 0) {
     if (a[i - 1] === b[j - 1]) {
       i--; j--;
     } else if (dp[i - 1][j] >= dp[i][j - 1]) {
-      // 旧段落被删除；若与新段落相邻且内容相似，记为 modified
+      // 旧段落被删除；若与新段落内容仅空白差异 → 视为未变更（不误报为修改，验收标准 3）
       const oldP = oldParas[i - 1];
       const newP = j > 0 && i > 0 ? newParas[j - 1] : undefined;
       if (newP && isSameText(oldP.text, newP.text)) {
-        changes.unshift({
-          type: 'modified',
-          oldIndex: i - 1,
-          newIndex: j - 1,
-          oldText: oldP.text,
-          newText: newP.text,
-          sectionTitle: pickSection(oldP, newP),
-        });
         i--; j--;
       } else {
         changes.unshift({ type: 'removed', oldIndex: i - 1, newIndex: -1, oldText: oldP.text, sectionTitle: oldP.sectionTitle });
@@ -162,14 +154,7 @@ function diffParagraphs(oldParas: Array<{ text: string; sectionTitle?: string }>
       const newP = newParas[j - 1];
       const oldP = i > 0 && j > 0 ? oldParas[i - 1] : undefined;
       if (oldP && isSameText(oldP.text, newP.text)) {
-        changes.unshift({
-          type: 'modified',
-          oldIndex: i - 1,
-          newIndex: j - 1,
-          oldText: oldP.text,
-          newText: newP.text,
-          sectionTitle: pickSection(oldP, newP),
-        });
+        // 内容仅空白差异 → 视为未变更（不误报为修改）
         i--; j--;
       } else {
         changes.unshift({ type: 'added', oldIndex: -1, newIndex: j - 1, newText: newP.text, sectionTitle: newP.sectionTitle });
@@ -203,7 +188,6 @@ function truncate(text: string, maxLen: number): string {
 async function generateChangeSummary(changes: ParagraphDiff[]): Promise<string | undefined> {
   if (changes.length === 0 || changes.length > 30) return undefined;
 
-  const { LlmService } = require('../../../llm/llm.service');
   const lines = changes.slice(0, 15).map((c, idx) => {
     const oldText = c.oldText ? truncate(c.oldText, 120) : '';
     const newText = c.newText ? truncate(c.newText, 120) : '';
@@ -241,7 +225,7 @@ async function generateChangeSummary(changes: ParagraphDiff[]): Promise<string |
  * - stats: 变更统计
  * - summary: LLM 变更摘要（可选）
  */
-export function createCompareDocumentsTool(_context: ToolContext) {
+export function createCompareDocumentsTool(context: ToolContext) {
   return tool({
     description: '对比两份文档（旧版 vs 新版），输出段落级差异（新增/删除/修改块）+ 变更统计 + LLM 变更摘要。适用于合同修订版核对、制度新旧版本对比等场景。参数 oldFilePath/newFilePath 为服务端文件绝对路径（由 upload_file 返回）。',
     inputSchema: z.object({
@@ -251,6 +235,20 @@ export function createCompareDocumentsTool(_context: ToolContext) {
         .describe('是否生成 LLM 变更语义摘要（默认 true，变更过多/过少时自动跳过）'),
     }),
     execute: async ({ oldFilePath, newFilePath, withSummary }): Promise<CompareResult> => {
+      // 路径安全校验（与 read_file 同款）：只能对比 Agent 临时目录下当前用户的文件
+      const uploadsRoot = path.join(__dirname, '../../../../../uploads/agent_temp');
+      const normalizedRoot = path.resolve(uploadsRoot);
+      for (const filePath of [oldFilePath, newFilePath]) {
+        const normalizedPath = path.resolve(filePath);
+        if (!normalizedPath.startsWith(normalizedRoot + path.sep) && normalizedPath !== normalizedRoot) {
+          throw new Error('路径越权：只能读取 Agent 临时目录下的文件');
+        }
+        const expectedUserDir = path.join(normalizedRoot, context.userId);
+        if (!normalizedPath.startsWith(expectedUserDir + path.sep) && normalizedPath !== expectedUserDir) {
+          throw new Error('路径越权：只能读取当前用户上传的文件');
+        }
+      }
+
       if (!fs.existsSync(oldFilePath)) throw new Error(`旧文件不存在: ${oldFilePath}`);
       if (!fs.existsSync(newFilePath)) throw new Error(`新文件不存在: ${newFilePath}`);
 

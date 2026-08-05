@@ -30,6 +30,8 @@ import * as path from 'path';
 import { z } from 'zod';
 import type { ToolContext } from '../file/upload_file';
 import { parseDocument } from '../file/parse-document';
+import { EmbeddingService } from '../../../knowledge/embedding.service';
+import { LlmService } from '../../../llm/llm.service';
 
 const { tool } = require('@ai-sdk/provider-utils') as typeof import('@ai-sdk/provider-utils');
 
@@ -111,7 +113,6 @@ async function selectRelevantParagraphs(
 
   // 尝试语义打分（内网 embedding 服务可能不可用，2s 超时后静默降级关键词）
   try {
-    const { EmbeddingService } = require('../../../knowledge/embedding.service');
     const timeout = <T>(p: Promise<T>, ms: number) =>
       Promise.race([p, new Promise<never>((_, rej) => setTimeout(() => rej(new Error('embedding 超时')), ms))]);
     const qVec = (await timeout(EmbeddingService.embedText(query), 2000)) as number[];
@@ -128,19 +129,23 @@ async function selectRelevantParagraphs(
     const scored = paragraphs.map((p, i) => {
       const lower = p.text.toLowerCase();
       let score = 0;
+      let overlap = 0;
       for (const t of qTerms) {
         const idx = lower.indexOf(t);
-        if (idx >= 0) score += 1 + 0.5 / (1 + idx / 200); // 靠前出现加分
+        if (idx >= 0) {
+          score += 1 + 0.5 / (1 + idx / 200); // 靠前出现加分
+          overlap++;
+        }
       }
       // 与 query 的词重叠率
-      const overlap = qTerms.filter(t => lower.includes(t)).length;
       score += overlap * 2;
-      // 轻微偏向靠前段落
+      // 轻微偏向靠前段落（仅作排序权重，不单独决定相关性）
       score += Math.max(0, 1 - i / paragraphs.length);
-      return { ...p, score };
+      return { ...p, score, overlapCount: overlap };
     });
-    // 阈值过滤：一个词都没命中的段落（score < 1 仅位置加分）视为不相关
-    const relevant = scored.filter(s => s.score >= 1);
+    // 相关性过滤：query 有词项时必须至少命中一个关键词，否则视为不相关
+    // （位置加分只是排序权重，不能让完全无关的段落通过「未检索到」判定）
+    const relevant = scored.filter(s => qTerms.length === 0 || s.overlapCount > 0);
     if (relevant.length === 0) return [];
     return relevant.sort((a, b) => b.score - a.score).slice(0, topN);
   }
@@ -174,8 +179,6 @@ async function llmCompare(
   selA: Array<{ text: string; sectionTitle?: string }>,
   selB: Array<{ text: string; sectionTitle?: string }>,
 ): Promise<CompareResult> {
-  const { LlmService } = require('../../../llm/llm.service');
-
   const systemPrompt =
     '你是文档一致性比对助手。给定一个查询主题和两份文档（A/B）的相关片段，' +
     '逐主题点判断两份文档表述是否一致。' +

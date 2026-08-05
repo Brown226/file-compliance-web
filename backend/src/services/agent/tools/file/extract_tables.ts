@@ -138,9 +138,10 @@ export function createExtractTablesTool(_context: ToolContext) {
       const parsed = await parseDocument(filePath);
       let tables = extractTablesFromStructure(parsed.structure);
 
-      // 按 sheet 过滤（sheet 参数存在时只保留指定 sheet）
+      // 按 sheet 过滤（sheet 参数为 0-based 表格索引；doc-parser 表格无 sheetName 字段，
+      // 无法按名称匹配，按文档顺序取指定位置的表格）
       if (sheet !== undefined) {
-        tables = tables.filter(t => t.sheetName === String(sheet) || t.sheetName === undefined);
+        tables = tables.filter((_, idx) => idx === sheet);
       }
 
       const totalRows = tables.reduce((sum, t) => sum + t.rows.length, 0);
