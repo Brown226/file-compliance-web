@@ -1,17 +1,35 @@
 /**
- * 任务 1：流式调用重试包装测试
+ * 任务 1：流式调用重试包装测试（测真身）
  *
- * 验证 agent.service.ts 中 callStreamWithRetry 的行为：
+ * 直接 import agent.service 导出的 callStreamWithRetry（2026-08-05 加 export），
+ * 验证真实实现（非等价重写）：
  * - 首次成功直接返回，不重试
  * - 可重试错误按 decideRetry 决策退避后重试，成功后返回
  * - 不可重试错误直接抛出（不重试）
  * - 重试仍失败时最终抛出
+ * 另含 decideRetry / isRetryable / calcBackoff 纯函数测试。
  *
- * callStreamWithRetry 未从 agent.service.ts 导出，故这里对 retry-strategy
- * 的 decideRetry 与包装逻辑做等价验证（decideRetry 是重试决策的纯函数核心，
- * callStreamWithRetry 只是其外层循环）。
+ * agent.service 的重依赖全部 mock（llm/tools/prisma/redis 等），
+ * retry-strategy 保留真实（重试决策是测的核心）。
  */
 import { describe, it, expect, vi } from 'vitest';
+
+// —— agent.service 重依赖 mock（retry-strategy 保留真实）——
+vi.mock('../../../config/db', () => ({ __esModule: true, default: {} }));
+vi.mock('@prisma/client', () => ({ Prisma: { ModelName: {} }, PrismaClient: class {} }));
+vi.mock('../../../llm/llm.service', () => ({ LlmService: {} }));
+vi.mock('../../tools', () => ({ createAllTools: () => ({}) }));
+vi.mock('../../tools/file/filename', () => ({ fixMojibake: (p: string) => p }));
+vi.mock('../qa-session.service', () => ({ QASessionService: {} }));
+vi.mock('../../../config/upload', () => ({ getUploadDir: () => '/tmp' }));
+vi.mock('../steering/steering.service', () => ({ SteeringService: {} }));
+vi.mock('../skills/skills.service', () => ({ SkillsService: {} }));
+vi.mock('../context-compaction/compaction.service', () => ({ CompactionService: {} }));
+vi.mock('../security/scrub-sensitive', () => ({ scrubSensitive: (s: string) => s }));
+vi.mock('../../../utils/llm-rate-limiter', () => ({ acquireLlmToken: () => Promise.resolve() }));
+vi.mock('../../prompts', () => ({ PromptLoader: { resolve: () => Promise.resolve('') } }));
+
+import { callStreamWithRetry } from '../../agent.service';
 import {
   decideRetry,
   isRetryable,
@@ -20,22 +38,7 @@ import {
   BACKOFF_CAP_MS,
 } from '../retry-strategy';
 
-/** 模拟 callStreamWithRetry 的重试循环（与 agent.service.ts 实现一致） */
-async function callStreamWithRetry<T>(fn: () => T): Promise<Awaited<T>> {
-  let attemptNumber = 1;
-  for (;;) {
-    try {
-      return await fn();
-    } catch (e) {
-      const decision = decideRetry(e, attemptNumber, false);
-      if (!decision.shouldRetry) throw e;
-      await new Promise((r) => setTimeout(r, decision.delayMs));
-      attemptNumber += 1;
-    }
-  }
-}
-
-describe('callStreamWithRetry（decideRetry 驱动）', () => {
+describe('callStreamWithRetry（agent.service 真身）', () => {
   it('首次调用成功时直接返回，不重试', async () => {
     const fn = vi.fn().mockResolvedValue('ok');
     const result = await callStreamWithRetry(fn);

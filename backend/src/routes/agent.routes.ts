@@ -33,6 +33,7 @@ import { fixMojibake } from '../services/agent/tools/file/filename';
 import { getTodayDir } from '../services/agent/tools/file/paths';
 import { lookupCapabilities } from '../services/llm/model-capabilities.registry';
 import FalsePositiveLibraryService from '../services/review/falsePositiveLibrary.service';
+import prisma from '../config/db';
 import {
   submitBatchJob,
   getBatchJob,
@@ -1146,7 +1147,7 @@ router.post('/sessions/:id/compact', async (req: AuthRequest, res: Response) => 
     const result = await CompactionService.compact(chatMessages);
 
     if (result.truncatedMessages && result.truncatedMessages > 0) {
-      const prisma = require('../config/db').default;
+      
       // 删除被压缩的早期消息（按时间正序取前 N 条），插入摘要 system 消息
       const ordered = [...messages].sort((a: any, b: any) =>
         new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
@@ -1187,22 +1188,18 @@ router.post('/sessions/:id/compact', async (req: AuthRequest, res: Response) => 
 /**
  * GET /api/agent/models — 可用模型列表
  *
- * 从 system_configs.llm_profiles 展平所有 provider 的模型，
- * 附带系统默认模型（llm_chat_model 当前配置）。
+ * 从 system_configs.llm_profiles 展平所有 provider 的模型（不含系统默认条目，
+ * 模型列表只来自用户配置；默认选中由前端取第一个模型）。
  *
- * 返回：{ success, data: { defaultKey: string|null, models: [{ key, label }] } }
- *   key 格式：<providerId>::<modelName>（null 表示系统默认）
+ * 返回：{ success, data: { defaultKey: string|null, models: AgentModelOption[] } }
+ *   AgentModelOption: { key, label, provider, modelId, name, vision }
+ *   key 格式：<providerId>::<modelName>
+ *   provider/modelId/name 为结构化字段（对齐参考 pi-web modelList: { id, name, provider }[]）
+ *   vision 表示该模型配置时勾选了视觉能力（capabilities.inputModalities 含 image）
  */
 router.get('/models', async (req: AuthRequest, res: Response) => {
   try {
-    const prisma = require('../config/db').default;
-    const { LlmService } = require('../services/llm/llm.service');
-
-    const defaultCfg = await LlmService.getLlmConfig();
-    const models: Array<{ key: string | null; label: string }> = [];
-    if (defaultCfg?.modelName) {
-      models.push({ key: null, label: `${defaultCfg.modelName}（系统默认）` });
-    }
+    const models: Array<{ key: string | null; label: string; provider: string; modelId: string; name: string; vision: boolean }> = [];
 
     const profilesCfg = await prisma.systemConfig.findUnique({ where: { key: 'llm_profiles' } });
     if (profilesCfg?.value) {
@@ -1210,9 +1207,21 @@ router.get('/models', async (req: AuthRequest, res: Response) => {
       const profiles = Array.isArray(raw) ? raw : [];
       for (const p of profiles) {
         if (p?.id && p?.model) {
+          // provider 分组用 p.name（真实供应商名，如 CNPE），而不是 p.id（随机串）。
+          // llm_profiles 是「一 provider 一 model」扁平结构，同一供应商的多模型 name 相同，
+          // 按 name 分组才能在对话下拉里归成一组（对齐 pi-web providers->models 两级视图）。
+          const providerName = p.name || p.id;
+          const inputModalities: string[] = Array.isArray(p?.capabilities?.inputModalities)
+            ? p.capabilities.inputModalities
+            : [];
+          const vision = inputModalities.includes('image') || inputModalities.includes('images');
           models.push({
             key: `${p.id}::${p.model}`,
-            label: `${p.name || p.id} · ${p.model}`,
+            label: `${providerName} · ${p.model}`,
+            provider: providerName,
+            modelId: p.model,
+            name: p.model,
+            vision,
           });
         }
       }
@@ -1226,9 +1235,7 @@ router.get('/models', async (req: AuthRequest, res: Response) => {
         const { minimatch } = require('minimatch');
         const filtered = models.filter(m => {
           const target = m.key || m.label;
-          return patterns.some(p => minimatch(target, p, { nocase: true }))
-            // 保留系统默认（key=null）当 scope 未显式排除
-            || (m.key === null && !patterns.some(p => p.startsWith('!') && minimatch(m.label, p.slice(1), { nocase: true })));
+          return patterns.some(p => minimatch(target, p, { nocase: true }));
         });
         return res.json({ success: true, data: { defaultKey: null, models: filtered } });
       }
@@ -1246,7 +1253,7 @@ router.get('/models', async (req: AuthRequest, res: Response) => {
  */
 router.get('/providers', async (_req: AuthRequest, res: Response) => {
   try {
-    const prisma = require('../config/db').default;
+    
     const cfg = await prisma.systemConfig.findUnique({ where: { key: 'llm_profiles' } });
     const raw = cfg?.value
       ? (typeof cfg.value === 'string' ? JSON.parse(cfg.value) : cfg.value)
@@ -1268,7 +1275,7 @@ router.put('/providers', async (req: AuthRequest, res: Response) => {
     if (!Array.isArray(profiles)) {
       return res.status(400).json({ success: false, message: 'profiles 必须为数组' });
     }
-    const prisma = require('../config/db').default;
+    
     await prisma.systemConfig.upsert({
       where: { key: 'llm_profiles' },
       update: { value: JSON.stringify(profiles) },
@@ -1411,7 +1418,7 @@ router.post('/providers/discover', async (req: AuthRequest, res: Response) => {
 
     // 脱敏/空 key 时从 llm_profiles 匹配真实凭证
     if (!apiKey || isMaskedApiKey(apiKey)) {
-      const prisma = require('../config/db').default;
+      
       const cfg = await prisma.systemConfig.findUnique({ where: { key: 'llm_profiles' } });
       if (cfg?.value) {
         const raw = typeof cfg.value === 'string' ? JSON.parse(cfg.value) : cfg.value;
@@ -1578,7 +1585,7 @@ router.post('/saves', async (req: AuthRequest, res: Response) => {
     if (!title || typeof title !== 'string' || !content || typeof content !== 'string') {
       return res.status(400).json({ success: false, message: 'title 和 content 必填' });
     }
-    const prisma = require('../config/db').default;
+    
     const item = await prisma.savedItem.create({
       data: {
         userId,
@@ -1605,7 +1612,7 @@ router.get('/saves', async (req: AuthRequest, res: Response) => {
     const userId = req.user?.id;
     if (!userId) return res.status(401).json({ success: false, message: '未认证' });
     const type = req.query.type;
-    const prisma = require('../config/db').default;
+    
     const items = await prisma.savedItem.findMany({
       where: { userId, ...(type ? { type: String(type) } : {}) },
       orderBy: { createdAt: 'desc' },
@@ -1625,8 +1632,8 @@ router.delete('/saves/:id', async (req: AuthRequest, res: Response) => {
   try {
     const userId = req.user?.id;
     if (!userId) return res.status(401).json({ success: false, message: '未认证' });
-    const prisma = require('../config/db').default;
-    const result = await prisma.savedItem.deleteMany({ where: { id: req.params.id, userId } });
+    
+    const result = await prisma.savedItem.deleteMany({ where: { id: String(req.params.id), userId } });
     if (result.count === 0) return res.status(404).json({ success: false, message: '收藏不存在' });
     return res.json({ success: true, data: { deleted: result.count } });
   } catch (e: any) {
@@ -1641,7 +1648,7 @@ router.get('/search', async (req: AuthRequest, res: Response) => {
     if (!userId) return res.status(401).json({ success: false, message: '未认证' });
     const q = String(req.query.q || '').trim();
     if (!q) return res.json({ success: true, data: [] });
-    const prisma = require('../config/db').default;
+    
     // 全文搜索会话消息（ILIKE 关键词）
     const messages = await prisma.qAMessage.findMany({
       where: {

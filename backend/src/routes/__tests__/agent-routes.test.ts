@@ -18,7 +18,7 @@ import * as os from 'os';
 import * as path from 'path';
 
 // —— 鉴权：透传并注入 req.user ——
-vi.mock('../middlewares/auth.middleware', () => ({
+vi.mock('../../middlewares/auth.middleware', () => ({
   authenticate: (req: any, _res: any, next: any) => {
     req.user = { id: 'u1', username: 'admin', role: 'ADMIN' };
     next();
@@ -33,24 +33,24 @@ const { prismaMock } = vi.hoisted(() => ({
     qAMessage: { findMany: vi.fn() },
   },
 }));
-vi.mock('../config/db', () => ({ __esModule: true, default: prismaMock }));
+vi.mock('../../config/db', () => ({ __esModule: true, default: prismaMock }));
 
 // —— 重依赖服务全部 mock（路由加载不触发真实实现）——
-vi.mock('../services/agent/agent.service', () => ({ AgentService: {} }));
+vi.mock('../../services/agent/agent.service', () => ({ AgentService: {} }));
 const { qaSessionMock } = vi.hoisted(() => ({ qaSessionMock: { duplicateSession: vi.fn() } }));
-vi.mock('../services/agent/qa-session.service', () => ({ QASessionService: qaSessionMock }));
-vi.mock('../services/agent/session-stats.service', () => ({ SessionStatsService: {} }));
-vi.mock('../services/agent/memory/memory.service', () => ({ MemoryService: {} }));
-vi.mock('../services/agent/skills/skills.service', () => ({ SkillsService: {} }));
-vi.mock('../services/agent/worktree/worktree.service', () => ({ WorktreeService: {} }));
-vi.mock('../services/agent/steering/steering.service', () => ({ SteeringService: {} }));
-vi.mock('../services/agent/summary/summary.service', () => ({ SummaryService: {} }));
-vi.mock('../config/env', () => ({ env: { redisUrl: 'redis://localhost:6379', jwtSecret: 'test', jwtExpiresIn: '1d' } }));
-vi.mock('../services/llm/model-capabilities.registry', () => ({ lookupCapabilities: () => [] }));
-vi.mock('../services/review/falsePositiveLibrary.service', () => ({ default: {} }));
-vi.mock('../services/agent/tools/file/filename', () => ({ fixMojibake: (p: string) => p }));
-vi.mock('../config/upload', () => ({ getUploadDir: () => path.join(os.tmpdir(), 'route-test-upload') }));
-vi.mock('../services/agent/tools/file/paths', () => ({
+vi.mock('../../services/agent/qa-session.service', () => ({ QASessionService: qaSessionMock }));
+vi.mock('../../services/agent/session-stats.service', () => ({ SessionStatsService: {} }));
+vi.mock('../../services/agent/memory/memory.service', () => ({ MemoryService: {} }));
+vi.mock('../../services/agent/skills/skills.service', () => ({ SkillsService: {} }));
+vi.mock('../../services/agent/worktree/worktree.service', () => ({ WorktreeService: {} }));
+vi.mock('../../services/agent/steering/steering.service', () => ({ SteeringService: {} }));
+vi.mock('../../services/agent/summary/summary.service', () => ({ SummaryService: {} }));
+vi.mock('../../config/env', () => ({ env: { redisUrl: 'redis://localhost:6379', jwtSecret: 'test', jwtExpiresIn: '1d' } }));
+vi.mock('../../services/llm/model-capabilities.registry', () => ({ lookupCapabilities: () => [] }));
+vi.mock('../../services/review/falsePositiveLibrary.service', () => ({ default: {} }));
+vi.mock('../../services/agent/tools/file/filename', () => ({ fixMojibake: (p: string) => p }));
+vi.mock('../../config/upload', () => ({ getUploadDir: () => path.join(os.tmpdir(), 'route-test-upload') }));
+vi.mock('../../services/agent/tools/file/paths', () => ({
   getTodayDir: () => path.join(os.tmpdir(), 'route-test-upload', 'agent_temp', 'u1'),
 }));
 

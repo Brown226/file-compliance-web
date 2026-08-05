@@ -52,7 +52,7 @@ const { createOpenAI } = require('@ai-sdk/openai') as typeof import('@ai-sdk/ope
  * 流已开始后的错误由 onError 回调记录，不重试（数据已流出，无法安全回滚）。
  * 重试决策复用 retry-strategy 的 decideRetry（401 特殊处理 + 指数退避，最多 3 次尝试）。
  */
-async function callStreamWithRetry<T>(fn: () => T): Promise<Awaited<T>> {
+export async function callStreamWithRetry<T>(fn: () => T): Promise<Awaited<T>> {
   let attemptNumber = 1;
   for (;;) {
     try {
