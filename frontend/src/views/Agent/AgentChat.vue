@@ -379,33 +379,31 @@
               <div class="bubble-footer">
                 <div class="msg-actions">
                   <button
-                    v-if="getMessageText(message)"
-                    class="msg-action"
+                    v-if="getMessageText(message) && !isStreamingTail(message, idx)"
+                    class="msg-action icon-only"
                     :class="{ 'is-active': msgCopied[message.id] }"
-                    :title="'复制消息'"
+                    :title="msgCopied[message.id] ? '已复制' : '复制消息'"
                     @click="copyMessageText(message)"
                   >
-                    <svg v-if="msgCopied[message.id]" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-                      <polyline points="20 6 9 17 4 12" />
-                    </svg>
-                    <svg v-else width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-                      <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
-                      <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
-                    </svg>
-                    <span>{{ msgCopied[message.id] ? '已复制' : '复制' }}</span>
+                    <el-icon :size="16"><CopyDocument /></el-icon>
                   </button>
                   <button
-                    v-if="getMessageText(message)"
-                    class="msg-action"
-                    :class="{ 'is-active': msgSaved[message.id] }"
-                    :title="'收藏'"
+                    v-if="getMessageText(message) && !isStreamingTail(message, idx)"
+                    class="msg-action icon-only"
+                    :class="{ 'is-saved': msgSaved[message.id] }"
+                    :title="msgSaved[message.id] ? '已收藏' : '收藏'"
                     @click="saveMessage(message)"
-                  >{{ msgSaved[message.id] ? '已收藏' : '收藏' }}</button>
+                  >
+                    <el-icon :size="16"><StarFilled v-if="msgSaved[message.id]" /><Star v-else /></el-icon>
+                  </button>
                   <button
                     v-if="message.role === 'assistant' && idx === messages.length - 1 && !isLoading && messages.length > 0"
-                    class="msg-action"
+                    class="msg-action icon-only"
+                    title="重新生成"
                     @click="handleRegenerate"
-                  >重新生成</button>
+                  >
+                    <el-icon :size="16"><Refresh /></el-icon>
+                  </button>
                 </div>
                 <span v-if="message.createdAt" class="msg-time">{{ formatTime(message.createdAt) }}</span>
               </div>
@@ -429,28 +427,29 @@
         />
         </div>
 
-        <!-- 已上传文件标签：紧贴底部输入框上方，从左往右排列 -->
-        <div v-if="uploadedFiles.length > 0" class="uploaded-files uploaded-files-input">
-          <div
-            v-for="(f, i) in uploadedFiles"
-            :key="i"
-            class="file-chip"
-            :class="['kind-' + (f.kind || 'other'), { 'has-path': f.path }]"
-            @click="f.path && openFileInPanel(f.path, f.name)"
-          >
-            <el-icon v-if="f.kind === 'image'" :size="14"><Picture /></el-icon>
-            <el-icon v-else-if="f.kind === 'pdf'" :size="14"><Tickets /></el-icon>
-            <el-icon v-else-if="f.kind === 'excel'" :size="14"><Grid /></el-icon>
-            <el-icon v-else :size="14"><Document /></el-icon>
-            <span class="file-name" :title="f.path ? '在右侧面板打开预览' : '尚未保存路径'">{{ f.name }}</span>
-            <span class="file-size">{{ formatSize(f.size) }}</span>
-            <button class="file-remove" title="移除" @click.stop="uploadedFiles.splice(i, 1)">
-              <el-icon :size="12"><Close /></el-icon>
-            </button>
-          </div>
-        </div>
-        <!-- 输入栏（底部复用 ChatInputArea） -->
+        <!-- 输入栏（底部复用 ChatInputArea）：文件标签放入其中，
+             与输入框共用 max-width 820 居中约束，避免超出输入框范围 -->
         <footer class="input-area">
+          <!-- 已上传文件标签：紧贴输入框上方，与输入框同宽同中心 -->
+          <div v-if="uploadedFiles.length > 0" class="uploaded-files uploaded-files-input">
+            <div
+              v-for="(f, i) in uploadedFiles"
+              :key="i"
+              class="file-chip"
+              :class="['kind-' + (f.kind || 'other'), { 'has-path': f.path }]"
+              @click="f.path && openFileInPanel(f.path, f.name)"
+            >
+              <el-icon v-if="f.kind === 'image'" :size="14"><Picture /></el-icon>
+              <el-icon v-else-if="f.kind === 'pdf'" :size="14"><Tickets /></el-icon>
+              <el-icon v-else-if="f.kind === 'excel'" :size="14"><Grid /></el-icon>
+              <el-icon v-else :size="14"><Document /></el-icon>
+              <span class="file-name" :title="f.path ? '在右侧面板打开预览' : '尚未保存路径'">{{ f.name }}</span>
+              <span class="file-size">{{ formatSize(f.size) }}</span>
+              <button class="file-remove" title="移除" @click.stop="uploadedFiles.splice(i, 1)">
+                <el-icon :size="12"><Close /></el-icon>
+              </button>
+            </div>
+          </div>
           <ChatInputArea
             :model-options="modelOptions"
             :model-key="modelKey"
@@ -575,11 +574,14 @@ import {
   Moon,
   Sunny,
   Star,
+  StarFilled,
   Files,
   View,
   Picture,
   Tickets,
   Grid,
+  CopyDocument,
+  Refresh,
 } from '@element-plus/icons-vue'
 import type { UIMessage } from 'ai'
 import { useAgentChat } from '@/composables/useAgentChat'
@@ -1446,6 +1448,11 @@ watch(sessionId, () => { refreshStats() })
   height: 100%;
   min-width: 0;
 }
+/* 右组预留 36px：右上角固定悬浮的右面板开关按钮（right-panel-fab）会盖住
+   最右元素——token 统计标签的右端，故整体让位 36px 避免遮挡 */
+.toolbar-right {
+  padding-right: 36px;
+}
 .top-toolbar .toolbar-icon-btn {
   width: 36px;
   height: 36px;
@@ -1885,8 +1892,31 @@ watch(sessionId, () => { refreshStats() })
   white-space: nowrap;
   transition: color 0.12s;
 }
-.msg-action:hover,
+.msg-action:hover {
+  color: var(--accent);
+}
 .msg-action.is-active {
+  color: var(--accent);
+}
+/* 纯图标操作按钮（复制/收藏/重新生成）：加大方块、图标居中 */
+.msg-action.icon-only {
+  width: 30px;
+  height: 28px;
+  padding: 0;
+  justify-content: center;
+}
+.msg-action.icon-only .el-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+/* 收藏激活态：填充色背景 + 实心星（不是只改边框/描边色） */
+.msg-action.is-saved {
+  background: color-mix(in srgb, var(--accent) 16%, transparent);
+  color: var(--accent);
+  border-radius: 6px;
+}
+.msg-action.is-saved .el-icon {
   color: var(--accent);
 }
 
@@ -1944,10 +1974,10 @@ watch(sessionId, () => { refreshStats() })
   flex-shrink: 0;
   max-width: 100%;
 }
-/* 有消息分支：标签与底部输入框左对齐（input-area 有 16px 左右 padding） */
+/* 有消息分支：标签已置于 .input-area 内，与输入框共用 max-width 820 居中约束
+   （.input-area > *），横向 padding 由 input-area 提供（16px 左右 + 52px minimap 留白） */
 .uploaded-files-input {
-  padding: 6px 16px 0;
-  padding-right: 52px; /* 36 minimap 留白 */
+  padding: 6px 0 0;
 }
 /* 用户消息内的文件标签块：左对齐，标签之间 gap */
 .uploaded-files-in-msg {

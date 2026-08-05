@@ -26,15 +26,33 @@
       </div>
 
       <div v-else class="session-list">
+        <!-- 分组渲染：今天 / 最近7天 / 更早 -->
         <div
-          v-for="session in sessions"
-          :key="session.id"
-          class="session-item"
-          :class="{ active: session.id === currentSessionId }"
-          @click="confirmDeleteId === session.id || renamingId === session.id ? null : $emit('select', session.id)"
-          @mouseenter="hoveredId = session.id"
-          @mouseleave="hoveredId = null"
+          v-for="group in groups"
+          :key="group.key"
+          class="session-group"
         >
+          <button
+            class="group-header"
+            :title="group.collapsed ? '展开' : '收起'"
+            @click="toggleGroup(group.key)"
+          >
+            <span class="group-chevron" :class="{ 'is-collapsed': group.collapsed }">
+              <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><polyline points="2.5 4.5 6 8 9.5 4.5" /></svg>
+            </span>
+            <span class="group-name">{{ group.label }}</span>
+            <span class="group-count">{{ group.sessions.length }}</span>
+          </button>
+          <template v-if="!group.collapsed">
+            <div
+              v-for="session in group.sessions"
+              :key="session.id"
+              class="session-item"
+              :class="{ active: session.id === currentSessionId }"
+              @click="confirmDeleteId === session.id || renamingId === session.id ? null : $emit('select', session.id)"
+              @mouseenter="hoveredId = session.id"
+              @mouseleave="hoveredId = null"
+            >
           <!-- 删除确认（行内，对齐参考） -->
           <template v-if="confirmDeleteId === session.id">
             <span class="delete-hint">{{ (session.title || '未命名会话').slice(0, 18) }}</span>
@@ -76,6 +94,8 @@
               </button>
             </div>
           </template>
+          </div>
+          </template>
         </div>
       </div>
     </div>
@@ -99,7 +119,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, nextTick, onMounted } from 'vue'
+import { ref, computed, nextTick, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import { Plus, Refresh, Check, Loading, ChatDotRound, Delete, EditPen, CopyDocument } from '@element-plus/icons-vue'
 import { listSessionsApi, deleteSessionApi, renameSessionApi, duplicateSessionApi, type SessionListItem } from '@/api/agent'
@@ -122,6 +142,45 @@ const confirmDeleteId = ref<string | null>(null)
 const renamingId = ref<string | null>(null)
 const renameValue = ref('')
 const renameInputRef = ref<HTMLInputElement | null>(null)
+
+// ===== 会话历史分组（今天 / 最近7天 / 更早）=====
+type GroupKey = 'today' | 'recent7' | 'older'
+const GROUP_STORAGE_KEY = 'agent-session-group-collapsed'
+
+function loadCollapsedMap(): Record<GroupKey, boolean> {
+  try {
+    const raw = localStorage.getItem(GROUP_STORAGE_KEY)
+    if (raw) return { ...{ today: true, recent7: true, older: false }, ...JSON.parse(raw) }
+  } catch { /* ignore */ }
+  return { today: true, recent7: true, older: false }
+}
+const collapsedMap = ref<Record<GroupKey, boolean>>(loadCollapsedMap())
+
+function toggleGroup(key: GroupKey) {
+  collapsedMap.value[key] = !collapsedMap.value[key]
+  try {
+    localStorage.setItem(GROUP_STORAGE_KEY, JSON.stringify(collapsedMap.value))
+  } catch { /* ignore */ }
+}
+
+function startOfDay(d: Date): number {
+  return new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime()
+}
+
+const groups = computed(() => {
+  const todayStart = startOfDay(new Date())
+  const today = sessions.value.filter(s => startOfDay(new Date(s.updatedAt)) === todayStart)
+  const recent7 = sessions.value.filter(s => {
+    const t = startOfDay(new Date(s.updatedAt))
+    return t < todayStart && t >= todayStart - 6 * 86400000
+  })
+  const older = sessions.value.filter(s => startOfDay(new Date(s.updatedAt)) < todayStart - 6 * 86400000)
+  return [
+    { key: 'today' as GroupKey, label: '今天', sessions: today, collapsed: collapsedMap.value.today },
+    { key: 'recent7' as GroupKey, label: '最近 7 天', sessions: recent7, collapsed: collapsedMap.value.recent7 },
+    { key: 'older' as GroupKey, label: '更早', sessions: older, collapsed: collapsedMap.value.older },
+  ].filter(g => g.sessions.length > 0)
+})
 
 async function loadSessions() {
   loading.value = true
@@ -325,6 +384,66 @@ defineExpose({ refresh: loadSessions })
 .session-list {
   display: flex;
   flex-direction: column;
+}
+
+/* ===== 会话分组（今天 / 最近7天 / 更早）===== */
+.session-group {
+  display: flex;
+  flex-direction: column;
+  margin-bottom: 6px;
+}
+.session-group:last-child {
+  margin-bottom: 0;
+}
+.group-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  height: 28px;
+  padding: 0 12px;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  color: var(--text-dim);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-align: left;
+  transition: color 0.12s, background 0.12s;
+  flex-shrink: 0;
+}
+.group-header:hover {
+  color: var(--text);
+  background: var(--bg-hover);
+}
+.group-chevron {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 12px;
+  height: 12px;
+  flex-shrink: 0;
+  transition: transform 0.15s;
+}
+.group-chevron.is-collapsed {
+  transform: rotate(-90deg);
+}
+.group-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.group-count {
+  margin-left: auto;
+  font-size: 10px;
+  font-weight: 500;
+  color: var(--text-dim);
+  background: var(--bg-hover);
+  border-radius: 8px;
+  padding: 0 6px;
+  line-height: 16px;
+  flex-shrink: 0;
 }
 
 /* 会话项：54px 高 + 2px accent 竖条（对齐参考） */
