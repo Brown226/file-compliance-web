@@ -16,7 +16,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { mount, flushPromises } from '@vue/test-utils'
 import AgentSessionList from '../AgentSessionList.vue'
 
-const { apiMock, elMessageMock } = vi.hoisted(() => ({
+const { apiMock, elMessageMock, userStoreMock } = vi.hoisted(() => ({
   apiMock: {
     listSessionsApi: vi.fn(),
     deleteSessionApi: vi.fn(),
@@ -24,10 +24,13 @@ const { apiMock, elMessageMock } = vi.hoisted(() => ({
     duplicateSessionApi: vi.fn(),
   },
   elMessageMock: { error: vi.fn(), success: vi.fn() },
+  userStoreMock: { isAdmin: vi.fn(() => true) },
 }))
 
 vi.mock('@/api/agent', () => apiMock)
 vi.mock('element-plus', () => ({ ElMessage: elMessageMock }))
+// 模型配置按钮仅管理员可见：mock userStore.isAdmin（默认 true，非管理员用例单独覆盖）
+vi.mock('@/stores/user', () => ({ useUserStore: () => userStoreMock }))
 
 const sessions = [
   { id: 's1', title: '合同审查', messageCount: 5, updatedAt: '2026-08-01T10:00:00Z' },
@@ -56,6 +59,8 @@ beforeEach(() => {
   localStorage.clear()
   for (const fn of Object.values(apiMock)) fn.mockReset()
   elMessageMock.error.mockReset()
+  userStoreMock.isAdmin.mockReset()
+  userStoreMock.isAdmin.mockReturnValue(true) // 默认管理员；非管理员用例单独覆盖
   apiMock.listSessionsApi.mockResolvedValue({ data: sessions })
   apiMock.duplicateSessionApi.mockResolvedValue({ data: { id: 's3', title: '合同审查（副本）' } })
   apiMock.deleteSessionApi.mockResolvedValue({ data: { success: true } })
@@ -176,6 +181,15 @@ describe('事件', () => {
     await footerBtns[1].trigger('click')
     await footerBtns[2].trigger('click')
     expect(wrapper.emitted('open-config')).toEqual([['models'], ['skills'], ['memory']])
+  })
+
+  it('非管理员看不到「模型」配置按钮', async () => {
+    userStoreMock.isAdmin.mockReturnValue(false)
+    const wrapper = mountList()
+    const titles = wrapper.findAll('.footer-btn').map(b => b.text())
+    // 只剩「技能」「记忆」，无「模型」
+    expect(titles).not.toContain('模型')
+    expect(titles).toEqual(['技能', '记忆'])
   })
 
   it('点击会话项 emit select(sessionId)', async () => {

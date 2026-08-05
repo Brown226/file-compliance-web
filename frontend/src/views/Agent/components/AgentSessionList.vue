@@ -102,7 +102,8 @@
 
     <!-- 底部工具栏（对齐参考项目：等分按钮，置底展示；Plugins 替换为「记忆」） -->
     <div class="panel-footer">
-      <button class="footer-btn" title="模型配置" @click="emit('open-config', 'models')">
+      <!-- 模型配置仅管理员可见（普通用户使用配置好的模型即可） -->
+      <button v-if="userStore.isAdmin()" class="footer-btn" title="模型配置" @click="emit('open-config', 'models')">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="16" rx="2" /><rect x="9" y="9" width="6" height="6" /><line x1="9" y1="1" x2="9" y2="4" /><line x1="15" y1="1" x2="15" y2="4" /><line x1="9" y1="20" x2="9" y2="23" /><line x1="15" y1="20" x2="15" y2="23" /><line x1="20" y1="9" x2="23" y2="9" /><line x1="20" y1="14" x2="23" y2="14" /><line x1="1" y1="9" x2="4" y2="9" /><line x1="1" y1="14" x2="4" y2="14" /></svg>
         <span>模型</span>
       </button>
@@ -123,6 +124,9 @@ import { ref, computed, nextTick, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import { Plus, Refresh, Check, Loading, ChatDotRound, Delete, EditPen, CopyDocument } from '@element-plus/icons-vue'
 import { listSessionsApi, deleteSessionApi, renameSessionApi, duplicateSessionApi, type SessionListItem } from '@/api/agent'
+import { useUserStore } from '@/stores/user'
+
+const userStore = useUserStore()
 
 const props = defineProps<{
   currentSessionId?: string | null
