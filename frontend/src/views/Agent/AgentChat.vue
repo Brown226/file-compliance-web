@@ -167,6 +167,26 @@
               <span class="brand-name">Agent 审查助手</span>
             </div>
             <div class="empty-hint">文档合规智能审查工作台 · 上传待审文件或直接描述需求</div>
+            <!-- 已上传文件标签：紧贴输入框上方，从左往右排列 -->
+            <div v-if="uploadedFiles.length > 0" class="uploaded-files">
+              <div
+                v-for="(f, i) in uploadedFiles"
+                :key="i"
+                class="file-chip"
+                :class="['kind-' + (f.kind || 'other'), { 'has-path': f.path }]"
+                @click="f.path && openFileInPanel(f.path, f.name)"
+              >
+                <el-icon v-if="f.kind === 'image'" :size="14"><Picture /></el-icon>
+                <el-icon v-else-if="f.kind === 'pdf'" :size="14"><Tickets /></el-icon>
+                <el-icon v-else-if="f.kind === 'excel'" :size="14"><Grid /></el-icon>
+                <el-icon v-else :size="14"><Document /></el-icon>
+                <span class="file-name" :title="f.path ? '在右侧面板打开预览' : '尚未保存路径'">{{ f.name }}</span>
+                <span class="file-size">{{ formatSize(f.size) }}</span>
+                <button class="file-remove" title="移除" @click.stop="uploadedFiles.splice(i, 1)">
+                  <el-icon :size="12"><Close /></el-icon>
+                </button>
+              </div>
+            </div>
             <div class="empty-chat-input">
               <ChatInputArea
                 :model-options="modelOptions"
@@ -301,8 +321,28 @@
                     class="markdown-body markdown-content"
                     v-html="renderMarkdown(getMessageText(message))"
                   />
-                  <!-- 用户消息走 markdown（对齐参考 markdown-user-message，p { white-space: pre-wrap }） -->
-                  <div v-else class="markdown-body markdown-user-message markdown-content" v-html="renderMarkdown(getMessageText(message))" />
+                  <!-- 用户消息：文件标签块 + 剩余文本（对齐参考：上传文件在消息里显示为可视化标签） -->
+                  <div v-else class="user-message-content">
+                    <div v-if="extractUploadedFileNames(getMessageText(message)).length > 0" class="uploaded-files-in-msg">
+                      <div
+                        v-for="(fname, fi) in extractUploadedFileNames(getMessageText(message))"
+                        :key="fi"
+                        class="file-chip"
+                        :class="'kind-' + getFileKind(fname)"
+                      >
+                        <el-icon v-if="getFileKind(fname) === 'image'" :size="14"><Picture /></el-icon>
+                        <el-icon v-else-if="getFileKind(fname) === 'pdf'" :size="14"><Tickets /></el-icon>
+                        <el-icon v-else-if="getFileKind(fname) === 'excel'" :size="14"><Grid /></el-icon>
+                        <el-icon v-else :size="14"><Document /></el-icon>
+                        <span class="file-name">{{ fname }}</span>
+                      </div>
+                    </div>
+                    <div
+                      v-if="!isOnlyFileTagMessage(getMessageText(message))"
+                      class="markdown-body markdown-user-message markdown-content"
+                      v-html="renderMarkdown(getUserMessageTextWithoutFileTag(getMessageText(message)))"
+                    />
+                  </div>
                 </template>
 
                 <!-- 报告下载 -->
@@ -389,10 +429,19 @@
         />
         </div>
 
-        <!-- 已上传文件（点击文件名在右栏打开预览，对齐参考的文件 tab） -->
-        <div v-if="uploadedFiles.length > 0" class="uploaded-files">
-          <div v-for="(f, i) in uploadedFiles" :key="i" class="file-chip" :class="{ 'has-path': f.path }" @click="f.path && openFileInPanel(f.path, f.name)">
-            <el-icon :size="14"><Document /></el-icon>
+        <!-- 已上传文件标签：紧贴底部输入框上方，从左往右排列 -->
+        <div v-if="uploadedFiles.length > 0" class="uploaded-files uploaded-files-input">
+          <div
+            v-for="(f, i) in uploadedFiles"
+            :key="i"
+            class="file-chip"
+            :class="['kind-' + (f.kind || 'other'), { 'has-path': f.path }]"
+            @click="f.path && openFileInPanel(f.path, f.name)"
+          >
+            <el-icon v-if="f.kind === 'image'" :size="14"><Picture /></el-icon>
+            <el-icon v-else-if="f.kind === 'pdf'" :size="14"><Tickets /></el-icon>
+            <el-icon v-else-if="f.kind === 'excel'" :size="14"><Grid /></el-icon>
+            <el-icon v-else :size="14"><Document /></el-icon>
             <span class="file-name" :title="f.path ? '在右侧面板打开预览' : '尚未保存路径'">{{ f.name }}</span>
             <span class="file-size">{{ formatSize(f.size) }}</span>
             <button class="file-remove" title="移除" @click.stop="uploadedFiles.splice(i, 1)">
@@ -400,7 +449,6 @@
             </button>
           </div>
         </div>
-
         <!-- 输入栏（底部复用 ChatInputArea） -->
         <footer class="input-area">
           <ChatInputArea
@@ -529,6 +577,9 @@ import {
   Star,
   Files,
   View,
+  Picture,
+  Tickets,
+  Grid,
 } from '@element-plus/icons-vue'
 import type { UIMessage } from 'ai'
 import { useAgentChat } from '@/composables/useAgentChat'
@@ -997,7 +1048,23 @@ function handleNewChat() {
 const inputValue = ref('')
 const messagesContainer = ref<HTMLDivElement | null>(null)
 const uploading = ref(false)
-const uploadedFiles = ref<Array<{ name: string; size: number; path?: string }>>([])
+
+/** 上传文件类型（用于标签区分） */
+type FileKind = 'image' | 'pdf' | 'word' | 'excel' | 'ppt' | 'text' | 'other'
+
+/** 按扩展名推断文件类型 */
+function getFileKind(name: string): FileKind {
+  const ext = name.includes('.') ? name.split('.').pop()!.toLowerCase() : ''
+  if (['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'svg', 'ico'].includes(ext)) return 'image'
+  if (ext === 'pdf') return 'pdf'
+  if (['doc', 'docx'].includes(ext)) return 'word'
+  if (['xls', 'xlsx', 'csv', 'tsv'].includes(ext)) return 'excel'
+  if (['ppt', 'pptx'].includes(ext)) return 'ppt'
+  if (['txt', 'md', 'markdown', 'json', 'log', 'xml', 'yaml', 'yml', 'js', 'ts', 'tsx', 'jsx', 'vue', 'css', 'html', 'py', 'sh', 'sql'].includes(ext)) return 'text'
+  return 'other'
+}
+
+const uploadedFiles = ref<Array<{ name: string; size: number; path?: string; kind?: FileKind }>>([])
 // 粘贴图片附件（dataUrl + 预览；粘贴/移除逻辑在 ChatInputArea 组件内）
 const attachedImages = ref<Array<{ dataUrl: string; previewUrl: string; fileName?: string }>>([])
 // 右栏文件查看器：待打开文件路径（传给 AgentSidePanel，触发文件 tab）
@@ -1045,6 +1112,27 @@ async function uploadImageDataUrl(dataUrl: string): Promise<string | null> {
 
 function getMessageText(message: UIMessage): string {
   return message.parts.filter(p => p.type === 'text').map(p => (p as { text: string }).text).join('')
+}
+
+/** 从用户消息文本中提取已上传文件名列表（匹配 "[已上传文件：a、b]" 标记） */
+function extractUploadedFileNames(text: string): string[] {
+  if (!text) return []
+  const match = text.match(/\[已上传文件：([^\]]+)\]/)
+  if (!match) return []
+  return match[1].split(/[、,，]/).map(s => s.trim()).filter(Boolean)
+}
+
+/** 用户消息：移除文件标签标记行后剩余的纯文本（供渲染） */
+function getUserMessageTextWithoutFileTag(text: string): string {
+  if (!text) return ''
+  return text.replace(/\[已上传文件：[^\]]*\](\n+)?/g, '').trim()
+}
+
+/** 用户消息：是否为纯文件标签消息（无其他文字） */
+function isOnlyFileTagMessage(text: string): boolean {
+  if (!text) return false
+  const cleaned = getUserMessageTextWithoutFileTag(text)
+  return cleaned.length === 0
 }
 
 function getToolCallParts(message: UIMessage): any[] {
@@ -1185,9 +1273,10 @@ async function handleSend() {
   if ((!text && attachedImages.value.length === 0) || isLoading.value) return
   inputValue.value = ''
   const parts: string[] = []
+  // 文件标签：只列文件名（后端按 sessionId 注入的文件列表里含完整路径，无需在前端塞路径）
   if (uploadedFiles.value.length > 0) {
-    const filesInfo = uploadedFiles.value.map(f => f.path ? `${f.name}（路径：${f.path}）` : f.name).join('、')
-    parts.push(`[已上传文件：${filesInfo}]`)
+    const names = uploadedFiles.value.map(f => f.name)
+    parts.push(`[已上传文件：${names.join('、')}]`)
   }
   if (attachedImages.value.length > 0) {
     const paths: string[] = []
@@ -1200,6 +1289,8 @@ async function handleSend() {
   }
   let finalText = text
   if (parts.length > 0) finalText = `${parts.join('\n')}\n\n${text}`
+  // 发送瞬间清空文件标签（对齐参考：输入框恢复干净，不保留已发送的文件）
+  uploadedFiles.value = []
   await sendMessage({ text: finalText })
   // 发送后刷新会话列表（修复原有 bug：新会话不立即出现）
   sessionListRef.value?.refresh?.()
@@ -1212,17 +1303,38 @@ async function customUpload(options: { file: File }) {
   const file = options.file
   uploading.value = true
   try {
+    // 图片格式不标签化：恢复为缩略图预览（走 attachedImages，与粘贴图片一致）
+    if (getFileKind(file.name) === 'image') {
+      const dataUrl = await readFileAsDataUrl(file)
+      attachedImages.value.push({ dataUrl, previewUrl: dataUrl, fileName: file.name })
+      return
+    }
     const formData = new FormData(); formData.append('file', file)
     if (sessionId.value) formData.append('sessionId', sessionId.value)
     const res = await fetch('/api/agent/upload', { method: 'POST', headers: { Authorization: `Bearer ${userStore.token}` }, body: formData })
     if (!res.ok) { const errText = await res.text().catch(() => ''); throw new Error(errText || `上传失败 (${res.status})`) }
     const data = await res.json()
     if (data?.data?.sessionId) sessionId.value = data.data.sessionId
-    uploadedFiles.value.push({ name: file.name, size: file.size, path: data?.data?.filePath })
+    uploadedFiles.value.push({
+      name: file.name,
+      size: file.size,
+      path: data?.data?.filePath,
+      kind: getFileKind(file.name),
+    })
     // [无弹窗] 成功提示已移除：ElMessage.success(`${file.name} 上传成功`)
   } catch (e) {
     ElMessage.error((e as Error)?.message || '上传失败')
   } finally { uploading.value = false }
+}
+
+/** 读取文件为 DataURL（图片缩略图预览用） */
+function readFileAsDataUrl(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => resolve(reader.result as string)
+    reader.onerror = () => reject(reader.error)
+    reader.readAsDataURL(file)
+  })
 }
 
 function formatSize(bytes: number): string {
@@ -1325,12 +1437,14 @@ watch(sessionId, () => { refreshStats() })
   padding: 0;
   background: var(--bg-panel);
   border-bottom: 1px solid var(--border);
+  overflow: hidden;
 }
 .toolbar-left, .toolbar-right {
   display: flex;
   align-items: center;
   gap: 0;
   height: 100%;
+  min-width: 0;
 }
 .top-toolbar .toolbar-icon-btn {
   width: 36px;
@@ -1382,9 +1496,9 @@ watch(sessionId, () => { refreshStats() })
 .token-stats {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
   height: 100%;
-  padding: 0 12px;
+  padding: 0 8px;
   font-size: 11px;
   color: var(--text-muted);
   font-variant-numeric: tabular-nums;
@@ -1405,7 +1519,7 @@ watch(sessionId, () => { refreshStats() })
 .stat-item {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
+  gap: 3px;
 }
 .stat-cost {
   color: var(--text);
@@ -1823,12 +1937,25 @@ watch(sessionId, () => { refreshStats() })
 .uploaded-files {
   display: flex;
   flex-wrap: wrap;
-  justify-content: center;
+  justify-content: flex-start; /* 从左往右依次排列 */
   gap: 6px;
-  padding: 6px 16px;
-  padding-right: 52px; /* 36 minimap 留白 */
+  padding: 6px 0;
   background: transparent;
   flex-shrink: 0;
+  max-width: 100%;
+}
+/* 有消息分支：标签与底部输入框左对齐（input-area 有 16px 左右 padding） */
+.uploaded-files-input {
+  padding: 6px 16px 0;
+  padding-right: 52px; /* 36 minimap 留白 */
+}
+/* 用户消息内的文件标签块：左对齐，标签之间 gap */
+.uploaded-files-in-msg {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-start;
+  gap: 6px;
+  margin-bottom: 6px;
 }
 .file-chip {
   display: inline-flex;
@@ -1846,7 +1973,21 @@ watch(sessionId, () => { refreshStats() })
 .file-chip:hover { border-color: var(--text-dim); }
 .file-chip.has-path { cursor: pointer; }
 .file-chip.has-path:hover { background: var(--bg-hover); border-color: var(--accent); }
-.file-chip .el-icon { color: var(--accent); flex-shrink: 0; }
+.file-chip .el-icon { flex-shrink: 0; }
+/* 按类型区分标签颜色 */
+.file-chip.kind-image .el-icon { color: #10b981; }   /* 图片：绿 */
+.file-chip.kind-image { border-color: color-mix(in srgb, #10b981 35%, var(--border)); }
+.file-chip.kind-pdf .el-icon { color: #ef4444; }     /* PDF：红 */
+.file-chip.kind-pdf { border-color: color-mix(in srgb, #ef4444 35%, var(--border)); }
+.file-chip.kind-word .el-icon { color: #3b82f6; }    /* Word：蓝 */
+.file-chip.kind-word { border-color: color-mix(in srgb, #3b82f6 35%, var(--border)); }
+.file-chip.kind-excel .el-icon { color: #22c55e; }   /* Excel：绿 */
+.file-chip.kind-excel { border-color: color-mix(in srgb, #22c55e 35%, var(--border)); }
+.file-chip.kind-ppt .el-icon { color: #f97316; }     /* PPT：橙 */
+.file-chip.kind-ppt { border-color: color-mix(in srgb, #f97316 35%, var(--border)); }
+.file-chip.kind-text .el-icon { color: var(--accent); } /* 文本：主题色 */
+.file-chip.kind-text { border-color: color-mix(in srgb, var(--accent) 30%, var(--border)); }
+.file-chip.kind-other .el-icon { color: var(--text-dim); }
 .file-name { max-width: 160px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .file-size { color: var(--text-dim); font-size: 11px; }
 .file-remove {
