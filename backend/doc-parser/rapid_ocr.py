@@ -6,7 +6,9 @@ PDF 页面渲染使用 PyMuPDF（无需 pdf2image / poppler）。
 
 import io
 import logging
+import os
 import time
+from pathlib import Path
 from typing import Optional
 
 import numpy as np
@@ -19,6 +21,12 @@ OCR_DPI = 150                # PDF→图片渲染 DPI（平衡质量与速度）
 MAX_PAGES = 100              # 最多处理页数
 CONFIDENCE_THRESHOLD = 0.7   # 平均置信度阈值，低于此值视为识别质量不足
 
+# RapidOCR 模型根目录（可被环境变量 RAPIDOCR_MODEL_DIR 覆盖，默认与脚本同目录的 models/ 子目录）
+MODEL_ROOT_DIR = os.environ.get(
+    "RAPIDOCR_MODEL_DIR",
+    str(Path(__file__).resolve().parent / "models"),
+)
+
 # 延迟初始化 RapidOCR 实例（避免启动时加载模型耗时）
 _ocr_engine = None
 
@@ -29,8 +37,13 @@ def _get_engine():
     if _ocr_engine is None:
         try:
             from rapidocr import RapidOCR
-            _ocr_engine = RapidOCR()
-            logger.info("RapidOCR 引擎初始化成功")
+            # rapidocr>=3.9 配合 omegaconf 2.x 时，Global.model_root_dir 若为
+            # PosixPath 会触发 "not a supported primitive type" 报错。
+            # 必须显式传字符串路径（点分 key）绕过该兼容问题。
+            _ocr_engine = RapidOCR(
+                params={"Global.model_root_dir": MODEL_ROOT_DIR}
+            )
+            logger.info("RapidOCR 引擎初始化成功, model_root_dir=%s", MODEL_ROOT_DIR)
         except ImportError as e:
             logger.error(f"RapidOCR 未安装: {e}")
             raise

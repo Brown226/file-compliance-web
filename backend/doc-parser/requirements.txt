@@ -26,6 +26,9 @@ PyMuPDF>=1.26.0
 Pillow>=10.0.0
 
 # --- OCR: RapidOCR 本地识别（轻量、离线、纯 CPU） ---
+# opencv-python-headless 替代 opencv-python，避免 libGL.so.1 运行时缺失
+# （RapidOCR 依赖 opencv，但 headless 版无需 GUI 图形库，适合容器）
+opencv-python-headless>=4.9.0
 rapidocr>=3.9.0
 onnxruntime>=1.20.0
 

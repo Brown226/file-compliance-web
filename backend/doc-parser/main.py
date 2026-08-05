@@ -48,9 +48,11 @@ app.add_middleware(
 SUPPORTED_EXTENSIONS = {".doc", ".docx", ".xlsx", ".pdf", ".pptx"}
 
 # 文件类型 → 扩展名映射
+# 注意：.doc 是 Word 97-2003 老格式（与 .docx 不同），必须映射为 .doc
+# 才能走 antiword/LibreOffice 老格式解析链路，而不是被当成 .docx 处理
 FILE_TYPE_MAP = {
     "docx": ".docx",
-    "doc": ".docx",
+    "doc": ".doc",
     "xlsx": ".xlsx",
     "xls": ".xlsx",
     "pdf": ".pdf",
@@ -85,6 +87,79 @@ class HealthResult(BaseModel):
 
 
 # ==================== 增强解析器调度 ====================
+
+def _parse_doc_with_antiword(content: bytes, filename: str) -> Optional[dict]:
+    """
+    使用 antiword 提取 .doc 老格式文件的纯文本（轻量方案，替代 LibreOffice）。
+    antiword 是 Debian/Ubuntu 标准包（约 200KB），只做 .doc → 文本提取，
+    不依赖 LibreOffice（节省约 550MB 镜像体积）。
+
+    返回结构与现有增强解析器一致（text/pages/metadata/structure/markdown/table_kv_pairs）。
+    失败返回 None（调用方会回退到 LibreOffice 兜底）。
+    """
+    import shutil
+
+    # 检查 antiword 是否可用（镜像里装了就用，没装则走 LibreOffice 兜底）
+    if not shutil.which('antiword'):
+        logger.warning(f"antiword 未安装，.doc 解析走 LibreOffice 兜底: {filename}")
+        return None
+
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        tmp_in_path = os.path.join(tmp_dir, 'input.doc')
+        with open(tmp_in_path, 'wb') as f:
+            f.write(content)
+
+        try:
+            result = subprocess.run(
+                ['antiword', tmp_in_path],
+                timeout=60,
+                capture_output=True,
+            )
+        except subprocess.TimeoutExpired:
+            logger.error(f"antiword 超时: {filename}")
+            return None
+        except Exception as e:
+            logger.error(f"antiword 执行异常: {filename} - {e}")
+            return None
+
+        if result.returncode != 0:
+            stderr = result.stderr.decode('utf-8', errors='ignore')
+            logger.warning(f"antiword 解析失败 ({filename}): {stderr.strip()[:200]}")
+            return None
+
+        text = result.stdout.decode('utf-8', errors='replace').strip()
+        if not text:
+            logger.warning(f"antiword 解析结果为空: {filename}")
+            return None
+
+        logger.info(f"antiword 解析成功: {filename} ({len(text)} chars)")
+
+        # 构造与现有增强解析器一致的结构
+        paragraphs = [
+            {'text': line, 'style': 'Normal', 'page': 0}
+            for line in text.split('\n')
+            if line.strip()
+        ]
+        return {
+            'text': text,
+            'pages': [text],
+            'metadata': {
+                'page_count': 1,
+                'has_tables': False,
+                'has_images': False,
+                'parse_error': None,
+                'parser': 'antiword',
+            },
+            'structure': {
+                'paragraphs': paragraphs,
+                'tables': [],
+                'headers': [],
+                'dimensions': [],
+            },
+            'markdown': text,
+            'table_kv_pairs': [],
+        }
+
 
 def convert_doc_to_docx(content: bytes, filename: str) -> Optional[bytes]:
     """
@@ -304,15 +379,21 @@ def _parse_with_enhanced(content: bytes, ext: str, filename: str, vision_config:
     """
     统一解析调度：MarkItDown 为主力引擎，现有增强解析器为 fallback。
     """
-    # .doc 文件需要先转换为 .docx
+    # .doc 文件处理：优先 antiword 直接提取文本（轻量），失败再回退 LibreOffice 转 docx
     if ext == ".doc":
-        logger.info(f"检测到 .doc 文件，使用 LibreOffice 转换为 .docx: {filename}")
+        # 第一优先：antiword 纯文本提取（无需 LibreOffice，节省镜像体积）
+        doc_result = _parse_doc_with_antiword(content, filename)
+        if doc_result:
+            return _enrich_result_table_kv(doc_result)
+
+        # 第二优先：LibreOffice 转 .docx（兜底，需镜像含 libreoffice-writer）
+        logger.info(f"antiword 不可用/失败，尝试 LibreOffice 转换为 .docx: {filename}")
         docx_content = convert_doc_to_docx(content, filename)
         if docx_content:
             content = docx_content
             ext = ".docx"
         else:
-            logger.error(f".doc 文件转换失败: {filename}")
+            logger.error(f".doc 文件转换失败（antiword 和 LibreOffice 均失败）: {filename}")
             return None
 
     # === 主力引擎：MarkItDown ===
@@ -592,19 +673,19 @@ async def convert_base64(
         )
 
 
-@app.post("/api/ocr/scan", summary="扫描件 OCR（视觉模型）")
+@app.post("/api/ocr/scan", summary="扫描件 OCR（RapidOCR 本地优先 → 视觉模型兜底）")
 async def ocr_scan(
     file: UploadFile = File(..., description="待识别的文件（PDF/图片）"),
-    apiBaseUrl: str = Form(..., description="视觉模型 API 地址"),
+    apiBaseUrl: str = Form(..., description="视觉模型 API 地址（兜底用）"),
     apiKey: str = Form(..., description="API Key"),
     modelName: str = Form(..., description="模型名称"),
     timeoutSec: int = Form(300, description="超时秒数"),
 ):
     """
-    使用视觉大模型识别扫描件/图片中的文字。
+    识别扫描件/图片中的文字。
+    策略：RapidOCR 本地识别优先（离线、免费、无需 key）→ 视觉大模型兜底。
     纯 PDF 无文本层时由后端 OcrService 自动调用此端点。
     """
-    from vision_ocr import recognize_with_vision
     filename = file.filename or "unknown"
     content = await file.read()
     if not content:
@@ -621,9 +702,29 @@ async def ocr_scan(
         'timeoutSec': timeoutSec,
     }
 
+    # 第一优先：RapidOCR 本地识别（无需任何外部 API）
     try:
+        from rapid_ocr import recognize_with_rapidocr, CONFIDENCE_THRESHOLD
+        ocr_result = recognize_with_rapidocr(content, file_type, filename)
+        if ocr_result and ocr_result['text']:
+            if ocr_result['confidence'] >= CONFIDENCE_THRESHOLD:
+                text = ocr_result['text']
+                logger.info(f"RapidOCR 识别成功: {filename}, "
+                           f"{len(text)} 字符, 置信度 {ocr_result['confidence']:.3f}")
+                return {"code": 200, "message": "success",
+                        "data": {"text": text, "char_count": len(text),
+                                 "engine": "rapidocr", "confidence": ocr_result['confidence']}}
+            else:
+                logger.info(f"RapidOCR 置信度不足 ({ocr_result['confidence']:.3f}), 尝试视觉模型兜底")
+    except Exception as e:
+        logger.warning(f"RapidOCR 识别失败: {filename} - {e}")
+
+    # 第二优先：视觉大模型兜底
+    try:
+        from vision_ocr import recognize_with_vision
         text = recognize_with_vision(content, file_type, filename, config)
-        return {"code": 200, "message": "success", "data": {"text": text, "char_count": len(text)}}
+        return {"code": 200, "message": "success",
+                "data": {"text": text or "", "char_count": len(text or ""), "engine": "vision-llm"}}
     except Exception as e:
         logger.error(f"视觉模型 OCR 失败: {filename} - {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"OCR 识别失败: {str(e)}")

@@ -14,3 +14,6 @@ build/
 
 # 日志
 *.log
+
+# RapidOCR 模型文件（~46MB，不入库。构建镜像前需手动放置：见 README 说明）
+models/*.onnx

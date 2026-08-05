@@ -298,13 +298,62 @@ def _fallback_mammoth_parse(content: bytes, filename: str) -> Optional[dict]:
 
 def _fallback_libreoffice_parse(content: bytes, filename: str) -> Optional[dict]:
     """
-    LibreOffice 回退解析：用于 .doc 老格式
-    将 .doc 转为 .docx，再用 python-docx 解析。
+    .doc 老格式回退解析：优先 antiword 提取纯文本（轻量），失败再回退 LibreOffice 转 docx。
     """
     import subprocess
     import tempfile
     import os
+    import shutil
 
+    # 第一优先：antiword 直接提取文本（无需 LibreOffice，节省镜像体积）
+    if shutil.which('antiword'):
+        try:
+            with tempfile.NamedTemporaryFile(suffix='.doc', delete=False) as tmp_in:
+                tmp_in.write(content)
+                tmp_in_path = tmp_in.name
+            try:
+                aw_result = subprocess.run(
+                    ['antiword', tmp_in_path],
+                    capture_output=True, timeout=60,
+                )
+            finally:
+                if os.path.exists(tmp_in_path):
+                    os.unlink(tmp_in_path)
+
+            if aw_result.returncode == 0:
+                text = aw_result.stdout.decode('utf-8', errors='replace').strip()
+                if text:
+                    logger.info(f"antiword 解析成功: {filename} ({len(text)} chars)")
+                    paragraphs = [
+                        {'text': line, 'style': 'Normal', 'page': 0}
+                        for line in text.split('\n') if line.strip()
+                    ]
+                    return {
+                        'text': text,
+                        'pages': [text],
+                        'metadata': {
+                            'page_count': 1,
+                            'has_tables': False,
+                            'has_images': False,
+                            'parse_error': None,
+                            'parser': 'antiword',
+                        },
+                        'structure': {
+                            'paragraphs': paragraphs,
+                            'tables': [],
+                            'headers': [],
+                            'dimensions': [],
+                        },
+                        'markdown': text,
+                        'table_kv_pairs': [],
+                    }
+                logger.warning(f"antiword 结果为空: {filename}")
+            else:
+                logger.warning(f"antiword 失败: {aw_result.stderr.decode('utf-8', errors='ignore')[:200]}")
+        except Exception as e:
+            logger.error(f"antiword 异常: {filename} - {e}", exc_info=True)
+
+    # 第二优先：LibreOffice 转 docx（兜底）
     try:
         # 写入临时 .doc 文件
         with tempfile.NamedTemporaryFile(suffix='.doc', delete=False) as tmp_in:
