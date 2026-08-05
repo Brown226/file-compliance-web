@@ -74,6 +74,14 @@ interface DiffResult {
 
 const props = defineProps<{ result: DiffResult }>()
 
+/** 统计条安全取值（模板直接引用 stats.*，缺省时按 0 渲染） */
+const stats = computed(() => ({
+  added: props.result.stats?.added ?? 0,
+  removed: props.result.stats?.removed ?? 0,
+  modified: props.result.stats?.modified ?? 0,
+  unchanged: props.result.stats?.unchanged ?? 0,
+}))
+
 /** 剥离后端 <file_content> 防注入标签（那是给 LLM 的，不是给用户看的） */
 function stripFileContentTags(text?: string): string {
   if (!text) return ''
