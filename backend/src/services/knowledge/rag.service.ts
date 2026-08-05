@@ -77,7 +77,7 @@ export interface RAGReviewOptions {
  * 2. chunk 文本开头的页码标记（doc-parser 分块时保留的 pageRange，如 "p3" / "第3页" / "【第3页】"）
  * 3. 章节：文本开头的 markdown 标题（# 标题）或 【标题】 标记
  */
-function parseChunkLocator(raw: any, content: string): { page?: number; section?: string } {
+export function parseChunkLocator(raw: any, content: string): { page?: number; section?: string } {
   const locator: { page?: number; section?: string } = {};
 
   // 1. 显式字段优先

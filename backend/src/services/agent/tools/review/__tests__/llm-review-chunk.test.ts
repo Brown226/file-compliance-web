@@ -31,11 +31,19 @@ vi.mock('../../../../llm/llm.service', () => ({
 import {
   filterFalsePositives,
   enrichLocateMeta,
+  backfillStandardRefs,
 } from '../llm_review_chunk';
 import type { ReviewIssue } from '../../../../llm/llm.service';
 
 function mkIssue(originalText: string, extra: Partial<ReviewIssue> = {}): ReviewIssue {
   return { issueType: 'TYPO', originalText, ...extra };
+}
+
+/** 构造假 search_standard_checkpoints 工具：按入参返回 list_standards / list_checkpoints */
+function fakeSearchTool(mockImpl: (args: any) => any) {
+  return {
+    execute: vi.fn(async (args: any) => mockImpl(args)),
+  };
 }
 
 describe('filterFalsePositives (P2-⑧)', () => {
@@ -146,5 +154,88 @@ describe('enrichLocateMeta (P2-⑬)', () => {
     const result = enrichLocateMeta([], text);
     expect(result).toEqual([]);
     expect(buildLocateMetaMock).not.toHaveBeenCalled();
+  });
+});
+
+describe('backfillStandardRefs (P1-⑦)', () => {
+  const std = { id: 'std-1', standardNo: 'GB/T 15834', standardName: '标点符号用法' };
+
+  it('ruleCode 存在且 standardRef 为空 → 按 clauseCode 精确匹配回填', async () => {
+    const searchTool = fakeSearchTool((args: any) => {
+      if (args.keyword === undefined) {
+        return { mode: 'list_standards', standards: [std] };
+      }
+      return {
+        mode: 'list_checkpoints',
+        checkpoints: [{ clauseCode: 'TYPO_001', clauseText: '错别字' }],
+      };
+    });
+    const issues = [mkIssue('帐号', { ruleCode: 'TYPO_001' })];
+    const result = await backfillStandardRefs(issues, searchTool as any);
+    expect(result[0].standardRef).toBe('GB/T 15834 标点符号用法 第TYPO_001条');
+  });
+
+  it('无 clauseCode 精确命中时取第一个模糊命中', async () => {
+    const searchTool = fakeSearchTool((args: any) => {
+      if (args.keyword === undefined) {
+        return { mode: 'list_standards', standards: [std] };
+      }
+      return {
+        mode: 'list_checkpoints',
+        checkpoints: [{ clauseCode: 'TYPO_002', clauseText: '其他' }],
+      };
+    });
+    const issues = [mkIssue('帐号', { ruleCode: 'TYPO_001' })];
+    const result = await backfillStandardRefs(issues, searchTool as any);
+    expect(result[0].standardRef).toContain('TYPO_002');
+  });
+
+  it('已填 standardRef 的 issue 绝不覆盖', async () => {
+    const searchTool = fakeSearchTool(() => ({ mode: 'list_standards', standards: [std] }));
+    const issues = [mkIssue('帐号', { ruleCode: 'TYPO_001', standardRef: '已有引用' })];
+    const result = await backfillStandardRefs(issues, searchTool as any);
+    expect(result[0].standardRef).toBe('已有引用');
+  });
+
+  it('无 ruleCode 的 issue 不回填', async () => {
+    const searchTool = fakeSearchTool(() => ({ mode: 'list_standards', standards: [std] }));
+    const issues = [mkIssue('问题', {})];
+    const result = await backfillStandardRefs(issues, searchTool as any);
+    expect(result[0].standardRef).toBeUndefined();
+    expect(searchTool.execute).not.toHaveBeenCalled();
+  });
+
+  it('无现行标准 → 原样返回', async () => {
+    const searchTool = fakeSearchTool(() => ({ mode: 'list_standards', standards: [] }));
+    const issues = [mkIssue('帐号', { ruleCode: 'TYPO_001' })];
+    const result = await backfillStandardRefs(issues, searchTool as any);
+    expect(result[0].standardRef).toBeUndefined();
+  });
+
+  it('searchTool 抛错 → 告警降级，原样返回', async () => {
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const searchTool = {
+      execute: vi.fn().mockRejectedValue(new Error('checkpoint service down')),
+    };
+    try {
+      const issues = [mkIssue('帐号', { ruleCode: 'TYPO_001' })];
+      const result = await backfillStandardRefs(issues, searchTool as any);
+      expect(result[0].standardRef).toBeUndefined();
+      expect(warnSpy.mock.calls[0][0]).toContain('standardRef 反查回填失败');
+    } finally {
+      warnSpy.mockRestore();
+    }
+  });
+
+  it('查不到任何审点 → 保持为空', async () => {
+    const searchTool = fakeSearchTool((args: any) => {
+      if (args.keyword === undefined) {
+        return { mode: 'list_standards', standards: [std] };
+      }
+      return { mode: 'list_checkpoints', checkpoints: [] };
+    });
+    const issues = [mkIssue('帐号', { ruleCode: 'TYPO_001' })];
+    const result = await backfillStandardRefs(issues, searchTool as any);
+    expect(result[0].standardRef).toBeUndefined();
   });
 });

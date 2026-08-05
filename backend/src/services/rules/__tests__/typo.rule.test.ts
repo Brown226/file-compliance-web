@@ -182,8 +182,8 @@ describe('Typo Rule (TYPO)', () => {
 
   it('should respect maxIssues config', () => {
     const text = '帐号 帐户 按装 布署 必竟 幅射 鬼计 宏扬 即然'.repeat(3);
-    const issues = checkTypo(ctx(text));
-    // With default maxIssues=10, should find at most 10 issues
+    // 显式传 maxIssues=10：规则默认 30，必须显式配置才验证截断生效
+    const issues = checkTypo(makeCtx(text), { maxIssues: 10 });
     expect(issues.length).toBeLessThanOrEqual(10);
   });
 

@@ -74,7 +74,7 @@ type BackfillSearchResult =
  *
  * 反查失败仅告警，不影响审查结果返回。
  */
-async function backfillStandardRefs(
+export async function backfillStandardRefs(
   issues: ReviewIssue[],
   searchTool: ReturnType<typeof createSearchStandardCheckpointsTool>,
 ): Promise<ReviewIssue[]> {
