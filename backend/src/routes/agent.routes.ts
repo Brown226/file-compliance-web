@@ -1011,8 +1011,9 @@ router.get('/skills/:name', async (req: AuthRequest, res: Response) => {
 /**
  * POST /api/agent/skills — 新建 skill
  * Body: { name, description, content }
+ * 仅管理员可写（普通用户只读）
  */
-router.post('/skills', async (req: AuthRequest, res: Response) => {
+router.post('/skills', requireRole('ADMIN'), async (req: AuthRequest, res: Response) => {
   try {
     const { name, description, content } = req.body || {};
     if (!name || !content) {
@@ -1029,8 +1030,9 @@ router.post('/skills', async (req: AuthRequest, res: Response) => {
 /**
  * PUT /api/agent/skills/:name — 更新 skill
  * Body: { description?, content? }
+ * 仅管理员可写（普通用户只读）
  */
-router.put('/skills/:name', async (req: AuthRequest, res: Response) => {
+router.put('/skills/:name', requireRole('ADMIN'), async (req: AuthRequest, res: Response) => {
   try {
     const { description, content } = req.body || {};
     const skill = SkillsService.updateSkill(String(req.params.name || ''), { description, content });
@@ -1044,8 +1046,9 @@ router.put('/skills/:name', async (req: AuthRequest, res: Response) => {
 /**
  * PATCH /api/agent/skills/:name — 启用/禁用
  * Body: { enabled: boolean }
+ * 仅管理员可写（普通用户只读）
  */
-router.patch('/skills/:name', async (req: AuthRequest, res: Response) => {
+router.patch('/skills/:name', requireRole('ADMIN'), async (req: AuthRequest, res: Response) => {
   try {
     const { enabled } = req.body || {};
     if (typeof enabled !== 'boolean') {
@@ -1061,8 +1064,9 @@ router.patch('/skills/:name', async (req: AuthRequest, res: Response) => {
 
 /**
  * DELETE /api/agent/skills/:name — 删除 skill
+ * 仅管理员可写（普通用户只读）
  */
-router.delete('/skills/:name', async (req: AuthRequest, res: Response) => {
+router.delete('/skills/:name', requireRole('ADMIN'), async (req: AuthRequest, res: Response) => {
   try {
     SkillsService.deleteSkill(String(req.params.name || ''));
     return res.json({ success: true, data: null });
