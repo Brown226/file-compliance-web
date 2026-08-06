@@ -92,6 +92,13 @@ router.post('/chat/stream', async (req: AuthRequest, res: Response) => {
         thinkingLevel: req.body?.thinkingLevel || undefined,
       });
       console.log(`[Agent] 创建新会话: ${sessionId.slice(0, 8)}`);
+    } else {
+      // 安全修复：携带 sessionId 时必须校验该会话属于当前用户，
+      // 防止跨用户向他人会话写入消息 / 消费 steering / 回答他人挂起的提问
+      const owned = await QASessionService.getSession(sessionId, userId);
+      if (!owned) {
+        return res.status(403).json({ success: false, message: '无权访问该会话' });
+      }
     }
 
     const result = await AgentService.chatStream({
@@ -1080,8 +1087,9 @@ router.delete('/skills/:name', requireRole('ADMIN'), async (req: AuthRequest, re
 
 /**
  * GET /api/agent/worktrees — 列出全部 worktree
+ * 仅管理员可查看（worktree 是项目级 git 共享资源）
  */
-router.get('/worktrees', async (_req: AuthRequest, res: Response) => {
+router.get('/worktrees', requireRole('ADMIN'), async (_req: AuthRequest, res: Response) => {
   try {
     const list = await WorktreeService.listWorktrees();
     return res.json({ success: true, data: list });
@@ -1094,8 +1102,9 @@ router.get('/worktrees', async (_req: AuthRequest, res: Response) => {
 /**
  * POST /api/agent/worktrees — 新建 worktree（新分支）
  * Body: { branch: string }
+ * 仅管理员可创建（项目级 git 共享资源）
  */
-router.post('/worktrees', async (req: AuthRequest, res: Response) => {
+router.post('/worktrees', requireRole('ADMIN'), async (req: AuthRequest, res: Response) => {
   try {
     const { branch } = req.body || {};
     if (!branch) {
@@ -1111,8 +1120,9 @@ router.post('/worktrees', async (req: AuthRequest, res: Response) => {
 
 /**
  * DELETE /api/agent/worktrees?path=<绝对路径> — 删除 worktree（仅限非主工作区）
+ * 仅管理员可删除（项目级 git 共享资源）
  */
-router.delete('/worktrees', async (req: AuthRequest, res: Response) => {
+router.delete('/worktrees', requireRole('ADMIN'), async (req: AuthRequest, res: Response) => {
   try {
     const targetPath = String(req.query.path || '');
     if (!targetPath) {
@@ -1913,7 +1923,22 @@ router.post('/batch/:jobId/cancel', async (req: AuthRequest, res: Response) => {
  */
 router.get('/sessions/:id/pending-ask', async (req: AuthRequest, res: Response) => {
   try {
+    const userId = req.user?.id;
+    if (!userId) {
+      return res.status(401).json({ success: false, message: '未认证' });
+    }
+
     const sid = String(req.params.id || '');
+    if (!sid) {
+      return res.status(400).json({ success: false, message: 'sessionId 不能为空' });
+    }
+
+    // 安全修复：校验会话归属，防止轮询他人会话的挂起提问（泄露敏感上下文）
+    const owned = await QASessionService.getSession(sid, userId);
+    if (!owned) {
+      return res.status(403).json({ success: false, message: '无权访问该会话' });
+    }
+
     const ask = AskUserService.getPending(sid);
     return res.json({
       success: true,

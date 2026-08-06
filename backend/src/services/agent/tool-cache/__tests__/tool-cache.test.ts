@@ -54,6 +54,16 @@ describe('普通工具缓存键', () => {
     const k = await ToolCacheService.cacheKey('read_file', { filePath: '/x' });
     expect(k.startsWith('tool-cache:')).toBe(true);
   });
+
+  it('不同 userId 产生不同键（防跨用户缓存泄露）', async () => {
+    // list_uploads 参数恒为 {}，若缓存键不含 userId，A 用户清单会返回给 B 用户
+    const kA = await ToolCacheService.cacheKey('list_uploads', {}, 'user-a');
+    const kB = await ToolCacheService.cacheKey('list_uploads', {}, 'user-b');
+    expect(kA).not.toBe(kB);
+    // 同一用户键稳定
+    const kA2 = await ToolCacheService.cacheKey('list_uploads', {}, 'user-a');
+    expect(kA).toBe(kA2);
+  });
 });
 
 describe('文件内容类工具缓存键（文件指纹）', () => {

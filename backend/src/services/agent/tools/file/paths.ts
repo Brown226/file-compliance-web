@@ -53,3 +53,19 @@ export function parseDateDirName(name: string): number | null {
   const t = new Date(y, m - 1, d, 0, 0, 0, 0).getTime();
   return Number.isNaN(t) ? null : t;
 }
+
+/**
+ * 断言 filePath 位于当前用户的 agent_temp 目录内（用户隔离校验）。
+ * 不满足时抛出「路径越权」错误，防止跨用户读取/写入他人文件。
+ *
+ * 用法：在工具 execute 里对传入的 filePath 调用本函数。
+ */
+export function assertUserFilePath(filePath: string, userId: string): string {
+  const userDir = getUserAgentTempDir(userId);
+  const normalizedPath = path.resolve(filePath);
+  const normalizedUserDir = path.resolve(userDir);
+  if (!normalizedPath.startsWith(normalizedUserDir + path.sep) && normalizedPath !== normalizedUserDir) {
+    throw new Error('路径越权：只能访问当前用户上传的文件');
+  }
+  return normalizedPath;
+}

@@ -30,6 +30,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { z } from 'zod';
+import { assertUserFilePath } from './paths';
 import type { ToolContext } from './upload_file';
 
 const { tool } = require('@ai-sdk/provider-utils') as typeof import('@ai-sdk/provider-utils');
@@ -235,7 +236,7 @@ function autoStrategy(ext: string, structure: any): 'by_page' | 'by_section' | '
  * - total: 总分块数
  * - strategy: 实际使用的策略（auto 会解析为具体策略）
  */
-export function createChunkDocumentTool(_context: ToolContext) {
+export function createChunkDocumentTool(context: ToolContext) {
   return tool({
     description: '将文档按结构感知分块，支持 5 种策略：auto（默认，根据文件类型自动选）/ by_page（按页）/ by_section（按标题层级）/ by_paragraph（按段落）/ fixed_4000（固定 4000 字符 + 200 重叠）。PDF 推荐用 by_page，DOCX 推荐用 by_section，纯文本推荐用 fixed_4000。返回 chunks 数组，每个 chunk 含 index/text/sectionTitle?/pageRange?。',
     inputSchema: z.object({
@@ -248,6 +249,9 @@ export function createChunkDocumentTool(_context: ToolContext) {
       if (!fs.existsSync(filePath)) {
         throw new Error(`文件不存在: ${filePath}`);
       }
+
+      // 安全修复：用户隔离校验，只能读取当前用户 agent_temp 目录下的文件
+      assertUserFilePath(filePath, context.userId);
 
       const fileName = path.basename(filePath);
       const ext = path.extname(fileName).toLowerCase().replace('.', '');

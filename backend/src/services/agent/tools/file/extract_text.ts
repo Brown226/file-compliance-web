@@ -12,6 +12,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { z } from 'zod';
 import { fixMojibakePath } from './filename';
+import { assertUserFilePath } from './paths';
 import type { ToolContext } from './upload_file';
 
 const { tool } = require('@ai-sdk/provider-utils') as typeof import('@ai-sdk/provider-utils');
@@ -52,7 +53,7 @@ function wrapFileContent(rawText: string): string {
  * - pages: 页数（来自 metadata.page_count，可能为 undefined）
  * - markdown: Markdown 格式文本（Task 22.1：已用 <file_content> 标签包裹）
  */
-export function createExtractTextTool(_context: ToolContext) {
+export function createExtractTextTool(context: ToolContext) {
   return tool({
     description: '从文件中提取文本。调用 doc-parser 服务解析 docx/xlsx/pdf/pptx 等格式文件，返回纯文本、结构化信息和 Markdown。需要先通过 upload_file 上传文件获得 filePath。',
     inputSchema: z.object({
@@ -69,6 +70,9 @@ export function createExtractTextTool(_context: ToolContext) {
           throw new Error(`文件不存在: ${filePath}`);
         }
       }
+
+      // 安全修复：用户隔离校验，只能读取当前用户 agent_temp 目录下的文件
+      assertUserFilePath(filePath, context.userId);
 
       const fileName = path.basename(filePath);
       const ext = path.extname(fileName).toLowerCase().replace('.', '');

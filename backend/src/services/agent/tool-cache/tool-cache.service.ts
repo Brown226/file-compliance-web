@@ -51,13 +51,22 @@ const KEY_PREFIX = 'tool-cache:';
 export class ToolCacheService {
   /**
    * 生成缓存键
-   * 将工具名和参数（canonical sorted keys JSON）拼接后取 MD5。
+   * 将工具名 + userId + 参数（canonical sorted keys JSON）拼接后取 MD5。
+   * - userId 混入缓存键：防止跨用户缓存命中（如 list_uploads 参数恒为 {}，
+   *   不带 userId 会导致 A 用户上传清单被缓存后返回给所有用户）
    * extract_text / chunk_document 额外混入文件内容指纹（大小 + mtime + 内容 hash），
    * 同文件未变 → 命中缓存，文件变更 → 自动失效重新解析。
    */
-  static async cacheKey(toolName: string, args: Record<string, unknown>): Promise<string> {
+  static async cacheKey(
+    toolName: string,
+    args: Record<string, unknown>,
+    userId?: string,
+  ): Promise<string> {
     const canonicalArgs = await this.buildCanonicalArgs(toolName, args);
-    const hash = crypto.createHash('md5').update(`${toolName}:${canonicalArgs}`).digest('hex');
+    const hash = crypto
+      .createHash('md5')
+      .update(`${toolName}:${userId || ''}:${canonicalArgs}`)
+      .digest('hex');
     return `${KEY_PREFIX}${hash}`;
   }
 
@@ -105,8 +114,12 @@ export class ToolCacheService {
    * 从 Redis 读取缓存
    * @returns 缓存值或 null（未命中）
    */
-  static async get(toolName: string, args: Record<string, unknown>): Promise<any | null> {
-    const key = await this.cacheKey(toolName, args);
+  static async get(
+    toolName: string,
+    args: Record<string, unknown>,
+    userId?: string,
+  ): Promise<any | null> {
+    const key = await this.cacheKey(toolName, args, userId);
     return redisClient.get<any>(key);
   }
 
@@ -114,8 +127,13 @@ export class ToolCacheService {
    * 写入 Redis 缓存
    * @param result 要缓存的结果值
    */
-  static async set(toolName: string, args: Record<string, unknown>, result: any): Promise<void> {
-    const key = await this.cacheKey(toolName, args);
+  static async set(
+    toolName: string,
+    args: Record<string, unknown>,
+    result: any,
+    userId?: string,
+  ): Promise<void> {
+    const key = await this.cacheKey(toolName, args, userId);
     await redisClient.set(key, result, CACHE_TTL);
   }
 

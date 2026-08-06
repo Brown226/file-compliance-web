@@ -20,6 +20,7 @@ import { createPipelineTools } from './pipeline';
 import { createMemoryTools } from './memory';
 import { createBatchProcessTool } from './batch/batch_process';
 import { createDocTools } from './doc';
+import { createAskUserTool } from './user/ask_user';
 import { ToolCacheService, CACHEABLE_TOOLS } from '../tool-cache/tool-cache.service';
 import { runBeforeToolHooks, runAfterToolHooks } from '../tool-hook/tool-hook.service';
 import { registerDefaultToolHooks } from '../tool-hook/register-tool-hooks';
@@ -42,10 +43,11 @@ export { createFileTools, createReviewTools, createKnowledgeTools, createPipelin
 function cacheWrapper(
   toolName: string,
   execute: (args: any, options?: any) => Promise<any>,
+  userId?: string,
 ): (args: any, options?: any) => Promise<any> {
   return async (args: any, options?: any) => {
-    // 先查缓存
-    const cached = await ToolCacheService.get(toolName, args ?? {});
+    // 先查缓存（缓存键混入 userId，防止跨用户缓存命中泄露）
+    const cached = await ToolCacheService.get(toolName, args ?? {}, userId);
     if (cached !== null) {
       return { type: 'tool-result', output: cached };
     }
@@ -58,7 +60,7 @@ function cacheWrapper(
       result && typeof result === 'object' && 'output' in result
         ? result.output
         : result;
-    await ToolCacheService.set(toolName, args ?? {}, output);
+    await ToolCacheService.set(toolName, args ?? {}, output, userId);
 
     return result;
   };
@@ -160,6 +162,19 @@ function injectionGuardWrapper(
   return async (args: any, options?: any) => {
     const result = await execute(args, options);
 
+    // 透传豁免（Task 44：ask_user 主动提问）：
+    // ask_user 工具返回的 { status: 'awaiting_user', ... } 是"挂起"语义标记，
+    // 必须原样透传——若被包成 <tool_result> 字符串，前端无法识别挂起，
+    // 也无法在恢复注入时把用户回复回填到 tool-result。
+    // 这是唯一被豁免的返回形态（其余工具结果一律包裹），安全边界清晰。
+    if (
+      result &&
+      typeof result === 'object' &&
+      (result as any).status === 'awaiting_user'
+    ) {
+      return result;
+    }
+
     // 兼容 cacheWrapper 的 { type: 'tool-result', output } 包装格式
     // 提取实际 output，避免 LLM 看到冗余的 SDK 内部字段
     let output = result;
@@ -228,7 +243,7 @@ function hookWrapper(
  * @param context userId / sessionId，注入到每个工具
  * @returns 合并后的工具对象，key 为工具名
  *
- * 当前工具总数：10（file）+ 6（review）+ 4（knowledge）+ 3（pipeline）+ 3（memory）+ 1（batch）+ 2（doc）= 29
+ * 当前工具总数：10（file）+ 6（review）+ 4（knowledge）+ 3（pipeline）+ 3（memory）+ 1（batch）+ 2（doc）+ 1（user/ask_user）= 30
  *
  * 包装顺序（外到内）：injectionGuardWrapper → retryWrapper → cacheWrapper → truncateWrapper → 原始 execute
  * - 最外层 injectionGuardWrapper（Task 22.2）：把结果序列化为 <tool_result> 标签字符串
@@ -250,6 +265,7 @@ export function createAllTools(context: ToolContext) {
     ...createMemoryTools(context),
     batch_process: createBatchProcessTool(context),
     ...createDocTools(context),
+    ask_user: createAskUserTool(context),
   };
 
   // 统一包装每个工具的 execute：
@@ -271,9 +287,9 @@ export function createAllTools(context: ToolContext) {
       wrappedExecute = truncateWrapper(name, wrappedExecute);
     }
 
-    // 内层：缓存包装（仅可缓存工具）
+    // 内层：缓存包装（仅可缓存工具；缓存键混入 userId，防跨用户缓存泄露）
     if (CACHEABLE_TOOLS.has(name)) {
-      wrappedExecute = cacheWrapper(name, wrappedExecute);
+      wrappedExecute = cacheWrapper(name, wrappedExecute, context.userId);
     }
 
     // 中层：重试包装（所有工具）

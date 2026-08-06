@@ -21,6 +21,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { z } from 'zod';
+import { assertUserFilePath } from './paths';
 import type { ToolContext } from './upload_file';
 import { parseDocument, isPlainTextExt } from './parse-document';
 
@@ -113,7 +114,7 @@ function tableToCsv(table: ExtractedTable): string {
  * - totalRows: 所有表格数据行合计
  * - csv?: toCsv=true 时返回，多个表格用空行分隔
  */
-export function createExtractTablesTool(_context: ToolContext) {
+export function createExtractTablesTool(context: ToolContext) {
   return tool({
     description: '从文档中提取表格，返回结构化 JSON（表头/数据行/页码/sheet名）。支持 docx/xlsx/pdf/pptx 等二进制格式（调 doc-parser 解析）。可指定 sheet 提取 xlsx 的特定工作表，toCsv=true 时输出 CSV 文本。适合把表格内容交给 LLM 做数据比对、合规核对、字段抽取。',
     inputSchema: z.object({
@@ -125,6 +126,9 @@ export function createExtractTablesTool(_context: ToolContext) {
       if (!fs.existsSync(filePath)) {
         throw new Error(`文件不存在: ${filePath}`);
       }
+
+      // 安全修复：用户隔离校验，只能读取当前用户 agent_temp 目录下的文件
+      assertUserFilePath(filePath, context.userId);
 
       const fileName = path.basename(filePath);
       const ext = path.extname(fileName).toLowerCase().replace('.', '');
