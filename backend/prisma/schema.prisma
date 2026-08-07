@@ -188,15 +188,10 @@ enum ReviewMode {
   DOC_REVIEW        // 以文审文 — 上游参照文件比对
   CONSISTENCY       // 全文一致性 — 跨文件参数/语义比对
   TYPO_GRAMMAR      // 错别字/语法 — 轻量LLM直接调用
-  MULTIMODAL        // 多模态识别 — 表格/公式/图纸
   RULE_ONLY       // 仅规则审查 — 只跑规则引擎，不调 AI
   SELF_CHECK        // 标准引用自检 — 机械匹配，独立于AI审查
   CONTRACT_REVIEW   // 合同风险审查 — 合同专用审查模式
-  STANDARD_CHECK    // 标准符合性检查 — 标准条文符合性验证
-  RULE_PARSING      // 规则解析 — 从文档中异步解析候选规则
   DEC_REVIEW        // DEC 规范审查 — 审点工程化 + 双分支并行审核 + 多层交叉复核
-  CUSTOM_RULE       // 兼容历史数据
-  FULL_REVIEW       // 兼容历史数据
 }
 
 model TaskFile {
@@ -413,25 +408,6 @@ model TerminologyWhitelist {
 }
 
 // ===== 提示词模板管理 =====
-
-model PromptTemplate {
-  id          String   @id @default(uuid())
-  key         String   @unique   // 唯一标识: library_review_system, typo_grammar_system, ...
-  module      String             // 审查场景: library_review, consistency, typo_grammar, doc_review, multimodal, ocr
-  role        String             // 角色: system, user
-  variant     String   @default("default")  // 用户提示词变体: default, with_context, no_context, comparison, structural, instruction
-  name        String             // 显示名称: "合规审查-系统提示词"
-  description String?            @db.Text  // 用途说明
-  content     String             @db.Text  // 提示词模板内容（支持 ${text}, ${ragContext}, ${standardContext}, ${refTexts} 等占位符）
-  placeholders String?           // 可用占位符说明，JSON 数组: ["${text}", "${ragContext}"]
-  defaultValue String?           @db.Text  // 默认值（用于重置）
-  isBuiltin   Boolean  @default(true)   // 是否为内置模板（内置模板不可删除）
-  enabled     Boolean  @default(true)   // 是否启用
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-
-  @@map("prompt_templates")
-}
 
 // ===== 误报标记库 =====
 
