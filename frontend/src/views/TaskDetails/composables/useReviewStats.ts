@@ -50,7 +50,6 @@ const modeLabelMap: Record<string, string> = {
   DOC_REVIEW: '以文审文',
   CONTRACT_REVIEW: '合同风险审查',
   TYPO_GRAMMAR: '基础校对',
-  MULTIMODAL: '结构化审查',
   SELF_CHECK: '标准引用自检',
   CONSISTENCY: '一致性审查',
   RULE_ONLY: '仅规则审查',

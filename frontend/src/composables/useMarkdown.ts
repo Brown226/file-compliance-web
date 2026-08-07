@@ -85,13 +85,31 @@ md.renderer.rules.code_inline = function (tokens: any, idx: any) {
 }
 
 /**
+ * 安全修复：原实现 ADD_ATTR 全局放行 onclick——markdown 源文本里的
+ * `<img onclick="...">` 等恶意属性会原样通过 DOMPurify（XSS 注入面）。
+ * 复制按钮的 inline handler 是 markdown-it 渲染器生成的固定值
+ * `window.__copyCodeBlock(this)`，用 DOMPurify hook 精确放行：
+ * 仅 .markdown-code-action 按钮且 onclick 值完全匹配时才保留，其余一律移除。
+ * hook 是全局注册且幂等（模块顶层只执行一次）。
+ */
+DOMPurify.addHook('afterSanitizeAttributes', (node) => {
+  if (node.hasAttribute('onclick')) {
+    const isCopyButton =
+      node.tagName === 'BUTTON' &&
+      String(node.getAttribute('class') || '').includes('markdown-code-action') &&
+      node.getAttribute('onclick') === 'window.__copyCodeBlock(this)'
+    if (!isCopyButton) node.removeAttribute('onclick')
+  }
+})
+
+/**
  * 安全地将 Markdown 文本转换为 HTML
  */
 export function useMarkdown() {
   const renderMarkdown = (text: string | null | undefined): string => {
     if (!text) return ''
     const html = md.render(text)
-    return DOMPurify.sanitize(html, { ADD_ATTR: ['data-code', 'onclick'] })
+    return DOMPurify.sanitize(html, { ADD_ATTR: ['data-code'] })
   }
 
   const renderInlineMarkdown = (text: string | null | undefined): string => {

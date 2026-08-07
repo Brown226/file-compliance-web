@@ -166,12 +166,6 @@ const routes: Array<RouteRecordRaw> = [
         meta: { title: '审查规则配置', allowViewer: true }
       },
       {
-        path: 'admin/prompts',
-        name: 'AdminPrompts',
-        component: () => import('../views/PromptConfig.vue'),
-        meta: { title: '提示词模板', requiresAdminOrManager: true }
-      },
-      {
         path: 'admin/system',
         name: 'AdminSystem',
         component: () => import('../views/SystemManagement.vue'),

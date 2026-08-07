@@ -636,7 +636,7 @@ const handleBatchAdopt = async () => {
 
   try {
     await ElMessageBox.confirm(
-      `确定要批量采纳 ${adoptableCount.value} 条建议吗？此操作将自动修改文档内容。`,
+      `确定要批量采纳 ${adoptableCount.value} 条建议吗？采纳后将标记为已采纳。`,
       '批量确认',
       {
         confirmButtonText: '确认采纳',
@@ -701,10 +701,9 @@ const handleBatchFalsePositive = async () => {
       .filter((issue: IssueDetail) => !issue.isFalsePositive)
       .map((issue: IssueDetail) => issue.id)
 
-    // 触发父组件事件
+    // 触发父组件事件（真实标记结果与提示由父组件 handleBatchFalsePositiveFromIssueList 完成后给出，
+    // 2026-08 修复：此前此处无条件弹"已提交 N 条"假成功提示）
     emit('batchFalsePositive', fpMarkableIds, reason)
-
-    ElMessage.success(`已提交 ${fpMarkableIds.length} 条误报标记`)
 
     setTimeout(() => {
       clearSelection()

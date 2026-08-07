@@ -74,8 +74,49 @@ export function useFalsePositive(allDetails: Ref<TaskDetail[]>) {
   }
 
   const handleBatchFalsePositiveFromIssueList = async (issueIds: string[], reason?: string) => {
-    console.log('批量标记误报:', issueIds.length, '条, 原因:', reason)
-    // TODO: 根据实际需求实现批量误报标记逻辑
+    // 2026-08 修复：原为空实现（仅 console.log），但 UI 会弹"已提交 N 条"假成功提示。
+    // 改为真实逐条调用误报接口，成功后统一提示。
+    if (!issueIds.length) {
+      ElMessage.warning('没有可标记的问题')
+      return
+    }
+    const results = await Promise.allSettled(
+      issueIds.map(id => toggleFalsePositiveApi(id, {
+        isFalsePositive: true,
+        reason: reason || undefined,
+      }))
+    )
+    // 只对成功项更新本地状态（2026-08：原实现按入参 id 全量置位，部分失败时会误标失败项）
+    const succeededIds = issueIds.filter((_, i) => results[i]?.status === 'fulfilled')
+    const succeeded = succeededIds.length
+    const failed = results.length - succeeded
+    if (succeeded > 0) {
+      const idSet = new Set(succeededIds)
+      allDetails.value.forEach((d: any) => {
+        if (idSet.has(d.id)) d.isFalsePositive = true
+      })
+      ElMessage.success(`已标记 ${succeeded} 条误报${failed > 0 ? `，${failed} 条失败` : ''}`)
+    } else {
+      ElMessage.error('批量标记误报失败')
+    }
+  }
+
+  /** 取消误报标记（2026-08 新增：原 UI 有入口但父组件未接线） */
+  const handleCancelFalsePositive = async (detail: TaskDetail) => {
+    if (!detail?.id) return
+    try {
+      await toggleFalsePositiveApi(detail.id, {
+        isFalsePositive: false,
+      })
+      const target = allDetails.value.find((d: any) => d.id === detail.id)
+      if (target) {
+        target.isFalsePositive = false
+        target.fpReason = null
+      }
+      ElMessage.success('已取消误报标记')
+    } catch (e: any) {
+      ElMessage.error(e?.response?.data?.message || '取消误报标记失败')
+    }
   }
 
   return {
@@ -85,5 +126,6 @@ export function useFalsePositive(allDetails: Ref<TaskDetail[]>) {
     handleFalsePositive,
     handleConfirmFalsePositive,
     handleBatchFalsePositiveFromIssueList,
+    handleCancelFalsePositive,
   }
 }

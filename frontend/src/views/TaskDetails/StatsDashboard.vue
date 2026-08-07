@@ -39,7 +39,7 @@
       <div class="score-header">
         <div class="score-value" :class="scoreLevel">{{ contractScore.score }}</div>
         <div class="score-meta">
-          <div class="score-label">综合评分 / 100</div>
+          <div class="score-label">综合评分 / 100（估算）</div>
           <div class="score-conclusion">{{ scoreConclusion }}</div>
         </div>
       </div>

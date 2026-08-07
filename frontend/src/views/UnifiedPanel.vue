@@ -90,7 +90,6 @@
       <div class="config-content">
         <DepartmentManagement v-show="activeConfig === 'departments'" />
         <ReviewRules v-show="activeConfig === 'reviewRules'" />
-        <PromptConfig v-show="activeConfig === 'prompts'" />
       </div>
     </div>
 
@@ -126,7 +125,6 @@ import { getDashboardStatsApi, getSystemHealthApi } from '@/api/dashboard'
 import { useUserStore } from '@/stores/user'
 import DepartmentManagement from './admin/DepartmentManagement.vue'
 import ReviewRules from './ReviewRules.vue'
-import PromptConfig from './PromptConfig.vue'
 import AiEngineConfig from './admin/AiEngineConfig.vue'
 import StorageManagement from './admin/StorageManagement.vue'
 import BasicSettings from './admin/BasicSettings.vue'
@@ -150,7 +148,6 @@ const activeSystem = ref('aiEngine')
 const reviewConfigItems = [
   { id: 'departments', name: '部门与员工' },
   { id: 'reviewRules', name: '审查规则' },
-  { id: 'prompts', name: '提示词模板' },
 ]
 
 const systemItems = computed(() => {

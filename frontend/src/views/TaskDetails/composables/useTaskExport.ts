@@ -24,8 +24,11 @@ export function useTaskExport(taskId: () => string, taskTitle: () => string) {
     exporting.value = true
     try {
       const res = await exportTaskReportWordApi(taskId())
-      const success = downloadBlob(res.data, `${taskTitle() || '审查报告'}_Word版.docx`)
-      if (success) ElMessage.success('Word导出成功')
+      // 2026-08 修复：后端输出为 Word 兼容 HTML（.doc 格式），此前前端改名 .docx
+      // 导致"HTML 内容 + .docx 扩展名"不匹配，Word/WPS 打开报格式错误。
+      // 文件名改回 .doc，与后端 Content-Type application/msword 一致。
+      const success = downloadBlob(res.data, `${taskTitle() || '审查报告'}_审查报告.doc`)
+      if (success) ElMessage.success('Word文档导出成功')
     } catch (e) {
       console.error('[useTaskExport] Word导出失败:', e)
       ElMessage.error('导出Word失败')

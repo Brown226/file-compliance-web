@@ -369,6 +369,9 @@
               @select-file-by-id="switchToFileContext"
               @copy-handle-id="handleCopyCadHandle"
               @locate-text="handleLocateTextFromIssueList"
+              @locate-bbox="handleLocateBboxFromIssueList"
+              @open-clause="handleOpenClauseFromIssueList"
+              @cancel-fp="handleCancelFalsePositiveFromIssueList"
               @open-fp-dialog="(detail) => handleFalsePositive(detail)"
               @batch-false-positive="handleBatchFalsePositiveFromIssueList"
               @batch-adopt="handleBatchAdoptFromIssueList"
@@ -514,11 +517,20 @@ const {
   scErrorTagType, scErrorLabel, handleExportScReport,
 } = useSelfCheck(task, taskId, files, filterFileId, selectFile, locateTarget)
 
-// AI 审查空结果警告：审查模式需要 AI 但 AI 未产出结果
+// AI 审查空结果警告：审查模式需要 AI 但未产出任何 AI 来源的问题
+// 修复（2026-08）：原逻辑依赖 REVIEW_SUMMARY 条目（后端无生产者），
+// 导致每个 AI 模式任务都恒显示"AI 未产出结果"误报；改为按实际问题来源统计。
+const AI_ISSUE_SOURCES = ['AI', 'AI_REVIEW', 'COMPLETENESS', 'COMPLIANCE', 'STANDARD_REF', 'RAG']
 const showAiWarning = computed(() => {
   const mode = (task.value as any)?.reviewMode
   if (!mode || mode === 'RULE_ONLY' || mode === 'SELF_CHECK') return false
-  return (reviewSummary.value?.aiIssues ?? 0) === 0
+  const hasAiIssues = issueDetails.value.some((d: any) => {
+    const src = String(d.reviewSource || '').toUpperCase()
+    if (AI_ISSUE_SOURCES.includes(src)) return true
+    const engine = String(d.engine || '').toLowerCase()
+    return engine.includes('llm') || engine.includes('rag')
+  })
+  return !hasAiIssues
 })
 
 // ===== 合同审查评分 =====
@@ -775,7 +787,7 @@ const navigateToIssue = (issue: TaskDetail) => {
 const {
   fpDialogVisible, fpSubmitting, fpTargetDetail,
   handleFalsePositive, handleConfirmFalsePositive,
-  handleBatchFalsePositiveFromIssueList,
+  handleBatchFalsePositiveFromIssueList, handleCancelFalsePositive,
 } = useFalsePositive(allDetails)
 
 // ===== IssueCardList 组件引用 =====
@@ -840,6 +852,14 @@ const appendNewIssues = (msg: WsMessage) => {
     diffRanges: d.diffRanges,
     textPosition: d.textPosition,
     locateMeta: d.locateMeta || null,
+    // 2026-08 补全：与 fetchData 白名单一致，避免 WS 增量阶段字段缺失
+    reviewSource: d.reviewSource || null,
+    riskLevel: d.riskLevel || null,
+    clauseType: d.clauseType || null,
+    recommendation: d.recommendation || null,
+    dwgMetadata: d.dwgMetadata || null,
+    fpReason: d.fpReason || null,
+    reviewStatus: d.reviewStatus || null,
     fileId: msg.fileId,
     isFalsePositive: false,
     adopted: false,
@@ -848,10 +868,11 @@ const appendNewIssues = (msg: WsMessage) => {
   }))
   allDetails.value = [...allDetails.value, ...newIssues]
 
-  // 去重：基于 (fileId + issueType + originalText) 去重，移除 WS 临时 ID 和 API 真实 ID 的重复
+  // 去重：基于 (fileId + issueType + ruleCode + originalText) 去重（2026-08 加 ruleCode，
+  // 与 DB 唯一约束 [taskId, fileId, issueType, ruleCode, originalText] 对齐，减少位置信息合并丢失）
   const seen = new Set<string>()
   allDetails.value = allDetails.value.filter((d: any) => {
-    const key = `${d.fileId}:${d.issueType}:${d.originalText}`
+    const key = `${d.fileId}:${d.issueType}:${d.ruleCode}:${d.originalText}`
     if (seen.has(key)) return false
     seen.add(key)
     return true
@@ -924,6 +945,13 @@ const startReviewTimeout = () => {
   reviewTimeoutTimer = setTimeout(() => {
     if (reviewing.value) {
       console.warn('[TaskResultsView] ⏰ 审查超时，强制退出 reviewing 状态')
+      // 2026-08 修复：此前静默截断，页面呈现部分结果且看似终态；现在明确提示
+      ElMessage({
+        type: 'warning',
+        message: '审查超时（30 分钟），当前显示的结果可能不完整，请检查任务状态后重试',
+        duration: 10000,
+        showClose: true,
+      })
       finishReview()
     }
   }, 30 * 60 * 1000)
@@ -996,6 +1024,13 @@ const fetchData = async (silent = false) => {
       adopted: d.adopted || false,
       adoptedBy: d.adoptedBy || null,
       adoptedAt: d.adoptedAt || null,
+      // 2026-08 补全：合同/DWG/复核相关字段此前被白名单丢弃，导致页面不显示
+      riskLevel: d.riskLevel || null,
+      clauseType: d.clauseType || null,
+      recommendation: d.recommendation || null,
+      dwgMetadata: d.dwgMetadata || null,
+      fpReason: d.fpReason || null,
+      reviewStatus: d.reviewStatus || null,
       taskId: d.taskId || taskId.value,
       taskFileId: d.taskFileId || '',
     }))
@@ -1101,6 +1136,42 @@ const handleCopyCadHandle = (handleId: string) => {
 
 const handleLocateTextFromIssueList = (payload: { detail: any; elementId: string }) => {
   handleLocateText(payload.detail)
+}
+
+/** 图纸区域定位（2026-08 接线：IssueCard 的 locate-bbox 按钮此前无父组件处理，点击无反应） */
+const handleLocateBboxFromIssueList = (detail: any) => {
+  if (!detail) return
+  // DWG 图元定位复用文本定位链路（locateTarget → DwgPreviewPanel 高亮图元）
+  if (detail.cadHandleId) {
+    handleLocateText(detail)
+    return
+  }
+  // 非 DWG 或无图元句柄：切到所属文件并提示
+  if (detail.fileId) {
+    switchToFileContext(detail.fileId)
+  }
+  ElMessage({
+    type: 'warning',
+    message: detail.cadHandleId ? '图纸定位失败，请尝试文本定位' : '该问题未关联图纸图元，无法进行区域定位',
+    duration: 4000,
+    showClose: true,
+  })
+}
+
+/** 查看标准条文（2026-08 接线：IssueCard 的 open-clause 按钮此前无父组件处理，点击无反应） */
+const handleOpenClauseFromIssueList = (detail: any) => {
+  if (!detail) return
+  const clauseText = detail.standardRef || detail.standardRefId || ''
+  ElMessageBox.alert(
+    clauseText || '该问题未关联标准条文内容。',
+    '标准条文',
+    {
+      confirmButtonText: '知道了',
+      customClass: 'clause-dialog',
+      dangerouslyUseHTMLString: false,
+      type: 'info',
+    }
+  )
 }
 
 /** 知识库 Tab：点击标准引用卡片 → 定位到文件原文 */
