@@ -21,7 +21,7 @@ export interface ModeConfigOverride {
   rules?: boolean;
   standardRef?: boolean;
   ai?: boolean;
-  aiStrategy?: 'standard' | 'llmOnly' | 'refCompare' | 'contractReview' | 'multimodal' | 'decReview';
+  aiStrategy?: 'standard' | 'llmOnly' | 'refCompare' | 'contractReview' | 'decReview';
   crossFile?: boolean;
   paramTolerance?: ParamToleranceConfig;
 }
@@ -30,23 +30,30 @@ export interface ModeCapabilitiesConfig {
   [mode: string]: ModeConfigOverride;
 }
 
-/** 各模式的默认配置（自包含，不依赖外部模块） */
+/**
+ * 各模式的默认配置（自包含，不依赖外部模块）
+ *
+ * ⚠️ 优先级：DB 表 `system_configs.pipeline_mode_capabilities` 中的显式记录
+ * **优先于**本默认值（见 getModeCapabilitiesConfig 的覆盖逻辑）。
+ * 若线上库已有历史记录（如 LIBRARY_REVIEW.standardRef=false），默认值不会生效——
+ * 如需强制启用默认行为，需清除该配置记录（或改 DB 对应字段），代码层不做自动清库。
+ */
 const DEFAULT_MODE_CONFIGS: Record<ReviewModeType, {
   enabled: boolean;
   rules: boolean;
   standardRef: boolean;
   ai: boolean;
-  aiStrategy: 'standard' | 'llmOnly' | 'refCompare' | 'contractReview' | 'multimodal' | 'decReview';
+  aiStrategy: 'standard' | 'llmOnly' | 'refCompare' | 'contractReview' | 'decReview';
   crossFile: boolean;
   paramTolerance?: ParamToleranceConfig;
 }> = {
-  LIBRARY_REVIEW: { enabled: true, rules: false, standardRef: false, ai: true, aiStrategy: 'standard', crossFile: false },
+  LIBRARY_REVIEW: { enabled: true, rules: false, standardRef: true, ai: true, aiStrategy: 'standard', crossFile: false },
   DOC_REVIEW:     { enabled: true, rules: false, standardRef: false, ai: true, aiStrategy: 'refCompare', crossFile: false },
   CONTRACT_REVIEW: { enabled: true, rules: false, standardRef: false, ai: true, aiStrategy: 'contractReview', crossFile: false },
   CONSISTENCY:    { enabled: true, rules: true,  standardRef: false, ai: true, aiStrategy: 'standard', crossFile: true, paramTolerance: { default: 0.01, byUnit: { 'MPa': 0.005, '℃': 0.02 } } },
   TYPO_GRAMMAR:   { enabled: true, rules: false, standardRef: false, ai: true, aiStrategy: 'llmOnly', crossFile: false },
   RULE_ONLY:    { enabled: true, rules: true,  standardRef: false, ai: false, aiStrategy: 'standard', crossFile: false },
-  SELF_CHECK:     { enabled: true, rules: false, standardRef: false, ai: false, aiStrategy: 'standard', crossFile: false },
+  SELF_CHECK:     { enabled: true, rules: false, standardRef: true, ai: false, aiStrategy: 'standard', crossFile: false },
   DEC_REVIEW:     { enabled: true, rules: false, standardRef: false, ai: true, aiStrategy: 'decReview', crossFile: false },
 };
 
@@ -56,7 +63,7 @@ export async function getModeCapabilitiesConfig(): Promise<Record<ReviewModeType
   rules: boolean;
   standardRef: boolean;
   ai: boolean;
-  aiStrategy: 'standard' | 'llmOnly' | 'refCompare' | 'contractReview' | 'multimodal' | 'decReview';
+  aiStrategy: 'standard' | 'llmOnly' | 'refCompare' | 'contractReview' | 'decReview';
   crossFile: boolean;
   paramTolerance?: ParamToleranceConfig;
 }>> {

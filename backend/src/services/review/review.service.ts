@@ -35,7 +35,7 @@ import { normalizeText } from './falsePositiveLibrary.service';
  * - ʹ���ڴ� Map ׷�٣�Map<userId, { processingCount, pendingQueue }>
  */
 export class ReviewService {
-  private static adaptReviewPlanForExecution(task: any): {
+  static adaptReviewPlanForExecution(task: any): {
     plan: ReviewPlan;
     reviewMode: string;
     ruleSource: ('STANDARD' | 'RULE_LIBRARY')[];
@@ -56,10 +56,11 @@ export class ReviewService {
     };
   } {
     const plan = TaskService.normalizeReviewPlan(task?.reviewPlan);
-    // DEC_REVIEW 等特殊模式由前端 entryModule 直接指定并已落库 task.reviewMode，
-    // 其 reviewPlan.objective 仍是 COMPLIANCE（与 LIBRARY_REVIEW 相同），
-    // resolvePipelineSelector 无法区分，故优先用 task.reviewMode 兜底。
-    const reviewMode = (task?.reviewMode && ['DEC_REVIEW'].includes(task.reviewMode))
+    // 优先采用已落库的 task.reviewMode（前端 entryModule 经 mapEntryModule 写入），
+    // 避免 resolvePipelineSelector 把 CONSISTENCY 等模式重推导为 LIBRARY_REVIEW（主业缺陷：模式被吞）；
+    // 仅当任务无 reviewMode 或值非法时才回退到 plan 推导（兼容旧数据）。
+    const validModes = Object.keys(REVIEW_HANDLERS) as string[];
+    const reviewMode = (task?.reviewMode && validModes.includes(task.reviewMode))
       ? task.reviewMode
       : TaskService.resolvePipelineSelector(plan);
     // ֧��ͬʱѡ��֪ʶ��(STANDARD)����������(RULE_LIBRARY)

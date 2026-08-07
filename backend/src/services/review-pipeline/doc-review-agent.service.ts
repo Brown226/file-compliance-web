@@ -167,6 +167,12 @@ function parseExtractItems(raw: string): ExtractItemsResult {
 
 // ==================== Step 2：逐条对齐 ====================
 
+/** 逐条对齐的全局预算（跨条目共享，防单任务 LLM 调用无封顶） */
+interface AlignBudget {
+  /** 剩余二次复核（recheck）次数上限 */
+  recheckRemaining: number;
+}
+
 /**
  * 对单条目，在待审文本中 Embedding 定位相关段落，然后判定。
  * @returns issue（可能为 null：一致/等效不报）
@@ -178,6 +184,10 @@ async function alignItem(
   targetVectors: number[][] | null,
   ctx: { fileId?: string; taskId?: string; mode?: string; traceId?: string },
   config: { llmMaxTokens?: number; llmTimeout?: number },
+  /** true 表示预嵌入已失败过，逐条目不再重试全量嵌入（防 embedding 服务持续故障时每条目浪费一次调用） */
+  skipEmbedRetry = false,
+  /** 共享预算：recheck 次数封顶 */
+  budget?: AlignBudget,
 ): Promise<AlignResult> {
   const llmMaxTokens = config.llmMaxTokens || 4096;
   const llmTimeout = config.llmTimeout || 180;
@@ -188,7 +198,7 @@ async function alignItem(
   let targetVecs: number[][] | null = targetVectors;
   try {
     queryVec = await EmbeddingService.embedText(queryText);
-    if (!targetVecs) {
+    if (!targetVecs && !skipEmbedRetry) {
       targetVecs = await EmbeddingService.embedTexts(targetChunks.map(c => c.text));
     }
   } catch (e: any) {
@@ -257,8 +267,12 @@ async function alignItem(
   }
 
   // ⑤ 自检（Step 3，路线 C）：判定"一致/无 issue"但相似度低且含数值/日期 → 二次复核
+  //    预算保护：recheck 次数全任务封顶（原实现 50 条目 × 每次 180s 超时无上限）
   if (!issue && similarity > 0 && similarity < 0.55 && hasNumericOrDate(item.requirement)) {
-    issue = await recheckItem(item, candidateText, ctx, config, similarity);
+    if (budget && budget.recheckRemaining > 0) {
+      budget.recheckRemaining -= 1;
+      issue = await recheckItem(item, candidateText, ctx, config, similarity);
+    }
   }
 
   return { issue, similarity, candidateFound };
@@ -360,16 +374,21 @@ export async function runRefCompareAgent(
   // 预分块待审文本 + 预嵌入（避免每条目重复嵌入）
   const chunks = (LlmService.splitText(targetText, 4000, true, 300) as Array<{ text: string; startIndex: number }>);
   let targetVectors: number[][] | null = null;
+  let embedFailed = false;
   try {
     targetVectors = await EmbeddingService.embedTexts(chunks.map(c => c.text));
   } catch (e: any) {
-    console.warn(`[DocReviewAgent] 待审文本预嵌入失败（逐条目退化）: ${e.message}`);
+    embedFailed = true;
+    console.warn(`[DocReviewAgent] 待审文本预嵌入失败（逐条目退化，不再重试全量嵌入）: ${e.message}`);
   }
+
+  // 全任务预算：recheck 最多 20 次（每次 LLM 调用 180s 超时，封顶总时长）
+  const budget: AlignBudget = { recheckRemaining: 20 };
 
   // Step 2：逐条对齐（限并发）
   const CONCURRENT_LIMIT = await getChunkConcurrency('doc_review');
   const results = await parallelLimit(items, CONCURRENT_LIMIT, (item) =>
-    alignItem(item, targetText, chunks, targetVectors, ctx, config),
+    alignItem(item, targetText, chunks, targetVectors, ctx, config, embedFailed, budget),
   );
 
   // 收集 issues
