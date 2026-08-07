@@ -78,6 +78,18 @@ export function checkEncodingConsistency(ctx: FileContext, config?: any): RuleIs
     }
   }
 
+  return issues;
+}
+
+/**
+ * 规则 2b: 机组号一致性检查（UNIT_001 ~ UNIT_005）
+ *
+ * 独立函数：原先与 checkEncodingConsistency 注册为同一条 fn 执行两遍，
+ * 导致 CODE 与 UNIT 两类问题全部双份重复报告（2026-08 修复）。
+ */
+export function checkUnitConsistency(ctx: FileContext, _config?: any): RuleIssue[] {
+  const issues: RuleIssue[] = [];
+
   // 2.5 机组号一致性检查 (UNIT_001 ~ UNIT_005)
   const coverText = ctx.extractedText || '';
 

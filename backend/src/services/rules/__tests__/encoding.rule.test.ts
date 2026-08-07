@@ -2,7 +2,7 @@
  * OPT-002: encoding.rule 黄金测试集
  */
 import { describe, it, expect } from 'vitest';
-import { checkEncodingConsistency } from '../encoding.rule';
+import { checkEncodingConsistency, checkUnitConsistency } from '../encoding.rule';
 import { FileContext } from '../types';
 
 function makeCtx(fileName: string, pdfPages?: string[]): FileContext {
@@ -83,7 +83,7 @@ describe('checkEncodingConsistency', () => {
       extractedText: '图册编号：INVALIDFORMAT',
       pdfPages: ['第一页', 'AB01C02DE-FGH03(A) 正确页眉'],
     };
-    const issues = checkEncodingConsistency(ctx);
+    const issues = checkUnitConsistency(ctx);
     expect(issues.some(i => i.ruleCode === 'UNIT_002')).toBe(true);
   });
 
@@ -95,7 +95,7 @@ describe('checkEncodingConsistency', () => {
       extractedText: '图册编号：AB0100CDE-FGH03\nDOC.NO: INVALIDFORMAT',
       pdfPages: ['第一页', 'AB01C02DE-FGH03(A) 正确页眉'],
     };
-    const issues = checkEncodingConsistency(ctx);
+    const issues = checkUnitConsistency(ctx);
     expect(issues.some(i => i.ruleCode === 'UNIT_003')).toBe(true);
   });
 
@@ -107,8 +107,20 @@ describe('checkEncodingConsistency', () => {
       extractedText: '图册编号：AB0100CDE-FGH03\nDOC.NO: ABC123456',
       pdfPages: ['第一页', 'AB01C02DE-FGH03(A) 正确页眉'],
     };
-    const issues = checkEncodingConsistency(ctx);
+    const issues = checkUnitConsistency(ctx);
     expect(issues.some(i => i.ruleCode === 'UNIT_002' || i.ruleCode === 'UNIT_003')).toBe(false);
+  });
+
+  // ===== 双份报告回归（2026-08 修复：CODE/UNIT 拆分） =====
+
+  it('checkEncodingConsistency 不再产出 UNIT_*（防双份报告回归）', () => {
+    const issues = checkEncodingConsistency(makeCtx('AB01C02DE-FGH03(A).pdf', ['第一页', '页眉：AB01C02DE-FGH03(A)']));
+    expect(issues.some(i => i.ruleCode.startsWith('UNIT_'))).toBe(false);
+  });
+
+  it('checkUnitConsistency 不产出 CODE_*（防双份报告回归）', () => {
+    const issues = checkUnitConsistency(makeCtx('AB01C02DE-FGH03(A).pdf', ['第一页']));
+    expect(issues.some(i => i.ruleCode.startsWith('CODE_'))).toBe(false);
   });
 });
 /**
@@ -116,7 +128,7 @@ describe('checkEncodingConsistency', () => {
  * 测试文件: encoding.rule.ts → checkEncodingConsistency
  */
 import { describe, it, expect } from 'vitest';
-import { checkEncodingConsistency } from '../encoding.rule';
+import { checkEncodingConsistency, checkUnitConsistency } from '../encoding.rule';
 import { FileContext } from '../types';
 
 /** 快捷创建 FileContext */
@@ -178,7 +190,7 @@ describe('Encoding Consistency Rule (CODE)', () => {
   /* ===== UNIT 正例 ===== */
 
   it('UNIT_004: should detect missing album code on cover', () => {
-    const issues = checkEncodingConsistency(ctx({
+    const issues = checkUnitConsistency(ctx({
       pdfPages: ['page1', 'header with FJ24A00AC-JPS02'],
       extractedText: 'some random text without album code',
     }));
@@ -186,7 +198,7 @@ describe('Encoding Consistency Rule (CODE)', () => {
   });
 
   it('UNIT_005: should detect missing DOC.NO on cover', () => {
-    const issues = checkEncodingConsistency(ctx({
+    const issues = checkUnitConsistency(ctx({
       pdfPages: ['page1', 'header with FJ24A00AC-JPS02'],
       extractedText: '图册编号：FJ24A00AC-JPS02\nsome other text',
     }));
@@ -216,7 +228,7 @@ describe('Encoding Consistency Rule (CODE)', () => {
   });
 
   it('should pass when cover has both album code and DOC.NO with matching unit numbers', () => {
-    const issues = checkEncodingConsistency(ctx({
+    const issues = checkUnitConsistency(ctx({
       fileName: 'QS2516EED-JPK01-001(A).pdf',
       pdfPages: ['cover', 'QS2516EED-JPK01-001(A) header'],
       extractedText: '图册编号：QS2516EED-JPK01\nDOC.NO：ZGE25000001B25A44GN',
@@ -239,7 +251,7 @@ describe('Encoding Consistency Rule (CODE)', () => {
   });
 
   it('should detect UNIT_001 when unit numbers mismatch', () => {
-    const issues = checkEncodingConsistency(ctx({
+    const issues = checkUnitConsistency(ctx({
       fileName: 'FJ24A00AC-JPS02-001(A).pdf',
       pdfPages: ['cover', 'FJ24A00AC-JPS02-001(A) 页眉内容'],
       extractedText: '图册编号：QS2516EED-JPK01\nDOC.NO：ZGA25000001B25A44GN',

@@ -38,6 +38,18 @@ describe('checkNaming', () => {
     expect(issues.some(i => i.ruleCode === 'NAME_008')).toBe(true);
   });
 
+  it('NAME_008: 4 位序号也应检出', () => {
+    const issues = checkNaming(makeCtx('AB01C02DE-FGH03-1234(A).dwg'));
+    expect(issues.some(i => i.ruleCode === 'NAME_008')).toBe(true);
+  });
+
+  it('NAME_008 反例：合法 3 位序号 002~999 不误报（2026-08 回归）', () => {
+    for (const seq of ['002', '012', '123', '999']) {
+      const issues = checkNaming(makeCtx(`AB01C02DE-FGH03-${seq}(A).dwg`));
+      expect(issues.some(i => i.ruleCode === 'NAME_008')).toBe(false);
+    }
+  });
+
   // ===== 反例：不应检出 =====
 
   it('规范英文文件名不报错', () => {

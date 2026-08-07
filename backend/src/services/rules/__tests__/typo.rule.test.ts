@@ -187,4 +187,31 @@ describe('Typo Rule (TYPO)', () => {
     expect(issues.length).toBeLessThanOrEqual(10);
   });
 
+  // ===== 2026-08 字典误配清理回归：规范词不再被标错 =====
+
+  it('不再误标"渡过难关"（规范写法）', () => {
+    const issues = checkTypo(makeCtx('他们最终渡过了难关。'));
+    expect(issues.some(i => i.originalText === '渡过难关')).toBe(false);
+  });
+
+  it('不再误标"泄露"（泄露消息为规范用法）', () => {
+    const issues = checkTypo(makeCtx('严禁泄露公司机密信息。'));
+    expect(issues.some(i => i.originalText === '泄露')).toBe(false);
+  });
+
+  it('不再误标"蒸气"（水蒸气为规范写法）', () => {
+    const issues = checkTypo(makeCtx('水蒸气凝结成水滴。'));
+    expect(issues.some(i => i.originalText === '蒸气')).toBe(false);
+  });
+
+  it('不再误标"其它"与"漫延"', () => {
+    const issues = checkTypo(makeCtx('其它事项另行通知。河水漫延至岸边。'));
+    expect(issues.some(i => ['其它', '漫延'].includes(i.originalText))).toBe(false);
+  });
+
+  it('仍然检出真错字"按装"（回归确认字典未被过度清理）', () => {
+    const issues = checkTypo(makeCtx('设备按装完成后进行调试'));
+    expect(issues.some(i => i.originalText === '按装')).toBe(true);
+  });
+
 });

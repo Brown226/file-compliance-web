@@ -25,7 +25,7 @@ export interface FileContext {
   fileType: string;         // dwg, doc, docx, xls, xlsx, pdf, ppt, pptx
   extractedText?: string;   // 解析后的文本
   pdfPages?: string[];      // PDF 逐页文本（用于页眉/页码检查）
-  reviewMode?: string;      // 审查模式（LIBRARY_REVIEW, DOC_REVIEW, CONSISTENCY, TYPO_GRAMMAR, MULTIMODAL, RULE_ONLY）
+  reviewMode?: string;      // 审查模式（LIBRARY_REVIEW, DOC_REVIEW, CONSISTENCY, TYPO_GRAMMAR, RULE_ONLY）
   /** Python 解析服务的结构化结果（DWG 图层/标注/图元等元数据） */
   parseResult?: import('../file/python-parser.service').ParseResult | null;
 }

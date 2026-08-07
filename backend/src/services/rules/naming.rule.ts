@@ -70,8 +70,10 @@ export function checkNaming(ctx: FileContext, config?: any): RuleIssue[] {
         const systemCodeMatch = nameWithoutExt.match(/^[A-Z]{2}\d{2}[A-Z]\d{2}[A-Z]{2}-([A-Z]{3}\d{2})/);
 
         // NAME_008: 序号格式检查（有连字符+数字但不是3位）
+        // 修复（2026-08）：原条件 `seqMatch[1] !== '001'` 会把任何合法 3 位序号(002~999)误报，
+        // 正确语义是仅当序号不是 3 位数字时报告。
         const seqMatch = nameWithoutExt.match(/^[A-Z]{2}\d{2}[A-Z]\d{2}[A-Z]{2}-[A-Z]{3}\d{2}-(\d+)\(/);
-        if (seqMatch && seqMatch[1] !== '001' || (seqMatch && !/^\d{3}$/.test(seqMatch[1]))) {
+        if (seqMatch && !/^\d{3}$/.test(seqMatch[1])) {
           issues.push({
             issueType: 'NAMING', ruleCode: 'NAME_008', severity: 'warning',
             originalText: seqMatch[1],

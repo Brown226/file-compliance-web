@@ -6,7 +6,7 @@
 export { RuleIssue, FileContext, RuleConfig, RunRulesOptions } from './types';
 
 export { checkNaming } from './naming.rule';
-export { checkEncodingConsistency } from './encoding.rule';
+export { checkEncodingConsistency, checkUnitConsistency } from './encoding.rule';
 export { checkCoverAttributes } from './attribute.rule';
 export { checkHeader } from './header.rule';
 export { checkPageNumbers } from './page.rule';
@@ -22,7 +22,7 @@ export { checkContractRules } from './contract.rule';
 
 import { RuleIssue, FileContext, RunRulesOptions } from './types';
 import { checkNaming } from './naming.rule';
-import { checkEncodingConsistency } from './encoding.rule';
+import { checkEncodingConsistency, checkUnitConsistency } from './encoding.rule';
 import { checkCoverAttributes } from './attribute.rule';
 import { checkHeader } from './header.rule';
 import { checkPageNumbers } from './page.rule';
@@ -84,7 +84,7 @@ const RULE_REGISTRY: RuleEntry[] = [
   {
     prefix: 'UNIT',
     category: 'ENCODING',
-    fn: checkEncodingConsistency,
+    fn: checkUnitConsistency,
     condition: (ctx) => !!ctx.pdfPages && ctx.pdfPages.length > 0,
     meta: { label: '单位规范', description: '计量单位使用规范性检查', group: '内容规范', icon: 'EditPen' },
   },

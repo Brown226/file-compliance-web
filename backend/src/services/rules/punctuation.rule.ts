@@ -126,13 +126,17 @@ export function checkPunctuation(ctx: FileContext, _config?: any): RuleIssue[] {
   while ((m = duplicatePunctRegex.exec(text)) !== null && count6 < maxPerType) {
     const context = text.slice(Math.max(0, m.index - 15), Math.min(text.length, m.index + m[0].length + 15));
     const first = m[0][0];
+    // 连续句号（如"。。"）在中文排版中常是省略号的非规范写法，应建议"……"而非合并为单个句号（2026-08 修复）
+    const isEllipsisLike = /^。{2,}$/.test(m[0]);
     issues.push({
       issueType: 'PUNCTUATION',
       ruleCode: 'PUNCT_003',
       severity: 'info',
       originalText: m[0],
-      suggestedText: first,
-      description: `连续重复标点：'${m[0]}' 应为单个 '${first}'。上下文: ...${context}...`,
+      suggestedText: isEllipsisLike ? '……' : first,
+      description: isEllipsisLike
+        ? `连续句号疑似省略号的非规范写法：'${m[0]}' 应为 '……'。上下文: ...${context}...`
+        : `连续重复标点：'${m[0]}' 应为单个 '${first}'。上下文: ...${context}...`,
     });
     count6++;
   }
@@ -153,9 +157,9 @@ export function checkPunctuation(ctx: FileContext, _config?: any): RuleIssue[] {
   }
 
   // ===== 4. 引号/括号不配对 =====
-  // 中文引号配对检查
-  const leftDoubleQuote = (text.match(/"/g) || []).length;
-  const rightDoubleQuote = (text.match(/"/g) || []).length;
+  // 中文引号配对检查（分别统计左右引号；修复前左右共用同一正则，条件恒等永不触发，2026-08）
+  const leftDoubleQuote = (text.match(/“/g) || []).length;
+  const rightDoubleQuote = (text.match(/”/g) || []).length;
   if (leftDoubleQuote !== rightDoubleQuote && leftDoubleQuote + rightDoubleQuote > 0) {
     issues.push({
       issueType: 'PUNCTUATION',
