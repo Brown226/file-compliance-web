@@ -6,6 +6,10 @@
         <span>Agent 提问</span>
       </div>
       <p class="ask-user-question">{{ question }}</p>
+      <div v-if="timeoutRemaining > 0" class="ask-user-timeout">
+        <el-icon :size="12"><Timer /></el-icon>
+        <span>{{ timeoutRemaining }} 秒后自动取消</span>
+      </div>
 
       <!-- confirm -->
       <div v-if="method === 'confirm'" class="ask-user-body">
@@ -66,13 +70,14 @@
 
 <script setup lang="ts">
 import { ref, watch } from 'vue'
-import { ChatDotRound } from '@element-plus/icons-vue'
+import { ChatDotRound, Timer } from '@element-plus/icons-vue'
 
 const props = defineProps<{
   visible: boolean
   question: string
   method: 'confirm' | 'input' | 'select' | 'editor'
   options?: string[]
+  timeoutSec?: number
 }>()
 
 const emit = defineEmits<{
@@ -83,6 +88,29 @@ const emit = defineEmits<{
 const inputValue = ref('')
 const selectValue = ref('')
 const editorValue = ref('')
+const timeoutRemaining = ref(0)
+let timeoutTimer: number | null = null
+
+// 超时倒计时：timeoutSec 到达后自动取消（修复：原实现完全未使用 timeoutSec 字段）
+function startTimeout() {
+  clearTimeoutTimer()
+  const total = props.timeoutSec && props.timeoutSec > 0 ? props.timeoutSec : 0
+  if (!total) return
+  timeoutRemaining.value = total
+  timeoutTimer = window.setInterval(() => {
+    timeoutRemaining.value -= 1
+    if (timeoutRemaining.value <= 0) {
+      clearTimeoutTimer()
+      emit('cancel', '')
+    }
+  }, 1000)
+}
+function clearTimeoutTimer() {
+  if (timeoutTimer !== null) {
+    clearInterval(timeoutTimer)
+    timeoutTimer = null
+  }
+}
 
 // 每次打开重置内部状态
 watch(
@@ -92,14 +120,19 @@ watch(
       inputValue.value = ''
       selectValue.value = props.options && props.options.length > 0 ? props.options[0] : ''
       editorValue.value = ''
+      startTimeout()
+    } else {
+      clearTimeoutTimer()
     }
   },
 )
 
 function onSubmit(answer: string) {
+  clearTimeoutTimer()
   emit('submit', (answer || '').toString().trim())
 }
 function onCancel() {
+  clearTimeoutTimer()
   emit('cancel', '')
 }
 </script>
@@ -134,6 +167,14 @@ function onCancel() {
   margin: 12px 0 14px;
   line-height: 1.5;
   white-space: pre-wrap;
+}
+.ask-user-timeout {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  color: #909399;
+  margin: -6px 0 10px;
 }
 .ask-user-actions {
   display: flex;

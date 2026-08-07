@@ -104,6 +104,7 @@ import { readAgentFileApi, type AgentFileReadResult } from '@/api/agent'
 import { useMarkdown } from '@/composables/useMarkdown'
 // docx / xlsx 预览（参考传统审查 TaskDetails 的 DocxPreviewPanel / ExcelPreviewPanel 方案）
 import mammoth from 'mammoth'
+import DOMPurify from 'dompurify'
 import * as XLSX from 'xlsx'
 
 const props = defineProps<{
@@ -180,7 +181,9 @@ async function parseDocx(base64: string) {
     const bytes = new Uint8Array(bin.length)
     for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i)
     const result = await mammoth.convertToHtml({ arrayBuffer: bytes.buffer })
-    docxHtml.value = result.value
+    // 安全修复：mammoth 输出直接 v-html 存在 XSS 注入面（docx 内嵌 HTML 可执行脚本），
+    // 经 DOMPurify 白名单清洗后再渲染
+    docxHtml.value = DOMPurify.sanitize(result.value)
   } catch (e: any) {
     console.error('[AgentFileViewer] docx 渲染失败:', e)
     ElMessage.error(`Word 渲染失败：${e?.message || '未知错误'}`)

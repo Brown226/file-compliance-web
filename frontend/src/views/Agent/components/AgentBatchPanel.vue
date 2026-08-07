@@ -173,7 +173,10 @@ function startPoll(id: string) {
         if (currentJob.value.status === 'FAILED') ElMessage.error('批量任务失败')
       }
     } catch (e) {
+      // 修复：轮询异常原实现静默 stopPoll，进度永久卡死无任何提示
       stopPoll()
+      currentJob.value = null
+      ElMessage.error(`批量任务查询失败：${(e as Error)?.message || '网络错误'}（请到「批量」面板重新查询）`)
     }
   }, 2000)
 }

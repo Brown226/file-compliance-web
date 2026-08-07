@@ -19,6 +19,10 @@ export function useAgentChat() {
   const toolPreset = ref<string>('full')
   const thinkingLevel = ref<string | null>(null)
 
+  // Task 44：ask_user 恢复注入 — 用户回复挂起问题后，带 answer 重发，
+  // transport.body 每次请求重新求值，因此置值后会随下一次 sendMessage 透传到后端
+  const pendingAskAnswer = ref<{ requestId: string; answer: string } | null>(null)
+
   // transport 的 headers/body 支持 getter 函数，每次请求都会重新求值，
   // 因此 token 与 sessionId 的变化会被自动带入。
   const transport = new DefaultChatTransport({
@@ -29,6 +33,7 @@ export function useAgentChat() {
       modelKey: modelKey.value,
       toolPreset: toolPreset.value,
       thinkingLevel: thinkingLevel.value,
+      pendingAskAnswer: pendingAskAnswer.value,
     }),
     credentials: 'include',
   })
@@ -111,5 +116,6 @@ export function useAgentChat() {
     isLoading, sessionId,
     modelKey, toolPreset, thinkingLevel, setSettings,
     loadHistory, clearSession, startNewSession,
+    pendingAskAnswer,
   }
 }

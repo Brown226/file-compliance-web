@@ -82,6 +82,12 @@ export function updateSessionSettingsApi(sessionId: string, settings: SessionSet
 export interface AgentModelOption {
   key: string | null  // <providerId>::<modelName>，null = 系统默认
   label: string
+  /** 结构化字段（对齐参考 pi-web modelList: { id, name, provider }[]） */
+  provider?: string
+  modelId?: string
+  name?: string
+  /** 模型配置时是否勾选视觉能力（capabilities.inputModalities 含 image） */
+  vision?: boolean
 }
 
 export interface AgentModelsResponse {
@@ -324,31 +330,7 @@ export function deleteSkillApi(name: string) {
   return request.delete(`/agent/skills/${name}`)
 }
 
-// ===== Worktree 管理（2026-08-03 新增：Agent 多任务规划工作区）=====
-
-export interface WorktreeInfo {
-  path: string
-  branch: string
-  head: string
-  isMain: boolean
-}
-
-/** 列出全部 worktree */
-export function listWorktreesApi() {
-  return request.get<WorktreeInfo[]>('/agent/worktrees')
-}
-
-/** 新建 worktree（新分支） */
-export function createWorktreeApi(branch: string) {
-  return request.post<WorktreeInfo>('/agent/worktrees', { branch })
-}
-
-/** 删除 worktree（仅非主工作区） */
-export function deleteWorktreeApi(path: string) {
-  return request.delete(`/agent/worktrees?path=${encodeURIComponent(path)}`)
-}
-
-/** P2-⑧：Agent 审查结果标记误报（写入误报标记库） */
+// ===== P2-⑧：Agent 审查结果标记误报（写入误报标记库） =====
 export function markAgentIssueFalsePositiveApi(data: {
   originalText: string
   reason?: string
@@ -469,4 +451,18 @@ export function browseDirectoriesApi(path?: string) {
   return request.get<BrowseDirectoriesResult>('/agent/directories/browse', {
     params: path ? { path } : {},
   })
+}
+
+/** Task 44：查询会话是否被 Agent 挂起等待用户回复（ask_user） */
+export interface PendingAskResult {
+  requestId: string
+  question: string
+  method: 'confirm' | 'input' | 'select' | 'editor'
+  options?: string[]
+  timeoutSec: number
+}
+export function getPendingAskApi(sessionId: string) {
+  return request.get<{ success: boolean; data: PendingAskResult | null }>(
+    `/agent/sessions/${sessionId}/pending-ask`,
+  )
 }

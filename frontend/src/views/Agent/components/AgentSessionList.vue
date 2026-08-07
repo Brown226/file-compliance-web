@@ -136,6 +136,8 @@ const emit = defineEmits<{
   select: [sessionId: string]
   'new-chat': []
   'open-config': [type: 'models' | 'skills' | 'memory']
+  /** 当前正在查看的会话被删除（父组件需清理本地状态，防止继续向已删会话发送消息） */
+  'deleted-current': []
 }>()
 
 const sessions = ref<SessionListItem[]>([])
@@ -209,6 +211,11 @@ async function doDelete(sessionId: string) {
     await deleteSessionApi(sessionId)
     sessions.value = sessions.value.filter(s => s.id !== sessionId)
     confirmDeleteId.value = null
+    // 修复：删除当前查看的会话时通知父组件清理消息/会话状态，
+    // 否则 UI 仍显示已删会话，继续发送会重建空会话
+    if (props.currentSessionId === sessionId) {
+      emit('deleted-current')
+    }
     // [无弹窗] 成功提示已移除：ElMessage.success('会话已删除')
   } catch (e: any) {
     ElMessage.error(`删除失败: ${e?.message || e}`)

@@ -41,8 +41,11 @@ async function loadReport() {
       errorMsg.value = '缺少报告 URL 参数（src）'
       return
     }
-    // fetch Markdown 原文（/uploads/ 走 express.static，无需鉴权 header）
-    const res = await fetch(src)
+    // /uploads/agent_temp/** 已加 JWT 鉴权：token 由父页面经外层 query 传入（window.open 追加），
+    // 这里取出并拼到 src 上，否则静态服务返回 401
+    const token = new URLSearchParams(window.location.search).get('token')
+    const fetchUrl = token ? `${src}${src.includes('?') ? '&' : '?'}token=${encodeURIComponent(token)}` : src
+    const res = await fetch(fetchUrl)
     if (!res.ok) {
       throw new Error(`加载失败 (${res.status})`)
     }

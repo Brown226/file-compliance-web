@@ -63,7 +63,7 @@
           <button
             class="model-select-btn"
             :disabled="isLoading"
-            :title="'选择会话使用的模型（清空 = 系统默认）'"
+            :title="modelButtonTitle"
             @click.stop="toggleModelDropdown"
           >
             <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="16" rx="2" /><rect x="9" y="9" width="6" height="6" /><line x1="9" y1="1" x2="9" y2="4" /><line x1="15" y1="1" x2="15" y2="4" /><line x1="9" y1="20" x2="9" y2="23" /><line x1="15" y1="20" x2="15" y2="23" /><line x1="20" y1="9" x2="23" y2="9" /><line x1="20" y1="14" x2="23" y2="14" /><line x1="1" y1="9" x2="4" y2="9" /><line x1="1" y1="14" x2="4" y2="14" /></svg>
@@ -92,9 +92,11 @@
                   <svg v-if="isActiveModel(opt)" width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="var(--accent)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="opt-check"><polyline points="1.5 5 4 7.5 8.5 2.5" /></svg>
                   <span v-else class="opt-placeholder" />
                   <span class="opt-label">{{ opt.label }}</span>
+                  <svg v-if="opt.vision" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="var(--text-dim)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" class="opt-vision" title="支持图像输入"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8S1 12 1 12Z" /><circle cx="12" cy="12" r="3" /></svg>
                 </button>
               </template>
-              <div v-if="modelGroups.length === 0" class="model-no-results">无匹配模型</div>
+              <div v-if="hasNoModels" class="model-no-results">无可用模型</div>
+              <div v-else-if="hasNoMatches" class="model-no-results">无匹配模型</div>
             </div>
           </div>
         </div>
@@ -222,34 +224,70 @@ function removeImage(i: number) {
   emit('update:attachedImages', next)
 }
 
-// ===== 模型选择器（对齐参考：按钮 + 下拉面板 + provider 分组）=====
+// ===== 模型选择器（对齐参考 pi-web ChatInput：按钮 + fixed 面板 + provider 分组 + 数字感知排序）=====
 const modelDropdownRef = ref<HTMLDivElement | null>(null)
 const modelDropdownOpen = ref(false)
 const modelFilter = ref('')
 const MODEL_FILTER_THRESHOLD = 8
 const showModelFilter = computed(() => props.modelOptions.length > MODEL_FILTER_THRESHOLD)
 
+/** 数字感知排序（对齐 pi-web compareModelOptions：Intl.Collator numeric + base） */
+const MODEL_OPTION_COLLATOR = new Intl.Collator(undefined, { numeric: true, sensitivity: 'base' })
+function compareModelOptions(a: AgentModelOption, b: AgentModelOption): number {
+  const an = a.name || a.label
+  const bn = b.name || b.label
+  const ap = a.provider || ''
+  const bp = b.provider || ''
+  const am = a.modelId || a.label
+  const bm = b.modelId || b.label
+  return MODEL_OPTION_COLLATOR.compare(an, bn)
+    || MODEL_OPTION_COLLATOR.compare(ap, bp)
+    || MODEL_OPTION_COLLATOR.compare(am, bm)
+}
+
+/** 过滤：匹配 name + modelId（对齐 pi-web filterModelOptions，同时保留 label 兼容） */
+function filterModelOptions(options: AgentModelOption[], query: string): AgentModelOption[] {
+  const q = query.trim().toLocaleLowerCase()
+  if (!q) return options
+  return options.filter(o => {
+    const hay = `${o.name || ''} ${o.modelId || ''} ${o.label}`
+    return hay.toLocaleLowerCase().includes(q)
+  })
+}
+
 const currentModelName = computed(() => {
-  if (!props.modelKey) return '系统默认'
+  if (!props.modelKey) {
+    // 无选中时显示第一个可用模型（默认选中由父组件保证，这里兜底显示）
+    const first = props.modelOptions[0]
+    if (first) return first.label
+    return '选择模型'
+  }
   const m = props.modelOptions.find(o => o.key === props.modelKey)
   if (m) return m.label
   const last = props.modelKey.split('::').pop()
   return last ?? props.modelKey
 })
 
+const modelButtonTitle = computed(() =>
+  props.modelOptions.length > 0 ? '选择会话使用的模型' : '暂无可用模型'
+)
+
 interface ModelGroup { provider: string; options: AgentModelOption[] }
 const modelGroups = computed<ModelGroup[]>(() => {
-  const q = modelFilter.value.trim().toLowerCase()
+  const filtered = filterModelOptions(props.modelOptions, modelFilter.value)
+  const sorted = [...filtered].sort(compareModelOptions)
   const groups: ModelGroup[] = []
-  for (const m of props.modelOptions) {
-    if (q && !m.label.toLowerCase().includes(q)) continue
-    const provider = m.key ? m.key.split('::')[0] || '其他' : '系统默认'
+  for (const m of sorted) {
+    const provider = m.provider || (m.key ? m.key.split('::')[0] || '其他' : '系统默认')
     const g = groups.find(x => x.provider === provider)
     if (g) g.options.push(m)
     else groups.push({ provider, options: [m] })
   }
   return groups
 })
+
+const hasNoModels = computed(() => props.modelOptions.length === 0)
+const hasNoMatches = computed(() => props.modelOptions.length > 0 && modelGroups.value.length === 0)
 
 function isActiveModel(opt: AgentModelOption): boolean {
   return opt.key === props.modelKey
@@ -261,7 +299,10 @@ function toggleModelDropdown() {
 }
 
 function selectModel(opt: AgentModelOption) {
-  emit('model-change', opt.key ?? null)
+  // 对齐 pi-web：点击当前激活模型时也触发（若当前是自动选择则显式固定），否则关闭
+  if (!isActiveModel(opt)) {
+    emit('model-change', opt.key ?? null)
+  }
   modelDropdownOpen.value = false
   modelFilter.value = ''
 }
@@ -627,7 +668,7 @@ onBeforeUnmount(() => document.removeEventListener('mousedown', onDocMouseDown))
   border-radius: 8px;
   box-shadow: 0 -4px 16px rgba(0, 0, 0, 0.10);
   overflow: hidden;
-  max-height: 320px;
+  max-height: min(320px, calc(100vh - 90px));
 }
 .model-filter {
   padding: 6px 8px;
@@ -680,7 +721,7 @@ onBeforeUnmount(() => document.removeEventListener('mousedown', onDocMouseDown))
   text-align: left;
   white-space: nowrap;
 }
-.model-option:hover {
+.model-option:hover:not(.active) {
   background: var(--bg-hover);
 }
 .model-option.active {
@@ -700,6 +741,20 @@ onBeforeUnmount(() => document.removeEventListener('mousedown', onDocMouseDown))
   overflow: hidden;
   text-overflow: ellipsis;
   min-width: 0;
+}
+.opt-vision {
+  flex-shrink: 0;
+  margin-left: auto;
+  padding-left: 8px;
+  opacity: 0.75;
+}
+.model-option.active .opt-vision {
+  stroke: var(--accent);
+  opacity: 1;
+}
+.model-option:hover:not(.active) .opt-vision {
+  stroke: var(--text-muted);
+  opacity: 1;
 }
 .model-no-results {
   padding: 8px 12px;

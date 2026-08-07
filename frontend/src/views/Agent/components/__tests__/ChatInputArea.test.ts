@@ -5,7 +5,7 @@
  * - 输入文本 → emit update:inputValue
  * - 发送：空输入且无图片时禁用；有内容时点击/回车 → emit send
  * - isLoading → 显示停止按钮 → emit stop
- * - 模型选择：默认显示「系统默认」→ 打开下拉 → 选择 → emit model-change
+ * - 模型选择：无选中时兜底显示第一个可用模型 → 打开下拉 → 选择 → emit model-change
  * - 图片移除 → emit update:attachedImages
  *
  * el-upload 用 stub（上传走父组件，这里不测）。
@@ -74,9 +74,14 @@ describe('输入与发送', () => {
 })
 
 describe('模型选择', () => {
-  it('modelKey 为空 → 显示「系统默认」', () => {
+  it('modelKey 为空 → 兜底显示第一个可用模型', () => {
     const wrapper = mountInput()
-    expect(wrapper.find('.model-current').text()).toBe('系统默认')
+    expect(wrapper.find('.model-current').text()).toBe('模型A')
+  })
+
+  it('无任何模型 → 显示「选择模型」', () => {
+    const wrapper = mountInput({ modelOptions: [] })
+    expect(wrapper.find('.model-current').text()).toBe('选择模型')
   })
 
   it('modelKey 命中选项 → 显示模型标签', () => {

@@ -19,6 +19,7 @@
         @select="handleSelectSession"
         @new-chat="handleNewChat"
         @open-config="handleOpenConfig"
+        @deleted-current="handleDeletedCurrentSession"
       />
     </aside>
 
@@ -556,6 +557,17 @@
     >
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" /><line x1="15" y1="3" x2="15" y2="21" /></svg>
     </button>
+
+    <!-- Task 44：ask_user 主动提问对话框（四形态） -->
+    <AskUserDialog
+      :visible="askDialogVisible"
+      :question="askPending?.question || ''"
+      :method="askPending?.method || 'input'"
+      :options="askPending?.options"
+      :timeout-sec="askPending?.timeoutSec"
+      @submit="onSubmitAsk"
+      @cancel="onCancelAsk"
+    />
   </div>
 </template>
 
@@ -608,6 +620,8 @@ import AgentLibraryPanel from './components/AgentLibraryPanel.vue'
 import AgentBatchPanel from './components/AgentBatchPanel.vue'
 import ChatInputArea from './components/ChatInputArea.vue'
 import ChatMinimap from './components/ChatMinimap.vue'
+import AskUserDialog from './components/AskUserDialog.vue'
+import { getPendingAskApi, type PendingAskResult } from '@/api/agent'
 import './agent-theme.css'
 
 const userStore = useUserStore()
@@ -625,7 +639,7 @@ function toggleTheme() {
     localStorage.setItem(THEME_STORAGE_KEY, isDark.value ? '1' : '0')
   } catch { /* ignore */ }
 }
-const { messages, sendMessage, stop, regenerate, isLoading, sessionId, loadHistory, clearSession, startNewSession, modelKey, toolPreset, thinkingLevel, setSettings } = useAgentChat()
+const { messages, sendMessage, stop, regenerate, isLoading, status, error, sessionId, loadHistory, clearSession, startNewSession, modelKey, toolPreset, thinkingLevel, setSettings, pendingAskAnswer } = useAgentChat()
 
 const sessionListRef = ref<InstanceType<typeof AgentSessionList> | null>(null)
 
@@ -823,7 +837,9 @@ function handleJumpToSession(targetSessionId: string) {
   }
   // 会话切换后由 watch(sessionId) 加载消息；这里聚焦到消息区
   nextTick(() => {
-    const el = document.querySelector('.chat-messages-container')
+    // 修复：原选择器 '.chat-messages-container' 与模板实际类名 '.messages-container' 不符，
+    // 搜索跳转后滚动定位始终无效。改用模板 ref 直接定位。
+    const el = messagesContainer.value
     if (el) el.scrollTop = el.scrollHeight
   })
 }
@@ -960,6 +976,15 @@ async function loadModelOptions() {
   try {
     const res = await listAgentModelsApi()
     modelOptions.value = res.data.models
+    // 无「系统默认」概念：modelKey 为空或已不在列表中时，默认选中第一个配置模型
+    if (modelOptions.value.length > 0) {
+      const current = modelKey.value
+      const valid = current && modelOptions.value.some(o => o.key === current)
+      if (!valid) {
+        modelKey.value = modelOptions.value[0].key ?? null
+        if (sessionId.value) persistSessionSettings()
+      }
+    }
   } catch { /* 静默失败：选择器保持为空 */ }
 }
 loadModelOptions()
@@ -1042,8 +1067,20 @@ function handleNewChat() {
   attachedImages.value = []
   openingFilePath.value = null
   stats.value = null
-  setSettings({ modelKey: null, toolPreset: 'full', thinkingLevel: null })
+  // 无「系统默认」：新建会话默认选中第一个配置模型
+  const firstKey = modelOptions.value[0]?.key ?? null
+  setSettings({ modelKey: firstKey, toolPreset: 'full', thinkingLevel: null })
   // 立即刷新会话列表（新会话可能已由 startNewSession 生成）
+  sessionListRef.value?.refresh?.()
+}
+
+/** 删除当前会话后清理本地状态（修复：原实现删除后 UI 仍显示已删会话，继续发送会重建空会话） */
+function handleDeletedCurrentSession() {
+  startNewSession()
+  uploadedFiles.value = []
+  attachedImages.value = []
+  openingFilePath.value = null
+  stats.value = null
   sessionListRef.value?.refresh?.()
 }
 
@@ -1092,23 +1129,37 @@ function handleOpenConfig(type: 'models' | 'skills' | 'memory') {
   configDialogs[type] = true
 }
 
-/** 将粘贴的图片 dataUrl 上传到服务器，返回 filePath（失败返回 null） */
+/** 将粘贴的图片 dataUrl 上传到服务器，返回 filePath（失败抛错，由调用方提示） */
 async function uploadImageDataUrl(dataUrl: string): Promise<string | null> {
+  // 从 dataUrl 推导真实扩展名（原实现一律存 .png，jpg 也变 png）
+  const mimeMatch = dataUrl.match(/^data:image\/([a-zA-Z0-9.+-]+);/)
+  const mimeExt = mimeMatch && mimeMatch[1] ? mimeMatch[1].toLowerCase().replace('jpeg', 'jpg') : 'png'
+  const blob = await (await fetch(dataUrl)).blob()
+  const formData = new FormData()
+  formData.append('file', blob, `paste-${Date.now()}.${mimeExt}`)
+  if (sessionId.value) formData.append('sessionId', sessionId.value)
+  // 上传加 60s 超时 + 401 明确提示（原实现原生 fetch 无超时无错误处理，失败静默丢弃）
+  const controller = new AbortController()
+  const timeoutId = setTimeout(() => controller.abort(), 60_000)
   try {
-    const blob = await (await fetch(dataUrl)).blob()
-    const formData = new FormData()
-    formData.append('file', blob, `paste-${Date.now()}.png`)
-    if (sessionId.value) formData.append('sessionId', sessionId.value)
     const res = await fetch('/api/agent/upload', {
       method: 'POST',
       headers: { Authorization: `Bearer ${userStore.token}` },
       body: formData,
+      signal: controller.signal,
     })
-    if (!res.ok) return null
+    if (!res.ok) {
+      if (res.status === 401) throw new Error('登录已过期，请重新登录')
+      const errText = await res.text().catch(() => '')
+      throw new Error(errText || `上传失败 (${res.status})`)
+    }
     const data = await res.json()
     return data?.data?.filePath ?? null
-  } catch {
-    return null
+  } catch (e: any) {
+    if (e?.name === 'AbortError') throw new Error('图片上传超时（60s），请重试')
+    throw e
+  } finally {
+    clearTimeout(timeoutId)
   }
 }
 
@@ -1237,10 +1288,26 @@ function extractReportLinks(message: UIMessage): ReportLink[] {
   return links
 }
 
-function downloadMd(url: string, fileName?: string) {
-  const a = document.createElement('a'); a.href = url; a.download = fileName || ''; document.body.appendChild(a); a.click(); document.body.removeChild(a)
+/**
+ * /uploads/agent_temp/** 已加 JWT 鉴权（后端 2026-08-07 修复）：
+ * 为下载/打印链接追加 token query，保证登录用户仍可访问（非 agent_temp 路径原样返回）
+ */
+function withToken(url: string): string {
+  // 判断依据：URL 中含 /uploads/agent_temp（下载链接以它开头；
+  // 打印页是 /agent/report-print?src=/uploads/... 前端路由，token 需加在外层 query）
+  if (!url || !url.includes('/uploads/agent_temp')) return url
+  const sep = url.includes('?') ? '&' : '?'
+  return `${url}${sep}token=${encodeURIComponent(userStore.token)}`
 }
-function openPrintPage(printUrl: string) { window.open(printUrl, '_blank', 'noopener,noreferrer') }
+
+function downloadMd(url: string, fileName?: string) {
+  const a = document.createElement('a'); a.href = withToken(url); a.download = fileName || ''; document.body.appendChild(a); a.click(); document.body.removeChild(a)
+}
+function openPrintPage(printUrl: string) {
+  // 打印页自身是前端路由（/agent/report-print），token 追加在外层 URL 的 query，
+  // ReportPrint.vue 读取 location.search 中的 token 后再请求 /uploads 原文
+  window.open(withToken(printUrl), '_blank', 'noopener,noreferrer')
+}
 
 const showTypingIndicator = computed(() => {
   if (!isLoading.value) return false
@@ -1283,8 +1350,13 @@ async function handleSend() {
   if (attachedImages.value.length > 0) {
     const paths: string[] = []
     for (const img of attachedImages.value) {
-      const p = await uploadImageDataUrl(img.dataUrl)
-      if (p) paths.push(p)
+      try {
+        const p = await uploadImageDataUrl(img.dataUrl)
+        if (p) paths.push(p)
+      } catch (e) {
+        // 修复：图片上传失败不再静默丢弃（用户以为已发送实际没发）
+        ElMessage.error(`图片上传失败：${(e as Error)?.message || '未知错误'}`)
+      }
     }
     if (paths.length > 0) parts.push(`[已上传图片：${paths.join('、')}]`)
     attachedImages.value = []
@@ -1313,7 +1385,16 @@ async function customUpload(options: { file: File }) {
     }
     const formData = new FormData(); formData.append('file', file)
     if (sessionId.value) formData.append('sessionId', sessionId.value)
-    const res = await fetch('/api/agent/upload', { method: 'POST', headers: { Authorization: `Bearer ${userStore.token}` }, body: formData })
+    // 上传加 60s 超时 + 401 明确提示（原实现无超时，失败仅靠外层 catch）
+    const controller = new AbortController()
+    const timeoutId = setTimeout(() => controller.abort(), 60_000)
+    let res: Response
+    try {
+      res = await fetch('/api/agent/upload', { method: 'POST', headers: { Authorization: `Bearer ${userStore.token}` }, body: formData, signal: controller.signal })
+    } finally {
+      clearTimeout(timeoutId)
+    }
+    if (res.status === 401) throw new Error('登录已过期，请重新登录')
     if (!res.ok) { const errText = await res.text().catch(() => ''); throw new Error(errText || `上传失败 (${res.status})`) }
     const data = await res.json()
     if (data?.data?.sessionId) sessionId.value = data.data.sessionId
@@ -1384,6 +1465,22 @@ watch(messages, () => {
   })
 }, { flush: 'post', deep: false })
 
+// 流式错误提示（修复：原实现 error 解构后无人消费，流中断/500/断网完全静默——
+// ai-sdk useChat 内部把错误置入 error 且不 reject promise，用户看到的是"空会话"）
+watch(error, (err) => {
+  if (err) {
+    const msg = (err as any)?.message || String(err)
+    console.error('[Agent] 流式对话错误:', msg)
+    ElMessage.error(`对话中断：${msg.slice(0, 200)}${msg.length > 200 ? '…' : ''}（可点击停止后重发）`)
+  }
+})
+// status 变 error 时同样提示（部分路径 error 对象可能为空但 status 已置 error）
+watch(status, (s, prev) => {
+  if (s === 'error' && prev !== 'error') {
+    ElMessage.error('对话流已中断，请重试发送或刷新页面')
+  }
+})
+
 // 流式结束时刷新 token 统计 + 强制重建 tool part（ai-sdk useChat 的 messages 是 shallowRef，
 // 流式过程中 tool part 的 state/input/output 原地修改不触发重渲染，
 // 导致工具调用块始终停留在"执行中"。流结束时重建 part 对象，让 Vue 渲染出最终状态）
@@ -1392,6 +1489,8 @@ watch(isLoading, (now, prev) => {
     refreshStats()
     sessionListRef.value?.refresh?.()
     forceRefreshMessages()
+    // Task 44：流式结束检测是否有挂起提问
+    scheduleCheckPendingAsk()
   }
 })
 
@@ -1402,6 +1501,61 @@ function forceRefreshMessages() {
     ...m,
     parts: (m.parts || []).map((p: any) => ({ ...p })),
   })) as any
+}
+
+// ============================================================
+// Task 44：ask_user 主动提问 — 挂起检测 + 提问对话框 + 回复重发
+// ============================================================
+const askDialogVisible = ref(false)
+const askPending = ref<PendingAskResult | null>(null)
+// 轮询挂起提问时的防重入（避免流未完全结束就轮询）
+let askPollTimer: number | null = null
+
+/** 流式结束后检测会话是否被 Agent 挂起 */
+async function checkPendingAsk() {
+  const sid = sessionId.value
+  if (!sid) return
+  try {
+    const res = await getPendingAskApi(sid)
+    const data = res.data?.data || null
+    if (data) {
+      askPending.value = data
+      askDialogVisible.value = true
+    }
+  } catch {
+    // 轮询失败静默（如路由未就绪），不影响主流程
+  }
+}
+
+/** 用户提交回复 → 带 pendingAskAnswer 重发，Agent 续跑 */
+async function onSubmitAsk(answer: string) {
+  const data = askPending.value
+  if (!data) return
+  askDialogVisible.value = false
+  pendingAskAnswer.value = { requestId: data.requestId, answer }
+  await sendMessage({ text: `[用户回复] ${answer}` })
+  pendingAskAnswer.value = null
+  askPending.value = null
+}
+
+function onCancelAsk() {
+  const data = askPending.value
+  askDialogVisible.value = false
+  askPending.value = null
+  if (!data) return
+  // 取消 = 用「[用户取消]」信号重发一次，让后端 resolvePendingById 取出并关闭挂起，
+  // 避免下次流式结束重复弹窗
+  pendingAskAnswer.value = { requestId: data.requestId, answer: '[用户取消]' }
+  sendMessage({ text: '[用户取消]' }).catch(() => {})
+  pendingAskAnswer.value = null
+}
+
+/** 在流式结束的 watch 里触发检测（延后一拍，确保消息已落盘） */
+function scheduleCheckPendingAsk() {
+  if (askPollTimer) window.clearTimeout(askPollTimer)
+  askPollTimer = window.setTimeout(() => {
+    checkPendingAsk()
+  }, 300)
 }
 
 // 会话变化时刷新统计
