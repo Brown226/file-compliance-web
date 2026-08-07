@@ -27,6 +27,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { z } from 'zod';
+import { getAgentTempRoot } from './paths';
 import { fixMojibakePath } from './filename';
 import type { ToolContext } from './upload_file';
 
@@ -69,7 +70,8 @@ async function extractTextFromDocParser(filePath: string, ext: string): Promise<
   const parserBaseUrl = process.env.PARSER_SERVICE_URL || 'http://localhost:8000';
   const parseUrl = `${parserBaseUrl}/api/parse`;
 
-  const response = await fetch(parseUrl, { method: 'POST', body: formData });
+      // 修复：doc-parser 不可达时原实现无限挂起，加 90s 显式超时
+      const response = await fetch(parseUrl, { method: 'POST', body: formData, signal: AbortSignal.timeout(90_000) });
   if (!response.ok) {
     const errText = await response.text().catch(() => response.statusText);
     throw new Error(`doc-parser 调用失败 (HTTP ${response.status}): ${errText}`);
@@ -136,20 +138,9 @@ export function createReadFileTool(context: ToolContext) {
       endLine: z.number().int().min(1).optional().describe('结束行号（默认 startLine + 1999，最大 2000 行窗口）'),
     }),
     execute: async ({ filePath, startLine, endLine }): Promise<ReadFileResult> => {
-      // 兼容历史乱码路径：multer 曾把中文文件名按 latin1 存盘，若给定路径不存在，
-      // 尝试把路径中各段乱码名修复为 UTF-8 后再访问
-      if (!fs.existsSync(filePath)) {
-        const fixed = fixMojibakePath(filePath);
-        if (fixed !== filePath && fs.existsSync(fixed)) {
-          filePath = fixed;
-        } else {
-          throw new Error(`文件不存在: ${filePath}`);
-        }
-      }
-
-      // 路径安全校验：只能读 Agent 临时目录下的文件
-      // uploadsRoot = backend/uploads/agent_temp
-      const uploadsRoot = path.join(__dirname, '../../../../../uploads/agent_temp');
+      // 路径安全校验前置（原实现先 existsSync 探测任意绝对路径的存在性，
+      // 越权路径会泄露存在性信息）
+      const uploadsRoot = getAgentTempRoot();
       const normalizedRoot = path.resolve(uploadsRoot);
       const normalizedPath = path.resolve(filePath);
       if (!normalizedPath.startsWith(normalizedRoot + path.sep) && normalizedPath !== normalizedRoot) {
@@ -160,6 +151,17 @@ export function createReadFileTool(context: ToolContext) {
       const expectedUserDir = path.join(normalizedRoot, context.userId);
       if (!normalizedPath.startsWith(expectedUserDir + path.sep) && normalizedPath !== expectedUserDir) {
         throw new Error('路径越权：只能读取当前用户上传的文件');
+      }
+
+      // 兼容历史乱码路径：multer 曾把中文文件名按 latin1 存盘，若给定路径不存在，
+      // 尝试把路径中各段乱码名修复为 UTF-8 后再访问
+      if (!fs.existsSync(filePath)) {
+        const fixed = fixMojibakePath(filePath);
+        if (fixed !== filePath && fs.existsSync(fixed)) {
+          filePath = fixed;
+        } else {
+          throw new Error(`文件不存在: ${filePath}`);
+        }
       }
 
       const fileName = path.basename(filePath);

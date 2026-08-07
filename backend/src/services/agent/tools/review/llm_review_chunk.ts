@@ -34,6 +34,9 @@ const { tool } = require('@ai-sdk/provider-utils') as typeof import('@ai-sdk/pro
 const SYSTEM_PROMPT_FALLBACK =
   '你是文件审查专家，请按规范输出问题列表。每个问题必须包含 issueType 和 originalText 字段，严格按照 JSON 数组格式输出。';
 
+/** 单次审查文本上限（字符）：防止整份超大文档打爆上下文或挂起（截断后行号定位仍有效） */
+export const MAX_REVIEW_TEXT_CHARS = 100000;
+
 /**
  * 有参考知识（context）注入时的 standardRef 约束段。
  * 仅在 context 注入时追加：要求引用审点必须带 standardRef，且禁止编造条文；
@@ -89,13 +92,21 @@ export async function backfillStandardRefs(
     }
 
     // 2. 按 ruleCode 去重反查，找到即停（逐标准早退）
+    //    N+1 防护：标准数量截断（最多 10 个）+ 总查询预算（60 次），
+    //    原实现最坏 50 标准 × 50 ruleCode = 2500 次串行 DB 查询，阻塞工具执行路径
+    const MAX_BACKFILL_STANDARDS = 10;
+    const MAX_BACKFILL_QUERIES = 60;
+    const standards = listResult.standards.slice(0, MAX_BACKFILL_STANDARDS);
+    let queryBudget = MAX_BACKFILL_QUERIES;
     const refByRuleCode = new Map<string, string | null>();
     for (const issue of missing) {
       const ruleCode = String(issue.ruleCode).trim();
       if (!ruleCode || refByRuleCode.has(ruleCode)) continue;
 
       let ref: string | null = null;
-      for (const std of listResult.standards) {
+      for (const std of standards) {
+        if (ref || queryBudget <= 0) break;
+        queryBudget -= 1;
         if (ref) break;
         const cpRes = (await searchTool.execute(
           {
@@ -261,11 +272,23 @@ export function createLlmReviewChunkTool(_context: ToolContext) {
       // 5. 调 LlmService.reviewText
       //    skipUserTemplate=true：直接用 text 作为 user content（调用方已自行组装）
       //    mode=module：用于 LlmCallLog 可观测性关联
-      let issues = await LlmService.reviewText(text, {
-        systemPrompt,
-        mode: module,
-        skipUserTemplate: true,
-      });
+      // 预算保护：text 超长截断（防整份超大文档打爆上下文/挂起），
+      // 并显式传 maxTokens/timeout（原实现不传，超长输入直接挂起）
+      if (text.length > MAX_REVIEW_TEXT_CHARS) {
+        console.warn(`[llm_review_chunk] text 超长（${text.length} 字符），截断至 ${MAX_REVIEW_TEXT_CHARS}`);
+      }
+      let issues = await LlmService.reviewText(
+        text.length > MAX_REVIEW_TEXT_CHARS
+          ? text.slice(0, MAX_REVIEW_TEXT_CHARS)
+          : text,
+        {
+          systemPrompt,
+          mode: module,
+          skipUserTemplate: true,
+          maxTokens: 2048,
+          timeout: 90,
+        },
+      );
 
       // 6. 后处理：ruleCode 存在但 standardRef 为空时，反查审点库回填（查不到保持空，不覆盖已有引用）
       const searchTool = createSearchStandardCheckpointsTool(_context);

@@ -123,12 +123,12 @@ export function createExtractTablesTool(context: ToolContext) {
       toCsv: z.boolean().optional().default(false).describe('是否把表格转换为 CSV 文本返回（默认 false）'),
     }),
     execute: async ({ filePath, sheet, toCsv }): Promise<ExtractTablesResult> => {
+      // 安全修复：用户隔离校验前置（原实现先 existsSync 探测任意绝对路径的存在性）
+      assertUserFilePath(filePath, context.userId);
+
       if (!fs.existsSync(filePath)) {
         throw new Error(`文件不存在: ${filePath}`);
       }
-
-      // 安全修复：用户隔离校验，只能读取当前用户 agent_temp 目录下的文件
-      assertUserFilePath(filePath, context.userId);
 
       const fileName = path.basename(filePath);
       const ext = path.extname(fileName).toLowerCase().replace('.', '');

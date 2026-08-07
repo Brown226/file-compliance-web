@@ -183,6 +183,14 @@ export function createLlmCrossCheckTool(_context: ToolContext) {
         };
       }
 
+      // 预算保护：issues 总量上限（每批 LLM 核验 15 条 ≈ 每次调用 timeout 60s，
+      // 无上限时 1000 条 = 67 批串行调用，总时长无封顶）
+      const MAX_CROSS_CHECK_ISSUES = 200;
+      if (issues.length > MAX_CROSS_CHECK_ISSUES) {
+        console.warn(`[Agent:llm_cross_check] issues ${issues.length} 超上限，截断至 ${MAX_CROSS_CHECK_ISSUES}（超出的部分跳过 LLM 核验）`);
+        issues = issues.slice(0, MAX_CROSS_CHECK_ISSUES) as any;
+      }
+
       // 第一步：精确去重
       const exactResult = deduplicateExact(issues as ReviewIssue[]);
       let current = exactResult.deduped;

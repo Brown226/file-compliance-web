@@ -18,7 +18,8 @@ import * as fs from 'fs';
 import crypto from 'crypto';
 import { redisClient } from '../../../utils/redis';
 
-/** 可缓存的工具名集合（幂等 + 结果稳定的工具） */
+/** 可缓存的工具名集合（幂等 + 结果稳定的工具）
+ * 注：list_uploads 已移出（结果依赖文件系统状态，24h 缓存会导致新上传文件不可见）。 */
 export const CACHEABLE_TOOLS = new Set([
   'extract_text',
   'chunk_document',
@@ -27,7 +28,6 @@ export const CACHEABLE_TOOLS = new Set([
   'search_standard_checkpoints',
   'list_available_rules',
   'read_file',
-  'list_uploads',
   'compare_documents',
   'extract_tables',
 ]);
@@ -36,8 +36,9 @@ export const CACHEABLE_TOOLS = new Set([
  * 缓存键与「文件内容」绑定的工具集合（P1-⑫）：
  * 这些工具的结果只依赖文件内容 + 参数（如 chunk_document 的 strategy），
  * 与参数里的 filePath 字符串本身无关，因此 key 必须包含文件内容指纹。
+ * read_file 同此：edit_file 修改文件后若仍按 filePath 缓存，24h 内读到陈旧内容。
  */
-const FILE_CONTENT_KEY_TOOLS = new Set(['extract_text', 'chunk_document', 'extract_tables']);
+const FILE_CONTENT_KEY_TOOLS = new Set(['extract_text', 'chunk_document', 'extract_tables', 'read_file']);
 
 /** 内容 hash 计算的文件大小上限（字节）：超过该大小只取 stat（size+mtime），避免读大文件拖慢缓存 */
 const CONTENT_HASH_MAX_BYTES = 10 * 1024 * 1024; // 10MB

@@ -34,19 +34,30 @@ export function createAskUserTool(context: ToolContext) {
       'method=input 适用于缺一个参数值；method=select 适用于多义时让用户从选项中选一个；' +
       'method=editor 适用于让用户补充一段多行说明。' +
       '返回 { status:"awaiting_user", requestId, question, method, options? } 表示已挂起等待用户回复。',
-    inputSchema: z.object({
-      question: z.string().min(1).describe('要问用户的问题（清晰、可执行）'),
-      method: z
-        .enum(['confirm', 'input', 'select', 'editor'])
-        .default('input')
-        .describe('提问形态：confirm=确认/取消，input=单行输入，select=选项单选，editor=多行输入'),
-      options: z
-        .array(z.string())
-        .optional()
-        .describe('method=select 时的候选项列表（至少 2 项）'),
-      timeoutSec: z.number().int().min(10).max(600).optional().default(120)
-        .describe('挂起超时秒数（默认 120，超时后前端轮询返回 null）'),
-    }),
+    inputSchema: z
+      .object({
+        question: z.string().min(1).describe('要问用户的问题（清晰、可执行）'),
+        method: z
+          .enum(['confirm', 'input', 'select', 'editor'])
+          .default('input')
+          .describe('提问形态：confirm=确认/取消，input=单行输入，select=选项单选，editor=多行输入'),
+        options: z
+          .array(z.string())
+          .optional()
+          .describe('method=select 时的候选项列表（至少 2 项）'),
+        timeoutSec: z.number().int().min(10).max(600).optional().default(120)
+          .describe('挂起超时秒数（默认 120，超时后前端轮询返回 null）'),
+      })
+      // 修复：select 模式必须提供 ≥2 个选项，否则前端无法渲染（原 schema 未强制）
+      .superRefine((val, ctx) => {
+        if (val.method === 'select' && (!Array.isArray(val.options) || val.options.length < 2)) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            path: ['options'],
+            message: 'method=select 时 options 至少提供 2 项',
+          });
+        }
+      }),
     execute: async ({ question, method, options, timeoutSec }): Promise<any> => {
       const requestId = genRequestId();
       // select 模式必须把选项透传，否则前端无法渲染

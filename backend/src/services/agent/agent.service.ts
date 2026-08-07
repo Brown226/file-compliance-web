@@ -231,8 +231,10 @@ export class AgentService {
     thinkingLevel?: string;
     /** Task 44：ask_user 恢复注入 — 用户已回复挂起问题时的答案透传 */
     pendingAskAnswer?: { requestId: string; answer: string } | null;
+    /** 中止信号：客户端断开/超时时由路由层 abort，streamText 随即取消 LLM 调用 */
+    signal?: AbortSignal;
   }): Promise<any> {
-    const { messages, userId, sessionId, modelKey, toolPreset, toolNames, thinkingLevel, pendingAskAnswer } = params;
+    const { messages, userId, sessionId, modelKey, toolPreset, toolNames, thinkingLevel, pendingAskAnswer, signal } = params;
 
     // 1. 读取 LLM 配置（LlmService.getLlmConfig 是静态方法，带 5 分钟缓存）
     const config = await LlmService.getLlmConfig();
@@ -449,6 +451,10 @@ export class AgentService {
       system: systemPrompt,
       messages: modelMessages,
       tools,
+      // 安全修复：LLM 调用超时/客户端断开中止（路由层通过 signal 传入 AbortController）
+      // 以及输出 token 上限（取模型探测上限，缺省回退 maxTokens），防止网关挂起时请求永久悬挂
+      abortSignal: signal,
+      maxOutputTokens: effConfig.modelMaxOutput ?? effConfig.maxTokens ?? 4096,
       providerOptions: thinkingLevel ? { openai: { reasoningEffort: thinkingLevel } } : undefined,
       stopWhen: (o: any) =>
         isStepCount(10)(o) ||
@@ -601,8 +607,10 @@ export class AgentService {
     messages: any[];
     userId: string;
     sessionId?: string;
+    /** 中止信号：客户端断开/超时时取消 LLM 调用 */
+    signal?: AbortSignal;
   }): Promise<any> {
-    const { messages, userId, sessionId } = params;
+    const { messages, userId, sessionId, signal } = params;
 
     const config = await LlmService.getLlmConfig();
     if (!config) {
@@ -650,6 +658,7 @@ export class AgentService {
       system: systemPrompt,
       messages: modelMessages,
       tools,
+      abortSignal: signal,
       stopWhen: isStepCount(10),
       onToolExecutionEnd: ({ toolCall, toolOutput, toolExecutionMs }: any) => {
         // 工具执行过程由 QAMessage.parts 承载，AgentTrace 链路已移除（2026-08-03）

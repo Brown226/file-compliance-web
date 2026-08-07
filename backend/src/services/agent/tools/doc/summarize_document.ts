@@ -18,6 +18,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { z } from 'zod';
+import { getAgentTempRoot } from '../file/paths';
 import type { ToolContext } from '../file/upload_file';
 import { parseDocument } from '../file/parse-document';
 import { LlmService } from '../../../llm/llm.service';
@@ -39,7 +40,7 @@ function truncate(s: string, max: number): string {
 
 /** 路径校验 */
 function assertReadablePath(context: ToolContext, filePath: string): string {
-  const uploadsRoot = path.join(__dirname, '../../../../../uploads/agent_temp');
+  const uploadsRoot = getAgentTempRoot();
   const normalizedRoot = path.resolve(uploadsRoot);
   const normalizedPath = path.resolve(filePath);
   if (!normalizedPath.startsWith(normalizedRoot + path.sep) && normalizedPath !== normalizedRoot) {

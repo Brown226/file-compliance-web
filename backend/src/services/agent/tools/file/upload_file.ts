@@ -22,6 +22,33 @@ export interface ToolContext {
   sessionId: string;
 }
 
+/** 单次上传大小上限（base64 解码后字节数）：50MB（与 /api/agent/upload 端点一致） */
+export const MAX_UPLOAD_BYTES = 50 * 1024 * 1024;
+
+/**
+ * 拒绝上传的可执行/脚本类扩展名（防 XSS 与恶意文件传播）。
+ * html/htm/svg 是脚本注入载体（前端预览走 iframe/v-html），一并拒绝。
+ */
+const BLOCKED_EXT = new Set([
+  'exe', 'dll', 'msi', 'bat', 'cmd', 'com', 'scr', 'pif', 'reg',
+  'sh', 'bash', 'ps1', 'psm1', 'vbs', 'vbe', 'js', 'jse', 'jar', 'class',
+  'php', 'phtml', 'php3', 'php4', 'php5', 'asp', 'aspx', 'jsp', 'jspx',
+  'html', 'htm', 'svg', 'swf', 'apk', 'app', 'gadget', 'msh',
+]);
+
+/** 净化文件名：仅保留 basename、拒绝空/点/隐藏系统保留名（防目录穿越） */
+export function sanitizeFileName(raw: string): string {
+  const base = path.basename(String(raw || '').trim()).replace(/^\.+$/, '');
+  if (!base || base === '.' || base === '..') {
+    throw new Error('文件名无效：不能为空或路径形式');
+  }
+  const ext = path.extname(base).toLowerCase().replace(/^\./, '');
+  if (BLOCKED_EXT.has(ext)) {
+    throw new Error(`不支持上传 .${ext} 类型的文件（可执行/脚本类文件被拒绝）`);
+  }
+  return base;
+}
+
 /**
  * 创建 upload_file 工具
  *
@@ -48,12 +75,23 @@ export function createUploadFileTool(context: ToolContext) {
       const base64Data = fileBase64.includes(',')
         ? fileBase64.substring(fileBase64.indexOf(',') + 1)
         : fileBase64;
+
+      // 大小上限：base64 长度 ≈ 字节数 * 4/3，先按长度估算拒绝超大输入
+      if (base64Data.length > Math.ceil(MAX_UPLOAD_BYTES * 4 / 3) + 16) {
+        throw new Error(`文件过大：上限 ${Math.round(MAX_UPLOAD_BYTES / 1024 / 1024)}MB`);
+      }
       const buffer = Buffer.from(base64Data, 'base64');
+      if (buffer.length > MAX_UPLOAD_BYTES) {
+        throw new Error(`文件过大：上限 ${Math.round(MAX_UPLOAD_BYTES / 1024 / 1024)}MB`);
+      }
+
+      // 文件名净化：只取 basename + 拒绝可执行/脚本类扩展名（防目录穿越 + XSS 载体）
+      const safeName = sanitizeFileName(fileName);
 
       // 计算存储路径：backend/uploads/agent_temp/{userId}/{YYYY-MM-DD}/{fileName}
       // 按日期划分（跨会话共享当天目录），不再按 sessionId 分区
       const targetDir = getTodayDir(context.userId);
-      const filePath = path.join(targetDir, fileName);
+      const filePath = path.join(targetDir, safeName);
 
       // 创建目录（recursive: true 不会因目录已存在而报错）
       await fs.promises.mkdir(targetDir, { recursive: true });
@@ -63,7 +101,7 @@ export function createUploadFileTool(context: ToolContext) {
 
       return {
         filePath,
-        fileName,
+        fileName: safeName,
         size: buffer.length,
       };
     },

@@ -1,63 +1,35 @@
 /**
- * Prompt 模板化单元测试（任务 7：Agent 办公模板加载）
+ * Prompt 模板化单元测试（Agent 办公模板加载，纯 registry 语义）
  *
- * 覆盖 PromptLoader.resolve 的加载链语义：
- * - DB 不可达 → registry 回退（Agent 办公模板内容可用）
- * - DB content === defaultValue（用户未改）→ 用 registry 最新值（热更新）
- * - DB content !== defaultValue（用户改过）→ 用用户版本
- * - 未知模板 key → 用调用方 fallback
- *
- * 通过 mock prompt-template.service 隔离 prisma。
+ * 管理面板移除后 PromptLoader.resolve 不再查询 DB，prompt 内容以 registry.ts 为准：
+ * - registry 命中 → 返回模板内容（Agent 办公模板）
+ * - 指定 variant 未命中 → 降级到 default variant
+ * - 未知模板 key → 返回调用方 fallback
  */
-import { describe, it, expect, vi, beforeEach } from 'vitest';
-
-const getPromptBySceneWithMetaMock = vi.fn();
-vi.mock('../../llm/prompt-template.service', () => ({
-  PromptTemplateService: {
-    getPromptBySceneWithMeta: (...args: any[]) => getPromptBySceneWithMetaMock(...args),
-    getPrompt: vi.fn(),
-  },
-}));
+import { describe, it, expect } from 'vitest';
 
 import { PromptLoader } from '../../prompts';
 
-beforeEach(() => getPromptBySceneWithMetaMock.mockReset());
-
-const KEY = 'office_contract_review';
-const REGISTRY_DEFAULT = '## 办公模板：合同审查'; // registry.ts 中 content 开头
-
-describe('PromptLoader.resolve（agent 办公模板）', () => {
-  it('DB 不可达/无记录 → registry 回退返回模板内容', async () => {
-    // 返回 undefined 而非 mockRejectedValue/throw：vitest 2.1.9 对 mock 内
-    // 抛出的错误有 unhandled 追踪误报（即使调用方已 catch），
-    // 与 llm-review-chunk.test.ts 同款规避；语义等效（无 meta → registry 回退）
-    getPromptBySceneWithMetaMock.mockResolvedValue(undefined);
-    const content = await PromptLoader.resolve('agent', 'system', KEY, 'FALLBACK');
-    expect(content).toContain(REGISTRY_DEFAULT);
+describe('PromptLoader.resolve（纯 registry 加载）', () => {
+  it('agent 办公模板命中 registry → 返回模板内容', async () => {
+    const content = await PromptLoader.resolve('agent', 'system', 'office_contract_review', 'FALLBACK');
+    expect(content).toContain('## 办公模板：合同审查');
     expect(content).toContain('付款条款');
   });
 
-  it('DB content === defaultValue（用户未改）→ 用 registry 最新值', async () => {
-    getPromptBySceneWithMetaMock.mockResolvedValue({
-      content: '旧版本',
-      defaultValue: '旧版本', // 用户没改 → 用 registry
-    });
-    const content = await PromptLoader.resolve('agent', 'system', KEY, 'FALLBACK');
-    expect(content).toContain(REGISTRY_DEFAULT);
+  it('指定 variant 未命中 → 降级到 default variant', async () => {
+    const content = await PromptLoader.resolve('library_review', 'system', 'no_such_variant', 'FALLBACK');
+    expect(content).not.toBe('FALLBACK');
+    expect(content.length).toBeGreaterThan(0);
   });
 
-  it('DB content !== defaultValue（用户改过）→ 用用户版本', async () => {
-    getPromptBySceneWithMetaMock.mockResolvedValue({
-      content: '管理员自定义模板内容',
-      defaultValue: '旧版本',
-    });
-    const content = await PromptLoader.resolve('agent', 'system', KEY, 'FALLBACK');
-    expect(content).toBe('管理员自定义模板内容');
-  });
-
-  it('未知模板 key → 用调用方 fallback', async () => {
-    getPromptBySceneWithMetaMock.mockResolvedValue(null);
-    const content = await PromptLoader.resolve('agent', 'system', 'not_exist_key', 'MINIMAL');
+  it('未知模块/key → 返回调用方 fallback', async () => {
+    const content = await PromptLoader.resolve('not_a_module', 'system', 'not_exist_key', 'MINIMAL');
     expect(content).toBe('MINIMAL');
+  });
+
+  it('loadSystemPrompt 返回系统提示词', async () => {
+    const content = await PromptLoader.loadSystemPrompt('library_review', { hasContext: false });
+    expect(content.length).toBeGreaterThan(0);
   });
 });

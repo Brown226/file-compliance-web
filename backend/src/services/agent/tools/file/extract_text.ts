@@ -60,6 +60,10 @@ export function createExtractTextTool(context: ToolContext) {
       filePath: z.string().describe('服务端文件绝对路径（由 upload_file 返回）'),
     }),
     execute: async ({ filePath }): Promise<ParseResult> => {
+      // 安全修复：用户隔离校验前置（原实现先 existsSync 探测任意绝对路径，
+      // 越权路径会泄露存在性信息）
+      assertUserFilePath(filePath, context.userId);
+
       // 兼容历史乱码路径：multer 曾把中文文件名按 latin1 存盘，若给定路径不存在，
       // 尝试把路径中各段乱码名修复为 UTF-8 后再访问
       if (!fs.existsSync(filePath)) {
@@ -70,9 +74,6 @@ export function createExtractTextTool(context: ToolContext) {
           throw new Error(`文件不存在: ${filePath}`);
         }
       }
-
-      // 安全修复：用户隔离校验，只能读取当前用户 agent_temp 目录下的文件
-      assertUserFilePath(filePath, context.userId);
 
       const fileName = path.basename(filePath);
       const ext = path.extname(fileName).toLowerCase().replace('.', '');
@@ -101,6 +102,9 @@ export function createExtractTextTool(context: ToolContext) {
       const response = await fetch(parseUrl, {
         method: 'POST',
         body: formData,
+        // 修复：doc-parser 不可达时原实现无限挂起（TCP 超时 1-2 分钟+），
+        // Agent 步骤卡死。加 90s 显式超时，超时后走降级路径。
+        signal: AbortSignal.timeout(90_000),
       });
 
       if (!response.ok) {

@@ -43,7 +43,8 @@ export async function parseWithDocParser(filePath: string, ext: string): Promise
   const parserBaseUrl = process.env.PARSER_SERVICE_URL || 'http://localhost:8000';
   const parseUrl = `${parserBaseUrl}/api/parse`;
 
-  const response = await fetch(parseUrl, { method: 'POST', body: formData });
+      // 修复：doc-parser 不可达时原实现无限挂起，加 90s 显式超时
+      const response = await fetch(parseUrl, { method: 'POST', body: formData, signal: AbortSignal.timeout(90_000) });
   if (!response.ok) {
     const errText = await response.text().catch(() => response.statusText);
     throw new Error(`doc-parser 调用失败 (HTTP ${response.status}): ${errText}`);

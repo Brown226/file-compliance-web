@@ -86,7 +86,8 @@ async function parseWithDocParser(filePath: string, ext: string): Promise<{
   const parserBaseUrl = process.env.PARSER_SERVICE_URL || 'http://localhost:8000';
   const parseUrl = `${parserBaseUrl}/api/parse`;
 
-  const response = await fetch(parseUrl, { method: 'POST', body: formData });
+      // 修复：doc-parser 不可达时原实现无限挂起，加 90s 显式超时
+      const response = await fetch(parseUrl, { method: 'POST', body: formData, signal: AbortSignal.timeout(90_000) });
   if (!response.ok) {
     const errText = await response.text().catch(() => response.statusText);
     throw new Error(`doc-parser 调用失败 (HTTP ${response.status}): ${errText}`);
@@ -246,12 +247,13 @@ export function createChunkDocumentTool(context: ToolContext) {
         .describe('分块策略：auto（默认）/ by_page / by_section / by_paragraph / fixed_4000'),
     }),
     execute: async ({ filePath, strategy }): Promise<ChunkResult> => {
+      // 安全修复：用户隔离校验前置（原实现先 existsSync 探测任意绝对路径的存在性，
+      // 越权路径会得到"存在/不存在"差异信息——存在性检查应只对合法路径执行）
+      assertUserFilePath(filePath, context.userId);
+
       if (!fs.existsSync(filePath)) {
         throw new Error(`文件不存在: ${filePath}`);
       }
-
-      // 安全修复：用户隔离校验，只能读取当前用户 agent_temp 目录下的文件
-      assertUserFilePath(filePath, context.userId);
 
       const fileName = path.basename(filePath);
       const ext = path.extname(fileName).toLowerCase().replace('.', '');

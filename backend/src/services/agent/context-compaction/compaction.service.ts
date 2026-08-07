@@ -67,12 +67,27 @@ export class CompactionService {
    *
    * 算法：字符总数 / 2.5（中文约占 1.5-2 token，英文约占 1 token，
    * 取 2.5 作为中英文混合场景的经验折中值）
+   *
+   * 修复：原实现只统计 string content，工具调用/结果的 parts 数组与
+   * 对象型 content（UIMessage 格式）完全不计入，导致实际 token 远超
+   * 84k 阈值后仍不压缩（长对话模型退化）。这里对非字符串字段做 JSON
+   * 序列化后一并统计。
    */
   static estimateTokens(messages: Message[]): number {
-    const totalChars = messages.reduce(
-      (sum, m) => sum + (typeof m.content === 'string' ? m.content.length : 0),
-      0,
-    );
+    const totalChars = messages.reduce((sum, m) => {
+      let s = 0;
+      if (typeof m.content === 'string') {
+        s = m.content.length;
+      } else if (m.content != null) {
+        s = JSON.stringify(m.content)?.length ?? 0;
+      }
+      // 工具调用/结果等附加字段（ai-sdk steps 结构、UIMessage parts 等）
+      for (const key of ['parts', 'toolCalls', 'toolResults', 'tool_calls', 'toolCallId', 'toolName', 'input', 'output']) {
+        const v = (m as any)[key];
+        if (v != null) s += JSON.stringify(v)?.length ?? 0;
+      }
+      return sum + s;
+    }, 0);
     return Math.round(totalChars / 2.5);
   }
 

@@ -30,6 +30,8 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { z } from 'zod';
+import { getAgentTempRoot } from '../file/paths';
+import { getUploadDir } from '../../../../config/upload';
 import prisma from '../../../../config/db';
 import { addReviewJob } from '../../../../services/system/queue.service';
 import type { ToolContext } from '../file/upload_file';
@@ -62,7 +64,7 @@ export function createCreatePipelineTaskTool(context: ToolContext) {
       reviewMode: z.enum(VALID_REVIEW_MODES).describe(
         '审查模式：LIBRARY_REVIEW（规则库审查）/ DOC_REVIEW（文档审查）/ CONSISTENCY（一致性）/ TYPO_GRAMMAR（校对）/ RULE_ONLY（仅规则）/ SELF_CHECK（自检）/ CONTRACT_REVIEW（合同审查）/ DEC_REVIEW（DEC 三维度）'
       ),
-      filePaths: z.array(z.string()).min(1).describe('文件路径数组（uploads/agent_temp 下的绝对路径，由 upload_file 返回）'),
+      filePaths: z.array(z.string()).min(1).max(20).describe('文件路径数组（uploads/agent_temp 下的绝对路径，由 upload_file 返回，最多 20 个）'),
       standardId: z.string().optional().describe('标准 ID（DEC_REVIEW 等模式需要）'),
       knowledgeId: z.string().optional().describe('MaxKB 知识库 ID'),
       ruleLibraryId: z.string().optional().describe('规则库 ID'),
@@ -70,7 +72,7 @@ export function createCreatePipelineTaskTool(context: ToolContext) {
     }),
     execute: async ({ title, reviewMode, filePaths, standardId, knowledgeId, ruleLibraryId, perspective }): Promise<CreatePipelineTaskResult> => {
       // 1. 校验文件路径安全（必须在当前用户 agent_temp 目录内）
-      const uploadsRoot = path.join(__dirname, '../../../../../../uploads/agent_temp');
+      const uploadsRoot = getAgentTempRoot();
       const normalizedRoot = path.resolve(uploadsRoot);
       const expectedUserDir = path.join(normalizedRoot, context.userId);
 
@@ -117,8 +119,8 @@ export function createCreatePipelineTaskTool(context: ToolContext) {
         data: validFilePaths.map(fp => {
           const fileName = path.basename(fp);
           const ext = path.extname(fileName).toLowerCase().replace('.', '');
-          // 把绝对路径转为 /uploads/ 相对路径，便于后续静态服务访问
-          const uploadDir = path.resolve(path.join(__dirname, '../../../../../../uploads'));
+          // 把绝对路径转为 /uploads/ 相对路径，便于后续静态服务访问（用配置化的上传根，与工具路径根一致）
+          const uploadDir = getUploadDir();
           const relativePath = '/uploads/' + path.relative(uploadDir, fp).replace(/\\/g, '/');
           return {
             taskId: task.id,

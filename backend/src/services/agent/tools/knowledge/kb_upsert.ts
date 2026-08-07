@@ -58,7 +58,8 @@ export function createKbUpsertTool(_context: ToolContext) {
       '会话式知识库维护：把文本内容入库到指定的 MaxKB 知识库。' +
       'mode=append 追加为新文档；mode=update 按 source 名先删后建（upsert，避免重复）。' +
       '返回 { success, knowledgeId, documentId?, chunkCount, message }。' +
-      '不传 knowledgeId 时使用第一个可用知识库。',
+      '不传 knowledgeId 时使用第一个可用知识库。' +
+      '注意：这是写入知识库的写操作，执行前必须先调 ask_user(method=confirm) 向用户说明将入库的内容并获得确认。',
     inputSchema: z.object({
       content: z.string().min(1).describe('要入库的文本内容（文档或片段）'),
       knowledgeId: z.string().optional().describe('目标知识库 ID（不传则用第一个可用知识库）'),

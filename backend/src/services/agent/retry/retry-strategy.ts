@@ -20,6 +20,14 @@ export const BACKOFF_CAP_MS = 15_000;
 /** 可重试的 HTTP 状态码集合 */
 const RETRYABLE_STATUSES = new Set([408, 429, 500, 502, 503, 504]);
 
+/**
+ * 网络层错误特征（不含 HTTP 状态码，但属于可重试的瞬时故障）：
+ * - Node fetch/undici：ECONNRESET / ECONNREFUSED / ETIMEDOUT / EAI_AGAIN / ENOTFOUND / socket hang up
+ * - ai-sdk：APICallError（网关超时无状态码）、AbortError 除外（用户主动中止不重试）
+ */
+const NETWORK_ERROR_RE =
+  /ECONNRESET|ECONNREFUSED|ETIMEDOUT|EAI_AGAIN|ENOTFOUND|socket hang up|network error|network timeout|请求超时|timed out|fetch failed|connection (closed|reset|refused)/i;
+
 // ──────────────────────────── 类型定义 ────────────────────────────
 
 /** decideRetry 返回值 */
@@ -87,12 +95,26 @@ function extractHttpStatus(error: unknown): number {
  * 可重试的 HTTP 状态码：408（超时）、429（限流）、
  * 500/502/503/504（服务端错误）。
  *
+ * 修复：网络层错误（连接重置/拒绝/超时/DNS 失败）无 HTTP 状态码，
+ * 原实现一律判为不可重试——一次网络抖动即导致工具/流式调用直接失败。
+ * 这里对错误信息中的网络故障特征做识别（AbortError 除外，主动中止不重试）。
+ *
  * @param error 任意错误对象
  * @returns 是否应该重试
  */
 export function isRetryable(error: unknown): boolean {
   const status = extractHttpStatus(error);
-  return RETRYABLE_STATUSES.has(status);
+  if (RETRYABLE_STATUSES.has(status)) return true;
+
+  // 主动中止不重试
+  const err = error as Record<string, any>;
+  if (err?.name === 'AbortError' || err?.name === 'TimeoutError') return false;
+
+  const message: string | undefined =
+    typeof error === 'string' ? error : (err?.message ?? err?.messageText ?? undefined);
+  if (message && NETWORK_ERROR_RE.test(message)) return true;
+
+  return false;
 }
 
 /**

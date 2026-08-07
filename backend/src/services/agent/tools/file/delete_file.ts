@@ -22,6 +22,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { z } from 'zod';
+import { getAgentTempRoot } from './paths';
 import type { ToolContext } from './upload_file';
 
 const { tool } = require('@ai-sdk/provider-utils') as typeof import('@ai-sdk/provider-utils');
@@ -38,7 +39,7 @@ interface DeleteFileResult {
  */
 export function createDeleteFileTool(context: ToolContext) {
   return tool({
-    description: '删除当前会话的临时文件。只能删除当前用户当前会话目录下的文件，不递归删除目录。文件不存在视为成功（幂等）。',
+    description: '删除当前会话的临时文件。只能删除当前用户当前会话目录下的文件，不递归删除目录。文件不存在视为成功（幂等）。注意：这是删除操作，执行前必须先调 ask_user(method=confirm) 向用户说明并获得确认。',
     inputSchema: z.object({
       filePath: z.string().describe('要删除的文件绝对路径（由 upload_file 返回或 list_uploads 列出）'),
     }),
@@ -46,7 +47,7 @@ export function createDeleteFileTool(context: ToolContext) {
       const fileName = path.basename(filePath);
 
       // 路径安全校验：只能删 Agent 临时目录下的文件
-      const uploadsRoot = path.join(__dirname, '../../../../../uploads/agent_temp');
+      const uploadsRoot = getAgentTempRoot();
       const normalizedRoot = path.resolve(uploadsRoot);
       const normalizedPath = path.resolve(filePath);
 

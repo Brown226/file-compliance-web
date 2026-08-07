@@ -28,6 +28,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { z } from 'zod';
+import { getAgentTempRoot } from './paths';
 import type { ToolContext } from './upload_file';
 import { DocxReplaceService } from '../../../file/docx-replace.service';
 import { FileWriteQueueService } from '../../file-queue/file-write-queue.service';
@@ -53,7 +54,7 @@ interface ChangeRecord {
 
 /** 校验路径在 Agent 临时目录且属于当前用户（按日期目录存储，跨会话共享） */
 function assertEditablePath(context: ToolContext, filePath: string): string {
-  const uploadsRoot = path.join(__dirname, '../../../../../uploads/agent_temp');
+  const uploadsRoot = getAgentTempRoot();
   const normalizedRoot = path.resolve(uploadsRoot);
   const normalizedPath = path.resolve(filePath);
   if (!normalizedPath.startsWith(normalizedRoot + path.sep) && normalizedPath !== normalizedRoot) {
@@ -221,7 +222,7 @@ export function createEditFileTool(context: ToolContext, descriptionOverride?: s
   return tool({
     description:
       descriptionOverride ||
-      '编辑已上传的文件。支持两种模式：① replace：精确替换文本（oldText → newText，occurrence 指定第几次出现）；② patch：应用 unified diff（unified patch 格式，@@ -a,b +c,d @@ 头 + 上下文行，仅纯文本）。支持纯文本（txt/md/csv/log/json/xml/yaml/yml）与 DOCX（受控替换，保留格式；仅 replace 模式）。只能编辑当前会话上传的文件。返回变更摘要供确认。',
+      '编辑已上传的文件。支持两种模式：① replace：精确替换文本（oldText → newText，occurrence 指定第几次出现）；② patch：应用 unified diff（unified patch 格式，@@ -a,b +c,d @@ 头 + 上下文行，仅纯文本）。支持纯文本（txt/md/csv/log/json/xml/yaml/yml）与 DOCX（受控替换，保留格式；仅 replace 模式）。只能编辑当前会话上传的文件。返回变更摘要供确认。注意：这是修改原文件的写操作，执行前必须先调 ask_user(method=confirm) 向用户说明改动并获得确认。',
     inputSchema: z.object({
       filePath: z.string().describe('服务端文件绝对路径（由 upload_file 返回）'),
       mode: z.enum(['replace', 'patch']).default('replace').describe('编辑模式：replace=精确替换，patch=unified diff'),
@@ -332,8 +333,14 @@ export function createEditFileTool(context: ToolContext, descriptionOverride?: s
       // P2-⑲：经文件写队列串行化，同一文件的并发写操作排队执行（防写冲突）
       await FileWriteQueueService.enqueue(normalizedPath, async () => {
         const tmpPath = `${normalizedPath}.edit.tmp`;
-        await fs.promises.writeFile(tmpPath, after, 'utf-8');
-        await fs.promises.rename(tmpPath, normalizedPath);
+        try {
+          await fs.promises.writeFile(tmpPath, after, 'utf-8');
+          await fs.promises.rename(tmpPath, normalizedPath);
+        } catch (err) {
+          // 修复：写入/重命名失败时清理残留的 .tmp 文件（原实现崩溃中断后永久残留）
+          await fs.promises.unlink(tmpPath).catch(() => {});
+          throw err;
+        }
       });
 
       const afterLines = after.split('\n');

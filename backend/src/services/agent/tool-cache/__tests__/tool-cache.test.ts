@@ -156,12 +156,15 @@ describe('CACHEABLE_TOOLS 集合', () => {
       'search_standard_checkpoints',
       'list_available_rules',
       'read_file',
-      'list_uploads',
       'compare_documents',
       'extract_tables',
     ]) {
       expect(CACHEABLE_TOOLS.has(name)).toBe(true);
     }
+  });
+
+  it('list_uploads 不在集合中（结果依赖文件系统状态，24h 缓存导致新上传文件不可见）', () => {
+    expect(CACHEABLE_TOOLS.has('list_uploads')).toBe(false);
   });
 
   it('非幂等工具不在集合中', () => {

@@ -28,7 +28,9 @@ export class FileWriteQueueService {
    * @returns task 的返回值（task 抛错则 reject）
    */
   static enqueue<T>(filePath: string, task: () => Promise<T>): Promise<T> {
-    const key = filePath.replace(/\\/g, '/');
+    // 键归一化：统一分隔符 + 小写（Windows 路径大小写不敏感，
+    // 原实现仅 \→/ 转换，同一文件的大小写变体可绕过写串行化）
+    const key = filePath.replace(/\\/g, '/').toLowerCase();
     const prev = this.tails.get(key) || Promise.resolve();
     const run = prev.then(() => task());
     // 尾部指针指向 catch 后的 promise：即使 task 失败，后续任务也能继续排队

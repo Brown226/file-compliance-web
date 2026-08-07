@@ -23,6 +23,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { z } from 'zod';
+import { getAgentTempRoot } from './paths';
 import type { ToolContext } from './upload_file';
 import { parseDocument } from './parse-document';
 import { LlmService } from '../../../llm/llm.service';
@@ -236,7 +237,7 @@ export function createCompareDocumentsTool(context: ToolContext) {
     }),
     execute: async ({ oldFilePath, newFilePath, withSummary }): Promise<CompareResult> => {
       // 路径安全校验（与 read_file 同款）：只能对比 Agent 临时目录下当前用户的文件
-      const uploadsRoot = path.join(__dirname, '../../../../../uploads/agent_temp');
+      const uploadsRoot = getAgentTempRoot();
       const normalizedRoot = path.resolve(uploadsRoot);
       for (const filePath of [oldFilePath, newFilePath]) {
         const normalizedPath = path.resolve(filePath);

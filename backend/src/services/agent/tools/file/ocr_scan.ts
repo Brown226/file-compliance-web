@@ -28,6 +28,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { z } from 'zod';
+import { getAgentTempRoot } from './paths';
 import { OcrService } from '../../../file/ocr.service';
 import { FileTypeService } from '../../../file/file-type.service';
 import { fixMojibakePath } from './filename';
@@ -62,18 +63,8 @@ export function createOcrScanTool(context: ToolContext) {
         .describe('文件类型（扩展名，如 png/pdf）。可选，用于预检是否支持 OCR'),
     }),
     execute: async ({ filePath, fileType }): Promise<OcrScanResult> => {
-      // ---- 路径存在性 + 乱码兜底（与 read_file 一致）----
-      if (!fs.existsSync(filePath)) {
-        const fixed = fixMojibakePath(filePath);
-        if (fixed !== filePath && fs.existsSync(fixed)) {
-          filePath = fixed;
-        } else {
-          throw new Error(`文件不存在: ${filePath}`);
-        }
-      }
-
-      // ---- 路径安全校验：只能识别 Agent 临时目录下的文件 ----
-      const uploadsRoot = path.join(__dirname, '../../../../../uploads/agent_temp');
+      // ---- 路径安全校验前置（原实现先 existsSync 探测任意绝对路径的存在性）----
+      const uploadsRoot = getAgentTempRoot();
       const normalizedRoot = path.resolve(uploadsRoot);
       const normalizedPath = path.resolve(filePath);
       if (!normalizedPath.startsWith(normalizedRoot + path.sep) && normalizedPath !== normalizedRoot) {
@@ -84,6 +75,16 @@ export function createOcrScanTool(context: ToolContext) {
       const expectedUserDir = path.join(normalizedRoot, context.userId);
       if (!normalizedPath.startsWith(expectedUserDir + path.sep) && normalizedPath !== expectedUserDir) {
         throw new Error('路径越权：只能识别当前用户上传的文件');
+      }
+
+      // ---- 路径存在性 + 乱码兜底（与 read_file 一致）----
+      if (!fs.existsSync(filePath)) {
+        const fixed = fixMojibakePath(filePath);
+        if (fixed !== filePath && fs.existsSync(fixed)) {
+          filePath = fixed;
+        } else {
+          throw new Error(`文件不存在: ${filePath}`);
+        }
       }
 
       // ---- 类型预检：确认是否支持 OCR ----

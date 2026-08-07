@@ -32,6 +32,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { z } from 'zod';
+import { getAgentTempRoot } from './paths';
 import type { ToolContext } from './upload_file';
 import { getUploadDir } from '../../../../config/upload';
 // 路径核对：tools/file/download_report.ts → tools/file/ → tools/ → agent/ → services/ → src/
@@ -62,7 +63,7 @@ export function createDownloadReportTool(context: ToolContext) {
     }),
     execute: async ({ filePath, format }): Promise<DownloadReportResult> => {
       // 路径安全校验：只能读 Agent 临时目录下的文件
-      const uploadsRoot = path.join(__dirname, '../../../../../uploads/agent_temp');
+      const uploadsRoot = getAgentTempRoot();
       const normalizedRoot = path.resolve(uploadsRoot);
       const normalizedPath = path.resolve(filePath);
 

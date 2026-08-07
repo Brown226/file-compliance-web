@@ -49,6 +49,9 @@ const router = Router();
 // 所有 Agent 接口都需要认证
 router.use(authenticate);
 
+/** auto-name 防刷冷却表（sessionId → 最近触发时间戳） */
+const autoNameCooldown = new Map<string, number>();
+
 /**
  * POST /api/agent/chat/stream — SSE 流式对话
  *
@@ -61,6 +64,16 @@ router.use(authenticate);
  *   result.toUIMessageStreamResponse() 自动设置，下方手动复制到 Express res。
  */
 router.post('/chat/stream', async (req: AuthRequest, res: Response) => {
+  // 请求开始时间：用于并发新会话竞态防护（见下方 completeActiveSessions 调用）
+  const requestStartedAt = new Date();
+  // 安全修复：LLM 调用中止控制（提升到 try 外，catch 降级分支也可见）
+  const controller = new AbortController();
+  const streamTimeout = setTimeout(() => controller.abort(), 600_000);
+  const onClientClose = () => {
+    if (!res.writableEnded) controller.abort();
+  };
+  req.on('close', onClientClose);
+  res.on('close', onClientClose);
   try {
     const userId = req.user?.id;
     if (!userId) {
@@ -71,15 +84,32 @@ router.post('/chat/stream', async (req: AuthRequest, res: Response) => {
     if (!Array.isArray(messages) || messages.length === 0) {
       return res.status(400).json({ success: false, message: 'messages 不能为空' });
     }
+    // 输入校验：条数/角色/体量上限，防超长输入拖垮 LLM 上下文与 SSE 连接
+    if (messages.length > 200) {
+      return res.status(400).json({ success: false, message: 'messages 条数不能超过 200' });
+    }
+    const VALID_ROLES = new Set(['system', 'user', 'assistant']);
+    let totalChars = 0;
+    for (const m of messages) {
+      if (!m || typeof m !== 'object' || !VALID_ROLES.has(String(m.role || ''))) {
+        return res.status(400).json({ success: false, message: 'messages 中每条必须包含合法的 role（system/user/assistant）' });
+      }
+      totalChars += JSON.stringify(m).length;
+      if (totalChars > 2_000_000) {
+        return res.status(400).json({ success: false, message: 'messages 总体量过大（上限约 200 万字符）' });
+      }
+    }
 
     // Task 25：每用户单会话限制 — 新会话开始时自动结束旧会话（真实约束）
     // P0 #1 修复：改为调用 QASessionService.completeActiveSessions（service 内按 status 过滤）
     // 2026-08-04 修复：无 sessionId 时必须创建新会话并返回 sessionId，
     //   否则 chatStream 不会持久化消息、前端拿不到会话 id（单活跃会话死循环）
+    // 2026-08-07 竞态修复：completeActiveSessions 只关闭 createdAt 早于本请求开始时间的
+    //   会话，避免两个并发新会话请求互相误杀对方刚创建的会话。
     let sessionId: string = req.body?.sessionId || '';
     const isNewSession = !sessionId;
     if (isNewSession) {
-      const closedCount = await QASessionService.completeActiveSessions(userId);
+      const closedCount = await QASessionService.completeActiveSessions(userId, requestStartedAt);
       if (closedCount > 0) {
         console.log(`[Agent] 自动结束旧会话: ${closedCount} 个`);
       }
@@ -101,6 +131,11 @@ router.post('/chat/stream', async (req: AuthRequest, res: Response) => {
       }
     }
 
+    // 安全修复：LLM 调用中止控制
+    // 1. 客户端断开（关页面/切网络）→ req/res close 时 abort，LLM 调用立即取消，
+    //    不再把配额与资源浪费在已断开的连接上
+    // 2. 全流程超时（10 步工具循环 + LLM 网关异常挂起兜底）：600s 后强制中止，
+    //    防止网关挂起时请求永久悬挂
     const result = await AgentService.chatStream({
       messages,
       userId,
@@ -110,12 +145,33 @@ router.post('/chat/stream', async (req: AuthRequest, res: Response) => {
       toolNames: Array.isArray(req.body?.toolNames) ? req.body.toolNames : undefined,
       thinkingLevel: req.body?.thinkingLevel || undefined,
       pendingAskAnswer: req.body?.pendingAskAnswer || null,
+      signal: controller.signal,
     });
 
     // Express 5 不直接接受 Web Response，手动转换（Task 1 验证过的写法）：
     // 1) 复制 status / headers（含 SSE 必需的 Content-Type: text/event-stream 等）
     // 2) 把 ReadableStream pipe 到 Express res
     const uiResponse = result.toUIMessageStreamResponse();
+    // 降级死逻辑修复：先读首块再写 SSE 头。
+    // 旧实现先 flush headers 再读流，streamText 首步异常（finishReason="other" 或
+    // 网络错误）时 headersSent 已为 true，下方 catch 的降级分支永不触发（兜底形同虚设）。
+    // 现在首块读取失败且头未发送 → 走降级重试；首块成功 → 写头 + 继续管道。
+    const webBody = uiResponse.body;
+    if (!webBody) {
+      res.end();
+      return;
+    }
+
+    const reader = webBody.getReader();
+    let firstChunk: { done: boolean; value?: Uint8Array };
+    try {
+      firstChunk = await reader.read();
+    } finally {
+      // 首块已产出（或流已结束），LLM 已开始响应——解除超时定时器，
+      // 但客户端断开监听保持（断开时仍中止 LLM 后续工具循环）
+      clearTimeout(streamTimeout);
+    }
+
     res.status(uiResponse.status);
     // 显式标注 value/key 类型：AgentService.chatStream 返回 Promise<any>，
     // 导致 uiResponse.headers.forEach 回调参数退化为 implicit any（TS7006）
@@ -125,18 +181,16 @@ router.post('/chat/stream', async (req: AuthRequest, res: Response) => {
       res.setHeader(key, value);
     });
 
-    const webBody = uiResponse.body;
-    if (!webBody) {
-      res.end();
-      return;
-    }
-
-    const reader = webBody.getReader();
     // 注意：不能在这里注入自定义 `data:` 首帧（如 session-init）。
     // AI SDK 前端（@ai-sdk/vue useChat）的 processUIMessageStream 只认识标准
     // UIMessageStream 事件，未知类型会被原样 enqueue 导致流解析失败、请求中止，
     // assistant 消息不渲染。前端 sessionId 由 useAgentChat 用 crypto.randomUUID()
     // 自行生成并随请求体传入，无需后端回传。
+    if (firstChunk.done) {
+      res.end();
+      return;
+    }
+    res.write(firstChunk.value);
     while (true) {
       const { done, value } = await reader.read();
       if (done) break;
@@ -147,11 +201,30 @@ router.post('/chat/stream', async (req: AuthRequest, res: Response) => {
   } catch (e: any) {
     console.error('[Agent] 流式调用失败:', e?.message || e);
 
+    // 中止场景（客户端断开 / 600s 超时）：不再降级重试——
+    // 客户端已断开时写入无意义，超时时 LLM 大概率不可用，降级只会再等一轮超时。
+    // 断开场景 res 已不可写，静默结束即可；超时场景给前端明确提示。
+    if (controller.signal.aborted) {
+      if (res.writableEnded) return;
+      try {
+        clearTimeout(streamTimeout);
+        if (res.headersSent) {
+          res.end();
+        } else {
+          res.status(504).json({ success: false, message: '流式调用超时（600s），请重试' });
+        }
+      } catch {
+        // 连接已断开，忽略写错误
+      }
+      return;
+    }
+
     // Task 21.2：LLM 整体失败降级 — 流未开始时（headersSent=false），
     // 降级重试。P0 #1（接通纸面能力）：先降级到 AgentService.chatWithGenerateText()
     // （非流式但保留工具调用循环，generateText 兜底），再失败才降级到纯文本 LlmService.chat()。
     if (!res.headersSent) {
       try {
+        clearTimeout(streamTimeout);
         const sessionId: string = req.body?.sessionId || '';
         const messages: any[] = req.body?.messages || [];
 
@@ -163,7 +236,7 @@ router.post('/chat/stream', async (req: AuthRequest, res: Response) => {
           const { AgentService } = require('../services/agent/agent.service');
           // catch 块内 try 无法访问外层 try 的 userId（块级作用域），重新取
           const uid = (req as any).user?.id || '';
-          const generateResult = await AgentService.chatWithGenerateText({ messages, userId: uid, sessionId });
+          const generateResult = await AgentService.chatWithGenerateText({ messages, userId: uid, sessionId, signal: controller.signal });
           // generateText result 的 text 字段为最终文本
           fallbackText = typeof generateResult?.text === 'string' ? generateResult.text : '';
           fallbackMode = 'generateText';
@@ -242,15 +315,15 @@ router.post('/chat/stream', async (req: AuthRequest, res: Response) => {
  * Form fields:
  *   - file: 文件（multer single field，字段名固定为 'file'）
  *   - sessionId?: string（可选；建议在 file 字段之前发送，确保 multer 解析时可用）
- *                   未提供时自动生成 UUID，并在响应中返回，前端可用于后续 /chat/stream
+ *                   未提供时响应中为空串——新会话 ID 由前端在 /chat/stream 前自行生成
  *
  * 返回：{ success, data: { filePath, fileName, size, sessionId } }
  *   - filePath: 服务端绝对路径（与 upload_file 工具返回格式一致，可直接喂给 extract_text 工具）
  *   - fileName: 原始文件名
  *   - size: 文件字节数
- *   - sessionId: 实际使用的会话 ID（便于前端续接对话）
+ *   - sessionId: 前端传入的会话 ID（原样回显，便于前端续接对话）
  *
- * 存储路径与 upload_file 工具完全一致：backend/uploads/agent_temp/{userId}/{sessionId}/{fileName}
+ * 存储路径与 upload_file 工具完全一致：backend/uploads/agent_temp/{userId}/{YYYY-MM-DD}/{fileName}
  */
 const agentUploadStorage = multer.diskStorage({
   destination: (req: AuthRequest, _file, cb) => {
@@ -283,9 +356,27 @@ const agentUploadStorage = multer.diskStorage({
   },
 });
 
+/**
+ * 拒绝上传的可执行/脚本类扩展名（与 upload_file 工具一致，防 XSS 与恶意文件传播）。
+ * html/htm/svg 是脚本注入载体（files/read 预览走 base64 + 前端 iframe/v-html），一并拒绝。
+ */
+const BLOCKED_UPLOAD_EXT = new Set([
+  'exe', 'dll', 'msi', 'bat', 'cmd', 'com', 'scr', 'pif', 'reg',
+  'sh', 'bash', 'ps1', 'psm1', 'vbs', 'vbe', 'js', 'jse', 'jar', 'class',
+  'php', 'phtml', 'php3', 'php4', 'php5', 'asp', 'aspx', 'jsp', 'jspx',
+  'html', 'htm', 'svg', 'swf', 'apk', 'app', 'gadget', 'msh',
+]);
+
 const agentUpload = multer({
   storage: agentUploadStorage,
   limits: { fileSize: 100 * 1024 * 1024 }, // 100MB（与 task.routes.ts 默认上限一致）
+  fileFilter: (_req, file, cb) => {
+    const ext = path.extname(file.originalname || '').toLowerCase().replace(/^\./, '');
+    if (BLOCKED_UPLOAD_EXT.has(ext)) {
+      return cb(new Error(`不支持上传 .${ext} 类型的文件（可执行/脚本类文件被拒绝）`));
+    }
+    cb(null, true);
+  },
 });
 
 router.post('/upload', agentUpload.single('file'), (req: AuthRequest, res: Response) => {
@@ -300,9 +391,11 @@ router.post('/upload', agentUpload.single('file'), (req: AuthRequest, res: Respo
       return res.status(401).json({ success: false, message: '未认证' });
     }
 
-    // 优先用前端传入的 sessionId，否则取 destination 阶段生成的 UUID
-    const sessionId: string =
-      (req.body?.sessionId as string) || (req as any).__agentGeneratedSessionId || '';
+    // 修复死代码：原实现读 (req as any).__agentGeneratedSessionId（从未被设置，恒为空串）。
+    // multer 的 diskStorage destination 回调执行时 req.body 已含非文件字段，
+    // 但此处不生成新 sessionId——新会话 ID 由前端在 /chat/stream 前用
+    // crypto.randomUUID() 生成并传入（见 useAgentChat.ts），这里只回显前端传入值。
+    const sessionId: string = typeof req.body?.sessionId === 'string' ? req.body.sessionId : '';
 
     // file.path 是 multer diskStorage 写入的绝对路径，与 upload_file 工具返回格式一致
     return res.json({
@@ -381,14 +474,30 @@ router.get('/files/read', async (req: AuthRequest, res: Response) => {
       return res.status(400).json({ success: false, message: '缺少 filePath 参数' });
     }
 
-    const resolved = path.resolve(filePath);
     const userDir = path.resolve(path.join(getUploadDir(), 'agent_temp', userId));
-    // 必须位于当前用户 agent_temp 目录内（允许子目录如 sessionId）
+    // 第一重校验：参数解析后的路径必须位于当前用户 agent_temp 目录内（允许子目录如 sessionId）
+    const resolvedRaw = path.resolve(filePath);
+    if (resolvedRaw !== userDir && !resolvedRaw.startsWith(userDir + path.sep)) {
+      return res.status(403).json({ success: false, message: '无权读取该文件' });
+    }
+
+    if (!fs.existsSync(resolvedRaw)) {
+      return res.status(404).json({ success: false, message: '文件不存在' });
+    }
+
+    // 第二重校验：realpath 解析 symlink 后的真实路径也必须位于用户目录内，
+    // 防止白名单目录内的符号链接指向外部文件（目录穿越变体）
+    let resolved: string;
+    try {
+      resolved = fs.realpathSync(resolvedRaw);
+    } catch {
+      return res.status(404).json({ success: false, message: '文件不存在' });
+    }
     if (resolved !== userDir && !resolved.startsWith(userDir + path.sep)) {
       return res.status(403).json({ success: false, message: '无权读取该文件' });
     }
 
-    if (!fs.existsSync(resolved) || !fs.statSync(resolved).isFile()) {
+    if (!fs.statSync(resolved).isFile()) {
       return res.status(404).json({ success: false, message: '文件不存在' });
     }
 
@@ -744,6 +853,17 @@ router.post('/sessions/:sessionId/auto-name', async (req: AuthRequest, res: Resp
     const sessionId = String(req.params.sessionId || '');
     if (!sessionId) {
       return res.status(400).json({ success: false, message: 'sessionId 不能为空' });
+    }
+
+    // 防刷限流：同一会话 30s 内只允许触发一次（内存 Map，单实例有效；多实例容忍少量穿透）
+    const now = Date.now();
+    const lastAt = autoNameCooldown.get(sessionId) || 0;
+    if (now - lastAt < 30_000) {
+      return res.status(429).json({ success: false, message: '操作过于频繁，请 30 秒后再试' });
+    }
+    autoNameCooldown.set(sessionId, now);
+    if (autoNameCooldown.size > 1000) {
+      autoNameCooldown.clear(); // 防 Map 无限膨胀（清理后冷却记录失效可接受）
     }
 
     // 权限校验
@@ -1358,6 +1478,81 @@ function buildModelsListUrl(baseUrl: string, api: string): URL {
 /** 解析 /models 上游响应为模型列表（兼容 string[] / {id,model,name}[] / data/models/results/items 包裹）
  *  同时解析能力信息（capabilities.contextWindow/maxOutput/reasoning/inputModalities），
  *  供前端添加模型时自动回填上下文窗口 / 最大输出 / 推理 / 图片输入。 */
+
+/**
+ * SSRF 防护：校验 /providers/discover 的 fetch 目标。
+ *
+ * 策略（平衡内网部署刚需与安全）：
+ * - 协议白名单：仅 http/https
+ * - 拒绝 link-local / 链路本地地址（169.254.0.0/16，含云元数据 169.254.169.254）
+ * - 拒绝 0.0.0.0 / 组播 / 广播
+ * - 其余内网网段（10.x / 172.16-31.x / 192.168.x / 127.0.0.1 本地 LLM）放行——
+ *   本项目为内网部署，LLM 网关（CNPE 等）本身就在内网，全拒会破坏合法功能。
+ * - 域名先经 dns.lookup 全量解析，任一解析地址命中黑名单即拒绝（缓解 DNS rebinding）
+ *
+ * @throws 校验失败时抛错（message 可直接回显给管理员）
+ */
+async function assertSafeFetchUrl(endpoint: URL): Promise<void> {
+  const proto = endpoint.protocol.toLowerCase();
+  if (proto !== 'http:' && proto !== 'https:') {
+    throw new Error('仅支持 http/https 协议的 Base URL');
+  }
+  const isBlockedIp = (ip: string): boolean => {
+    const clean = ip.replace(/^\[|\]$/g, '').toLowerCase();
+    // IPv6 映射的 IPv4（::ffff:1.2.3.4）先还原
+    const v4match = clean.match(/^::ffff:(\d+\.\d+\.\d+\.\d+)$/);
+    const target = v4match ? v4match[1] : clean;
+    if (target.includes('.')) {
+      const parts = target.split('.').map(Number);
+      if (parts.length !== 4 || parts.some(p => Number.isNaN(p))) return false;
+      const [a, b] = parts;
+      if (a === 0) return true;                       // 0.0.0.0/8
+      if (a === 169 && b === 254) return true;        // 169.254.0.0/16 link-local + 云元数据
+      if (a >= 224) return true;                      // 组播 224.0.0.0/4 + 保留 + 广播 255.255.255.255
+      if (a === 127) return false;                    // loopback 放行（本地 ollama 等）
+      if (a === 10) return false;                     // 内网放行（内网部署刚需）
+      if (a === 172 && b >= 16 && b <= 31) return false;
+      if (a === 192 && b === 168) return false;
+      if (a === 100 && b >= 64 && b <= 127) return false; // CGNAT 放行
+      return false;
+    }
+    // IPv6：拒绝环回/链路本地/唯一本地地址
+    if (target === '::1' || target === '::') return true;
+    if (target.startsWith('fe80:')) return true;     // link-local
+    if (target.startsWith('fc') || target.startsWith('fd')) return false; // ULA 放行
+    return false;
+  };
+
+  const hostname = endpoint.hostname;
+  // hostname 本身是 IP：直接校验
+  const isIpLiteral = /^[\d.]+$/.test(hostname) || hostname.includes(':');
+  if (isIpLiteral) {
+    if (isBlockedIp(hostname)) {
+      throw new Error('Base URL 指向禁止访问的地址（link-local/元数据/组播）');
+    }
+    return;
+  }
+  // 域名：dns.lookup 解析全部地址，任一命中即拒绝
+  const { lookup } = require('dns') as typeof import('dns');
+  const addresses = await new Promise<string[]>((resolve, reject) => {
+    lookup(hostname, { all: true }, (err, addrs) => {
+      if (err) return reject(err);
+      resolve((addrs as Array<{ address: string }>).map(a => a.address));
+    });
+  }).catch(() => []);
+  if (addresses.length === 0) {
+    throw new Error(`Base URL 域名解析失败: ${hostname}`);
+  }
+  for (const addr of addresses) {
+    if (isBlockedIp(addr)) {
+      throw new Error('Base URL 解析到禁止访问的地址（link-local/元数据/组播）');
+    }
+  }
+}
+
+/** 解析 /models 上游响应为模型列表（兼容 string[] / {id,model,name}[] / data/models/results/items 包裹）
+ *  同时解析能力信息（capabilities.contextWindow/maxOutput/reasoning/inputModalities），
+ *  供前端添加模型时自动回填上下文窗口 / 最大输出 / 推理 / 图片输入。 */
 function parseDiscoveredModels(value: any): Array<{
   id: string;
   name?: string;
@@ -1456,6 +1651,13 @@ router.post('/providers/discover', requireRole('ADMIN'), async (req: AuthRequest
       return res.status(400).json({ success: false, message: 'Base URL 无效' });
     }
 
+    // SSRF 防护：协议白名单 + 拒绝 link-local/元数据/组播地址（内网网段放行）
+    try {
+      await assertSafeFetchUrl(endpoint);
+    } catch (e: any) {
+      return res.status(400).json({ success: false, message: `Base URL 校验失败: ${e?.message || e}` });
+    }
+
     const headers: Record<string, string> = { Accept: 'application/json' };
     if (apiKey) {
       if (api === 'anthropic-messages') {
@@ -1479,10 +1681,10 @@ router.post('/providers/discover', requireRole('ADMIN'), async (req: AuthRequest
     }
 
     if (!response.ok) {
-      const errText = (await response.text()).slice(0, 500);
+      // 安全修复：不回显上游错误正文（可能包含 apiKey / 内部地址等敏感信息），只回显状态码
       return res.status(502).json({
         success: false,
-        message: errText || `上游返回 HTTP ${response.status}`,
+        message: `上游返回 HTTP ${response.status}，请检查 Base URL / API Key / 网络连通性`,
       });
     }
 
@@ -1607,6 +1809,10 @@ router.post('/saves', async (req: AuthRequest, res: Response) => {
     if (!title || typeof title !== 'string' || !content || typeof content !== 'string') {
       return res.status(400).json({ success: false, message: 'title 和 content 必填' });
     }
+    // 防超长收藏内容拖垮存储与列表接口
+    if (content.length > 100000) {
+      return res.status(400).json({ success: false, message: 'content 长度不能超过 100000 字符' });
+    }
     
     const item = await prisma.savedItem.create({
       data: {
@@ -1670,6 +1876,10 @@ router.get('/search', async (req: AuthRequest, res: Response) => {
     if (!userId) return res.status(401).json({ success: false, message: '未认证' });
     const q = String(req.query.q || '').trim();
     if (!q) return res.json({ success: true, data: [] });
+    // 防超长 ILIKE 拖垮数据库查询
+    if (q.length > 100) {
+      return res.status(400).json({ success: false, message: '搜索关键词长度不能超过 100 字符' });
+    }
     
     // 全文搜索会话消息（ILIKE 关键词）
     const messages = await prisma.qAMessage.findMany({
@@ -1770,13 +1980,26 @@ router.get('/directories/browse', async (req: AuthRequest, res: Response) => {
       return res.json({ success: true, data: { roots: rootEntries, root: null, entries: [] } });
     }
 
-    const resolved = path.resolve(rawPath);
+    const resolvedRaw = path.resolve(rawPath);
     // 越权校验：必须在某个允许根目录内
-    if (!isWithinAllowedRoot(resolved, roots)) {
+    if (!isWithinAllowedRoot(resolvedRaw, roots)) {
       return res.status(403).json({ success: false, message: '无权浏览该目录（不在白名单内）' });
     }
 
-    if (!fs.existsSync(resolved) || !fs.statSync(resolved).isDirectory()) {
+    if (!fs.existsSync(resolvedRaw)) {
+      return res.status(404).json({ success: false, message: '目录不存在' });
+    }
+    // realpath 二次校验：symlink 解析后的真实路径也必须位于白名单内
+    let resolved: string;
+    try {
+      resolved = fs.realpathSync(resolvedRaw);
+    } catch {
+      return res.status(404).json({ success: false, message: '目录不存在' });
+    }
+    if (!isWithinAllowedRoot(resolved, roots)) {
+      return res.status(403).json({ success: false, message: '无权浏览该目录（符号链接指向白名单外）' });
+    }
+    if (!fs.statSync(resolved).isDirectory()) {
       return res.status(404).json({ success: false, message: '目录不存在' });
     }
 
@@ -1785,6 +2008,10 @@ router.get('/directories/browse', async (req: AuthRequest, res: Response) => {
       names = fs.readdirSync(resolved);
     } catch (e: any) {
       return res.status(500).json({ success: false, message: `读取目录失败: ${e?.message || e}` });
+    }
+    // 超大目录条目上限：防止同步 readdirSync + stat 全量阻塞事件循环
+    if (names.length > 2000) {
+      names = names.slice(0, 2000);
     }
 
     // 排序：目录在前，文件在后，各自按名称字母序
@@ -1846,6 +2073,12 @@ router.post('/batch', async (req: AuthRequest, res: Response) => {
       if (!f || typeof f.filePath !== 'string' || !Array.isArray(f.tasks) || f.tasks.length === 0) {
         return res.status(400).json({ success: false, message: '每个文件必须包含 filePath 和 tasks' });
       }
+      // 子任务去重 + 上限（BATCH_TASKS 共 5 种，超长数组是重复子任务刷 LLM 配额的入口）
+      const tasks = [...new Set(f.tasks)];
+      if (tasks.length > BATCH_TASKS.length) {
+        return res.status(400).json({ success: false, message: `每个文件最多提交 ${BATCH_TASKS.length} 个去重后的子任务` });
+      }
+      f.tasks = tasks;
       for (const t of f.tasks) {
         if (!BATCH_TASKS.includes(t)) {
           return res.status(400).json({ success: false, message: `不支持的子任务: ${t}（可选 ${BATCH_TASKS.join('/')}）` });

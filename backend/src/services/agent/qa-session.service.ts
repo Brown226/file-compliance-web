@@ -113,11 +113,19 @@ export class QASessionService {
    * 把该用户所有 status='active' 的会话置为 'completed'，
    * 确保每用户同一时刻只有一个活跃会话。
    *
+   * @param notCreatedAfter 可选：只关闭 createdAt 早于该时间的会话。
+   *        用于并发新会话竞态防护——后发请求不会误杀先发请求
+   *        在自身处理期间刚创建的会话（见 agent.routes.ts /chat/stream）。
+   *
    * @returns 被关闭的会话数量
    */
-  static async completeActiveSessions(userId: string): Promise<number> {
+  static async completeActiveSessions(userId: string, notCreatedAfter?: Date): Promise<number> {
     const res = await prisma.qASession.updateMany({
-      where: { userId, status: 'active' },
+      where: {
+        userId,
+        status: 'active',
+        ...(notCreatedAfter ? { createdAt: { lt: notCreatedAfter } } : {}),
+      },
       data: { status: 'completed' },
     });
     return res.count;
