@@ -122,7 +122,7 @@ export class TaskService {
     reviewPlan?: any;       // 审查方案
     selectedTemplateId?: string;  // 选择的审查模板ID
     intraFileConsistency?: boolean;  // 文件内一致性检查
-    entryModule?: string;             // 前端入口模块（LIBRARY/CONSISTENCY/PROOFREAD/RULE_ONLY/MULTIMODAL/DOC_REVIEW）
+    entryModule?: string;             // 前端入口模块（LIBRARY/CONSISTENCY/PROOFREAD/RULE_ONLY/DOC_REVIEW）
     reviewMode?: string;              // 直接指定审查模式（如 SELF_CHECK）
     files?: Express.Multer.File[];
     dwgParsedData?: Record<string, any>;  // 前端 WASM 解析的 DWG 数据（按文件名映射）
@@ -782,6 +782,17 @@ export class TaskService {
 
     const workbook = new ExcelJS.Workbook();
 
+    // 口径统一（2026-08 修复）：排除 NO_RESULT（系统占位）与 REVIEW_SUMMARY（统计条目），
+    // 与页面统计口径一致（此前概览 sheet 的 errorCount 含这两类，文件 sheet 又不含，自相矛盾）
+    const exportableDetails = task.details.filter(
+      (d) => d.ruleCode !== 'NO_RESULT' && d.issueType !== 'REVIEW_SUMMARY'
+    );
+
+    // 状态中文映射（2026-08 修复：此前输出英文枚举）
+    const statusMap: Record<string, string> = {
+      PENDING: '待处理', PROCESSING: '审查中', COMPLETED: '已完成', FAILED: '失败', CANCELLED: '已取消',
+    };
+
     // Sheet 1: 任务概览
     const overviewSheet = workbook.addWorksheet('任务概览');
     overviewSheet.columns = [
@@ -796,10 +807,10 @@ export class TaskService {
     overviewSheet.addRow({
       title: task.title,
       creator: task.creator?.name || '-',
-      status: task.status,
+      status: statusMap[task.status] || task.status,
       createdAt: task.createdAt.toLocaleString('zh-CN'),
       fileCount: task.files.length,
-      errorCount: task.details.length,
+      errorCount: exportableDetails.length,
     });
 
     // Sheet 2: 文件列表
@@ -831,6 +842,8 @@ export class TaskService {
       { header: '建议修改', key: 'suggestedText', width: 28 },
       { header: '违规说明', key: 'description', width: 44 },
       { header: 'CAD Handle', key: 'cadHandleId', width: 15 },
+      { header: '复核状态', key: 'reviewStatus', width: 12 },
+      { header: '误报标记', key: 'isFalsePositive', width: 10 },
     ];
     detailsSheet.getRow(1).font = { bold: true };
 
@@ -839,13 +852,17 @@ export class TaskService {
       TYPO: '错别字', VIOLATION: '合规违规', NAMING: '命名规范',
       ENCODING: '编码一致性', ATTRIBUTE: '封面属性', HEADER: '页眉检查',
       PAGE: '页码检查', SCAN: '图纸扫描', TEMPLATE: '模板统一',
+      // 2026-08 补全：此前缺 COMPLETENESS/COMPLIANCE/CONSISTENCY 等导出为英文枚举
+      COMPLETENESS: '完整性', COMPLIANCE: '合规性', CONSISTENCY: '一致性',
+      PUNCTUATION: '标点符号', STANDARD_REF: '标准引用', CONTRACT_RISK: '合同风险',
+      FLUENCY: '语言通顺', NO_RESULT: '无结果', REVIEW_SUMMARY: '审查摘要',
     };
     // 严重度映射
     const severityMap: Record<string, string> = {
       error: '错误', warning: '警告', info: '提示',
     };
 
-    task.details.forEach((detail) => {
+    exportableDetails.forEach((detail) => {
       const row = detailsSheet.addRow({
         severity: severityMap[detail.severity] || detail.severity,
         issueType: issueTypeMap[detail.issueType] || detail.issueType,
@@ -855,6 +872,9 @@ export class TaskService {
         suggestedText: detail.suggestedText || '-',
         description: detail.description || '-',
         cadHandleId: detail.cadHandleId || '-',
+        // 2026-08 新增列：人工复核状态与误报标记（此前页面有、导出无）
+        reviewStatus: (detail as any).reviewStatus || '-',
+        isFalsePositive: (detail as any).isFalsePositive ? '是' : '否',
       });
 
       // 字符级差异着色（标准引用检查的 diffRanges 字段）

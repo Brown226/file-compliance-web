@@ -6,6 +6,7 @@ import { errorHandler } from './middlewares/error.middleware';
 import { auditLog } from './middlewares/audit.middleware';
 import { globalLimiter } from './middlewares/security.middleware';
 import { getUploadDir, onPathChange } from './config/upload';
+import { TokenService } from './services/auth/token.service';
 import authRoutes from './routes/auth.routes';
 import departmentRoutes from './routes/department.routes';
 import employeeRoutes from './routes/employee.routes';
@@ -18,7 +19,6 @@ import ruleRoutes from './routes/rule.routes';
 
 import standardFolderRoutes from './routes/standardFolder.routes';
 import terminologyRoutes from './routes/terminology.routes';
-import promptTemplateRoutes from './routes/promptTemplate.routes';
 import falsePositiveLibraryRoutes from './routes/falsePositiveLibrary.routes';
 
 import systemRoutes from './routes/system.routes';
@@ -54,7 +54,28 @@ app.use('/api', globalLimiter);
 // 静态文件服务：提供上传文件的访问（支持运行时切换路径）
 let _staticMw = express.static(getUploadDir());
 onPathChange(() => { _staticMw = express.static(getUploadDir()); });
-app.use('/uploads', (req, res, next) => _staticMw(req, res, next));
+// 安全：/uploads/agent_temp/** 是 Agent 用户上传的临时文件，匿名静态挂载会泄露任意用户文件。
+// 仅对 agent_temp 子目录做登录校验（Authorization: Bearer 或 ?token=），其余子目录维持现状
+// （task/feedback/selfcheck 等历史链路仍走匿名静态访问）。
+app.use('/uploads', (req, res, next) => {
+  const pathname = (req.path || '').replace(/\\/g, '/');
+  if (!pathname.startsWith('/agent_temp/')) {
+    return _staticMw(req, res, next);
+  }
+  const authHeader = req.headers.authorization || '';
+  const bearer = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : '';
+  const queryToken = typeof req.query.token === 'string' ? req.query.token : '';
+  const token = bearer || queryToken;
+  if (!token) {
+    return res.status(401).json({ error: '未提供认证 Token' });
+  }
+  try {
+    TokenService.verifyToken(token);
+    return _staticMw(req, res, next);
+  } catch {
+    return res.status(401).json({ error: 'Token 无效或已过期' });
+  }
+});
 
 // Global Audit Logging (will log POST/PUT/DELETE requests)
 app.use(auditLog);
@@ -73,7 +94,6 @@ app.use('/api/rules', ruleRoutes);
 app.use('/api/rule-libraries', ruleLibraryRoutes);
 
 app.use('/api/terminology', terminologyRoutes);
-app.use('/api/prompt-templates', promptTemplateRoutes);
 app.use('/api/false-positive-library', falsePositiveLibraryRoutes);
 
 app.use('/api/system', systemRoutes);

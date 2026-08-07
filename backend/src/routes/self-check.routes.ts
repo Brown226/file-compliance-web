@@ -2,6 +2,7 @@ import { Router } from 'express';
 import multer from 'multer';
 import path from 'path';
 import { authenticate } from '../middlewares/auth.middleware';
+import { checkTaskAccess } from '../middlewares/rbac.middleware';
 import { runSelfCheck, exportSelfCheckReport, getLibraryInfo } from '../controllers/self-check.controller';
 import { getUploadPath } from '../config/upload';
 
@@ -38,7 +39,7 @@ router.get('/library-info', getLibraryInfo);
 // 执行自检
 router.post('/run', upload.array('files', 20), runSelfCheck);
 
-// 导出报告
-router.get('/report/:id/export', exportSelfCheckReport);
+// 导出报告（2026-08 修复：此前仅 authenticate，任意登录用户可越权导出他人自检报告）
+router.get('/report/:id/export', checkTaskAccess, exportSelfCheckReport);
 
 export default router;

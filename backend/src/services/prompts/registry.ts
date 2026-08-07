@@ -2,7 +2,7 @@
  * 提示词注册中心 — 唯一数据源
  *
  * 所有提示词在此定义，一处修改全局生效。
- * - prompt-template.service.ts 从此读取 BUILTIN_TEMPLATES 种子数据库
+ * - prompt-template.service.ts 从此读取（registry 门面，无 DB 依赖）
  * - prompt-loader.ts 从此读取运行时 fallback
  * - 各 Pipeline / Service 通过 loader 加载，不再自行硬编码
  *
@@ -22,7 +22,6 @@ export const SCENE_MODULE_MAP: Record<string, string> = {
   CONSISTENCY: 'consistency',
   TYPO_GRAMMAR: 'typo_grammar',
   DOC_REVIEW: 'doc_review',
-  MULTIMODAL: 'multimodal',
   RULE_ONLY: 'library_review', // 复用 library_review 提示词
   CONTRACT_REVIEW: 'contract_review', // 合同风险审查
   DWG_VISION: 'dwg_vision', // DWG 视觉审查
@@ -613,85 +612,6 @@ ${consistencyDimensionsBlock()}
     description: '以文审文模式下，同时发送参照文件与待审文件内容的用户提示词',
     content: '## 参照文件（权威基准，以下内容均为正确规定）\n\n${refTexts}\n\n---\n\n## 待审文件（被审查对象）\n\n${text}\n\n---\n\n请按照系统指令中的四层审查策略，逐项核对以上待审文件是否与参照文件完全一致。输出 JSON 数组格式的审查结果。',
     placeholders: JSON.stringify(['${refTexts}', '${text}']),
-    isBuiltin: true,
-    enabled: true,
-  },
-
-  // ==========================================
-  // 结构化审查（multimodal）— MULTIMODAL
-  // ==========================================
-  {
-    key: 'multimodal_review_system',
-    module: 'multimodal',
-    role: 'system',
-    variant: 'default',
-    name: '结构化审查-系统提示词',
-    description: '结构化审查模式下，LLM 检查表格/数值/公式/图纸标注时的系统提示词',
-    content: `你是核电工程文件结构化审查专家。请重点检查以下内容：
-1. 表格数据的完整性和一致性
-2. 数值数据的合理性（单位、量级）
-3. 公式和计算的正确性
-4. 图纸和图表中的标注规范性
-
-## 审查原则
-1. **宁缺毋滥**：不确定是否违规的内容不要报告，宁可漏报也不要误报。
-2. **有据必依**：每个问题必须有明确的依据（格式规范不一致、数据矛盾、计算错误等），不要报告主观感受。
-3. **仅审所列**：仅检查以上4项内容，不要扩展到合规性、错别字等其他方面。
-
-## originalText 字段要求（极其重要 — 前端定位高亮唯一依据）
-- originalText 必须从待审文本中**逐字原样复制**，不得改写、合并、截断、或调整标点符号
-
-## 排除项（以下情况不要报告）
-- **纯空格/间距差异**：仅空格数不同，不影响数据含义和可读性
-- **纯排版细节**：标点符号前后空格不一致、全角半角混用但不影响理解等排版层面的小瑕疵
-- **不确定的问题**：如果你无法确定某处是否存在问题，**不要输出**到结果中
-
-## 输出要求
-严格按照 JSON 数组格式输出，每个问题包含:
-- issueType: VIOLATION（合规违规）/ CONSISTENCY（一致性）/ COMPLETENESS（完整性）/ TYPO（文本错误）
-- originalText: 原始问题文本（**逐字复制，不得修改**）
-- suggestedText: 建议修改内容
-- description: 问题描述
-- plain_language: 用通俗易懂的语言解释这个问题（让非专业人员也能理解）
-
-如果没有发现问题，输出空数组 []`,
-    placeholders: JSON.stringify([]),
-    isBuiltin: true,
-    enabled: true,
-  },
-  {
-    key: 'multimodal_review_user',
-    module: 'multimodal',
-    role: 'user',
-    variant: 'structural',
-    name: '结构化审查-用户提示词(结构化)',
-    description: '结构化审查模式下，发送带结构化标记的待审查文本的用户提示词',
-    content: '【待审查文本】\n${text}\n\n请重点检查表格数据、数值、公式和图纸标注的正确性。',
-    placeholders: JSON.stringify(['${text}']),
-    isBuiltin: true,
-    enabled: true,
-  },
-  {
-    key: 'multimodal_review_user_default',
-    module: 'multimodal',
-    role: 'user',
-    variant: 'default',
-    name: '结构化审查-用户提示词(默认)',
-    description: '结构化审查模式下，LLM 直接调用时的默认用户提示词',
-    content: '【待审查文本】\n${text}\n\n请重点检查表格数据、数值、公式和图纸标注的正确性。',
-    placeholders: JSON.stringify(['${text}']),
-    isBuiltin: true,
-    enabled: true,
-  },
-  {
-    key: 'multimodal_review_user_no_context',
-    module: 'multimodal',
-    role: 'user',
-    variant: 'no_context',
-    name: '结构化审查-用户提示词(无标准)',
-    description: '结构化审查模式下，无外部标准上下文时的用户提示词',
-    content: '【待审查文本】\n${text}\n\n请重点检查表格数据、数值、公式和图纸标注的正确性。',
-    placeholders: JSON.stringify(['${text}']),
     isBuiltin: true,
     enabled: true,
   },
@@ -1827,7 +1747,7 @@ Please give a short succinct context to situate this chunk within the overall do
     role: 'system',
     variant: 'office_contract_review',
     name: 'Agent办公模板-合同审查',
-    description: 'Agent 对话时追加的合同审查约束（审查重点/输出格式），管理员可在模板管理页编辑',
+    description: 'Agent 对话时追加的合同审查约束（审查重点/输出格式）',
     content: `## 办公模板：合同审查
 用户涉及合同审查时，请遵循以下约定：
 - 优先审查：付款条款、违约责任、质保期、知识产权归属、争议解决、不可抗力

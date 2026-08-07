@@ -129,13 +129,16 @@ export class OcrService {
     const serviceUrl = await PythonParserService.getServiceUrl();
     const fileName = path.basename(filePath);
 
-    const FormData = (await import('form-data')).default;
+    // 用 Node 原生 FormData + Blob（勿用 form-data 包：其流式 body 与 undici fetch
+    // 组合在 FastAPI 端会报 "error parsing the body" 400，详见 OCR 排障记录）
     const form = new FormData();
     const fileBuffer = await fs.promises.readFile(filePath);
-    form.append('file', fileBuffer, fileName);
+    const ext = path.extname(fileName).toLowerCase().replace('.', '');
+    const mime = ext === 'pdf' ? 'application/pdf' : `image/${ext === 'jpg' ? 'jpeg' : ext}`;
+    form.append('file', new Blob([fileBuffer], { type: mime }), fileName);
     form.append('apiBaseUrl', config.apiBaseUrl);
-    form.append('apiKey', config.apiKey);
-    form.append('modelName', config.modelName);
+    form.append('apiKey', config.apiKey || '');
+    form.append('modelName', config.modelName || '');
     form.append('timeoutSec', String(Math.round(config.timeout / 1000)));
 
     const controller = new AbortController();
@@ -145,10 +148,9 @@ export class OcrService {
       console.log(`[OCR] 调用 doc-parser 视觉模型 OCR: ${fileName}, model=${config.modelName}`);
       const response = await fetch(`${serviceUrl}/api/ocr/scan`, {
         method: 'POST',
-        body: form as any,
-        headers: form.getHeaders(),
+        body: form,
         signal: controller.signal,
-      } as any);
+      });
 
       if (!response.ok) {
         const errorText = await response.text();

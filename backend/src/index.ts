@@ -1,7 +1,6 @@
 import app from './app';
 import { env } from './config/env';
 import { TerminologyService } from './services/standard/terminology.service';
-import { PromptTemplateService } from './services/llm/prompt-template.service';
 import { WebSocketService } from './services/system/websocket.service';
 import { initQueueProcessors, closeQueue } from './services/system/queue.service';
 import { initAgentBatchQueue } from './services/system/agent-batch-queue.service';
@@ -32,9 +31,6 @@ const startServer = async () => {
 
     // 初始化术语白名单（内存缓存，API 术语接口与 Worker 审查均需要）
     await TerminologyService.initialize();
-
-    // 初始化提示词模板（幂等 upsert，不覆盖用户自定义内容）
-    await PromptTemplateService.seedBuiltinTemplates();
 
     // 初始化功能开关默认值（幂等 upsert，不覆盖已修改的值）
     const { seedFeatureFlags } = await import('./services/system/feature-flag.service');

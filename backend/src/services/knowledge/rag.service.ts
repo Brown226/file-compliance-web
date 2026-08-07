@@ -396,12 +396,13 @@ export class RAGService {
   /** 读取 Agent 灰度开关（system_configs.rag_agent_enabled，默认关闭） */
   static async isAgentEnabled(): Promise<boolean> {
     try {
-      const prisma = (global as any).prisma;
-      if (!prisma) return false;
+      // 修复死代码：原实现读 (global as any).prisma，全库无赋值导致恒 false，
+      // runRAGReviewAgent 疑点驱动闭环永远不可达。改用 config/db 的 prisma 实例。
+      const prisma = (await import('../../config/db')).default;
       const row = await prisma.systemConfig.findUnique({ where: { key: 'rag_agent_enabled' } });
       const v = row?.value;
       if (v === true || v === 'true') return true;
-      if (v && typeof v === 'object' && (v.enabled === true || v.enabled === 'true')) return true;
+      if (v && typeof v === 'object' && ((v as { enabled?: boolean | string }).enabled === true || (v as { enabled?: boolean | string }).enabled === 'true')) return true;
       return false;
     } catch {
       return false;
@@ -455,6 +456,14 @@ export class RAGService {
             snippet: s.snippet || s.originalText || '',
           }))
           .filter(p => p.question && p.question.length > 3);
+
+        // 预算保护：单分片疑点数上限（每个疑点 = 1 次检索 + 1 次判定 LLM 调用，
+        // 不受控的疑点数会让单分片产生数十次串行 LLM 调用，拖垮整个任务）
+        const MAX_SUSPICIONS_PER_CHUNK = 15;
+        if (points.length > MAX_SUSPICIONS_PER_CHUNK) {
+          console.warn(`[RAG-Agent] 分片 ${i + 1}: 疑点数 ${points.length} 超上限，截断至 ${MAX_SUSPICIONS_PER_CHUNK}`);
+          points.length = MAX_SUSPICIONS_PER_CHUNK;
+        }
 
         console.log(`[RAG-Agent] 分片 ${i + 1}/${totalChunks}: 抽取 ${points.length} 个疑点`);
 

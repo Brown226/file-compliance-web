@@ -562,16 +562,24 @@ function buildWordHtml(task: any, details: any): string {
     summary.infos = issues.filter((d: any) => d.severity === 'info').length;
   }
 
+  // HTML 转义（2026-08 修复：此前 description/suggestedText/title 直接插值，无转义有注入风险）
+  const esc = (v: unknown): string => String(v ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+
   const issuesHtml = issues.map((issue: any, i: number) => {
     const severityLabels: Record<string, string> = { error: '错误', warning: '警告', info: '提示' };
     const severity = severityLabels[issue.severity] || issue.severity || '-';
     return `
       <tr>
         <td>${i + 1}</td>
-        <td>${severity}</td>
-        <td>${issue.ruleCode || issue.code || '-'}</td>
-        <td>${issue.description || issue.message || '-'}</td>
-        <td>${issue.suggestedText || issue.suggestion || '-'}</td>
+        <td>${esc(severity)}</td>
+        <td>${esc(issue.ruleCode || issue.code || '-')}</td>
+        <td>${esc(issue.description || issue.message || '-')}</td>
+        <td>${esc(issue.suggestedText || issue.suggestion || '-')}</td>
       </tr>`;
   }).join('');
 
@@ -600,9 +608,9 @@ function buildWordHtml(task: any, details: any): string {
 <body>
   <h1>文件智能审查报告</h1>
   <div class="meta">
-    <p><strong>任务名称：</strong>${task?.title || '-'}</p>
-    <p><strong>审查时间：</strong>${task?.updatedAt ? new Date(task.updatedAt).toLocaleString('zh-CN') : '-'}</p>
-    <p><strong>审查状态：</strong>${task?.status || '-'}</p>
+    <p><strong>任务名称：</strong>${esc(task?.title || '-')}</p>
+    <p><strong>审查时间：</strong>${esc(task?.updatedAt ? new Date(task.updatedAt).toLocaleString('zh-CN') : '-')}</p>
+    <p><strong>审查状态：</strong>${esc(task?.status || '-')}</p>
   </div>
   
   <h2>审查概览</h2>

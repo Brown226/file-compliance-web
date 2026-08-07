@@ -214,6 +214,29 @@ export async function initQueueProcessors(): Promise<void> {
     console.log('[Queue] 临时文件清理定时任务已注册 (每天 03:00)');
   } catch (e) {
     console.warn('[Queue] 清理队列初始化失败（Redis 不可用或配置错误）:', e);
+    // 兜底：Redis 不可用导致清理永不注册时，agent_temp 会永久堆积（磁盘泄漏）。
+    // 这里用进程内定时器兜底：延迟到下一个 03:00 执行一次，之后每 24h 重复。
+    // 清理逻辑幂等（只删过期目录），多实例重复执行无害。
+    try {
+      const now = new Date();
+      const msUntilNext3am =
+        ((24 - now.getHours()) * 60 - now.getMinutes()) * 60 - now.getSeconds();
+      const firstDelayMs = Math.max(msUntilNext3am, 1) * 1000;
+      setTimeout(() => {
+        setInterval(async () => {
+          try {
+            const result = await CleanupService.cleanOldTempFiles(7);
+            console.log(`[Cleanup] 进程内兜底清理完成: 删除 ${result.deleted} 个目录, ${result.errors} 个错误`);
+          } catch (err) {
+            console.error('[Cleanup] 进程内兜底清理失败:', (err as Error).message);
+          }
+        }, 24 * 60 * 60 * 1000);
+        console.log('[Queue] 进程内清理兜底定时器已启动（Redis 不可用模式）');
+      }, firstDelayMs);
+      console.log(`[Queue] 已启用进程内清理兜底（首个执行点 ≈ ${firstDelayMs / 1000 / 60} 分钟后）`);
+    } catch (timerErr) {
+      console.warn('[Queue] 进程内清理兜底注册失败:', (timerErr as Error).message);
+    }
   }
 }
 
