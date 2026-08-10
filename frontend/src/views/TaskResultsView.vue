@@ -70,6 +70,25 @@
           </template>
         </el-alert>
       </div>
+      <!-- P1-7: 标准库/审点库为空告警横幅 -->
+      <div v-if="libEmptyWarnings.length > 0" class="ocr-degraded-banner">
+        <el-alert
+          :title="`审查数据缺失：${libEmptyWarnings.length} 条告警 — 本次审查可能未完整执行`"
+          type="warning"
+          show-icon
+          :closable="true"
+          @close="libEmptyWarnings = []"
+        >
+          <template #default>
+            <div style="margin-top:4px; font-size:13px;">
+              <div v-for="(w, i) in libEmptyWarnings" :key="i" style="margin-bottom:2px;">
+                ⚠️ {{ w }}
+              </div>
+              <p style="margin:4px 0 0; color:#856404;">「未发现问题」可能是「没审到」而非「真合规」，请补充标准库/审点库数据后重新审查。</p>
+            </div>
+          </template>
+        </el-alert>
+      </div>
       <!-- 左侧：文件预览 -->
       <div class="left-panel" :style="leftPanelStyle" ref="leftPanel">
         <div class="panel-header">
@@ -580,6 +599,7 @@ const totalLiveIssueCount = ref(0)
 const skippedNoTextFiles = ref<string[]>([])
 const ocrDegradedFiles = ref<string[]>([])
 const ragDegradedFiles = ref<string[]>([]) // OPT-027: RAG 降级文件列表
+const libEmptyWarnings = ref<string[]>([]) // P1-7: 标准库/审点库为空告警列表
 const runtimeFileStatus = ref<Record<string, 'completed' | 'failed' | 'skipped'>>({})
 let unsubscribeWs: (() => void) | null = null
 const currentStep = ref(2)
@@ -903,6 +923,12 @@ const handleWsMessage = (msg: WsMessage) => {
           ragDegradedFiles.value.push(msg.fileName)
         }
       }
+      // P1-7: 标准库/审点库为空告警
+      if (msg.progressType === 'lib_empty' && msg.message) {
+        if (!libEmptyWarnings.value.includes(msg.message)) {
+          libEmptyWarnings.value.push(msg.message)
+        }
+      }
       break
 
     case 'chunk_result':
@@ -996,6 +1022,15 @@ const fetchData = async (silent = false) => {
       getTaskDetailsApi(taskId.value),
     ])
     task.value = taskRes.data
+    // P1-7: 从 stats.warnings 恢复空库告警（轮询/刷新页面后仍可见）
+    const taskStatsWarnings = (task.value as any)?.stats?.warnings
+    if (Array.isArray(taskStatsWarnings) && taskStatsWarnings.length > 0) {
+      for (const w of taskStatsWarnings) {
+        if (!libEmptyWarnings.value.includes(String(w))) {
+          libEmptyWarnings.value.push(String(w))
+        }
+      }
+    }
     const rawDetails = detailsRes.data as any
     const detailsData = rawDetails?.details || rawDetails || []
     allDetails.value = (Array.isArray(detailsData) ? detailsData : []).map((d: any) => ({
@@ -1031,6 +1066,8 @@ const fetchData = async (silent = false) => {
       dwgMetadata: d.dwgMetadata || null,
       fpReason: d.fpReason || null,
       reviewStatus: d.reviewStatus || null,
+      judgeConfidence: d.judgeConfidence || null,
+      judgeReason: d.judgeReason || null,
       taskId: d.taskId || taskId.value,
       taskFileId: d.taskFileId || '',
     }))

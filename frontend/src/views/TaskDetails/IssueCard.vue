@@ -47,6 +47,28 @@
           <el-tag v-if="detail.isFalsePositive" type="info" size="small" effect="plain" round class="fp-tag">
             误报
           </el-tag>
+          <!-- P1-6: 待人工复核徽标（AI_INFERRED 纯推断 / 合同 HIGH 风险 / 判标 LOW 置信度） -->
+          <el-tag
+            v-if="detail.reviewStatus === 'PENDING_REVIEW'"
+            type="warning"
+            size="small"
+            effect="dark"
+            round
+            :title="detail.judgeReason || '该条目为低置信度/推断结果，建议人工复核后确认'"
+          >
+            待复核
+          </el-tag>
+          <!-- P1-6: 判标置信度（LOW 已由"待复核"徽标承载，避免双标签） -->
+          <el-tag
+            v-if="detail.judgeConfidence && detail.judgeConfidence !== 'LOW'"
+            :type="detail.judgeConfidence === 'HIGH' ? 'success' : 'info'"
+            size="small"
+            effect="plain"
+            round
+            :title="detail.judgeReason || ''"
+          >
+            判标 {{ detail.judgeConfidence }}
+          </el-tag>
           <!-- 合同审查：风险等级 + 条款类型 -->
           <el-tag
             v-if="reviewMode === 'CONTRACT_REVIEW' && detail.riskLevel"

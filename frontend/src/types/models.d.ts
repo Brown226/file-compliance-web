@@ -151,6 +151,10 @@ export interface TaskDetail {
   locateMeta?: LocateMeta | null
   confidence?: ReviewConfidence | null
   confidenceSource?: string | null
+  /** 判标置信度（智能判标层）：HIGH / MEDIUM / LOW；LOW 标记待人工复核 */
+  judgeConfidence?: 'HIGH' | 'MEDIUM' | 'LOW' | null
+  /** 判标理由 */
+  judgeReason?: string | null
   /** DWG 解析元数据 */
   dwgMetadata?: DwgMetadata
   /** 标记建议是否已采纳 */
