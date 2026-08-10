@@ -65,6 +65,13 @@ export interface ReviewIssue {
   textFidelity?: 'exact' | 'normalized' | 'fuzzy' | 'not_found';
   /** DOC_REVIEW（以文审文）：问题来源的参照文件名（多参照文件场景下精确溯源） */
   refSource?: string;
+  /** 审查置信度（智能判标维度）：HIGH / MEDIUM / LOW
+   *  - HIGH: 问题明确、证据充分
+   *  - MEDIUM: 问题存在但证据不够充分
+   *  - LOW: 疑似误报 / 过度解读 —— 不丢弃，落库标记为待人工复核（PENDING_REVIEW） */
+  confidence?: 'HIGH' | 'MEDIUM' | 'LOW';
+  /** 判标理由（智能判标 LLM 输出） */
+  confidenceReason?: string;
 }
 
 export interface LocateMeta {
@@ -238,6 +245,10 @@ export class LlmService {
               if (!zodResult.success) {
                 console.warn('[LLM] 合同审查 item zod 校验失败:', zodResult.error.issues.map(i => `${i.path.join('.')}: ${i.message}`).join('; '));
                 // 校验失败但保留 item（降级处理，不丢弃）
+              }
+              // P2-12: LLM 判定法条存疑时，给法条引用加"仅供参考"后缀，避免以权威口吻呈现
+              if (item.legalBasisUncertain === true && item.standardRef) {
+                item.standardRef = `${item.standardRef}（仅供参考，需人工复核）`;
               }
             }
             const issueType = item.issueType || riskLevelToIssueType[item.riskLevel] || 'VIOLATION';

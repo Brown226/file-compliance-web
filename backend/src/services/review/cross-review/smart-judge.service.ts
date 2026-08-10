@@ -29,10 +29,10 @@ export class SmartJudgeService {
       }
     }
 
-    // 过滤 LOW 置信度
-    const filtered = scored.filter(i => (i as any).confidence !== 'LOW');
-    console.log(`[SmartJudge] 判标: 输入 ${issues.length} 条，过滤 LOW 后 ${filtered.length} 条`);
-    return filtered;
+    // 不再过滤丢弃 LOW：LOW 保留并标记置信度，由落库层转为"待人工复核"（PENDING_REVIEW），
+    // 避免"疑似误报"从用户视野中直接消失（2026-08 P1-6 修复）
+    console.log(`[SmartJudge] 判标: 输入 ${issues.length} 条，LOW 置信度 ${scored.filter(i => i.confidence === 'LOW').length} 条（转人工复核）`);
+    return scored;
   }
 
   private static async judgeBatch(issues: ReviewIssue[], ctx?: PipelineContext): Promise<ReviewIssue[]> {
@@ -67,11 +67,14 @@ ${JSON.stringify(items, null, 2)}
     // 解析 LLM 返回的置信度
     const scores = this.parseJudgeResponse(response);
 
-    // 将置信度写回 issue
+    // 将置信度与理由写回 issue（类型化字段，不再用 any 硬挂）
     return issues.map((issue, idx) => {
       const score = scores.get(idx);
       if (score) {
-        (issue as any).confidence = score.confidence;
+        issue.confidence = (score.confidence === 'HIGH' || score.confidence === 'MEDIUM' || score.confidence === 'LOW')
+          ? score.confidence
+          : undefined;
+        issue.confidenceReason = score.reason || undefined;
       }
       return issue;
     });
