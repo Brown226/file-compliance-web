@@ -114,6 +114,29 @@ export const runSelfCheck = async (req: Request, res: Response): Promise<void> =
           dwgParsedData
         );
 
+        // P1-7: 空库显式告警 — 标准库为空时用户必须能看到「没审到」而非「真合规」
+        if ((report as any).warning) {
+          WebSocketService.emitTaskProgress(task.id, {
+            type: 'lib_empty',
+            step: '标准库为空',
+            progress: 80,
+            message: (report as any).warning,
+            phase: 'self_check',
+            timestamp: Date.now(),
+          });
+          try {
+            const curStats = ((task as any).stats as any) || {};
+            const warnings = Array.isArray(curStats.warnings) ? [...curStats.warnings] : [];
+            warnings.push(`标准库为空：${(report as any).warning}`);
+            await prisma.task.update({
+              where: { id: task.id },
+              data: { stats: { ...curStats, warnings } },
+            });
+          } catch (e) {
+            console.warn('[SelfCheck] 空库告警落库失败（不影响主流程）:', e);
+          }
+        }
+
         // 更新任务：写入报告 + 标记完成
         await prisma.task.update({
           where: { id: task.id },

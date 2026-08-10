@@ -67,6 +67,8 @@ export interface SelfCheckReport {
     name: string;
     total: number;
   };
+  /** P1-7: 空库显式告警 — 标准库为空时提示用户「没审到」而非「真合规」 */
+  warning?: string;
 }
 
 // ============ 服务 ============
@@ -94,6 +96,11 @@ export class SelfCheckService {
     onProgress?.({ current: 0, total: totalFiles, message: '正在加载标准库...' });
     const standardLibrary = await SelfCheckService.loadStandardLibrary(standardFolderId);
     const libInfo = await SelfCheckService.getLibraryInfo(standardFolderId);
+
+    // P1-7: 空库显式告警 — 标准库为空时，比对结果全为 NO_MATCH，不能算「真合规」
+    const libEmptyWarning = standardLibrary.length === 0
+      ? `标准库为空${standardFolderId ? '（当前目录）' : ''}，所有标准引用都会被判为「库中不存在」，请先在标准库中录入标准后再自检。`
+      : undefined;
 
     // 2. 逐文件处理
     for (let i = 0; i < filePaths.length; i++) {
@@ -173,6 +180,7 @@ export class SelfCheckService {
       items: allItems,
       checkedAt: new Date().toISOString(),
       standardLibraryInfo: libInfo,
+      ...(libEmptyWarning ? { warning: libEmptyWarning } : {}),
     };
   }
 
