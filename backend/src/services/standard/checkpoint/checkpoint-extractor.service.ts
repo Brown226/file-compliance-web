@@ -5,8 +5,9 @@
  * 流程（路线 2）：
  * 1. 调 ClauseSplitterService 从 Standard.content 切分条文
  * 2. 对每个条文调 LLM 加工（clauseCode/mandatory/auditDimension/checkPrompt）
- * 3. 落库 StandardCheckpoint
- * 4. 幂等：clauseHash 已存在则跳过
+ * 3. 落库 rule_library_items（V3.2 合并：审点统一落在 rule_library_items，
+ *    标准 → 审点库 的关联在 rule_libraries.standardId，无库时自动创建）
+ * 4. 幂等：同一审点库内 clauseHash 已存在则跳过
  *
  * 不依赖 MaxKB，数据全部来自本地 Standard.content + LLM 加工。
  */
@@ -29,13 +30,14 @@ export class CheckpointExtractorService {
   /**
    * 切分 + 加工 + 落库（一站式）
    */
-  static async extractAndSave(standardId: string, options?: { concurrency?: number }): Promise<{
+  static async extractAndSave(standardId: string, options?: { concurrency?: number; createdBy?: string }): Promise<{
     total: number;
     extracted: number;
     skipped: number;
     failed: number;
   }> {
     const concurrency = options?.concurrency ?? 3;
+    const createdBy = options?.createdBy || 'system';
 
     // 1. 切分条文
     const { clauses } = await ClauseSplitterService.splitStandard(standardId);
@@ -45,9 +47,28 @@ export class CheckpointExtractorService {
       return { total: 0, extracted: 0, skipped: 0, failed: 0 };
     }
 
-    // 2. 查已存在的 clauseHash（幂等）
-    const existing = await prisma.standardCheckpoint.findMany({
-      where: { standardId, clauseHash: { in: clauses.map(c => c.clauseHash) } },
+    // 1.5 找/创建该标准关联的审点库（V3.2 合并：审点统一落在 rule_libraries.standardId → rule_library_items）
+    const standard = await prisma.standard.findUnique({
+      where: { id: standardId },
+      select: { title: true, standardNo: true },
+    });
+    let library = await prisma.ruleLibrary.findFirst({ where: { standardId } });
+    if (!library) {
+      library = await prisma.ruleLibrary.create({
+        data: {
+          name: `${standard?.title || '未命名标准'}审点库`,
+          description: '由「标准全文切分 + LLM 加工」自动生成（V3.2 条文库合并载体）',
+          standardId,
+          createdBy,
+          status: 'DRAFT',
+        },
+      });
+      console.log(`[CheckpointExtractor] 标准 ${standardId} 无关联审点库，已自动创建 ${library.id}`);
+    }
+
+    // 2. 查已存在的 clauseHash（幂等，在同一审点库内查重）
+    const existing = await prisma.ruleLibraryItem.findMany({
+      where: { libraryId: library.id, clauseHash: { in: clauses.map(c => c.clauseHash) } },
       select: { clauseHash: true },
     });
     const existingHashes = new Set(existing.map(e => e.clauseHash));
@@ -69,16 +90,20 @@ export class CheckpointExtractorService {
               failed++;
               return;
             }
-            await prisma.standardCheckpoint.create({
+            await prisma.ruleLibraryItem.create({
               data: {
-                standardId,
-                clauseHash: checkpoint.clauseHash,
-                clauseCode: checkpoint.clauseCode,
+                libraryId: library.id,
+                ruleCode: checkpoint.clauseCode,
+                ruleName: checkpoint.clauseCode,
+                description: checkpoint.clauseText,
                 clauseText: checkpoint.clauseText,
-                mandatory: checkpoint.mandatory,
-                auditDimension: checkpoint.auditDimension,
                 checkPrompt: checkpoint.checkPrompt,
-                source: 'clause_split',
+                auditDimension: checkpoint.auditDimension,
+                mandatory: checkpoint.mandatory,
+                clauseHash: checkpoint.clauseHash,
+                severity: checkpoint.mandatory === 'mandatory' ? 'error' : 'warning',
+                sourceLocation: standard?.standardNo || null,
+                enabled: true,
               },
             });
             extracted++;

@@ -300,7 +300,7 @@ const handleContractReview: ReviewHandler = async (ctx) => {
 /**
  * DEC_REVIEW — DEC 规范审查（审点工程化 + 双分支并行 + 多层交叉复核）
  *
- * - 审点工程化：规范条文经 LLM 加工成结构化审点（mandatory/auditDimension/checkPrompt），存 StandardCheckpoint
+ * - 审点工程化：规范条文经 LLM 加工成结构化审点（mandatory/auditDimension/checkPrompt），存 rule_library_items（V3.2 唯一审点载体）
  * - 双分支并行：完整性审核（骨架级）+ 遵从性审核（内容级）同时运行
  * - 多层容错：遵从性分支内部 3 分支并行 → 3 层交叉复核 → 规则兜底
  * - 依赖 ctx.checkpoints（阶段0 预加载）

@@ -177,7 +177,7 @@ export interface PipelineContext {
   fpLibrarySet?: Set<string>;
   /** OCR 降级原因（非空表示 OCR 服务不可用或失败，审查应生成告警） */
   ocrDegradedReason?: string;
-  /** DEC_REVIEW 专用：预加载的审点库（StandardCheckpoint 记录） */
+  /** DEC_REVIEW 专用：预加载的审点库（rule_library_items 记录，V3.2 合并后唯一载体） */
   checkpoints?: Array<{
     id: string;
     clauseCode: string | null;

@@ -222,9 +222,11 @@ function buildFallbackPreviewItems(text: string, sourceFileName?: string): RuleP
 }
 
 export class RuleLibraryService {
-  static async list(options?: { selectableOnly?: boolean; keyword?: string; status?: string }) {
+  static async list(options?: { selectableOnly?: boolean; keyword?: string; status?: string; standardId?: string }) {
     const selectableOnly = !!options?.selectableOnly;
     const where: any = selectableOnly ? { status: 'PUBLISHED' } : {};
+    // V3.2 条文库合并：按标准过滤审点库（rule_libraries.standardId）
+    if (options?.standardId) where.standardId = options.standardId;
     if (options?.status && ['DRAFT', 'PUBLISHED', 'ARCHIVED'].includes(options.status)) {
       where.status = options.status;
     }
@@ -277,12 +279,14 @@ export class RuleLibraryService {
     };
   }
 
-  static async create(data: { name: string; description?: string; createdBy: string }) {
+  static async create(data: { name: string; description?: string; createdBy: string; standardId?: string | null }) {
     return prisma.ruleLibrary.create({
       data: {
         name: data.name,
         description: data.description,
         createdBy: data.createdBy,
+        // V3.2 条文库合并：可关联标准（保留标准树组织）
+        standardId: data.standardId ?? null,
       },
     });
   }

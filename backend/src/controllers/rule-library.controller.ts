@@ -40,6 +40,8 @@ export const listLibraries = async (_req: AuthRequest, res: Response): Promise<v
     const options: Record<string, any> = { selectableOnly };
     if (_req.query.keyword) options.keyword = String(_req.query.keyword);
     if (_req.query.status) options.status = String(_req.query.status);
+    // V3.2 条文库合并：按标准过滤审点库
+    if (_req.query.standardId) options.standardId = String(_req.query.standardId);
     const libraries = await RuleLibraryService.list(options);
     success(res, libraries);
   } catch (err) {
@@ -63,12 +65,14 @@ export const getLibrary = async (req: AuthRequest, res: Response): Promise<void>
 /** 创建规则库 */
 export const createLibrary = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
-    const { name, description } = req.body;
+    const { name, description, standardId } = req.body;
     if (!name?.trim()) { error(res, '名称不能为空', 400); return; }
     const library = await RuleLibraryService.create({
       name: name.trim(),
       description,
       createdBy: req.user!.id,
+      // V3.2 条文库合并：可关联标准
+      standardId: standardId || null,
     });
     success(res, library, '创建成功');
   } catch (err) {

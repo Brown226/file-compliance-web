@@ -25,7 +25,8 @@ router.post('/standards/:id/checkpoints/generate', requireRole('MANAGER', 'ADMIN
   try {
     const id = req.params.id as string;
     const { concurrency } = req.body || {};
-    const result = await CheckpointExtractorService.extractAndSave(id, { concurrency });
+    const createdBy = (req as any).user?.id || 'system';
+    const result = await CheckpointExtractorService.extractAndSave(id, { concurrency, createdBy });
     success(res, result, '审点生成完成');
   } catch (e) {
     console.error('[Checkpoint Route] 生成失败:', e);
