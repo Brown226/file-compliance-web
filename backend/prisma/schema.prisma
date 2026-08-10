@@ -95,49 +95,9 @@ model Standard {
   updatedAt         DateTime         @updatedAt
   tasks             Task[]
   taskStandards     TaskStandard[]
-  checkpoints       StandardCheckpoint[]
+  ruleLibraries     RuleLibrary[]
 
   @@map("standards")
-}
-
-// ===== DEC 审点库（路线 2：自建条文切分 + LLM 加工） =====
-model StandardCheckpoint {
-  id              String   @id @default(uuid())
-  standardId      String
-  standard        Standard @relation(fields: [standardId], references: [id], onDelete: Cascade)
-  clauseHash      String?  // 条文文本 SHA-256 前 16 位，用于幂等去重
-  clauseCode      String?  // 条文编号（如 "5.2.3"）
-  clauseText      String   @db.Text
-  mandatory       String   @default("mandatory")  // mandatory | guidance
-  auditDimension  String   @default("compliance") // compliance | fact | text
-  checkPrompt     String?  @db.Text  // LLM 加工出的判定 prompt
-  source          String   @default("clause_split")  // clause_split | manual
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
-
-  designChunkBindings DesignChunkCheckpoint[]
-
-  @@unique([standardId, clauseHash])
-  @@index([standardId])
-  @@map("standard_checkpoints")
-}
-
-// ===== 设计 chunk ↔ 审点预绑定 =====
-model DesignChunkCheckpoint {
-  id              String   @id @default(uuid())
-  taskFileId      String
-  taskFile        TaskFile @relation(fields: [taskFileId], references: [id], onDelete: Cascade)
-  chunkIndex      Int
-  chunkText       String   @db.Text
-  checkpointId    String
-  checkpoint      StandardCheckpoint @relation(fields: [checkpointId], references: [id], onDelete: Cascade)
-  bindType        String   @default("prebind")  // prebind | realtime
-  similarity      Float?
-  createdAt       DateTime @default(now())
-
-  @@unique([taskFileId, chunkIndex, checkpointId])
-  @@index([taskFileId, chunkIndex])
-  @@map("design_chunk_checkpoints")
 }
 
 model Task {
@@ -214,7 +174,6 @@ model TaskFile {
   documentKey      String?     @unique @map("document_key")  // OnlyOffice 文档密钥，用于缓存失效
   details         TaskDetail[]
   versions        FileVersion[]
-  checkpointBindings DesignChunkCheckpoint[]
   createdAt       DateTime      @default(now())
 
   @@map("task_files")
@@ -282,6 +241,10 @@ model TaskDetail {
 
   // 人工复核状态
   reviewStatus     String?  @default("CONFIRMED") // PENDING_REVIEW / CONFIRMED / DISMISSED
+
+  // 判标置信度（智能判标层输出）：HIGH / MEDIUM / LOW；LOW 时 reviewStatus 应为 PENDING_REVIEW
+  judgeConfidence String?   @map("judge_confidence")
+  judgeReason     String?   @map("judge_reason")  @db.Text  // 判标理由
 
   // 合同审查专属字段
   riskLevel        String?  // 风险等级: HIGH / MEDIUM / LOW
@@ -770,11 +733,15 @@ model RuleLibrary {
   sourceFileName  String?             @map("source_file_name")
   status          RuleLibraryStatus   @default(DRAFT)
   createdBy       String
+  // ===== V3.2 条文库合并：可选关联标准（保留标准树组织），删除标准时置空 =====
+  standardId      String?
+  standard        Standard?           @relation(fields: [standardId], references: [id], onDelete: SetNull)
   items           RuleLibraryItem[]
   tasks           Task[]
   createdAt       DateTime            @default(now())
   updatedAt       DateTime            @updatedAt
 
+  @@index([standardId])
   @@map("rule_libraries")
 }
 
