@@ -18,6 +18,8 @@ export interface StandardClause {
   title: string;
   content: string;
   category: string;
+  /** DEC-2：审点工程化判定 prompt（由 CheckpointExtractor 加工产出，注入逐条核对 prompt） */
+  checkPrompt?: string;
 }
 
 export interface CheckResult {
@@ -55,6 +57,7 @@ const CLAUSE_CHECK_USER_PROMPT = `## 标准条文
 条文编号：{clauseCode}
 条文标题：{clauseTitle}
 条文内容：{clauseContent}
+{checkPrompt}
 
 ## 待审查文档文本
 {text}
@@ -73,10 +76,13 @@ export class StandardClauseCheckService {
       timeout?: number;
     },
   ): Promise<CheckResult> {
+    // DEC-2: 审点加工出的 checkPrompt 作为审查提示注入（无则留空行，不改变原有行为）
+    const checkPromptSection = clause.checkPrompt ? `审查提示：${clause.checkPrompt}` : '';
     const userContent = CLAUSE_CHECK_USER_PROMPT
       .replace(/\{clauseCode\}/g, clause.code)
       .replace(/\{clauseTitle\}/g, clause.title)
       .replace(/\{clauseContent\}/g, clause.content)
+      .replace(/\{checkPrompt\}/g, checkPromptSection)
       .replace(/\{text\}/g, text);
 
     try {

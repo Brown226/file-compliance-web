@@ -1399,7 +1399,6 @@ const fileContexts = task.files.map(file => {
             issueType: issue.issueType,
             ruleCode: issue.ruleCode || null,
             severity: validateSeverity(issue.issueType, issue.severity),
-            reviewSource: 'AI',
             originalText: issue.originalText,
             suggestedText: issue.suggestedText || null,
             description: issue.description || null,
@@ -1423,6 +1422,9 @@ const fileContexts = task.files.map(file => {
             })(this.getConfidence(issue).confidence),
             clauseType: issue.clauseType || null,
             recommendation: issue.recommendation || null,
+            // DEC-1 修复：透传 handler 层的 reviewSource 标记（DEC 的 COMPLETENESS/COMPLIANCE/RULE_FALLBACK），
+            // 无标记时保持 'AI'。此前写死 'AI' 导致前端 DEC 双清单按 reviewSource 过滤永远为空。
+            reviewSource: (issue as any).reviewSource || 'AI',
           };
         });
 
@@ -1578,7 +1580,6 @@ const fileContexts = task.files.map(file => {
             issueType: issue.issueType,
             ruleCode: issue.ruleCode || null,
             severity: validateSeverity(issue.issueType, issue.severity),
-            reviewSource: 'AI',
             originalText: issue.originalText,
             suggestedText: issue.suggestedText || null,
             description: issue.description || null,
@@ -1595,6 +1596,8 @@ const fileContexts = task.files.map(file => {
             riskLevel: issue.riskLevel || null,
             clauseType: issue.clauseType || null,
             recommendation: issue.recommendation || null,
+            // DEC-1 修复：透传 handler 层 reviewSource 标记（DEC 的 COMPLETENESS/COMPLIANCE/RULE_FALLBACK），无标记保持 'AI'
+            reviewSource: (issue as any).reviewSource || 'AI',
           };
         });
         await prisma.taskDetail.createMany({

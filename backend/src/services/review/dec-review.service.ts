@@ -54,7 +54,8 @@ export class DecReviewService {
     // ===== 合并结果 =====
     const allIssues: ReviewIssue[] = [
       ...completenessResult.issues.map(i => ({ ...i, reviewSource: 'COMPLETENESS' as any })),
-      ...complianceResult.issues.map(i => ({ ...i, reviewSource: 'COMPLIANCE' as any })),
+      // DEC-1 修复：不覆盖已有的 RULE_FALLBACK 标记（runComplianceBranch 已打标），仅无标记时补 COMPLIANCE
+      ...complianceResult.issues.map(i => ({ ...i, reviewSource: (i as any).reviewSource || 'COMPLIANCE' as any })),
     ];
 
     return {
@@ -131,17 +132,19 @@ export class DecReviewService {
   private static async runClauseCheck(
     text: string,
     _ctx: PipelineContext,
-    checkpoints: Array<{ id: string; clauseCode: string | null; clauseText: string; auditDimension: string }>,
+    checkpoints: Array<{ id: string; clauseCode: string | null; clauseText: string; auditDimension: string; checkPrompt?: string | null }>,
     config: PipelineReviewConfig,
   ): Promise<ReviewIssue[]> {
     if (checkpoints.length === 0) return [];
     // 适配 StandardClause 类型：id/code/title/content/category
+    // DEC-2 修复：透传 checkPrompt（审点工程化字段），由 checkSingleClause 注入用户 prompt
     const clauses = checkpoints.map(c => ({
       id: c.id,
       code: c.clauseCode || c.id,
       title: c.clauseCode || '',
       content: c.clauseText,
       category: c.auditDimension,
+      checkPrompt: c.checkPrompt || '',
     }));
     const { results } = await StandardClauseCheckService.checkClauses(clauses, text, {
       temperature: 0.1,
