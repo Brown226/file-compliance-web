@@ -250,6 +250,29 @@ describe('Encoding Consistency Rule (CODE)', () => {
     expect(issues.length).toBe(0);
   });
 
+  it('CODE_005: should NOT trigger for non-pdf files even with encoded filename and no pdfPages', () => {
+    // P2-13 可达性验证：txt 等无 pdfPages 文件路径可达；文件名虽匹配外部编码格式，
+    // 但"PDF页眉不可读"对非 PDF 文件无意义，不应误报 CODE_005
+    const issues = checkEncodingConsistency(ctx({
+      fileName: 'FJ24A00AC-JPS02-001(A).txt',
+      fileType: 'txt',
+      pdfPages: [],
+      extractedText: '',
+    }));
+    expect(issues.some(i => i.ruleCode === 'CODE_005')).toBe(false);
+  });
+
+  it('CODE_005: should still trigger for pdf files with encoded filename and no pdfPages', () => {
+    // 回归：PDF 类型 + 编码文件名 + 空 pdfPages → CODE_005 仍可达
+    const issues = checkEncodingConsistency(ctx({
+      fileName: 'FJ24A00AC-JPS02-001(A).pdf',
+      fileType: 'pdf',
+      pdfPages: [],
+      extractedText: '',
+    }));
+    expect(issues.some(i => i.ruleCode === 'CODE_005')).toBe(true);
+  });
+
   it('should detect UNIT_001 when unit numbers mismatch', () => {
     const issues = checkUnitConsistency(ctx({
       fileName: 'FJ24A00AC-JPS02-001(A).pdf',

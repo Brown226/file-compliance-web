@@ -42,6 +42,21 @@ export function checkHeader(ctx: FileContext, config?: any): RuleIssue[] {
   // 最多检查页数（支持 config 覆盖）
   const maxCheckPages: number = config?.maxCheckPages ?? 5;
 
+  // 替代页眉白名单：工程图纸页眉常用图号/编号/页码等替代封面名，不算错误。
+  // 任一模式命中即视为"正常页眉"，跳过 HEADER_001/002。支持 config 覆盖。
+  const alternativeHeaderPatterns: RegExp[] = config?.alternativeHeaderPatterns
+    ? (Array.isArray(config.alternativeHeaderPatterns)
+        ? config.alternativeHeaderPatterns.map((p: string | RegExp) =>
+            typeof p === 'string' ? new RegExp(p) : p)
+        : [config.alternativeHeaderPatterns])
+    : [
+        /图\s*号|图号[：:\s]|DWG[\s\-]?NO/i,            // 图号
+        /DOC\.?\s*NO|FILE\s*NO|文件编号|编号[：:\s]/i,   // 文件编号
+        /第\s*\d+\s*页|PAGE\s*\d+/i,                     // 页码
+        /共\s*\d+\s*页|(\d+)\s*\/\s*(\d+)/,              // 共几页 / x/y
+        /版\s*次|REV\s*[.\-]?\d+/i,                      // 版次/修订
+      ];
+
   // 检查第2页起的页眉（跳过封面页）
   let reported = false;
   for (let i = 1; i < Math.min(ctx.pdfPages.length, maxCheckPages) && !reported; i++) {
@@ -61,6 +76,9 @@ export function checkHeader(ctx: FileContext, config?: any): RuleIssue[] {
         description: `第${i + 1}页页眉内容为空，应包含图册名称"${coverName}"。`,
       });
       reported = true;
+    } else if (alternativeHeaderPatterns.some(re => re.test(headerText))) {
+      // 命中替代页眉白名单（图号/编号/页码/版次等）：视为正常工程页眉，不报错
+      continue;
     } else {
       // 不匹配（可通过 config.headerMustMatchCover=false 跳过此检查）
       if (config?.headerMustMatchCover !== false) {

@@ -28,12 +28,20 @@ export function checkEncodingConsistency(ctx: FileContext, config?: any): RuleIs
   const externalCode = externalCodeMatch[1];
 
   // CODE_005: PDF无法读取页眉内容
+  // 可达性验证（2026-08-07 确认）：文件名匹配外部编码格式但 pdfPages 为空 的路径可达——
+  // 现有测试 encoding.rule.test.ts "CODE_005: should detect when pdfPages is empty" 已证明（pdfPages: [] + 编码文件名）。
+  // txt 等无 pdfPages 文件路径同样可达，但"PDF页眉不可读"对非 PDF 文件无意义：
+  // 若 txt/docx/dwg 文件名恰好匹配编码格式且无 pdfPages，会误报 CODE_005。
+  // 故仅 PDF 文件类型触发 CODE_005；非 PDF 文件无页眉文本可校验，直接返回（同时避免
+  // 下方 headerText 从空 pdfPages 越界读取 undefined——P2-13 实测暴露的潜在崩溃点）。
   if (!ctx.pdfPages || ctx.pdfPages.length === 0) {
-    issues.push({
-      issueType: 'VIOLATION', ruleCode: 'CODE_005', severity: 'warning',
-      originalText: '(PDF页眉不可读)',
-      description: '无法读取PDF页眉内容，跳过编码一致性检查。',
-    });
+    if (ctx.fileType.toLowerCase() === 'pdf') {
+      issues.push({
+        issueType: 'VIOLATION', ruleCode: 'CODE_005', severity: 'warning',
+        originalText: '(PDF页眉不可读)',
+        description: '无法读取PDF页眉内容，跳过编码一致性检查。',
+      });
+    }
     return issues;
   }
 

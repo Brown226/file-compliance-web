@@ -15,6 +15,10 @@
  *   forbiddenLayers?: string[]       — 禁止出现的图层名（默认 ['0', 'Defpoints']）
  *   maxEntitiesPerLayer?: number     — 单图层最大图元数（超过可能重叠，默认 500）
  *   scalePattern?: string            — 比例格式正则（默认匹配 1:N 或 N:1 格式）
+ *   dimensionTextMin?: number        — DWG_DIM 文本实体数下限（默认 2）
+ *   dimensionOtherThreshold?: number — DWG_DIM "其他"图元数阈值（默认 10；other 为 WASM 推断数据，判定仅作提示）
+ *   overlapOtherThreshold?: number   — DWG_OVERLAP "其他"图元数阈值（默认 500；超过时重叠判定降置信提示）
+ *   stdRefPattern?: string           — DWG_STDREF 标准引用格式正则（默认匹配核电工标/国标前缀 + 序号 + 版本年份）
  */
 
 import { RuleIssue, FileContext } from './types';
@@ -175,13 +179,21 @@ function checkLayerNaming(ctx: FileContext, config?: any): RuleIssue[] {
 /**
  * DWG_DIM_001: 尺寸标注检查
  * 检查是否有图层包含文本但没有尺寸标注（可能遗漏标注）
+ *
+ * P2-13 降置信说明：`layer_stats.other`（"其他"图元数）是前端 WASM 的推断数据——
+ * 由总图元数扣除 text/dimension 后平均分摊到各图层（见 dwg-handler.service.ts:70-98），
+ * 并非逐图层真实统计。因此本规则的阈值通过 config 可调，且命中时描述标注"需人工确认"。
  */
-function checkDimensions(ctx: FileContext, _config?: any): RuleIssue[] {
+function checkDimensions(ctx: FileContext, config?: any): RuleIssue[] {
   const issues: RuleIssue[] = [];
   const dwg = getDwgData(ctx);
   if (!dwg?.metadata?.layer_stats) return issues;
 
   const layerStats = dwg.metadata.layer_stats;
+
+  // 阈值可配置（默认与旧硬编码一致）
+  const textMin: number = config?.dimensionTextMin ?? 2;
+  const otherThreshold: number = config?.dimensionOtherThreshold ?? 10;
 
   // 检查有文本但无标注的图层（可能遗漏标注）
   for (const [layerName, stats] of Object.entries(layerStats)) {
@@ -192,13 +204,13 @@ function checkDimensions(ctx: FileContext, _config?: any): RuleIssue[] {
     }
 
     // 有文本且有其他图元，但无标注
-    if (stats.text > 2 && stats.other > 10 && stats.dimension === 0) {
+    if (stats.text > textMin && stats.other > otherThreshold && stats.dimension === 0) {
       issues.push({
         issueType: 'VIOLATION',
         ruleCode: 'DWG_DIM_001',
         severity: 'warning',
         originalText: `图层: ${layerName}`,
-        description: `图层"${layerName}"包含 ${stats.text} 个文本实体和 ${stats.other} 个其他图元，但无尺寸标注，可能遗漏标注。`,
+        description: `图层"${layerName}"包含 ${stats.text} 个文本实体和 ${stats.other} 个其他图元，但无尺寸标注，可能遗漏标注（"其他"图元为图层统计推断数据，需人工确认）。`,
       });
     }
   }
@@ -222,8 +234,18 @@ function checkDimensions(ctx: FileContext, _config?: any): RuleIssue[] {
 /**
  * DWG_STDREF_001: 标准规范引用检查
  * 检查图纸中是否引用了相关标准
+ *
+ * 字段语义推断（2026-08-07，暂无真实 DWG 数据现场验证，按代码现有结构）：
+ * - standardRefs 由前端 WASM（dwg_standard_refs → dwg-handler.service.ts:149-155）或 Python parser
+ *   （python-parser.service.ts:69-75）填充，结构为 { standardNo, standardName, standardIdent, fullMatch, cadHandleId? }。
+ * - standardIdent 只是前缀标识符（如 "GB/T"，见 standard-extractor.service.ts:16 与 getIdent），
+ *   完整编号在 standardNo（如 "GB/T 50010-2010"）。因此格式校验以 standardNo 为准，
+ *   standardNo 为空时回退 fullMatch / standardIdent。
+ *
+ * P2-13 修复：原循环体为空注释（等于没做），且 refCount > 0 时无任何检查。
+ * 现在 refCount > 0 时逐条校验引用格式（前缀 + 序号 + 版本年份），异常报 DWG_STDREF_001。
  */
-function checkStandardRefs(ctx: FileContext, _config?: any): RuleIssue[] {
+function checkStandardRefs(ctx: FileContext, config?: any): RuleIssue[] {
   const issues: RuleIssue[] = [];
   const dwg = getDwgData(ctx);
   if (!dwg) return issues;
@@ -231,7 +253,7 @@ function checkStandardRefs(ctx: FileContext, _config?: any): RuleIssue[] {
   const standardRefs = dwg.structure?.standardRefs || [];
   const refCount = (dwg.metadata as any)?.standard_ref_count ?? standardRefs.length;
 
-  // 如果图纸有内容但无标准引用
+  // 图纸有内容但无标准引用（保留原有告警分支）
   const textCount = dwg.metadata?.dwg_text_count ?? 0;
   if (textCount > 5 && refCount === 0) {
     issues.push({
@@ -243,14 +265,24 @@ function checkStandardRefs(ctx: FileContext, _config?: any): RuleIssue[] {
     });
   }
 
-  // 检查已废止标准（需要配合标准库检查，此处仅做基本提示）
+  // refCount > 0：逐条校验引用格式（核电工标/国标前缀 + 序号 + 版本年份）
+  // config.stdRefPattern 可覆盖默认正则；默认覆盖 GB/T、DL/T、NB/T、EJ、JB/T 等常见前缀
+  const stdRefPattern: RegExp = config?.stdRefPattern
+    ? new RegExp(config.stdRefPattern)
+    : /^(GB\/T|GB|DL\/T|DL|NB\/T|NB|EJ|EJ\/T|JB\/T|JB|HG\/T|HG|SH\/T|SH|SY\/T|SY|SL|JTG|CJJ|JGJ|JG|HAF|T\/CECS|CECS)\s*\d+(?:\.\d+)?\s*[-—－]\s*\d{2,4}\s*(?:\(.*\))?$/i;
+
   for (const ref of standardRefs) {
-    // 这里可以做更精确的标准库匹配检查
-    // 目前仅检查引用格式是否规范
-    const ident = ref.standardIdent || '';
-    if (ident && !ident.includes('/')) {
-      // 可能是强制性国标（GB），无 /T 后缀，需特别关注
-      // 但不一定是问题，所以仅记录为 info
+    const ident = (ref.standardNo || ref.fullMatch || ref.standardIdent || '').trim();
+    if (!ident) continue;
+    if (!stdRefPattern.test(ident)) {
+      issues.push({
+        issueType: 'VIOLATION',
+        ruleCode: 'DWG_STDREF_001',
+        severity: 'warning',
+        originalText: ident,
+        suggestedText: '示例: GB/T 50010-2010',
+        description: `标准引用"${ident}"格式异常：应包含标准前缀（如 GB/T、DL/T、NB/T、EJ 等）及版本号/年份。`,
+      });
     }
   }
 
@@ -308,6 +340,10 @@ function checkScale(ctx: FileContext, config?: any): RuleIssue[] {
 /**
  * DWG_OVERLAP_001: 图元重叠检查
  * 检查是否有图层包含大量图元（可能存在重叠）
+ *
+ * P2-13 降置信说明：totalEntities 包含 `layer_stats.other`（前端 WASM 推断数据，
+ * 总图元数扣除 text/dimension 后平均分摊，见 dwg-handler.service.ts:70-98）。
+ * 当 other 超过 config.overlapOtherThreshold 时，重叠判定依赖推断数据，描述追加"需人工确认"。
  */
 function checkOverlap(ctx: FileContext, config?: any): RuleIssue[] {
   const issues: RuleIssue[] = [];
@@ -315,16 +351,20 @@ function checkOverlap(ctx: FileContext, config?: any): RuleIssue[] {
   if (!dwg?.metadata?.layer_stats) return issues;
 
   const maxEntitiesPerLayer: number = config?.maxEntitiesPerLayer ?? 500;
+  const overlapOtherThreshold: number = config?.overlapOtherThreshold ?? 500;
 
   for (const [layerName, stats] of Object.entries(dwg.metadata.layer_stats)) {
     const totalEntities = stats.text + stats.dimension + stats.other;
     if (totalEntities > maxEntitiesPerLayer) {
+      // 其他图元占比高 → 判定依据为推断数据，降置信
+      const otherInferred = stats.other > overlapOtherThreshold;
       issues.push({
         issueType: 'VIOLATION',
         ruleCode: 'DWG_OVERLAP_001',
         severity: 'warning',
         originalText: `图层: ${layerName} (${totalEntities} 个图元)`,
-        description: `图层"${layerName}"包含 ${totalEntities} 个图元（超过阈值 ${maxEntitiesPerLayer}），可能存在图元重叠，建议检查。`,
+        description: `图层"${layerName}"包含 ${totalEntities} 个图元（超过阈值 ${maxEntitiesPerLayer}），可能存在图元重叠，建议检查。` +
+          (otherInferred ? `（其中"其他"图元 ${stats.other} 个为图层统计推断数据，需人工确认）` : ''),
       });
     }
   }

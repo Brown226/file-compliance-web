@@ -99,4 +99,44 @@ describe('Page Number Rule (PAGE)', () => {
     expect(issues.some(i => i.ruleCode === 'PAGE_001')).toBe(false);
   });
 
+  /* ===== 误报回归：正文中的分数/比值/日期不应被当页码 ===== */
+
+  it('should NOT treat body-text fractions/ratios as page numbers', () => {
+    // 分数/比值出现在正文中段（超过页首/页尾 80 字符区域），不应触发 PAGE_001
+    const bodyText = (marker: string) =>
+      `这是第${marker}页的正文开头，包含大量说明性文字用于撑满页眉检查边界，继续填充内容直至超过八十字符的门槛阈值，` +
+      `此处出现比例 ${marker}/2 与比值 3/4 属于正常正文内容，后续还有更多描述文字确保整个段落长度远超页首页尾的检测范围，` +
+      `结尾部分继续补充常规文档内容以便定位函数只会在页眉页脚区域寻找真实页码。`;
+
+    const issues = checkPageNumbers(ctx([bodyText('1'), bodyText('2'), bodyText('3')]));
+    expect(issues.some(i => i.ruleCode === 'PAGE_001')).toBe(false);
+  });
+
+  it('should NOT treat dates (yyyy/mm/dd) as page numbers', () => {
+    // 日期形态出现在页首区域也不应匹配：前有斜杠排除，且 4 位年份超出 1-3 位限制
+    const issues = checkPageNumbers(ctx([
+      '签署日期 2026/08/07 完成',
+      '签署日期 2026/08/08 完成',
+      '签署日期 2026/08/09 完成',
+    ]));
+    expect(issues.some(i => i.ruleCode === 'PAGE_001')).toBe(false);
+    expect(issues.some(i => i.ruleCode === 'PAGE_003')).toBe(false);
+  });
+
+  it('should still detect real bare page numbers in header/footer margin', () => {
+    const issues = checkPageNumbers(ctx([
+      '页脚页码区 1/10',
+      '页脚页码区 2/10',
+      '页脚页码区 3/10',
+    ]));
+    // 连续页码通过；但如果出现跳页（如第3页写4/10）应报 PAGE_001
+    const gap = checkPageNumbers(ctx([
+      '页脚 1/10',
+      '页脚 3/10',
+      '页脚 3/10',
+    ]));
+    expect(issues.some(i => i.ruleCode === 'PAGE_001')).toBe(false);
+    expect(gap.some(i => i.ruleCode === 'PAGE_001')).toBe(true);
+  });
+
 });

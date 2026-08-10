@@ -104,4 +104,48 @@ describe('Header Rule (HEADER)', () => {
     expect(issues.length).toBe(0);
   });
 
+  /* ===== 误报回归：工程图纸替代页眉（图号/编号/页码）不应触发 HEADER_001 ===== */
+
+  it('should pass when header uses drawing number (图号) instead of cover name', () => {
+    const issues = checkHeader(ctx([
+      '封面',
+      '图号：HX-2026-001',
+      '图号：HX-2026-002',
+    ], '图册名称：某厂区总平面施工图设计说明'));
+    expect(issues.some(i => i.ruleCode === 'HEADER_001')).toBe(false);
+  });
+
+  it('should pass when header uses document number (DOC.NO/文件编号)', () => {
+    const issues = checkHeader(ctx([
+      '封面',
+      'DOC.NO: SJS-2026-0158',
+    ], '图册名称：综合管网施工图设计说明'));
+    expect(issues.some(i => i.ruleCode === 'HEADER_001')).toBe(false);
+  });
+
+  it('should pass when header uses page marker (第X页/共X页)', () => {
+    const issues = checkHeader(ctx([
+      '封面',
+      '第2页 共10页',
+      '第3页 共10页',
+    ], '图册名称：道路排水施工图设计说明'));
+    expect(issues.some(i => i.ruleCode === 'HEADER_001')).toBe(false);
+  });
+
+  it('should still report HEADER_001 when header is plain unrelated text (not whitelisted)', () => {
+    const issues = checkHeader(ctx([
+      '封面',
+      '这是毫无关联的普通描述性文字且不含任何编号页码特征',
+    ], '图册名称：某某施工图设计说明'));
+    expect(issues.some(i => i.ruleCode === 'HEADER_001')).toBe(true);
+  });
+
+  it('should respect custom alternativeHeaderPatterns config override', () => {
+    const issues = checkHeader(ctx([
+      '封面',
+      '内部资料 请勿外传',
+    ], '图册名称：某某施工图设计说明'), { alternativeHeaderPatterns: [/内部资料/] });
+    expect(issues.some(i => i.ruleCode === 'HEADER_001')).toBe(false);
+  });
+
 });
