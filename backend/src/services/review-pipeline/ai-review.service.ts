@@ -1149,7 +1149,9 @@ export class AiReviewService {
           batch.map(async (clause, batchIdx) => {
             const clauseIdx = i + batchIdx;
             const legalBasis = getDefaultLegalBasis(clause.clauseType || clause.clauseNo + clause.clauseTitle);
-            const userContent = `【条款】${clause.clauseNo} ${clause.clauseTitle}\n${clause.clauseContent}\n\n【法律依据】${legalBasis}`
+            // P2-12: 法条由"既定事实"降级为"候选线索"——系统按条款类型推断，可能不准确，
+            // 需 LLM 自行判断是否适用，避免错误法条被当作权威上下文引导结论。
+            const userContent = `【条款】${clause.clauseNo} ${clause.clauseTitle}\n${clause.clauseContent}\n\n【法律依据参考，可能不准确，请勿直接引用，需自行判断该法条是否适用；不适用则不引用或标注存疑】${legalBasis}`
               + (refTextsJoined ? `\n\n【参照文件】\n${refTextsJoined}` : '')
               + (ragContext ? `\n\n【知识库上下文】\n${ragContext}` : '')
               + `\n\n${mergedUserPromptTemplate}`;

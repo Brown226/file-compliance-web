@@ -28,6 +28,8 @@ export const RiskItemSchema = z.object({
   riskDescription: z.string().min(1, '风险描述不能为空'),
   suggestion: z.string().min(1, '修改建议不能为空'),
   legalBasis: z.string().optional(),
+  // P2-12: 法条存疑标记——启发式推断的 legalBasis 不保证准确，LLM 判断不适用/存疑时置 true
+  legalBasisUncertain: z.boolean().optional(),
   originalText: z.string().optional(),
 });
 
