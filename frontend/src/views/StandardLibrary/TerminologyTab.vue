@@ -1,182 +1,199 @@
 <template>
-  <div class="terminology-container">
-    <div class="terminology-layout">
-      <!-- 左侧分类 -->
-      <div class="terminology-sidebar">
-        <el-card class="terminology-sidebar-card">
-          <template #header>
-            <div class="folder-header">
-              <span class="folder-title">术语分类</span>
-              <el-tag size="small" type="info">{{ terminologyTotal }} 词</el-tag>
-            </div>
-          </template>
-          <div class="folder-search">
-            <el-input v-model="categorySearchQuery" placeholder="搜索分类..." clearable size="small" :prefix-icon="Search" />
-          </div>
-          <div class="folder-tree-wrapper">
-            <div
-              class="folder-node"
-              :class="{ active: !termFilterCategory }"
-              @click="termFilterCategory = ''"
-            >
-              <el-icon><Files /></el-icon>
-              <span class="folder-name">全部分类</span>
-              <span class="folder-count">{{ terminologyTotal }}</span>
-            </div>
-            <div
-              v-for="cat in filteredCategories"
-              :key="cat.category"
-              class="folder-node"
-              :class="{ active: termFilterCategory === cat.category }"
-              @click="termFilterCategory = cat.category"
-            >
-              <el-icon><Folder /></el-icon>
-              <span class="folder-name">{{ cat.category }}</span>
-              <span class="folder-count">{{ cat.count }}</span>
-            </div>
-          </div>
-        </el-card>
+  <div class="wl-page">
+    <!-- 页头 -->
+    <header class="page-header">
+      <div>
+        <h3 class="page-title">白名单库</h3>
+        <p class="page-sub">审查时自动忽略白名单内的专业词条，避免误报，让审查聚焦真实问题。</p>
       </div>
+      <div class="page-actions">
+        <el-input
+          v-model="termSearchQuery"
+          placeholder="搜索词条或别名…"
+          clearable
+          class="quick-search"
+          :prefix-icon="Search"
+          @input="handleTermSearch"
+          @clear="handleTermSearch"
+        />
+        <el-button v-if="canManage" type="primary" :icon="Plus" @click="openTermDialog('add')">新增词条</el-button>
+        <el-button
+          v-if="canManage && selectedRows.length > 0"
+          type="danger"
+          :icon="Delete"
+          @click="handleBatchDelete"
+        >
+          批量删除 ({{ selectedRows.length }})
+        </el-button>
+      </div>
+    </header>
 
-      <!-- 右侧术语列表 -->
-      <div class="terminology-main">
-        <el-card>
-          <template #header>
-            <div class="card-header">
-              <div class="header-title">
-                {{ termFilterCategory || '白名单术语库' }}
-              </div>
-              <div class="header-actions">
-                <el-input
-                  v-model="termSearchQuery"
-                  placeholder="搜索术语或别名"
-                  class="search-input"
-                  clearable
-                  :prefix-icon="Search"
-                  @input="handleTermSearch"
-                  @clear="handleTermSearch"
-                />
-                <!-- 新增按钮：仅 ADMIN/MANAGER 可见 -->
-                <el-button v-if="canManage" type="primary" :icon="Plus" @click="openTermDialog('add')">新增术语</el-button>
-                <el-button
-                  v-if="canManage && selectedRows.length > 0"
-                  type="danger"
-                  :icon="Delete"
-                  size="default"
-                  @click="handleBatchDelete"
-                >
-                  批量删除 ({{ selectedRows.length }})
-                </el-button>
-              </div>
-            </div>
-          </template>
-
-          <el-table
-            :data="terminologyList"
-            style="width:100%"
-            v-loading="terminologyLoading"
-            border
-            @selection-change="handleSelectionChange"
+    <!-- 左右布局 -->
+    <div class="wl-body">
+      <!-- 左栏：分类 -->
+      <aside class="wl-sidebar">
+        <div class="sidebar-header">
+          <span class="sidebar-title">词条分类</span>
+          <el-tooltip content="按专业领域分类管理白名单词条" placement="top">
+            <el-icon class="sidebar-help"><QuestionFilled /></el-icon>
+          </el-tooltip>
+        </div>
+        <div class="sidebar-search">
+          <el-input v-model="categorySearchQuery" placeholder="搜索分类…" clearable size="default" :prefix-icon="Search" />
+        </div>
+        <div class="sidebar-list">
+          <div
+            class="sidebar-item"
+            :class="{ active: !termFilterCategory }"
+            @click="termFilterCategory = ''"
           >
-            <el-table-column v-if="canManage" type="selection" width="45" align="center" />
-            <el-table-column prop="term" label="术语" width="200" sortable="custom" />
-            <el-table-column prop="category" label="分类" width="120" align="center" sortable="custom">
-              <template #default="{ row }">
-                <el-tag size="small" :type="termCategoryTagType(row.category)">{{ row.category }}</el-tag>
-              </template>
-            </el-table-column>
-            <el-table-column label="别名" min-width="280">
-              <template #default="{ row }">
-                <template v-if="row.aliases?.length">
-                  <el-popover v-if="row.aliases.length > 5" trigger="hover" placement="top" :width="240">
-                    <template #reference>
-                      <div class="alias-preview">
-                        <el-tag v-for="(alias, i) in row.aliases.slice(0, 5)" :key="i" size="small" type="info" style="margin:2px 4px 2px 0;">{{ alias }}</el-tag>
-                        <el-tag size="small" type="primary" style="margin:2px;">+{{ row.aliases.length - 5 }}</el-tag>
-                      </div>
-                    </template>
-                    <div class="alias-full-list">
-                      <el-tag v-for="(alias, i) in row.aliases" :key="i" size="small" type="info" style="margin:2px 4px 2px 0;">{{ alias }}</el-tag>
-                    </div>
-                  </el-popover>
-                  <template v-else>
-                    <el-tag v-for="(alias, i) in row.aliases" :key="i" size="small" type="info" style="margin:2px 4px 2px 0;">{{ alias }}</el-tag>
-                  </template>
-                </template>
-                <span v-else style="color:var(--el-text-color-secondary);">—</span>
-              </template>
-            </el-table-column>
-            <el-table-column prop="isBuiltin" label="类型" width="80" align="center">
-              <template #default="{ row }">
-                <el-tag :type="row.isBuiltin ? 'warning' : 'success'" size="small">{{ row.isBuiltin ? '内置' : '自定义' }}</el-tag>
-              </template>
-            </el-table-column>
-            <!-- 操作列：仅 ADMIN/MANAGER 可见 -->
-            <el-table-column v-if="canManage" label="操作" width="150" align="center" fixed="right">
-              <template #default="scope">
-                <el-button size="small" type="primary" link @click="openTermDialog('edit', scope.row)">编辑</el-button>
-                <el-tooltip :content="scope.row.isBuiltin ? '内置术语不可删除' : '删除此术语'" placement="top">
-                  <el-button size="small" type="danger" link @click="handleDeleteTerm(scope.row)" :disabled="scope.row.isBuiltin">删除</el-button>
-                </el-tooltip>
-              </template>
-            </el-table-column>
-          </el-table>
-
-          <el-empty v-if="!terminologyLoading && terminologyList.length === 0" description="暂无术语数据" :image-size="100" />
-
-          <div class="pagination-container">
-            <el-pagination
-              v-model:current-page="termCurrentPage"
-              v-model:page-size="termPageSize"
-              :page-sizes="[20, 50, 100]"
-              :background="true"
-              layout="total, sizes, prev, pager, next"
-              :total="terminologyTotal"
-              @size-change="fetchTerminologyList"
-              @current-change="fetchTerminologyList"
-            />
+            <div class="sidebar-item-top">
+              <el-icon class="cat-icon"><Files /></el-icon>
+              <span class="cat-name">全部分类</span>
+              <span class="sidebar-item-count">{{ terminologyTotal }}</span>
+            </div>
           </div>
-        </el-card>
-      </div>
+          <div class="sidebar-group-label">专业分类</div>
+          <div
+            v-for="cat in filteredCategories"
+            :key="cat.category"
+            class="sidebar-item"
+            :class="{ active: termFilterCategory === cat.category }"
+            @click="termFilterCategory = cat.category"
+          >
+            <div class="sidebar-item-top">
+              <el-icon class="cat-icon" :style="{ color: `var(--color-${termCategoryColor(cat.category)})` }"><Folder /></el-icon>
+              <span class="cat-name">{{ cat.category }}</span>
+              <span class="sidebar-item-count">{{ cat.count }}</span>
+            </div>
+          </div>
+          <div v-if="filteredCategories.length === 0" class="sidebar-empty">未找到匹配分类</div>
+        </div>
+      </aside>
+
+      <!-- 右栏：词条列表 -->
+      <main class="wl-main">
+        <div class="scope-bar">
+          <span class="scope-badge" :class="{ 'scope-badge-all': !termFilterCategory }">
+            {{ termFilterCategory || '全部分类' }}
+          </span>
+          <span class="scope-hint">审查时这些词条将被自动忽略，不计入问题</span>
+        </div>
+
+        <el-table
+          v-loading="terminologyLoading"
+          :data="terminologyList"
+          class="wl-table"
+          stripe
+          size="default"
+          max-height="calc(100vh - 480px)"
+          empty-text="暂无词条"
+          @selection-change="handleSelectionChange"
+        >
+          <el-table-column v-if="canManage" type="selection" width="44" align="center" />
+          <el-table-column prop="term" label="词条" min-width="200" sortable="custom">
+            <template #default="{ row }">
+              <span class="term-name">{{ row.term }}</span>
+            </template>
+          </el-table-column>
+          <el-table-column prop="category" label="分类" width="140" align="center" sortable="custom">
+            <template #default="{ row }">
+              <el-tag size="small" effect="light" :type="termCategoryTagType(row.category)">{{ row.category }}</el-tag>
+            </template>
+          </el-table-column>
+          <el-table-column label="别名" min-width="260">
+            <template #default="{ row }">
+              <template v-if="row.aliases?.length">
+                <el-popover v-if="row.aliases.length > 5" trigger="hover" placement="top" :width="260">
+                  <template #reference>
+                    <div class="alias-preview">
+                      <el-tag v-for="(alias, i) in row.aliases.slice(0, 5)" :key="i" size="small" effect="plain" class="alias-tag">{{ alias }}</el-tag>
+                      <el-tag size="small" type="primary" class="alias-tag">+{{ row.aliases.length - 5 }}</el-tag>
+                    </div>
+                  </template>
+                  <div class="alias-full-list">
+                    <el-tag v-for="(alias, i) in row.aliases" :key="i" size="small" effect="plain" class="alias-tag">{{ alias }}</el-tag>
+                  </div>
+                </el-popover>
+                <div v-else class="alias-preview">
+                  <el-tag v-for="(alias, i) in row.aliases" :key="i" size="small" effect="plain" class="alias-tag">{{ alias }}</el-tag>
+                </div>
+              </template>
+              <span v-else class="alias-empty">—</span>
+            </template>
+          </el-table-column>
+          <el-table-column prop="isBuiltin" label="类型" width="100" align="center">
+            <template #default="{ row }">
+              <el-tag :type="row.isBuiltin ? 'info' : 'success'" size="small" effect="light">
+                {{ row.isBuiltin ? '内置' : '自定义' }}
+              </el-tag>
+            </template>
+          </el-table-column>
+          <el-table-column v-if="canManage" label="操作" width="140" align="center" fixed="right">
+            <template #default="scope">
+              <el-button link type="primary" size="small" @click="openTermDialog('edit', scope.row)">编辑</el-button>
+              <el-tooltip :content="scope.row.isBuiltin ? '内置词条不可删除' : '删除此词条'" placement="top">
+                <el-button link type="danger" size="small" @click="handleDeleteTerm(scope.row)" :disabled="scope.row.isBuiltin">删除</el-button>
+              </el-tooltip>
+            </template>
+          </el-table-column>
+        </el-table>
+
+        <div class="pagination-container">
+          <el-pagination
+            v-model:current-page="termCurrentPage"
+            v-model:page-size="termPageSize"
+            :page-sizes="[20, 50, 100]"
+            :background="true"
+            layout="total, sizes, prev, pager, next"
+            :total="terminologyTotal"
+            @size-change="fetchTerminologyList"
+            @current-change="fetchTerminologyList"
+          />
+        </div>
+      </main>
     </div>
 
-    <!-- Terminology Add/Edit Dialog -->
+    <!-- 词条新增/编辑对话框 -->
     <el-dialog
       v-model="termDialogVisible"
-      :title="termDialogType === 'add' ? '新增术语' : '编辑术语'"
+      :title="termDialogType === 'add' ? '新增词条' : '编辑词条'"
       width="520px"
       @close="resetTermForm"
     >
       <el-form ref="termFormRef" :model="termFormData" :rules="termFormRules" label-width="80px">
-        <el-form-item label="术语" prop="term">
-          <el-input v-model="termFormData.term" placeholder="请输入专业术语" />
+        <el-form-item label="词条" prop="term">
+          <el-input v-model="termFormData.term" placeholder="请输入专业词条，如：余热排出系统" />
         </el-form-item>
         <el-form-item label="分类" prop="category">
-          <el-select v-model="termFormData.category" placeholder="选择或输入新分类" style="width:100%" filterable allow-create default-first-option>
+          <el-select v-model="termFormData.category" placeholder="选择或输入新分类" class="full-width" filterable allow-create default-first-option>
             <el-option v-for="cat in termCategoryOptions" :key="cat" :label="cat" :value="cat" />
           </el-select>
         </el-form-item>
         <el-form-item label="别名">
-          <div style="width:100%;">
-            <el-tag
-              v-for="(alias, index) in termFormData.aliases"
-              :key="index"
-              closable
-              @close="termFormData.aliases.splice(index, 1)"
-              style="margin:2px 4px;"
-            >{{ alias }}</el-tag>
-            <el-input
-              v-if="termAliasInputVisible"
-              ref="termAliasInputRef"
-              v-model="termAliasInputValue"
-              size="small"
-              style="width:120px;margin:2px;"
-              @keyup.enter="handleTermAliasConfirm"
-              @blur="handleTermAliasConfirm"
-            />
-            <el-button v-else size="small" @click="termAliasInputVisible = true" style="margin:2px;">
-              + 添加别名
-            </el-button>
+          <div class="full-width">
+            <div class="alias-edit-wrap">
+              <el-tag
+                v-for="(alias, index) in termFormData.aliases"
+                :key="index"
+                closable
+                effect="plain"
+                class="alias-tag"
+                @close="termFormData.aliases.splice(index, 1)"
+              >{{ alias }}</el-tag>
+              <el-input
+                v-if="termAliasInputVisible"
+                ref="termAliasInputRef"
+                v-model="termAliasInputValue"
+                size="small"
+                class="alias-input"
+                @keyup.enter="handleTermAliasConfirm"
+                @blur="handleTermAliasConfirm"
+              />
+              <el-button v-else size="small" class="alias-add-btn" @click="termAliasInputVisible = true">
+                + 添加别名
+              </el-button>
+            </div>
           </div>
         </el-form-item>
       </el-form>
@@ -190,7 +207,7 @@
 
 <script setup lang="ts">
 import { ref, reactive, onMounted, computed, watch } from 'vue'
-import { Plus, Search, Folder, Files, Delete } from '@element-plus/icons-vue'
+import { Plus, Search, Folder, Files, Delete, QuestionFilled } from '@element-plus/icons-vue'
 import { useEnterToConfirm } from '@/composables/useEnterToConfirm'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import type { FormInstance, FormRules } from 'element-plus'
@@ -223,14 +240,14 @@ const termPageSize = ref(50)
 const categorySearchQuery = ref('')
 const selectedRows = ref<TerminologyEntry[]>([])
 
-// 术语编辑对话框
+// 词条编辑对话框
 const termDialogVisible = ref(false)
 const termDialogType = ref<'add' | 'edit'>('add')
 const termSubmitLoading = ref(false)
 const termFormRef = ref<FormInstance>()
 const termFormData = reactive({ id: '', term: '', category: '', aliases: [] as string[] })
 const termFormRules = reactive<FormRules>({
-  term: [{ required: true, message: '请输入术语', trigger: 'blur' }],
+  term: [{ required: true, message: '请输入词条', trigger: 'blur' }],
   category: [{ required: true, message: '请选择分类', trigger: 'change' }],
 })
 
@@ -252,8 +269,20 @@ const filteredCategories = computed(() => {
   return terminologyCategories.value.filter(c => c.category.toLowerCase().includes(q))
 })
 
+// 分类主题色（映射到 --color-* 体系）
+const CATEGORY_COLORS: Record<string, string> = {
+  '核安全术语': 'danger',
+  '设备术语': 'warning',
+  '工艺术语': 'info',
+  '建筑术语': 'success',
+  '电气术语': 'primary',
+  '自定义': 'info',
+}
+
+const termCategoryColor = (cat: string): string => CATEGORY_COLORS[cat] || 'gray'
+
 const termCategoryTagType = (cat: string): 'warning' | 'info' | 'success' | 'danger' | 'primary' => {
-  const map: Record<string, 'warning' | 'info' | 'success' | 'danger' | 'primary'> = { '核安全术语': 'danger', '设备术语': 'warning', '工艺术语': 'info', '建筑术语': 'success', '电气术语': 'primary', '自定义': 'info' }
+  const map: Record<string, 'warning' | 'info' | 'success' | 'danger' | 'primary'> = CATEGORY_COLORS as any
   return map[cat] || 'info'
 }
 
@@ -339,14 +368,14 @@ const submitTermForm = async () => {
           category: termFormData.category,
           aliases: termFormData.aliases,
         })
-        ElMessage.success('术语新增成功')
+        ElMessage.success('词条新增成功')
       } else {
         await updateTerminologyApi(termFormData.id, {
           term: termFormData.term,
           category: termFormData.category,
           aliases: termFormData.aliases,
         })
-        ElMessage.success('术语更新成功')
+        ElMessage.success('词条更新成功')
       }
       termDialogVisible.value = false
       fetchTerminologyList()
@@ -363,7 +392,7 @@ useEnterToConfirm(termDialogVisible, submitTermForm, { disabled: termSubmitLoadi
 
 const handleDeleteTerm = async (row: TerminologyEntry) => {
   try {
-    await ElMessageBox.confirm(`确认删除术语 "${row.term}" 吗？`, '警告', {
+    await ElMessageBox.confirm(`确认删除词条 "${row.term}" 吗？`, '警告', {
       confirmButtonText: '确定', cancelButtonText: '取消', type: 'warning',
     })
     await deleteTerminologyApi(row.id)
@@ -384,19 +413,19 @@ const handleSelectionChange = (rows: TerminologyEntry[]) => {
 const handleBatchDelete = async () => {
   const rows = selectedRows.value.filter(r => !r.isBuiltin)
   if (rows.length === 0) {
-    ElMessage.warning('所选术语均为内置项，不可删除')
+    ElMessage.warning('所选词条均为内置项，不可删除')
     return
   }
-  const builtinCount = selectedRows.value.length - rows.length
-  const hint = builtinCount > 0 ? `\n（已自动排除 ${builtinCount} 个内置术语）` : ''
+  const builtinCountInSel = selectedRows.value.length - rows.length
+  const hint = builtinCountInSel > 0 ? `\n（已自动排除 ${builtinCountInSel} 个内置词条）` : ''
   try {
-    await ElMessageBox.confirm(`确认删除选中的 ${rows.length} 条术语吗？${hint}`, '批量删除', {
+    await ElMessageBox.confirm(`确认删除选中的 ${rows.length} 条词条吗？${hint}`, '批量删除', {
       confirmButtonText: '确定', cancelButtonText: '取消', type: 'warning',
     })
     for (const row of rows) {
       await deleteTerminologyApi(row.id)
     }
-    ElMessage.success(`成功删除 ${rows.length} 条术语`)
+    ElMessage.success(`成功删除 ${rows.length} 条词条`)
     selectedRows.value = []
     fetchTerminologyList()
     fetchTerminologyCategories()
@@ -414,141 +443,253 @@ onMounted(() => {
 </script>
 
 <style scoped>
-.terminology-container {
+/* ===== 整体布局 ===== */
+.wl-page {
   height: calc(100vh - 200px);
-}
-
-.terminology-layout {
   display: flex;
-  gap: 16px;
-  height: 100%;
-  align-items: flex-start;
+  flex-direction: column;
+  overflow: hidden;
+  background: var(--color-gray-50);
+  padding: 20px 24px;
 }
 
-.terminology-sidebar {
-  width: 220px;
+/* ===== 页头 ===== */
+.page-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 4px 0 16px;
   flex-shrink: 0;
 }
-
-.terminology-sidebar-card {
-  height: 100%;
-  overflow: hidden;
+.page-title {
+  margin: 0 0 4px;
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--color-gray-900);
 }
-
-.terminology-sidebar-card :deep(.el-card__header) {
-  /* 与右侧卡片 header 高度保持一致（右侧有搜索框+按钮） */
-  min-height: 56px;
-  box-sizing: border-box;
+.page-sub {
+  margin: 0;
+  font-size: 13px;
+  color: var(--color-gray-500);
 }
-
-.terminology-sidebar-card :deep(.el-card__body) {
-  padding: 8px 0;
-  overflow-y: auto;
-  height: calc(100% - 56px);
-}
-
-.terminology-main {
-  flex: 1;
-  min-width: 0;
+.page-actions {
   display: flex;
-  flex-direction: column;
-}
-
-.terminology-main > .el-card {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-}
-
-.terminology-main > .el-card > .el-card__body {
-  flex: 1;
-  overflow: hidden;
-  display: flex;
-  flex-direction: column;
-}
-
-.folder-header {
-  display: flex;
-  justify-content: space-between;
+  gap: 8px;
   align-items: center;
+  flex-wrap: wrap;
+}
+.quick-search {
+  width: 260px;
 }
 
-.folder-title {
-  font-size: 15px;
+/* ===== 左右布局 ===== */
+.wl-body {
+  flex: 1;
+  display: flex;
+  gap: 16px;
+  overflow: hidden;
+  min-height: 0;
+}
+
+/* ===== 左栏：分类 ===== */
+.wl-sidebar {
+  width: 240px;
+  min-width: 240px;
+  background: #fff;
+  border: 1px solid var(--color-gray-200);
+  border-radius: 10px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  box-shadow: var(--shadow-surface);
+}
+.sidebar-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 16px 8px;
+}
+.sidebar-title {
+  font-size: 14px;
   font-weight: 600;
-  color: var(--el-text-color-primary);
+  color: var(--color-gray-800);
 }
-
-.folder-tree-wrapper {
-  padding: 0 8px;
+.sidebar-help {
+  color: var(--color-gray-400);
+  font-size: 14px;
 }
-
-.folder-node {
+.sidebar-search {
+  padding: 8px 12px;
+}
+.sidebar-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 0 8px 8px;
+}
+.sidebar-group-label {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--color-gray-400);
+  letter-spacing: 0.4px;
+  padding: 10px 8px 4px;
+}
+.sidebar-item {
+  position: relative;
+  padding: 8px 10px;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background 0.12s ease;
+  margin-bottom: 2px;
+}
+.sidebar-item:hover {
+  background: var(--color-gray-50);
+}
+.sidebar-item.active {
+  background: var(--color-primary-50);
+}
+.sidebar-item.active::before {
+  content: '';
+  position: absolute;
+  left: -8px;
+  top: 6px;
+  bottom: 6px;
+  width: 3px;
+  border-radius: 0 3px 3px 0;
+  background: var(--color-primary-500);
+}
+.sidebar-item-top {
   display: flex;
   align-items: center;
   gap: 6px;
-  padding: 8px 12px;
-  cursor: pointer;
-  border-radius: 6px;
-  transition: background 0.2s;
+}
+.cat-icon {
   font-size: 14px;
-  color: var(--el-text-color-regular);
-  margin-bottom: 2px;
+  color: var(--color-gray-400);
+  flex-shrink: 0;
 }
-
-.folder-node:hover {
-  background: var(--el-fill-color-light);
+.sidebar-item.active .cat-icon {
+  color: var(--color-primary-500);
 }
-
-.folder-node.active {
-  background: var(--el-color-primary-light-9);
-  color: var(--el-color-primary);
+.cat-name {
+  flex: 1;
+  font-size: 13px;
+  color: var(--color-gray-700);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.sidebar-item.active .cat-name {
+  color: var(--color-gray-900);
   font-weight: 500;
 }
+.sidebar-item-count {
+  font-size: 12px;
+  color: var(--color-gray-500);
+  background: var(--color-gray-100);
+  padding: 1px 7px;
+  border-radius: 10px;
+  min-width: 22px;
+  text-align: center;
+  flex-shrink: 0;
+}
+.sidebar-item.active .sidebar-item-count {
+  background: var(--color-primary-100);
+  color: var(--color-primary-700);
+}
+.sidebar-empty {
+  text-align: center;
+  padding: 40px 0;
+  color: var(--color-gray-400);
+  font-size: 13px;
+}
 
-.folder-name {
+/* ===== 右栏 ===== */
+.wl-main {
   flex: 1;
+  background: #fff;
+  border: 1px solid var(--color-gray-200);
+  border-radius: 10px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  min-width: 0;
+  padding: 0 16px 16px;
+  box-shadow: var(--shadow-surface);
+}
+.scope-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 4px;
+  border-bottom: 1px solid var(--color-gray-100);
+  flex-shrink: 0;
+  min-height: 44px;
+}
+.scope-badge {
+  flex-shrink: 0;
+  padding: 2px 8px;
+  border-radius: 5px;
+  background: var(--color-primary-50);
+  color: var(--color-primary-600);
+  font-size: 12px;
+  font-weight: 600;
+}
+.scope-badge-all {
+  background: var(--color-gray-100);
+  color: var(--color-gray-600);
+}
+.scope-hint {
+  font-size: 12px;
+  color: var(--color-gray-400);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.folder-count {
-  font-size: 12px;
-  color: var(--el-text-color-secondary);
-  background: var(--el-fill-color);
-  padding: 1px 6px;
-  border-radius: 10px;
-  min-width: 20px;
-  text-align: center;
+/* ===== 表格 ===== */
+.term-name {
+  font-weight: 500;
+  color: var(--color-gray-800);
 }
-
-.folder-search {
-  padding: 0 12px 8px;
-}
-
 .alias-preview {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
 }
-
+.alias-tag {
+  margin: 2px 4px 2px 0;
+}
+.alias-empty {
+  color: var(--color-gray-400);
+}
 .alias-full-list {
   max-height: 160px;
   overflow-y: auto;
   display: flex;
   flex-wrap: wrap;
 }
-
-.card-header { display: flex; justify-content: space-between; align-items: center; }
-.header-title {
-  font-size: 18px;
-  font-weight: 600;
-  color: var(--el-text-color-primary);
+.pagination-container {
+  margin-top: 12px;
   display: flex;
-  align-items: center;
+  justify-content: flex-end;
+  flex-shrink: 0;
 }
-.header-actions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
-.search-input { width: 300px; }
-.pagination-container { margin-top: 20px; display: flex; justify-content: flex-end; }
+
+/* ===== 对话框 ===== */
+.full-width {
+  width: 100%;
+}
+.alias-edit-wrap {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+}
+.alias-input {
+  width: 140px;
+}
+.alias-add-btn {
+  margin: 2px;
+}
 </style>
