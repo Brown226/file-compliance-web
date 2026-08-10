@@ -43,10 +43,42 @@ const RULE_CONFIG_CACHE_TTL_MS = 60_000; // 60秒缓存
 let ruleConfigCache: Map<string, { enabled: boolean; severity: string; config?: any }> | null = null;
 let ruleConfigCacheTimestamp = 0;
 
+// ===== 合同规则阈值缓存（P2-12）：system_configs.contract_rule_thresholds 的运行时缓存 =====
+let contractThresholdCache: Record<string, any> | null = null;
+let contractThresholdCacheTimestamp = 0;
+
 /** 使规则配置缓存失效（规则配置变更时调用） */
 export function invalidateRuleConfigCache(): void {
   ruleConfigCache = null;
   ruleConfigCacheTimestamp = 0;
+  contractThresholdCache = null;
+  contractThresholdCacheTimestamp = 0;
+}
+
+/**
+ * 加载合同规则阈值（P2-12：接通 system_configs.contract_rule_thresholds 死配置）
+ *
+ * 从 system_configs 读取合同阈值覆盖（如 payment_advance_ratio_max），
+ * 与规则配置同生命周期（60s 缓存）。读取失败/配置不存在时返回 null，调用方回退
+ * contract.rule.ts 的内置 DEFAULT_THRESHOLDS。
+ */
+export async function loadContractThresholds(): Promise<Record<string, any> | null> {
+  const now = Date.now();
+  if (contractThresholdCache !== null && (now - contractThresholdCacheTimestamp) < RULE_CONFIG_CACHE_TTL_MS) {
+    return contractThresholdCache;
+  }
+  try {
+    const row = await prisma.systemConfig.findUnique({ where: { key: 'contract_rule_thresholds' } });
+    const value = row?.value;
+    contractThresholdCache = (value && typeof value === 'object' && !Array.isArray(value))
+      ? (value as Record<string, any>)
+      : null;
+  } catch (e) {
+    console.warn('[规则引擎] 加载 contract_rule_thresholds 失败，使用内置默认阈值:', e);
+    contractThresholdCache = null;
+  }
+  contractThresholdCacheTimestamp = now;
+  return contractThresholdCache;
 }
 
 /**
@@ -210,8 +242,34 @@ const RULE_REGISTRY: RuleEntry[] = [
 ];
 
 /**
+ * 从 ruleCode 匹配注册表前缀（最长前缀优先）
+ *
+ * 修复 P1-8：旧实现 `ruleCode.replace(/_\d+$/, '')` 会把
+ * CONTRACT_PAYMENT_001 提取成 CONTRACT_PAYMENT，而注册表前缀是 CONTRACT，
+ * 导致 DB 配置永远查不到（子前缀断链）。这里按注册表前缀做最长匹配：
+ * - CONTRACT_PAYMENT_001 → CONTRACT
+ * - NAME_001 → NAME
+ * - DWG_TITLE_001 → DWG_TITLE
+ */
+function matchRulePrefix(ruleCode: string): string {
+  // 按前缀长度降序，保证最长匹配优先（DWG_TITLE 先于 DWG 等）
+  const sortedPrefixes = [...RULE_REGISTRY].map((r) => r.prefix).sort((a, b) => b.length - a.length);
+  for (const prefix of sortedPrefixes) {
+    if (ruleCode === prefix || ruleCode.startsWith(`${prefix}_`)) {
+      return prefix;
+    }
+  }
+  // 兜底：去掉尾部序号（如 NAME_001 → NAME）
+  return ruleCode.replace(/_\d+$/, '');
+}
+
+/**
  * 从数据库加载规则配置（带缓存，60秒TTL）
- * 返回 Map<ruleCode前缀, { enabled, severity, config }>
+ *
+ * 返回结构（修复 P1-8 粒度问题）：
+ * - 每个 DB 配置按「完整 ruleCode」作为 key 保存（保留 issue 级粒度，如 NAME_001 / CONTRACT_PAYMENT_001）
+ * - 同时按「注册表前缀」聚合一份（用于规则级 enabled 快速判断，如 NAME / CONTRACT）
+ * 两个 key 都指向同一个配置对象。
  */
 export async function loadRuleConfigsFromDB(): Promise<Map<string, { enabled: boolean; severity: string; config?: any }>> {
   const now = Date.now();
@@ -224,22 +282,24 @@ export async function loadRuleConfigsFromDB(): Promise<Map<string, { enabled: bo
   try {
     const rules = await prisma.reviewRule.findMany();
 
+    // 第一遍：先按完整 ruleCode 保存（粒度不丢）
     for (const rule of rules) {
-      // 从 ruleCode 提取前缀，如 NAME_001 → NAME, CODE_001 → CODE
-      const prefix = rule.ruleCode.replace(/_\d+$/, '');
+      configMap.set(rule.ruleCode, {
+        enabled: rule.enabled,
+        severity: rule.severity || 'warning',
+        config: rule.config as any || undefined,
+      });
+    }
+
+    // 第二遍：按注册表前缀聚合（用于规则级 enabled 判断）
+    // 同前缀多条规则：任一禁用则整体禁用；severity 取最严重
+    for (const rule of rules) {
+      const prefix = matchRulePrefix(rule.ruleCode);
       const existing = configMap.get(prefix);
 
-      // 如果同前缀已有配置，合并（任一禁用则整体禁用，取最严重的 severity）
       if (existing) {
+        // 前缀聚合：只更新 enabled（任一禁用则禁用），不覆盖 severity/config（粒度已由完整 ruleCode 保留）
         if (!rule.enabled) existing.enabled = false;
-        // severity 优先级: error > warning > info
-        const severityOrder = ['info', 'warning', 'error'];
-        if (severityOrder.indexOf(rule.severity) > severityOrder.indexOf(existing.severity)) {
-          existing.severity = rule.severity;
-        }
-        if (rule.config && typeof rule.config === 'object') {
-          existing.config = { ...existing.config, ...rule.config };
-        }
       } else {
         configMap.set(prefix, {
           enabled: rule.enabled,
@@ -260,17 +320,79 @@ export async function loadRuleConfigsFromDB(): Promise<Map<string, { enabled: bo
 
 /**
  * 对规则的 issue 应用配置覆盖（severity）
+ *
+ * 匹配优先级（修复 P1-8 粒度问题）：
+ * 1. 完整 ruleCode（如 CONTRACT_PAYMENT_001 → 精确覆盖该条 issue）
+ * 2. 注册表前缀（如 CONTRACT → 覆盖该前缀下所有 issue）
  */
 function applyConfigOverrides(issues: RuleIssue[], rulePrefix: string, options?: RunRulesOptions): RuleIssue[] {
   return issues.map(issue => {
-    // 优先使用 options 中的 severityMap
     if (options?.severityMap) {
+      // 先精确 ruleCode，再前缀兜底
       const overrideSeverity = options.severityMap.get(issue.ruleCode) || options.severityMap.get(rulePrefix);
       if (overrideSeverity && ['error', 'warning', 'info'].includes(overrideSeverity)) {
         return { ...issue, severity: overrideSeverity as RuleIssue['severity'] };
       }
     }
     return issue;
+  });
+}
+
+/**
+ * 合并 DB 配置的 severityMap 与调用方 options.severityMap
+ * （修复 P1-8：旧实现 dbConfigMap 存在时直接丢弃 options.severityMap）
+ */
+function mergeSeverityMaps(
+  dbConfigMap: Map<string, { enabled: boolean; severity: string; config?: any }> | undefined,
+  options?: RunRulesOptions,
+): Map<string, string> | undefined {
+  const merged = new Map<string, string>();
+  if (dbConfigMap) {
+    for (const [key, cfg] of dbConfigMap) {
+      if (cfg.severity) merged.set(key, cfg.severity);
+    }
+  }
+  if (options?.severityMap) {
+    for (const [key, severity] of options.severityMap) {
+      merged.set(key, severity); // options 优先覆盖 DB
+    }
+  }
+  return merged.size > 0 ? merged : undefined;
+}
+
+/**
+ * 跨规则去重（P2-9）：同一缺陷被两条规则同时命中时，只保留一条。
+ *
+ * 映射表语义：key 为"被丢弃方"的 ruleCode，dropWhenSameText 为"保留方"的 ruleCode 列表。
+ * 仅当被丢弃方与任一保留方命中的 originalText 完全相同时才去重（位置代理 = 原文）。
+ * 例如：同一半角逗号夹中文字符，FORMAT_006（半角/全角标点混用，info）与
+ * PUNCT_001（中英文标点混用，warning）同时命中 → 保留 PUNCT_001，丢弃 FORMAT_006。
+ */
+const CROSS_RULE_DEDUP_MAP: Record<string, { dropWhenSameText: string[] }> = {
+  'FORMAT_006': { dropWhenSameText: ['PUNCT_001'] },
+};
+
+/**
+ * 对聚合后的规则输出做跨规则去重（纯函数，便于单测）。
+ * 被丢弃方命中与任一保留方相同的 originalText 时丢弃；否则原样保留。
+ */
+export function dedupeCrossRuleIssues(issues: RuleIssue[]): RuleIssue[] {
+  // 收集"保留方"命中过的原文集合
+  const keeperTexts = new Set<string>();
+  for (const issue of issues) {
+    const cfg = CROSS_RULE_DEDUP_MAP[issue.ruleCode];
+    if (cfg) continue; // 被丢弃方本身不算保留方
+    if (!issue.originalText) continue;
+    for (const c of Object.values(CROSS_RULE_DEDUP_MAP)) {
+      if (c.dropWhenSameText.includes(issue.ruleCode)) keeperTexts.add(issue.originalText);
+    }
+  }
+  if (keeperTexts.size === 0) return issues;
+
+  return issues.filter((issue) => {
+    const cfg = CROSS_RULE_DEDUP_MAP[issue.ruleCode];
+    if (!cfg || !issue.originalText) return true;
+    return !keeperTexts.has(issue.originalText);
   });
 }
 
@@ -308,22 +430,30 @@ export async function runAllRules(ctx: FileContext, options?: RunRulesOptions): 
       if (!options.enabledRulePrefixes.has(rule.prefix)) continue;
     }
 
-    // 获取规则配置参数
-    const config = options?.configMap?.get(rule.prefix) || dbConfigMap?.get(rule.prefix)?.config;
+    // 获取规则配置参数（优先调用方显式 configMap，其次 DB 前缀聚合配置）
+    let config = options?.configMap?.get(rule.prefix) || dbConfigMap?.get(rule.prefix)?.config;
+
+    // P2-12: CONTRACT 规则并入 system_configs.contract_rule_thresholds（DB 阈值优先于内置 DEFAULT_THRESHOLDS）
+    if (rule.prefix === 'CONTRACT') {
+      const contractThresholds = await loadContractThresholds();
+      if (contractThresholds) {
+        config = { ...(config || {}), ...contractThresholds };
+      }
+    }
 
     try {
       const ruleIssues = rule.fn(ctx, config);
-      // 应用 severity 覆盖
-      const overridden = applyConfigOverrides(ruleIssues, rule.prefix, dbConfigMap ? {
-        severityMap: new Map([...(dbConfigMap || [])].map(([k, v]) => [k, v.severity])),
-      } : options);
+      // 应用 severity 覆盖：合并 DB 配置与调用方 options（修复 P1-8：不再丢弃 options.severityMap）
+      const mergedSeverityMap = mergeSeverityMaps(dbConfigMap, options);
+      const overridden = applyConfigOverrides(ruleIssues, rule.prefix, mergedSeverityMap ? { severityMap: mergedSeverityMap } : options);
       issues.push(...overridden);
     } catch (e) {
       console.error(`[规则引擎] 规则 ${rule.prefix} 执行出错:`, e);
     }
   }
 
-  return issues;
+  // P2-9: 跨规则去重（FORMAT_006 vs PUNCT_001 同原文双报 → 保留 severity 更高者）
+  return dedupeCrossRuleIssues(issues);
 }
 
 export interface RuleMetaItem {
