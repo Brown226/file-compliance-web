@@ -323,9 +323,38 @@ export class StructuredConsistencyService {
 
       const parsed: RawExtractResult = JSON.parse(objMatch[0]);
 
-      const params: ExtractedParam[] = (parsed.params || [])
-        .filter(p => p.name && p.value)
-        .map(p => ({
+      // P1-5: 逐分类隔离——每个分类独立解析+独立 try/catch。
+      // 之前任一分类类型异常（如 params 不是数组）会让整个 JSON.parse 的 map/filter 抛错，
+      // 导致整片抽取结果被丢弃（单分类崩溃吞整片）。现在单分类畸形只丢该分类，不影响其余 4 类。
+      const params = this.parseExtractParams(parsed.params, chunk);
+      const codes = this.parseExtractCodes(parsed.codes, chunk);
+      const refs = this.parseExtractRefs(parsed.refs, chunk);
+      const meta = this.parseExtractMeta(parsed.meta, chunk);
+      const facts = this.parseExtractFacts(parsed.facts, chunk);
+
+      return { params, codes, refs, meta, facts };
+    } catch (e) {
+      console.warn('[StructConsist] JSON 解析失败:', e, 'raw:', raw.slice(0, 200));
+      return empty;
+    }
+  }
+
+  /**
+   * 安全取数组：LLM 输出可能把字段写成非数组（字符串/对象/null），统一兜底为 []。
+   * 仅在非空且非数组时告警，避免噪音。
+   */
+  private static safeArray(v: unknown, field: string): any[] {
+    if (v === undefined || v === null) return [];
+    if (Array.isArray(v)) return v;
+    console.warn(`[StructConsist] 字段 "${field}" 类型异常（期望数组，实为 ${typeof v}），该分类丢弃:`, String(v).slice(0, 100));
+    return [];
+  }
+
+  private static parseExtractParams(raw: unknown, chunk: TextChunk): ExtractedParam[] {
+    try {
+      return this.safeArray(raw, 'params')
+        .filter((p: any) => p && typeof p === 'object' && p.name && p.value)
+        .map((p: any) => ({
           name: String(p.name).trim(),
           value: String(p.value).trim(),
           lineHint: typeof p.lineHint === 'number' ? p.lineHint : 0,
@@ -333,10 +362,17 @@ export class StructuredConsistencyService {
           chunkStartIndex: chunk.startIndex,
           fingerprint: p.fingerprint?.trim() || undefined,
         }));
+    } catch (e) {
+      console.warn('[StructConsist] params 分类解析失败，丢弃该分类:', e);
+      return [];
+    }
+  }
 
-      const codes: ExtractedCode[] = (parsed.codes || [])
-        .filter(c => c.code)
-        .map(c => ({
+  private static parseExtractCodes(raw: unknown, chunk: TextChunk): ExtractedCode[] {
+    try {
+      return this.safeArray(raw, 'codes')
+        .filter((c: any) => c && typeof c === 'object' && c.code)
+        .map((c: any) => ({
           code: String(c.code).trim(),
           context: String(c.context || '').trim(),
           lineHint: typeof c.lineHint === 'number' ? c.lineHint : 0,
@@ -344,20 +380,34 @@ export class StructuredConsistencyService {
           chunkStartIndex: chunk.startIndex,
           fingerprint: c.fingerprint?.trim() || undefined,
         }));
+    } catch (e) {
+      console.warn('[StructConsist] codes 分类解析失败，丢弃该分类:', e);
+      return [];
+    }
+  }
 
-      const refs: ExtractedRef[] = (parsed.refs || [])
-        .filter(r => r.ref)
-        .map(r => ({
+  private static parseExtractRefs(raw: unknown, chunk: TextChunk): ExtractedRef[] {
+    try {
+      return this.safeArray(raw, 'refs')
+        .filter((r: any) => r && typeof r === 'object' && r.ref)
+        .map((r: any) => ({
           ref: String(r.ref).trim(),
           lineHint: typeof r.lineHint === 'number' ? r.lineHint : 0,
           chunkIndex: chunk.chunkIndex,
           chunkStartIndex: chunk.startIndex,
           fingerprint: r.fingerprint?.trim() || undefined,
         }));
+    } catch (e) {
+      console.warn('[StructConsist] refs 分类解析失败，丢弃该分类:', e);
+      return [];
+    }
+  }
 
-      const meta: ExtractedMeta[] = (parsed.meta || [])
-        .filter(m => m.key && m.value)
-        .map(m => ({
+  private static parseExtractMeta(raw: unknown, chunk: TextChunk): ExtractedMeta[] {
+    try {
+      return this.safeArray(raw, 'meta')
+        .filter((m: any) => m && typeof m === 'object' && m.key && m.value)
+        .map((m: any) => ({
           key: String(m.key).trim(),
           value: String(m.value).trim(),
           lineHint: typeof m.lineHint === 'number' ? m.lineHint : 0,
@@ -365,10 +415,17 @@ export class StructuredConsistencyService {
           chunkStartIndex: chunk.startIndex,
           fingerprint: m.fingerprint?.trim() || undefined,
         }));
+    } catch (e) {
+      console.warn('[StructConsist] meta 分类解析失败，丢弃该分类:', e);
+      return [];
+    }
+  }
 
-      const facts: ExtractedFact[] = (parsed.facts || [])
-        .filter(f => f.subject && f.claim)
-        .map(f => ({
+  private static parseExtractFacts(raw: unknown, chunk: TextChunk): ExtractedFact[] {
+    try {
+      return this.safeArray(raw, 'facts')
+        .filter((f: any) => f && typeof f === 'object' && f.subject && f.claim)
+        .map((f: any) => ({
           subject: String(f.subject).trim(),
           claim: String(f.claim).trim(),
           lineHint: typeof f.lineHint === 'number' ? f.lineHint : 0,
@@ -376,11 +433,9 @@ export class StructuredConsistencyService {
           chunkStartIndex: chunk.startIndex,
           fingerprint: f.fingerprint?.trim() || undefined,
         }));
-
-      return { params, codes, refs, meta, facts };
     } catch (e) {
-      console.warn('[StructConsist] JSON 解析失败:', e, 'raw:', raw.slice(0, 200));
-      return empty;
+      console.warn('[StructConsist] facts 分类解析失败，丢弃该分类:', e);
+      return [];
     }
   }
 
@@ -506,6 +561,8 @@ export class StructuredConsistencyService {
     },
     maxChars: number,
   ): string {
+    // P1-5 修复：压缩时保留全部 5 类维度（之前完全丢弃 meta/facts，导致 C5/C6 静默漏报）。
+    // 预算分配：params 40%、codes 25%、refs 15%、meta 10%、facts 10%，保证各维度都有代表性内容。
     const paramGroups = new Map<string, ExtractedParam[]>();
     for (const p of merged.params) {
       const key = this.normalizeName(p.name);
@@ -516,20 +573,36 @@ export class StructuredConsistencyService {
     const sortedParams = [...paramGroups.entries()]
       .sort((a, b) => b[1].length - a[1].length);
 
-    let current = '';
+    const out: string[] = [];
+
+    // params：按冲突条目数排序（保留变化最多的参数，信息量最大）
+    let paramsUsed = 0;
+    const paramsBudget = Math.floor(maxChars * 0.4);
     for (const [_name, entries] of sortedParams) {
       const line = `- ${entries[0].name}: ${entries.map(e => `${e.value} (分片${e.chunkIndex + 1})`).join('; ')}\n`;
-      if (current.length + line.length > maxChars * 0.5) break;
-      current += line;
+      if (paramsUsed + line.length > paramsBudget) break;
+      out.push(line);
+      paramsUsed += line.length;
     }
 
-    const budgetForOthers = maxChars - current.length - 100;
-    const codesText = merged.codes.slice(0, 30).map(c => `- ${c.code}\n`).join('');
-    current += `\n## 编码汇总\n${codesText}`.slice(0, Math.floor(budgetForOthers * 0.3));
-    const refsText = merged.refs.slice(0, 20).map(r => `- ${r.ref}\n`).join('');
-    current += `\n## 引用汇总\n${refsText}`.slice(0, Math.floor(budgetForOthers * 0.2));
+    const remaining = maxChars - out.join('').length - 120;
+    const addSection = (title: string, lines: string[], budget: number) => {
+      if (budget <= 0 || lines.length === 0) return;
+      const header = `\n## ${title}\n`;
+      let text = header;
+      for (const l of lines) {
+        if (text.length + l.length > budget) break;
+        text += l;
+      }
+      out.push(text);
+    };
 
-    return current.slice(0, maxChars);
+    addSection('编码汇总', merged.codes.slice(0, 30).map(c => `- ${c.code}\n`), Math.floor(remaining * 0.25));
+    addSection('引用汇总', merged.refs.slice(0, 20).map(r => `- ${r.ref}\n`), Math.floor(remaining * 0.15));
+    addSection('元数据汇总', merged.meta.slice(0, 15).map(m => `- ${m.key}: ${m.value}\n`), Math.floor(remaining * 0.10));
+    addSection('事实断言', merged.facts.slice(0, 15).map(f => `- ${f.subject}: ${f.claim}\n`), Math.floor(remaining * 0.10));
+
+    return out.join('').slice(0, maxChars);
   }
 
   private static async compareSummaries(
@@ -579,18 +652,36 @@ export class StructuredConsistencyService {
         return [];
       }
 
-      const parsed: any[] = JSON.parse(arrMatch[0]);
+      const parsed: unknown = JSON.parse(arrMatch[0]);
       if (!Array.isArray(parsed)) return [];
 
-      return parsed.map((item: any) => ({
-        issueType: item.issueType || 'CONSISTENCY',
-        originalText: item.originalText || '',
-        suggestedText: item.suggestedText || undefined,
-        description: item.description || undefined,
-        ruleCode: item.ruleCode || undefined,
-        standardRef: item.standardRef || undefined,
-        plainLanguage: item.plain_language || item.plainLanguage || undefined,
-      }));
+      const validTypes = ['TYPO', 'VIOLATION', 'FORMAT', 'COMPLETENESS', 'CONSISTENCY', 'LAYOUT', 'NAMING', 'ENCODING', 'ATTRIBUTE', 'HEADER', 'PAGE', 'FLUENCY', 'CROSS_REFERENCE'];
+
+      const issues: ReviewIssue[] = [];
+      for (const item of parsed) {
+        // P1-5: 逐条隔离——单条畸形条目只丢弃该条，不影响其余条目。
+        // 之前任一 null/非对象条目会让整片解析失败返回 []（静默漏报整片）。
+        try {
+          if (!item || typeof item !== 'object' || Array.isArray(item)) continue;
+          const it = item as Record<string, any>;
+          const originalText = it.originalText != null ? String(it.originalText).trim() : '';
+          if (!originalText) continue; // 无原文的条目无定位价值，丢弃
+
+          const issueType = it.issueType != null ? String(it.issueType) : 'CONSISTENCY';
+          issues.push({
+            issueType: validTypes.includes(issueType) ? issueType : 'CONSISTENCY',
+            originalText,
+            suggestedText: it.suggestedText != null ? String(it.suggestedText) : undefined,
+            description: it.description != null ? String(it.description) : undefined,
+            ruleCode: it.ruleCode != null ? String(it.ruleCode) : undefined,
+            standardRef: it.standardRef != null ? String(it.standardRef) : undefined,
+            plainLanguage: it.plain_language != null ? String(it.plain_language) : (it.plainLanguage != null ? String(it.plainLanguage) : undefined),
+          });
+        } catch (e) {
+          console.warn('[StructConsist] 比对结果单条解析失败，丢弃该条:', e);
+        }
+      }
+      return issues;
     } catch (e) {
       console.warn('[StructConsist] 比对结果 JSON 解析失败:', e, 'raw:', raw.slice(0, 200));
       return [];
