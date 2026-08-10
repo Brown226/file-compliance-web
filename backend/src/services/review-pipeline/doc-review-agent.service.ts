@@ -394,6 +394,8 @@ export async function runRefCompareAgent(
   // 收集 issues
   const issues: ReviewIssue[] = [];
   for (const r of results) {
+    // parallelLimit 单条失败会写入 null：跳过而非解引用崩溃，保住其余已审结果
+    if (!r) continue;
     if (r.issue) issues.push(r.issue);
   }
   const deduped = dedupIssues(issues);
@@ -402,7 +404,7 @@ export async function runRefCompareAgent(
     issues: deduped,
     engine: 'doc-review-agent',
     itemCount: items.length,
-    alignedCount: results.filter(r => r.candidateFound).length,
+    alignedCount: results.filter(r => r && r.candidateFound).length,
   };
 }
 

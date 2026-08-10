@@ -25,7 +25,17 @@ interface ParamEntry {
 /** 不一致项 */
 interface Inconsistency {
   paramName: string;
-  entries: Array<{ value: string; lineNumber: number; context: string }>;
+  entries: Array<{
+    value: string;
+    lineNumber: number;
+    context: string;
+    /** 该条 entry 在原文中的字符区间 [start, end)（UTF-16 偏移，基于 lineNumber+行内定位，尽力而为，算不准为 undefined） */
+    position?: { start: number; end: number };
+  }>;
+  /** 不一致的首个定位点（取 entries[0].position，尽力而为，算不准为 undefined） */
+  position?: { start: number; end: number };
+  /** 数值不一致的补充描述（如"单位不同且数值不等（1MPa = 1000kPa）"），缺省时由调用方使用默认文案 */
+  description?: string;
 }
 
 /**
@@ -83,6 +93,125 @@ function extractTableKvPairsFromMarkdown(text: string): Array<{ key: string; val
   return pairs;
 }
 
+/** 单位维度 */
+type UnitDimension = 'pressure' | 'temperature' | 'length' | 'mass' | 'time' | 'percent' | 'number';
+
+/** 单位定义：toBase 换算到基准单位，fromBase 反向换算（用于生成"1MPa = 1000kPa"式说明） */
+interface UnitDef {
+  dimension: UnitDimension;
+  toBase: (value: number) => number;
+  fromBase: (value: number) => number;
+  display: string;
+}
+
+/** 构造纯倍数换算单位（压力/长度/质量/时间/百分比） */
+function multiplicativeUnit(factor: number, dimension: UnitDimension, display: string): UnitDef {
+  return {
+    dimension,
+    display,
+    toBase: v => v * factor,
+    fromBase: v => v / factor,
+  };
+}
+
+/**
+ * 单位换算表（键为规范化单位）
+ * 基准单位：压力 Pa、温度 ℃、长度 m、质量 kg、时间 s、百分比 %、纯数值 ''
+ */
+const UNIT_TABLE: Record<string, UnitDef> = {
+  // 压力
+  pa: multiplicativeUnit(1, 'pressure', 'Pa'),
+  kpa: multiplicativeUnit(1e3, 'pressure', 'kPa'),
+  mpa: multiplicativeUnit(1e6, 'pressure', 'MPa'),
+  bar: multiplicativeUnit(1e5, 'pressure', 'bar'),
+  atm: multiplicativeUnit(101325, 'pressure', 'atm'),
+  // 温度（℃/℉/K 为仿射换算，不是纯倍数）
+  '°c': { dimension: 'temperature', toBase: v => v, fromBase: v => v, display: '℃' },
+  '°f': { dimension: 'temperature', toBase: v => ((v - 32) * 5) / 9, fromBase: v => (v * 9) / 5 + 32, display: '℉' },
+  k: { dimension: 'temperature', toBase: v => v - 273.15, fromBase: v => v + 273.15, display: 'K' },
+  // 长度
+  mm: multiplicativeUnit(1e-3, 'length', 'mm'),
+  cm: multiplicativeUnit(1e-2, 'length', 'cm'),
+  m: multiplicativeUnit(1, 'length', 'm'),
+  km: multiplicativeUnit(1e3, 'length', 'km'),
+  // 质量
+  g: multiplicativeUnit(1e-3, 'mass', 'g'),
+  kg: multiplicativeUnit(1, 'mass', 'kg'),
+  t: multiplicativeUnit(1e3, 'mass', 't'),
+  // 时间
+  s: multiplicativeUnit(1, 'time', 's'),
+  min: multiplicativeUnit(60, 'time', 'min'),
+  h: multiplicativeUnit(3600, 'time', 'h'),
+  day: multiplicativeUnit(86400, 'time', 'day'),
+  // 百分比
+  '%': multiplicativeUnit(1, 'percent', '%'),
+  '‰': multiplicativeUnit(0.1, 'percent', '‰'),
+  // 纯数值（无单位）
+  '': multiplicativeUnit(1, 'number', ''),
+};
+
+/** 中文单位别名 → 规范化单位（按序匹配，长别名在前） */
+const UNIT_ALIASES: Array<[string, string]> = [
+  ['兆帕', 'mpa'],
+  ['千帕', 'kpa'],
+  ['帕', 'pa'],
+  ['摄氏度', '°c'],
+  ['华氏度', '°f'],
+  ['开尔文', 'k'],
+  ['开', 'k'],
+  ['度', '°c'],
+  ['毫米', 'mm'],
+  ['厘米', 'cm'],
+  ['公里', 'km'],
+  ['千米', 'km'],
+  ['米', 'm'],
+  ['千克', 'kg'],
+  ['公斤', 'kg'],
+  ['克', 'g'],
+  ['吨', 't'],
+  ['分钟', 'min'],
+  ['分', 'min'],
+  ['小时', 'h'],
+  ['时', 'h'],
+  ['天', 'day'],
+  ['日', 'day'],
+  ['秒', 's'],
+];
+
+/**
+ * 规范化单位字符串：小写、去空格、统一符号与中文别名
+ * 如 "MPa" → "mpa"、"℃" → "°c"、"兆帕" → "mpa"；无单位 → ""
+ */
+function normalizeUnit(raw: string): string {
+  let unit = raw.trim().toLowerCase().replace(/\s+/g, '');
+  if (!unit) return '';
+  unit = unit.replace(/℃/g, '°c').replace(/℉/g, '°f');
+  for (const [alias, canonical] of UNIT_ALIASES) {
+    if (unit.includes(alias)) {
+      return unit.replace(alias, canonical);
+    }
+  }
+  return unit;
+}
+
+/**
+ * 解析"数值+单位"，如 "17.5MPa" → { value: 17.5, unit: 'mpa' }、"350℃" → { value: 350, unit: '°c' }
+ * 非数值开头（如 "DN100"）或无法解析 → null
+ */
+export function normalizeNumericValue(raw: string): { value: number; unit: string } | null {
+  const match = raw.trim().match(/^([+-]?\d+(?:\.\d+)?)\s*(.*)$/);
+  if (!match) return null;
+  const value = parseFloat(match[1]);
+  if (isNaN(value)) return null;
+  return { value, unit: normalizeUnit(match[2].trim()) };
+}
+
+/** 数值格式化：整数不带小数位，否则最多保留 3 位小数（用于生成换算说明） */
+function formatNumber(value: number): string {
+  if (Number.isInteger(value)) return String(value);
+  return String(Math.round(value * 1000) / 1000);
+}
+
 export class IntraFileConsistencyService {
   /**
    * 执行文件内一致性检查
@@ -134,7 +263,7 @@ export class IntraFileConsistencyService {
     }
 
     // 3. 检测不一致
-    const inconsistencies = this.findInconsistencies(allParams);
+    const inconsistencies = this.findInconsistencies(allParams, { extractedText });
     if (inconsistencies.length === 0) {
       console.log(`[IntraConsist] ${fileName}: 未发现文件内不一致`);
       return 0;
@@ -155,7 +284,12 @@ export class IntraFileConsistencyService {
         reviewSource: 'RULE_ENGINE' as const,
         originalText: context,
         suggestedText: `参数"${inc.paramName}"存在多个不同值: ${values}，请核实并统一`,
-        description: `文件内"${inc.paramName}"在不同位置出现了不一致的值`,
+        description: inc.description || `文件内"${inc.paramName}"在不同位置出现了不一致的值`,
+        // P2-10: 落库 locateMeta（position 为 UTF-16 半开区间 [start,end)，对 extractedText 切片用；
+        // 与 review.service.ts buildLegacyTextPosition 的 locateMeta.absolute.start 结构兼容）
+        locateMeta: inc.position
+          ? { absolute: { start: inc.position.start, end: inc.position.end } }
+          : undefined,
       };
     });
 
@@ -270,8 +404,13 @@ export class IntraFileConsistencyService {
 
   /**
    * 检测同一参数名的多个不同值
+   * @param opts.extractedText 原文（用于计算字符级定位，可缺省）
+   * @param opts.tolerance 数值相对容差，默认 0.01（1%），|a-b|/max(|a|,|b|) ≤ tol 视为一致
    */
-  private static findInconsistencies(params: ParamEntry[]): Inconsistency[] {
+  private static findInconsistencies(
+    params: ParamEntry[],
+    opts?: { extractedText?: string; tolerance?: number },
+  ): Inconsistency[] {
     // 按参数名分组
     const grouped = new Map<string, ParamEntry[]>();
     for (const p of params) {
@@ -280,6 +419,10 @@ export class IntraFileConsistencyService {
       grouped.get(key)!.push(p);
     }
 
+    const tolerance = opts?.tolerance ?? 0.01;
+    const extractedText = opts?.extractedText;
+    const lineOffsets = extractedText ? IntraFileConsistencyService.buildLineOffsets(extractedText) : undefined;
+
     const inconsistencies: Inconsistency[] = [];
 
     for (const [paramName, entries] of grouped) {
@@ -287,31 +430,147 @@ export class IntraFileConsistencyService {
 
       // 去重后看有多少种不同的值
       const uniqueValues = new Set(entries.map(e => e.value.trim()));
-      if (uniqueValues.size > 1) {
-        // 数值类型的特殊处理：忽略单位差异
-        const numericValues = [...uniqueValues].map(v => {
-          const num = parseFloat(v.replace(/[^\d.-]/g, ''));
-          return isNaN(num) ? null : num;
-        });
+      if (uniqueValues.size <= 1) continue;
 
-        // 如果都是数值，检查是否真的不同（忽略单位）
-        const allNumeric = numericValues.every(v => v !== null);
-        if (allNumeric) {
-          const uniqueNums = new Set(numericValues);
-          if (uniqueNums.size <= 1) continue; // 数值相同，只是单位不同
+      // 数值类型的特殊处理：解析单位并换算到基准单位后按相对容差比对
+      const numericValues: Array<{ original: string; value: number; unit: string }> = [];
+      let allNumeric = true;
+      for (const v of uniqueValues) {
+        const parsed = normalizeNumericValue(v);
+        if (!parsed) {
+          allNumeric = false;
+          break;
         }
-
-        inconsistencies.push({
-          paramName,
-          entries: entries.map(e => ({
-            value: e.value,
-            lineNumber: e.lineNumber,
-            context: e.context,
-          })),
-        });
+        numericValues.push({ original: v, value: parsed.value, unit: parsed.unit });
       }
+
+      let description: string | undefined;
+      if (allNumeric) {
+        const evalResult = IntraFileConsistencyService.evaluateNumericGroup(numericValues, tolerance);
+        if (evalResult.consistent) continue; // 数值相同或在容差内 → 视为一致（跳过）
+        description = evalResult.description;
+      }
+
+      inconsistencies.push({
+        paramName,
+        entries: entries.map(e => ({
+          value: e.value,
+          lineNumber: e.lineNumber,
+          context: e.context,
+          position: lineOffsets
+            ? IntraFileConsistencyService.computePosition(extractedText!, lineOffsets, e.lineNumber, e.value)
+            : undefined,
+        })),
+        position: lineOffsets
+          ? IntraFileConsistencyService.computePosition(extractedText!, lineOffsets, entries[0].lineNumber, entries[0].value)
+          : undefined,
+        description,
+      });
     }
 
     return inconsistencies;
+  }
+
+  /**
+   * 数值组判定：两两按相对容差比对，全部在容差内 → { consistent: true }；
+   * 否则 → { consistent: false, description: 单位说明 }（单位说明可能为 undefined，走默认文案）
+   */
+  private static evaluateNumericGroup(
+    values: Array<{ original: string; value: number; unit: string }>,
+    tolerance: number,
+  ): { consistent: boolean; description?: string } {
+    for (let i = 0; i < values.length; i++) {
+      for (let j = i + 1; j < values.length; j++) {
+        const a = values[i];
+        const b = values[j];
+        if (IntraFileConsistencyService.compareNumericPair(a, b, tolerance) === 'equal') continue;
+        return { consistent: false, description: IntraFileConsistencyService.buildUnitMismatchDescription(a, b) };
+      }
+    }
+    return { consistent: true };
+  }
+
+  /**
+   * 数值对比较：换算到基准单位后按相对容差判定相等（|a-b|/max(|a|,|b|) ≤ tol）
+   * - 单位维度不同（如 m vs kg）→ 不可换算 → 判不一致
+   * - 无单位（''）与任意单位兼容，直接比基准值
+   * - 单位未知（如 m³）→ 退回比较原始数值
+   */
+  private static compareNumericPair(
+    a: { value: number; unit: string },
+    b: { value: number; unit: string },
+    tolerance: number,
+  ): 'equal' | 'different' {
+    const aDef = UNIT_TABLE[a.unit];
+    const bDef = UNIT_TABLE[b.unit];
+    const aBase = aDef ? aDef.toBase(a.value) : null;
+    const bBase = bDef ? bDef.toBase(b.value) : null;
+
+    // 两侧单位均可换算 → 换算到基准单位后比对
+    if (aBase !== null && bBase !== null) {
+      // 明确的不同维度（两侧均非纯数值）→ 不可换算 → 判不一致（如 5m vs 5kg）
+      if (aDef!.dimension !== 'number' && bDef!.dimension !== 'number' && aDef!.dimension !== bDef!.dimension) {
+        return 'different';
+      }
+      return IntraFileConsistencyService.withinTolerance(aBase, bBase, tolerance) ? 'equal' : 'different';
+    }
+
+    // 至少一侧单位未知 → 退回原始数值比较
+    return IntraFileConsistencyService.withinTolerance(a.value, b.value, tolerance) ? 'equal' : 'different';
+  }
+
+  /** 相对容差判定：|a-b| / max(|a|,|b|) ≤ tolerance */
+  private static withinTolerance(a: number, b: number, tolerance: number): boolean {
+    if (a === b) return true;
+    const maxAbs = Math.max(Math.abs(a), Math.abs(b));
+    if (maxAbs === 0) return false;
+    return Math.abs(a - b) / maxAbs <= tolerance;
+  }
+
+  /**
+   * 生成"单位不同且数值不等"描述：如 1MPa vs 1kPa → "单位不同且数值不等（1MPa = 1000kPa）"
+   * 仅当两侧单位均已知、不同且属同一维度时生成；否则返回 undefined（走默认文案）
+   */
+  private static buildUnitMismatchDescription(
+    a: { original: string; value: number; unit: string },
+    b: { original: string; value: number; unit: string },
+  ): string | undefined {
+    if (!a.unit || !b.unit || a.unit === b.unit) return undefined;
+    const aDef = UNIT_TABLE[a.unit];
+    const bDef = UNIT_TABLE[b.unit];
+    if (!aDef || !bDef || aDef.dimension !== bDef.dimension) return undefined;
+    // 把 a 的基准值换算回 b 的单位，示例：1MPa → 1000kPa
+    const aInBUnit = bDef.fromBase(aDef.toBase(a.value));
+    return `单位不同且数值不等（${a.original} = ${formatNumber(aInBUnit)}${bDef.display}）`;
+  }
+
+  /** 计算各行在原文中的起始字符偏移（1-indexed 行号 → 偏移数组） */
+  private static buildLineOffsets(text: string): number[] {
+    const offsets: number[] = [];
+    let pos = 0;
+    for (const line of text.split('\n')) {
+      offsets.push(pos);
+      pos += line.length + 1;
+    }
+    return offsets;
+  }
+
+  /**
+   * 基于 1-indexed 行号 + 行内值定位计算字符区间 [start, end)
+   * 行号越界、行内找不到值 → 返回 undefined（尽力而为）
+   */
+  private static computePosition(
+    text: string,
+    lineOffsets: number[],
+    lineNumber: number,
+    value: string,
+  ): { start: number; end: number } | undefined {
+    if (lineNumber < 1 || lineNumber > lineOffsets.length) return undefined;
+    const lineStart = lineOffsets[lineNumber - 1];
+    const lineEnd = lineNumber < lineOffsets.length ? lineOffsets[lineNumber] - 1 : text.length;
+    const line = text.slice(lineStart, lineEnd);
+    const idx = line.indexOf(value);
+    if (idx === -1) return undefined;
+    return { start: lineStart + idx, end: lineStart + idx + value.length };
   }
 }

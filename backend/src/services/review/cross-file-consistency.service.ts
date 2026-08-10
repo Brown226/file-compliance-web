@@ -169,6 +169,45 @@ interface CrossFileIssueRaw {
   severity?: 'error' | 'warning';
 }
 
+/**
+ * P2-11b：按 LLM 返回的 fileNames 过滤排序候选文件（纯函数，可单测）
+ *
+ * 匹配优先级：
+ *   1. 精确匹配：ext.fileName === fileName（排在前面，按 fileNames 数组顺序）
+ *   2. 包含匹配：互为子串（ext.fileName.includes(fileName) || fileName.includes(ext.fileName)）
+ * 未命中任何 fileName 的文件被剔除；按 fileId 去重（同名/别名文件只保留一次）。
+ * 返回 [] 表示无候选（调用方应退化为原启发式 findIssueSourceFile）。
+ */
+export function orderCandidatesByFileNames(
+  fileNames: string[],
+  extractions: FileDimensionSummary[],
+): FileDimensionSummary[] {
+  const names = [...new Set(fileNames.map((n) => n.trim()).filter(Boolean))];
+  if (names.length === 0 || extractions.length === 0) return [];
+
+  const ordered: FileDimensionSummary[] = [];
+  const seen = new Set<string>();
+  const pushUnique = (ext: FileDimensionSummary) => {
+    if (seen.has(ext.fileId)) return;
+    seen.add(ext.fileId);
+    ordered.push(ext);
+  };
+
+  for (const name of names) {
+    // 精确匹配优先
+    for (const ext of extractions) {
+      if (ext.fileName === name) pushUnique(ext);
+    }
+    // 包含匹配兜底
+    for (const ext of extractions) {
+      if (ext.fileName !== name && (ext.fileName.includes(name) || name.includes(ext.fileName))) {
+        pushUnique(ext);
+      }
+    }
+  }
+  return ordered;
+}
+
 export class CrossFileConsistencyService {
   /**
    * 执行跨文件一致性检查
@@ -222,6 +261,26 @@ export class CrossFileConsistencyService {
     // 4. 合并写入 TaskDetail
     const allDetails = [...c2Details, ...c13456Details];
     if (allDetails.length > 0) {
+      // P2-9 跨服务去重：同一文件同一原文已被 INTRA_CONSIST_001（文件内一致性，先跑）覆盖时，
+      // 不再写 CROSS 重复项（INTRA 证据更直接、优先保留）。归一化：trim + 压缩空白。
+      try {
+        const intraDetails = await prisma.taskDetail.findMany({
+          where: { taskId, ruleCode: 'INTRA_CONSIST_001' },
+          select: { fileId: true, originalText: true },
+        });
+        if (intraDetails.length > 0) {
+          const norm = (s?: string | null) => (s || '').replace(/\s+/g, '').trim();
+          const intraKeys = new Set(intraDetails.map((d) => `${d.fileId}|${norm(d.originalText)}`));
+          const before = allDetails.length;
+          const filtered = allDetails.filter((d) => !intraKeys.has(`${d.fileId}|${norm(d.originalText)}`));
+          if (filtered.length !== before) {
+            console.log(`[CrossConsist] P2-9 跨服务去重: 丢弃 ${before - filtered.length} 条与 INTRA_CONSIST_001 重复的一致性明细`);
+            allDetails.splice(0, allDetails.length, ...filtered);
+          }
+        }
+      } catch (e) {
+        console.warn('[CrossConsist] P2-9 跨服务去重查询失败，跳过去重（不影响主流程）:', e);
+      }
       await prisma.taskDetail.createMany({ data: allDetails });
     }
 
@@ -389,29 +448,35 @@ export class CrossFileConsistencyService {
     console.log(`[CrossConsist] C1-C6 发现 ${allIssues.length} 个跨文件不一致`);
 
     // ---- 3. issue → TaskDetail（映射回来源文件，构造 locateMeta） ----
+    // P2-11b：优先使用 LLM 返回的 fileNames 归因——按文件名过滤排序候选文件，
+    // 在候选内做 fingerprint/原文定位；多文件命中时每个命中文件各写一条（与 C2 路径 L296 口径一致）；
+    // 无 fileNames 或候选无命中时完全退化为原启发式 findIssueSourceFile（兼容旧行为）。
     return allIssues.flatMap((issue) => {
-      const sourceFile = this.findIssueSourceFile(issue.originalText, fileExtractions);
-      const loc = this.locateIssueInFile(issue.originalText, sourceFile);
+      const sourceFiles = this.resolveIssueSourceFiles(issue, fileExtractions);
 
-      return [{
-        taskId,
-        fileId: sourceFile.fileId,
-        issueType: 'CONSISTENCY' as const,
-        ruleCode: issue.ruleCode,
-        severity: issue.severity === 'error' ? 'error' : 'warning',
-        reviewSource: 'RULE_ENGINE' as const,
-        originalText: issue.originalText,
-        suggestedText: issue.suggestedText || null,
-        description: issue.description || '',
-        plainLanguage: undefined,
-        locateMeta: {
-          version: 2,
-          mode: 'text' as const,
-          confidence: loc.confidence,
-          absolute: { start: loc.position, end: loc.endPosition },
-          quote: { text: issue.originalText },
-        },
-      }];
+      return sourceFiles.map((sourceFile) => {
+        const loc = this.locateIssueInFile(issue.originalText, sourceFile);
+
+        return {
+          taskId,
+          fileId: sourceFile.fileId,
+          issueType: 'CONSISTENCY' as const,
+          ruleCode: issue.ruleCode,
+          severity: issue.severity === 'error' ? 'error' : 'warning',
+          reviewSource: 'RULE_ENGINE' as const,
+          originalText: issue.originalText,
+          suggestedText: issue.suggestedText || null,
+          description: issue.description || '',
+          plainLanguage: undefined,
+          locateMeta: {
+            version: 2,
+            mode: 'text' as const,
+            confidence: loc.confidence,
+            absolute: { start: loc.position, end: loc.endPosition },
+            quote: { text: issue.originalText },
+          },
+        };
+      });
     });
   }
 
@@ -825,6 +890,58 @@ ${fileBlocks}
     }
     // 兜底：第一个文件
     return extractions[0];
+  }
+
+  /**
+   * P2-11b：解析 issue 归属文件，优先采用 LLM 返回的 fileNames 归因
+   *
+   * 规则：
+   *   1. 有 fileNames：先用文件名过滤排序候选文件（精确匹配优先、包含匹配兜底），
+   *      再在候选内做 fingerprint/原文定位；多候选命中时返回全部命中文件（每个写一条 TaskDetail）；
+   *      候选均未命中时兜底 findIssueSourceFile。
+   *   2. 无 fileNames：完全退化为原启发式（单文件），兼容旧行为。
+   */
+  private static resolveIssueSourceFiles(
+    issue: CrossFileIssueRaw,
+    fileExtractions: FileDimensionSummary[],
+  ): FileDimensionSummary[] {
+    const namedCandidates = issue.fileNames && issue.fileNames.length > 0
+      ? orderCandidatesByFileNames(issue.fileNames, fileExtractions)
+      : [];
+
+    if (namedCandidates.length === 0) {
+      return [this.findIssueSourceFile(issue.originalText, fileExtractions)];
+    }
+
+    const hitFiles = this.findIssueSourceFilesInCandidates(issue.originalText, namedCandidates);
+    if (hitFiles.length > 0) {
+      return hitFiles;
+    }
+    // fileNames 指定的候选文件中均未定位到原文 → 兜底原启发式
+    return [this.findIssueSourceFile(issue.originalText, fileExtractions)];
+  }
+
+  /**
+   * P2-11b：在候选文件中定位 issue 的归属文件
+   * 匹配口径与 findIssueSourceFile 一致（fingerprint 包含 → 原文包含），
+   * 但返回全部命中的候选文件（供多文件各写一条 TaskDetail），而非第一个命中。
+   */
+  private static findIssueSourceFilesInCandidates(
+    originalText: string,
+    candidates: FileDimensionSummary[],
+  ): FileDimensionSummary[] {
+    const hit: FileDimensionSummary[] = [];
+    for (const ext of candidates) {
+      const allItems = [...ext.params, ...ext.codes, ...ext.refs, ...ext.meta, ...ext.facts];
+      const inFingerprint = allItems.some(
+        (item) => !!item.fingerprint && item.fingerprint.includes(originalText),
+      );
+      const inText = !!originalText && ext.text.includes(originalText);
+      if (inFingerprint || inText) {
+        hit.push(ext);
+      }
+    }
+    return hit;
   }
 
   /**

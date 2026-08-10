@@ -120,6 +120,19 @@ describe('自检 C（数值/日期 + 低相似度二次复核）', () => {
 });
 
 describe('降级与去重', () => {
+  it('单条目对齐失败（parallelLimit 写入 null）→ 不崩溃，其余条目结果保留', async () => {
+    // ITEM_001 对齐判定 reject → 该条 null；ITEM_002 正常判定 → issue 保留
+    reviewTextMock
+      .mockRejectedValueOnce(new Error('LLM timeout'))
+      .mockResolvedValueOnce([{ issueType: 'VIOLATION', originalText: '违约金条款不一致', severity: 'error', status: 'mismatched' }]);
+
+    const result = await runRefCompareAgent('待审文本', [{ fileName: 'ref.md', content: '参照' }], ctx, config);
+    expect(result.issues).toHaveLength(1);
+    expect(result.issues[0].ruleCode).toBe('ITEM_002');
+    // itemCount 仍按全部条目统计，只有对齐失败的条目不产出 issue
+    expect(result.itemCount).toBe(2);
+  });
+
   it('预嵌入失败 → 逐条目退化仍工作', async () => {
     embedTextsMock.mockRejectedValueOnce(new Error('embedding down'));
     reviewTextMock.mockResolvedValue([{ issueType: 'VIOLATION', originalText: 'x', severity: 'error', status: 'mismatched' }]);

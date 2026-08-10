@@ -39,7 +39,9 @@ export class ChunkSplitterService {
    * 注意：数字编号行必须顶格（不以空格开头），避免误匹配正文中的数字列表项。
    */
   static extractOutline(text: string): OutlineNode[] {
-    const lines = text.split('\n');
+    // 归一化 CRLF：行尾 \r 会导致 /$/ 断言失效、标题正则匹配不到（JS 的 . 不匹配 \r）
+    const normalized = text.replace(/\r\n/g, '\n');
+    const lines = normalized.split('\n');
     const nodes: OutlineNode[] = [];
     let currentOffset = 0;
     const stack: OutlineNode[] = [];
@@ -109,14 +111,16 @@ export class ChunkSplitterService {
    *      如需去重，调用方可在审查阶段按 startIndex 去重。
    */
   static splitBySection(text: string, outline: OutlineNode[], maxChunkSize: number = 4000): SectionChunk[] {
+    // 归一化 CRLF：确保 outline 的 startIndex/endIndex 与 sectionText 切片在同一字符坐标下
+    const normalized = text.replace(/\r\n/g, '\n');
     const chunks: SectionChunk[] = [];
     let chunkIndex = 0;
 
     const processNode = (node: OutlineNode, parentPath: string) => {
       const path = parentPath ? `${parentPath} > ${node.title}` : node.title;
       const start = node.startIndex;
-      const end = node.endIndex || text.length;
-      const sectionText = text.substring(start, end);
+      const end = node.endIndex || normalized.length;
+      const sectionText = normalized.substring(start, end);
 
       if (sectionText.length <= maxChunkSize) {
         chunks.push({
@@ -127,8 +131,8 @@ export class ChunkSplitterService {
           sectionLevel: node.level,
         });
       } else {
-        // 章节内容超长，按段落再切
-        const paragraphs = sectionText.split(/\n\n+/);
+        // 章节内容超长，按段落再切（兼容 \r\n 段落分隔，避免 CRLF 文档整段不切）
+        const paragraphs = sectionText.split(/\r?\n\r?\n+/);
         let currentChunk = '';
         let currentStart = start;
 
@@ -187,8 +191,11 @@ export class ChunkSplitterService {
     outline: OutlineNode[];
     chunks: SectionChunk[];
   } {
-    const outline = this.extractOutline(text);
-    const chunks = this.splitBySection(text, outline, maxChunkSize);
+    // 归一化 CRLF → LF：Windows 文档若保留 \r，按 \n\n 切段会整体失效，
+    // 且 extractOutline 里 \r 会残留进标题、字符偏移量错位。
+    const normalized = text.replace(/\r\n/g, '\n');
+    const outline = this.extractOutline(normalized);
+    const chunks = this.splitBySection(normalized, outline, maxChunkSize);
     return { outline, chunks };
   }
 }
