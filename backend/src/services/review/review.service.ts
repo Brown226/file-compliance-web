@@ -455,43 +455,44 @@ export class ReviewService {
       }
 
       // ===== Ϊÿ���ļ����� PipelineContext�������׶ν���� =====
-            // ===== DEC_REVIEW 专用：预加载审点（V3.1 双源）=====
+            // ===== DEC_REVIEW 专用：预加载审点（V3.2 单源）=====
       // 审点与文件无关（任务级共享），在 fileContexts 构建前一次性加载
-      // V3.1：规则库（RuleLibraryItem）若包含审点字段（clauseText/checkPrompt）也作为审点源
+      // V3.2 合并：审点统一从 rule_library_items 加载（唯一审查点载体）
+      //   - 任务挂标准 → 经 rule_libraries.standardId 找到关联审点库
+      //   - 任务直挂规则库 → 直接加载
       let decCheckpoints: PipelineContext['checkpoints'] = undefined;
       if (reviewMode === 'DEC_REVIEW' || reviewMode === 'LIBRARY_REVIEW') {
         const decStdIds = task.taskStandards.map((item: any) => item.standardId);
         const effectiveRuleLibId = executionPlan.ruleLibraryId || (task as any).ruleLibraryId;
         const sources: string[] = [];
 
-        // 来源 1：Standard.standardCheckpoint（旧审点库，保留兼容）
+        // 单源：标准关联审点库（rule_libraries.standardId）+ 直挂规则库，统一从 rule_library_items 加载
+        const libraryIds = new Set<string>();
         if (decStdIds.length > 0) {
           try {
-            const checkpoints = await prisma.standardCheckpoint.findMany({
+            const linkedLibs = await prisma.ruleLibrary.findMany({
               where: { standardId: { in: decStdIds } },
-              select: { id: true, clauseCode: true, clauseText: true, mandatory: true, auditDimension: true, checkPrompt: true },
+              select: { id: true, name: true },
             });
-            if (checkpoints.length > 0) {
-              decCheckpoints = [...(decCheckpoints || []), ...checkpoints];
-              sources.push(`StandardCheckpoint ${checkpoints.length} 条（标准 ${decStdIds.length} 个）`);
-            }
+            linkedLibs.forEach((l: any) => libraryIds.add(l.id));
+            if (linkedLibs.length > 0) sources.push(`标准关联审点库 ${linkedLibs.length} 个`);
           } catch (e) {
-            console.warn('[Review] StandardCheckpoint 预加载失败:', e);
+            console.warn('[Review] 标准→审点库关联查询失败:', e);
           }
         }
+        if (effectiveRuleLibId) libraryIds.add(effectiveRuleLibId);
 
-        // 来源 2：RuleLibraryItem（V3.1：规则库吸收审点库机制后的主审点源）
-        if (effectiveRuleLibId) {
+        if (libraryIds.size > 0) {
           try {
             const ruleItems = await prisma.ruleLibraryItem.findMany({
-              where: { libraryId: effectiveRuleLibId, enabled: true, clauseText: { not: null } },
+              where: { libraryId: { in: [...libraryIds] }, enabled: true, clauseText: { not: null } },
               select: {
                 id: true, ruleCode: true, clauseText: true, checkPrompt: true,
                 auditDimension: true, mandatory: true, severity: true,
                 ruleName: true, description: true, clauseHash: true,
               },
             });
-            // 适配成 ctx.checkpoints 格式
+            // 适配成 ctx.checkpoints 格式（按 id 去重，避免标准关联库与直挂库重复）
             const adapted = ruleItems.map((item: any) => ({
               id: item.id,
               clauseCode: item.ruleCode || item.ruleName || null,
@@ -500,9 +501,15 @@ export class ReviewService {
               auditDimension: item.auditDimension || 'compliance',
               checkPrompt: item.checkPrompt || '',
             })).filter((c: any) => c.clauseText && c.clauseText.length >= 10);  // 过滤过短条目
-            if (adapted.length > 0) {
-              decCheckpoints = [...(decCheckpoints || []), ...adapted];
-              sources.push(`RuleLibraryItem ${adapted.length} 条（规则库 ${effectiveRuleLibId.slice(0, 8)}…）`);
+            const seenIds = new Set<string>();
+            const deduped = adapted.filter((c: any) => {
+              if (c.id && seenIds.has(c.id)) return false;
+              if (c.id) seenIds.add(c.id);
+              return true;
+            });
+            if (deduped.length > 0) {
+              decCheckpoints = [...(decCheckpoints || []), ...deduped];
+              sources.push(`RuleLibraryItem ${deduped.length} 条（库 ${[...libraryIds].map((id) => id.slice(0, 8)).join(',')}…）`);
             }
           } catch (e) {
             console.warn('[Review] RuleLibraryItem 审点加载失败:', e);
@@ -516,14 +523,37 @@ export class ReviewService {
             console.log(`[Review] LIBRARY_REVIEW 自动升级为 DEC_REVIEW：双分支增强已启用`);
           }
         } else {
+          // P1-7: 空库显式告警 — 用户必须能区分「真合规」与「没审到」
           const hints: string[] = [];
           if (decStdIds.length === 0 && !effectiveRuleLibId) {
             hints.push('任务未关联标准也未挂规则库');
           } else {
-            if (decStdIds.length > 0) hints.push('标准下无审点');
+            if (decStdIds.length > 0) hints.push('标准未关联审点库或库内无审点');
             if (effectiveRuleLibId) hints.push('规则库无审点字段（clauseText 为空，请用审点模式 /parse-checkpoints-async 重新生成）');
           }
-          console.warn(`[Review] DEC_REVIEW: ${hints.join('，')}`);
+          const libEmptyMsg = hints.join('，');
+          console.warn(`[Review] DEC_REVIEW: ${libEmptyMsg}`);
+          // 通过 WebSocket 显式告警：本次审查未加载任何审点，返回「无问题」不代表真合规
+          WebSocketService.emitTaskProgress(taskId, {
+            type: 'lib_empty',
+            step: '审点库为空',
+            progress: 5,
+            message: libEmptyMsg,
+            phase: 'preload',
+            timestamp: Date.now(),
+          });
+          // 落库到 stats.warnings，供任务完成后的详情页展示（轮询兜底时也能看到）
+          try {
+            const curStats = (task.stats as any) || {};
+            const warnings = Array.isArray(curStats.warnings) ? [...curStats.warnings] : [];
+            warnings.push(`审点库为空：${libEmptyMsg}`);
+            await prisma.task.update({
+              where: { id: taskId },
+              data: { stats: { ...curStats, warnings } },
+            });
+          } catch (e) {
+            console.warn('[Review] 空库告警落库失败（不影响主流程）:', e);
+          }
         }
       }
       // Task 14: 生成全链路 traceId，关联本次任务处理的所有 LLM 调用（Phase A 分片 + Phase C 比对等）
@@ -1382,9 +1412,15 @@ const fileContexts = task.files.map(file => {
             diffRanges: issue.diffRanges || null,
             textPosition: this.buildLegacyTextPosition(meta, ctx.extractedText, issue.originalText),
             locateMeta: meta,
-            // 人工复核状态：AI_INFERRED 纯推断结果或合同 HIGH 风险需要人工复核
+            // 人工复核状态：AI_INFERRED 纯推断、合同 HIGH 风险、判标 LOW 置信度（疑似误报但不丢弃）均需人工复核
             riskLevel: issue.riskLevel || null,
-            reviewStatus: ((confidence) => { return (confidence === 'AI_INFERRED' || issue.riskLevel === 'HIGH') ? 'PENDING_REVIEW' : 'CONFIRMED'; })(this.getConfidence(issue).confidence),
+            judgeConfidence: issue.confidence || null,
+            judgeReason: issue.confidenceReason || null,
+            reviewStatus: ((confidence) => {
+              return (confidence === 'AI_INFERRED' || issue.riskLevel === 'HIGH' || issue.confidence === 'LOW')
+                ? 'PENDING_REVIEW'
+                : 'CONFIRMED';
+            })(this.getConfidence(issue).confidence),
             clauseType: issue.clauseType || null,
             recommendation: issue.recommendation || null,
           };
