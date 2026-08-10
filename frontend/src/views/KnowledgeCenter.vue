@@ -21,7 +21,6 @@
       <StandardClauses v-if="activeTab === 'clauses'" />
       <TerminologyTab v-show="activeTab === 'terminology'" />
       <FalsePositiveLibraryTab v-show="activeTab === 'falsepositive'" />
-      <RuleLibraries v-if="activeTab === 'rules'" />
     </div>
   </div>
 </template>
@@ -29,13 +28,12 @@
 <script setup lang="ts">
 import { ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { Collection, FolderOpened, Reading, Notebook, CircleClose, Files } from '@element-plus/icons-vue'
+import { Collection, FolderOpened, Reading, Notebook, CircleClose } from '@element-plus/icons-vue'
 import LocalStandardTab from '@/views/StandardLibrary/LocalStandardTab.vue'
 import MaxKBTab from '@/views/StandardLibrary/MaxKBTab.vue'
 import TerminologyTab from '@/views/StandardLibrary/TerminologyTab.vue'
 import FalsePositiveLibraryTab from '@/views/StandardLibrary/FalsePositiveLibraryTab.vue'
 import StandardClauses from '@/views/StandardLibrary/StandardClauses.vue'
-import RuleLibraries from '@/views/admin/RuleLibraries.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -44,17 +42,21 @@ const tabs = [
   { key: 'standards', label: '标准库', icon: Collection },
   { key: 'maxkb', label: 'MaxKB 知识库', icon: FolderOpened },
   { key: 'clauses', label: '条文库', icon: Reading },
-  { key: 'terminology', label: '术语表', icon: Notebook },
+  { key: 'terminology', label: '白名单库', icon: Notebook },
   { key: 'falsepositive', label: '误报库', icon: CircleClose },
-  { key: 'rules', label: '语义规则库', icon: Files },
 ]
 
 const activeTab = ref('standards')
 
 // 支持 /knowledge?tab=maxkb
 watch(() => route.query.tab, (tab) => {
-  if (tab && tabs.some(t => t.key === tab)) {
-    activeTab.value = tab as string
+  // V3.2 合并：语义规则库入口并入条文库，?tab=rules 兼容重定向到 clauses
+  // 白名单库：?tab=whitelist 兼容映射到 terminology（内部接口名不变）
+  let key = tab as string
+  if (key === 'rules') key = 'clauses'
+  if (key === 'whitelist') key = 'terminology'
+  if (key && tabs.some(t => t.key === key)) {
+    activeTab.value = key
   }
 }, { immediate: true })
 

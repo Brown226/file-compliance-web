@@ -87,7 +87,7 @@ const routes: Array<RouteRecordRaw> = [
       },
       { path: 'admin/standards', redirect: '/knowledge' },
       { path: 'admin/knowledge', redirect: '/knowledge?tab=maxkb' },
-      { path: 'admin/rule-libraries', redirect: '/knowledge?tab=rules' },
+      { path: 'admin/rule-libraries', redirect: '/knowledge?tab=clauses' },
       { path: 'openspec/clauses', redirect: '/knowledge?tab=clauses' },
       {
         path: 'feedback',
@@ -136,7 +136,7 @@ const routes: Array<RouteRecordRaw> = [
       {
         path: 'admin/standards/:id/checkpoints',
         name: 'StandardCheckpoints',
-        component: () => import('../views/StandardLibrary/CheckpointManager.vue'),
+        redirect: (to) => `/knowledge?tab=clauses&standardId=${to.params.id}`,
         meta: { title: 'DEC 审点管理', allowViewer: true, hidden: true }
       },
       {
@@ -153,11 +153,10 @@ const routes: Array<RouteRecordRaw> = [
         path: 'admin/knowledge-categories/:id/documents',
         redirect: '/admin/knowledge'
       },
+      // V3.2 合并：语义规则库独立页面并入条文库，路由重定向
       {
         path: 'admin/rule-libraries',
-        name: 'RuleLibraries',
-        component: () => import('../views/admin/RuleLibraries.vue'),
-        meta: { title: '语义规则库', allowViewer: true }
+        redirect: '/knowledge?tab=clauses',
       },
       {
         path: 'admin/rules',

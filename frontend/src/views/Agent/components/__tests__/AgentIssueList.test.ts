@@ -10,16 +10,16 @@
  * - P2-⑧ 标记误报：确认 → api 调用 → 已反馈标记；取消 → 不调用
  * - P2-⑬ 定位原文：emit('locate-issue', issue)
  *
- * mock：@/api/agent、standardClauses、vue-router、element-plus（ElMessage/ElMessageBox），
+ * mock：@/api/agent、@/api/standard、vue-router、element-plus（ElMessage/ElMessageBox），
  * el-* 组件用轻量 stub（el-input 支持 v-model 以测搜索）。
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { mount, flushPromises } from '@vue/test-utils'
 import AgentIssueList from '../AgentIssueList.vue'
 
-const { apiMock, clausesMock, routerMock, elMock } = vi.hoisted(() => ({
+const { apiMock, standardsMock, routerMock, elMock } = vi.hoisted(() => ({
   apiMock: { markAgentIssueFalsePositiveApi: vi.fn() },
-  clausesMock: { getStandardTreeApi: vi.fn(), getClausesByStandardApi: vi.fn() },
+  standardsMock: { getStandardsApi: vi.fn(), getCheckpointsApi: vi.fn() },
   routerMock: { push: vi.fn() },
   elMock: {
     ElMessage: { error: vi.fn(), warning: vi.fn(), success: vi.fn() },
@@ -28,7 +28,7 @@ const { apiMock, clausesMock, routerMock, elMock } = vi.hoisted(() => ({
 }))
 
 vi.mock('@/api/agent', () => apiMock)
-vi.mock('@/views/StandardLibrary/service/standardClauses', () => clausesMock)
+vi.mock('@/api/standard', () => standardsMock)
 vi.mock('vue-router', () => ({ useRouter: () => routerMock }))
 vi.mock('element-plus', () => elMock)
 
@@ -53,13 +53,6 @@ const issues = [
   },
 ]
 
-const tree = [
-  {
-    standard: { id: 'std-1', number: 'GB/T 50001-2017' },
-    clauses: [{ clause: { id: 'cl-1', clauseNumber: '3.0.2' } }],
-  },
-]
-
 function mountList(props: Record<string, any> = {}) {
   return mount(AgentIssueList, {
     props: { issues, ...props },
@@ -81,14 +74,18 @@ function mountList(props: Record<string, any> = {}) {
 
 beforeEach(() => {
   for (const fn of Object.values(apiMock)) fn.mockReset()
-  for (const fn of Object.values(clausesMock)) fn.mockReset()
+  for (const fn of Object.values(standardsMock)) fn.mockReset()
   routerMock.push.mockReset()
   elMock.ElMessage.error.mockReset()
   elMock.ElMessage.warning.mockReset()
   elMock.ElMessageBox.confirm.mockReset()
   apiMock.markAgentIssueFalsePositiveApi.mockResolvedValue({ added: true })
-  clausesMock.getStandardTreeApi.mockResolvedValue(tree)
-  clausesMock.getClausesByStandardApi.mockResolvedValue([])
+  standardsMock.getStandardsApi.mockResolvedValue({
+    data: { items: [{ id: 'std-1', standardNo: 'GB/T 50001-2017' }] },
+  })
+  standardsMock.getCheckpointsApi.mockResolvedValue({
+    data: { checkpoints: [{ id: 'cl-1', clauseCode: '3.0.2' }] },
+  })
 })
 
 describe('渲染', () => {
@@ -141,7 +138,7 @@ describe('P1-⑦ 查看条文', () => {
     expect(btn.exists()).toBe(true)
     await btn.trigger('click')
     await flushPromises()
-    expect(clausesMock.getStandardTreeApi).toHaveBeenCalled()
+    expect(standardsMock.getStandardsApi).toHaveBeenCalled()
     expect(routerMock.push).toHaveBeenCalledWith({
       path: '/knowledge',
       query: { tab: 'clauses', standardId: 'std-1', clauseId: 'cl-1' },
@@ -157,7 +154,7 @@ describe('P1-⑦ 查看条文', () => {
   })
 
   it('标准树未找到 → ElMessage.warning', async () => {
-    clausesMock.getStandardTreeApi.mockResolvedValue([])
+    standardsMock.getStandardsApi.mockResolvedValue({ data: { items: [] } })
     const wrapper = mountList()
     await wrapper.findAll('.card-header')[0].trigger('click')
     await wrapper.find('.ref-jump-btn').trigger('click')

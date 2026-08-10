@@ -7,6 +7,8 @@ export interface RuleLibrary {
   sourceFileName?: string
   status: 'DRAFT' | 'PUBLISHED' | 'ARCHIVED'
   createdBy: string
+  /** V3.2 条文库合并：关联的标准 ID（可选，保留标准树组织） */
+  standardId?: string | null
   items?: RuleLibraryItem[]
   _count?: { items: number }
   executableItemCount?: number
@@ -70,12 +72,14 @@ export const getRuleLibrariesApi = (params?: {
   selectableOnly?: boolean
   keyword?: string
   status?: string
+  /** V3.2 条文库合并：按关联标准过滤 */
+  standardId?: string
 }) => request.get<RuleLibrary[]>('/rule-libraries', { params })
 
 export const getRuleLibraryApi = (id: string) =>
   request.get<RuleLibrary>(`/rule-libraries/${id}`)
 
-export const createRuleLibraryApi = (data: { name: string; description?: string }) =>
+export const createRuleLibraryApi = (data: { name: string; description?: string; standardId?: string | null }) =>
   request.post<RuleLibrary>('/rule-libraries', data)
 
 export const updateRuleLibraryApi = (id: string, data: {

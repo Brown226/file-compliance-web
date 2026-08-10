@@ -136,7 +136,7 @@ import { ref, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Search, ArrowDown, Document, CircleClose, Aim } from '@element-plus/icons-vue'
-import { getStandardTreeApi, getClausesByStandardApi } from '@/views/StandardLibrary/service/standardClauses'
+import { getStandardsApi, getCheckpointsApi } from '@/api/standard'
 import { markAgentIssueFalsePositiveApi } from '@/api/agent'
 import type { IssueDetail } from '@/views/TaskDetails/types/issue'
 
@@ -187,7 +187,11 @@ const expandedIds = ref<Set<string>>(new Set())
 // ===== P1-⑦ 查看条文跳转 =====
 // standardRef 形如「GB 50052-2009 供配电系统设计规范 · 3.0.2」或「GB/T 50001-2017 第3.0.2条」。
 // 跳转目标：/knowledge?tab=clauses&standardId={id}&clauseId={id}（StandardClauses 按 query 定位展开条文）
-// 用模块级缓存避免重复拉取标准树（Agent 会话中多个 issue 共享同一批标准）。
+// V3.2 合并：标准/审点统一查 Node 后端（standards + rule_library_items），不再走 Java 旧 API。
+interface ClauseNode { clause: { id: string; clauseNumber: string } }
+interface StandardTreeNode { standard: { id: string; number: string }; clauses: ClauseNode[] }
+
+// 用模块级缓存避免重复拉取标准（Agent 会话中多个 issue 共享同一批标准）。
 let treeCache: StandardTreeNode[] | null = null
 let treeCachePromise: Promise<StandardTreeNode[]> | null = null
 const refJumping = ref(false)
@@ -195,9 +199,13 @@ const refJumping = ref(false)
 async function getTreeOnce(): Promise<StandardTreeNode[]> {
   if (treeCache) return treeCache
   if (!treeCachePromise) {
-    treeCachePromise = getStandardTreeApi().then(t => {
-      treeCache = t
-      return t
+    treeCachePromise = getStandardsApi({ limit: 500 }).then(res => {
+      const items = (res.data?.items || res.data?.data || []) as any[]
+      treeCache = items.map(s => ({
+        standard: { id: s.id, number: s.standardNo || s.standardIdent || s.title || '' },
+        clauses: [],
+      }))
+      return treeCache
     })
   }
   return treeCachePromise
@@ -243,11 +251,12 @@ async function viewClause(ref: string) {
       ElMessage.warning(`未找到标准「${standardNo}」，请到知识库确认标准编号`)
       return
     }
-    // 条文可能在标准树未含 clauses（树默认不含），需要按标准查条文
+    // 条文：Node 后端按标准查审点（rule_library_items，V3.2 合并后唯一载体）
     let clause = node.clauses?.find(c => normalizeNo(c.clause.clauseNumber) === normalizeNo(clauseNo))
     if (!clause) {
-      const clauses = await getClausesByStandardApi(node.standard.id)
-      clause = clauses.find(c => normalizeNo(c.clause.clauseNumber) === normalizeNo(clauseNo)) || null
+      const { data } = await getCheckpointsApi(node.standard.id)
+      const cp = (data?.checkpoints || []).find(c => normalizeNo(c.clauseCode || '') === normalizeNo(clauseNo))
+      if (cp) clause = { clause: { id: cp.id, clauseNumber: cp.clauseCode || '' } }
     }
     if (!clause) {
       ElMessage.warning(`未找到标准「${standardNo}」中的条文「${clauseNo}」`)
