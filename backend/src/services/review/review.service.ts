@@ -731,11 +731,20 @@ const fileContexts = task.files.map(file => {
           message: 'running intra-file consistency check...', timestamp: Date.now(),
         });
         const filesWithText = fileContexts.filter(({ ctx }) => ctx.extractedText && ctx.extractedText.trim().length > 0);
+        // CONSISTENCY 容差口径统一：文件内检查复用模式配置的 paramTolerance（含 byUnit），
+        // 与跨文件检查一致；读取失败时回退 undefined（intra 内部恒用默认 1%）
+        let intraParamTolerance: any = undefined;
+        try {
+          const { getModeCapabilitiesConfig } = await import('../review-pipeline/mode-config.service');
+          intraParamTolerance = (await getModeCapabilitiesConfig()).CONSISTENCY?.paramTolerance;
+        } catch (e) {
+          console.warn('[Review] 读取 paramTolerance 配置失败，文件内检查使用默认 1% 容差:', e);
+        }
         intraConsistencyPromise = Promise.all(
           filesWithText.map(async ({ file, ctx }) => {
             try {
               const issueCount = await IntraFileConsistencyService.check(
-                taskId, file.id, file.fileName, ctx.extractedText,
+                taskId, file.id, file.fileName, ctx.extractedText, intraParamTolerance,
               );
               return { fileId: file.id, issueCount };
             } catch (e) {

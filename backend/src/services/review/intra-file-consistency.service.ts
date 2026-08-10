@@ -13,6 +13,8 @@
  */
 
 import prisma from '../../config/db';
+import { getToleranceForUnit } from '../review-pipeline/param-tolerance';
+import type { ParamToleranceConfig } from '../review-pipeline/mode-config.service';
 
 /** 参数抽取结果 */
 interface ParamEntry {
@@ -225,6 +227,7 @@ export class IntraFileConsistencyService {
     fileId: string,
     fileName: string,
     extractedText: string,
+    paramTolerance?: ParamToleranceConfig,
   ): Promise<number> {
     if (!extractedText || extractedText.trim().length < 100) {
       console.log(`[IntraConsist] ${fileName}: 文本过短，跳过检查`);
@@ -263,7 +266,7 @@ export class IntraFileConsistencyService {
     }
 
     // 3. 检测不一致
-    const inconsistencies = this.findInconsistencies(allParams, { extractedText });
+    const inconsistencies = this.findInconsistencies(allParams, { extractedText, paramTolerance });
     if (inconsistencies.length === 0) {
       console.log(`[IntraConsist] ${fileName}: 未发现文件内不一致`);
       return 0;
@@ -409,7 +412,7 @@ export class IntraFileConsistencyService {
    */
   private static findInconsistencies(
     params: ParamEntry[],
-    opts?: { extractedText?: string; tolerance?: number },
+    opts?: { extractedText?: string; tolerance?: number; paramTolerance?: ParamToleranceConfig },
   ): Inconsistency[] {
     // 按参数名分组
     const grouped = new Map<string, ParamEntry[]>();
@@ -446,7 +449,7 @@ export class IntraFileConsistencyService {
 
       let description: string | undefined;
       if (allNumeric) {
-        const evalResult = IntraFileConsistencyService.evaluateNumericGroup(numericValues, tolerance);
+        const evalResult = IntraFileConsistencyService.evaluateNumericGroup(numericValues, tolerance, opts?.paramTolerance);
         if (evalResult.consistent) continue; // 数值相同或在容差内 → 视为一致（跳过）
         description = evalResult.description;
       }
@@ -478,12 +481,13 @@ export class IntraFileConsistencyService {
   private static evaluateNumericGroup(
     values: Array<{ original: string; value: number; unit: string }>,
     tolerance: number,
+    paramTolerance?: ParamToleranceConfig,
   ): { consistent: boolean; description?: string } {
     for (let i = 0; i < values.length; i++) {
       for (let j = i + 1; j < values.length; j++) {
         const a = values[i];
         const b = values[j];
-        if (IntraFileConsistencyService.compareNumericPair(a, b, tolerance) === 'equal') continue;
+        if (IntraFileConsistencyService.compareNumericPair(a, b, tolerance, paramTolerance) === 'equal') continue;
         return { consistent: false, description: IntraFileConsistencyService.buildUnitMismatchDescription(a, b) };
       }
     }
@@ -500,7 +504,11 @@ export class IntraFileConsistencyService {
     a: { value: number; unit: string },
     b: { value: number; unit: string },
     tolerance: number,
+    paramTolerance?: ParamToleranceConfig,
   ): 'equal' | 'different' {
+    // CONSISTENCY 容差口径统一：配置了 paramTolerance（DB 可覆盖，含 byUnit）时按单位取容差，
+    // 与跨文件检查共用 getToleranceForUnit，不再恒用 1%。
+    const effectiveTol = paramTolerance ? getToleranceForUnit(a.unit, paramTolerance) : tolerance;
     const aDef = UNIT_TABLE[a.unit];
     const bDef = UNIT_TABLE[b.unit];
     const aBase = aDef ? aDef.toBase(a.value) : null;
@@ -512,11 +520,11 @@ export class IntraFileConsistencyService {
       if (aDef!.dimension !== 'number' && bDef!.dimension !== 'number' && aDef!.dimension !== bDef!.dimension) {
         return 'different';
       }
-      return IntraFileConsistencyService.withinTolerance(aBase, bBase, tolerance) ? 'equal' : 'different';
+      return IntraFileConsistencyService.withinTolerance(aBase, bBase, effectiveTol) ? 'equal' : 'different';
     }
 
     // 至少一侧单位未知 → 退回原始数值比较
-    return IntraFileConsistencyService.withinTolerance(a.value, b.value, tolerance) ? 'equal' : 'different';
+    return IntraFileConsistencyService.withinTolerance(a.value, b.value, effectiveTol) ? 'equal' : 'different';
   }
 
   /** 相对容差判定：|a-b| / max(|a|,|b|) ≤ tolerance */

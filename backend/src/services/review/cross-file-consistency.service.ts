@@ -14,6 +14,7 @@ import { TextExtractionService } from '../review-pipeline/text-extraction.servic
 import { resolveFilePath } from '../../config/upload';
 import { parallelLimit } from '../../utils/parallel';
 import { getModeCapabilitiesConfig, ParamToleranceConfig } from '../review-pipeline/mode-config.service';
+import { getToleranceForUnit } from '../review-pipeline/param-tolerance';
 import { LlmService, TextChunk } from '../llm/llm.service';
 import { PromptLoader } from '../prompts';
 import { CONSISTENCY_DIMENSIONS } from '../prompts';
@@ -1218,7 +1219,7 @@ ${fileBlocks}
         const diff = Math.abs(aInBase - bInBase);
         const avg = (Math.abs(aInBase) + Math.abs(bInBase)) / 2;
         // 按单位选择容差（默认 1%）
-        const tol = this.getToleranceForUnit(a.unit, paramTolerance);
+        const tol = getToleranceForUnit(a.unit, paramTolerance);
         if (avg > 0 && diff / avg < tol) {
           return true;
         }
@@ -1231,7 +1232,7 @@ ${fileBlocks}
       // 直接数值比较（无单位转换时）
       const diff = Math.abs(a.numeric - b.numeric);
       const avg = (Math.abs(a.numeric) + Math.abs(b.numeric)) / 2;
-      const tol = this.getToleranceForUnit(a.unit, paramTolerance);
+      const tol = getToleranceForUnit(a.unit, paramTolerance);
       if (avg > 0 && diff / avg < tol) {
         return true;
       }
@@ -1294,37 +1295,6 @@ ${fileBlocks}
     return null;
   }
 
-  /**
-   * 按参数单位选择容差阈值
-   * 优先匹配 byUnit（单位规范化后比较），未匹配则返回 default
-   */
-  private static getToleranceForUnit(unit: string, paramTolerance?: ParamToleranceConfig): number {
-    const defaultTol = paramTolerance?.default ?? 0.01;
-    if (!paramTolerance?.byUnit) return defaultTol;
-    const normalizedUnit = this.normalizeUnitKey(unit);
-    for (const [key, value] of Object.entries(paramTolerance.byUnit)) {
-      if (this.normalizeUnitKey(key) === normalizedUnit) {
-        return value;
-      }
-    }
-    return defaultTol;
-  }
-
-  /**
-   * 规范化单位字符串，用于 byUnit 配置键匹配
-   * 统一为小写、去空格、合并同义单位（℃→°c、度→°c、兆帕→mpa 等）
-   */
-  private static normalizeUnitKey(unit: string): string {
-    return unit
-      .toLowerCase()
-      .replace(/\s/g, '')
-      .replace(/℃/g, '°c')
-      .replace(/℉/g, '°f')
-      .replace(/度/g, '°c')
-      .replace(/兆帕/g, 'mpa')
-      .replace(/千帕/g, 'kpa')
-      .replace(/帕/g, 'pa');
-  }
 
   /**
    * 判断是否为有效的参数名

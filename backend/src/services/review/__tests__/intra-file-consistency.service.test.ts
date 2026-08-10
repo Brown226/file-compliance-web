@@ -250,3 +250,38 @@ describe('同参数名多值分组逻辑不回归', () => {
     expect(result).toHaveLength(0);
   });
 });
+
+describe('byUnit 容差（CONSISTENCY 口径统一：intra 与 cross 共用 paramTolerance 配置）', () => {
+  it('默认 1% 容差：10MPa vs 10.4MPa（相对差≈3.8%）→ 判不一致', () => {
+    const result = Svc.findInconsistencies([
+      param('设计压力', '10MPa', 3),
+      param('设计压力', '10.4MPa', 7),
+    ]);
+    expect(result).toHaveLength(1);
+  });
+
+  it('配置 byUnit MPa=0.05（5%）→ 10MPa vs 10.4MPa 判一致（不再误报）', () => {
+    const result = Svc.findInconsistencies(
+      [param('设计压力', '10MPa', 3), param('设计压力', '10.4MPa', 7)],
+      { paramTolerance: { default: 0.01, byUnit: { 'MPa': 0.05 } } },
+    );
+    expect(result).toHaveLength(0);
+  });
+
+  it('byUnit 只影响配置单位：无单位参数回退 default 1% 仍判不一致', () => {
+    const result = Svc.findInconsistencies(
+      [param('数量', '100', 3), param('数量', '104', 7)],
+      { paramTolerance: { default: 0.01, byUnit: { 'MPa': 0.05 } } },
+    );
+    expect(result).toHaveLength(1);
+  });
+
+  it('℃ 与 °c 同义单位匹配 byUnit 配置', () => {
+    // 350℃ vs 357℃（相对差 2%）→ ℃ 容差 0.02 → 一致；默认 1% 本应判不一致
+    const result = Svc.findInconsistencies(
+      [param('运行温度', '350℃', 3), param('运行温度', '357℃', 7)],
+      { paramTolerance: { default: 0.01, byUnit: { '℃': 0.02 } } },
+    );
+    expect(result).toHaveLength(0);
+  });
+});
