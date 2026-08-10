@@ -97,19 +97,32 @@ export class AiReviewService {
 
     for (const kbId of knowledgeIds) {
       try {
-        const kbContext = await MaxKBService.getKnowledgeParagraphs(kbId, {
-          maxParagraphs: 10,
-          maxChars: 5000,
-        });
+        // P1 修复：降级路径与 runLLMDirect 统一为 hitTest 语义检索（相关段落），
+        // 而非整库顺序抽取前 N 段（原 getKnowledgeParagraphs 导致上下文与检索路径质量不一致）。
+        // hitTest 失败（如 MaxKB 检索接口异常）再降级 getKnowledgeParagraphs 顺序抽取兜底。
+        let kbContext = '';
+        try {
+          const workspaceId = await MaxKBService.getDefaultWorkspaceId();
+          const hits = await MaxKBService.hitTest(workspaceId, kbId, text.substring(0, 1000), 5);
+          if (Array.isArray(hits)) {
+            for (const hit of hits) {
+              const content = (hit as any).content || (hit as any).text || '';
+              if (content) kbContext += content + '\n';
+            }
+          }
+        } catch (e) {
+          console.warn(`[Pipeline] 降级路径 hitTest 检索失败，改用整库段落抽取兜底: ${kbId}`, e);
+          kbContext = await MaxKBService.getKnowledgeParagraphs(kbId, {
+            maxParagraphs: 10,
+            maxChars: 5000,
+          });
+        }
         if (kbContext) {
           knowledgeContext += kbContext + '\n\n';
         }
       } catch (e) {
         console.warn(`[Pipeline] ��ȡ֪ʶ�� ${kbId} ����ʧ��:`, e);
       }
-    }
-
-    if (knowledgeContext) {
     }
 
     // ʹ������ LLM ������飨��λ����Ϣ��
@@ -1451,16 +1464,19 @@ export class AiReviewService {
     // RAG ����ִֻ��һ�Σ���������
     let ragContext = '';
     if (categoryIds.length > 0) {
-      try {
-        const kbContext = await MaxKBService.getKnowledgeParagraphs(categoryIds[0], {
-          maxParagraphs: 6,
-          maxChars: 3000,
-        });
-        if (kbContext) {
-          ragContext = kbContext;
+      // P2 修复：多知识库全部参与（原实现只取第一个库，用户勾选多个库时其余库被静默忽略）
+      for (const kbId of categoryIds) {
+        try {
+          const kbContext = await MaxKBService.getKnowledgeParagraphs(kbId, {
+            maxParagraphs: 6,
+            maxChars: 3000,
+          });
+          if (kbContext) {
+            ragContext += (ragContext ? '\n\n' : '') + kbContext;
+          }
+        } catch (e) {
+          console.warn(`[SemanticSpec] 知识库 ${kbId} 段落获取失败，跳过该库:`, e);
         }
-      } catch (e) {
-        console.warn('[SemanticSpec] RAG ����ʧ�ܣ���������������:', e);
       }
     }
 
