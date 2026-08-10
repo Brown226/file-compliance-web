@@ -20,40 +20,52 @@ const DEFAULT_THRESHOLDS = {
  * @param config 可选阈值覆盖（来自 review_rules 表 config 字段或 system_configs）
  */
 export function checkContractRules(ctx: FileContext, config?: any): RuleIssue[] {
-  if (!ctx.extractedText) return [];
+  if (!ctx.extractedText || !ctx.extractedText.trim()) return [];
   const text = ctx.extractedText;
   const thresholds = { ...DEFAULT_THRESHOLDS, ...(config || {}) };
   const issues: RuleIssue[] = [];
 
   // 1. 预付款比例检查
+  // P0-3 修复：兼容两种语序——"预付款 50%"（正向）与"按合同价款的 50% 作为预付款"（反向）
   const paymentMatch = text.match(/预付款[^。\n]*?(\d+(?:\.\d+)?)\s*%/);
-  if (paymentMatch) {
-    const ratio = parseFloat(paymentMatch[1]) / 100;
-    if (ratio > thresholds.payment_advance_ratio_max) {
+  const paymentMatchReverse = text.match(/(\d+(?:\.\d+)?)\s*%\s*(?:作为|为|支付)?预付款/);
+  const paymentRatio = paymentMatch
+    ? parseFloat(paymentMatch[1]) / 100
+    : paymentMatchReverse
+      ? parseFloat(paymentMatchReverse[1]) / 100
+      : null;
+  if (paymentRatio !== null) {
+    if (paymentRatio > thresholds.payment_advance_ratio_max) {
       issues.push({
         ruleCode: 'CONTRACT_PAYMENT_001',
         issueType: 'VIOLATION',
         severity: 'error',
-        originalText: paymentMatch[0],
+        originalText: paymentMatch?.[0] || paymentMatchReverse![0],
         suggestedText: `预付款比例应 ≤ ${thresholds.payment_advance_ratio_max * 100}%`,
-        description: `预付款比例 ${paymentMatch[1]}% 超过核电工程合同默认上限 ${thresholds.payment_advance_ratio_max * 100}%`,
+        description: `预付款比例 ${paymentRatio * 100}% 超过核电工程合同默认上限 ${thresholds.payment_advance_ratio_max * 100}%`,
         standardRef: '《核电工程合同管理规范》预付款条款',
       });
     }
   }
 
   // 2. 违约金比例检查
+  // P0-3 修复：兼容两种语序——"违约金 X%"（正向）与"按 X% 支付违约金"（反向，数字在前）
   const penaltyMatch = text.match(/违约金[^。\n]*?(\d+(?:\.\d+)?)\s*%/);
-  if (penaltyMatch) {
-    const ratio = parseFloat(penaltyMatch[1]) / 100;
-    if (ratio > thresholds.penalty_ratio_max) {
+  const penaltyMatchReverse = text.match(/(\d+(?:\.\d+)?)\s*%\s*(?:支付|缴纳|的)?违约金/);
+  const penaltyRatio = penaltyMatch
+    ? parseFloat(penaltyMatch[1]) / 100
+    : penaltyMatchReverse
+      ? parseFloat(penaltyMatchReverse[1]) / 100
+      : null;
+  if (penaltyRatio !== null) {
+    if (penaltyRatio > thresholds.penalty_ratio_max) {
       issues.push({
         ruleCode: 'CONTRACT_PENALTY_001',
         issueType: 'VIOLATION',
         severity: 'error',
-        originalText: penaltyMatch[0],
+        originalText: penaltyMatch?.[0] || penaltyMatchReverse![0],
         suggestedText: `违约金比例应 ≤ ${thresholds.penalty_ratio_max * 100}%`,
-        description: `违约金比例 ${penaltyMatch[1]}% 超过法定上限 ${thresholds.penalty_ratio_max * 100}%`,
+        description: `违约金比例 ${penaltyRatio * 100}% 超过法定上限 ${thresholds.penalty_ratio_max * 100}%`,
         standardRef: '《民法典》合同编第八章 违约责任',
       });
     }

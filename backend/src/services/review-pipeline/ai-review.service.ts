@@ -1192,6 +1192,43 @@ export class AiReviewService {
     // 执行单链
     const allIssues = await unifiedTask();
 
+    // ---- P0-1 修复：合同确定性规则并入（预付款/违约金/质保期/必需条款阈值检查）----
+    // 此前 checkContractRules 只注册在 RULE_REGISTRY，而 runAllRules 的调用点
+    // （阶段1 仅 RULE_ONLY/CONSISTENCY、DEC 兜底、agent 工具）在 CONTRACT_REVIEW
+    // 模式下均不满足 condition，导致合同规则与 contract_rule_thresholds 配置
+    // 在主流程中完全不生效。此处仅执行 CONTRACT 前缀（condition 已满足），
+    // unshift 到最前，保证 dedupIssues 去重时确定性规则优先于 LLM 推断。
+    try {
+      const { runAllRules } = await import('../rules');
+      const ruleIssues = await runAllRules(
+        {
+          fileName: ctx.fileName,
+          filePath: ctx.filePath,
+          fileType: ctx.fileType,
+          extractedText: text,
+          pdfPages: ctx.pdfPages,
+          reviewMode: ctx.reviewMode,
+          parseResult: ctx.parseResult ?? null,
+        },
+        { enabledRulePrefixes: new Set(['CONTRACT']) },
+      );
+      if (ruleIssues.length > 0) {
+        allIssues.unshift(...ruleIssues.map((ri) => ({
+          issueType: ri.issueType,
+          originalText: ri.originalText,
+          suggestedText: ri.suggestedText,
+          description: ri.description,
+          ruleCode: ri.ruleCode,
+          severity: ri.severity,
+          standardRef: ri.standardRef,
+          cadHandleId: ri.cadHandleId,
+        })));
+        console.log(`[ContractReview] 合同规则引擎并入 ${ruleIssues.length} 条确定性结果`);
+      }
+    } catch (e: any) {
+      console.warn('[ContractReview] 规则引擎执行失败（不影响 LLM 审查）:', e.message);
+    }
+
     // ---- 3.5 P2-A: 跨条款一致性检查（单次 Reduce 调用）----
     // 发现"条款 A 说乙方负责保险，条款 B 说甲方承担保险费用"这类跨条款矛盾
     if (clauses.length >= 2) {

@@ -40,7 +40,10 @@ const LEGAL_BASIS_BY_CLAUSE_TYPE: Record<string, string> = {
 /** P2-G: 根据条款标题+内容推断 clauseType */
 export function inferClauseType(title: string, content: string): string {
   const text = title + content;
-  if (/付款|支付|价款|预付/.test(text)) return 'payment';
+  // P0-2 修复：'支付' 是通用动词（"支付违约金/支付赔偿"），不能单独作为 payment 特征，
+  // 否则"违约金条款 + 按 30% 支付违约金"会被付款正则抢占误判为 payment。
+  // 用负向前瞻排除"支付违约/支付赔偿/支付罚金"，保留"支付合同总价"等真实付款语义。
+  if (/付款|预付款|价款|支付(?!违约|赔偿|罚金)/.test(text)) return 'payment';
   if (/违约|赔偿|罚金/.test(text)) return 'penalty';
   if (/质保|保修|质量/.test(text)) return 'warranty';
   if (/保密|知识产权|专利|著作权/.test(text)) return 'ip';
@@ -166,8 +169,8 @@ export function extractClauseParameters(clauses: ParsedClause[]): Array<{
   return clauses.map(c => {
     const parameters: Record<string, string> = {};
     const text = c.clauseContent;
-    // 付款方
-    const payerMatch = text.match(/(?:由|甲方|乙方|承包商|业主)[^。\n]*?(?:支付|承担|付款)/);
+    // 付款方（P0-2 修复：排除"支付违约金/支付赔偿"，避免违约金条款被误当付款条款）
+    const payerMatch = text.match(/(?:由|甲方|乙方|承包商|业主)[^。\n]*?(?:付款|承担|支付(?!违约|赔偿|罚金))/);
     if (payerMatch) parameters.payer = payerMatch[0].substring(0, 50);
     // 保险责任方
     const insurerMatch = text.match(/(?:甲方|乙方|承包商|业主)[^。\n]*?(?:投保|购买保险|承担保险)/);
