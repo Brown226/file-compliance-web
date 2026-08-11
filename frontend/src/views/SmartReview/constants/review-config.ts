@@ -30,7 +30,7 @@ export const EVIDENCE_ICON_MAP: Record<string, string> = {
 export const EVIDENCE_SOURCE_OPTIONS: Record<ReviewObjective, Array<{ value: ReviewEvidenceSource; label: string }>> = {
   COMPLIANCE: [
     { value: 'STANDARD', label: '知识库' },
-    { value: 'RULE_LIBRARY', label: '语义规则库' },
+    { value: 'RULE_LIBRARY', label: '条文库' },
   ],
   COMPARE: [
     { value: 'REFERENCE', label: '参考文件' },

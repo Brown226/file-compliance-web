@@ -177,7 +177,7 @@ export class TaskService {
     if (ruleLibraryId) normalizedReviewPlan.evidence.ruleLibraryId = ruleLibraryId;
     if (intraFileConsistency !== undefined) normalizedReviewPlan.enhancements.intraFileConsistency = !!intraFileConsistency;
 
-    // 仅当选择了语义规则库且未选择知识库时，清空标准库关联
+    // 仅当选择了条文库且未选择知识库时，清空标准库关联
     const hasOnlyReviewSpec = normalizedReviewPlan.evidence.sources.includes('RULE_LIBRARY')
       && !normalizedReviewPlan.evidence.sources.includes('STANDARD')
       && !!normalizedReviewPlan.evidence.ruleLibraryId;

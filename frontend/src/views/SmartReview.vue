@@ -58,7 +58,7 @@
               </div>
             </div>
 
-            <!-- 证据源：仅"以库审文"模式显示，让用户在知识库/语义规则库间选择 -->
+            <!-- 证据源：仅"以库审文"模式显示，让用户在知识库/条文库间选择 -->
             <template v-if="showEvidenceSection && entryModule === 'LIBRARY'">
               <div class="config-section">
                 <div class="config-section-label">审查依据</div>
@@ -74,7 +74,7 @@
                   <div v-if="(reviewPlanDraft?.evidence?.maxkbKnowledgeIds??[]).length>0" class="selected-items-tags"><el-tag v-for="id in (reviewPlanDraft?.evidence?.maxkbKnowledgeIds??[])" :key="id" closable type="primary" effect="plain" size="small" @close="removeMaxKBKnowledge(id)"><el-icon style="margin-right:4px"><Document /></el-icon>{{ getMaxKBKnowledgeName(id) }}</el-tag></div>
                 </div>
                 <div v-if="(reviewPlanDraft?.evidence?.sources??[]).includes('RULE_LIBRARY')" class="selected-items-display">
-                  <div class="selected-items-header"><span>{{ reviewPlanDraft?.evidence?.ruleLibraryId?'已选择':'未选择' }}语义规则库</span><el-button size="small" @click="openRuleLibraryDialog"><el-icon><Plus /></el-icon>添加</el-button></div>
+                  <div class="selected-items-header"><span>{{ reviewPlanDraft?.evidence?.ruleLibraryId?'已选择':'未选择' }}条文库</span><el-button size="small" @click="openRuleLibraryDialog"><el-icon><Plus /></el-icon>添加</el-button></div>
                   <div v-if="reviewPlanDraft?.evidence?.ruleLibraryId" class="selected-item-single"><el-tag closable type="info" size="small" @close="reviewPlanDraft.evidence.ruleLibraryId=null">{{ getRuleLibraryName(reviewPlanDraft?.evidence?.ruleLibraryId??'') }}</el-tag></div>
                 </div>
               </div>
@@ -211,7 +211,7 @@
       <el-button @click="maxkbDialogVisible = false">关闭</el-button>
     </template>
   </el-dialog>
-  <!-- 语义规则库选择对话框 -->
+  <!-- 条文库选择对话框 -->
   <SmartReviewRuleLibraryDialog v-model:visible="ruleLibraryDialogVisible" :ruleLibraries="ruleLibraries" @confirm="handleRuleLibraryConfirm" />
 </template>
 
@@ -362,7 +362,7 @@ const startAnalysis = async () => {
     const reasons: string[] = []
     if (!state.form.title.trim()) reasons.push('请输入任务标题')
     if ((state.reviewPlanDraft?.objective??'')==='COMPARE'&&state.refFileList.value.length===0) reasons.push('以文审文/参照比对模式需要上传参照文件')
-    if ((state.reviewPlanDraft?.evidence?.sources??[]).includes('RULE_LIBRARY')&&!state.reviewPlanDraft?.evidence?.ruleLibraryId) reasons.push('语义规则库模式需要选择具体的规则库')
+    if ((state.reviewPlanDraft?.evidence?.sources??[]).includes('RULE_LIBRARY')&&!state.reviewPlanDraft?.evidence?.ruleLibraryId) reasons.push('条文库模式需要选择具体的规则库')
     ElMessage.warning(reasons.length>0?reasons[0]:'请完善审查配置后再开始分析')
     return
   }

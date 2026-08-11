@@ -1,5 +1,5 @@
 /**
- * search_rule_library 工具 — 查询语义规则库（RuleLibrary + RuleLibraryItem）
+ * search_rule_library 工具 — 查询条文库（RuleLibrary + RuleLibraryItem）
  *
  * 复用 RuleLibraryService.list({ selectableOnly: true })，
  * 返回 PUBLISHED 状态的规则库及其可执行 items。
@@ -73,7 +73,7 @@ function matchKeyword(item: any, keyword: string): boolean {
  */
 export function createSearchRuleLibraryTool(_context: ToolContext) {
   return tool({
-    description: '查询已发布（PUBLISHED）的语义规则库。返回可执行规则项列表，支持按关键词和类别过滤。规则项含 ruleCode/ruleName/category/description/severity/checkMethod/checkPrompt/auditDimension 等字段，可作为审查依据或调 apply_rule 时的规则清单。',
+    description: '查询已发布（PUBLISHED）的条文库。返回可执行规则项列表，支持按关键词和类别过滤。规则项含 ruleCode/ruleName/category/description/severity/checkMethod/checkPrompt/auditDimension 等字段，可作为审查依据或调 apply_rule 时的规则清单。',
     inputSchema: z.object({
       libraryId: z.string().optional().describe('指定规则库 ID（不传时查所有 PUBLISHED 规则库的可执行 items）'),
       keyword: z.string().optional().describe('关键词（在 ruleName/description/clauseText/checkMethod/category 中模糊匹配）'),

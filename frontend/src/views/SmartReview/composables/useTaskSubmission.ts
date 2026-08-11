@@ -26,7 +26,7 @@ export function useTaskSubmission(
       fd.append('maxkbKnowledgeIds', JSON.stringify(submitPlan.evidence.maxkbKnowledgeIds))
     }
 
-    // 语义规则库
+    // 条文库
     if (submitPlan.evidence.sources.includes('RULE_LIBRARY') && submitPlan.evidence.ruleLibraryId) {
       fd.append('ruleLibraryId', submitPlan.evidence.ruleLibraryId)
     }
@@ -92,7 +92,7 @@ export function useTaskSubmission(
         reasons.push('以文审文/参照比对模式需要上传参照文件')
       
       if (state.reviewPlanDraft.evidence.sources.includes('RULE_LIBRARY') && !state.reviewPlanDraft.evidence.ruleLibraryId)
-        reasons.push('语义规则库模式需要选择具体的规则库')
+        reasons.push('条文库模式需要选择具体的规则库')
 
       ElMessage.warning(reasons.length > 0 ? reasons[0] : '请完善审查配置后再开始分析')
       return

@@ -117,11 +117,11 @@ const commonModules: ModuleItem[] = [
   {
     id: 'LIBRARY',
     title: '以库审文',
-    desc: '结合知识库或语义规则库进行合规审查',
+    desc: '结合知识库或条文库进行合规审查',
     scenario: '技术文档 vs 知识库、规范要点核查',
     icon: Document,
     color: '#2563eb',
-    techHint: '知识库走 RAG + DEC 双分支增强；语义规则库作为 AI 审查点逐条匹配',
+    techHint: '知识库走 RAG + DEC 双分支增强；条文库作为 AI 审查点逐条匹配',
     featureKey: 'entry.LIBRARY',
   },
   {

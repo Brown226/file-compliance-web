@@ -64,7 +64,7 @@ export function useSmartReviewState() {
   const submitting = ref(false)
 
   // ===== 计算属性 =====
-  // 证据源选择器：仅"以库审文"模式显示，让用户在知识库/语义规则库间选择
+  // 证据源选择器：仅"以库审文"模式显示，让用户在知识库/条文库间选择
   // 其他模式证据源由 applyEntryModulePreset 锁定，不再让用户选
   const showEvidenceSection = computed(() => {
     if (!entryModule.value) return true  // 历史任务恢复场景：无 entryModule，显示全部配置

@@ -36,7 +36,7 @@ const objectiveLabelMap: Record<string, string> = {
 
 const evidenceLabelMap: Record<string, string> = {
   STANDARD: '知识库',
-  RULE_LIBRARY: '语义规则库',
+  RULE_LIBRARY: '条文库',
   REFERENCE: '参考文件',
 }
 
@@ -111,9 +111,9 @@ export function useReviewStats(
       if (plan.objective === 'COMPARE') return '一致性审查（对照）'
       if (plan.objective === 'PROOFREAD') return '基础校对'
       if (plan.objective === 'STRUCTURED') return '结构化审查'
-      if (plan.execution?.profile === 'RULE_ONLY' && sources.includes('RULE_LIBRARY')) return '语义规则库审查'
+      if (plan.execution?.profile === 'RULE_ONLY' && sources.includes('RULE_LIBRARY')) return '条文库审查'
       if (sources.includes('RULE_LIBRARY') && sources.includes('STANDARD')) return '以库审文'
-      if (sources.includes('RULE_LIBRARY')) return '语义规则库审查'
+      if (sources.includes('RULE_LIBRARY')) return '条文库审查'
       return '以库审文'
     })()
 

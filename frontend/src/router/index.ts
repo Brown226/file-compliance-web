@@ -152,7 +152,7 @@ const routes: Array<RouteRecordRaw> = [
         path: 'admin/knowledge-categories/:id/documents',
         redirect: '/admin/knowledge'
       },
-      // V3.2 合并：语义规则库独立页面并入条文库，路由重定向
+      // V3.2 合并：条文库独立页面并入条文库，路由重定向
       {
         path: 'admin/rule-libraries',
         redirect: '/knowledge?tab=clauses',

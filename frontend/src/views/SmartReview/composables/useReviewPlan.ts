@@ -107,7 +107,7 @@ export function useReviewPlan(state: ReturnType<typeof useSmartReviewState>) {
     switch (module) {
       case 'LIBRARY':
         draft.objective = 'COMPLIANCE'
-        // 默认勾选知识库证据源，用户可在向导内切换为语义规则库或同时勾选
+        // 默认勾选知识库证据源，用户可在向导内切换为条文库或同时勾选
         draft.evidence.sources = ['STANDARD']
         draft.execution.profile = 'AI_ONLY'
         break

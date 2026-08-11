@@ -2,7 +2,7 @@
 /**
  * 审点 CRUD 服务（V3.2 合并：审点统一落在 rule_library_items）
  *
- * 合并后审点载体 = rule_library_items（语义规则库条目），
+ * 合并后审点载体 = rule_library_items（条文库条目），
  * 标准 → 审点库 的关联在 rule_libraries.standardId。
  * 本服务对上层保持原 API 形状（clauseCode/clauseText/checkPrompt/...），内部转查新表。
  */

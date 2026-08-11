@@ -50,7 +50,7 @@ const activeTab = ref('standards')
 
 // 支持 /knowledge?tab=maxkb
 watch(() => route.query.tab, (tab) => {
-  // V3.2 合并：语义规则库入口并入条文库，?tab=rules 兼容重定向到 clauses
+  // V3.2 合并：条文库入口并入条文库，?tab=rules 兼容重定向到 clauses
   // 白名单库：?tab=whitelist 兼容映射到 terminology（内部接口名不变）
   let key = tab as string
   if (key === 'rules') key = 'clauses'

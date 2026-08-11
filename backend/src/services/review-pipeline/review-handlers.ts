@@ -147,7 +147,7 @@ const handleTypoGrammar: ReviewHandler = async (ctx) => {
 
 /**
  * LIBRARY_REVIEW — 以库审文（标准合规审查）
- * 双轨并行：知识库 RAG + 语义规范库逐条匹配，结果去重合并。
+ * 双轨并行：知识库 RAG + 条文库逐条匹配，结果去重合并。
  */
 const handleLibraryReview: ReviewHandler = async (ctx) => {
   const text = ctx.extractedText || '';
@@ -161,7 +161,7 @@ const handleLibraryReview: ReviewHandler = async (ctx) => {
   const hasSemanticSpec = ctx.semanticItems && ctx.semanticItems.length > 0;
 
   if (hasKnowledge && hasSemanticSpec) {
-    console.log(`[Handler] 双轨审查: 知识库RAG + 语义规范库(${ctx.semanticItems!.length}条)`);
+    console.log(`[Handler] 双轨审查: 知识库RAG + 条文库(${ctx.semanticItems!.length}条)`);
     const [ragResult, specResult] = await Promise.all([
       AiReviewService.runAIReview(text, ctx, scene, config),
       AiReviewService.runSemanticSpecReview(text, ctx, config),
@@ -180,7 +180,7 @@ const handleLibraryReview: ReviewHandler = async (ctx) => {
   }
 
   if (hasSemanticSpec) {
-    console.log(`[Handler] 语义规范库单独审查: ${ctx.semanticItems!.length}条条文`);
+    console.log(`[Handler] 条文库单独审查: ${ctx.semanticItems!.length}条条文`);
     const result = await AiReviewService.runSemanticSpecReview(text, ctx, config);
     return { aiIssues: result.issues, usedEngine: result.engine };
   }

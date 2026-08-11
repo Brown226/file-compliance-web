@@ -16,7 +16,7 @@ const DEFAULT_FLAGS: Array<{
 }> = [
   // 审查入口卡片
   { key: 'entry.PROOFREAD', label: '文字校对', enabled: true, description: '错别字、语句通顺、标点检查', category: 'entry' },
-  { key: 'entry.LIBRARY', label: '以库审文', enabled: true, description: '结合知识库或语义规则库进行合规审查', category: 'entry' },
+  { key: 'entry.LIBRARY', label: '以库审文', enabled: true, description: '结合知识库或条文库进行合规审查', category: 'entry' },
   { key: 'entry.DOC_REVIEW', label: '以文审文', enabled: true, description: '待审文档与参照文档逐项比对', category: 'entry' },
   { key: 'entry.CONSISTENCY', label: '上下文一致性', enabled: true, description: '检查文件内部及多文件间的术语、数值、指标自洽', category: 'entry' },
   { key: 'entry.CONTRACT', label: '合同风险审查', enabled: true, description: '立场驱动识别不利条款、缺失保护条款', category: 'entry' },

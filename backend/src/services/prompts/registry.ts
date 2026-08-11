@@ -756,15 +756,15 @@ Please give a short succinct context to situate this chunk within the overall do
   },
 
   // ==========================================
-  // 语义规范库逐条审查（semantic_spec）
+  // 条文库逐条审查（semantic_spec）
   // ==========================================
   {
     key: 'semantic_spec_system',
     module: 'semantic_spec',
     role: 'system',
     variant: 'default',
-    name: '语义规范库-系统提示词',
-    description: '语义规范库逐条匹配审查时使用的系统提示词，包含动态规则条文的占位符',
+    name: '条文库-系统提示词',
+    description: '条文库逐条匹配审查时使用的系统提示词，包含动态规则条文的占位符',
     content: `你是文件合规审查专家。请严格根据以下规范条文，逐条检查待审文本是否存在违规。
 
 ## ⚠️ 宁缺毋滥原则（最高优先级）
@@ -805,8 +805,8 @@ Please give a short succinct context to situate this chunk within the overall do
     module: 'semantic_spec',
     role: 'user',
     variant: 'default',
-    name: '语义规范库-用户提示词',
-    description: '语义规范库逐条审查时，发送待审文本分片的用户提示词',
+    name: '条文库-用户提示词',
+    description: '条文库逐条审查时，发送待审文本分片的用户提示词',
     content: `【待审查文本】\n\${text}\n\n请逐条检查以上文本是否违反规范条文，输出 JSON 数组。`,
     placeholders: JSON.stringify(['${text}']),
     isBuiltin: true,
@@ -817,9 +817,9 @@ Please give a short succinct context to situate this chunk within the overall do
     module: 'semantic_spec',
     role: 'system',
     variant: 'context',
-    name: '语义规范库-条文上下文',
-    description: '将语义规范库条目列表格式化为提示词上下文的模板',
-    content: `## 语义规范库条文（审查依据）
+    name: '条文库-条文上下文',
+    description: '将条文库条目列表格式化为提示词上下文的模板',
+    content: `## 条文库条文（审查依据）
 以下是本次审查必须依据的规范条文，请逐条检查文件是否违反：
 
 \${items}

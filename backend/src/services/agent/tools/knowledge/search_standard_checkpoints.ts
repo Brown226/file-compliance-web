@@ -1,7 +1,7 @@
 /**
  * search_standard_checkpoints 工具 — 查询审点库（V3.2 合并后：rule_library_items）
  *
- * V3.2 条文库合并后，审点统一落在 rule_library_items（语义规则库条目），
+ * V3.2 条文库合并后，审点统一落在 rule_library_items（条文库条目），
  * 标准 → 审点库 的关联在 rule_libraries.standardId。
  * 本工具复用 CheckpointService（内部已转查新表），对外行为不变：
  * 不传 standardId 列出现行标准（仅列已关联审点库且有审点的标准），传 standardId 查该标准下审点。

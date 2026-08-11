@@ -147,7 +147,7 @@ export interface PipelineContext {
   onFastResult?: (fastResult: { ruleIssues: RuleIssue[]; stdRefIssues: ReviewIssue[] }) => void;
   /** 是否启用文件内一致性检查 */
   intraFileConsistency?: boolean;
-  /** 语义规范库条目（从 ReviewSpecification 加载，用于 AI 语义审查） */
+  /** 条文库条目（从 rule_library_items 加载，用于 AI 语义审查） */
   semanticItems?: Array<{
     ruleCode: string;
     ruleName: string;
@@ -159,7 +159,7 @@ export interface PipelineContext {
   reviewPoints?: string[];
   /** 用户定义的核心目的（用于指导 AI 审查重点） */
   corePurposes?: string[];
-  /** 内部使用的语义规范库提示词上下文（由 AI 服务构建） */
+  /** 内部使用的条文库提示词上下文（由 AI 服务构建） */
   _semanticPromptContext?: string;
   /** 审查场景名（供 prompt 加载用，从 ReviewMode 映射） */
   scene?: string;
