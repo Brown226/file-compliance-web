@@ -402,22 +402,6 @@ export class ReviewService {
         maxkbKnowledgeIds = [maxkbKnowledgeId];
       }
 
-      // ===== ���ع������Ŀ������ AI ������飩 =====
-      let semanticItems: PipelineContext['semanticItems'] = undefined;
-      const effectiveSpecId = executionPlan.ruleLibraryId || (task as any).ruleLibraryId;
-      if (effectiveSpecId) {
-        try {
-          const specItems = await prisma.ruleLibraryItem.findMany({
-            where: { libraryId: effectiveSpecId, enabled: true },
-            select: { ruleCode: true, ruleName: true, category: true, description: true, severity: true },
-          });
-          if (specItems.length > 0) {
-            semanticItems = specItems as any;
-          }
-        } catch (e) {
-          console.warn('[Review] ���ع������Ŀʧ��:', e);
-        }
-      }
 
       // ��������ļ�Ϊ PENDING
       await prisma.taskFile.updateMany({
@@ -553,6 +537,26 @@ export class ReviewService {
             });
           } catch (e) {
             console.warn('[Review] 空库告警落库失败（不影响主流程）:', e);
+          }
+        }
+      }
+      // ===== 加载条文库条目（供 LIBRARY_REVIEW 语义路径使用） =====
+      // 仅当未升级为 DEC_REVIEW（审点库为空/无审点字段）时才需要；
+      // 已升级场景由 DEC 双分支消费 checkpoints，此处跳过避免重复查询。
+      let semanticItems: PipelineContext['semanticItems'] = undefined;
+      if (reviewMode === 'LIBRARY_REVIEW') {
+        const semanticSpecId = executionPlan.ruleLibraryId || (task as any).ruleLibraryId;
+        if (semanticSpecId) {
+          try {
+            const specItems = await prisma.ruleLibraryItem.findMany({
+              where: { libraryId: semanticSpecId, enabled: true },
+              select: { ruleCode: true, ruleName: true, category: true, description: true, severity: true },
+            });
+            if (specItems.length > 0) {
+              semanticItems = specItems as any;
+            }
+          } catch (e) {
+            console.warn('[Review] 加载条文库条目失败:', e);
           }
         }
       }
