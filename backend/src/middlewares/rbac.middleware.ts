@@ -221,8 +221,6 @@ export const checkDetailAccess = async (req: AuthRequest, res: Response, next: N
       return;
     }
 
-    // 透传 taskId，供 controller 复用（避免重复查询）
-    (req as any).taskId = detail.taskId;
     next();
   } catch (err) {
     console.error('Check Detail Access Error:', err);

@@ -159,8 +159,8 @@ router.post('/:id/ref-files', checkTaskAccess, upload.array('files', 20), upload
 router.patch('/details/:detailId/false-positive', checkDetailAccess, toggleFalsePositive);
 router.patch('/details/:detailId/adopt', checkDetailAccess, toggleAdopt);
 
-// 人工复核（仅 MANAGER/ADMIN）
-router.patch('/:id/details/:detailId/review', requireRole('MANAGER'), reviewIssue);
+// 人工复核（仅 MANAGER/ADMIN，加 checkDetailAccess 归属校验——防跨部门复核他人任务）
+router.patch('/:id/details/:detailId/review', requireRole('MANAGER', 'ADMIN'), checkDetailAccess, reviewIssue);
 
 // 阶段 3：LLM 推理回放 — 查询任务级 LLM 调用日志（含 prompt/completion 全文）
 router.get('/:id/llm-logs', checkTaskAccess, async (req, res) => {

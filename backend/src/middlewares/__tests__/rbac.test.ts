@@ -203,10 +203,9 @@ describe('checkDetailAccess 中间件（误报/采纳归属校验，高危修复
     expect(mockNext).not.toHaveBeenCalled();
   });
 
-  it('本人任务的问题条目调用 next() 并透传 taskId', async () => {
+  it('本人任务的问题条目调用 next()', async () => {
     await checkDetailAccess(mockReq, mockRes as Response, mockNext);
     expect(mockNext).toHaveBeenCalled();
-    expect(mockReq.taskId).toBe('task-1');
     expect(mockRes.status).not.toHaveBeenCalled();
   });
 
