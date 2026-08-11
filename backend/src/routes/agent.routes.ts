@@ -19,9 +19,11 @@ import { Router, Response } from 'express';
 import multer from 'multer';
 import path from 'path';
 import fs from 'fs';
+import { lookup as dnsLookup } from 'dns';
 import { authenticate, AuthRequest } from '../middlewares/auth.middleware';
 import { requireRole } from '../middlewares/rbac.middleware';
 import { AgentService } from '../services/agent/agent.service';
+import { LlmService } from '../services/llm/llm.service';
 import { QASessionService } from '../services/agent/qa-session.service';
 import { SessionStatsService } from '../services/agent/session-stats.service';
 import { MemoryService } from '../services/agent/memory/memory.service';
@@ -72,7 +74,14 @@ router.post('/chat/stream', async (req: AuthRequest, res: Response) => {
   const onClientClose = () => {
     if (!res.writableEnded) controller.abort();
   };
-  req.on('close', onClientClose);
+  // 注意：req 'close' 在请求体完整接收后也会触发（Connection: close 客户端 /
+  // 部分代理在响应前关闭请求流），此时 req.complete === true 表示请求已完整
+  // 送达，不是客户端中途断开——若直接 abort 会误杀正在进行的 LLM 调用。
+  // 只有 req.complete === false（body 未收完连接即断）才算真正断开。
+  req.on('close', () => {
+    if (req.complete) return;
+    onClientClose();
+  });
   res.on('close', onClientClose);
   try {
     const userId = req.user?.id;
@@ -233,7 +242,6 @@ router.post('/chat/stream', async (req: AuthRequest, res: Response) => {
 
         // 第一级兜底：chatWithGenerateText（保留工具调用能力，能处理上传文件/检索/规则）
         try {
-          const { AgentService } = require('../services/agent/agent.service');
           // catch 块内 try 无法访问外层 try 的 userId（块级作用域），重新取
           const uid = (req as any).user?.id || '';
           const generateResult = await AgentService.chatWithGenerateText({ messages, userId: uid, sessionId, signal: controller.signal });
@@ -260,7 +268,6 @@ router.post('/chat/stream', async (req: AuthRequest, res: Response) => {
           }
 
           // 调非流式 LLM
-          const { LlmService } = require('../services/llm/llm.service');
           fallbackText = await LlmService.chat(userText, {
             systemPrompt: '你是文件合规审查助手。由于流式调用失败，请直接基于用户消息回复（无法调用工具）。',
             mode: 'agent',
@@ -886,7 +893,6 @@ router.post('/sessions/:sessionId/auto-name', async (req: AuthRequest, res: Resp
       .join('\n');
     const prompt = `根据以下对话内容，生成一个简短的会话标题（不超过20个中文字符，不要加引号、不要加句号）。只返回标题文本。\n\n${dialogue}`;
 
-    const { LlmService } = require('../services/llm/llm.service');
     const titleRaw = await LlmService.chat(prompt, {
       systemPrompt: '你是一个会话标题生成助手。请根据对话内容生成简短的中文标题。',
       temperature: 0.3,
@@ -895,13 +901,19 @@ router.post('/sessions/:sessionId/auto-name', async (req: AuthRequest, res: Resp
       traceId: sessionId,
     });
 
-    // 清理：去首尾引号、去末尾句号/感叹号/问号、限制长度
-    const cleanedTitle = String(titleRaw || '')
-      .trim()
-      .replace(/^["“”''「]+|["“”''」]+$/g, '')
-      .replace(/[。.！!？?]+$/g, '')
-      .slice(0, 100)
-      .trim();
+    // 清理：去首尾引号、去末尾句号/感叹号/问号、限制长度。
+    // 循环清洗直至稳定——处理 「xxx」。 / "xxx." 等引号外带标点的嵌套形态
+    // （单轮先删引号再删标点会残留「xxx」尾部引号）
+    let cleanedTitle = String(titleRaw || '').trim();
+    for (let i = 0; i < 3; i++) {
+      const before = cleanedTitle;
+      cleanedTitle = cleanedTitle
+        .replace(/^["“”''「]+|["“”''」]+$/g, '')
+        .replace(/[。.！!？?]+$/g, '')
+        .trim();
+      if (cleanedTitle === before) break;
+    }
+    cleanedTitle = cleanedTitle.slice(0, 100).trim();
     if (!cleanedTitle) {
       return res.status(500).json({ success: false, message: 'LLM 返回空标题' });
     }
@@ -1492,13 +1504,23 @@ function buildModelsListUrl(baseUrl: string, api: string): URL {
  *
  * @throws 校验失败时抛错（message 可直接回显给管理员）
  */
-async function assertSafeFetchUrl(endpoint: URL): Promise<void> {
+export async function assertSafeFetchUrl(endpoint: URL): Promise<void> {
   const proto = endpoint.protocol.toLowerCase();
   if (proto !== 'http:' && proto !== 'https:') {
     throw new Error('仅支持 http/https 协议的 Base URL');
   }
   const isBlockedIp = (ip: string): boolean => {
     const clean = ip.replace(/^\[|\]$/g, '').toLowerCase();
+    // IPv6 映射 IPv4 的十六进制形式（Node URL 会把 ::ffff:169.254.169.254
+    // 规范化为 ::ffff:a9fe:a9fe，点分形式的 v4match 分支永远命中不了——
+    // 必须先把十六进制两段还原为点分 IPv4 再走 IPv4 判定，否则可绕过
+    // 云元数据/组播拦截（SSRF 绕过）
+    const v6mapped = clean.match(/^::ffff:([0-9a-f]{1,4}):([0-9a-f]{1,4})$/);
+    if (v6mapped) {
+      const h1 = parseInt(v6mapped[1], 16);
+      const h2 = parseInt(v6mapped[2], 16);
+      return isBlockedIp(`${(h1 >> 8) & 0xff}.${h1 & 0xff}.${(h2 >> 8) & 0xff}.${h2 & 0xff}`);
+    }
     // IPv6 映射的 IPv4（::ffff:1.2.3.4）先还原
     const v4match = clean.match(/^::ffff:(\d+\.\d+\.\d+\.\d+)$/);
     const target = v4match ? v4match[1] : clean;
@@ -1533,9 +1555,8 @@ async function assertSafeFetchUrl(endpoint: URL): Promise<void> {
     return;
   }
   // 域名：dns.lookup 解析全部地址，任一命中即拒绝
-  const { lookup } = require('dns') as typeof import('dns');
   const addresses = await new Promise<string[]>((resolve, reject) => {
-    lookup(hostname, { all: true }, (err, addrs) => {
+    dnsLookup(hostname, { all: true }, (err, addrs) => {
       if (err) return reject(err);
       resolve((addrs as Array<{ address: string }>).map(a => a.address));
     });

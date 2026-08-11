@@ -19,19 +19,38 @@ vi.mock('../../../../review/falsePositiveLibrary.service', () => ({
 
 // —— Mock LlmService.buildLocateMeta（避免真实定位实现，行为由用例驱动）——
 const buildLocateMetaMock = vi.fn();
+const reviewTextMock = vi.fn();
 vi.mock('../../../../llm/llm.service', () => ({
   LlmService: {
     buildLocateMeta: (...args: any[]) => buildLocateMetaMock(...args),
-    reviewText: vi.fn(),
+    reviewText: (...args: any[]) => reviewTextMock(...args),
     splitText: vi.fn(),
     chat: vi.fn(),
   },
+}));
+
+// —— tool() 包装桩（同 upload_file 测试）——
+vi.mock('@ai-sdk/provider-utils', () => ({
+  tool: (def: any) => def,
+}));
+
+// —— PromptLoader 桩（不触达 registry/DB）——
+vi.mock('../../../../prompts', () => ({
+  PromptLoader: { resolve: vi.fn(async () => 'mock system prompt') },
+}));
+
+// —— search_standard_checkpoints 桩：默认返回空标准（不触发查询）——
+const { searchToolMock } = vi.hoisted(() => ({ searchToolMock: { execute: vi.fn() } }));
+vi.mock('../../knowledge/search_standard_checkpoints', () => ({
+  createSearchStandardCheckpointsTool: () => searchToolMock,
 }));
 
 import {
   filterFalsePositives,
   enrichLocateMeta,
   backfillStandardRefs,
+  createLlmReviewChunkTool,
+  MAX_REVIEW_TEXT_CHARS,
 } from '../llm_review_chunk';
 import type { ReviewIssue } from '../../../../llm/llm.service';
 
@@ -237,5 +256,100 @@ describe('backfillStandardRefs (P1-⑦)', () => {
     const issues = [mkIssue('帐号', { ruleCode: 'TYPO_001' })];
     const result = await backfillStandardRefs(issues, searchTool as any);
     expect(result[0].standardRef).toBeUndefined();
+  });
+
+  it('标准数量截断：>10 个标准时只反查前 10 个（N+1 防护）', async () => {
+    const standards = Array.from({ length: 50 }, (_, i) => ({
+      id: `std-${i}`,
+      standardNo: `GB/T ${i}`,
+      standardName: `标准${i}`,
+    }));
+    const searchTool = fakeSearchTool((args: any) => {
+      if (args.keyword === undefined) return { mode: 'list_standards', standards };
+      return { mode: 'list_checkpoints', checkpoints: [] };
+    });
+    // 50 个不同 ruleCode → 若全量反查将是 50 标准 × 50 ruleCode = 2500 次
+    const issues = Array.from({ length: 50 }, (_, i) =>
+      mkIssue(`原文${i}`, { ruleCode: `RULE_${i}` }),
+    );
+    const result = await backfillStandardRefs(issues, searchTool as any);
+
+    // 查询预算 60 内截断（list_standards 1 次 + checkpoint 查询 ≤60 次）
+    const callCount = searchTool.execute.mock.calls.length;
+    expect(callCount).toBeLessThanOrEqual(61);
+    expect(callCount).toBeGreaterThan(1);
+    // 预算用尽后查不到的都保持空
+    for (const issue of result) {
+      expect(issue.standardRef).toBeUndefined();
+    }
+  });
+
+  it('相同 ruleCode 只反查一次（按 ruleCode 去重）', async () => {
+    const searchTool = fakeSearchTool((args: any) => {
+      if (args.keyword === undefined) return { mode: 'list_standards', standards: [std] };
+      return { mode: 'list_checkpoints', checkpoints: [] };
+    });
+    const issues = [
+      mkIssue('原文A', { ruleCode: 'TYPO_001' }),
+      mkIssue('原文B', { ruleCode: 'TYPO_001' }),
+      mkIssue('原文C', { ruleCode: 'TYPO_001' }),
+    ];
+    await backfillStandardRefs(issues, searchTool as any);
+    // list_standards 1 次 + 只对首个 ruleCode 查询（缓存命中后不再重复查）
+    expect(searchTool.execute.mock.calls.length).toBeLessThanOrEqual(2);
+  });
+});
+
+describe('createLlmReviewChunkTool 预算保护（2026-08-07）', () => {
+  beforeEach(() => {
+    reviewTextMock.mockReset();
+    searchToolMock.execute.mockReset();
+    searchToolMock.execute.mockResolvedValue({ mode: 'list_standards', standards: [] });
+  });
+
+  it('text 超 10 万字符 → 截断后传给 reviewText（不挂起）', async () => {
+    reviewTextMock.mockResolvedValue([]);
+    const tool = createLlmReviewChunkTool({ userId: 'u1', sessionId: 's1' } as any);
+    const longText = 'a'.repeat(MAX_REVIEW_TEXT_CHARS + 500);
+
+    await tool.execute!({ text: longText });
+
+    expect(reviewTextMock).toHaveBeenCalledTimes(1);
+    const [sentText, options] = reviewTextMock.mock.calls[0];
+    expect(sentText.length).toBe(MAX_REVIEW_TEXT_CHARS);
+    expect(sentText).toBe(longText.slice(0, MAX_REVIEW_TEXT_CHARS));
+    // 显式超时与 maxTokens（原实现不传，超长输入直接挂起）
+    expect(options).toMatchObject({ maxTokens: 2048, timeout: 90 });
+  });
+
+  it('text 未超限 → 原样传递', async () => {
+    reviewTextMock.mockResolvedValue([]);
+    const tool = createLlmReviewChunkTool({ userId: 'u1', sessionId: 's1' } as any);
+    const shortText = '正常审查文本';
+    await tool.execute!({ text: shortText });
+    expect(reviewTextMock.mock.calls[0][0]).toBe(shortText);
+  });
+
+  it('完整链路：reviewText → 回填（空库不查）→ 误报过滤 → locateMeta 增强', async () => {
+    reviewTextMock.mockResolvedValue([
+      { issueType: 'TYPO', originalText: '帐号', ruleCode: 'TYPO_001' },
+    ]);
+    // locateMeta 增强依赖 buildLocateMeta（配置命中返回）
+    buildLocateMetaMock.mockImplementation((_fullText: string, searchText: string) =>
+      searchText === '帐号'
+        ? { version: 2, mode: 'text', confidence: 'exact', absolute: { start: 4, end: 6 }, quote: { text: '帐号' } }
+        : null,
+    );
+    // 误报库不命中（默认 batchCheck mock 未配置 → 返回 undefined → 降级保留全部）
+    const tool = createLlmReviewChunkTool({ userId: 'u1', sessionId: 's1' } as any);
+    const text = '第一行\n帐号错误';
+    const result = await tool.execute!({ text, focus: '错别字' });
+
+    expect(result).toHaveLength(1);
+    expect(result[0].issueType).toBe('TYPO');
+    // 空标准库 → 不触发 checkpoint 查询
+    expect(searchToolMock.execute).toHaveBeenCalledTimes(1); // 仅 list_standards
+    // 短文本可定位 → locateMeta 已增强
+    expect(result[0].locateMeta).toBeTruthy();
   });
 });
