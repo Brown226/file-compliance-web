@@ -5,9 +5,31 @@ backend/node_modules
 .codebuddy
 .codegraph
 
-# 离线部署包（构建镜像时不需要）
+# 离线部署包（构建镜像时不需要，且体积巨大：v6 含 2.1GB zip + 2.6GB 镜像 tar）
 offline-deploy
+offline-deploy-v6
+offline-deploy-v6.zip
 offline-packages
+
+# 本地工作区/产物（勿打进 build context）
+tmp
+artifacts
+docs
+交付文件
+可参考开源项目
+PSAR知识库分析
+平台V3.0升级
+集团比赛报名
+.agent
+.agents
+.newmax
+.playwright-mcp
+.qoder
+.qoderignore
+.reasonix
+.trae
+.workbuddy
+.zcode
 
 # 大文件
 *.tar

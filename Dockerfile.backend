@@ -35,6 +35,10 @@ RUN npm ci --omit=dev && npm cache clean --force
 
 # 复制 Prisma 运行时引擎（由 builder 阶段生成）
 COPY --from=prisma-builder /app/node_modules/.prisma ./node_modules/.prisma
+# 复制 Prisma CLI（docker-entrypoint.sh 的 migrate deploy / db push 需要；
+# runtime 用 --omit=dev 安装，CLI 在 devDependencies，必须从 builder 拷入）
+COPY --from=prisma-builder /app/node_modules/prisma ./node_modules/prisma
+COPY --from=prisma-builder /app/node_modules/@prisma ./node_modules/@prisma
 
 # 复制编译产物
 COPY backend/dist ./dist
@@ -45,9 +49,6 @@ COPY backend/prisma ./prisma
 # 复制入口脚本
 COPY backend/docker-entrypoint.sh /app/docker-entrypoint.sh
 RUN chmod +x /app/docker-entrypoint.sh
-
-# 复制环境变量文件
-COPY .env.production .env
 
 # 创建上传目录
 RUN mkdir -p /app/uploads

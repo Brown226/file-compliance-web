@@ -276,3 +276,7 @@ backend/maxkb-chunks-eval-*.json
 
 # ===== Agent UI 验证产物（截图/Playwright 脚本，不入库）=====
 artifacts/
+
+# ===== 前端杂散产物（防再入库）=====
+frontend/temp_check.txt
+frontend/pnpm-lock.yaml
