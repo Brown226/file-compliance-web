@@ -13,8 +13,7 @@ import { TerminologyService } from '../standard/terminology.service';
 import { StructuredConsistencyService } from '../review/structured-consistency.service';
 import { getEffectiveConfig } from './pipeline-config';
 import { DecReviewService } from '../review/dec-review.service';
-import { checkTypo } from '../rules/typo.rule';
-import { checkPunctuation } from '../rules/punctuation.rule';
+import { runAllRules } from '../rules';
 import { dedupIssues } from '../../utils/issue-dedup';
 
 /** 审查模式处理器签名 */
@@ -70,7 +69,7 @@ const handleCustomRule: ReviewHandler = async (_ctx) => {
 
 /**
  * TYPO_GRAMMAR — 基础校对（文字质量审查）
- * 两层架构：① 确定性规则字典（typo.rule.ts 60+ 条，零成本零延迟 100%准确）
+ * 两层架构：① 确定性规则字典（typo.rule.ts 225 条映射 + 标点规则，零成本零延迟 100%准确）
  *           ② LLM 直调（跳过 RAG），检查语法/通顺性/上下文一致性/标点等
  * LLM 结果与规则结果去重合并，规则优先（确定性错别字以规则为准）。
  */
@@ -80,6 +79,9 @@ const handleTypoGrammar: ReviewHandler = async (ctx) => {
   if (!text.trim()) return { aiIssues: [buildNoTextIssue(ctx)], usedEngine: 'none' };
 
   // ── 第一层：确定性规则字典（零 Token 消耗） ──
+  // TYPO-2 修复：字典层改走统一规则管道（runAllRules + TYPO/PUNCT 前缀过滤），
+  // 使 review_rules 表的 enabled/severity 配置对校对模式同样生效（此前直接调
+  // checkTypo/checkPunctuation 绕过配置，用户关掉 TYPO 前缀或调 severity 均无效）。
   const fileCtx = {
     fileName: ctx.fileName,
     filePath: ctx.filePath,
@@ -89,10 +91,9 @@ const handleTypoGrammar: ReviewHandler = async (ctx) => {
     reviewMode: ctx.reviewMode,
     parseResult: ctx.parseResult,
   };
-  const ruleIssues = checkTypo(fileCtx as any);
-  const punctIssues = checkPunctuation(fileCtx as any);
-  // 合并确定性规则结果
-  const allRuleIssues = [...ruleIssues, ...punctIssues];
+  const allRuleIssues = await runAllRules(fileCtx as any, {
+    enabledRulePrefixes: new Set(['TYPO', 'PUNCT']),
+  });
   // 规则结果转为 ReviewIssue 格式
   const ruleReviewIssues: ReviewIssue[] = allRuleIssues.map(r => ({
     issueType: r.issueType,
@@ -117,11 +118,13 @@ const handleTypoGrammar: ReviewHandler = async (ctx) => {
   const allowedTypes = new Set(['TYPO', 'FLUENCY', 'CONSISTENCY']);
   result.issues = result.issues.filter(issue => allowedTypes.has(issue.issueType));
 
-  // FLUENCE（语病/修辞微调，如"空水→空管"）是低价值噪声，占校对产出过半。
+  // FLUENCY（语病/修辞微调，如"空水→空管"）是低价值噪声，占校对产出过半。
   // 借鉴 TextGuard：修辞类归 info 级，避免淹没 TYPO/CONSISTENCY 等高价值问题。
   // 与前端「仅看实质问题」开关（过滤 FLUENCE + info/prompt）协同，降低信噪比。
+  // TYPO-1 修复：原判断 'FLUENCE' 为拼写错误（合法值 'FLUENCY'），导致该降级永不生效；
+  // 修辞类一直以 warning 级出现，前端「仅看实质问题」开关对 FLUENCY 完全无效。
   result.issues = result.issues.map(issue =>
-    issue.issueType === 'FLUENCE' && issue.severity !== 'info'
+    issue.issueType === 'FLUENCY' && issue.severity !== 'info'
       ? { ...issue, severity: 'info' as const }
       : issue,
   );
