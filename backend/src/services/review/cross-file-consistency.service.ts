@@ -29,6 +29,20 @@ interface ParamEntry {
 }
 
 /**
+ * 参数指纹（P2-9 跨服务去重键）
+ *
+ * 从 originalText 中提取"参数名:值"指纹用于去重匹配。
+ * 原因：CROSS（匹配位前后各 40 字）与 INTRA（60 字行切片）对同一参数生成的
+ * originalText 原文格式不同，整段去空白比较永不命中 → 双报残留。
+ * 表格 KV（| key | value |，无 ::= 分隔符）回退到整段去空白比较（保持原行为）。
+ */
+export function paramFingerprint(s?: string | null): string {
+  const t = s || '';
+  const m = t.match(/([^\s\n\r：:=|]{1,20})\s*[：:=]\s*([^\s\n\r,，。；;|]{1,50})/);
+  return m ? `${m[1]}|${m[2]}` : t.replace(/\s+/g, '').trim();
+}
+
+/**
  * Task 10: 从 markdown 文本中抽取表格键值对，返回带位置信息的 ParamEntry 列表。
  * 仅处理 markdown 表格语法 `| key | value |`，二列表格第一列为键、第二列为值；
  * 多列表格第一列为键、其余列用空格拼接为值。
@@ -270,10 +284,12 @@ export class CrossFileConsistencyService {
           select: { fileId: true, originalText: true },
         });
         if (intraDetails.length > 0) {
-          const norm = (s?: string | null) => (s || '').replace(/\s+/g, '').trim();
-          const intraKeys = new Set(intraDetails.map((d) => `${d.fileId}|${norm(d.originalText)}`));
+          // P2-9 去重键修复：改用"参数指纹"（参数名:值）而非整段原文比较。
+          // 正则提取类参数（如"设计压力=17.5MPa"）两边原文格式不同，整段去空白比较永不命中；
+          // 表格 KV（| key | value |）无 ::= 分隔符，paramFingerprint 回退到整段比较。
+          const intraKeys = new Set(intraDetails.map((d) => `${d.fileId}|${paramFingerprint(d.originalText)}`));
           const before = allDetails.length;
-          const filtered = allDetails.filter((d) => !intraKeys.has(`${d.fileId}|${norm(d.originalText)}`));
+          const filtered = allDetails.filter((d) => !intraKeys.has(`${d.fileId}|${paramFingerprint(d.originalText)}`));
           if (filtered.length !== before) {
             console.log(`[CrossConsist] P2-9 跨服务去重: 丢弃 ${before - filtered.length} 条与 INTRA_CONSIST_001 重复的一致性明细`);
             allDetails.splice(0, allDetails.length, ...filtered);

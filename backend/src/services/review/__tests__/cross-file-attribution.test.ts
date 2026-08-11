@@ -17,7 +17,7 @@
  * 全 mock 隔离：仅测纯函数/静态方法，不连 DB/Redis/LLM。
  */
 import { describe, it, expect } from 'vitest';
-import { CrossFileConsistencyService, orderCandidatesByFileNames } from '../cross-file-consistency.service';
+import { CrossFileConsistencyService, orderCandidatesByFileNames, paramFingerprint } from '../cross-file-consistency.service';
 
 // private 静态方法经 (Class as any) 访问（测试专用，与 structured-consistency.test.ts 同风格）
 const Svc = CrossFileConsistencyService as any;
@@ -238,5 +238,30 @@ describe('parseCrossCompareResult：fileNames 解析（L790 生效路径）', ()
     const raw = JSON.stringify([{ ruleCode: 'C3', originalText: 'x' }]);
     const issues = Svc.parseCrossCompareResult(raw, 'C3');
     expect(issues[0].fileNames).toBeUndefined();
+  });
+});
+
+describe('paramFingerprint（P2-9 跨服务去重键修复）', () => {
+  it('正则参数：CROSS（前后各 40 字片段）与 INTRA（60 字行切片）原文不同但指纹相同', () => {
+    // CROSS originalText：匹配位前后各 40 字片段（中文冒号分隔）
+    const crossText = '某文件参数段前文内容 设计压力：17.5MPa 后文补充说明文字';
+    // INTRA originalText：60 字行切片（等号分隔、前缀不同、紧邻逗号截断）
+    const intraText = '设备铭牌 设计压力=17.5MPa，与设计文件一致且已通过验收';
+    expect(paramFingerprint(crossText)).toBe('设计压力|17.5MPa');
+    expect(paramFingerprint(intraText)).toBe('设计压力|17.5MPa');
+  });
+
+  it('表格 KV（| key | value |）无 ::= 分隔符 → 回退整段去空白比较', () => {
+    expect(paramFingerprint('| 设计压力 | 17.5MPa |')).toBe('|设计压力|17.5MPa|');
+  });
+
+  it('无分隔符文本 → 回退整段去空白', () => {
+    expect(paramFingerprint(' 普通 文本 片段 ')).toBe('普通文本片段');
+  });
+
+  it('空值/undefined → 空串（不误伤）', () => {
+    expect(paramFingerprint('')).toBe('');
+    expect(paramFingerprint(null)).toBe('');
+    expect(paramFingerprint(undefined)).toBe('');
   });
 });
