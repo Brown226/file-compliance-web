@@ -97,6 +97,37 @@
               </div>
             </div>
 
+            <!-- 仅规则审查：规则范围（前缀）选择 -->
+            <div v-if="entryModule === 'RULE_ONLY'" class="config-section">
+              <div class="config-section-label">规则范围</div>
+              <div class="rule-prefix-panel">
+                <div v-for="group in rulePrefixGroups" :key="group.title" class="rule-prefix-group">
+                  <div class="rule-prefix-group__header">
+                    <span class="rule-prefix-group__title">{{ group.title }}</span>
+                    <span class="rule-prefix-group__count">{{ group.items.length }} 项</span>
+                  </div>
+                  <div class="rule-prefix-group__items">
+                    <div
+                      v-for="item in group.items"
+                      :key="item.prefix"
+                      class="rule-prefix-item"
+                      :class="{ 'rule-prefix-item--active': enabledRulePrefixes.includes(item.prefix) }"
+                      @click="plan.togglePrefix(item.prefix)"
+                      tabindex="0"
+                    >
+                      <div class="rule-prefix-item__info">
+                        <div class="rule-prefix-item__label">{{ item.label }}</div>
+                        <div class="rule-prefix-item__desc">{{ item.description }}</div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <div class="config-reason config-reason--info" style="margin-top: 8px;">
+                <el-icon><InfoFilled /></el-icon> 不勾选任何规则时执行全部内置规则；勾选后仅执行所选规则组。结果页将按检查项分组展示。
+              </div>
+            </div>
+
             <div v-if="entryModule==='DOC_REVIEW'&&reviewPlanDraft?.objective==='COMPARE'" class="config-reason config-reason--warning">
               <el-icon><WarningFilled /></el-icon> 参照比对目标强制使用参考文件，未上传参考文件将无法提交。
             </div>
@@ -191,6 +222,7 @@ import { Check, MagicStick, WarningFilled, FolderOpened, Files, Link, Document, 
 import { getKnowledgeTreeApi } from '@/api/maxkb'
 import { getRuleLibrariesApi } from '@/api/rule-library'
 import { getModeCapabilitiesApi } from '@/api/task'
+import { getRuleRegistryApi, type RuleGroupMeta } from '@/api/system'
 import SmartReviewUploadStep from './components/SmartReviewUploadStep.vue'
 import KnowledgeTreeSelector from '@/components/KnowledgeTreeSelector.vue'
 import SmartReviewRuleLibraryDialog from './components/SmartReviewRuleLibraryDialog.vue'
@@ -270,6 +302,24 @@ const engineeringRuleEnhancement = computed({
 })
 
 const maxkbDialogVisible = ref(false)
+
+// ===== 规则前缀面板（RULE_ONLY 模式：规则范围选择）=====
+const rulePrefixGroups = ref<RuleGroupMeta[]>([])
+const enabledRulePrefixes = computed(() => state.enabledRulePrefixes.value)
+let ruleRegistryLoadedFlag = false
+const loadRuleRegistry = async () => {
+  if (ruleRegistryLoadedFlag) return
+  ruleRegistryLoadedFlag = true
+  try {
+    const res = await getRuleRegistryApi()
+    rulePrefixGroups.value = res.data?.groups ?? []
+  } catch (e) {
+    ruleRegistryLoadedFlag = false
+    console.error('[SmartReview] 加载规则注册表失败:', e)
+  }
+}
+// RULE_ONLY 模式进入时预加载规则注册表（卡片/历史恢复共用）
+watch(entryModule, (v) => { if (v === 'RULE_ONLY') loadRuleRegistry() }, { immediate: true })
 const ruleLibraryDialogVisible = ref(false)
 const maxkbKnowledgeIds = computed({
   get: () => state.reviewPlanDraft?.evidence?.maxkbKnowledgeIds ?? [],

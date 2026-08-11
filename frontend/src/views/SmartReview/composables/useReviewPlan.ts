@@ -152,6 +152,8 @@ export function useReviewPlan(state: ReturnType<typeof useSmartReviewState>) {
         draft.enhancements.intraFileConsistency = false
         draft.enhancements.crossFileConsistency = false
         draft.execution.profile = 'RULE_ONLY'
+        // 规则前缀默认全选（空数组 = 执行全部内置规则），防止从 CONSISTENCY 切换后残留 ['CONSIST']
+        state.enabledRulePrefixes.value = []
         break
 
       case 'CONTRACT':

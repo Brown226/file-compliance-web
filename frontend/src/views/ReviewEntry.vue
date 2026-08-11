@@ -77,7 +77,7 @@
 import { computed, ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import {
-  Document, Fold, Link, EditPen, Stamp, CircleCheck, View,
+  Document, Fold, Link, EditPen, Stamp, CircleCheck, View, List,
 } from '@element-plus/icons-vue'
 import SmartReviewLegacy from './SmartReview.vue'
 import SelfCheck from './SelfCheck/index.vue'
@@ -143,6 +143,16 @@ const commonModules: ModuleItem[] = [
     color: '#0891b2',
     techHint: 'Map-Reduce 架构：先抽取结构化摘要，再跨分片做 C1-C4 一致性比对',
     featureKey: 'entry.CONSISTENCY',
+  },
+  {
+    id: 'RULE_ONLY',
+    title: '仅规则审查',
+    desc: '不调用大模型，纯确定性规则引擎快速检查',
+    scenario: '批量初筛、格式与编码合规底线检查',
+    icon: List,
+    color: '#475569',
+    techHint: '20 组内置规则（命名/编码/格式/完整性/一致性/DWG/合同），规则开关与严重度来自 review_rules 表',
+    featureKey: 'entry.RULE_ONLY',
   },
 ]
 
