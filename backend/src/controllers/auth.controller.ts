@@ -85,9 +85,17 @@ export const logout = async (req: Request, res: Response): Promise<void> => {
   try {
     const token = (req as any).token;
     if (token) {
-      // 简单起见，设定黑名单的过期时间与 Token 最大生命周期一致 (例如 1 天 = 86400 秒)
-      // 在生产环境中可以解析 token 中的 exp 来计算剩余时间
-      const expiresIn = 86400;
+      // 黑名单 TTL 与 token 实际剩余有效期对齐（解析 exp），
+      // 避免 JWT_EXPIRES_IN 调整后黑名单条目过早过期导致登出的 token 复活
+      let expiresIn = 86400;
+      try {
+        const decoded = TokenService.verifyToken(token);
+        if (decoded.exp) {
+          expiresIn = Math.max(1, decoded.exp - Math.floor(Date.now() / 1000));
+        }
+      } catch {
+        // token 已失效，黑名单条目用默认 TTL（很快过期，无害）
+      }
       await TokenService.blacklistToken(token, expiresIn);
     }
     // 注意：不清除 MaxKB 嵌入会话（UserChatSession），

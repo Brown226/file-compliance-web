@@ -10,6 +10,17 @@ import prisma from './config/db';
 import { setUploadDir, initUploadSubdirs, getUploadDir } from './config/upload';
 import type { Server } from 'http';
 
+// 进程级异常兜底：
+// - uncaughtException：记录后退出（由容器/PM2 重启），避免脏状态继续运行
+// - unhandledRejection：记录（多数可恢复，退出会造成无谓重启）
+process.on('uncaughtException', (err) => {
+  console.error('[Fatal] uncaughtException:', err);
+  process.exit(1);
+});
+process.on('unhandledRejection', (reason) => {
+  console.error('[Fatal] unhandledRejection:', reason);
+});
+
 // 进程角色：all（默认，单进程 API+Worker）/ api（仅 HTTP+WS）/ worker（仅队列+定时任务）
 const role = env.processRole;
 const runApi = role === 'all' || role === 'api';

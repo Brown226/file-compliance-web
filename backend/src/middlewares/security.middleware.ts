@@ -25,28 +25,6 @@ export const globalLimiter = rateLimit({
   },
 });
 
-/**
- * 登录接口严格限流：每 IP 每 15 分钟最多 10 次（防暴力破解）
- */
-export const loginLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
-  max: 10,
-  standardHeaders: true,
-  legacyHeaders: false,
-  message: { code: 429, message: '登录尝试过于频繁，请 15 分钟后再试', data: null },
-});
-
-/**
- * LLM 代理接口限流：每 IP 每分钟最多 20 次（防滥用）
- */
-export const llmProxyLimiter = rateLimit({
-  windowMs: 60 * 1000,
-  max: 20,
-  standardHeaders: true,
-  legacyHeaders: false,
-  message: { code: 429, message: 'AI 请求过于频繁，请稍后再试', data: null },
-});
-
 // ===== 文件上传校验 =====
 
 /** 允许的文件扩展名 → MIME 类型映射 */

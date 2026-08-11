@@ -1,6 +1,7 @@
 import express, { Express, Request, Response } from 'express';
 import cors from 'cors';
 import morgan from 'morgan';
+import helmet from 'helmet';
 import { env } from './config/env';
 import { errorHandler } from './middlewares/error.middleware';
 import { auditLog } from './middlewares/audit.middleware';
@@ -41,12 +42,30 @@ const app: Express = express();
 // Middleware
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
+// 安全响应头（X-Content-Type-Options / X-Frame-Options 等）。
+// 关闭 CSP：前端样式为内联注入 + MaxKB 管理面板走 iframe 嵌入，默认 CSP 会破坏两者
+app.use(helmet({ contentSecurityPolicy: false }));
+
 // CORS：生产环境使用白名单（由 CORS_ALLOWED_ORIGINS 配置），开发环境默认放开
 app.use(cors({
   origin: env.corsAllowedOrigins,
   credentials: true,
 }));
-app.use(morgan('dev'));
+// 信任一层反向代理（nginx），使 req.ip 取 X-Forwarded-For 首段，
+// 与 rate-limit.middleware 的 getClientIp 口径一致；直连后端时回退 socket 地址
+app.set('trust proxy', 1);
+
+// 访问日志：脱敏 URL 中的敏感 query 参数（如 /uploads?token=），避免 token 明文进日志
+const sanitizeUrl = (rawUrl: string): string =>
+  rawUrl.replace(/([?&](?:token|authorization|key|secret)=)[^&]+/gi, '$1***');
+app.use(morgan((tokens, req, res) => {
+  return [
+    tokens.method(req, res),
+    sanitizeUrl(tokens.url(req, res) || ''),
+    tokens.status(req, res),
+    `${tokens['response-time'](req, res)} ms`,
+  ].join(' ');
+}));
 
 // OPT-039: 全局 API 限流
 app.use('/api', globalLimiter);
@@ -101,7 +120,6 @@ app.use('/api/feedback', feedbackRoutes);
 app.use('/api/announcements', announcementRoutes);
 app.use('/api/self-check', selfCheckRoutes);
 app.use('/api/maxkb', maxkbRoutes);
-app.use('/api/dwg-vision', dwgVisionRoutes);
 app.use('/api/dwg', dwgVisionRoutes);
 app.use('/api/checkpoint', checkpointRoutes);
 app.use('/api/metrics', metricsRoutes);
@@ -109,6 +127,11 @@ app.use('/api/agent', agentRoutes);
 app.use('/api', healthRoutes);
 app.get('/health', (_req: Request, res: Response) => {
   res.status(200).json({ status: 'OK', message: 'Server is running' });
+});
+
+// 404 JSON 兜底（与全站 { code, message, data } 格式一致，避免返回 HTML 404）
+app.use((req: Request, res: Response) => {
+  res.status(404).json({ code: 404, message: `接口不存在: ${req.method} ${req.path}`, data: null });
 });
 
 // Global Error Handler
