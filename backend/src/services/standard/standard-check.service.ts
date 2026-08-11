@@ -215,7 +215,9 @@ export class StandardCheckService {
              .replace(/：/g, ':')
              .replace(/，/g, ',')
              .replace(/－/g, '-')
-             .replace(/—/g, '-');
+             .replace(/—/g, '-')
+             // SELF_CHECK 修复：全角斜杠（U+FF0F）未归一化导致"GB／T 19001"只能靠 L8 模糊兜底
+             .replace(/／/g, '/');
     if (isName) {
       r = r.replace(/及/g, '和').replace(/、/g, '和');
     }
