@@ -238,8 +238,11 @@ const handleDocReview: ReviewHandler = async (ctx) => {
   const scene = ctx.scene || getModeScene('DOC_REVIEW');
   const config = getEffectiveConfig(ctx);
 
-  // 二期 B：aiEngine 为 'rag' 时走条目级对齐 Agent（治本），失败自动降级旧策略
-  if (ctx.pipelineConfig?.aiEngine === 'rag' && ctx.refFileGroup?.refFiles?.length) {
+  // 二期 B：条目级对齐 Agent（治本）。P0-D1 修复：aiEngine 默认 'auto' 也启用 Agent
+  // （auto 语义 = 自动选择最优路径；embedding 缺失时 Agent 内部退化为整文本判定，
+  // LLM 失败条目级跳过、全失败标记 degraded → 自动降级旧策略，路径安全）。
+  // 仅显式 'llm_only'/'disabled' 等配置时保持旧策略。
+  if ((ctx.pipelineConfig?.aiEngine === 'rag' || ctx.pipelineConfig?.aiEngine === 'auto') && ctx.refFileGroup?.refFiles?.length) {
     try {
       const { runRefCompareAgent } = await import('./doc-review-agent.service');
       // 组装参照文本（复用 refFileGroup 已解析内容，缺失时即时提取）
@@ -259,8 +262,8 @@ const handleDocReview: ReviewHandler = async (ctx) => {
           mode: ctx.reviewMode,
           traceId: ctx.traceId,
         }, { llmMaxTokens: config.llmMaxTokens, llmTimeout: config.llmTimeout });
-        // 降级：条目抽取为空或完全失败 → 回退旧策略
-        if (agentResult.degraded && agentResult.issues.length === 0 && agentResult.itemCount === 0) {
+        // 降级：Agent 标记 degraded（抽取为空 或 条目对齐全部失败）且零产出 → 回退旧策略
+        if (agentResult.degraded && agentResult.issues.length === 0) {
           console.warn(`[Handler] DOC_REVIEW 条目级对齐降级（${agentResult.degradedReason}），回退旧策略`);
           const fallback = await AiReviewService.runRefCompareStrategy(text, ctx, scene, config);
           return {

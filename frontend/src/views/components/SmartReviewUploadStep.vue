@@ -71,7 +71,9 @@
         <h3 class="section-title">
           <el-icon><Link /></el-icon>
           {{ entryModule === 'CONTRACT' ? '合同模板' : '参考文件（用于以文审文）' }}
-          <el-tag type="info" size="small">可选</el-tag>
+          <el-tag :type="entryModule === 'DOC_REVIEW' ? 'warning' : 'info'" size="small">
+            {{ entryModule === 'DOC_REVIEW' ? '必填' : '可选' }}
+          </el-tag>
         </h3>
         <p class="section-description">
           {{ entryModule === 'CONTRACT' ? '上传合同模板进行比对审查，不上传则基于通用知识纯风险扫描' : '上传参考文件作为审查依据，系统将基于参考文件对待审文件进行逐项比对。' }}

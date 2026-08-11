@@ -532,8 +532,25 @@ export class AiReviewService {
     config: PipelineReviewConfig,
   ): Promise<{ issues: ReviewIssue[]; engine: string; sources?: SourceReference[]; degraded?: boolean; degradedReason?: string }> {
     // 无参照文件时降级为标准 AI 审查（保留原始 scene）
+    // P0-D2 修复：降级不再静默——附加一条 info 提示，避免用户误以为
+    // "已做逐项比对且无问题"（此前无参照时悄悄变成普通审查，结果页无任何说明）
     if (!ctx.refFileGroup || ctx.refFileGroup.refFiles.length === 0) {
-      return AiReviewService.runAIReview(text, ctx, scene, config);
+      const result = await AiReviewService.runAIReview(text, ctx, scene, config);
+      return {
+        ...result,
+        degraded: true,
+        degradedReason: '未上传参照文件，已降级为普通 AI 审查',
+        issues: [
+          {
+            issueType: 'COMPLETENESS',
+            severity: 'info',
+            ruleCode: 'DOC_REVIEW_DEGRADED',
+            originalText: '（无参照文件）',
+            description: '未上传参照文件，本次为普通 AI 审查（非逐项比对）。如需以文审文，请在创建任务时上传参照文件。',
+          } as ReviewIssue,
+          ...result.issues,
+        ],
+      };
     }
 
     // ===== C2: 参照文件加载改并行（Promise.allSettled） + D1: 解析失败明确告知 =====

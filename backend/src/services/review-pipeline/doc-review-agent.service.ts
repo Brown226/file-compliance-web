@@ -400,11 +400,20 @@ export async function runRefCompareAgent(
   }
   const deduped = dedupIssues(issues);
 
+  // P0-D2 修复：统计对齐失败条目数，全部失败且零产出时标记 degraded，
+  // 让 handler 能降级到旧策略（此前抽取成功但对齐全失败会静默返回空结果，
+  // 用户看到"无问题"而实际是审查过程失败）。
+  const failedCount = results.filter(r => !r).length;
+  const allFailed = failedCount > 0 && failedCount === items.length;
+
   return {
     issues: deduped,
     engine: 'doc-review-agent',
     itemCount: items.length,
     alignedCount: results.filter(r => r && r.candidateFound).length,
+    ...(allFailed && deduped.length === 0
+      ? { degraded: true, degradedReason: `条目对齐全部失败（${failedCount}/${items.length} 条失败），无可用结果` }
+      : {}),
   };
 }
 

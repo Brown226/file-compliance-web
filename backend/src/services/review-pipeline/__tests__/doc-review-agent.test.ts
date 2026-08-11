@@ -153,3 +153,24 @@ describe('降级与去重', () => {
     expect(typoIssues.length).toBeLessThanOrEqual(1);
   });
 });
+
+describe('降级与去重（P0-D2 全失败标记）', () => {
+  it('全部条目对齐失败（LLM 抛错）→ degraded=true（供 handler 降级，不再静默空结果）', async () => {
+    reviewTextMock.mockRejectedValue(new Error('LLM timeout'));
+    const result = await runRefCompareAgent('待审文本', [{ fileName: 'ref.md', content: '参照' }], ctx, config);
+    expect(result.itemCount).toBeGreaterThan(0); // 抽取成功
+    expect(result.issues).toEqual([]);           // 但零产出
+    expect(result.degraded).toBe(true);          // 标记降级
+    expect(result.degradedReason).toContain('全部失败');
+  });
+
+  it('部分条目失败 → 不标记 degraded（其余结果保留）', async () => {
+    // 第一条失败、第二条成功：reviewTextMock 第一次 reject，第二次 resolve
+    reviewTextMock
+      .mockRejectedValueOnce(new Error('LLM timeout'))
+      .mockResolvedValueOnce([{ issueType: 'VIOLATION', originalText: '付款期限 60 日', severity: 'error', status: 'mismatched' }]);
+    const result = await runRefCompareAgent('待审文本', [{ fileName: 'ref.md', content: '参照' }], ctx, config);
+    expect(result.degraded).toBeUndefined();
+    expect(result.issues.length).toBeGreaterThan(0);
+  });
+});
