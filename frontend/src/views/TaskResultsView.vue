@@ -239,8 +239,8 @@
             <!-- 导出操作 -->
             <ExportMenu :is-self-check="isSelfCheck" @command="handleExportCommand" />
 
-            <!-- LLM 推理回放 -->
-            <el-tooltip content="查看本次审查的 LLM 调用全过程（Prompt / Completion / RAG 片段）" placement="bottom">
+            <!-- LLM 推理回放（SELF_CHECK 为纯机械匹配无 LLM 日志，隐藏避免白挂按钮） -->
+            <el-tooltip v-if="!isSelfCheck" content="查看本次审查的 LLM 调用全过程（Prompt / Completion / RAG 片段）" placement="bottom">
               <el-button size="small" class="header-action-btn" @click="llmReplayVisible = true">
                 <el-icon><View /></el-icon>&nbsp;推理回放
               </el-button>
@@ -555,17 +555,42 @@ const showAiWarning = computed(() => {
 // ===== 合同审查评分 =====
 const isContractReview = computed(() => (task.value as any)?.reviewMode === 'CONTRACT_REVIEW')
 
+// 与后端 calculateContractScore 同口径的 clauseType 加权（ai-review.service.ts）
+// 修复：此前前端统一 15/8/3，与后端 other 类 8/4/1 等权重不一致，同份结果两套分数
+const CONTRACT_CLAUSE_WEIGHTS: Record<string, { high: number; medium: number; low: number }> = {
+  payment: { high: 15, medium: 8, low: 3 },
+  penalty: { high: 15, medium: 8, low: 3 },
+  warranty: { high: 12, medium: 6, low: 2 },
+  insurance: { high: 12, medium: 6, low: 2 },
+  dispute: { high: 10, medium: 5, low: 2 },
+  other: { high: 8, medium: 4, low: 1 },
+}
+
+/** 风险等级解析：riskLevel 优先，fallback severity（与后端 resolveLevel 同口径） */
+const resolveRiskLevel = (d: any): 'high' | 'medium' | 'low' => {
+  const rl = String(d.riskLevel || '').toUpperCase()
+  if (rl === 'HIGH' || rl === 'CRITICAL') return 'high'
+  if (rl === 'MEDIUM' || rl === 'MODERATE') return 'medium'
+  if (rl === 'LOW' || rl === 'INFO') return 'low'
+  if (d.severity === 'error') return 'high'
+  if (d.severity === 'warning') return 'medium'
+  return 'low'
+}
+
 const contractScoreData = computed(() => {
-  const high = issueDetails.value.filter((d: any) => {
-    const desc = (d.description || '').toLowerCase()
-    return /高风险|严重|重大|high/i.test(desc) || d.severity === 'error'
-  }).length
-  const medium = issueDetails.value.filter((d: any) => {
-    const desc = (d.description || '').toLowerCase()
-    return (/中风险|一般|medium/i.test(desc) || d.severity === 'warning') && !(/高风险|严重|重大|high/i.test(desc) || d.severity === 'error')
-  }).length
-  const low = issueDetails.value.length - high - medium
-  const score = Math.max(0, 100 - high * 15 - medium * 8 - low * 3)
+  let high = 0
+  let medium = 0
+  let low = 0
+  let deduction = 0
+  for (const d of issueDetails.value) {
+    const level = resolveRiskLevel(d)
+    if (level === 'high') high++
+    else if (level === 'medium') medium++
+    else low++
+    const w = CONTRACT_CLAUSE_WEIGHTS[String(d.clauseType || 'other')] || CONTRACT_CLAUSE_WEIGHTS.other
+    deduction += w[level]
+  }
+  const score = Math.max(0, 100 - deduction)
   return { score, high, medium, low: Math.max(0, low) }
 })
 

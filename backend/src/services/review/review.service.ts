@@ -1440,10 +1440,19 @@ const fileContexts = task.files.map(file => {
         // ��ǿ�棺���񱣻� + ���Ի��� + ʧ��ʱ�ӳ�����
         let dbWriteSuccess = false;
         const strippedData = aiData.map((item) => this.stripDbUnsupportedFields(item));
+        // 中危修复：DB 唯一约束 [taskId,fileId,issueType,ruleCode,originalText] 对 fileId=NULL
+        // 失效（Postgres 中 NULL != NULL），代码层按完整键去重兜底，双保险
+        const seenDetailKeys = new Set<string>();
+        const dedupedData = strippedData.filter((d: any) => {
+          const key = [d.taskId, d.fileId ?? '', d.issueType, d.ruleCode ?? '', d.originalText ?? ''].join('|');
+          if (seenDetailKeys.has(key)) return false;
+          seenDetailKeys.add(key);
+          return true;
+        });
         try {
           await prisma.$transaction(async (tx) => {
             await tx.taskDetail.createMany({
-              data: strippedData,
+              data: dedupedData,
               skipDuplicates: true,
             });
           });
@@ -1455,7 +1464,7 @@ const fileContexts = task.files.map(file => {
           // ����һ��
           try {
             await prisma.taskDetail.createMany({
-              data: strippedData,
+              data: dedupedData,
               skipDuplicates: true,
             });
             dbWriteSuccess = true;
@@ -1603,6 +1612,14 @@ const fileContexts = task.files.map(file => {
             locateMeta: meta,
             // ��ͬ���ר���ֶ�
             riskLevel: issue.riskLevel || null,
+            // 判标层字段（P1-6）：兜底路径与分片路径保持一致——LOW 置信度/AI 纯推断/HIGH 风险转人工复核
+            judgeConfidence: issue.confidence || null,
+            judgeReason: issue.confidenceReason || null,
+            reviewStatus: ((confidence) => {
+              return (confidence === 'AI_INFERRED' || issue.riskLevel === 'HIGH' || issue.confidence === 'LOW')
+                ? 'PENDING_REVIEW'
+                : 'CONFIRMED';
+            })(this.getConfidence(issue).confidence),
             clauseType: issue.clauseType || null,
             recommendation: issue.recommendation || null,
             // DEC-1 修复：透传 handler 层 reviewSource 标记（DEC 的 COMPLETENESS/COMPLIANCE/RULE_FALLBACK），无标记保持 'AI'
