@@ -19,7 +19,7 @@
         text-color="#9CA3AF"
         active-text-color="#FFFFFF"
       >
-        <!-- ===== 鐢ㄦ埛鍔熻兘锛堟墍鏈夎鑹插彲瑙侊級===== -->
+        <!-- ===== 用户功能（所有角色可见）===== -->
         <el-menu-item index="/review-center">
           <el-icon><DataBoard /></el-icon>
           <template #title><span>审查中心</span></template>
@@ -131,7 +131,7 @@
             </div>
             <template #dropdown>
               <el-dropdown-menu>
-                <!-- 鐢ㄦ埛淇℃伅澶?-->
+                <!-- 用户信息头部 -->
                 <div class="dropdown-user-header">
                   <el-avatar :size="40" class="dropdown-avatar">{{ userStore.userInfo?.name?.charAt(0).toUpperCase() || 'A' }}</el-avatar>
                   <div class="dropdown-user-meta">
@@ -230,7 +230,7 @@
             <kbd class="kbd">{{ row.keys }}</kbd>
           </template>
         </el-table-column>
-        <el-table-column label="鍔熻兘" prop="desc" />
+        <el-table-column label="功能" prop="desc" />
       </el-table>
       <template #footer>
         <el-button type="primary" @click="showShortcutHelp = false">知道了</el-button>
@@ -499,7 +499,7 @@ const submitUsernameChange = async () => {
         })
         ElMessage.success('登录账号修改成功')
         usernameDialogVisible.value = false
-        // 鐢ㄦ柊璐﹀彿閲嶆柊鐧诲綍鍒锋柊鐢ㄦ埛淇℃伅
+        // 用新账号重新登录刷新用户信息
         const { data } = await loginApi({
           username: usernameForm.newUsername,
           password: usernameForm.password,
@@ -965,7 +965,7 @@ const submitUsernameChange = async () => {
   flex-shrink: 0;
 }
 
-/* 涓嬫媺鑿滃崟鐢ㄦ埛淇℃伅澶?*/
+/* 下拉菜单用户信息头部 */
 .dropdown-user-header {
   display: flex;
   align-items: center;

@@ -99,13 +99,12 @@ const allItems = ref<SearchResult[]>([])
 
 function loadAllItems() {
   allItems.value = [
-    { id: '1', category: 'dashboard', title: '监控仪表盘', description: '系统概览与统计', route: '/admin/dashboard' },
+    { id: '1', category: 'dashboard', title: '审查质量看板', description: '审查质量统计与趋势', route: '/accuracy-dashboard' },
     { id: '2', category: 'task', title: '新建任务', description: '创建新的审查任务', route: '/review' },
     { id: '3', category: 'task', title: '任务历史', description: '查看任务历史记录', route: '/tasks' },
     { id: '4', category: 'standard', title: '企业标准规范库', description: '管理与查询标准文档', route: '/admin/standards' },
     { id: '5', category: 'rule', title: '合规规则库', description: '配置自动审查规则', route: '/admin/rules' },
     { id: '6', category: 'config', title: '流水线配置', description: '审查流程与规则配置入口', route: '/admin/rules' },
-    { id: '7', category: 'config', title: '提示词模板管理', description: 'LLM 提示词配置', route: '/admin/prompts' },
     { id: '8', category: 'config', title: 'LLM 配置', description: '大语言模型与 OCR 配置', route: '/admin/ai-engine' },
     { id: '9', category: 'dashboard', title: '用户管理', description: '系统用户与权限管理', route: '/admin/users' },
     { id: '10', category: 'rule', title: '正则表达式工具', description: 'AI 生成与测试正则表达式', route: '/admin/rules' },

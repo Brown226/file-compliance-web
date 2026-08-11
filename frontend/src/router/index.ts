@@ -137,7 +137,6 @@ const routes: Array<RouteRecordRaw> = [
         path: 'admin/standards/:id/checkpoints',
         name: 'StandardCheckpoints',
         redirect: (to) => `/knowledge?tab=clauses&standardId=${to.params.id}`,
-        meta: { title: 'DEC 审点管理', allowViewer: true, hidden: true }
       },
       {
         path: 'admin/knowledge',
@@ -242,7 +241,6 @@ const routes: Array<RouteRecordRaw> = [
       {
         path: 'openspec',
         redirect: '/agent',
-        meta: { title: 'OpenSpec', hidden: true }
       },
       {
         path: 'openspec/create',
@@ -271,6 +269,14 @@ const routes: Array<RouteRecordRaw> = [
 const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
   routes
+})
+
+// 404 catch-all：未知路径显示 NotFound 页（放在路由表末尾，匹配所有未命中路径）
+router.addRoute({
+  path: '/:pathMatch(.*)*',
+  name: 'NotFound',
+  component: () => import('../views/NotFound.vue'),
+  meta: { title: '页面不存在' }
 })
 
 router.beforeEach(async (to, _from, next) => {
