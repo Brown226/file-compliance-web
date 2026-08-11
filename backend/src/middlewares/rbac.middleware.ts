@@ -179,3 +179,53 @@ export const checkTaskAccess = async (req: AuthRequest, res: Response, next: Nex
     res.status(500).json({ error: '服务器内部错误' });
   }
 };
+
+/**
+ * Express 中间件：检查当前用户是否有权访问某问题条目（误报/采纳等按 detailId 定位的写操作）
+ *
+ * URL 无 taskId（如 PATCH /tasks/details/:detailId/false-positive），
+ * 需从 detailId 反查 TaskDetail → task.creatorId → canAccessTask 归属校验。
+ * 修复高危：此前该类端点仅 authenticate，任意用户猜到 detailId 可篡改任意任务结果。
+ */
+export const checkDetailAccess = async (req: AuthRequest, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const detailId = req.params.detailId as string;
+    if (!detailId) {
+      res.status(400).json({ error: '缺少问题条目ID' });
+      return;
+    }
+
+    const detail = await prisma.taskDetail.findUnique({
+      where: { id: detailId },
+      select: { taskId: true },
+    });
+
+    if (!detail) {
+      res.status(404).json({ error: '未找到该问题条目' });
+      return;
+    }
+
+    const task = await prisma.task.findUnique({
+      where: { id: detail.taskId },
+      select: { creatorId: true },
+    });
+
+    if (!task) {
+      res.status(404).json({ error: '未找到该任务' });
+      return;
+    }
+
+    const hasAccess = await canAccessTask(req.user, task.creatorId);
+    if (!hasAccess) {
+      res.status(403).json({ error: '无权访问该任务的问题条目' });
+      return;
+    }
+
+    // 透传 taskId，供 controller 复用（避免重复查询）
+    (req as any).taskId = detail.taskId;
+    next();
+  } catch (err) {
+    console.error('Check Detail Access Error:', err);
+    res.status(500).json({ error: '服务器内部错误' });
+  }
+};

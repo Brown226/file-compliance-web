@@ -4,7 +4,7 @@ import path from 'path';
 
 import prisma from '../config/db';
 import { authenticate } from '../middlewares/auth.middleware';
-import { requireRole, checkTaskAccess } from '../middlewares/rbac.middleware';
+import { requireRole, checkTaskAccess, checkDetailAccess } from '../middlewares/rbac.middleware';
 import { uploadRateLimit } from '../middlewares/rate-limit.middleware';
 import { success, error } from '../utils/response';
 import { getMaxUploadSizeMB } from '../utils/system-config';
@@ -155,9 +155,9 @@ router.post('/:id/review', checkTaskAccess, reReviewTask);
 // 上传参照文件（以文审文模式）
 router.post('/:id/ref-files', checkTaskAccess, upload.array('files', 20), uploadRefFiles);
 
-// 标记/取消标记误报
-router.patch('/details/:detailId/false-positive', toggleFalsePositive);
-router.patch('/details/:detailId/adopt', toggleAdopt);
+// 标记/取消标记误报（高危修复：加 checkDetailAccess 归属校验，防任意用户篡改他人任务结果）
+router.patch('/details/:detailId/false-positive', checkDetailAccess, toggleFalsePositive);
+router.patch('/details/:detailId/adopt', checkDetailAccess, toggleAdopt);
 
 // 人工复核（仅 MANAGER/ADMIN）
 router.patch('/:id/details/:detailId/review', requireRole('MANAGER'), reviewIssue);

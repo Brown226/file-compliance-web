@@ -9,6 +9,7 @@ vi.mock('../../config/db', () => ({
   default: {
     user: { findUnique: vi.fn() },
     task: { findUnique: vi.fn() },
+    taskDetail: { findUnique: vi.fn() },
     department: { findMany: vi.fn() },
     $queryRaw: vi.fn(),
   },
@@ -31,7 +32,7 @@ vi.mock('../../services/auth/token.service', () => ({
 }));
 
 import prisma from '../../config/db';
-import { canAccessTask, checkTaskAccess, clearSubDeptCache } from '../rbac.middleware';
+import { canAccessTask, checkTaskAccess, checkDetailAccess, clearSubDeptCache } from '../rbac.middleware';
 import { Response } from 'express';
 
 const mockPrisma = prisma as any;
@@ -148,6 +149,71 @@ describe('checkTaskAccess 中间件', () => {
     mockReq.user = { id: 'admin-1', role: 'ADMIN', departmentId: null };
     mockPrisma.task.findUnique.mockResolvedValue({ creatorId: 'someone-else' });
     await checkTaskAccess(mockReq, mockRes as Response, mockNext);
+    expect(mockNext).toHaveBeenCalled();
+  });
+});
+
+describe('checkDetailAccess 中间件（误报/采纳归属校验，高危修复）', () => {
+  let mockReq: any;
+  let mockRes: any;
+  let mockNext: any;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    clearSubDeptCache();
+    mockReq = {
+      params: { detailId: 'detail-1' },
+      user: { id: 'user-1', role: 'USER', departmentId: 'dept-1' },
+    };
+    mockRes = {
+      status: vi.fn().mockReturnThis(),
+      json: vi.fn().mockReturnThis(),
+    };
+    mockNext = vi.fn();
+    // 默认：detail 存在且属于 user-1 的任务
+    mockPrisma.taskDetail.findUnique.mockResolvedValue({ taskId: 'task-1' });
+    mockPrisma.task.findUnique.mockResolvedValue({ creatorId: 'user-1' });
+  });
+
+  it('缺少 detailId 返回 400', async () => {
+    mockReq.params = {};
+    await checkDetailAccess(mockReq, mockRes as Response, mockNext);
+    expect(mockRes.status).toHaveBeenCalledWith(400);
+    expect(mockNext).not.toHaveBeenCalled();
+  });
+
+  it('问题条目不存在返回 404', async () => {
+    mockPrisma.taskDetail.findUnique.mockResolvedValue(null);
+    await checkDetailAccess(mockReq, mockRes as Response, mockNext);
+    expect(mockRes.status).toHaveBeenCalledWith(404);
+    expect(mockNext).not.toHaveBeenCalled();
+  });
+
+  it('条目所属任务不存在返回 404', async () => {
+    mockPrisma.task.findUnique.mockResolvedValue(null);
+    await checkDetailAccess(mockReq, mockRes as Response, mockNext);
+    expect(mockRes.status).toHaveBeenCalledWith(404);
+    expect(mockNext).not.toHaveBeenCalled();
+  });
+
+  it('他人任务的问题条目返回 403（高危修复核心场景）', async () => {
+    mockPrisma.task.findUnique.mockResolvedValue({ creatorId: 'other-user' });
+    await checkDetailAccess(mockReq, mockRes as Response, mockNext);
+    expect(mockRes.status).toHaveBeenCalledWith(403);
+    expect(mockNext).not.toHaveBeenCalled();
+  });
+
+  it('本人任务的问题条目调用 next() 并透传 taskId', async () => {
+    await checkDetailAccess(mockReq, mockRes as Response, mockNext);
+    expect(mockNext).toHaveBeenCalled();
+    expect(mockReq.taskId).toBe('task-1');
+    expect(mockRes.status).not.toHaveBeenCalled();
+  });
+
+  it('ADMIN 可访问任意任务的问题条目', async () => {
+    mockReq.user = { id: 'admin-1', role: 'ADMIN', departmentId: null };
+    mockPrisma.task.findUnique.mockResolvedValue({ creatorId: 'someone-else' });
+    await checkDetailAccess(mockReq, mockRes as Response, mockNext);
     expect(mockNext).toHaveBeenCalled();
   });
 });
