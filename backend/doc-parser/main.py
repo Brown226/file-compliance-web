@@ -400,25 +400,18 @@ def _parse_with_pdf_inspector(content: bytes, filename: str):
         os.unlink(tmp_path)
 
 
-def _parse_pdf_pipeline(content: bytes, filename: str, vision_config: Optional[dict] = None) -> Optional[dict]:
+def _ocr_pages_text(content: bytes, filename: str, pages: Optional[list], vision_config: Optional[dict] = None):
     """
-    PDF 专用链路：pdf-inspector 分类+提取（毫秒级）
-    → 扫描件 RapidOCR 逐页识别（仅 pages_needing_ocr）→ Vision LLM 兜底。
+    对 PDF 指定页执行 OCR（pages 为 None 时全部页），返回 (text, engine)。
+    RapidOCR（本地）优先 → Vision LLM 兜底。
     """
-    # 第一优先：pdf-inspector（Rust）分类 + 文本提取，返回 (result, ocr_pages)
-    pi_result, pi_ocr_pages = _parse_with_pdf_inspector(content, filename)
-    if pi_result:
-        return _enrich_result_table_kv(pi_result)
-
-    # 扫描件 / 混合型中无文本的页：OCR
-    # 路由优化：pdf-inspector 提供 pages_needing_ocr，仅 OCR 需要的页
     ocr_text = None
     ocr_engine = None
 
     # 第一优先：RapidOCR 本地识别（pages 参数：仅扫描页）
     try:
         from rapid_ocr import recognize_with_rapidocr, CONFIDENCE_THRESHOLD
-        ocr_result = recognize_with_rapidocr(content, 'pdf', filename, pages=pi_ocr_pages)
+        ocr_result = recognize_with_rapidocr(content, 'pdf', filename, pages=pages)
         if ocr_result and ocr_result['text']:
             if ocr_result['confidence'] >= CONFIDENCE_THRESHOLD:
                 ocr_text = ocr_result['text']
@@ -443,7 +436,45 @@ def _parse_pdf_pipeline(content: bytes, filename: str, vision_config: Optional[d
         except Exception as e:
             logger.error(f"视觉模型 OCR 失败: {filename} - {e}")
 
-    # 返回 OCR 结果
+    return ocr_text, ocr_engine
+
+
+def _merge_ocr_into_result(result: dict, ocr_text: str, ocr_engine: str) -> dict:
+    """混合型 PDF：把 OCR 的扫描页文本合并进 pdf-inspector 提取结果。"""
+    marker = f"\n\n<!-- OCR 扫描页 ({ocr_engine}) -->\n"
+    result['text'] += marker + ocr_text
+    result['markdown'] += marker + ocr_text
+    result['pages'] = result['pages'] + [ocr_text]
+    result['metadata']['has_images'] = True
+    result['metadata']['ocr_engine'] = ocr_engine
+    for line in ocr_text.split('\n'):
+        stripped = line.strip()
+        if stripped:
+            result['structure']['paragraphs'].append({'text': stripped, 'style': 'Normal', 'page': 0})
+    logger.info(f"混合型 PDF 合并完成: OCR {ocr_engine} 追加 {len(ocr_text)} 字符")
+    return result
+
+
+def _parse_pdf_pipeline(content: bytes, filename: str, vision_config: Optional[dict] = None) -> Optional[dict]:
+    """
+    PDF 专用链路：pdf-inspector 分类+提取（毫秒级）
+    → 混合型扫描页 / 纯扫描件 RapidOCR 逐页识别 → Vision LLM 兜底。
+    """
+    # 第一优先：pdf-inspector（Rust）分类 + 文本提取，返回 (result, ocr_pages)
+    pi_result, pi_ocr_pages = _parse_with_pdf_inspector(content, filename)
+
+    if pi_result:
+        # 混合型 PDF：文本页已提取，扫描页逐页 OCR 后合并
+        if pi_ocr_pages:
+            logger.info(f"混合型 PDF: 文本已提取，{len(pi_ocr_pages)} 页需 OCR 合并: {pi_ocr_pages}")
+            ocr_text, ocr_engine = _ocr_pages_text(content, filename, pi_ocr_pages, vision_config)
+            if ocr_text:
+                pi_result = _merge_ocr_into_result(pi_result, ocr_text, ocr_engine)
+        return _enrich_result_table_kv(pi_result)
+
+    # 纯扫描件 / 图片型 / pdf-inspector 异常：全量 OCR（按 pages_needing_ocr 路由）
+    ocr_text, ocr_engine = _ocr_pages_text(content, filename, pi_ocr_pages, vision_config)
+
     if ocr_text:
         return {
             'text': ocr_text,
