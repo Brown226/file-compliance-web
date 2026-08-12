@@ -6,8 +6,8 @@ DWG 文件已改为前端 WASM 解析（@mlightcad/libredwg-web），后端不�
 
 解析策略：anydoc（Firecrawl，Rust）为非 PDF 格式主力引擎；
 PDF 走 pdf-inspector 专用链路（主动分类 → 文本提取 → 扫描件逐页 OCR 路由），
-pdf_enhanced 为 PDF 文本兜底，扫描件 RapidOCR → Vision LLM 兜底。
-（历史引擎 MarkItDown / antiword / LibreOffice 已移除，见 git 历史 b7c4f3c 之前）
+扫描件 RapidOCR（pdftoppm 渲染）→ Vision LLM 兜底。
+（历史引擎 MarkItDown / antiword / LibreOffice / pdf_enhanced 已移除，见 git 历史）
 """
 
 import os
@@ -325,7 +325,7 @@ def _parse_with_pdf_inspector(content: bytes, filename: str):
     返回 (result_or_None, ocr_pages_or_None)：
     - 文本型 PDF: (完整结果 dict, None)
     - 扫描件/图片型: (None, pages_needing_ocr 列表)，调用方据此逐页 OCR 路由
-    - 异常/未安装: (None, None)，调用方走 pdf_enhanced 文本兜底
+    - 异常/未安装: (None, None)，调用方走 OCR 兜底
     """
     try:
         import pdf_inspector
@@ -402,26 +402,15 @@ def _parse_with_pdf_inspector(content: bytes, filename: str):
 
 def _parse_pdf_pipeline(content: bytes, filename: str, vision_config: Optional[dict] = None) -> Optional[dict]:
     """
-    PDF 专用链路：pdf-inspector 分类+提取（毫秒级）→ pdf_enhanced 文本兜底
-    → RapidOCR 逐页识别（仅 pages_needing_ocr）→ Vision LLM 兜底。
+    PDF 专用链路：pdf-inspector 分类+提取（毫秒级）
+    → 扫描件 RapidOCR 逐页识别（仅 pages_needing_ocr）→ Vision LLM 兜底。
     """
     # 第一优先：pdf-inspector（Rust）分类 + 文本提取，返回 (result, ocr_pages)
     pi_result, pi_ocr_pages = _parse_with_pdf_inspector(content, filename)
     if pi_result:
         return _enrich_result_table_kv(pi_result)
 
-    # 第二优先：pdf_enhanced 文本兜底（PyMuPDF，OPT-010/011 页眉页脚/封面）
-    # 注意：扫描件（pi_ocr_pages 非空）无文本层，跳过文本兜底直接 OCR
-    if pi_ocr_pages is None:
-        try:
-            from pdf_enhanced import enhanced_pdf_parse
-            result = enhanced_pdf_parse(content, filename)
-            if result:
-                return _enrich_result_table_kv(result)
-        except Exception as e:
-            logger.warning(f"PDF 增强解析失败: {e}")
-
-    # 扫描件 PDF / 文本提取失败：OCR
+    # 扫描件 / 混合型中无文本的页：OCR
     # 路由优化：pdf-inspector 提供 pages_needing_ocr，仅 OCR 需要的页
     ocr_text = None
     ocr_engine = None
@@ -921,7 +910,7 @@ async def ocr_scan_batch_base64(data: dict):
 
 @app.on_event("startup")
 async def startup():
-    logger.info("文档解析服务启动中（anydoc 主力引擎 + RapidOCR 扫描件兜底）...")
+    logger.info("文档解析服务启动中（anydoc + pdf-inspector + RapidOCR）...")
     # 预热关键依赖的 import
     try:
         import anydoc
@@ -929,10 +918,15 @@ async def startup():
     except ImportError as e:
         logger.warning(f"anydoc 未安装: {e}（需 pip install firecrawl-anydoc）")
     try:
-        from pdf_enhanced import enhanced_pdf_parse
-        logger.info("PDF 增强解析器加载完成")
+        import pdf_inspector
+        logger.info("pdf-inspector 引擎加载完成")
     except ImportError as e:
-        logger.warning(f"PDF 增强解析器加载失败（将在首次请求时重试）: {e}")
+        logger.warning(f"pdf-inspector 未安装: {e}（需 pip install pdf-inspector）")
+    try:
+        from rapid_ocr import recognize_with_rapidocr
+        logger.info("RapidOCR 链路加载完成")
+    except ImportError as e:
+        logger.warning(f"RapidOCR 加载失败（将在首次请求时重试）: {e}")
 
 
 if __name__ == "__main__":

@@ -1,7 +1,7 @@
 """
 RapidOCR 本地 OCR 引擎 — 轻量、离线、纯 CPU
 用于扫描件 PDF / 图片的文字识别，无需外网 API。
-PDF 页面渲染使用 PyMuPDF（无需 pdf2image / poppler）。
+PDF 页面渲染使用 pdftoppm（poppler-utils，无需 PyMuPDF）。
 """
 
 import io
@@ -55,35 +55,59 @@ def _get_engine():
 
 def _pdf_to_images(file_bytes: bytes, dpi: int = OCR_DPI, max_pages: int = MAX_PAGES, pages: Optional[list] = None) -> list:
     """
-    用 PyMuPDF 将 PDF 渲染为 PIL Image 列表。
-    替代 pdf2image（无需 poppler-utils 系统依赖）。
+    用 pdftoppm（poppler-utils）将 PDF 渲染为 PIL Image 列表。
+    替代 PyMuPDF（已从依赖移除）。
     pages: 仅渲染指定页（1-indexed 页码列表，来自 pdf-inspector 的 pages_needing_ocr）；
-           为 None 时渲染全部页。
+           为 None 时渲染全部页（受 max_pages 限制）。
     """
-    import fitz  # PyMuPDF
+    import subprocess
+    import tempfile
 
-    doc = fitz.open(stream=file_bytes, filetype="pdf")
-    images = []
-    zoom = dpi / 72.0
-    matrix = fitz.Matrix(zoom, zoom)
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        pdf_path = os.path.join(tmp_dir, 'input.pdf')
+        with open(pdf_path, 'wb') as f:
+            f.write(file_bytes)
 
-    page_indices = None
-    if pages:
-        page_indices = [p - 1 for p in pages if 1 <= p <= doc.page_count]
-        if not page_indices:
-            doc.close()
+        # 页范围：pages 非空则渲染 min~max（pdftoppm 按页号命名，渲染后筛选）
+        if pages:
+            f_page = max(1, min(pages))
+            l_page = min(max(pages), max_pages)
+        else:
+            f_page, l_page = 1, max_pages
+
+        out_prefix = os.path.join(tmp_dir, 'page')
+        try:
+            subprocess.run(
+                ['pdftoppm', '-png', '-r', str(dpi), '-f', str(f_page), '-l', str(l_page),
+                 pdf_path, out_prefix],
+                check=True, capture_output=True, timeout=180,
+            )
+        except FileNotFoundError:
+            logger.error("pdftoppm 未安装（需 poppler-utils 系统包）")
+            return []
+        except subprocess.TimeoutExpired:
+            logger.error(f"pdftoppm 渲染超时（{l_page - f_page + 1} 页, DPI={dpi}）")
+            return []
+        except subprocess.CalledProcessError as e:
+            logger.error(f"pdftoppm 渲染失败: {e.stderr.decode('utf-8', errors='ignore')[:200]}")
             return []
 
-    for i, page in enumerate(doc):
-        if i >= max_pages:
-            break
-        if page_indices is not None and i not in page_indices:
-            continue
-        pix = page.get_pixmap(matrix=matrix)
-        img = Image.frombytes("RGB", [pix.width, pix.height], pix.samples)
-        images.append(img)
+        images = []
+        for fn in sorted(os.listdir(tmp_dir)):
+            if not fn.startswith('page-'):
+                continue
+            try:
+                page_num = int(fn.split('-')[1].split('.')[0])
+            except (IndexError, ValueError):
+                continue
+            if pages and page_num not in pages:
+                continue
+            try:
+                img = Image.open(os.path.join(tmp_dir, fn)).convert('RGB')
+                images.append(img)
+            except Exception as e:
+                logger.warning(f"页面图片打开失败: {fn} - {e}")
 
-    doc.close()
     return images
 
 

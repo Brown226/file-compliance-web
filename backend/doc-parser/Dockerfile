@@ -1,6 +1,6 @@
 # ============================================
 # 文档解析服务 - 精简 Docker 镜像（多阶段构建）
-# 主力引擎 anydoc（Rust），PDF fallback PyMuPDF，扫描件 RapidOCR
+# 主力引擎 anydoc + pdf-inspector（均 Rust），扫描件 RapidOCR（pdftoppm 渲染）
 # 支持 DOC/DOCX/PPT/PPTX/XLS/XLSX/ODT/ODS/ODP/RTF/EPUB/CSV/PDF
 # ============================================
 
@@ -46,16 +46,15 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /app
 
-# 运行时系统库：libxml2/libxslt1.1 是 lxml wheel 运行期动态库，必须保留
-# 已移除 antiword（.doc 老格式改由 anydoc 原生解析）
-# 已移除 poppler-utils（PDF 转图片改用 PyMuPDF 内置渲染）
+# 运行时系统库：poppler-utils 提供 pdftoppm（扫描件 PDF 页渲染 → RapidOCR）
+# libxml2/libxslt1.1 不再需要（lxml 依赖已移除）
+# 已移除 antiword / LibreOffice / PyMuPDF
 # apt 源切换到阿里云镜像（deb.debian.org 在代理环境下 502 不稳定）
 RUN sed -i 's|deb.debian.org|mirrors.aliyun.com|g' /etc/apt/sources.list.d/debian.sources 2>/dev/null || true && \
     sed -i 's|security.debian.org|mirrors.aliyun.com/debian-security|g' /etc/apt/sources.list.d/debian.sources 2>/dev/null || true && \
     apt-get update && \
     apt-get install -y --no-install-recommends \
-    libxml2 \
-    libxslt1.1 \
+    poppler-utils \
     && rm -rf /var/lib/apt/lists/*
 
 # 从 builder 阶段复制已编译的 Python 包
@@ -63,7 +62,6 @@ COPY --from=builder /install /usr/local
 
 # 复制服务代码
 COPY main.py .
-COPY pdf_enhanced.py .
 COPY vision_ocr.py .
 COPY rapid_ocr.py .
 # 固化 RapidOCR 模型（约 46MB），避免首次运行从 modelscope 下载（网络不稳定）

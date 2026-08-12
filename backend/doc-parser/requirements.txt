@@ -1,8 +1,8 @@
 # ============================================
 # 文档解析服务
-# anydoc（Firecrawl，Rust）为主力解析引擎，pdf_enhanced 为 PDF 文本兜底
+# anydoc（Firecrawl，Rust）为非 PDF 格式主力；pdf-inspector 为 PDF 主力
 # 支持 DOC / DOCX / PPT / PPTX / XLS / XLSX / ODT / ODS / ODP / RTF / EPUB / CSV / PDF
-# 扫描件 PDF 走 RapidOCR（本地）→ Vision LLM 兜底
+# 扫描件 PDF：pdf-inspector 分类 → RapidOCR（本地，pdftoppm 渲染）→ Vision LLM 兜底
 # DWG 已改为前端 WASM 解析（@mlightcad/libredwg-web），后端不再处理
 # ============================================
 
@@ -11,16 +11,12 @@ fastapi==0.115.12
 uvicorn[standard]==0.34.2
 python-multipart==0.0.20
 
-# --- anydoc: 统一文档转 Markdown 引擎（非 PDF 格式主力，Rust 实现） ---
+# --- anydoc: 非 PDF 格式统一转 Markdown 引擎（Rust 实现） ---
 firecrawl-anydoc>=0.1.8,<0.2
 
 # --- pdf-inspector: PDF 分类 + 提取（Rust，毫秒级，内置页码过滤/表格检测） ---
 #     扫描件自动分类并给出 pages_needing_ocr 逐页路由
 pdf-inspector>=1.14.0
-
-# --- PDF: PyMuPDF 仅用于 OCR 链路页面渲染（rapid_ocr.py） ---
-PyMuPDF>=1.26.0
-Pillow>=10.0.0
 
 # --- OCR: RapidOCR 本地识别（轻量、离线、纯 CPU） ---
 # opencv-python-headless 替代 opencv-python，避免 libGL.so.1 运行时缺失
@@ -28,11 +24,11 @@ Pillow>=10.0.0
 opencv-python-headless>=4.9.0
 rapidocr>=3.9.0
 onnxruntime>=1.20.0
+Pillow>=10.0.0
 
 # --- 生产部署 ---
 gunicorn~=23.0.0
 
-# --- 已移除（被 anydoc 取代）：markitdown / python-docx / mammoth / lxml /
-#     openpyxl / python-pptx / pdfplumber / antiword / LibreOffice ---
-#     对应删除的文件：docx_enhanced.py / xlsx_enhanced.py / pptx_enhanced.py
-#     （pdf_enhanced.py 保留，作 PDF 文本兜底，仅依赖 PyMuPDF）
+# --- 系统依赖（Dockerfile 安装）：poppler-utils（pdftoppm 渲染 PDF 页给 OCR） ---
+# --- 已移除（被 anydoc/pdf-inspector 取代）：markitdown / python-docx / mammoth /
+#     lxml / openpyxl / python-pptx / pdfplumber / PyMuPDF / antiword / LibreOffice ---

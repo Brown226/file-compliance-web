@@ -22,9 +22,8 @@
 
 ```
 doc-parser/
-├── main.py              # FastAPI 应用入口（anydoc 主力 + PDF fallback/OCR 调度）
-├── pdf_enhanced.py      # PDF 增强解析器（fallback，PyMuPDF，含页眉页脚过滤）
-├── rapid_ocr.py         # RapidOCR 本地 OCR（扫描件 PDF 兜底）
+├── main.py              # FastAPI 应用入口（anydoc + pdf-inspector 双路由 + OCR 调度）
+├── rapid_ocr.py         # RapidOCR 本地 OCR（pdftoppm 渲染，扫描件 PDF 兜底）
 ├── vision_ocr.py        # Vision LLM OCR（超低质量扫描件兜底）
 ├── requirements.txt     # Python 依赖声明
 ├── Dockerfile           # Docker 镜像构建
