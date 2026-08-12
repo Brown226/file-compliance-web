@@ -208,7 +208,6 @@ file-compliance-web/
 │       ├── stores/                  # Pinia（user/system-config）
 │       ├── router/index.ts          # 路由（meta 权限驱动）
 │       └── utils/                   # request/dwg-parser/useMarkdown 等
-├── desktop/                         # Tauri 2 桌面端「核审通」（Rust + Vue）
 ├── offline-deploy-v6/               # 现行生产/离线部署包
 │   ├── compose-files/               # docker-compose.offline/dev/split-verify.yml
 │   ├── images/                      # 镜像 tar（backend/doc-parser/frontend/maxkb）
