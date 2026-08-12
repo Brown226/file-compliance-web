@@ -11,8 +11,12 @@ fastapi==0.115.12
 uvicorn[standard]==0.34.2
 python-multipart==0.0.20
 
-# --- anydoc: 统一文档转 Markdown 引擎（主力，Rust 实现） ---
+# --- anydoc: 统一文档转 Markdown 引擎（非 PDF 格式主力，Rust 实现） ---
 firecrawl-anydoc>=0.1.8,<0.2
+
+# --- pdf-inspector: PDF 分类 + 提取（Rust，毫秒级，内置页码过滤/表格检测） ---
+#     扫描件自动分类并给出 pages_needing_ocr 逐页路由
+pdf-inspector>=1.14.0
 
 # --- PDF: PyMuPDF 仅用于 OCR 链路页面渲染（rapid_ocr.py） ---
 PyMuPDF>=1.26.0

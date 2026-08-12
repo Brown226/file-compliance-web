@@ -53,10 +53,12 @@ def _get_engine():
     return _ocr_engine
 
 
-def _pdf_to_images(file_bytes: bytes, dpi: int = OCR_DPI, max_pages: int = MAX_PAGES) -> list:
+def _pdf_to_images(file_bytes: bytes, dpi: int = OCR_DPI, max_pages: int = MAX_PAGES, pages: Optional[list] = None) -> list:
     """
     用 PyMuPDF 将 PDF 渲染为 PIL Image 列表。
     替代 pdf2image（无需 poppler-utils 系统依赖）。
+    pages: 仅渲染指定页（1-indexed 页码列表，来自 pdf-inspector 的 pages_needing_ocr）；
+           为 None 时渲染全部页。
     """
     import fitz  # PyMuPDF
 
@@ -65,9 +67,18 @@ def _pdf_to_images(file_bytes: bytes, dpi: int = OCR_DPI, max_pages: int = MAX_P
     zoom = dpi / 72.0
     matrix = fitz.Matrix(zoom, zoom)
 
+    page_indices = None
+    if pages:
+        page_indices = [p - 1 for p in pages if 1 <= p <= doc.page_count]
+        if not page_indices:
+            doc.close()
+            return []
+
     for i, page in enumerate(doc):
         if i >= max_pages:
             break
+        if page_indices is not None and i not in page_indices:
+            continue
         pix = page.get_pixmap(matrix=matrix)
         img = Image.frombytes("RGB", [pix.width, pix.height], pix.samples)
         images.append(img)
@@ -114,6 +125,7 @@ def recognize_with_rapidocr(
     file_bytes: bytes,
     file_type: str,
     file_name: str,
+    pages: Optional[list] = None,
 ) -> Optional[dict]:
     """
     使用 RapidOCR 本地引擎识别文件中的文字。
@@ -122,6 +134,8 @@ def recognize_with_rapidocr(
         file_bytes: 文件原始字节
         file_type: 文件类型 (pdf/png/jpg 等)
         file_name: 文件名（用于日志）
+        pages: 仅识别指定页（1-indexed，来自 pdf-inspector 的 pages_needing_ocr）；
+               为 None 时识别全部页。
 
     Returns:
         成功: {'text': str, 'confidence': float, 'engine': 'rapidocr'}
@@ -138,7 +152,7 @@ def recognize_with_rapidocr(
     is_pdf = file_type.lower() in ('pdf',) or file_name.lower().endswith('.pdf')
     if is_pdf:
         try:
-            images = _pdf_to_images(file_bytes)
+            images = _pdf_to_images(file_bytes, pages=pages)
         except Exception as e:
             logger.error(f"RapidOCR: PDF 渲染失败: {file_name} - {e}")
             return None
@@ -155,7 +169,10 @@ def recognize_with_rapidocr(
         return None
 
     total_pages = len(images)
-    logger.info(f"RapidOCR: 开始识别 {file_name}, {total_pages} 页, DPI={OCR_DPI}")
+    if pages:
+        logger.info(f"RapidOCR: 开始识别 {file_name}, 仅 {len(pages)} 页需 OCR: {pages}, DPI={OCR_DPI}")
+    else:
+        logger.info(f"RapidOCR: 开始识别 {file_name}, {total_pages} 页, DPI={OCR_DPI}")
 
     # 逐页识别
     page_texts = []

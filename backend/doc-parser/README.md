@@ -1,7 +1,8 @@
 # 文档解析服务
 
-基于 anydoc（Firecrawl，Rust 实现）的文档解析微服务，14 种格式统一转 Markdown + 结构化数据，
-扫描件 PDF 走 RapidOCR 本地识别兜底。
+基于 anydoc + pdf-inspector（均为 Firecrawl Rust 库）的文档解析微服务：
+14 种格式统一转 Markdown + 结构化数据；PDF 由 pdf-inspector 主动分类
+（文本型毫秒级提取 / 扫描件按页路由 RapidOCR）。
 
 ## 支持格式
 
@@ -12,8 +13,8 @@
 | Excel | `.xls` `.xlsx` `.xlsm` `.xlsb` | anydoc | 多 Sheet/合并单元格 → Markdown 表格 |
 | OpenDocument | `.odt` `.ods` `.odp` | anydoc | 文档/表格/演示 |
 | 其他 | `.rtf` `.epub` `.csv` | anydoc | RTF/电子书/表格 |
-| PDF（文本型） | `.pdf` | anydoc（内置 pdf-inspector） | 本地转换，无需 OCR |
-| PDF（扫描件） | `.pdf` | RapidOCR → Vision LLM | 无文本层时触发 OCR 兜底 |
+| PDF（文本型） | `.pdf` | pdf-inspector（Rust，内置 pdf 分类/页码过滤/表格检测） | 毫秒级本地转换，主动分类 |
+| PDF（扫描件） | `.pdf` | RapidOCR（仅 pages_needing_ocr 逐页）→ Vision LLM | 按页路由，省 80%+ OCR 时间 |
 
 > 引擎选择：默认 anydoc。环境变量 `PARSER_ENGINE=markitdown` 可回退旧引擎（灰度/回滚用，需另行安装 markitdown）。
 

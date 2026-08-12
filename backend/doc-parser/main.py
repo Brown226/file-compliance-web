@@ -4,8 +4,9 @@
 → Markdown + 结构化数据
 DWG 文件已改为前端 WASM 解析（@mlightcad/libredwg-web），后端不再处理
 
-解析策略：anydoc（Firecrawl，Rust）为主力引擎，pdf_enhanced 为 PDF 文本兜底，
-扫描件 PDF 走 RapidOCR → Vision LLM 兜底。
+解析策略：anydoc（Firecrawl，Rust）为非 PDF 格式主力引擎；
+PDF 走 pdf-inspector 专用链路（主动分类 → 文本提取 → 扫描件逐页 OCR 路由），
+pdf_enhanced 为 PDF 文本兜底，扫描件 RapidOCR → Vision LLM 兜底。
 （历史引擎 MarkItDown / antiword / LibreOffice 已移除，见 git 历史 b7c4f3c 之前）
 """
 
@@ -294,21 +295,124 @@ def _parse_with_anydoc(content: bytes, ext: str, filename: str) -> Optional[dict
         return None
 
 
-def _parse_with_enhanced(content: bytes, ext: str, filename: str, vision_config: Optional[dict] = None) -> Optional[dict]:
-    """
-    统一解析调度：anydoc 为主力引擎（Rust，14 格式覆盖）。
-    PDF fallback：pdf_enhanced（文本兜底 + 页眉页脚过滤）；
-    扫描件 PDF（anydoc 拒绝）走 RapidOCR → Vision LLM 兜底。
-    """
-    # === 主力引擎：anydoc ===
-    result = _parse_with_anydoc(content, ext, filename)
-    if result:
-        logger.info(f"anydoc 解析成功: {filename} ({len(result['text'])} chars)")
-        return result
+# PDF 页码行正则（文本级后处理；pdf-inspector 已内置页码过滤，此为双保险）
+_PAGE_NUMBER_PATTERNS = [
+    re.compile(r'^\s*\d{1,4}\s*$'),                    # "1", "23"
+    re.compile(r'^\s*-\s*\d{1,4}\s*-\s*$'),            # "- 3 -"
+    re.compile(r'^\s*\u2014\s*\d{1,4}\s*\u2014\s*$'),  # "— 3 —"
+    re.compile(r'^\s*第\s*\d{1,4}\s*页\s*$'),          # "第3页"
+    re.compile(r'^\s*[Pp]age\s+\d{1,4}\s*$'),          # "Page 3"
+    re.compile(r'^\s*\d{1,4}\s*/\s*\d{1,4}\s*$'),      # "3/50"
+    re.compile(r'^\s*\d{1,4}\s*of\s*\d{1,4}\s*$', re.I),  # "3 of 50"
+]
 
-    # === PDF fallback：增强解析器（文本兜底 + 页眉页脚过滤） ===
-    if ext == ".pdf":
-        logger.info(f"anydoc 未产出结果，降级到 PDF 增强解析器: {filename}")
+
+def _filter_page_number_lines(markdown_text: str) -> str:
+    """过滤独立成行的页码。"""
+    lines = markdown_text.split('\n')
+    kept = []
+    for line in lines:
+        stripped = line.strip()
+        if any(p.match(stripped) for p in _PAGE_NUMBER_PATTERNS):
+            continue
+        kept.append(line)
+    return '\n'.join(kept)
+
+
+def _parse_with_pdf_inspector(content: bytes, filename: str):
+    """
+    pdf-inspector（Firecrawl，Rust）PDF 分类 + 文本提取，毫秒级。
+    返回 (result_or_None, ocr_pages_or_None)：
+    - 文本型 PDF: (完整结果 dict, None)
+    - 扫描件/图片型: (None, pages_needing_ocr 列表)，调用方据此逐页 OCR 路由
+    - 异常/未安装: (None, None)，调用方走 pdf_enhanced 文本兜底
+    """
+    try:
+        import pdf_inspector
+    except ImportError:
+        logger.warning("pdf-inspector 未安装，跳过")
+        return None, None
+
+    with tempfile.NamedTemporaryFile(suffix='.pdf', delete=False) as tmp:
+        tmp.write(content)
+        tmp_path = tmp.name
+
+    try:
+        r = pdf_inspector.process_pdf(tmp_path)
+        pdf_type = getattr(r, 'pdf_type', None) or ''
+        ocr_pages = list(getattr(r, 'pages_needing_ocr', None) or [])
+
+        # 扫描件/图片型 → 逐页 OCR 路由（不尝试文本提取）
+        if pdf_type in ('scanned', 'image_based'):
+            logger.info(f"pdf-inspector: {filename} 分类为 {pdf_type}，需 OCR 页: {ocr_pages}")
+            return None, ocr_pages
+
+        markdown_text = getattr(r, 'markdown', None) or ''
+        if not markdown_text.strip():
+            logger.warning(f"pdf-inspector: {filename} 无文本产出 (type={pdf_type})")
+            return None, (ocr_pages or None)
+
+        markdown_text = _filter_page_number_lines(markdown_text)
+
+        # 构建与现有格式兼容的结构
+        lines = markdown_text.split('\n')
+        paragraphs = []
+        headers = []
+        for i, line in enumerate(lines):
+            stripped = line.strip()
+            if not stripped:
+                continue
+            if stripped.startswith('#'):
+                level = len(stripped) - len(stripped.lstrip('#'))
+                headers.append({'text': stripped.lstrip('#').strip(), 'level': level, 'line': i})
+            paragraphs.append({'text': stripped, 'style': 'Heading' if stripped.startswith('#') else 'Normal', 'page': 0})
+
+        table_kv_pairs = _parse_markdown_table_kv_pairs(markdown_text)
+        if table_kv_pairs:
+            logger.info(f"pdf-inspector 表格 KV 抽取: {filename}, {len(table_kv_pairs)} 对")
+
+        result = {
+            'text': markdown_text,
+            'pages': [markdown_text],
+            'metadata': {
+                'page_count': getattr(r, 'page_count', 1),
+                'has_tables': bool(getattr(r, 'pages_with_tables', None)),
+                'has_images': False,
+                'parse_error': None,
+                'engine': 'pdf-inspector',
+            },
+            'structure': {
+                'paragraphs': paragraphs,
+                'tables': [],
+                'headers': headers,
+                'dimensions': [],
+            },
+            'markdown': markdown_text,
+            'table_kv_pairs': table_kv_pairs,
+        }
+        logger.info(f"pdf-inspector 解析成功: {filename} ({pdf_type}, {len(markdown_text)} chars, "
+                    f"{getattr(r, 'processing_time_ms', '?')}ms)")
+        return result, None
+    except Exception as e:
+        logger.warning(f"pdf-inspector 解析失败: {filename} - {e}")
+        return None, None
+    finally:
+        os.unlink(tmp_path)
+
+
+def _parse_pdf_pipeline(content: bytes, filename: str, vision_config: Optional[dict] = None) -> Optional[dict]:
+    """
+    PDF 专用链路：pdf-inspector 分类+提取（毫秒级）→ pdf_enhanced 文本兜底
+    → RapidOCR 逐页识别（仅 pages_needing_ocr）→ Vision LLM 兜底。
+    """
+    # 第一优先：pdf-inspector（Rust）分类 + 文本提取，返回 (result, ocr_pages)
+    pi_result, pi_ocr_pages = _parse_with_pdf_inspector(content, filename)
+    if pi_result:
+        return _enrich_result_table_kv(pi_result)
+
+    # 第二优先：pdf_enhanced 文本兜底（PyMuPDF，OPT-010/011 页眉页脚/封面）
+    # 注意：扫描件（pi_ocr_pages 非空）无文本层，跳过文本兜底直接 OCR
+    if pi_ocr_pages is None:
         try:
             from pdf_enhanced import enhanced_pdf_parse
             result = enhanced_pdf_parse(content, filename)
@@ -317,64 +421,85 @@ def _parse_with_enhanced(content: bytes, ext: str, filename: str, vision_config:
         except Exception as e:
             logger.warning(f"PDF 增强解析失败: {e}")
 
-        # 扫描件 PDF 降级：文本提取为空时尝试 OCR
-        # 策略：RapidOCR（本地、快速）优先 → Vision LLM（内网 API）兜底
-        ocr_text = None
-        ocr_engine = None
+    # 扫描件 PDF / 文本提取失败：OCR
+    # 路由优化：pdf-inspector 提供 pages_needing_ocr，仅 OCR 需要的页
+    ocr_text = None
+    ocr_engine = None
 
-        # 第一优先：RapidOCR 本地识别
+    # 第一优先：RapidOCR 本地识别（pages 参数：仅扫描页）
+    try:
+        from rapid_ocr import recognize_with_rapidocr, CONFIDENCE_THRESHOLD
+        ocr_result = recognize_with_rapidocr(content, 'pdf', filename, pages=pi_ocr_pages)
+        if ocr_result and ocr_result['text']:
+            if ocr_result['confidence'] >= CONFIDENCE_THRESHOLD:
+                ocr_text = ocr_result['text']
+                ocr_engine = 'rapidocr'
+                logger.info(f"RapidOCR 识别成功: {filename}, "
+                           f"{len(ocr_text)} 字符, 置信度 {ocr_result['confidence']:.3f}")
+            else:
+                logger.info(f"RapidOCR 置信度不足 ({ocr_result['confidence']:.3f} < {CONFIDENCE_THRESHOLD}), "
+                           f"尝试 Vision LLM 兜底")
+    except Exception as e:
+        logger.warning(f"RapidOCR 识别失败: {filename} - {e}")
+
+    # 第二优先：Vision LLM 兜底（需配置有效）
+    if not ocr_text and vision_config and vision_config.get('apiKey') and vision_config.get('modelName'):
         try:
-            from rapid_ocr import recognize_with_rapidocr, CONFIDENCE_THRESHOLD
-            ocr_result = recognize_with_rapidocr(content, 'pdf', filename)
-            if ocr_result and ocr_result['text']:
-                if ocr_result['confidence'] >= CONFIDENCE_THRESHOLD:
-                    ocr_text = ocr_result['text']
-                    ocr_engine = 'rapidocr'
-                    logger.info(f"RapidOCR 识别成功: {filename}, "
-                               f"{len(ocr_text)} 字符, 置信度 {ocr_result['confidence']:.3f}")
-                else:
-                    logger.info(f"RapidOCR 置信度不足 ({ocr_result['confidence']:.3f} < {CONFIDENCE_THRESHOLD}), "
-                               f"尝试 Vision LLM 兜底")
+            from vision_ocr import recognize_with_vision
+            vision_text = recognize_with_vision(content, 'pdf', filename, vision_config)
+            if vision_text:
+                ocr_text = vision_text
+                ocr_engine = 'vision-llm'
+                logger.info(f"视觉模型 OCR 识别成功: {filename}, {len(ocr_text)} 字符")
         except Exception as e:
-            logger.warning(f"RapidOCR 识别失败: {filename} - {e}")
+            logger.error(f"视觉模型 OCR 失败: {filename} - {e}")
 
-        # 第二优先：Vision LLM 兜底（需配置有效）
-        if not ocr_text and vision_config and vision_config.get('apiKey') and vision_config.get('modelName'):
-            try:
-                from vision_ocr import recognize_with_vision
-                vision_text = recognize_with_vision(content, 'pdf', filename, vision_config)
-                if vision_text:
-                    ocr_text = vision_text
-                    ocr_engine = 'vision-llm'
-                    logger.info(f"视觉模型 OCR 识别成功: {filename}, {len(ocr_text)} 字符")
-            except Exception as e:
-                logger.error(f"视觉模型 OCR 失败: {filename} - {e}")
-
-        # 返回 OCR 结果
-        if ocr_text:
-            return {
-                'text': ocr_text,
-                'pages': [ocr_text],
-                'metadata': {
-                    'page_count': 1,
-                    'has_tables': False,
-                    'has_images': True,
-                    'parse_error': None,
-                    'ocr_engine': ocr_engine,
-                },
-                'structure': {
-                    'paragraphs': [{'text': line, 'style': 'Normal', 'page': 0}
-                                   for line in ocr_text.split('\n') if line.strip()],
-                    'tables': [],
-                    'headers': [],
-                    'dimensions': [],
-                },
-                'markdown': ocr_text,
-                'table_kv_pairs': [],
-            }
+    # 返回 OCR 结果
+    if ocr_text:
+        return {
+            'text': ocr_text,
+            'pages': [ocr_text],
+            'metadata': {
+                'page_count': 1,
+                'has_tables': False,
+                'has_images': True,
+                'parse_error': None,
+                'ocr_engine': ocr_engine,
+            },
+            'structure': {
+                'paragraphs': [{'text': line, 'style': 'Normal', 'page': 0}
+                               for line in ocr_text.split('\n') if line.strip()],
+                'tables': [],
+                'headers': [],
+                'dimensions': [],
+            },
+            'markdown': ocr_text,
+            'table_kv_pairs': [],
+        }
 
     return None
 
+
+def _parse_with_enhanced(content: bytes, ext: str, filename: str, vision_config: Optional[dict] = None) -> Optional[dict]:
+    """
+    统一解析调度：
+    - PDF: 走 pdf-inspector 专用链路（分类 → 提取 → 逐页 OCR 路由）
+    - 其他 13 格式: anydoc（Rust，统一引擎）
+    输出契约与旧引擎完全兼容（text/pages/metadata/structure/markdown/table_kv_pairs）。
+    """
+    # === PDF 专用链路（pdf-inspector 主动分类，跳过 anydoc 黑盒） ===
+    if ext == ".pdf":
+        logger.info(f"PDF 专用链路启动: {filename}")
+        return _parse_pdf_pipeline(content, filename, vision_config)
+
+    # === 主力引擎：anydoc（非 PDF 格式） ===
+    result = _parse_with_anydoc(content, ext, filename)
+    if result:
+        logger.info(f"anydoc 解析成功: {filename} ({len(result['text'])} chars)")
+        return result
+
+    logger.warning(f"anydoc 未产出结果: {filename} ({ext})")
+    return None
 
 
 # ==================== API 路由 ====================
