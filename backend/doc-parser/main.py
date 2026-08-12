@@ -1,9 +1,12 @@
 """
 文档解析服务 - FastAPI 应用
-支持格式：DOCX / XLSX / PDF / PPTX → Markdown + 结构化数据
+支持格式：DOCX / XLSX / PDF / PPTX / DOC / PPT / XLS / ODT / ODS / ODP / RTF / EPUB / CSV
+→ Markdown + 结构化数据
 DWG 文件已改为前端 WASM 解析（@mlightcad/libredwg-web），后端不再处理
 
-解析策略：MarkItDown 为主力引擎，现有增强解析器为 fallback。
+解析策略：anydoc（Firecrawl，Rust）为主力引擎，增强解析器为 fallback，
+扫描件 PDF 走 RapidOCR → Vision LLM 兜底。
+旧引擎 MarkItDown 可通过环境变量 PARSER_ENGINE=markitdown 回退（灰度/回滚用）。
 """
 
 import os
@@ -29,8 +32,8 @@ logger = logging.getLogger("doc-parser-service")
 
 app = FastAPI(
     title="文档解析服务",
-    description="将 DOCX/XLSX/PDF/PPTX 文档转换为 Markdown 格式 + 结构化解析数据。DWG 文件已改为前端 WASM 解析。",
-    version="4.0.0",
+    description="将 DOCX/XLSX/PDF/PPTX 等 14 种格式文档转换为 Markdown 格式 + 结构化解析数据（anydoc 引擎）。DWG 文件已改为前端 WASM 解析。",
+    version="5.0.0",
 )
 
 # CORS
@@ -45,19 +48,41 @@ app.add_middleware(
 
 # ==================== 常量 ====================
 
-SUPPORTED_EXTENSIONS = {".doc", ".docx", ".xlsx", ".pdf", ".pptx"}
+# anydoc 支持的 14 种格式全部开放（含老格式 .doc/.ppt/.xls 及 ODF/RTF/EPUB/CSV）
+SUPPORTED_EXTENSIONS = {
+    ".doc", ".docm", ".docx",
+    ".ppt", ".pps", ".pot", ".pptx", ".pptm", ".ppsx", ".ppsm",
+    ".xls", ".xlsx", ".xlsm", ".xlsb",
+    ".odt", ".ods", ".odp",
+    ".rtf", ".epub", ".csv",
+    ".pdf",
+}
 
 # 文件类型 → 扩展名映射
-# 注意：.doc 是 Word 97-2003 老格式（与 .docx 不同），必须映射为 .doc
-# 才能走 antiword/LibreOffice 老格式解析链路，而不是被当成 .docx 处理
+# 注意：.doc 是 Word 97-2003 老格式（与 .docx 不同），映射为 .doc。
+# anydoc 原生支持老格式，无需 antiword/LibreOffice（仅 PARSER_ENGINE=markitdown 回退时需要）。
 FILE_TYPE_MAP = {
     "docx": ".docx",
     "doc": ".doc",
+    "docm": ".docm",
     "xlsx": ".xlsx",
-    "xls": ".xlsx",
+    "xls": ".xls",
+    "xlsm": ".xlsm",
+    "xlsb": ".xlsb",
     "pdf": ".pdf",
     "pptx": ".pptx",
-    "ppt": ".pptx",
+    "ppt": ".ppt",
+    "pptm": ".pptm",
+    "pps": ".pps",
+    "pot": ".pot",
+    "ppsx": ".ppsx",
+    "ppsm": ".ppsm",
+    "odt": ".odt",
+    "ods": ".ods",
+    "odp": ".odp",
+    "rtf": ".rtf",
+    "epub": ".epub",
+    "csv": ".csv",
 }
 
 
@@ -82,7 +107,7 @@ class VisionOCRConfig(BaseModel):
 
 class HealthResult(BaseModel):
     status: str = "ok"
-    version: str = "4.0.0"
+    version: str = "5.0.0"
     supported_formats: list[str] = list(SUPPORTED_EXTENSIONS)
 
 
@@ -375,12 +400,92 @@ def _parse_with_markitdown(content: bytes, ext: str, filename: str) -> Optional[
         return None
 
 
+def _parse_with_anydoc(content: bytes, ext: str, filename: str) -> Optional[dict]:
+    """
+    anydoc 统一解析引擎（Firecrawl，Rust 实现，14 格式覆盖，中位 <5ms）。
+    格式按文件内容识别（非扩展名）；CSV 等无内容签名的格式需显式指定。
+    返回与现有格式兼容的结构（text/pages/metadata/structure/markdown/table_kv_pairs）。
+    扫描件 PDF 会抛 UnsupportedError（无文本层），返回 None 交由 OCR 链路处理。
+    """
+    # 变体扩展名归一化为 anydoc 基础格式（.docm→docx、.pptm→pptx、.xlsm→xlsx 等）
+    _ANYDOC_FMT_MAP = {
+        '.doc': 'doc', '.docx': 'docx', '.docm': 'docx',
+        '.ppt': 'ppt', '.pps': 'ppt', '.pot': 'ppt',
+        '.pptx': 'pptx', '.pptm': 'pptx', '.ppsx': 'pptx', '.ppsm': 'pptx',
+        '.xls': 'xls', '.xlsx': 'xlsx', '.xlsm': 'xlsx', '.xlsb': 'xlsb',
+        '.odt': 'odt', '.ods': 'ods', '.odp': 'odp',
+        '.rtf': 'rtf', '.epub': 'epub', '.csv': 'csv', '.pdf': 'pdf',
+    }
+    try:
+        import anydoc
+
+        fmt = _ANYDOC_FMT_MAP.get(ext.lower(), ext.lstrip('.').lower())
+        try:
+            markdown_text = anydoc.to_markdown_bytes(content, fmt)
+        except TypeError:
+            # 旧版 API 不支持格式参数
+            markdown_text = anydoc.to_markdown_bytes(content)
+
+        if not markdown_text or not markdown_text.strip():
+            return None
+
+        # 构建与现有格式兼容的响应结构
+        lines = markdown_text.split('\n')
+        paragraphs = []
+        headers = []
+        for i, line in enumerate(lines):
+            stripped = line.strip()
+            if not stripped:
+                continue
+            if stripped.startswith('#'):
+                level = len(stripped) - len(stripped.lstrip('#'))
+                headers.append({'text': stripped.lstrip('#').strip(), 'level': level, 'line': i})
+            paragraphs.append({'text': stripped, 'style': 'Heading' if stripped.startswith('#') else 'Normal', 'page': 0})
+
+        # 表格 KV 抽取（供一致性检查服务消费）
+        table_kv_pairs = _parse_markdown_table_kv_pairs(markdown_text)
+        if table_kv_pairs:
+            logger.info(f"anydoc 表格 KV 抽取: {filename}, {len(table_kv_pairs)} 对")
+
+        return {
+            'text': markdown_text,
+            'pages': [markdown_text],
+            'metadata': {
+                'page_count': 1,
+                'has_tables': '|' in markdown_text,
+                'has_images': False,
+                'parse_error': None,
+                'engine': 'anydoc',
+            },
+            'structure': {
+                'paragraphs': paragraphs,
+                'tables': [],
+                'headers': headers,
+                'dimensions': [],
+            },
+            'markdown': markdown_text,
+            'table_kv_pairs': table_kv_pairs,
+        }
+    except ImportError:
+        logger.warning("anydoc 未安装，跳过")
+        return None
+    except Exception as e:
+        # 扫描件 PDF（UnsupportedError）等一切失败 → None，交由 fallback/OCR 链路
+        logger.warning(f"anydoc 解析失败: {filename} - {e}")
+        return None
+
+
 def _parse_with_enhanced(content: bytes, ext: str, filename: str, vision_config: Optional[dict] = None) -> Optional[dict]:
     """
-    统一解析调度：MarkItDown 为主力引擎，现有增强解析器为 fallback。
+    统一解析调度：anydoc 为主力引擎（Rust），增强解析器为 fallback，
+    扫描件 PDF 走 RapidOCR → Vision LLM 兜底。
+    环境变量 PARSER_ENGINE=markitdown 可回退旧引擎（灰度/回滚用）。
     """
-    # .doc 文件处理：优先 antiword 直接提取文本（轻量），失败再回退 LibreOffice 转 docx
-    if ext == ".doc":
+    engine = os.environ.get('PARSER_ENGINE', 'anydoc').strip().lower()
+
+    # .doc 老格式：anydoc 原生支持，无需 antiword/LibreOffice；
+    # 仅回退到 markitdown 引擎时才走旧转换链路
+    if ext == ".doc" and engine == 'markitdown':
         # 第一优先：antiword 纯文本提取（无需 LibreOffice，节省镜像体积）
         doc_result = _parse_doc_with_antiword(content, filename)
         if doc_result:
@@ -396,14 +501,19 @@ def _parse_with_enhanced(content: bytes, ext: str, filename: str, vision_config:
             logger.error(f".doc 文件转换失败（antiword 和 LibreOffice 均失败）: {filename}")
             return None
 
-    # === 主力引擎：MarkItDown ===
-    result = _parse_with_markitdown(content, ext, filename)
+    # === 主力引擎：anydoc（或 PARSER_ENGINE 指定的引擎） ===
+    if engine == 'markitdown':
+        result = _parse_with_markitdown(content, ext, filename)
+        engine_name = 'markitdown'
+    else:
+        result = _parse_with_anydoc(content, ext, filename)
+        engine_name = 'anydoc'
     if result:
-        logger.info(f"MarkItDown 解析成功: {filename} ({len(result['text'])} chars)")
+        logger.info(f"{engine_name} 解析成功: {filename} ({len(result['text'])} chars)")
         return result
 
     # === Fallback：现有增强解析器 ===
-    logger.info(f"MarkItDown 未产出结果，降级到增强解析器: {filename}")
+    logger.info(f"{engine_name} 未产出结果，降级到增强解析器: {filename}")
 
     if ext == ".pdf":
         try:
@@ -518,7 +628,7 @@ async def parse_file(
 ):
     """
     解析文档文件，返回结构化解析结果 + Markdown。
-    各格式使用独立的增强解析器（原生 Python 库）。
+    主力引擎 anydoc（Rust），增强解析器/OCR 为 fallback。
     """
     filename = file.filename or "unknown"
     ext = FILE_TYPE_MAP.get(file_type.lower())

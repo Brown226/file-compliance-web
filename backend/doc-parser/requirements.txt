@@ -1,8 +1,10 @@
 # ============================================
 # 文档解析服务
-# MarkItDown 为主力解析引擎，增强解析器为 fallback
-# 支持 DOCX / XLSX / PDF / PPTX
+# anydoc（Firecrawl，Rust）为主力解析引擎，增强解析器为 fallback
+# 支持 DOC / DOCX / PPT / PPTX / XLS / XLSX / ODT / ODS / ODP / RTF / EPUB / CSV / PDF
+# 扫描件 PDF 走 RapidOCR（本地）→ Vision LLM 兜底
 # DWG 已改为前端 WASM 解析（@mlightcad/libredwg-web），后端不再处理
+# 回退旧引擎：PARSER_ENGINE=markitdown（灰度/回滚用，需另行安装 markitdown）
 # ============================================
 
 # --- Web 框架 ---
@@ -10,18 +12,10 @@ fastapi==0.115.12
 uvicorn[standard]==0.34.2
 python-multipart==0.0.20
 
-# --- MarkItDown: 统一文档转 Markdown 引擎（主力） ---
-markitdown[all]>=0.1.0
+# --- anydoc: 统一文档转 Markdown 引擎（主力，Rust 实现） ---
+firecrawl-anydoc>=0.1.8,<0.2
 
-# --- DOCX: python-docx 原生解析 ---
-python-docx==1.1.2
-lxml~=5.4.0
-mammoth~=1.11.0
-
-# --- XLSX: openpyxl 原生解析 ---
-openpyxl~=3.1.5
-
-# --- PDF: PyMuPDF 原生解析 + 内置表格提取 ---
+# --- PDF: PyMuPDF 仅用于 OCR 链路页面渲染（rapid_ocr.py） ---
 PyMuPDF>=1.26.0
 Pillow>=10.0.0
 
@@ -32,8 +26,8 @@ opencv-python-headless>=4.9.0
 rapidocr>=3.9.0
 onnxruntime>=1.20.0
 
-# --- PPTX: python-pptx 原生解析 ---
-python-pptx~=1.0.2
-
 # --- 生产部署 ---
 gunicorn~=23.0.0
+
+# --- 已移除（anydoc 取代）：markitdown / python-docx / mammoth / lxml /
+#     openpyxl / python-pptx / pdfplumber / antiword / LibreOffice ---
