@@ -46,6 +46,7 @@ const { prismaMock } = vi.hoisted(() => ({
     savedItem: { create: vi.fn(), findMany: vi.fn(), deleteMany: vi.fn() },
     qAMessage: { findMany: vi.fn() },
     systemConfig: { findUnique: vi.fn() },
+    qASession: { findUnique: vi.fn(), create: vi.fn(), update: vi.fn() },
   },
 }));
 vi.mock('../../config/db', () => ({ __esModule: true, default: prismaMock }));
@@ -92,6 +93,9 @@ beforeEach(() => {
   llmMock.chat.mockReset();
   prismaMock.systemConfig.findUnique.mockReset();
   prismaMock.systemConfig.findUnique.mockResolvedValue(null);
+  prismaMock.qASession.findUnique.mockReset();
+  // 默认：会话不存在（触发前端新会话自动创建分支），各用例可覆盖
+  prismaMock.qASession.findUnique.mockResolvedValue(null);
 
   qaSessionMock.completeActiveSessions.mockResolvedValue(0);
   qaSessionMock.ensureSession.mockResolvedValue({ id: 'new-session' });
@@ -166,18 +170,32 @@ describe('会话归属与并发竞态', () => {
     expect(qaSessionMock.ensureSession).toHaveBeenCalledWith(ensureArg, 'u1', undefined, expect.any(Object));
   });
 
-  it('携带 sessionId 且归属校验失败 → 403', async () => {
-    qaSessionMock.getSession.mockResolvedValue(null);
+  it('携带 sessionId 且会话不存在（前端新会话场景）→ 自动创建并放行', async () => {
+    // 前端 startNewSession() 生成 UUID 传入，后端应 ensureSession 自动创建而非 403
+    prismaMock.qASession.findUnique.mockResolvedValue(null);
+    const res = await request(app)
+      .post('/api/agent/chat/stream')
+      .send({ messages: validMessages, sessionId: 'new-uuid-0001' });
+    expect(res.status).toBe(200);
+    expect(qaSessionMock.ensureSession).toHaveBeenCalledWith(
+      'new-uuid-0001', 'u1', undefined, expect.any(Object),
+    );
+    expect(agentServiceMock.chatStream).toHaveBeenCalled();
+  });
+
+  it('携带 sessionId 且会话属于其他用户 → 403（防越权写入）', async () => {
+    prismaMock.qASession.findUnique.mockResolvedValue({ id: 's-other', userId: 'u2' });
     const res = await request(app)
       .post('/api/agent/chat/stream')
       .send({ messages: validMessages, sessionId: 's-other' });
     expect(res.status).toBe(403);
     expect(res.body.message).toContain('无权访问');
     expect(agentServiceMock.chatStream).not.toHaveBeenCalled();
+    expect(qaSessionMock.ensureSession).not.toHaveBeenCalled();
   });
 
-  it('携带 sessionId 且归属通过 → 放行（不关闭其他会话）', async () => {
-    qaSessionMock.getSession.mockResolvedValue({ id: 's1', userId: 'u1' });
+  it('携带 sessionId 且存在且属于当前用户 → 放行（不创建不关闭）', async () => {
+    prismaMock.qASession.findUnique.mockResolvedValue({ id: 's1', userId: 'u1' });
     const res = await request(app)
       .post('/api/agent/chat/stream')
       .send({ messages: validMessages, sessionId: 's1' });
@@ -212,6 +230,11 @@ describe('SSE 正常流', () => {
 });
 
 describe('降级链（流式失败两级兜底）', () => {
+  // 降级用例聚焦 LLM 故障路径：会话视为已存在且属于当前用户
+  beforeEach(() => {
+    prismaMock.qASession.findUnique.mockResolvedValue({ id: 's1', userId: 'u1' });
+  });
+
   it('chatStream 抛错 → 降级 chatWithGenerateText 并回显其文本', async () => {
     agentServiceMock.chatStream.mockRejectedValue(new Error('LLM 网关 500'));
     const res = await request(app).post('/api/agent/chat/stream').send({ messages: validMessages, sessionId: 's1' });

@@ -134,8 +134,23 @@ router.post('/chat/stream', async (req: AuthRequest, res: Response) => {
     } else {
       // 安全修复：携带 sessionId 时必须校验该会话属于当前用户，
       // 防止跨用户向他人会话写入消息 / 消费 steering / 回答他人挂起的提问
-      const owned = await QASessionService.getSession(sessionId, userId);
-      if (!owned) {
+      // 2026-08-11 修复：区分「会话不存在」与「存在但越权」——
+      // 前端 startNewSession() 用 crypto.randomUUID() 生成新会话 id 并随首条消息传入，
+      // 此时会话在后端尚不存在，应自动创建而非 403（此前新会话首条消息必失败）。
+      const rawSession = await prisma.qASession.findUnique({
+        where: { id: sessionId },
+        select: { id: true, userId: true },
+      });
+      if (!rawSession) {
+        // 会话 id 不存在 → 前端新会话场景，自动创建并绑定当前用户
+        await QASessionService.ensureSession(sessionId, userId, undefined, {
+          modelKey: req.body?.modelKey || undefined,
+          toolPreset: req.body?.toolPreset || undefined,
+          thinkingLevel: req.body?.thinkingLevel || undefined,
+        });
+        console.log(`[Agent] 自动创建前端新会话: ${sessionId.slice(0, 8)}`);
+      } else if (rawSession.userId !== userId) {
+        // 会话存在但属于其他用户 → 拒绝，防越权写入
         return res.status(403).json({ success: false, message: '无权访问该会话' });
       }
     }
