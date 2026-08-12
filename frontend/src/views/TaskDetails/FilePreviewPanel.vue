@@ -73,10 +73,10 @@ const ext = computed(() => {
   return dot >= 0 ? name.substring(dot + 1).toLowerCase() : ''
 })
 
-const isDocx = computed(() => ['docx', 'doc'].includes(ext.value))
+const isDocx = computed(() => ['docx', 'doc', 'docm'].includes(ext.value))
 const isPdf = computed(() => ext.value === 'pdf')
-const isExcel = computed(() => ['xlsx', 'xls', 'csv'].includes(ext.value))
-const isPptx = computed(() => ['pptx', 'ppt'].includes(ext.value))
+const isExcel = computed(() => ['xlsx', 'xls', 'csv', 'xlsm', 'xlsb'].includes(ext.value))
+const isPptx = computed(() => ['pptx', 'ppt', 'pptm', 'ppsx', 'ppsm'].includes(ext.value))
 </script>
 
 <style scoped>

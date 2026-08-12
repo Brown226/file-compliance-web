@@ -8,7 +8,8 @@
       <el-icon :size="24" color="#EF4444"><WarningFilled /></el-icon>
       <span>{{ error }}</span>
     </div>
-    <div v-else class="docx-content" ref="contentRef" v-html="renderedHtml"></div>
+    <!-- docx-preview 渲染容器（常驻 DOM，loading 时也可见，保证宽度测量准确） -->
+    <div class="docx-content" ref="contentRef"></div>
   </div>
 </template>
 
@@ -16,7 +17,8 @@
 import { ref, watch, nextTick, onMounted } from 'vue'
 import { Loading, WarningFilled } from '@element-plus/icons-vue'
 import request from '@/utils/request'
-import mammoth from 'mammoth'
+import { renderAsync } from 'docx-preview'
+// 注意：docx-preview 0.4.x 无独立 css 文件，样式由 renderAsync 动态注入
 import MarkdownIt from 'markdown-it'
 
 const mdRenderer = new MarkdownIt({ html: false, linkify: true, breaks: true })
@@ -39,7 +41,6 @@ const emit = defineEmits<{
 
 const loading = ref(false)
 const error = ref('')
-const renderedHtml = ref('')
 const contentRef = ref<HTMLElement | null>(null)
 const lastLocateTriggerId = ref('')
 const HIGHLIGHT_CLASS = 'docx-highlight-yellow'
@@ -48,11 +49,12 @@ const loadDocx = async () => {
   if (!props.fileId && !props.fileUrl) return
 
   // .doc 旧格式：后端 anydoc 直接转换为 Markdown 再渲染（无需 LibreOffice）
+  // .docx/.docm：docx-preview 保真渲染（页眉页脚/表格样式/批注）
   const isOldDoc = props.fileType === 'doc'
 
   loading.value = true
   error.value = ''
-  renderedHtml.value = ''
+  if (contentRef.value) contentRef.value.innerHTML = ''
 
   try {
     if (isOldDoc) {
@@ -62,7 +64,10 @@ const loadDocx = async () => {
         { responseType: 'text', timeout: 120000 }
       )
       const markdown = typeof resp === 'string' ? resp : (resp?.data ?? '')
-      renderedHtml.value = mdRenderer.render(markdown || '')
+      await nextTick()
+      if (contentRef.value) {
+        contentRef.value.innerHTML = mdRenderer.render(markdown || '')
+      }
     } else {
       let arrayBuffer: ArrayBuffer
       if (props.fileUrl) {
@@ -90,12 +95,18 @@ const loadDocx = async () => {
         }
       }
 
-      const result = await mammoth.convertToHtml({ arrayBuffer })
-      renderedHtml.value = result.value
-
-      if (result.messages.length > 0) {
-        console.warn('[DocxPreview] 转换警告:', result.messages)
-      }
+      // docx-preview 保真渲染（直接渲染 DOM，支持 .docx/.docm）
+      await nextTick()
+      if (!contentRef.value) throw new Error('预览容器未就绪')
+      await renderAsync(arrayBuffer, contentRef.value, null, {
+        className: 'docx',
+        inWrapper: true,
+        breakPages: true,
+        renderHeaders: true,
+        renderFooters: true,
+        renderFootnotes: true,
+        ignoreFonts: false,
+      })
     }
 
     // 内容加载完成后，检查是否有待定位的原文（locateTarget 可能在加载期间被设置）
@@ -237,7 +248,8 @@ const highlightAndScroll = (): boolean => {
   return found
 }
 
-watch(() => props.fileId, () => loadDocx(), { immediate: true })
+onMounted(() => loadDocx())
+watch(() => props.fileId, () => loadDocx())
 watch(() => props.locateTarget, () => {
   nextTick(() => {
     const target = props.locateTarget
