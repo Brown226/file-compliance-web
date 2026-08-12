@@ -17,6 +17,9 @@ import { ref, watch, nextTick, onMounted } from 'vue'
 import { Loading, WarningFilled } from '@element-plus/icons-vue'
 import request from '@/utils/request'
 import mammoth from 'mammoth'
+import MarkdownIt from 'markdown-it'
+
+const mdRenderer = new MarkdownIt({ html: false, linkify: true, breaks: true })
 
 const reportDebug = (_event: string, _data: Record<string, any>) => {
   // debug log disabled — backend /api/debug/log not implemented
@@ -44,7 +47,7 @@ const HIGHLIGHT_CLASS = 'docx-highlight-yellow'
 const loadDocx = async () => {
   if (!props.fileId && !props.fileUrl) return
 
-  // .doc 旧格式：通过后端 LibreOffice 转换为 .docx 再渲染
+  // .doc 旧格式：后端 anydoc 直接转换为 Markdown 再渲染（无需 LibreOffice）
   const isOldDoc = props.fileType === 'doc'
 
   loading.value = true
@@ -52,44 +55,47 @@ const loadDocx = async () => {
   renderedHtml.value = ''
 
   try {
-    let arrayBuffer: ArrayBuffer
-    if (props.fileUrl) {
-      const resp = await fetch(props.fileUrl)
-      arrayBuffer = await resp.arrayBuffer()
-    } else if (isOldDoc) {
-      // .doc → 后端转换为 .docx
+    if (isOldDoc) {
+      // .doc → 后端转换为 Markdown（tasks 服务转发 doc-parser /api/convert）
       const resp = await request.get(
         `/tasks/${props.taskId}/files/${props.fileId}/convert-doc`,
-        { responseType: 'arraybuffer', timeout: 120000 }
+        { responseType: 'text', timeout: 120000 }
       )
-      arrayBuffer = resp.data
+      const markdown = typeof resp === 'string' ? resp : (resp?.data ?? '')
+      renderedHtml.value = mdRenderer.render(markdown || '')
     } else {
-      const resp = await request.get(
-        `/tasks/${props.taskId}/files/${props.fileId}/raw`,
-        { responseType: 'arraybuffer' }
-      )
-      arrayBuffer = resp.data
-    }
+      let arrayBuffer: ArrayBuffer
+      if (props.fileUrl) {
+        const resp = await fetch(props.fileUrl)
+        arrayBuffer = await resp.arrayBuffer()
+      } else {
+        const resp = await request.get(
+          `/tasks/${props.taskId}/files/${props.fileId}/raw`,
+          { responseType: 'arraybuffer' }
+        )
+        arrayBuffer = resp.data
+      }
 
-    if (arrayBuffer.byteLength < 512) {
-      try {
-        const text = new TextDecoder().decode(arrayBuffer)
-        const json = JSON.parse(text)
-        if (json && json.code && json.code !== 200) {
-          throw new Error(json.message || '文件加载失败')
-        }
-      } catch (e: any) {
-        if (e.message !== 'Unexpected token' && !e.message.includes('Unexpected')) {
-          throw e
+      if (arrayBuffer.byteLength < 512) {
+        try {
+          const text = new TextDecoder().decode(arrayBuffer)
+          const json = JSON.parse(text)
+          if (json && json.code && json.code !== 200) {
+            throw new Error(json.message || '文件加载失败')
+          }
+        } catch (e: any) {
+          if (e.message !== 'Unexpected token' && !e.message.includes('Unexpected')) {
+            throw e
+          }
         }
       }
-    }
 
-    const result = await mammoth.convertToHtml({ arrayBuffer })
-    renderedHtml.value = result.value
+      const result = await mammoth.convertToHtml({ arrayBuffer })
+      renderedHtml.value = result.value
 
-    if (result.messages.length > 0) {
-      console.warn('[DocxPreview] 转换警告:', result.messages)
+      if (result.messages.length > 0) {
+        console.warn('[DocxPreview] 转换警告:', result.messages)
+      }
     }
 
     // 内容加载完成后，检查是否有待定位的原文（locateTarget 可能在加载期间被设置）

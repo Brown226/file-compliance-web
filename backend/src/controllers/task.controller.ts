@@ -442,15 +442,16 @@ export const convertDocToDocx = async (req: AuthRequest, res: Response): Promise
       return;
     }
 
-    // 调用 doc-parser 服务进行 .doc → .docx 转换
+    // 调用 doc-parser 服务进行 .doc → Markdown 转换（anydoc 引擎，原生支持老格式）
     const parserUrl = process.env.PARSER_SERVICE_URL || 'http://localhost:8000';
     const fileBuffer = fs.readFileSync(absPath);
 
     const formData = new FormData();
     const blob = new Blob([fileBuffer], { type: 'application/msword' });
     formData.append('file', blob, file.fileName);
+    formData.append('file_type', 'doc');
 
-    const response = await fetch(`${parserUrl}/api/convert/doc-to-docx`, {
+    const response = await fetch(`${parserUrl}/api/convert`, {
       method: 'POST',
       body: formData,
       signal: AbortSignal.timeout(120000),
@@ -458,19 +459,19 @@ export const convertDocToDocx = async (req: AuthRequest, res: Response): Promise
 
     if (!response.ok) {
       const errText = await response.text();
-      console.error('[convertDocToDocx] 转换失败:', response.status, errText);
+      console.error('[convertDocToMarkdown] 转换失败:', response.status, errText);
       error(res, '文档转换失败，请稍后重试', 500);
       return;
     }
 
-    const docxBuffer = Buffer.from(await response.arrayBuffer());
-    const docxFileName = file.fileName.replace(/\.doc$/i, '.docx');
+    const json = await response.json();
+    const markdown = json?.data?.markdown || json?.markdown || '';
 
-    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
-    res.setHeader('Content-Disposition', `inline; filename="${encodeURIComponent(docxFileName)}"`);
-    res.send(docxBuffer);
+    res.setHeader('Content-Type', 'text/markdown; charset=utf-8');
+    res.setHeader('Content-Disposition', `inline; filename="${encodeURIComponent(file.fileName)}.md"`);
+    res.send(markdown);
   } catch (err) {
-    console.error('Convert Doc to Docx Error:', err);
+    console.error('Convert Doc to Markdown Error:', err);
     error(res, '文档转换服务不可用', 500);
   }
 };

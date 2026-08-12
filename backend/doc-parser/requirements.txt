@@ -1,10 +1,9 @@
 # ============================================
 # 文档解析服务
-# anydoc（Firecrawl，Rust）为主力解析引擎，增强解析器为 fallback
+# anydoc（Firecrawl，Rust）为主力解析引擎，pdf_enhanced 为 PDF 文本兜底
 # 支持 DOC / DOCX / PPT / PPTX / XLS / XLSX / ODT / ODS / ODP / RTF / EPUB / CSV / PDF
 # 扫描件 PDF 走 RapidOCR（本地）→ Vision LLM 兜底
 # DWG 已改为前端 WASM 解析（@mlightcad/libredwg-web），后端不再处理
-# 回退旧引擎：PARSER_ENGINE=markitdown（灰度/回滚用，需另行安装 markitdown）
 # ============================================
 
 # --- Web 框架 ---
@@ -29,5 +28,7 @@ onnxruntime>=1.20.0
 # --- 生产部署 ---
 gunicorn~=23.0.0
 
-# --- 已移除（anydoc 取代）：markitdown / python-docx / mammoth / lxml /
+# --- 已移除（被 anydoc 取代）：markitdown / python-docx / mammoth / lxml /
 #     openpyxl / python-pptx / pdfplumber / antiword / LibreOffice ---
+#     对应删除的文件：docx_enhanced.py / xlsx_enhanced.py / pptx_enhanced.py
+#     （pdf_enhanced.py 保留，作 PDF 文本兜底，仅依赖 PyMuPDF）

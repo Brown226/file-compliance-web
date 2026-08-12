@@ -4,9 +4,9 @@
 → Markdown + 结构化数据
 DWG 文件已改为前端 WASM 解析（@mlightcad/libredwg-web），后端不再处理
 
-解析策略：anydoc（Firecrawl，Rust）为主力引擎，增强解析器为 fallback，
+解析策略：anydoc（Firecrawl，Rust）为主力引擎，pdf_enhanced 为 PDF 文本兜底，
 扫描件 PDF 走 RapidOCR → Vision LLM 兜底。
-旧引擎 MarkItDown 可通过环境变量 PARSER_ENGINE=markitdown 回退（灰度/回滚用）。
+（历史引擎 MarkItDown / antiword / LibreOffice 已移除，见 git 历史 b7c4f3c 之前）
 """
 
 import os
@@ -60,7 +60,7 @@ SUPPORTED_EXTENSIONS = {
 
 # 文件类型 → 扩展名映射
 # 注意：.doc 是 Word 97-2003 老格式（与 .docx 不同），映射为 .doc。
-# anydoc 原生支持老格式，无需 antiword/LibreOffice（仅 PARSER_ENGINE=markitdown 回退时需要）。
+# anydoc 原生支持全部老格式，无需 antiword/LibreOffice。
 FILE_TYPE_MAP = {
     "docx": ".docx",
     "doc": ".doc",
@@ -112,117 +112,6 @@ class HealthResult(BaseModel):
 
 
 # ==================== 增强解析器调度 ====================
-
-def _parse_doc_with_antiword(content: bytes, filename: str) -> Optional[dict]:
-    """
-    使用 antiword 提取 .doc 老格式文件的纯文本（轻量方案，替代 LibreOffice）。
-    antiword 是 Debian/Ubuntu 标准包（约 200KB），只做 .doc → 文本提取，
-    不依赖 LibreOffice（节省约 550MB 镜像体积）。
-
-    返回结构与现有增强解析器一致（text/pages/metadata/structure/markdown/table_kv_pairs）。
-    失败返回 None（调用方会回退到 LibreOffice 兜底）。
-    """
-    import shutil
-
-    # 检查 antiword 是否可用（镜像里装了就用，没装则走 LibreOffice 兜底）
-    if not shutil.which('antiword'):
-        logger.warning(f"antiword 未安装，.doc 解析走 LibreOffice 兜底: {filename}")
-        return None
-
-    with tempfile.TemporaryDirectory() as tmp_dir:
-        tmp_in_path = os.path.join(tmp_dir, 'input.doc')
-        with open(tmp_in_path, 'wb') as f:
-            f.write(content)
-
-        try:
-            result = subprocess.run(
-                ['antiword', tmp_in_path],
-                timeout=60,
-                capture_output=True,
-            )
-        except subprocess.TimeoutExpired:
-            logger.error(f"antiword 超时: {filename}")
-            return None
-        except Exception as e:
-            logger.error(f"antiword 执行异常: {filename} - {e}")
-            return None
-
-        if result.returncode != 0:
-            stderr = result.stderr.decode('utf-8', errors='ignore')
-            logger.warning(f"antiword 解析失败 ({filename}): {stderr.strip()[:200]}")
-            return None
-
-        text = result.stdout.decode('utf-8', errors='replace').strip()
-        if not text:
-            logger.warning(f"antiword 解析结果为空: {filename}")
-            return None
-
-        logger.info(f"antiword 解析成功: {filename} ({len(text)} chars)")
-
-        # 构造与现有增强解析器一致的结构
-        paragraphs = [
-            {'text': line, 'style': 'Normal', 'page': 0}
-            for line in text.split('\n')
-            if line.strip()
-        ]
-        return {
-            'text': text,
-            'pages': [text],
-            'metadata': {
-                'page_count': 1,
-                'has_tables': False,
-                'has_images': False,
-                'parse_error': None,
-                'parser': 'antiword',
-            },
-            'structure': {
-                'paragraphs': paragraphs,
-                'tables': [],
-                'headers': [],
-                'dimensions': [],
-            },
-            'markdown': text,
-            'table_kv_pairs': [],
-        }
-
-
-def convert_doc_to_docx(content: bytes, filename: str) -> Optional[bytes]:
-    """
-    使用 LibreOffice 将 .doc 文件转换为 .docx
-    返回转换后的 .docx 内容，失败时返回 None
-    """
-    with tempfile.TemporaryDirectory() as tmp_dir:
-        doc_path = os.path.join(tmp_dir, filename)
-        with open(doc_path, 'wb') as f:
-            f.write(content)
-
-        try:
-            subprocess.run(
-                ['soffice', '--headless', '--convert-to', 'docx', '--outdir', tmp_dir, doc_path],
-                timeout=60,
-                check=True,
-                capture_output=True,
-            )
-
-            base_name = os.path.splitext(filename)[0]
-            docx_path = os.path.join(tmp_dir, f'{base_name}.docx')
-
-            if not os.path.exists(docx_path):
-                logger.error(f"LibreOffice 转换失败：未生成 .docx 文件")
-                return None
-
-            with open(docx_path, 'rb') as f:
-                return f.read()
-        except subprocess.TimeoutExpired:
-            logger.error("LibreOffice 转换超时")
-            return None
-        except subprocess.CalledProcessError as e:
-            logger.error(f"LibreOffice 转换失败: {e.stderr.decode('utf-8', errors='ignore')}")
-            return None
-        except Exception as e:
-            logger.error(f"转换异常: {e}")
-            return None
-
 
 def _parse_markdown_table_kv_pairs(markdown_text: str) -> List[Dict[str, str]]:
     """
@@ -330,76 +219,6 @@ def _enrich_result_table_kv(result: Optional[dict]) -> Optional[dict]:
     return result
 
 
-def _parse_with_markitdown(content: bytes, ext: str, filename: str) -> Optional[dict]:
-    """
-    使用 MarkItDown 统一引擎解析文档，返回与现有格式兼容的结构。
-    MarkItDown 输出结构化 Markdown（标题/表格/列表），天然适合 LLM 审查。
-    """
-    try:
-        from markitdown import MarkItDown
-
-        md = MarkItDown()
-
-        # MarkItDown 需要文件路径，写入临时文件
-        suffix = ext if ext.startswith('.') else f'.{ext}'
-        with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as tmp:
-            tmp.write(content)
-            tmp_path = tmp.name
-
-        try:
-            result = md.convert(tmp_path)
-            markdown_text = result.text_content if result else ''
-        finally:
-            os.unlink(tmp_path)
-
-        if not markdown_text or not markdown_text.strip():
-            return None
-
-        # 构建与现有格式兼容的响应结构
-        lines = markdown_text.split('\n')
-        paragraphs = []
-        headers = []
-        for i, line in enumerate(lines):
-            stripped = line.strip()
-            if not stripped:
-                continue
-            if stripped.startswith('#'):
-                level = len(stripped) - len(stripped.lstrip('#'))
-                headers.append({'text': stripped.lstrip('#').strip(), 'level': level, 'line': i})
-            paragraphs.append({'text': stripped, 'style': 'Heading' if stripped.startswith('#') else 'Normal', 'page': 0})
-
-        # Task 10: 从 markdown 表格中抽取键值对，供一致性检查服务消费
-        table_kv_pairs = _parse_markdown_table_kv_pairs(markdown_text)
-        if table_kv_pairs:
-            logger.info(f"MarkItDown 表格 KV 抽取: {filename}, {len(table_kv_pairs)} 对")
-
-        return {
-            'text': markdown_text,
-            'pages': [markdown_text],
-            'metadata': {
-                'page_count': 1,
-                'has_tables': '|' in markdown_text,
-                'has_images': False,
-                'parse_error': None,
-                'engine': 'markitdown',
-            },
-            'structure': {
-                'paragraphs': paragraphs,
-                'tables': [],
-                'headers': headers,
-                'dimensions': [],
-            },
-            'markdown': markdown_text,
-            'table_kv_pairs': table_kv_pairs,
-        }
-    except ImportError:
-        logger.warning("MarkItDown 未安装，跳过")
-        return None
-    except Exception as e:
-        logger.warning(f"MarkItDown 解析失败: {filename} - {e}")
-        return None
-
-
 def _parse_with_anydoc(content: bytes, ext: str, filename: str) -> Optional[dict]:
     """
     anydoc 统一解析引擎（Firecrawl，Rust 实现，14 格式覆盖，中位 <5ms）。
@@ -477,45 +296,19 @@ def _parse_with_anydoc(content: bytes, ext: str, filename: str) -> Optional[dict
 
 def _parse_with_enhanced(content: bytes, ext: str, filename: str, vision_config: Optional[dict] = None) -> Optional[dict]:
     """
-    统一解析调度：anydoc 为主力引擎（Rust），增强解析器为 fallback，
-    扫描件 PDF 走 RapidOCR → Vision LLM 兜底。
-    环境变量 PARSER_ENGINE=markitdown 可回退旧引擎（灰度/回滚用）。
+    统一解析调度：anydoc 为主力引擎（Rust，14 格式覆盖）。
+    PDF fallback：pdf_enhanced（文本兜底 + 页眉页脚过滤）；
+    扫描件 PDF（anydoc 拒绝）走 RapidOCR → Vision LLM 兜底。
     """
-    engine = os.environ.get('PARSER_ENGINE', 'anydoc').strip().lower()
-
-    # .doc 老格式：anydoc 原生支持，无需 antiword/LibreOffice；
-    # 仅回退到 markitdown 引擎时才走旧转换链路
-    if ext == ".doc" and engine == 'markitdown':
-        # 第一优先：antiword 纯文本提取（无需 LibreOffice，节省镜像体积）
-        doc_result = _parse_doc_with_antiword(content, filename)
-        if doc_result:
-            return _enrich_result_table_kv(doc_result)
-
-        # 第二优先：LibreOffice 转 .docx（兜底，需镜像含 libreoffice-writer）
-        logger.info(f"antiword 不可用/失败，尝试 LibreOffice 转换为 .docx: {filename}")
-        docx_content = convert_doc_to_docx(content, filename)
-        if docx_content:
-            content = docx_content
-            ext = ".docx"
-        else:
-            logger.error(f".doc 文件转换失败（antiword 和 LibreOffice 均失败）: {filename}")
-            return None
-
-    # === 主力引擎：anydoc（或 PARSER_ENGINE 指定的引擎） ===
-    if engine == 'markitdown':
-        result = _parse_with_markitdown(content, ext, filename)
-        engine_name = 'markitdown'
-    else:
-        result = _parse_with_anydoc(content, ext, filename)
-        engine_name = 'anydoc'
+    # === 主力引擎：anydoc ===
+    result = _parse_with_anydoc(content, ext, filename)
     if result:
-        logger.info(f"{engine_name} 解析成功: {filename} ({len(result['text'])} chars)")
+        logger.info(f"anydoc 解析成功: {filename} ({len(result['text'])} chars)")
         return result
 
-    # === Fallback：现有增强解析器 ===
-    logger.info(f"{engine_name} 未产出结果，降级到增强解析器: {filename}")
-
+    # === PDF fallback：增强解析器（文本兜底 + 页眉页脚过滤） ===
     if ext == ".pdf":
+        logger.info(f"anydoc 未产出结果，降级到 PDF 增强解析器: {filename}")
         try:
             from pdf_enhanced import enhanced_pdf_parse
             result = enhanced_pdf_parse(content, filename)
@@ -580,35 +373,8 @@ def _parse_with_enhanced(content: bytes, ext: str, filename: str, vision_config:
                 'table_kv_pairs': [],
             }
 
-    elif ext == ".docx":
-        try:
-            from docx_enhanced import enhanced_docx_parse
-            result = enhanced_docx_parse(content, filename)
-            if result:
-                return _enrich_result_table_kv(result)
-        except Exception as e:
-            logger.warning(f"DOCX 增强解析失败: {e}")
-
-    elif ext == ".xlsx":
-        try:
-            from xlsx_enhanced import enhanced_xlsx_parse
-            result = enhanced_xlsx_parse(content, filename)
-            if result:
-                return _enrich_result_table_kv(result)
-        except Exception as e:
-            logger.warning(f"XLSX 增强解析失败: {e}")
-            raise HTTPException(status_code=500, detail=f"XLSX 文件解析失败: {filename}。{e}")
-
-    elif ext == ".pptx":
-        try:
-            from pptx_enhanced import enhanced_pptx_parse
-            result = enhanced_pptx_parse(content, filename)
-            if result:
-                return _enrich_result_table_kv(result)
-        except Exception as e:
-            logger.warning(f"PPTX 增强解析失败: {e}")
-
     return None
+
 
 
 # ==================== API 路由 ====================
@@ -840,33 +606,6 @@ async def ocr_scan(
         raise HTTPException(status_code=500, detail=f"OCR 识别失败: {str(e)}")
 
 
-@app.post("/api/convert/doc-to-docx", summary="将 .doc 转换为 .docx 返回二进制")
-async def convert_doc_to_docx_binary(
-    file: UploadFile = File(..., description="上传的 .doc 文件"),
-):
-    """将 .doc 旧格式文件转换为 .docx，返回转换后的 .docx 二进制文件。"""
-    filename = file.filename or 'document.doc'
-    ext = os.path.splitext(filename)[1].lower()
-
-    if ext != '.doc':
-        raise HTTPException(status_code=400, detail=f"仅支持 .doc 格式，当前: {ext}")
-
-    content = await file.read()
-    docx_bytes = convert_doc_to_docx(content, filename)
-
-    if docx_bytes is None:
-        raise HTTPException(status_code=500, detail="LibreOffice 转换失败，请稍后重试")
-
-    docx_filename = os.path.splitext(filename)[0] + '.docx'
-    from urllib.parse import quote
-    encoded_filename = quote(docx_filename, safe='().-_')
-    return Response(
-        content=docx_bytes,
-        media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-        headers={"Content-Disposition": f"attachment; filename*=UTF-8''{encoded_filename}"},
-    )
-
-
 # ==================== Task 38: 批量扫描件 OCR（视觉模型） ====================
 
 def _do_ocr_scan_single(
@@ -1057,16 +796,18 @@ async def ocr_scan_batch_base64(data: dict):
 
 @app.on_event("startup")
 async def startup():
-    logger.info("文档解析服务启动中（各格式独立增强解析器，无 markitdown 依赖）...")
-    # 预热各解析器的 import
+    logger.info("文档解析服务启动中（anydoc 主力引擎 + RapidOCR 扫描件兜底）...")
+    # 预热关键依赖的 import
+    try:
+        import anydoc
+        logger.info(f"anydoc 引擎加载完成 v{getattr(anydoc, '__version__', 'unknown')}")
+    except ImportError as e:
+        logger.warning(f"anydoc 未安装: {e}（需 pip install firecrawl-anydoc）")
     try:
         from pdf_enhanced import enhanced_pdf_parse
-        from docx_enhanced import enhanced_docx_parse
-        from xlsx_enhanced import enhanced_xlsx_parse
-        from pptx_enhanced import enhanced_pptx_parse
-        logger.info("所有增强解析器加载完成")
+        logger.info("PDF 增强解析器加载完成")
     except ImportError as e:
-        logger.warning(f"部分解析器加载失败（将在首次请求时重试）: {e}")
+        logger.warning(f"PDF 增强解析器加载失败（将在首次请求时重试）: {e}")
 
 
 if __name__ == "__main__":

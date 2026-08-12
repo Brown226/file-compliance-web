@@ -11,7 +11,7 @@ import logging
 import re
 from typing import Optional
 
-logger = logging.getLogger("markitdown-service")
+logger = logging.getLogger("doc-parser-service")
 
 # ==================== OPT-010: 页码/页眉页脚过滤 ====================
 

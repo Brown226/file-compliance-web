@@ -21,11 +21,8 @@
 
 ```
 doc-parser/
-├── main.py              # FastAPI 应用入口（anydoc 主力 + fallback/OCR 调度）
+├── main.py              # FastAPI 应用入口（anydoc 主力 + PDF fallback/OCR 调度）
 ├── pdf_enhanced.py      # PDF 增强解析器（fallback，PyMuPDF，含页眉页脚过滤）
-├── docx_enhanced.py     # DOCX 增强解析器（fallback）
-├── xlsx_enhanced.py     # XLSX 增强解析器（fallback）
-├── pptx_enhanced.py     # PPTX 增强解析器（fallback）
 ├── rapid_ocr.py         # RapidOCR 本地 OCR（扫描件 PDF 兜底）
 ├── vision_ocr.py        # Vision LLM OCR（超低质量扫描件兜底）
 ├── requirements.txt     # Python 依赖声明

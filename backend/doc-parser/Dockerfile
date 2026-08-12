@@ -1,12 +1,12 @@
 # ============================================
 # 文档解析服务 - 精简 Docker 镜像（多阶段构建）
-# 各格式使用独立的增强解析器（原生 Python 库）
-# 支持 DOCX / XLSX / PDF / PPTX
+# 主力引擎 anydoc（Rust），PDF fallback PyMuPDF，扫描件 RapidOCR
+# 支持 DOC/DOCX/PPT/PPTX/XLS/XLSX/ODT/ODS/ODP/RTF/EPUB/CSV/PDF
 # ============================================
 
 # ============================================
 # 阶段1: 编译阶段（安装编译工具 + 构建 lxml 等 C 扩展）
-# 说明：lxml/markitdown 依赖一般有预编译 wheel，若 pypi 有 wheel
+# 说明：lxml/onnxruntime 依赖一般有预编译 wheel，若 pypi 有 wheel
 #       则可跳过此阶段（设为空）；仅当需要从源码编译时才启用。
 # ============================================
 FROM python:3.12-slim AS builder
@@ -46,15 +46,14 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /app
 
-# 运行时系统库：antiword 用于 .doc 老格式文本提取（轻量 ~200KB，替代 libreoffice-writer 节省 ~550MB）
-# libxml2/libxslt1.1 是 lxml wheel 运行期动态库，必须保留
+# 运行时系统库：libxml2/libxslt1.1 是 lxml wheel 运行期动态库，必须保留
+# 已移除 antiword（.doc 老格式改由 anydoc 原生解析）
 # 已移除 poppler-utils（PDF 转图片改用 PyMuPDF 内置渲染）
 # apt 源切换到阿里云镜像（deb.debian.org 在代理环境下 502 不稳定）
 RUN sed -i 's|deb.debian.org|mirrors.aliyun.com|g' /etc/apt/sources.list.d/debian.sources 2>/dev/null || true && \
     sed -i 's|security.debian.org|mirrors.aliyun.com/debian-security|g' /etc/apt/sources.list.d/debian.sources 2>/dev/null || true && \
     apt-get update && \
     apt-get install -y --no-install-recommends \
-    antiword \
     libxml2 \
     libxslt1.1 \
     && rm -rf /var/lib/apt/lists/*
@@ -65,9 +64,6 @@ COPY --from=builder /install /usr/local
 # 复制服务代码
 COPY main.py .
 COPY pdf_enhanced.py .
-COPY docx_enhanced.py .
-COPY xlsx_enhanced.py .
-COPY pptx_enhanced.py .
 COPY vision_ocr.py .
 COPY rapid_ocr.py .
 # 固化 RapidOCR 模型（约 46MB），避免首次运行从 modelscope 下载（网络不稳定）
