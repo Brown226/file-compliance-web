@@ -572,7 +572,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, watch, nextTick, reactive } from 'vue'
+import { ref, computed, watch, nextTick, reactive, onBeforeUnmount } from 'vue'
 import { ElMessage } from 'element-plus'
 import {
   Document,
@@ -1475,8 +1475,9 @@ watch(error, (err) => {
   }
 })
 // status 变 error 时同样提示（部分路径 error 对象可能为空但 status 已置 error）
+// 注意：静止守卫最终化时主动 stop() 可能把 status 置为 error，此时对话实际已成功完成，不弹错误提示
 watch(status, (s, prev) => {
-  if (s === 'error' && prev !== 'error') {
+  if (s === 'error' && prev !== 'error' && !stuckFinalized) {
     ElMessage.error('对话流已中断，请重试发送或刷新页面')
   }
 })
@@ -1488,11 +1489,90 @@ watch(isLoading, (now, prev) => {
   if (prev && !now) {
     refreshStats()
     sessionListRef.value?.refresh?.()
+    // 流式结束：先把最后一条 assistant 消息的过程详情置为展开。
+    // useChat 的 messages 是 shallowRef，流式中 tool part 的 state/input/output 原地修改不触发渲染；
+    // forceRefreshMessages 重建 part 后虽然能渲染出最终状态（output-available / success），
+    // 但此刻 isLoading 已变 false，isStreamingTail 随之失效，process-details 默认折叠——
+    // 若不先展开，用户将永远看不到工具从「执行中」到「成功」的最终结果。
+    const lastMsg = messages.value[messages.value.length - 1]
+    if (lastMsg && lastMsg.role === 'assistant' && hasProcessParts(lastMsg)) {
+      processOpen[lastMsg.id] = true
+    }
     forceRefreshMessages()
     // Task 44：流式结束检测是否有挂起提问
     scheduleCheckPendingAsk()
   }
 })
+
+// ============================================================
+// 兜底修复：工具对话流终止守卫
+// 背景：@ai-sdk/vue（v4.0.41）在工具调用对话中，ai 包内部流处理会挂在
+// finish-step 之后的 job 上（transform 永不返回），导致：
+//   - status 卡在 streaming → watch(isLoading) 的结束分支永不触发
+//   - messages 是 shallowRef，tool part 的原地修改不触发渲染
+// 结果：工具块永远显示「执行中…」，用户也无法再发消息。
+// 处理：轮询数据层，检测「工具 part 已全部到达最终态 + 消息引用连续静止
+// （流不再推进）」后，主动执行与流结束相同的最终化（展开过程详情 + 重建
+// part + 刷新统计），并调 stop() 让 status 回落、解锁输入。
+// 幂等设计：stuckFinalized 置位后不再重复执行；会话切换时自动重置。
+// ============================================================
+let stuckFinalized = false
+let lastStuckMsgsRef: unknown = null
+let stuckStillTicks = 0
+const STUCK_STILL_THRESHOLD = 3 // 连续 3 次轮询（约 2.4s）引用未变视为流静止
+
+const finalizeStuckStream = () => {
+  if (stuckFinalized) return
+  stuckFinalized = true
+  window.clearInterval(stuckGuardTimer)
+  const lastMsg = messages.value[messages.value.length - 1]
+  if (lastMsg && lastMsg.role === 'assistant' && hasProcessParts(lastMsg)) {
+    processOpen[lastMsg.id] = true
+  }
+  refreshStats()
+  sessionListRef.value?.refresh?.()
+  forceRefreshMessages()
+  // 尝试让 status 回落（abort 已静止的流；即使失败，上面的最终化也已让 UI 定型）
+  stop()
+}
+
+const stuckGuardTimer = window.setInterval(() => {
+  const msgs = messages.value
+  const last = msgs?.[msgs.length - 1]
+  if (!last || last.role !== 'assistant' || !hasProcessParts(last)) {
+    lastStuckMsgsRef = msgs
+    stuckStillTicks = 0
+    return
+  }
+  const toolParts = getToolCallParts(last)
+  const allFinal = toolParts.every(
+    (p: any) => p.state === 'output-available' || p.state === 'output-error',
+  )
+  if (!allFinal) {
+    lastStuckMsgsRef = msgs
+    stuckStillTicks = 0
+    return
+  }
+  if (lastStuckMsgsRef === msgs) {
+    stuckStillTicks += 1
+    if (stuckStillTicks >= STUCK_STILL_THRESHOLD) {
+      finalizeStuckStream()
+    }
+  } else {
+    lastStuckMsgsRef = msgs
+    stuckStillTicks = 1
+  }
+}, 800)
+
+// 会话切换时重置守卫状态，保证新会话仍能触发兜底
+watch(sessionId, () => {
+  stuckFinalized = false
+  lastStuckMsgsRef = null
+  stuckStillTicks = 0
+})
+
+// 组件卸载时清理轮询，避免定时器泄漏
+onBeforeUnmount(() => window.clearInterval(stuckGuardTimer))
 
 function forceRefreshMessages() {
   const msgs = messages.value
