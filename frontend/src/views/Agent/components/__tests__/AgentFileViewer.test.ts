@@ -7,20 +7,20 @@
  * - P0-⑨ 页码锚点定位：命中 → 提示已定位；未命中 → 未找到提示；filePath 不匹配 → 忽略
  * - P2-⑬ 原文关键字定位：命中/未命中
  * - P2-⑬ 行号区间定位：命中/超范围
- * - docx 分支：mammoth 转 HTML 渲染
+ * - docx 分支：docx-preview 保真渲染
  * - xlsx 分支：SheetJS 解析 → 多 sheet tab + 表格渲染
  *
  * mock：@/api/agent、useMarkdown（每行包 <p>，让定位函数可命中 DOM）、
- * mammoth、xlsx、element-plus；stub scrollIntoView（jsdom 未实现）。
+ * docx-preview、xlsx、element-plus；stub scrollIntoView（jsdom 未实现）。
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { mount, flushPromises } from '@vue/test-utils'
 import AgentFileViewer from '../AgentFileViewer.vue'
 
-const { apiMock, mdMock, mammothMock, xlsxMock, elMessageMock } = vi.hoisted(() => ({
+const { apiMock, mdMock, docxPreviewMock, xlsxMock, elMessageMock } = vi.hoisted(() => ({
   apiMock: { readAgentFileApi: vi.fn() },
   mdMock: { renderMarkdown: vi.fn() },
-  mammothMock: { convertToHtml: vi.fn() },
+  docxPreviewMock: { renderAsync: vi.fn(async () => {}) },
   xlsxMock: {
     read: vi.fn(),
     utils: { sheet_to_json: vi.fn() },
@@ -30,8 +30,8 @@ const { apiMock, mdMock, mammothMock, xlsxMock, elMessageMock } = vi.hoisted(() 
 
 vi.mock('@/api/agent', () => apiMock)
 vi.mock('@/composables/useMarkdown', () => ({ useMarkdown: () => ({ renderMarkdown: mdMock.renderMarkdown }) }))
-// mammoth 是 default import
-vi.mock('mammoth', () => ({ default: mammothMock }))
+// docx-preview 是命名导出 renderAsync
+vi.mock('docx-preview', () => ({ renderAsync: docxPreviewMock.renderAsync }))
 vi.mock('xlsx', () => xlsxMock)
 vi.mock('element-plus', () => ({ ElMessage: elMessageMock }))
 
@@ -60,7 +60,7 @@ function mountViewer(props: Record<string, any> = {}) {
 beforeEach(() => {
   apiMock.readAgentFileApi.mockReset()
   mdMock.renderMarkdown.mockReset()
-  mammothMock.convertToHtml.mockReset()
+  docxPreviewMock.renderAsync.mockReset()
   xlsxMock.read.mockReset()
   xlsxMock.utils.sheet_to_json.mockReset()
   elMessageMock.error.mockReset()
@@ -156,15 +156,14 @@ describe('P2-⑬ 行级批注', () => {
 })
 
 describe('docx 预览', () => {
-  it('kind=docx → mammoth 转 HTML 渲染', async () => {
-    mammothMock.convertToHtml.mockResolvedValue({ value: '<h1>Word 标题</h1><p>正文</p>' })
+  it('kind=docx → docx-preview 保真渲染', async () => {
     apiMock.readAgentFileApi.mockResolvedValue({
       data: { ...TEXT_FILE, kind: 'docx', ext: 'docx', base64: 'eA==', mime: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' },
     })
     const wrapper = mountViewer()
     await loadText(wrapper)
-    expect(mammothMock.convertToHtml).toHaveBeenCalled()
-    expect(wrapper.find('.fv-office-body').html()).toContain('<h1>Word 标题</h1>')
+    expect(docxPreviewMock.renderAsync).toHaveBeenCalled()
+    expect(wrapper.find('.fv-docx').exists()).toBe(true)
   })
 })
 

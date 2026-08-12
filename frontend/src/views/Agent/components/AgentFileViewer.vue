@@ -54,10 +54,10 @@
       </div>
       <!-- PDF -->
       <iframe v-else-if="data.kind === 'pdf'" class="fv-pdf" :src="dataSrc" title="PDF 预览" />
-      <!-- docx：mammoth 渲染 HTML -->
-      <div v-else-if="data.kind === 'docx'" class="fv-office-body" v-html="docxHtml" />
-      <!-- xlsx：表格渲染 -->
-      <div v-else-if="data.kind === 'xlsx'" class="fv-office-body">
+      <!-- docx/docm：docx-preview 保真渲染（容器常驻 + v-show，ref 稳定绑定，与主预览一致） -->
+      <div v-show="data?.kind === 'docx'" class="fv-office-body fv-docx" ref="docxRef" />
+      <!-- xlsx：表格渲染（容器常驻 + v-show） -->
+      <div v-show="data?.kind === 'xlsx'" class="fv-office-body">
         <div v-if="xlsxLoading" class="fv-center"><span class="fv-dim-text">加载中…</span></div>
         <div v-else-if="xlsxError" class="fv-center"><span class="fv-error-text">{{ xlsxError }}</span></div>
         <template v-else>
@@ -98,13 +98,12 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, watch } from 'vue'
+import { ref, computed, watch, nextTick } from 'vue'
 import { ElMessage } from 'element-plus'
 import { readAgentFileApi, type AgentFileReadResult } from '@/api/agent'
 import { useMarkdown } from '@/composables/useMarkdown'
-// docx / xlsx 预览（参考传统审查 TaskDetails 的 DocxPreviewPanel / ExcelPreviewPanel 方案）
-import mammoth from 'mammoth'
-import DOMPurify from 'dompurify'
+// docx / xlsx 预览（与 TaskDetails 主预览统一方案：docx-preview 保真渲染 + SheetJS）
+import { renderAsync } from 'docx-preview'
 import * as XLSX from 'xlsx'
 
 const props = defineProps<{
@@ -156,8 +155,8 @@ const dataSrc = computed(() => {
   return `data:${data.value.mime};base64,${data.value.base64}`
 })
 
-// ===== docx / xlsx 预览（2026-08-04 新增，参考传统审查 TaskDetails 方案）=====
-const docxHtml = ref('')
+// ===== docx / xlsx 预览（与 TaskDetails 主预览统一：docx-preview + SheetJS）=====
+const docxRef = ref<HTMLElement | null>(null)
 const xlsxLoading = ref(false)
 const xlsxError = ref('')
 const sheetNames = ref<string[]>([])
@@ -173,17 +172,29 @@ const currentRows = computed<string[][]>(() => {
   return rows.length > 1 ? rows.slice(1) : []
 })
 
-/** 解析 docx：mammoth 转 HTML */
+/** 解析 docx/docm：docx-preview 保真渲染（直接渲染 DOM，无 v-html 注入面） */
 async function parseDocx(base64: string) {
-  docxHtml.value = ''
   try {
     const bin = atob(base64)
     const bytes = new Uint8Array(bin.length)
     for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i)
-    const result = await mammoth.convertToHtml({ arrayBuffer: bytes.buffer })
-    // 安全修复：mammoth 输出直接 v-html 存在 XSS 注入面（docx 内嵌 HTML 可执行脚本），
-    // 经 DOMPurify 白名单清洗后再渲染
-    docxHtml.value = DOMPurify.sanitize(result.value)
+
+    // 等待容器就绪：模板 ref 优先，querySelector 兜底
+    // （v-if="data" 动态内容块的 ref 绑定在部分环境时序不稳，DOM 元素本身是可靠的）
+    for (let i = 0; i < 5 && !docxRef.value; i++) await nextTick()
+    const container = docxRef.value || document.querySelector<HTMLElement>('.fv-docx')
+    if (!container) throw new Error('docx 容器未就绪')
+    container.innerHTML = ''
+
+    await renderAsync(bytes.buffer, container, null, {
+      className: 'docx',
+      inWrapper: true,
+      breakPages: true,
+      renderHeaders: true,
+      renderFooters: true,
+      renderFootnotes: true,
+      ignoreFonts: false,
+    })
   } catch (e: any) {
     console.error('[AgentFileViewer] docx 渲染失败:', e)
     ElMessage.error(`Word 渲染失败：${e?.message || '未知错误'}`)
@@ -234,7 +245,7 @@ async function load() {
   try {
     const res = await readAgentFileApi(props.filePath)
     data.value = res.data
-    // 2026-08-04：docx/xlsx 预览解析（mammoth / xlsx 库）
+    // 2026-08-12：docx/xlsx 预览解析（docx-preview / xlsx 库，与主预览统一）
     const kind = res.data?.kind
     const b64 = res.data?.base64
     if (kind === 'docx' && b64) await parseDocx(b64)
