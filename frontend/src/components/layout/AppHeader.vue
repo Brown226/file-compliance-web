@@ -449,13 +449,13 @@ register({ key: 'escape', label: '关闭', handler: () => {
 }
 
 .dropdown-role {
-  font-size: 11px;
+  font-size: 12px;
   color: #6B7280;
   line-height: 1.3;
 }
 
 .dropdown-account {
-  font-size: 11px;
+  font-size: 12px;
   color: #9CA3AF;
   line-height: 1.3;
 }

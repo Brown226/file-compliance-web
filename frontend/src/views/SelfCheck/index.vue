@@ -95,7 +95,7 @@
               class="upload-area--compact"
             >
               <div class="upload-compact-inner">
-                <el-icon class="upload-icon" :size="32" color="#C0C4CC"><UploadFilled /></el-icon>
+                <el-icon class="upload-icon" :size="32" color="var(--color-gray-400)"><UploadFilled /></el-icon>
                 <p class="upload-text">将文件拖到此处，或 <em>点击选择</em></p>
               </div>
             </el-upload>
@@ -205,6 +205,7 @@ import { createTaskApi } from '@/api/task'
 
 const router = useRouter()
 
+// JS 数据：Office 文件格式官方品牌专用色，无设计令牌对应，保持原值
 const supportedFormats = [
   { ext: 'DOCX', color: '#2B579A' },
   { ext: 'DOC', color: '#2B579A' },
@@ -274,6 +275,7 @@ const formatFileSize = (bytes?: number): string => {
   return (bytes / 1048576).toFixed(1) + ' MB'
 }
 
+// JS 逻辑：文件格式品牌专用色，无设计令牌对应，保持原值
 const getFileIconColor = (file: UploadFile): string => {
   const name = (file.name || '').toLowerCase()
   if (name.endsWith('.pdf')) return '#F40F02'
@@ -293,6 +295,7 @@ const matchPercent = computed(() => {
   return Math.round((report.value.matchedCount / report.value.totalChecked) * 1000) / 10
 })
 
+// JS 逻辑：EP 语义色，可对齐 --corp-success/--corp-warning/--corp-danger，保持原值
 const progressColor = computed(() => {
   const p = matchPercent.value
   if (p >= 95) return '#67C23A'
@@ -691,7 +694,7 @@ onMounted(() => {
   display: flex;
   align-items: center;
   gap: 4px;
-  font-size: 11px;
+  font-size: 12px;
   color: var(--el-text-color-secondary);
   background: var(--el-fill-color-light);
   padding: 3px 10px;
@@ -730,7 +733,7 @@ onMounted(() => {
 }
 
 .upload-icon {
-  color: #C0C4CC !important;
+  color: var(--color-gray-400) !important;
 }
 
 .upload-text {
@@ -786,7 +789,7 @@ onMounted(() => {
 }
 
 .file-size {
-  font-size: 11px;
+  font-size: 12px;
   color: var(--el-text-color-placeholder);
   flex-shrink: 0;
 }

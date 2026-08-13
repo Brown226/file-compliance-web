@@ -12,7 +12,7 @@
       :stroke-width="6"
       :show-text="false"
       :status="reviewProgress >= 100 ? 'success' : ''"
-      color="#2563EB"
+      color="var(--color-primary-600)"
     />
     <div class="progress-details">
       <p class="progress-step">{{ reviewStep || '准备中...' }}</p>
@@ -25,7 +25,7 @@
         </el-tag>
       </div>
       <div v-if="liveIssueCount > 0" class="live-issue-count">
-        <el-icon color="#E6A23C"><Warning /></el-icon>
+        <el-icon color="var(--corp-warning)"><Warning /></el-icon>
         已发现 <strong>{{ liveIssueCount }}</strong> 个问题
       </div>
     </div>

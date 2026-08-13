@@ -121,7 +121,7 @@ function typeLabel(type: string): string {
 }
 .stat {
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: 12px;
 }
 .stat.added { color: var(--color-success-600); }
 .stat.removed { color: var(--color-danger-600); }
@@ -136,7 +136,7 @@ function typeLabel(type: string): string {
   background: color-mix(in srgb, var(--color-warning-600) 5%, transparent);
 }
 .diff-summary-title {
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 600;
   color: var(--color-warning-600);
   margin-bottom: 4px;
@@ -163,7 +163,7 @@ function typeLabel(type: string): string {
   margin-bottom: 4px;
 }
 .change-badge {
-  font-size: 10px;
+  font-size: 12px;
   font-weight: 600;
   padding: 1px 6px;
   border-radius: 3px;
@@ -173,7 +173,7 @@ function typeLabel(type: string): string {
 .badge-removed { background: color-mix(in srgb, var(--color-danger-600) 12%, transparent); color: var(--color-danger-600); }
 .badge-modified { background: color-mix(in srgb, var(--color-warning-600) 12%, transparent); color: var(--color-warning-600); }
 .change-section {
-  font-size: 11px;
+  font-size: 12px;
   color: var(--text-dim);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -182,7 +182,7 @@ function typeLabel(type: string): string {
   min-width: 0;
 }
 .change-index {
-  font-size: 10px;
+  font-size: 12px;
   color: var(--text-dim);
   flex-shrink: 0;
 }
@@ -210,7 +210,7 @@ function typeLabel(type: string): string {
 }
 .arrow-mark {
   display: inline-block;
-  font-size: 10px;
+  font-size: 12px;
   font-weight: 600;
   margin-right: 6px;
   color: var(--text-dim);
@@ -232,6 +232,6 @@ function typeLabel(type: string): string {
   border-radius: 50%;
   background: color-mix(in srgb, var(--color-success-600) 15%, transparent);
   margin-right: 6px;
-  font-size: 10px;
+  font-size: 12px;
 }
 </style>

@@ -185,7 +185,7 @@
                     {{ rule.infoCount }} 提示
                   </el-tag>
                   <span v-if="rule.items.length === 0" class="rule-pass-badge">
-                    <el-icon color="#67C23A"><CircleCheck /></el-icon> 通过
+                    <el-icon color="var(--corp-success)"><CircleCheck /></el-icon> 通过
                   </span>
                 </div>
               </div>
@@ -729,7 +729,7 @@ defineExpose({
 /* ===== 面板容器 — Inset Shadow ===== */
 .right-panel {
   flex: 1;
-  background: #FFFFFF;
+  background: var(--bg-surface);
   border-radius: var(--radius-md);
   display: flex;
   flex-direction: column;
@@ -744,25 +744,25 @@ defineExpose({
   justify-content: space-between;
   align-items: center;
   flex-shrink: 0;
-  border-bottom: 1px solid #F0F0F0;
+  border-bottom: 1px solid var(--color-gray-100); /* 原 #F0F0F0 */
 }
-.panel-title { font-weight: 800; font-size: 14px; color: #111827; }
-.result-count { font-size: var(--text-sm); color: #6B7280; }
+.panel-title { font-weight: 800; font-size: 14px; color: var(--corp-text-primary); }
+.result-count { font-size: var(--text-sm); color: var(--corp-text-secondary); }
 
 .filter-toolbar {
   display: flex;
   align-items: center;
   justify-content: space-between;
   padding: 8px 14px;
-  border-bottom: 1px solid #F0F0F0;
+  border-bottom: 1px solid var(--color-gray-100); /* 原 #F0F0F0 */
   flex-shrink: 0;
-  background: #FFFFFF;
+  background: var(--bg-surface);
   position: sticky;
   top: 0;
   z-index: 10;
 }
 .filter-group { display: flex; align-items: center; gap: 8px; }
-.filter-advanced { padding-top: 8px; border-top: 1px solid #F0F0F0; margin-top: 8px; }
+.filter-advanced { padding-top: 8px; border-top: 1px solid var(--color-gray-100); margin-top: 8px; } /* 原 #F0F0F0 */
 
 /* ===== 批量操作工具栏样式已迁移至 BatchToolbar.vue ===== */
 
@@ -796,8 +796,8 @@ defineExpose({
   align-items: center;
   gap: 8px;
   padding: 10px 14px;
-  background: #F8FAFC;
-  border: 1px solid #E2E8F0;
+  background: var(--color-gray-50);
+  border: 1px solid var(--corp-border-light); /* 原 #E2E8F0 */
   border-radius: var(--radius-md);
   cursor: pointer;
   user-select: none;
@@ -805,13 +805,13 @@ defineExpose({
   margin-bottom: 2px;
 }
 .group-header:hover {
-  background: #F1F5F9;
+  background: var(--color-gray-100); /* 原 #F1F5F9 */
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
 }
 
 .group-arrow {
   font-size: 12px;
-  color: #64748B;
+  color: var(--corp-text-secondary); /* 原 #64748B */
   transition: transform 0.2s ease;
   flex-shrink: 0;
 }
@@ -822,13 +822,13 @@ defineExpose({
 .group-label {
   font-size: 13px;
   font-weight: 700;
-  color: #1E293B;
+  color: var(--color-gray-800); /* 原 #1E293B */
   flex-shrink: 0;
 }
 
 .group-sample {
   font-size: 12px;
-  color: #94A3B8;
+  color: var(--color-gray-400); /* 原 #94A3B8 */
   margin-left: auto;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -838,7 +838,7 @@ defineExpose({
 
 .group-items {
   padding-left: 4px;
-  border-left: 2px solid #E2E8F0;
+  border-left: 2px solid var(--corp-border-light); /* 原 #E2E8F0 */
   margin-left: 8px;
   margin-bottom: 8px;
 }
@@ -851,7 +851,7 @@ defineExpose({
 .rule-group-title {
   font-size: 12px;
   font-weight: 800;
-  color: #64748B;
+  color: var(--corp-text-secondary); /* 原 #64748B */
   text-transform: uppercase;
   letter-spacing: 0.5px;
   padding: 0 4px 8px;
@@ -865,18 +865,18 @@ defineExpose({
 
 .rule-group-card {
   margin-bottom: 4px;
-  border: 1px solid #E2E8F0;
+  border: 1px solid var(--corp-border-light); /* 原 #E2E8F0 */
   border-radius: var(--radius-md);
   overflow: hidden;
-  background: #FFFFFF;
+  background: var(--bg-surface);
   transition: border-color 0.15s;
 }
 .rule-group-card:hover {
-  border-color: #CBD5E1;
+  border-color: var(--corp-border); /* 原 #CBD5E1 */
 }
 .rule-group-card--empty {
   opacity: 0.7;
-  background: #F8FAFC;
+  background: var(--color-gray-50);
 }
 
 .rule-group-header {
@@ -889,12 +889,12 @@ defineExpose({
   transition: background 0.12s;
 }
 .rule-group-header:hover {
-  background: #F8FAFC;
+  background: var(--color-gray-50);
 }
 
 .rule-group-arrow {
   font-size: 12px;
-  color: #94A3B8;
+  color: var(--color-gray-400); /* 原 #94A3B8 */
   flex-shrink: 0;
   transition: transform 0.2s ease;
 }
@@ -905,13 +905,13 @@ defineExpose({
 .rule-group-label {
   font-size: 13px;
   font-weight: 700;
-  color: #1E293B;
+  color: var(--color-gray-800); /* 原 #1E293B */
   flex-shrink: 0;
 }
 
 .rule-group-desc {
-  font-size: 11px;
-  color: #94A3B8;
+  font-size: 12px;
+  color: var(--color-gray-400); /* 原 #94A3B8 */
   flex: 1;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -930,12 +930,12 @@ defineExpose({
   align-items: center;
   gap: 3px;
   font-size: 12px;
-  color: #67C23A;
+  color: var(--corp-success); /* 原 #67C23A */
   font-weight: 600;
 }
 
 .rule-group-items {
   padding: 0 14px 10px;
-  border-top: 1px solid #F0F0F0;
+  border-top: 1px solid var(--color-gray-100); /* 原 #F0F0F0 */
 }
 </style>

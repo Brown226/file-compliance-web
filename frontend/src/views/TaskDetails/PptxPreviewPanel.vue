@@ -20,12 +20,12 @@
     </div>
 
     <div v-else-if="error" class="pptx-error">
-      <el-icon :size="24" color="#EF4444"><WarningFilled /></el-icon>
+      <el-icon :size="24" color="var(--corp-danger)"><WarningFilled /></el-icon>
       <span>{{ error }}</span>
     </div>
 
     <div v-else-if="!slides.length" class="pptx-empty">
-      <el-icon :size="32" color="#94a3b8"><Document /></el-icon>
+      <el-icon :size="32" color="var(--color-gray-400)"><Document /></el-icon>
       <p>未提取到文本内容</p>
     </div>
 
@@ -243,15 +243,15 @@ watch(currentSlide, () => {
   flex-direction: column;
   overflow: hidden;
   min-height: 0;
-  background: #f5f5f5;
+  background: var(--bg-surface-active);
 }
 
 .pptx-toolbar {
   display: flex;
   align-items: center;
   padding: 8px 16px;
-  border-bottom: 1px solid #E5E7EB;
-  background: #F9FAFB;
+  border-bottom: 1px solid var(--corp-border-light);
+  background: var(--color-gray-50);
   flex-shrink: 0;
 }
 
@@ -264,7 +264,7 @@ watch(currentSlide, () => {
   align-items: center;
   justify-content: center;
   gap: 10px;
-  color: #6B7280;
+  color: var(--corp-text-secondary);
   font-size: 13px;
 }
 
@@ -281,7 +281,7 @@ watch(currentSlide, () => {
   width: 100%;
   max-width: 720px;
   min-height: 300px;
-  background: #fff;
+  background: var(--bg-surface);
   border-radius: 8px;
   box-shadow: 0 2px 12px rgba(0, 0, 0, 0.1);
   padding: 32px 28px;
@@ -293,14 +293,14 @@ watch(currentSlide, () => {
   top: 10px;
   right: 14px;
   font-size: 12px;
-  color: #9ca3af;
+  color: var(--color-gray-400);
   font-weight: 600;
 }
 
 .slide-content {
   font-size: 14px;
   line-height: 1.8;
-  color: #374151;
+  color: var(--color-gray-700);
 }
 
 .slide-line {
@@ -309,11 +309,11 @@ watch(currentSlide, () => {
 }
 
 .slide-content :deep(.pptx-highlight) {
-  background: rgba(239, 68, 68, 0.2);
-  border-bottom: 2px solid #EF4444;
+  background: color-mix(in srgb, var(--color-danger) 20%, transparent);
+  border-bottom: 2px solid var(--corp-danger);
   padding: 1px 2px;
   border-radius: 3px;
-  color: #dc2626;
+  color: var(--color-danger-600);
   font-weight: 600;
 }
 </style>

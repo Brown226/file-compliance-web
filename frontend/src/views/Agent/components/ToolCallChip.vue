@@ -201,7 +201,7 @@ const durationText = computed(() => {
 .tool-name {
   font-family: var(--font-mono);
   font-weight: 600;
-  font-size: 11px;
+  font-size: 12px;
   color: var(--color-success-600);
   flex-shrink: 0;
   white-space: nowrap;
@@ -211,7 +211,7 @@ const durationText = computed(() => {
 /* 预览文本（对齐参考：等宽 11px text-dim ellipsis 占满剩余） */
 .tool-preview {
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: 12px;
   color: var(--text-dim);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -221,7 +221,7 @@ const durationText = computed(() => {
 }
 
 .tool-duration {
-  font-size: 11px;
+  font-size: 12px;
   color: var(--text-dim);
   font-variant-numeric: tabular-nums;
   flex-shrink: 0;

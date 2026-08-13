@@ -368,7 +368,7 @@ onMounted(() => {
 }
 
 .login-form :deep(.el-input__inner::placeholder) {
-  color: #94a3b8;
+  color: var(--color-gray-500);
 }
 
 .login-options {

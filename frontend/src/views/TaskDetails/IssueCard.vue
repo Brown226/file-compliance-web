@@ -529,16 +529,16 @@ async function submitFeedback(type: FeedbackType) {
 /* ===== 问题卡片 — 简化紧凑版 ===== */
 .issue-card {
   margin-bottom: 8px;
-  background: #FFFFFF;
+  background: var(--bg-surface);
   border-radius: var(--radius-md);
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
   overflow: hidden;
   transition: box-shadow 0.15s ease;
   border-left: 3px solid transparent;
 }
-.issue-card.severity-error   { border-left-color: #EF4444; }
-.issue-card.severity-warning { border-left-color: #F59E0B; }
-.issue-card.severity-info    { border-left-color: #6B7280; }
+.issue-card.severity-error   { border-left-color: var(--corp-danger); }
+.issue-card.severity-warning { border-left-color: var(--corp-warning); }
+.issue-card.severity-info    { border-left-color: var(--corp-text-secondary); }
 .issue-card:hover { box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12); }
 
 /* ===== 头部：标签 + 描述 + 操作按钮 + 展开箭头 ===== */
@@ -551,7 +551,7 @@ async function submitFeedback(type: FeedbackType) {
   cursor: pointer;
 }
 .issue-header:hover {
-  background: #F9FAFB;
+  background: var(--color-gray-50);
 }
 .header-left { flex: 1; min-width: 0; }
 .header-right {
@@ -572,13 +572,13 @@ async function submitFeedback(type: FeedbackType) {
 .issue-desc {
   font-size: 13px;
   font-weight: 600;
-  color: #111827;
+  color: var(--corp-text-primary);
   line-height: 1.4;
   display: block;
 }
 .plain-language-preview {
   font-size: 12px;
-  color: #6B7280;
+  color: var(--corp-text-secondary);
   line-height: 1.4;
   margin-top: 2px;
   display: block;
@@ -601,24 +601,24 @@ async function submitFeedback(type: FeedbackType) {
   border-radius: 3px;
 }
 .collapsed-row.original {
-  color: #DC2626;
-  background: #FEF2F2;
+  color: var(--color-danger-600);
+  background: var(--color-danger-bg); /* #FEF2F2 对齐 --color-danger-bg */
 }
 .collapsed-row.suggested {
-  color: #059669;
-  background: #ECFDF5;
+  color: var(--color-success-600);
+  background: var(--color-success-bg); /* #ECFDF5 对齐 --color-success-bg */
 }
 .collapsed-label {
   font-weight: 600;
   margin-right: 3px;
 }
 
-.severity-tag { font-size: 11px; }
+.severity-tag { font-size: 12px; }
 .severity-error { font-weight: 700; }
 .fp-tag {
   font-style: italic;
-  background: #F3E8FF !important;
-  color: #7C3AED !important;
+  background: #F3E8FF !important; /* 紫色专用底，无对应令牌 */
+  color: #7C3AED !important; /* 紫色专用字，无对应令牌 */
 }
 
 /* 文件来源标签 */
@@ -644,43 +644,43 @@ async function submitFeedback(type: FeedbackType) {
   width: 28px;
   height: 28px;
   border: none;
-  background: #EFF6FF;
-  color: #2563EB;
+  background: var(--color-primary-50);
+  color: var(--color-primary-600);
   border-radius: 6px;
   transition: all 0.15s ease;
 }
 .locate-action-btn:hover {
-  background: #DBEAFE;
-  color: #1D4ED8;
+  background: var(--color-primary-100);
+  color: var(--color-primary-700);
   transform: scale(1.1);
 }
 .fp-action-btn {
   width: 28px;
   height: 28px;
   border: none;
-  background: #FEF3C7;
-  color: #D97706;
+  background: var(--color-warning-bg);
+  color: var(--color-warning-600);
   border-radius: 6px;
   transition: all 0.15s ease;
 }
 .fp-action-btn:hover {
-  background: #FDE68A;
-  color: #B45309;
+  background: #FDE68A; /* 无对应令牌，对齐 --color-warning-bg 或专用色 */
+  color: var(--color-warning-text); /* #B45309 对齐 --color-warning-text */
   transform: scale(1.1);
 }
 .fp-action-btn.is-fp {
-  background: #F3F4F6;
-  color: #6B7280;
+  background: var(--bg-surface-active);
+  color: var(--corp-text-secondary);
 }
 .fp-action-btn.is-fp:hover {
-  background: #E5E7EB;
-  color: #374151;
+  background: var(--corp-border-light);
+  color: var(--color-gray-700);
 }
 
 /* 展开箭头 */
 .expand-arrow {
   font-size: 16px;
-  color: #9CA3AF;
+  color: var(--color-gray-400);
   transition: transform 0.2s ease;
   flex-shrink: 0;
 }
@@ -691,8 +691,8 @@ async function submitFeedback(type: FeedbackType) {
 /* ===== 卡片内容体 ===== */
 .issue-body {
   padding: 8px 12px 12px;
-  border-top: 1px solid #F0F0F0;
-  background: #FAFAFA;
+  border-top: 1px solid var(--color-gray-100); /* 原 #F0F0F0 */
+  background: var(--bg-surface-hover);
 }
 
 /* ===== 问题行 ===== */
@@ -704,7 +704,7 @@ async function submitFeedback(type: FeedbackType) {
 }
 .row-label {
   font-size: 12px;
-  color: #6B7280;
+  color: var(--corp-text-secondary);
   font-weight: 500;
   min-width: 65px;
   flex-shrink: 0;
@@ -713,28 +713,28 @@ async function submitFeedback(type: FeedbackType) {
 .row-value {
   flex: 1;
   font-size: 13px;
-  color: #1F2937;
+  color: var(--color-gray-800);
   line-height: 1.5;
   word-break: break-word;
 }
 .original-text {
-  background: #FEF2F2;
+  background: var(--color-danger-bg); /* #FEF2F2 对齐 --color-danger-bg */
   padding: 6px 8px;
   border-radius: 4px;
-  border: 1px solid #FECACA;
+  border: 1px solid #FECACA; /* 无对应令牌，对齐 --color-danger-bg 或专用色 */
 }
 .suggested-text {
-  background: #F0FDF4;
+  background: var(--color-success-bg); /* #F0FDF4 对齐 --color-success-bg */
   padding: 6px 8px;
   border-radius: 4px;
-  border: 1px solid #BBF7D0;
+  border: 1px solid #BBF7D0; /* 无对应令牌，对齐 --color-success-bg 或专用色 */
 }
 .fp-reason-row .fp-reason-text {
-  color: #7C3AED;
+  color: #7C3AED; /* 紫色专用字，无对应令牌 */
   font-style: italic;
 }
 .link-value {
-  color: #3B82F6;
+  color: var(--corp-primary);
   text-decoration: underline;
   font-weight: 500;
 }
@@ -743,22 +743,22 @@ async function submitFeedback(type: FeedbackType) {
 .standard-ref-section {
   margin: 8px 0;
   padding: 6px 8px;
-  background: #EFF6FF;
+  background: var(--color-primary-50);
   border-radius: 4px;
-  border-left: 3px solid #60A5FA;
+  border-left: 3px solid var(--color-primary-400);
 }
 .standard-ref-header {
   display: flex;
   align-items: center;
   gap: 4px;
-  color: #1E40AF;
+  color: var(--color-info-text);
   font-size: 12px;
   font-weight: 600;
   margin-bottom: 4px;
 }
 .standard-ref-body {
   font-size: 12px;
-  color: #1E3A8A;
+  color: var(--color-primary-900);
   line-height: 1.5;
 }
 
@@ -767,14 +767,14 @@ async function submitFeedback(type: FeedbackType) {
   width: 28px;
   height: 28px;
   border: none;
-  background: #FCE7F3;
-  color: #BE185D;
+  background: #FCE7F3; /* 粉色专用底，无对应令牌 */
+  color: #BE185D; /* 粉色专用字，无对应令牌 */
   border-radius: 6px;
   transition: all 0.15s ease;
 }
 .locate-bbox-btn:hover {
-  background: #FBCFE8;
-  color: #9D174D;
+  background: #FBCFE8; /* 粉色专用底，无对应令牌 */
+  color: #9D174D; /* 粉色专用字，无对应令牌 */
   transform: scale(1.1);
 }
 
@@ -782,23 +782,23 @@ async function submitFeedback(type: FeedbackType) {
 .clause-ref-section {
   margin: 8px 0;
   padding: 6px 8px;
-  background: #F0FDF4;
+  background: var(--color-success-bg); /* #F0FDF4 对齐 --color-success-bg */
   border-radius: 4px;
-  border-left: 3px solid #10B981;
+  border-left: 3px solid var(--corp-success);
 }
 .clause-ref-header {
   display: flex;
   align-items: center;
   gap: 6px;
   font-size: 12px;
-  color: #065F46;
+  color: #065F46; /* 对齐 --color-success-text 或专用色 */
 }
 .clause-ref-label {
   font-weight: 600;
 }
 .clause-ref-text {
   flex: 1;
-  color: #047857;
+  color: #047857; /* 无对应令牌，对齐 --color-success-text 或专用色 */
   font-family: 'SF Mono', 'Monaco', 'Inconsolata', 'Roboto Mono', monospace;
 }
 .view-clause-btn {
@@ -816,14 +816,14 @@ async function submitFeedback(type: FeedbackType) {
   align-items: center;
   gap: 4px;
   font-size: 12px;
-  color: #6B7280;
+  color: var(--corp-text-secondary);
   font-weight: 500;
 }
 .reasoning-body {
   font-size: 12px;
-  color: #4B5563;
+  color: var(--color-gray-600);
   line-height: 1.6;
-  background: #F9FAFB;
+  background: var(--color-gray-50);
   padding: 6px 8px;
   border-radius: 4px;
   white-space: pre-wrap;
@@ -849,7 +849,7 @@ async function submitFeedback(type: FeedbackType) {
   align-items: center;
   gap: 4px;
   padding: 2px 8px;
-  background: #F3F4F6;
+  background: var(--bg-surface-active);
   border-radius: 4px;
   font-size: 12px;
 }
@@ -857,26 +857,26 @@ async function submitFeedback(type: FeedbackType) {
   width: 10px;
   height: 10px;
   border-radius: 50%;
-  background: var(--layer-color, #6B7280);
+  background: var(--layer-color, var(--corp-text-secondary));
   flex-shrink: 0;
 }
 .dwg-coord-text {
   font-family: 'SF Mono', 'Monaco', 'Inconsolata', 'Roboto Mono', monospace;
   font-size: 12px;
-  background: #F3F4F6;
+  background: var(--bg-surface-active);
   padding: 2px 6px;
   border-radius: 4px;
 }
 .dwg-block-text {
   font-size: 12px;
-  background: #F3F4F6;
+  background: var(--bg-surface-active);
   padding: 2px 6px;
   border-radius: 4px;
 }
 .cad-handle-badge {
   font-family: 'SF Mono', 'Monaco', 'Inconsolata', 'Roboto Mono', monospace;
   font-size: 12px;
-  background: #F3F4F6;
+  background: var(--bg-surface-active);
   padding: 3px 8px;
   border-radius: 4px;
 }
@@ -885,22 +885,22 @@ async function submitFeedback(type: FeedbackType) {
 .recommendation-section {
   margin: 8px 0;
   padding: 6px 8px;
-  background: #FFF7ED;
+  background: #FFF7ED; /* 橙色浅底，无对应令牌，对齐 --color-warning-bg */
   border-radius: 4px;
-  border-left: 3px solid #F97316;
+  border-left: 3px solid var(--severity-major);
 }
 .recommendation-header {
   display: flex;
   align-items: center;
   gap: 4px;
-  color: #C2410C;
+  color: #C2410C; /* 无对应令牌，对齐 --color-warning-text 或专用色 */
   font-size: 12px;
   font-weight: 600;
   margin-bottom: 4px;
 }
 .recommendation-body {
   font-size: 12px;
-  color: #9A3412;
+  color: #9A3412; /* 无对应令牌，对齐 --color-warning-text 或专用色 */
   line-height: 1.5;
 }
 
@@ -922,7 +922,7 @@ async function submitFeedback(type: FeedbackType) {
 }
 .source-content {
   font-size: 12px;
-  color: #6B7280;
+  color: var(--corp-text-secondary);
   line-height: 1.5;
   transition: max-height 0.25s ease;
   cursor: pointer;
@@ -939,7 +939,7 @@ async function submitFeedback(type: FeedbackType) {
   left: 0;
   right: 0;
   height: 2em;
-  background: linear-gradient(transparent, #fff);
+  background: linear-gradient(transparent, var(--bg-surface));
   pointer-events: none;
 }
 .source-expand-btn {
@@ -957,7 +957,7 @@ async function submitFeedback(type: FeedbackType) {
 /* ===== 误报卡片样式 ===== */
 .false-positive-card {
   opacity: 0.5;
-  background: #F9FAFB;
+  background: var(--color-gray-50);
 }
 .false-positive-card .issue-header {
   cursor: default;
@@ -985,15 +985,15 @@ async function submitFeedback(type: FeedbackType) {
   top: 0;
   bottom: 0;
   padding: 10px 8px;
-  background: rgba(255, 255, 255, 0.95);
+  background: color-mix(in srgb, var(--bg-surface) 95%, transparent);
   z-index: 10;
 }
 .batch-checkbox {
   transform: scale(1.1);
 }
 .issue-card.batch-selected {
-  border-left-color: #409EFF !important;
-  box-shadow: 0 0 0 2px rgba(64, 158, 255, 0.15), 0 4px 12px rgba(64, 158, 255, 0.1) !important;
+  border-left-color: var(--corp-primary) !important;
+  box-shadow: 0 0 0 2px rgba(64, 158, 255, 0.15), 0 4px 12px rgba(64, 158, 255, 0.1) !important; /* 光环保留 */
   transition: all 0.25s ease;
 }
 .issue-card.batch-selected:hover {
@@ -1005,7 +1005,7 @@ async function submitFeedback(type: FeedbackType) {
   align-items: center;
   margin-top: 8px;
   padding-top: 8px;
-  border-top: 1px dashed #E5E7EB;
+  border-top: 1px dashed var(--corp-border-light);
 }
 .feedback-actions {
   display: flex;
@@ -1020,26 +1020,26 @@ async function submitFeedback(type: FeedbackType) {
   padding: 4px 10px;
 }
 .fb-useful {
-  background: #D1FAE5;
-  color: #059669;
+  background: var(--color-success-bg); /* #D1FAE5 对齐 --color-success-bg */
+  color: var(--color-success-600);
 }
-.fb-useful:hover { background: #A7F3D0; color: #047857; }
+.fb-useful:hover { background: #A7F3D0; color: #047857; } /* 无对应令牌，对齐 --color-success-bg/--color-success-text */
 .fb-fp {
-  background: #FEF3C7;
-  color: #D97706;
+  background: var(--color-warning-bg);
+  color: var(--color-warning-600);
 }
-.fb-fp:hover { background: #FDE68A; color: #B45309; }
+.fb-fp:hover { background: #FDE68A; color: var(--color-warning-text); } /* #FDE68A 无对应令牌；#B45309 对齐 --color-warning-text */
 .fb-missed {
-  background: #FEE2E2;
-  color: #DC2626;
+  background: var(--color-danger-bg);
+  color: var(--color-danger-600);
 }
-.fb-missed:hover { background: #FECACA; color: #B91C1C; }
+.fb-missed:hover { background: #FECACA; color: #B91C1C; } /* 无对应令牌，对齐 --color-danger-bg/--color-danger-text */
 .fb-done {
   display: inline-flex;
   align-items: center;
   gap: 4px;
   font-size: 12px;
-  color: #059669;
+  color: var(--color-success-600);
   font-weight: 500;
 }
 </style>

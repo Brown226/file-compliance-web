@@ -262,7 +262,7 @@ defineExpose({
 }
 
 .dim-desc {
-  font-size: 11px;
+  font-size: 12px;
   color: var(--corp-text-tertiary);
 }
 

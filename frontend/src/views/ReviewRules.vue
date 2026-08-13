@@ -872,7 +872,7 @@ onMounted(() => {
 }
 
 .rule-code {
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 600;
   color: #606266;
   font-family: 'Courier New', Consolas, monospace;

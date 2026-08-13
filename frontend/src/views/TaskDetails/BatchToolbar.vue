@@ -97,8 +97,8 @@ const emit = defineEmits<{
   align-items: center;
   justify-content: space-between;
   padding: 10px 14px;
-  background: linear-gradient(135deg, #ECF5FF 0%, #F0F9FF 100%);
-  border-bottom: 2px solid #409EFF;
+  background: linear-gradient(135deg, var(--color-primary-100) 0%, var(--color-primary-50) 100%);
+  border-bottom: 2px solid var(--corp-primary);
   flex-shrink: 0;
   position: sticky;
   top: 48px; /* 筛选工具栏高度 */
@@ -125,16 +125,16 @@ const emit = defineEmits<{
 
 .select-all-checkbox {
   font-weight: 600;
-  color: #303133;
+  color: var(--corp-text-primary);
 }
 
 .selected-count {
   font-size: 13px;
-  color: #606266;
+  color: var(--corp-text-secondary);
 }
 
 .selected-count strong {
-  color: #409EFF;
+  color: var(--corp-primary);
   font-weight: 700;
   font-size: 15px;
   margin: 0 2px;

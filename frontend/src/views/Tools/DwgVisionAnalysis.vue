@@ -2716,7 +2716,7 @@ function handleOpenClause(detail: IssueDetail) {
 }
 .report-legend {
   margin-top: 6px;
-  font-size: 11px;
+  font-size: 12px;
   display: flex;
   gap: 16px;
 }
@@ -2736,7 +2736,7 @@ function handleOpenClause(detail: IssueDetail) {
 .report-table {
   width: 100%;
   border-collapse: collapse;
-  font-size: 11px;
+  font-size: 12px;
   margin-top: 4px;
 }
 .report-table th,
@@ -2763,7 +2763,7 @@ function handleOpenClause(detail: IssueDetail) {
 }
 .cell-clause {
   font-family: 'Consolas', monospace;
-  font-size: 10px;
+  font-size: 12px;
   color: var(--color-gray-700);
 }
 
@@ -2772,7 +2772,7 @@ function handleOpenClause(detail: IssueDetail) {
   display: inline-block;
   padding: 1px 6px;
   border-radius: 2px;
-  font-size: 10px;
+  font-size: 12px;
   color: var(--bg-surface);
   font-weight: 500;
 }
@@ -2790,7 +2790,7 @@ function handleOpenClause(detail: IssueDetail) {
 .report-error-list {
   margin: 4px 0 0 16px;
   padding: 0;
-  font-size: 11px;
+  font-size: 12px;
   color: var(--color-gray-700);
 }
 .report-error-list li {
@@ -2803,7 +2803,7 @@ function handleOpenClause(detail: IssueDetail) {
   padding-top: 8px;
   border-top: 1px solid var(--corp-border);
   text-align: center;
-  font-size: 10px;
+  font-size: 12px;
   color: var(--corp-text-tertiary);
 }
 </style>

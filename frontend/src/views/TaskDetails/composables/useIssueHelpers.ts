@@ -25,7 +25,7 @@ export function useIssueHelpers() {
 
   /** DWG 图层颜色（根据图层名 hash 生成稳定色相） */
   const getLayerColor = (layer: string): string => {
-    if (!layer) return '#909399'
+    if (!layer) return '#909399' /* JS 逻辑色值不改，对齐 --corp-text-tertiary 或专用色 */
     let hash = 0
     for (let i = 0; i < layer.length; i++) {
       hash = layer.charCodeAt(i) + ((hash << 5) - hash)

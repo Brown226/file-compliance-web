@@ -202,10 +202,10 @@ async function copyText(text: string) {
   gap: 20px;
   padding: 12px 16px;
   margin-bottom: 12px;
-  background: #f5f7fa;
+  background: var(--bg-surface-active);
   border-radius: 4px;
   font-size: 13px;
-  color: #606266;
+  color: var(--corp-text-secondary);
 }
 
 .stat-item {
@@ -226,31 +226,31 @@ async function copyText(text: string) {
   height: 24px;
   line-height: 24px;
   text-align: center;
-  background: #e4e7ed;
+  background: var(--corp-border-light);
   border-radius: 4px;
   font-size: 12px;
-  color: #606266;
+  color: var(--corp-text-secondary);
 }
 
 .log-mode {
-  color: #303133;
+  color: var(--corp-text-primary);
   font-weight: 500;
   min-width: 80px;
 }
 
 .log-model {
-  color: #909399;
+  color: var(--corp-text-tertiary);
   font-size: 12px;
 }
 
 .log-meta {
-  color: #909399;
+  color: var(--corp-text-tertiary);
   font-size: 12px;
   margin-left: auto;
 }
 
 .log-time {
-  color: #c0c4cc;
+  color: var(--color-gray-400);
   font-size: 12px;
   min-width: 70px;
   text-align: right;
@@ -274,7 +274,7 @@ async function copyText(text: string) {
 .block-label {
   font-size: 13px;
   font-weight: 600;
-  color: #303133;
+  color: var(--corp-text-primary);
   margin-bottom: 6px;
 }
 
@@ -289,20 +289,20 @@ async function copyText(text: string) {
   max-height: 360px;
   overflow: auto;
   padding: 10px 12px;
-  background: #f5f7fa;
-  border: 1px solid #e4e7ed;
+  background: var(--bg-surface-active);
+  border: 1px solid var(--corp-border-light);
   border-radius: 4px;
   font-size: 12px;
   line-height: 1.6;
-  color: #303133;
+  color: var(--corp-text-primary);
   white-space: pre-wrap;
   word-break: break-word;
   font-family: 'Consolas', 'Monaco', monospace;
 }
 
 .error-content {
-  color: #f56c6c;
-  background: #fef0f0;
-  border-color: #fbc4c4;
+  color: var(--color-danger); /* #f56c6c 对齐 --color-danger */
+  background: var(--color-danger-bg); /* #fef0f0 对齐 --color-danger-bg */
+  border-color: #fbc4c4; /* 无对应令牌，对齐 --color-danger-bg 或专用色 */
 }
 </style>

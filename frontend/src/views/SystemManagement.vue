@@ -189,7 +189,7 @@ const navGroups = [
 }
 
 .nav-badge {
-  font-size: 11px;
+  font-size: 12px;
   color: var(--color-gray-600);
   background: var(--bg-surface-active);
   border-radius: 999px;

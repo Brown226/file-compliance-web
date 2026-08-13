@@ -275,7 +275,7 @@ defineExpose({ refresh: loadMemories })
 }
 
 .empty-hint {
-  font-size: 11px;
+  font-size: 12px;
   color: var(--text-dim);
   margin-top: 4px;
 }
@@ -311,7 +311,7 @@ defineExpose({ refresh: loadMemories })
 
 /* 类型标签（对齐参考 scope 标签：10px、1px 5px、圆角 3、半透明） */
 .type-label {
-  font-size: 10px;
+  font-size: 12px;
   padding: 1px 5px;
   border-radius: 3px;
   flex-shrink: 0;
@@ -346,13 +346,13 @@ defineExpose({ refresh: loadMemories })
 }
 
 .scope-label {
-  font-size: 10px;
+  font-size: 12px;
   color: var(--text-dim);
   flex-shrink: 0;
 }
 
 .memory-confidence {
-  font-size: 10px;
+  font-size: 12px;
   color: var(--text-muted);
   font-family: var(--font-mono);
   font-variant-numeric: tabular-nums;
@@ -393,7 +393,7 @@ defineExpose({ refresh: loadMemories })
 
 .memory-source {
   margin-top: 4px;
-  font-size: 10px;
+  font-size: 12px;
   color: var(--text-dim);
 }
 

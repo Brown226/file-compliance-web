@@ -11,7 +11,7 @@
     </div>
 
     <div v-else-if="!sheetNames.length" class="preview-empty">
-      <el-icon :size="32" color="#94a3b8"><Grid /></el-icon>
+      <el-icon :size="32" color="var(--color-gray-400)"><Grid /></el-icon>
       <p>暂无表格内容可预览</p>
       <p class="empty-hint">请先选择一个 Excel 文件</p>
     </div>
@@ -323,21 +323,21 @@ watch(() => props.locateTarget, (target) => {
 }
 
 .excel-table th {
-  background: #f9fafb;
+  background: var(--color-gray-50);
   font-weight: 600;
-  color: #374151;
+  color: var(--color-gray-700);
   padding: 8px 12px;
   text-align: left;
-  border-bottom: 2px solid #e5e7eb;
-  border-right: 1px solid #e5e7eb;
+  border-bottom: 2px solid var(--corp-border-light);
+  border-right: 1px solid var(--corp-border-light);
   white-space: nowrap;
 }
 
 .excel-table td {
   padding: 6px 12px;
-  border-bottom: 1px solid #f3f4f6;
-  border-right: 1px solid #f3f4f6;
-  color: #4b5563;
+  border-bottom: 1px solid var(--bg-surface-active);
+  border-right: 1px solid var(--bg-surface-active);
+  color: var(--color-gray-600);
   max-width: 300px;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -345,11 +345,11 @@ watch(() => props.locateTarget, (target) => {
 }
 
 .excel-table tbody tr:nth-child(even) {
-  background: #fafbfc;
+  background: var(--color-gray-50);
 }
 
 .excel-table tbody tr:hover td {
-  background: #f0f4ff;
+  background: var(--color-info-bg); /* #f0f4ff 对齐 --color-info-bg */
 }
 
 .row-number-header,
@@ -357,17 +357,17 @@ watch(() => props.locateTarget, (target) => {
   width: 40px;
   min-width: 40px;
   text-align: center;
-  color: #9ca3af;
-  font-size: 11px;
-  background: #f9fafb;
-  border-right: 2px solid #e5e7eb;
+  color: var(--color-gray-400);
+  font-size: 12px;
+  background: var(--color-gray-50);
+  border-right: 2px solid var(--corp-border-light);
 }
 
 .cell-highlight {
-  background: rgba(239, 68, 68, 0.15) !important;
-  outline: 2px solid #EF4444;
+  background: color-mix(in srgb, var(--color-danger) 15%, transparent) !important;
+  outline: 2px solid var(--corp-danger);
   outline-offset: -2px;
   font-weight: 600;
-  color: #dc2626;
+  color: var(--color-danger-600);
 }
 </style>

@@ -1997,7 +1997,7 @@ onUnmounted(() => {
 
   .file-tab {
     padding: 3px 8px;
-    font-size: 11px;
+    font-size: 12px;
   }
 }
 
@@ -2065,7 +2065,7 @@ onUnmounted(() => {
   }
 
   .hint-text {
-    font-size: 11px;
+    font-size: 12px;
   }
 
   /* 文件Tab适配小屏 */
@@ -2102,7 +2102,7 @@ onUnmounted(() => {
 
   .file-tab {
     padding: 3px 6px;
-    font-size: 11px;
+    font-size: 12px;
   }
 }
 
@@ -2177,11 +2177,11 @@ onUnmounted(() => {
   }
 
   .progress-title {
-    font-size: 11px;
+    font-size: 12px;
   }
 
   .progress-percent {
-    font-size: 11px;
+    font-size: 12px;
     padding: 0 6px;
   }
 
@@ -2191,17 +2191,17 @@ onUnmounted(() => {
   }
 
   .progress-step {
-    font-size: 11px;
+    font-size: 12px;
     margin: 2px 0 0;
   }
 
   .progress-message {
-    font-size: 10px;
+    font-size: 12px;
     margin-bottom: 4px;
   }
 
   .chunk-progress {
-    font-size: 10px;
+    font-size: 12px;
     padding: 3px 6px;
     margin-bottom: 4px;
     gap: 4px;
@@ -2212,7 +2212,7 @@ onUnmounted(() => {
   }
 
   .live-issue-count {
-    font-size: 11px;
+    font-size: 12px;
     padding: 3px 6px;
   }
 }

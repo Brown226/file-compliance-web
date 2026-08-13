@@ -5,7 +5,7 @@
       <span>正在渲染 Word 文档...</span>
     </div>
     <div v-else-if="error" class="preview-error">
-      <el-icon :size="24" color="#EF4444"><WarningFilled /></el-icon>
+      <el-icon :size="24" color="var(--corp-danger)"><WarningFilled /></el-icon>
       <span>{{ error }}</span>
     </div>
     <!-- docx-preview 渲染容器（常驻 DOM，loading 时也可见，保证宽度测量准确） -->
@@ -287,7 +287,7 @@ watch(() => props.locateTarget, () => {
   align-items: center;
   justify-content: center;
   gap: 10px;
-  color: #6B7280;
+  color: var(--corp-text-secondary);
   font-size: 13px;
 }
 
@@ -297,12 +297,12 @@ watch(() => props.locateTarget, () => {
   padding: 24px 32px;
   font-size: 14px;
   line-height: 1.8;
-  color: #374151;
+  color: var(--color-gray-700);
 }
 
-.docx-content :deep(h1) { font-size: 1.8em; font-weight: 700; margin: 20px 0 12px; color: #1F2937; }
-.docx-content :deep(h2) { font-size: 1.5em; font-weight: 650; margin: 18px 0 10px; color: #1F2937; }
-.docx-content :deep(h3) { font-size: 1.2em; font-weight: 600; margin: 16px 0 8px; color: #374151; }
+.docx-content :deep(h1) { font-size: 1.8em; font-weight: 700; margin: 20px 0 12px; color: var(--color-gray-800); }
+.docx-content :deep(h2) { font-size: 1.5em; font-weight: 650; margin: 18px 0 10px; color: var(--color-gray-800); }
+.docx-content :deep(h3) { font-size: 1.2em; font-weight: 600; margin: 16px 0 8px; color: var(--color-gray-700); }
 .docx-content :deep(p) { margin: 0 0 10px; }
 .docx-content :deep(table) {
   width: 100%;
@@ -312,25 +312,25 @@ watch(() => props.locateTarget, () => {
 }
 .docx-content :deep(th),
 .docx-content :deep(td) {
-  border: 1px solid #E5E7EB;
+  border: 1px solid var(--corp-border-light);
   padding: 8px 12px;
   text-align: left;
 }
-.docx-content :deep(th) { background: #F9FAFB; font-weight: 600; }
+.docx-content :deep(th) { background: var(--color-gray-50); font-weight: 600; }
 .docx-content :deep(img) { max-width: 100%; height: auto; }
 .docx-content :deep(ul),
 .docx-content :deep(ol) { padding-left: 1.5em; margin: 8px 0; }
 .docx-content :deep(blockquote) {
-  border-left: 3px solid #3B82F6;
+  border-left: 3px solid var(--corp-primary);
   padding-left: 12px;
   margin: 12px 0;
-  color: #6B7280;
+  color: var(--corp-text-secondary);
 }
 
 /* 高亮标记 */
 .docx-content :deep(.docx-highlight-yellow) {
-  background: rgba(250, 204, 21, 0.35);
-  border-bottom: 2px solid #EAB308;
+  background: color-mix(in srgb, var(--severity-minor) 35%, transparent);
+  border-bottom: 2px solid var(--severity-minor);
   padding: 1px 2px;
   border-radius: 3px;
   scroll-margin: 100px;

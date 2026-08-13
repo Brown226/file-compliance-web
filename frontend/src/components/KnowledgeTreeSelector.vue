@@ -454,7 +454,7 @@ function collectChildKbs(children: KbTreeNode[]): KbTreeNode[] {
   color: var(--color-primary-500);
   padding: 1px 6px;
   border-radius: 10px;
-  font-size: 11px;
+  font-size: 12px;
 }
 
 .is-inline .item-docs {
@@ -462,7 +462,7 @@ function collectChildKbs(children: KbTreeNode[]): KbTreeNode[] {
   color: var(--color-success);
   padding: 1px 6px;
   border-radius: 10px;
-  font-size: 11px;
+  font-size: 12px;
 }
 
 /* ===== 对话框布局 ===== */

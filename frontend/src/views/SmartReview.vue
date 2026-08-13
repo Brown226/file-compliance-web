@@ -467,7 +467,7 @@ onMounted(async () => {
 .selectable-card__content { flex: 1; min-width: 0; }
 .selectable-card__label { font-size: var(--text-base); font-weight: 600; color: var(--corp-text-primary); }
 .selectable-card__desc { font-size: var(--text-sm); color: var(--corp-text-tertiary); margin-top: 1px; }
-.selectable-card__check { margin-left: auto; width: 20px; height: 20px; border-radius: 50%; background: var(--color-primary-500); color: var(--bg-surface); display: flex; align-items: center; justify-content: center; font-size: 11px; flex-shrink: 0; }
+.selectable-card__check { margin-left: auto; width: 20px; height: 20px; border-radius: 50%; background: var(--color-primary-500); color: var(--bg-surface); display: flex; align-items: center; justify-content: center; font-size: 12px; flex-shrink: 0; }
 
 /* ---- 目标选择 ---- */
 .objective-cards { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }

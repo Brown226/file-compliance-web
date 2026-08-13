@@ -108,7 +108,7 @@ const errorCount = computed(() => props.items.filter((it) => (it.errorTypes?.len
 }
 
 .sc-name-sub {
-  font-size: 11px;
+  font-size: 12px;
   color: var(--el-text-color-secondary);
   margin-top: 2px;
 }

@@ -588,7 +588,7 @@ onBeforeUnmount(() => {
 }
 
 .user-meta {
-  font-size: 11px;
+  font-size: 12px;
   color: var(--corp-text-secondary);
 }
 
@@ -640,14 +640,14 @@ onBeforeUnmount(() => {
 }
 
 .mini-unit {
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 500;
   color: var(--corp-text-tertiary);
   margin-left: 2px;
 }
 
 .mini-label {
-  font-size: 11px;
+  font-size: 12px;
   color: var(--corp-text-secondary);
   margin-top: 4px;
 }
@@ -703,7 +703,7 @@ onBeforeUnmount(() => {
 }
 
 .bar-label {
-  font-size: 11px;
+  font-size: 12px;
   color: var(--corp-text-tertiary);
 }
 

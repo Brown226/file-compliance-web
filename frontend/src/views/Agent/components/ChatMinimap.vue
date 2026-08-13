@@ -591,7 +591,7 @@ watch([minimapHovered, nearestNodeIndex], () => {
   padding: 0;
   color: var(--text-dim);
   font-family: var(--font-mono);
-  font-size: 10px;
+  font-size: 12px;
   font-variant-numeric: tabular-nums;
   line-height: 18px;
   text-align: center;
@@ -660,7 +660,7 @@ watch([minimapHovered, nearestNodeIndex], () => {
   background: transparent;
   color: var(--text-dim);
   font-family: var(--font-mono);
-  font-size: 10px;
+  font-size: 12px;
   font-weight: 600;
   line-height: 26px;
   text-align: center;
@@ -728,7 +728,7 @@ watch([minimapHovered, nearestNodeIndex], () => {
 .preview-heading[data-level="3"] {
   padding-left: 60px;
   color: var(--text-muted);
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 400;
 }
 

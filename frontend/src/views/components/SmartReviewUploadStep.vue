@@ -417,7 +417,7 @@ const getFileMeta = (fileName: string) => {
 }
 
 .file-size {
-  font-size: 11px;
+  font-size: 12px;
   color: #9CA3AF;
   flex-shrink: 0;
 }
@@ -486,7 +486,7 @@ const getFileMeta = (fileName: string) => {
   display: inline-flex;
   align-items: center;
   padding: 3px 10px;
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 500;
   color: #6B7280;
   background: #F3F4F6;

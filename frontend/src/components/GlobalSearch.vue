@@ -263,7 +263,7 @@ defineExpose({ open, close, visible })
 }
 
 .search-input::placeholder {
-  color: var(--corp-text-tertiary);
+  color: var(--color-gray-500);
 }
 
 .search-kbd {

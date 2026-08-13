@@ -477,7 +477,7 @@ function riskTagType(r?: string): 'danger' | 'warning' | 'info' {
 }
 
 .issue-rule {
-  font-size: 11px;
+  font-size: 12px;
   color: var(--text-muted);
   background: var(--bg-hover);
   padding: 1px 6px;
@@ -510,7 +510,7 @@ function riskTagType(r?: string): 'danger' | 'warning' | 'info' {
 }
 
 .section-label {
-  font-size: 11px;
+  font-size: 12px;
   color: var(--text-muted);
   margin-bottom: 3px;
   font-weight: 600;
@@ -569,7 +569,7 @@ function riskTagType(r?: string): 'danger' | 'warning' | 'info' {
 }
 
 .fp-done {
-  font-size: 11px;
+  font-size: 12px;
   color: var(--success);
 }
 
@@ -580,7 +580,7 @@ function riskTagType(r?: string): 'danger' | 'warning' | 'info' {
   margin-top: 8px;
   padding-top: 8px;
   border-top: 1px dashed var(--border);
-  font-size: 11px;
+  font-size: 12px;
   color: var(--text-muted);
 }
 

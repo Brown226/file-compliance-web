@@ -490,7 +490,7 @@ onMounted(() => {
 }
 
 .detail-count {
-  font-size: 11px;
+  font-size: 12px;
   color: var(--corp-text-tertiary);
   margin-top: 2px;
 }

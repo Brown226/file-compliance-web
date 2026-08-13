@@ -84,7 +84,7 @@
   /* === 字体系统 === */
   --font-family: "Inter", "PingFang SC", "Microsoft YaHei", ui-sans-serif, system-ui, -apple-system, sans-serif;
   --font-mono: "JetBrains Mono", "Fira Code", "Consolas", monospace;
-  --text-xs: 11px;
+  --text-xs: 12px; /* WCAG: 最小可读字号，10-11px 小字全站已提升（2026-08-13） */
   --text-sm: 12px;
   --text-base: 13px;
   --text-lg: 15px;
@@ -119,6 +119,8 @@
   --corp-border-light: #E5E7EB;
   --corp-border: #D1D5DB;
   --corp-border-focus: #3B82F6;
+  --focus-ring: 2px solid rgba(59, 130, 246, 0.6); /* WCAG 键盘焦点环（2026-08-13） */
+  --focus-ring-offset: 2px;
 
   /* === Element Plus 覆盖变量 === */
   --el-color-primary: #3B82F6;

@@ -488,7 +488,7 @@ defineExpose({ clearHighlights, loadPdf })
   display: flex;
   flex-direction: column;
   height: 100%;
-  background: #525659;
+  background: var(--color-gray-600); /* pdf.js 阅读器深灰背景（原 #525659） */
   position: relative;
 }
 
@@ -502,7 +502,7 @@ defineExpose({ clearHighlights, loadPdf })
   height: 400px;
   color: rgba(255, 255, 255, 0.85);
   font-size: var(--text-base);
-  background: #525659;
+  background: var(--color-gray-600); /* 原 #525659 */
   border-radius: var(--radius-lg);
 }
 
@@ -521,7 +521,7 @@ defineExpose({ clearHighlights, loadPdf })
   flex: 1;
   overflow-y: auto;
   padding: var(--space-8) var(--space-6);
-  background: #525659;
+  background: var(--color-gray-600); /* 原 #525659 */
   cursor: grab;
   user-select: none;
   will-change: scroll-position;
@@ -548,7 +548,7 @@ defineExpose({ clearHighlights, loadPdf })
 .pdf-container :deep(.page) {
   position: relative;
   box-shadow: 0 2px 12px rgba(0, 0, 0, 0.35);
-  background: #fff;
+  background: var(--bg-surface);
   border-radius: 2px;
 }
 
@@ -578,18 +578,18 @@ defineExpose({ clearHighlights, loadPdf })
 
 /* 高亮样式 - 实色不透明，确保在任何 opacity 父级下都清晰可见 */
 .pdf-container :deep(.textLayer > span.pdf-highlight-yellow) {
-  background-color: #FFD700 !important;
+  background-color: #FFD700 !important; /* 定位高亮专用金色，无对应令牌 */
   color: transparent !important;
-  box-shadow: 0 0 12px rgba(255, 180, 0, 1), 0 0 4px rgba(255, 150, 0, 1), inset 0 0 8px rgba(255, 220, 0, 0.5);
+  box-shadow: 0 0 12px rgba(255, 180, 0, 1), 0 0 4px rgba(255, 150, 0, 1), inset 0 0 8px rgba(255, 220, 0, 0.5); /* 光环保留 */
   border-radius: 3px;
-  outline: 2px solid #FF9500;
+  outline: 2px solid #FF9500; /* 专用橙色描边，无对应令牌 */
   outline-offset: -1px;
   animation: pdf-highlight-pulse 1.2s ease-in-out 4;
 }
 
 @keyframes pdf-highlight-pulse {
-  0%, 100% { box-shadow: 0 0 12px rgba(255, 180, 0, 1), 0 0 4px rgba(255, 150, 0, 1); outline-color: #FF9500; }
-  50% { box-shadow: 0 0 24px rgba(255, 200, 0, 1), 0 0 8px rgba(255, 120, 0, 1), inset 0 0 12px rgba(255, 230, 0, 0.6); outline-color: #FF6600; }
+  0%, 100% { box-shadow: 0 0 12px rgba(255, 180, 0, 1), 0 0 4px rgba(255, 150, 0, 1); outline-color: #FF9500; } /* 光环保留 + 专用橙色 */
+  50% { box-shadow: 0 0 24px rgba(255, 200, 0, 1), 0 0 8px rgba(255, 120, 0, 1), inset 0 0 12px rgba(255, 230, 0, 0.6); outline-color: #FF6600; } /* 光环保留 + 专用橙色 */
 }
 
 .pdf-toolbar {
@@ -612,7 +612,7 @@ defineExpose({ clearHighlights, loadPdf })
 }
 
 .zoom-hint {
-  font-size: 11px;
+  font-size: 12px;
   color: var(--corp-text-secondary);
   opacity: 0.7;
 }

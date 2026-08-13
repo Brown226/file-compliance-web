@@ -390,7 +390,7 @@ watch(() => props.filePath, load, { immediate: true })
   gap: 8px;
   padding: 5px 12px;
   border-bottom: 1px solid var(--border);
-  font-size: 11px;
+  font-size: 12px;
   color: var(--text-dim);
   background: var(--bg);
   flex-shrink: 0;
@@ -495,7 +495,7 @@ watch(() => props.filePath, load, { immediate: true })
   border-radius: 6px;
   background: var(--accent);
   color: var(--corp-text-inverse);
-  font-size: 11px;
+  font-size: 12px;
 }
 .fv-locate-notice.is-miss {
   background: var(--warning, var(--color-warning));

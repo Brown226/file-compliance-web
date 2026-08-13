@@ -568,7 +568,7 @@ onMounted(() => {
   align-items: center;
   padding: 1px 8px;
   border-radius: 4px;
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 500;
   border: 1px solid transparent;
   flex-shrink: 0;

@@ -65,7 +65,7 @@
 
     <!-- 空状态 -->
     <div v-else class="preview-empty">
-      <el-icon :size="32" color="#94a3b8"><Picture /></el-icon>
+      <el-icon :size="32" color="var(--color-gray-400)"><Picture /></el-icon>
       <p>暂无图纸预览</p>
       <p class="empty-hint">请先选择一个 DWG 文件查看原图预览</p>
     </div>
@@ -83,7 +83,7 @@
         :style="highlightTooltipStyle"
       >
         <div class="highlight-tooltip-content">
-          <el-icon color="#ef4444" :size="14"><WarningFilled /></el-icon>
+          <el-icon color="var(--corp-danger)" :size="14"><WarningFilled /></el-icon>
           <span class="highlight-text">{{ highlightInfo.description }}</span>
         </div>
       </div>
@@ -604,7 +604,7 @@ function highlightEntity(handle: string, description?: string): boolean {
 
   // 添加高亮样式
   el.classList.add('dwg-entity-highlight')
-  ;(el as SVGElement).style.filter = 'drop-shadow(0 0 6px #ef4444) drop-shadow(0 0 12px #ef4444)'
+  ;(el as SVGElement).style.filter = 'drop-shadow(0 0 6px #ef4444) drop-shadow(0 0 12px #ef4444)' /* JS 内联样式不改，对齐 --corp-danger 或专用色 */
   ;(el as SVGElement).style.opacity = '1'
 
   // ★ viewBox 定位：将图元居中到视口，自动适度放大
@@ -701,7 +701,7 @@ onUnmounted(() => {
   flex: 1;
   display: flex;
   flex-direction: column;
-  background-color: var(--corp-bg-panel, #f8fafc);
+  background-color: var(--corp-bg-panel, var(--bg-surface));
   overflow: hidden;
   min-width: 0;
   min-height: 0; /* 关键修复：允许在 flex 容器中正确收缩 */
@@ -715,8 +715,8 @@ onUnmounted(() => {
   align-items: center;
   justify-content: space-between;
   flex-shrink: 0;
-  border-bottom: 1px solid var(--corp-border-light, #475569);
-  background: var(--corp-bg-sunken, #334155);
+  border-bottom: 1px solid var(--corp-border-light, var(--color-gray-600)); /* 回退原 #475569 */
+  background: var(--corp-bg-sunken, var(--color-gray-700)); /* 回退原 #334155 */
 }
 
 .toolbar-left {
@@ -728,12 +728,12 @@ onUnmounted(() => {
 .preview-title {
   font-weight: 600;
   font-size: 13px;
-  color: var(--corp-text-primary, #e2e8f0);
+  color: var(--corp-text-primary, var(--color-gray-800)); /* 回退原 #e2e8f0 */
 }
 
 .preview-filename {
   font-size: 12px;
-  color: var(--corp-text-secondary, #94a3b8);
+  color: var(--corp-text-secondary, var(--color-gray-400)); /* 回退原 #94a3b8 */
   background: rgba(255, 255, 255, 0.08);
   padding: 3px 10px;
   border-radius: 12px;
@@ -751,8 +751,8 @@ onUnmounted(() => {
 }
 
 .toolbar-right .el-button {
-  border-color: var(--corp-border-light, #475569);
-  color: var(--corp-text-primary, #e2e8f0);
+  border-color: var(--corp-border-light, var(--color-gray-600)); /* 回退原 #475569 */
+  color: var(--corp-text-primary, var(--color-gray-800)); /* 回退原 #e2e8f0 */
 }
 
 /* ===== 加载/错误/空状态 ===== */
@@ -765,7 +765,7 @@ onUnmounted(() => {
   align-items: center;
   justify-content: center;
   gap: 8px;
-  color: var(--corp-text-secondary, #6b7280);
+  color: var(--corp-text-secondary, var(--color-gray-500)); /* 回退原 #6b7280 */
   font-size: 13px;
 }
 
@@ -776,14 +776,14 @@ onUnmounted(() => {
 
 .error-msg {
   font-size: 12px;
-  color: var(--el-color-warning, #e6a23c);
+  color: var(--el-color-warning, var(--corp-warning)); /* 回退原 #e6a23c */
   max-width: 300px;
   text-align: center;
 }
 
 .version-hint {
-  font-size: 11px;
-  color: var(--corp-text-secondary, #6b7280);
+  font-size: 12px;
+  color: var(--corp-text-secondary, var(--color-gray-500)); /* 回退原 #6b7280 */
   max-width: 360px;
   text-align: center;
   line-height: 1.5;
@@ -801,7 +801,7 @@ onUnmounted(() => {
   flex: 1;
   overflow: hidden;
   position: relative;
-  background: #1e293b; /* 深色背景 - 类似 AutoCAD 经典界面 */
+  background: var(--color-gray-800); /* 深色背景 - 类似 AutoCAD 经典界面（原 #1e293b） */
   cursor: grab;
   min-height: 0; /* 由父 flex 决定高度 */
 }
@@ -827,7 +827,7 @@ onUnmounted(() => {
 
 /* ===== 高亮样式 ===== */
 .svg-canvas :deep(.dwg-entity-highlight) {
-  filter: drop-shadow(0 0 6px #ef4444) drop-shadow(0 0 12px #ef4444) !important;
+  filter: drop-shadow(0 0 6px var(--corp-danger)) drop-shadow(0 0 12px var(--corp-danger)) !important;
   opacity: 1 !important;
 }
 
@@ -838,14 +838,14 @@ onUnmounted(() => {
 .svg-canvas :deep(.dwg-entity-highlight polyline),
 .svg-canvas :deep(.dwg-entity-highlight polygon),
 .svg-canvas :deep(.dwg-entity-highlight rect) {
-  stroke: #ef4444 !important;
+  stroke: var(--corp-danger) !important;
   stroke-width: 3 !important;
-  filter: drop-shadow(0 0 8px #ef4444) !important;
+  filter: drop-shadow(0 0 8px var(--corp-danger)) !important;
 }
 
 .svg-canvas :deep(.dwg-entity-highlight text) {
-  fill: #ef4444 !important;
-  filter: drop-shadow(0 0 4px rgba(239, 68, 68, 0.5)) !important;
+  fill: var(--corp-danger) !important;
+  filter: drop-shadow(0 0 4px rgba(239, 68, 68, 0.5)) !important; /* 光环保留 */
   font-weight: bold !important;
 }
 
@@ -854,8 +854,8 @@ onUnmounted(() => {
   position: absolute;
   bottom: 12px;
   right: 12px;
-  background: rgba(15, 23, 42, 0.75);
-  color: #fff;
+  background: rgba(15, 23, 42, 0.75); /* 浮层光环保留 */
+  color: var(--corp-text-inverse);
   padding: 4px 10px;
   border-radius: 6px;
   font-size: 12px;

@@ -70,7 +70,7 @@ const hasCsv = computed(() => Boolean(props.result?.csv))
   display: flex;
   align-items: center;
   gap: 12px;
-  font-size: 11px;
+  font-size: 12px;
   color: var(--text-muted);
 }
 .table-view-stat b { color: var(--text); font-weight: 600; }
@@ -80,7 +80,7 @@ const hasCsv = computed(() => Boolean(props.result?.csv))
   border-radius: 4px;
   background: color-mix(in srgb, var(--color-success) 12%, transparent);
   color: var(--color-success-600);
-  font-size: 10px;
+  font-size: 12px;
 }
 .table-card {
   border: 1px solid var(--border);
@@ -93,7 +93,7 @@ const hasCsv = computed(() => Boolean(props.result?.csv))
   gap: 8px;
   padding: 5px 8px;
   background: var(--bg);
-  font-size: 11px;
+  font-size: 12px;
 }
 .table-card-title { font-weight: 600; color: var(--text); }
 .table-card-tag {
@@ -101,7 +101,7 @@ const hasCsv = computed(() => Boolean(props.result?.csv))
   border-radius: 4px;
   background: var(--bg-selected);
   color: var(--text-muted);
-  font-size: 10px;
+  font-size: 12px;
   font-family: var(--font-mono);
 }
 .table-card-dim { margin-left: auto; color: var(--text-dim); }
@@ -109,7 +109,7 @@ const hasCsv = computed(() => Boolean(props.result?.csv))
 .data-table {
   width: 100%;
   border-collapse: collapse;
-  font-size: 11px;
+  font-size: 12px;
 }
 .data-table th, .data-table td {
   padding: 4px 8px;

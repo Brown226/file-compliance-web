@@ -174,7 +174,7 @@ onMounted(loadRoots)
 .current-path {
   padding: 4px 10px;
   color: var(--text-dim);
-  font-size: 11px;
+  font-size: 12px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -233,7 +233,7 @@ onMounted(loadRoots)
   text-overflow: ellipsis;
 }
 .entry-meta {
-  font-size: 11px;
+  font-size: 12px;
   color: var(--text-dim);
   flex-shrink: 0;
 }

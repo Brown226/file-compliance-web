@@ -208,14 +208,14 @@ watch(
 .lib-item-head { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; }
 .lib-item-type {
   flex-shrink: 0;
-  font-size: 11px;
+  font-size: 12px;
   padding: 1px 6px;
   border-radius: 3px;
   background: color-mix(in srgb, var(--accent, var(--color-action)) 12%, transparent);
   color: var(--accent, var(--color-action));
 }
 .lib-item-title { font-size: 12px; font-weight: 500; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.lib-item-time { font-size: 11px; color: var(--text-dim, var(--corp-text-tertiary)); flex-shrink: 0; }
+.lib-item-time { font-size: 12px; color: var(--text-dim, var(--corp-text-tertiary)); flex-shrink: 0; }
 .lib-item-content {
   font-size: 12px;
   color: var(--text-muted, var(--corp-text-secondary));
@@ -229,7 +229,7 @@ watch(
 }
 .lib-item-actions { display: flex; gap: 6px; margin-top: 6px; }
 .lib-btn {
-  font-size: 11px;
+  font-size: 12px;
   padding: 2px 10px;
   border: 1px solid var(--border, var(--corp-border-light));
   border-radius: 4px;

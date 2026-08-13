@@ -16,7 +16,7 @@
         </div>
       </div>
       <div class="stat-card-dash" :class="{ 'has-issues': issueCount > 0 }">
-        <el-icon class="stat-icon-dash" :size="18" :color="issueCount > 0 ? '#D97706' : '#16A34A'">
+        <el-icon class="stat-icon-dash" :size="18" :color="issueCount > 0 ? 'var(--color-warning-600)' : 'var(--color-success)'">
           <WarningFilled v-if="issueCount > 0" />
           <CircleCheckFilled v-else />
         </el-icon>
@@ -61,7 +61,7 @@
 
     <!-- AI 审查空结果警告 -->
     <div v-if="showAiWarning" class="ai-warning-banner">
-      <el-icon color="#E6A23C" :size="16"><WarningFilled /></el-icon>
+      <el-icon color="var(--corp-warning)" :size="16"><WarningFilled /></el-icon>
       <span>
         <template v-if="reviewMode === 'CONTRACT_REVIEW'">
           合同风险审查未发现风险条款。可能原因：上传的文件不是合同文本，或合同条款对该立场无明显风险。建议更换为正式合同文件后重新审查。
@@ -128,18 +128,18 @@ const scoreConclusion = computed(() => {
   align-items: center;
   gap: 8px;
   padding: 10px 12px;
-  background: #F9FAFB;
-  border: 1px solid #E5E7EB;
+  background: var(--color-gray-50);
+  border: 1px solid var(--corp-border-light);
   border-radius: 6px;
   transition: border-color 0.15s, box-shadow 0.15s;
 }
 .stat-card-dash:hover {
-  border-color: #D1D5DB;
+  border-color: var(--corp-border);
   box-shadow: 0 1px 4px rgba(0,0,0,0.04);
 }
 .stat-card-dash.has-issues {
-  background: #FEF2F2;
-  border-color: #FECACA;
+  background: var(--color-danger-bg);
+  border-color: #FECACA; /* 无对应令牌，对齐 --color-danger-bg 或专用色 */
 }
 
 .stat-icon-dash {
@@ -157,13 +157,13 @@ const scoreConclusion = computed(() => {
 .stat-value-dash {
   font-size: 15px;
   font-weight: 700;
-  color: #111827;
+  color: var(--corp-text-primary);
   line-height: 1.2;
 }
 
 .stat-label-dash {
-  font-size: 11px;
-  color: #6B7280;
+  font-size: 12px;
+  color: var(--corp-text-secondary);
 }
 
 /* ===== 合同审查评分卡片 ===== */
@@ -173,8 +173,8 @@ const scoreConclusion = computed(() => {
   gap: 24px;
   padding: 16px 20px;
   margin-top: 12px;
-  background: linear-gradient(135deg, #F0F9FF 0%, #E0F2FE 100%);
-  border: 1px solid #BAE6FD;
+  background: linear-gradient(135deg, var(--color-primary-50) 0%, var(--color-primary-100) 100%);
+  border: 1px solid #BAE6FD; /* 无对应令牌，对齐 --color-primary-200 或专用色 */
   border-radius: 8px;
 }
 .score-header {
@@ -187,9 +187,9 @@ const scoreConclusion = computed(() => {
   font-weight: 800;
   line-height: 1;
 }
-.score-value.level-good { color: #16A34A; }
-.score-value.level-warning { color: #D97706; }
-.score-value.level-danger { color: #DC2626; }
+.score-value.level-good { color: var(--color-success); } /* #16A34A 对齐 --color-success */
+.score-value.level-warning { color: var(--color-warning-600); }
+.score-value.level-danger { color: var(--color-danger-600); }
 .score-meta {
   display: flex;
   flex-direction: column;
@@ -197,12 +197,12 @@ const scoreConclusion = computed(() => {
 }
 .score-label {
   font-size: 12px;
-  color: #6B7280;
+  color: var(--corp-text-secondary);
 }
 .score-conclusion {
   font-size: 13px;
   font-weight: 600;
-  color: #374151;
+  color: var(--color-gray-700);
 }
 .risk-summary {
   display: flex;
@@ -217,12 +217,12 @@ const scoreConclusion = computed(() => {
   font-weight: 700;
   display: block;
 }
-.risk-item.high .risk-count { color: #DC2626; }
-.risk-item.medium .risk-count { color: #D97706; }
-.risk-item.low .risk-count { color: #16A34A; }
+.risk-item.high .risk-count { color: var(--color-danger-600); }
+.risk-item.medium .risk-count { color: var(--color-warning-600); }
+.risk-item.low .risk-count { color: var(--color-success); } /* #16A34A 对齐 --color-success */
 .risk-label {
-  font-size: 11px;
-  color: #6B7280;
+  font-size: 12px;
+  color: var(--corp-text-secondary);
 }
 
 .ai-warning-banner {
@@ -231,11 +231,11 @@ const scoreConclusion = computed(() => {
   gap: 8px;
   padding: 10px 14px;
   margin-top: 8px;
-  background: rgba(230, 162, 60, 0.08);
-  border: 1px solid rgba(230, 162, 60, 0.25);
+  background: color-mix(in srgb, var(--corp-warning) 8%, transparent);
+  border: 1px solid color-mix(in srgb, var(--corp-warning) 25%, transparent);
   border-radius: 6px;
   font-size: 13px;
-  color: #90640b;
+  color: var(--color-warning-text); /* #90640b 对齐 --color-warning-text */
   line-height: 1.5;
 }
 

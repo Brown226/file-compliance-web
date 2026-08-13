@@ -1494,7 +1494,7 @@ async function locateClauseById(clauseId: string) {
 }
 
 .sidebar-group-label {
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 600;
   color: var(--color-gray-400);
   letter-spacing: 0.4px;

@@ -97,7 +97,7 @@
   box-shadow: 0 0 0 1px var(--color-action) inset, 0 0 0 3px rgba(59, 130, 246, 0.1);
 }
 .el-input__inner::placeholder {
-  color: var(--corp-text-tertiary);
+  color: var(--color-gray-500);
 }
 
 /* Select 下拉框 */
@@ -149,7 +149,7 @@
 .el-tag.el-tag {
   border-radius: var(--radius-full);
   font-weight: 700;
-  font-size: 11px;
+  font-size: 12px;
   border: none;
   padding: 0 8px;
   height: 22px;
@@ -400,4 +400,25 @@
 .rule-prefix-group__header .el-checkbox__inner,
 .rule-prefix-group__header .el-checkbox__original {
   pointer-events: auto !important;
+}
+
+/* ===== 键盘焦点环 — WCAG 2.4.7 Focus Visible（2026-08-13 统一） =====
+   输入类控件已有 box-shadow 焦点态（见上），这里补全局键盘导航焦点环 */
+:focus-visible {
+  outline: var(--focus-ring);
+  outline-offset: var(--focus-ring-offset);
+}
+
+/* 输入类控件用自身 box-shadow 焦点态，避免双重焦点环 */
+.el-input__wrapper:focus-within,
+.el-select__wrapper:focus-within,
+.el-textarea__inner:focus,
+.el-checkbox__input:focus-visible + .el-checkbox__inner {
+  outline: none;
+}
+
+/* EP 组件内部 button 的 focus-visible 统一走全局环 */
+.el-button:focus-visible {
+  outline: var(--focus-ring);
+  outline-offset: var(--focus-ring-offset);
 }

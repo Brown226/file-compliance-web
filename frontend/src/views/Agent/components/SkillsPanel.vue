@@ -313,7 +313,7 @@ onMounted(loadSkills)
 }
 
 .header-path {
-  font-size: 11px;
+  font-size: 12px;
   color: var(--text-muted);
   font-family: var(--font-mono);
   max-width: 320px;
@@ -373,7 +373,7 @@ onMounted(loadSkills)
 
 .group-label {
   padding: 4px 8px 3px;
-  font-size: 10px;
+  font-size: 12px;
   font-weight: 600;
   color: var(--text-dim);
   text-transform: uppercase;
@@ -528,7 +528,7 @@ onMounted(loadSkills)
 }
 
 .scope-tag {
-  font-size: 10px;
+  font-size: 12px;
   padding: 1px 5px;
   border-radius: 3px;
   flex-shrink: 0;
@@ -538,7 +538,7 @@ onMounted(loadSkills)
 
 .detail-path {
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: 12px;
   color: var(--text-dim);
   flex: 1;
   overflow: hidden;

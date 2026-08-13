@@ -91,7 +91,7 @@ function statusLabel(s: string): string {
 .crv-stats {
   display: flex;
   gap: 12px;
-  font-size: 11px;
+  font-size: 12px;
   color: var(--text-muted);
 }
 .crv-stat b { color: var(--text); font-weight: 600; }
@@ -99,7 +99,7 @@ function statusLabel(s: string): string {
 .crv-table {
   width: 100%;
   border-collapse: collapse;
-  font-size: 11px;
+  font-size: 12px;
 }
 .crv-table th, .crv-table td {
   padding: 5px 8px;
@@ -124,7 +124,7 @@ function statusLabel(s: string): string {
   display: inline-block;
   padding: 1px 8px;
   border-radius: 4px;
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 600;
 }
 .st-consistent { background: color-mix(in srgb, var(--color-success) 14%, transparent); color: var(--color-success-600); }

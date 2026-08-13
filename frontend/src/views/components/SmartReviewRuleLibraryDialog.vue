@@ -315,7 +315,7 @@ useEnterToConfirm(computed(() => props.visible), handleConfirm)
 }
 
 .status-tag {
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 600;
   letter-spacing: 0.02em;
 }

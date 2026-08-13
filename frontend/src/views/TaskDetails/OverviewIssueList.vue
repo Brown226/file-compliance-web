@@ -114,15 +114,15 @@ const { getCategoryTagType, getIssueTypeLabel, truncateText } = useIssueHelpers(
   align-items: center;
   padding: 10px 12px;
   margin-bottom: 16px;
-  background: #F9FAFB;
-  border: 1px solid #E5E7EB;
+  background: var(--color-gray-50);
+  border: 1px solid var(--corp-border-light);
   border-radius: 6px;
 }
 
 .overview-section-title {
   font-size: 14px;
   font-weight: 700;
-  color: #111827;
+  color: var(--corp-text-primary);
   margin: 0;
 }
 
@@ -134,7 +134,7 @@ const { getCategoryTagType, getIssueTypeLabel, truncateText } = useIssueHelpers(
 
 .switch-label {
   font-size: 12px;
-  color: #6B7280;
+  color: var(--corp-text-secondary);
   white-space: nowrap;
 }
 
@@ -151,10 +151,10 @@ const { getCategoryTagType, getIssueTypeLabel, truncateText } = useIssueHelpers(
   font-weight: 700;
   padding: 6px 0 8px;
   margin-bottom: 6px;
-  border-bottom: 1px solid #F3F4F6;
+  border-bottom: 1px solid var(--bg-surface-active);
 }
-.severity-group-header.severity-error { color: #DC2626; }
-.severity-group-header.severity-warning { color: #D97706; }
+.severity-group-header.severity-error { color: var(--color-danger-600); }
+.severity-group-header.severity-warning { color: var(--color-warning-600); }
 
 .severity-dot-sm {
   width: 8px;
@@ -162,28 +162,28 @@ const { getCategoryTagType, getIssueTypeLabel, truncateText } = useIssueHelpers(
   border-radius: 50%;
   flex-shrink: 0;
 }
-.error-dot { background: #EF4444; }
-.warning-dot { background: #F59E0B; }
+.error-dot { background: var(--corp-danger); }
+.warning-dot { background: var(--corp-warning); }
 
 /* 概览问题卡片 */
 .overview-issue-card {
   position: relative;
   padding: 10px 36px 10px 12px;
-  background: #FFFFFF;
-  border: 1px solid #E5E7EB;
-  border-left: 3px solid #EF4444;
+  background: var(--bg-surface);
+  border: 1px solid var(--corp-border-light);
+  border-left: 3px solid var(--corp-danger);
   border-radius: 6px;
   margin-bottom: 6px;
   cursor: pointer;
   transition: all 0.15s ease;
 }
 .overview-issue-card:hover {
-  border-color: #D1D5DB;
+  border-color: var(--corp-border);
   box-shadow: 0 2px 8px rgba(0,0,0,0.06);
   transform: translateX(2px);
 }
 .overview-issue-card.warning {
-  border-left-color: #F59E0B;
+  border-left-color: var(--corp-warning);
 }
 
 .oic-tags {
@@ -196,14 +196,14 @@ const { getCategoryTagType, getIssueTypeLabel, truncateText } = useIssueHelpers(
 .oic-desc {
   font-size: 13px;
   font-weight: 600;
-  color: #111827;
+  color: var(--corp-text-primary);
   margin: 0 0 4px;
   line-height: 1.4;
 }
 
 .oic-plain {
   font-size: 12px;
-  color: #6B7280;
+  color: var(--corp-text-secondary);
   margin: 0 0 6px;
   line-height: 1.4;
 }
@@ -223,7 +223,7 @@ const { getCategoryTagType, getIssueTypeLabel, truncateText } = useIssueHelpers(
 }
 
 .oic-preview-label {
-  color: #9CA3AF;
+  color: var(--color-gray-400);
   flex-shrink: 0;
   font-weight: 500;
 }
@@ -235,14 +235,14 @@ const { getCategoryTagType, getIssueTypeLabel, truncateText } = useIssueHelpers(
   white-space: nowrap;
 }
 .oic-preview-text.original {
-  color: #DC2626;
-  background: #FEF2F2;
+  color: var(--color-danger-600);
+  background: var(--color-danger-bg); /* #FEF2F2 对齐 --color-danger-bg */
   padding: 1px 6px;
   border-radius: 3px;
 }
 .oic-preview-text.suggested {
-  color: #059669;
-  background: #ECFDF5;
+  color: var(--color-success-600);
+  background: var(--color-success-bg); /* #ECFDF5 对齐 --color-success-bg */
   padding: 1px 6px;
   border-radius: 3px;
 }
@@ -253,13 +253,13 @@ const { getCategoryTagType, getIssueTypeLabel, truncateText } = useIssueHelpers(
   top: 50%;
   transform: translateY(-50%);
   font-size: 14px;
-  color: #9CA3AF;
+  color: var(--color-gray-400);
   opacity: 0;
   transition: opacity 0.15s;
 }
 .overview-issue-card:hover .oic-arrow {
   opacity: 1;
-  color: #3B82F6;
+  color: var(--corp-primary);
 }
 
 /* 查看全部按钮 */
@@ -274,9 +274,9 @@ const { getCategoryTagType, getIssueTypeLabel, truncateText } = useIssueHelpers(
   gap: 6px;
   padding: 6px 16px;
   font-size: 12px;
-  color: #3B82F6;
-  background: #EFF6FF;
-  border: 1px solid #BFDBFE;
+  color: var(--corp-primary);
+  background: var(--color-primary-50);
+  border: 1px solid var(--color-primary-200);
   border-radius: 6px;
   cursor: pointer;
   transition: all 0.15s ease;
@@ -284,20 +284,20 @@ const { getCategoryTagType, getIssueTypeLabel, truncateText } = useIssueHelpers(
 }
 
 .view-all-btn:hover {
-  background: #DBEAFE;
-  border-color: #93C5FD;
-  color: #2563EB;
+  background: var(--color-primary-100);
+  border-color: var(--color-primary-300);
+  color: var(--color-primary-600);
 }
 
 .view-all-btn-warning {
-  background: #FFFBEB;
-  border-color: #FDE68A;
-  color: #D97706;
+  background: var(--color-warning-bg); /* #FFFBEB 对齐 --color-warning-bg */
+  border-color: #FDE68A; /* 无对应令牌，对齐 --color-warning-bg 或专用色 */
+  color: var(--color-warning-600);
 }
 
 .view-all-btn-warning:hover {
-  background: #FEF3C7;
-  border-color: #FCD34D;
-  color: #B45309;
+  background: var(--color-warning-bg);
+  border-color: #FCD34D; /* 无对应令牌，对齐 --color-warning-bg 或专用色 */
+  color: var(--color-warning-text); /* #B45309 对齐 --color-warning-text */
 }
 </style>

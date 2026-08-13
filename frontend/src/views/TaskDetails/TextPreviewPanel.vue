@@ -23,7 +23,7 @@
     </div>
 
     <div v-else-if="!extractedText" class="preview-empty">
-      <el-icon :size="32" color="#94a3b8"><Document /></el-icon>
+      <el-icon :size="32" color="var(--color-gray-400)"><Document /></el-icon>
       <p>暂无文本内容可预览</p>
       <p class="empty-hint">请先选择一个文件查看原文</p>
     </div>
@@ -640,7 +640,7 @@ onUnmounted(() => {
   padding: 24px 28px;
   font-size: 14.5px;
   line-height: 1.85;
-  color: #374151;
+  color: var(--color-gray-700);
   max-width: 900px;
 }
 
@@ -648,34 +648,34 @@ onUnmounted(() => {
 .markdown-body :deep(h1) {
   font-size: 1.85em;
   font-weight: 700;
-  color: #1f2937;
+  color: var(--color-gray-800);
   margin: 0 0 16px 0;
   padding-bottom: 10px;
-  border-bottom: 2px solid #e5e7eb;
+  border-bottom: 2px solid var(--corp-border-light);
   line-height: 1.3;
 }
 
 .markdown-body :deep(h2) {
   font-size: 1.5em;
   font-weight: 650;
-  color: #1f2937;
+  color: var(--color-gray-800);
   margin: 28px 0 12px 0;
   padding-bottom: 8px;
-  border-bottom: 1px solid #e5e7eb;
+  border-bottom: 1px solid var(--corp-border-light);
   line-height: 1.35;
 }
 
 .markdown-body :deep(h3) {
   font-size: 1.2em;
   font-weight: 600;
-  color: #374151;
+  color: var(--color-gray-700);
   margin: 20px 0 10px 0;
 }
 
 .markdown-body :deep(h4) {
   font-size: 1.05em;
   font-weight: 600;
-  color: #4b5563;
+  color: var(--color-gray-600);
   margin: 16px 0 8px 0;
 }
 
@@ -683,7 +683,7 @@ onUnmounted(() => {
 .markdown-body :deep(h6) {
   font-size: 0.95em;
   font-weight: 600;
-  color: #6b7280;
+  color: var(--corp-text-secondary);
   margin: 12px 0 6px 0;
 }
 
@@ -739,9 +739,9 @@ onUnmounted(() => {
   width: 18px;
   height: 18px;
   background: var(--corp-primary);
-  color: #fff;
+  color: var(--corp-text-inverse);
   border-radius: 50%;
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 600;
   text-align: center;
   line-height: 18px;
@@ -755,14 +755,14 @@ onUnmounted(() => {
 /* 代码块 - 深色主题 */
 .markdown-body :deep(pre),
 .markdown-body :deep(.code-block) {
-  background: #1e1e2e;
+  background: var(--color-gray-800); /* 代码块深色背景（原 #1e1e2e） */
   border-radius: 10px;
   padding: 16px 18px;
   margin: 14px 0;
   overflow-x: auto;
   font-size: 13px;
   line-height: 1.65;
-  border: 1px solid #2d2d3f;
+  border: 1px solid var(--color-gray-700); /* 原 #2d2d3f */
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
 }
 
@@ -774,12 +774,12 @@ onUnmounted(() => {
 /* 行内代码 */
 .markdown-body :deep(p code),
 .markdown-body :deep(li code) {
-  background: #f3f4f6;
-  color: #be123c;
+  background: var(--bg-surface-active);
+  color: #be123c; /* 行内代码专用玫瑰红，无对应令牌 */
   padding: 2px 7px;
   border-radius: 5px;
   font-size: 0.88em;
-  border: 1px solid #e5e7eb;
+  border: 1px solid var(--corp-border-light);
 }
 
 /* 表格 - 现代卡片风格 */
@@ -791,24 +791,24 @@ onUnmounted(() => {
   font-size: 13.5px;
   border-radius: 10px;
   overflow: hidden;
-  border: 1px solid #e5e7eb;
+  border: 1px solid var(--corp-border-light);
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
 }
 
 .markdown-body :deep(th) {
-  background: #f9fafb;
+  background: var(--color-gray-50);
   font-weight: 650;
-  color: #374151;
+  color: var(--color-gray-700);
   padding: 12px 16px;
   text-align: left;
-  border-bottom: 2px solid #e5e7eb;
+  border-bottom: 2px solid var(--corp-border-light);
   font-size: 13px;
 }
 
 .markdown-body :deep(td) {
   padding: 11px 16px;
-  border-bottom: 1px solid #f3f4f6;
-  color: #4b5563;
+  border-bottom: 1px solid var(--bg-surface-active);
+  color: var(--color-gray-600);
 }
 
 .markdown-body :deep(tr:last-child td) {
@@ -816,7 +816,7 @@ onUnmounted(() => {
 }
 
 .markdown-body :deep(tr:hover td) {
-  background: #fafafa;
+  background: var(--bg-surface-hover);
 }
 
 .markdown-body :deep(th:first-child) { border-radius: 10px 0 0 0; }
@@ -827,9 +827,9 @@ onUnmounted(() => {
   margin: 14px 0;
   padding: 14px 18px;
   border-left: 4px solid;
-  border-image: linear-gradient(180deg, var(--corp-primary) 0%, #818cf8 100%) 1;
-  background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%);
-  color: #64748b;
+  border-image: linear-gradient(180deg, var(--corp-primary) 0%, #818cf8 100%) 1; /* #818cf8 渐变专用色，无对应令牌 */
+  background: linear-gradient(135deg, var(--color-gray-50) 0%, var(--bg-surface-active) 100%); /* 原 #f8fafc/#f1f5f9 */
+  color: var(--corp-text-secondary); /* 原 #64748b */
   border-radius: 0 10px 10px 0;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
 }
@@ -848,7 +848,7 @@ onUnmounted(() => {
 .markdown-body :deep(hr) {
   border: none;
   height: 1px;
-  background: linear-gradient(90deg, transparent, #e5e7eb 20%, #e5e7eb 80%, transparent);
+  background: linear-gradient(90deg, transparent, var(--corp-border-light) 20%, var(--corp-border-light) 80%, transparent);
   margin: 24px 0;
 }
 
@@ -874,9 +874,9 @@ onUnmounted(() => {
 
 /* 高亮标记 */
 .markdown-body :deep(.md-highlight) {
-  background: linear-gradient(120deg, rgba(239, 68, 68, 0.15) 0%, rgba(239, 68, 68, 0.25) 100%);
-  color: #dc2626;
-  border-bottom: 2px solid #ef4444;
+  background: linear-gradient(120deg, color-mix(in srgb, var(--color-danger) 15%, transparent) 0%, color-mix(in srgb, var(--color-danger) 25%, transparent) 100%);
+  color: var(--color-danger-600);
+  border-bottom: 2px solid var(--corp-danger);
   padding: 1px 3px;
   border-radius: 4px;
   font-weight: 600;
@@ -884,9 +884,9 @@ onUnmounted(() => {
 }
 
 @keyframes md-highlight-pulse {
-  0% { background: rgba(239, 68, 68, 0.1); transform: scale(1); }
-  50% { background: rgba(239, 68, 68, 0.35); transform: scale(1.01); }
-  100% { background: rgba(239, 68, 68, 0.15); transform: scale(1); }
+  0% { background: color-mix(in srgb, var(--color-danger) 10%, transparent); transform: scale(1); }
+  50% { background: color-mix(in srgb, var(--color-danger) 35%, transparent); transform: scale(1.01); }
+  100% { background: color-mix(in srgb, var(--color-danger) 15%, transparent); transform: scale(1); }
 }
 
 /* ===== 源码模式样式 ===== */
@@ -895,10 +895,10 @@ onUnmounted(() => {
   font-family: 'JetBrains Mono', 'Fira Code', 'Menlo', 'Consolas', monospace;
   font-size: 13px;
   line-height: 1.8;
-  color: #4b5563;
+  color: var(--color-gray-600);
   white-space: pre-wrap;
   word-break: break-all;
-  background: #fafbfc;
+  background: var(--color-gray-50); /* 原 #fafbfc */
 }
 
 .text-chunk {
@@ -906,13 +906,13 @@ onUnmounted(() => {
   padding: 12px 16px;
   margin-bottom: 10px;
   border-radius: 8px;
-  border: 1px solid #e5e7eb;
-  background: #fff;
+  border: 1px solid var(--corp-border-light);
+  background: var(--bg-surface);
   transition: all 0.3s ease;
 }
 
 .text-chunk + .text-chunk {
-  border-top: 1px dashed #e5e7eb;
+  border-top: 1px dashed var(--corp-border-light);
   margin-top: 10px;
 }
 
@@ -920,22 +920,22 @@ onUnmounted(() => {
   position: absolute;
   top: 6px;
   right: 10px;
-  font-size: 10px;
-  color: #9ca3af;
+  font-size: 12px;
+  color: var(--color-gray-400);
   font-weight: 600;
   letter-spacing: 0.03em;
 }
 
 .chunk-highlighted {
-  background-color: #eff6ff;
-  border-color: #bfdbfe;
+  background-color: var(--color-primary-50);
+  border-color: var(--color-primary-200);
   box-shadow: 0 1px 4px rgba(59, 130, 246, 0.1);
 }
 
 .highlight-segment {
-  background: linear-gradient(120deg, rgba(239, 68, 68, 0.15) 0%, rgba(239, 68, 68, 0.25) 100%);
-  color: #dc2626;
-  border-bottom: 2px solid #ef4444;
+  background: linear-gradient(120deg, color-mix(in srgb, var(--color-danger) 15%, transparent) 0%, color-mix(in srgb, var(--color-danger) 25%, transparent) 100%);
+  color: var(--color-danger-600);
+  border-bottom: 2px solid var(--corp-danger);
   padding: 1px 3px;
   border-radius: 4px;
   font-weight: 600;
@@ -943,8 +943,8 @@ onUnmounted(() => {
 }
 
 @keyframes highlight-pulse {
-  0% { background: rgba(239, 68, 68, 0.1); }
-  50% { background: rgba(239, 68, 68, 0.35); }
-  100% { background: rgba(239, 68, 68, 0.15); }
+  0% { background: color-mix(in srgb, var(--color-danger) 10%, transparent); }
+  50% { background: color-mix(in srgb, var(--color-danger) 35%, transparent); }
+  100% { background: color-mix(in srgb, var(--color-danger) 15%, transparent); }
 }
 </style>

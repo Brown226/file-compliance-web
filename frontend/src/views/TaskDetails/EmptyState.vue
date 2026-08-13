@@ -34,7 +34,7 @@ withDefaults(defineProps<{
   iconSize?: number
 }>(), {
   variant: 'default',
-  iconColor: '#C0C4CC',
+  iconColor: '#C0C4CC', /* JS 默认值不改，对齐 --color-gray-400 或专用色 */
   iconSize: 64,
 })
 </script>
@@ -60,32 +60,32 @@ withDefaults(defineProps<{
 }
 
 .empty-state--success .empty-state__icon-wrapper {
-  background: linear-gradient(135deg, #ECFDF5 0%, #D1FAE5 100%);
+  background: linear-gradient(135deg, var(--color-success-bg) 0%, #D1FAE5 100%); /* #D1FAE5: 无对应令牌，对齐 --color-success-bg 或专用色 */
 }
 
 .empty-state--warning .empty-state__icon-wrapper {
-  background: linear-gradient(135deg, #FFFBEB 0%, #FEF3C7 100%);
+  background: linear-gradient(135deg, #FFFBEB 0%, var(--color-warning-bg) 100%); /* #FFFBEB: 无对应令牌，对齐 --color-warning-bg 或专用色 */
 }
 
 .empty-state__title {
   margin: 0 0 8px;
   font-size: 20px;
   font-weight: 600;
-  color: #065F46;
+  color: #065F46; /* 对齐 --color-success-text 或专用色 */
 }
 
 .empty-state--default .empty-state__title {
-  color: #606266;
+  color: var(--corp-text-secondary);
 }
 
 .empty-state--warning .empty-state__title {
-  color: #92400E;
+  color: var(--color-warning-text);
 }
 
 .empty-state__desc {
   margin: 0 0 24px;
   font-size: 14px;
-  color: #6B7280;
+  color: var(--corp-text-secondary);
 }
 
 .empty-state__extra {

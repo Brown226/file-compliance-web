@@ -145,16 +145,16 @@ function computeLCS(a: string, b: string): string {
   color: inherit;
 }
 .diff-removed {
-  background-color: rgba(229, 62, 62, 0.22);
-  color: #991B1B;
+  background-color: color-mix(in srgb, var(--color-danger) 22%, transparent);
+  color: var(--color-danger-text);
   text-decoration: line-through;
   padding: 1px 2px;
   border-radius: 2px;
   font-weight: 600;
 }
 .diff-added {
-  background-color: rgba(56, 161, 105, 0.2);
-  color: #166534;
+  background-color: color-mix(in srgb, var(--color-success) 20%, transparent);
+  color: var(--color-success-text);
   padding: 1px 2px;
   border-radius: 2px;
   font-weight: 700;

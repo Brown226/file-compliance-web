@@ -418,7 +418,7 @@ defineExpose({ refresh: loadSessions })
   background: transparent;
   cursor: pointer;
   color: var(--text-dim);
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 600;
   letter-spacing: 0.02em;
   text-align: left;
@@ -448,7 +448,7 @@ defineExpose({ refresh: loadSessions })
 }
 .group-count {
   margin-left: auto;
-  font-size: 10px;
+  font-size: 12px;
   font-weight: 500;
   color: var(--text-dim);
   background: var(--bg-hover);
@@ -497,12 +497,12 @@ defineExpose({ refresh: loadSessions })
   display: flex;
   align-items: center;
   gap: 8px;
-  font-size: 11px;
+  font-size: 12px;
   color: var(--text-dim);
   margin-top: 2px;
 }
 .meta-sep {
-  font-size: 10px;
+  font-size: 12px;
 }
 
 .item-actions {

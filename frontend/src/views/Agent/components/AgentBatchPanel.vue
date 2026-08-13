@@ -248,7 +248,7 @@ onUnmounted(stopPoll)
   padding: 4px 10px; border: 1px solid var(--border, var(--corp-border-light)); border-radius: 4px;
   font-size: 12px; cursor: pointer;
 }
-.batch-task-desc { color: var(--text-dim, var(--corp-text-tertiary)); font-size: 11px; }
+.batch-task-desc { color: var(--text-dim, var(--corp-text-tertiary)); font-size: 12px; }
 .batch-actions { display: flex; justify-content: flex-end; }
 .batch-submit {
   padding: 7px 20px; background: var(--accent, var(--color-action)); color: var(--corp-text-inverse);
@@ -264,7 +264,7 @@ onUnmounted(stopPoll)
 .batch-status.s-failed { background: color-mix(in srgb, var(--color-danger) 13%, transparent); color: var(--color-danger-600); }
 .batch-status.s-cancelled { background: color-mix(in srgb, var(--corp-text-secondary) 13%, transparent); color: var(--color-gray-600); }
 .batch-progress-text { font-size: 12px; color: var(--text-muted, var(--corp-text-secondary)); }
-.batch-cancel { font-size: 11px; padding: 2px 10px; border: 1px solid var(--border, var(--corp-border-light)); border-radius: 4px; background: none; cursor: pointer; }
+.batch-cancel { font-size: 12px; padding: 2px 10px; border: 1px solid var(--border, var(--corp-border-light)); border-radius: 4px; background: none; cursor: pointer; }
 .batch-progress-bar { height: 6px; background: var(--border, var(--corp-border-light)); border-radius: 3px; overflow: hidden; }
 .batch-progress-fill { height: 100%; background: var(--accent, var(--color-action)); transition: width 0.3s; }
 .batch-summary { font-size: 12px; color: var(--text-muted, var(--corp-text-secondary)); }
@@ -274,6 +274,6 @@ onUnmounted(stopPoll)
 .batch-result-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .batch-result-ok.ok { color: var(--color-success-600); }
 .batch-result-ok.fail { color: var(--color-danger-600); }
-.batch-result-error { color: var(--color-danger-600); font-size: 11px; }
-.batch-result-meta { color: var(--text-dim, var(--corp-text-tertiary)); font-size: 11px; }
+.batch-result-error { color: var(--color-danger-600); font-size: 12px; }
+.batch-result-meta { color: var(--text-dim, var(--corp-text-tertiary)); font-size: 12px; }
 </style>

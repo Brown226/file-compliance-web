@@ -585,7 +585,7 @@ onBeforeUnmount(() => document.removeEventListener('mousedown', onDocMouseDown))
   margin-left: 12px;
   color: var(--text-muted);
   opacity: 0.72;
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 400;
   white-space: nowrap;
 }
@@ -678,7 +678,7 @@ onBeforeUnmount(() => document.removeEventListener('mousedown', onDocMouseDown))
 .model-filter input {
   width: 100%;
   min-width: 200px;
-  font-size: 11px;
+  font-size: 12px;
   font-family: var(--font-mono);
   padding: 5px 8px;
   border: 1px solid var(--border);
@@ -697,7 +697,7 @@ onBeforeUnmount(() => document.removeEventListener('mousedown', onDocMouseDown))
 }
 .model-group-title {
   padding: 6px 12px 4px;
-  font-size: 10px;
+  font-size: 12px;
   font-weight: 600;
   color: var(--text-dim);
   text-transform: uppercase;

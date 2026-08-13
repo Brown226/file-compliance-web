@@ -41,7 +41,7 @@
       title="暂无标准引用"
       description="本次审查未命中相关标准条款"
       variant="warning"
-      :icon-color="'#E6A23C'"
+      :icon-color="'var(--corp-warning)'"
     >
       <template #extra>
         <div class="possible-reasons">
@@ -90,9 +90,9 @@ const { getStandardRefTitle } = useIssueHelpers()
 
 .knowledge-card {
   padding: 12px;
-  background: #EFF6FF;
+  background: var(--color-info-bg);
   border-radius: 6px;
-  border: 1px solid #BFDBFE;
+  border: 1px solid var(--color-primary-200);
   transition: all 0.15s ease;
 }
 
@@ -101,7 +101,7 @@ const { getStandardRefTitle } = useIssueHelpers()
 }
 
 .knowledge-card-clickable:hover {
-  border-color: #93C5FD;
+  border-color: var(--color-primary-300);
   box-shadow: 0 2px 8px rgba(59, 130, 246, 0.12);
   transform: translateX(3px);
 }
@@ -122,13 +122,13 @@ const { getStandardRefTitle } = useIssueHelpers()
 .knowledge-title {
   font-size: 13px;
   font-weight: 600;
-  color: #1E40AF;
+  color: var(--color-info-text);
   margin: 0;
 }
 
 .knowledge-content {
   font-size: 12px;
-  color: #374151;
+  color: var(--color-gray-700);
   line-height: 1.6;
   margin: 0;
 }
@@ -136,8 +136,8 @@ const { getStandardRefTitle } = useIssueHelpers()
 /* 标准引用空状态引导 */
 .possible-reasons {
   text-align: left;
-  background: #FFFBEB;
-  border: 1px solid #FDE68A;
+  background: var(--color-warning-bg);
+  border: 1px solid #FDE68A; /* 无对应令牌，对齐 --color-warning-bg 或专用色 */
   border-radius: 8px;
   padding: 16px 20px;
   max-width: 440px;
@@ -145,14 +145,14 @@ const { getStandardRefTitle } = useIssueHelpers()
 
 .possible-reasons p {
   margin: 0 0 8px;
-  color: #92400E;
+  color: var(--color-warning-text);
   font-size: 13px;
 }
 
 .possible-reasons ul {
   margin: 0;
   padding-left: 20px;
-  color: #78716C;
+  color: #78716C; /* 无对应令牌，对齐 --corp-text-secondary 或专用色 */
   font-size: 13px;
   line-height: 1.8;
 }
