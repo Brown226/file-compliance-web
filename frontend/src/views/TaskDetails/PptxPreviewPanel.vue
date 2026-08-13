@@ -53,6 +53,7 @@ import request from '@/utils/request'
 const props = defineProps<{
   taskId: string
   fileId: string | null
+  fileUrl?: string
   locateTarget?: { originalText: string; locateCandidates?: string[]; locateHint?: string } | null
 }>()
 
@@ -163,11 +164,18 @@ const loadPptx = async () => {
   currentSlide.value = 0
 
   try {
-    const resp = await request.get(
-      `/tasks/${props.taskId}/files/${props.fileId}/raw`,
-      { responseType: 'arraybuffer' }
-    )
-    const buffer = resp.data
+    let buffer: ArrayBuffer
+    if (props.fileUrl) {
+      // 直接 URL 加载（Agent 等外部入口传入 blob/data URL）
+      const resp = await fetch(props.fileUrl)
+      buffer = await resp.arrayBuffer()
+    } else {
+      const resp = await request.get(
+        `/tasks/${props.taskId}/files/${props.fileId}/raw`,
+        { responseType: 'arraybuffer' }
+      )
+      buffer = resp.data as ArrayBuffer
+    }
     slides.value = await extractTextFromPptx(buffer)
     // 内容加载完成后，检查是否有待定位的原文
     if (props.locateTarget?.originalText) {
@@ -205,7 +213,7 @@ const scrollToHighlight = (): boolean => {
   return true
 }
 
-watch(() => props.fileId, () => loadPptx(), { immediate: true })
+watch(() => [props.fileId, props.fileUrl], () => loadPptx(), { immediate: true })
 
 watch(() => props.locateTarget, async (target) => {
   if (!target?.originalText || !slides.value.length) return

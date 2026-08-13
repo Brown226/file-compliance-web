@@ -66,6 +66,7 @@ import * as XLSX from 'xlsx'
 const props = defineProps<{
   taskId: string
   fileId: string | null
+  fileUrl?: string
   locateTarget?: { originalText: string; locateCandidates?: string[]; locateMeta?: any; locateHint?: string } | null
 }>()
 
@@ -163,7 +164,7 @@ function switchSheet(name: string) {
 }
 
 async function loadFile() {
-  if (!props.fileId || !props.taskId) {
+  if (!props.fileId && !props.fileUrl) {
     sheetNames.value = []
     sheets.value = {}
     activeSheet.value = ''
@@ -172,11 +173,19 @@ async function loadFile() {
 
   loading.value = true
   try {
-    const res = await request.get(
-      `/tasks/${props.taskId}/files/${props.fileId}/raw`,
-      { responseType: 'arraybuffer' }
-    )
-    const workbook = XLSX.read(new Uint8Array(res.data), { type: 'array' })
+    let rawData: ArrayBuffer
+    if (props.fileUrl) {
+      // 直接 URL 加载（Agent 等外部入口传入 blob/data URL）
+      const resp = await fetch(props.fileUrl)
+      rawData = await resp.arrayBuffer()
+    } else {
+      const res = await request.get(
+        `/tasks/${props.taskId}/files/${props.fileId}/raw`,
+        { responseType: 'arraybuffer' }
+      )
+      rawData = res.data as ArrayBuffer
+    }
+    const workbook = XLSX.read(new Uint8Array(rawData), { type: 'array' })
     sheetNames.value = workbook.SheetNames
     const parsed: Record<string, string[][]> = {}
     for (const name of workbook.SheetNames) {
@@ -207,7 +216,7 @@ async function loadFile() {
   }
 }
 
-watch(() => props.fileId, loadFile, { immediate: true })
+watch(() => [props.fileId, props.fileUrl], loadFile, { immediate: true })
 
 watch(() => props.locateTarget, (target) => {
   buildHighlightMap()

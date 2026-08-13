@@ -7,32 +7,26 @@
  * - P0-⑨ 页码锚点定位：命中 → 提示已定位；未命中 → 未找到提示；filePath 不匹配 → 忽略
  * - P2-⑬ 原文关键字定位：命中/未命中
  * - P2-⑬ 行号区间定位：命中/超范围
- * - docx 分支：docx-preview 保真渲染
- * - xlsx 分支：SheetJS 解析 → 多 sheet tab + 表格渲染
+ * - docx 分支：复用 DocxPreviewPanel（blob URL 传入，统一方案）
+ * - xlsx 分支：复用 ExcelPreviewPanel（blob URL 传入，统一方案）
  *
  * mock：@/api/agent、useMarkdown（每行包 <p>，让定位函数可命中 DOM）、
- * docx-preview、xlsx、element-plus；stub scrollIntoView（jsdom 未实现）。
+ * element-plus；stub scrollIntoView / URL.createObjectURL（jsdom 未实现）。
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { mount, flushPromises } from '@vue/test-utils'
 import AgentFileViewer from '../AgentFileViewer.vue'
+import DocxPreviewPanel from '@/views/TaskDetails/DocxPreviewPanel.vue'
+import ExcelPreviewPanel from '@/views/TaskDetails/ExcelPreviewPanel.vue'
 
-const { apiMock, mdMock, docxPreviewMock, xlsxMock, elMessageMock } = vi.hoisted(() => ({
+const { apiMock, mdMock, elMessageMock } = vi.hoisted(() => ({
   apiMock: { readAgentFileApi: vi.fn() },
   mdMock: { renderMarkdown: vi.fn() },
-  docxPreviewMock: { renderAsync: vi.fn(async () => {}) },
-  xlsxMock: {
-    read: vi.fn(),
-    utils: { sheet_to_json: vi.fn() },
-  },
   elMessageMock: { error: vi.fn(), success: vi.fn(), warning: vi.fn() },
 }))
 
 vi.mock('@/api/agent', () => apiMock)
 vi.mock('@/composables/useMarkdown', () => ({ useMarkdown: () => ({ renderMarkdown: mdMock.renderMarkdown }) }))
-// docx-preview 是命名导出 renderAsync
-vi.mock('docx-preview', () => ({ renderAsync: docxPreviewMock.renderAsync }))
-vi.mock('xlsx', () => xlsxMock)
 vi.mock('element-plus', () => ({ ElMessage: elMessageMock }))
 
 const TEXT_FILE = {
@@ -60,17 +54,16 @@ function mountViewer(props: Record<string, any> = {}) {
 beforeEach(() => {
   apiMock.readAgentFileApi.mockReset()
   mdMock.renderMarkdown.mockReset()
-  docxPreviewMock.renderAsync.mockReset()
-  xlsxMock.read.mockReset()
-  xlsxMock.utils.sheet_to_json.mockReset()
   elMessageMock.error.mockReset()
   apiMock.readAgentFileApi.mockResolvedValue({ data: { ...TEXT_FILE } })
   // 每行包 <p>：让页码/文本/行号定位能命中 DOM 块
   mdMock.renderMarkdown.mockImplementation((s: string) =>
     s.split('\n').map((l: string) => `<p>${l}</p>`).join(''),
   )
-  // jsdom 未实现 scrollIntoView
+  // jsdom 未实现 scrollIntoView / URL.createObjectURL
   Element.prototype.scrollIntoView = vi.fn() as any
+  URL.createObjectURL = vi.fn(() => 'blob:mock-url') as any
+  URL.revokeObjectURL = vi.fn() as any
 })
 
 afterEach(() => {
@@ -156,34 +149,28 @@ describe('P2-⑬ 行级批注', () => {
 })
 
 describe('docx 预览', () => {
-  it('kind=docx → docx-preview 保真渲染', async () => {
+  it('kind=docx → 复用 DocxPreviewPanel（blob URL 传入）', async () => {
     apiMock.readAgentFileApi.mockResolvedValue({
       data: { ...TEXT_FILE, kind: 'docx', ext: 'docx', base64: 'eA==', mime: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' },
     })
     const wrapper = mountViewer()
     await loadText(wrapper)
-    expect(docxPreviewMock.renderAsync).toHaveBeenCalled()
-    expect(wrapper.find('.fv-docx').exists()).toBe(true)
+    const panel = wrapper.findComponent(DocxPreviewPanel)
+    expect(panel.exists()).toBe(true)
+    expect(panel.props('fileUrl')).toBe('blob:mock-url')
+    expect(panel.props('fileType')).toBe('docx')
   })
 })
 
 describe('xlsx 预览', () => {
-  it('kind=xlsx → SheetJS 解析 → 多 sheet tab + 表格渲染', async () => {
-    xlsxMock.read.mockReturnValue({ SheetNames: ['Sheet1', 'Sheet2'], Sheets: { Sheet1: {}, Sheet2: {} } })
-    xlsxMock.utils.sheet_to_json.mockReturnValue([['名称', '数量'], ['A', '1']])
+  it('kind=xlsx → 复用 ExcelPreviewPanel（blob URL 传入）', async () => {
     apiMock.readAgentFileApi.mockResolvedValue({
       data: { ...TEXT_FILE, kind: 'xlsx', ext: 'xlsx', base64: 'eA==', mime: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' },
     })
     const wrapper = mountViewer()
     await loadText(wrapper)
-    // 两个 sheet tab
-    expect(wrapper.findAll('.fv-sheet-tab').length).toBe(2)
-    // 表头 + 数据行
-    expect(wrapper.text()).toContain('名称')
-    expect(wrapper.text()).toContain('A')
-    expect(wrapper.text()).toContain('1')
-    // 切 sheet
-    await wrapper.findAll('.fv-sheet-tab')[1].trigger('click')
-    expect(wrapper.findAll('.fv-sheet-tab')[1].classes()).toContain('active')
+    const panel = wrapper.findComponent(ExcelPreviewPanel)
+    expect(panel.exists()).toBe(true)
+    expect(panel.props('fileUrl')).toBe('blob:mock-url')
   })
 })

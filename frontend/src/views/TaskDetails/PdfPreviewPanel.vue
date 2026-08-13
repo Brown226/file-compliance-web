@@ -161,9 +161,9 @@ onUnmounted(() => {
 // ===== PDF 加载 =====
 
 const loadPdf = async () => {
-  console.log('[PDF] loadPdf called', { taskId: props.taskId, fileId: props.fileId })
-  if (!props.fileId) {
-    console.warn('[PDF] loadPdf 跳过: fileId 为空')
+  console.log('[PDF] loadPdf called', { taskId: props.taskId, fileId: props.fileId, fileUrl: props.fileUrl })
+  if (!props.fileId && !props.fileUrl) {
+    console.warn('[PDF] loadPdf 跳过: fileId/fileUrl 均为空')
     return
   }
 
@@ -173,12 +173,19 @@ const loadPdf = async () => {
   totalPages.value = 0
 
   try {
-    const res = await request.get(`/tasks/${props.taskId}/files/${props.fileId}/raw`, {
-      responseType: 'arraybuffer',
-    })
+    let data: ArrayBuffer
+    if (props.fileUrl) {
+      // 直接 URL 加载（Agent 等外部入口传入 blob/data URL）
+      const resp = await fetch(props.fileUrl)
+      data = await resp.arrayBuffer()
+    } else {
+      const res = await request.get(`/tasks/${props.taskId}/files/${props.fileId}/raw`, {
+        responseType: 'arraybuffer',
+      })
+      data = res.data as ArrayBuffer
+    }
 
-    const data = res.data as ArrayBuffer
-    console.log('[PDF] API 返回数据大小:', data?.byteLength || 0)
+    console.log('[PDF] 数据大小:', data?.byteLength || 0)
     if (!data || data.byteLength === 0) throw new Error('PDF 文件内容为空')
 
     pdfSource.value = { data: new Uint8Array(data) }
@@ -200,9 +207,9 @@ function clearHighlights() {
 }
 
 watch(
-  () => props.fileId,
-  async (newId) => {
-    if (!newId) return
+  () => [props.fileId, props.fileUrl],
+  async () => {
+    if (!props.fileId && !props.fileUrl) return
     clearHighlights()
     await loadPdf()
   },

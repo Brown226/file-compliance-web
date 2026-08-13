@@ -54,40 +54,10 @@
       </div>
       <!-- PDF -->
       <iframe v-else-if="data.kind === 'pdf'" class="fv-pdf" :src="dataSrc" title="PDF 预览" />
-      <!-- docx/docm：docx-preview 保真渲染（容器常驻 + v-show，ref 稳定绑定，与主预览一致） -->
-      <div v-show="data?.kind === 'docx'" class="fv-office-body fv-docx" ref="docxRef" />
-      <!-- xlsx：表格渲染（容器常驻 + v-show） -->
-      <div v-show="data?.kind === 'xlsx'" class="fv-office-body">
-        <div v-if="xlsxLoading" class="fv-center"><span class="fv-dim-text">加载中…</span></div>
-        <div v-else-if="xlsxError" class="fv-center"><span class="fv-error-text">{{ xlsxError }}</span></div>
-        <template v-else>
-          <div v-if="sheetNames.length > 1" class="fv-sheet-tabs">
-            <button
-              v-for="name in sheetNames"
-              :key="name"
-              class="fv-sheet-tab"
-              :class="{ active: activeSheet === name }"
-              @click="activeSheet = name"
-            >{{ name }}</button>
-          </div>
-          <div class="fv-xlsx-table-wrap">
-            <table class="fv-xlsx-table">
-              <thead>
-                <tr>
-                  <th class="fv-xlsx-rownum">#</th>
-                  <th v-for="(h, hi) in currentHeaders" :key="hi">{{ h }}</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr v-for="(row, ri) in currentRows" :key="ri">
-                  <td class="fv-xlsx-rownum">{{ ri + 1 }}</td>
-                  <td v-for="(cell, ci) in row" :key="ci">{{ cell }}</td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-        </template>
-      </div>
+      <!-- docx/docm：复用主审查界面 DocxPreviewPanel（docx-preview 保真渲染，统一方案） -->
+      <DocxPreviewPanel v-if="data?.kind === 'docx'" :fileUrl="officeBlobUrl" :fileType="data?.ext" class="fv-office-body" />
+      <!-- xlsx/xls：复用主审查界面 ExcelPreviewPanel（SheetJS，统一方案） -->
+      <ExcelPreviewPanel v-else-if="data?.kind === 'xlsx'" :fileUrl="officeBlobUrl" class="fv-office-body" />
     </div>
 
     <!-- 空态 -->
@@ -98,13 +68,13 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, watch, nextTick } from 'vue'
+import { ref, computed, watch, nextTick, onUnmounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import { readAgentFileApi, type AgentFileReadResult } from '@/api/agent'
 import { useMarkdown } from '@/composables/useMarkdown'
-// docx / xlsx 预览（与 TaskDetails 主预览统一方案：docx-preview 保真渲染 + SheetJS）
-import { renderAsync } from 'docx-preview'
-import * as XLSX from 'xlsx'
+// docx / xlsx 预览：复用 TaskDetails 主审查界面公共组件（统一方案，不再内嵌渲染）
+import DocxPreviewPanel from '@/views/TaskDetails/DocxPreviewPanel.vue'
+import ExcelPreviewPanel from '@/views/TaskDetails/ExcelPreviewPanel.vue'
 
 const props = defineProps<{
   filePath: string
@@ -155,80 +125,32 @@ const dataSrc = computed(() => {
   return `data:${data.value.mime};base64,${data.value.base64}`
 })
 
-// ===== docx / xlsx 预览（与 TaskDetails 主预览统一：docx-preview + SheetJS）=====
-const docxRef = ref<HTMLElement | null>(null)
-const xlsxLoading = ref(false)
-const xlsxError = ref('')
-const sheetNames = ref<string[]>([])
-const activeSheet = ref('')
-const xlsxSheets = ref<Record<string, string[][]>>({})
-
-const currentHeaders = computed<string[]>(() => {
-  const rows = xlsxSheets.value[activeSheet.value] || []
-  return rows.length > 0 ? rows[0] : []
-})
-const currentRows = computed<string[][]>(() => {
-  const rows = xlsxSheets.value[activeSheet.value] || []
-  return rows.length > 1 ? rows.slice(1) : []
-})
-
-/** 解析 docx/docm：docx-preview 保真渲染（直接渲染 DOM，无 v-html 注入面） */
-async function parseDocx(base64: string) {
-  try {
-    const bin = atob(base64)
-    const bytes = new Uint8Array(bin.length)
-    for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i)
-
-    // 等待容器就绪：模板 ref 优先，querySelector 兜底
-    // （v-if="data" 动态内容块的 ref 绑定在部分环境时序不稳，DOM 元素本身是可靠的）
-    for (let i = 0; i < 5 && !docxRef.value; i++) await nextTick()
-    const container = docxRef.value || document.querySelector<HTMLElement>('.fv-docx')
-    if (!container) throw new Error('docx 容器未就绪')
-    container.innerHTML = ''
-
-    await renderAsync(bytes.buffer, container, null, {
-      className: 'docx',
-      inWrapper: true,
-      breakPages: true,
-      renderHeaders: true,
-      renderFooters: true,
-      renderFootnotes: true,
-      ignoreFonts: false,
-    })
-  } catch (e: any) {
-    console.error('[AgentFileViewer] docx 渲染失败:', e)
-    ElMessage.error(`Word 渲染失败：${e?.message || '未知错误'}`)
-  }
-}
-
-/** 解析 xlsx：SheetJS 读表格 */
-async function parseXlsx(base64: string) {
-  xlsxLoading.value = true
-  xlsxError.value = ''
-  sheetNames.value = []
-  activeSheet.value = ''
-  xlsxSheets.value = {}
-  try {
-    const bin = atob(base64)
-    const bytes = new Uint8Array(bin.length)
-    for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i)
-    const wb = XLSX.read(bytes.buffer, { type: 'array' })
-    const names = wb.SheetNames || []
-    sheetNames.value = names
-    const sheets: Record<string, string[][]> = {}
-    for (const name of names) {
-      const ws = wb.Sheets[name]
-      sheets[name] = XLSX.utils.sheet_to_json<string[]>(ws, { header: 1, defval: '' })
+// ===== docx / xlsx 预览（复用主预览组件，经 blob URL 传入）=====
+const officeBlobUrl = ref('')
+watch(
+  () => data.value?.base64,
+  (b64) => {
+    if (officeBlobUrl.value) {
+      URL.revokeObjectURL(officeBlobUrl.value)
+      officeBlobUrl.value = ''
     }
-    xlsxSheets.value = sheets
-    if (names.length > 0) activeSheet.value = names[0]
-  } catch (e: any) {
-    xlsxError.value = e?.message || 'Excel 解析失败'
-    console.error('[AgentFileViewer] xlsx 解析失败:', e)
-  } finally {
-    xlsxLoading.value = false
-  }
-}
+    const mime = data.value?.mime
+    if (!b64 || !mime) return
+    try {
+      const bin = atob(b64)
+      const bytes = new Uint8Array(bin.length)
+      for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i)
+      officeBlobUrl.value = URL.createObjectURL(new Blob([bytes], { type: mime }))
+    } catch (e) {
+      console.error('[AgentFileViewer] blob URL 创建失败:', e)
+    }
+  },
+  { immediate: true },
+)
+onUnmounted(() => {
+  if (officeBlobUrl.value) URL.revokeObjectURL(officeBlobUrl.value)
+})
+
 
 function formatSize(bytes: number): string {
   if (bytes < 1024) return `${bytes}B`
@@ -245,11 +167,6 @@ async function load() {
   try {
     const res = await readAgentFileApi(props.filePath)
     data.value = res.data
-    // 2026-08-12：docx/xlsx 预览解析（docx-preview / xlsx 库，与主预览统一）
-    const kind = res.data?.kind
-    const b64 = res.data?.base64
-    if (kind === 'docx' && b64) await parseDocx(b64)
-    else if (kind === 'xlsx' && b64) await parseXlsx(b64)
   } catch (e: any) {
     error.value = e?.response?.data?.message || e?.message || '读取文件失败'
     ElMessage.error(error.value)
@@ -661,21 +578,5 @@ watch(() => props.filePath, load, { immediate: true })
 .fv-office-body :deep(img) { max-width: 100%; height: auto; }
 .fv-office-body :deep(ul),
 .fv-office-body :deep(ol) { padding-left: 1.5em; margin: 8px 0; }
-.fv-sheet-tabs { display: flex; gap: 6px; margin-bottom: 10px; flex-wrap: wrap; }
-.fv-sheet-tab {
-  padding: 3px 12px;
-  font-size: 12px;
-  border: 1px solid var(--border);
-  border-radius: 4px;
-  background: none;
-  color: var(--text-muted);
-  cursor: pointer;
-}
-.fv-sheet-tab.active { background: var(--accent); color: #fff; border-color: var(--accent); }
-.fv-xlsx-table-wrap { overflow: auto; max-height: 100%; }
-.fv-xlsx-table { border-collapse: collapse; font-size: 12px; width: 100%; }
-.fv-xlsx-table th,
-.fv-xlsx-table td { border: 1px solid var(--border); padding: 4px 8px; text-align: left; white-space: nowrap; }
-.fv-xlsx-table th { background: var(--bg-subtle); font-weight: 600; position: sticky; top: 0; }
-.fv-xlsx-rownum { color: var(--text-dim); background: var(--bg-subtle); text-align: center; width: 40px; }
+
 </style>
