@@ -26,6 +26,7 @@ import { FactCheckService } from './fact-check.service';
 import { TextStyleCheckService } from './text-style-check.service';
 import { StandardClauseCheckService } from '../standard/standard-clause-check.service';
 import { SmartJudgeService } from './cross-review/smart-judge.service';
+import { ImageTextCheckService } from './cross-review/image-text-check.service';
 import { TextCrossCheckService } from './cross-review/text-cross-check.service';
 import { runAllRules } from '../rules';
 
@@ -108,7 +109,8 @@ export class DecReviewService {
     // ===== 第二层：3 层交叉复核 =====
     // ① 智能判标
     allComplianceIssues = await SmartJudgeService.judge(allComplianceIssues, ctx);
-    // ② 图文复核：TODO 未实现（如有图纸则触发视觉模型复核）
+    // ② 图文复核（结构化先行：图纸标准引用/关键参数 vs 设计文本；视觉模型扩展点见 ImageTextCheckService）
+    allComplianceIssues = await ImageTextCheckService.check(allComplianceIssues, ctx, text);
     // ③ 文本复核
     allComplianceIssues = await TextCrossCheckService.check(allComplianceIssues, ctx);
 
