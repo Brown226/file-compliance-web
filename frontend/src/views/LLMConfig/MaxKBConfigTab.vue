@@ -278,8 +278,8 @@ onMounted(async () => {
   justify-content: space-between;
   gap: 16px;
   padding: 14px 20px;
-  border-bottom: 1px solid #f1f5f9;
-  background: #fafbfc;
+  border-bottom: 1px solid var(--color-gray-100);
+  background: var(--corp-bg-sunken);
 }
 
 .module-title {
@@ -290,7 +290,7 @@ onMounted(async () => {
 }
 
 .module-title :deep(.el-icon) {
-  color: #64748b;
+  color: var(--corp-text-secondary);
   flex-shrink: 0;
 }
 
@@ -298,14 +298,14 @@ onMounted(async () => {
   margin: 0;
   font-size: 14px;
   font-weight: 600;
-  color: #0f172a;
+  color: var(--corp-text-primary);
 }
 
 .module-desc {
   display: block;
   margin-top: 2px;
   font-size: 12px;
-  color: #94a3b8;
+  color: var(--corp-text-tertiary);
 }
 
 .module-status {
@@ -317,18 +317,18 @@ onMounted(async () => {
 }
 
 .module-status.ready {
-  background: #f0fdf4;
-  color: #15803d;
+  background: var(--color-success-bg);
+  color: var(--color-success-text);
 }
 
 .module-status.pending {
-  background: #fffbeb;
-  color: #b45309;
+  background: var(--color-warning-bg);
+  color: var(--color-warning-text);
 }
 
 .module-status.offline {
-  background: #f1f5f9;
-  color: #64748b;
+  background: var(--color-gray-100);
+  color: var(--corp-text-secondary);
 }
 
 /* 状态指标 */
@@ -336,7 +336,7 @@ onMounted(async () => {
   display: flex;
   gap: 32px;
   padding: 16px 20px;
-  border-bottom: 1px solid #f1f5f9;
+  border-bottom: 1px solid var(--color-gray-100);
 }
 
 .metric {
@@ -349,31 +349,31 @@ onMounted(async () => {
   width: 8px;
   height: 8px;
   border-radius: 50%;
-  background: #cbd5e1;
+  background: var(--color-gray-300);
   flex-shrink: 0;
 }
 
-.metric-dot.online { background: #10b981; box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.15); }
-.metric-dot.offline { background: #ef4444; box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.15); }
-.metric-dot.ready { background: #2563eb; box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.15); }
-.metric-dot.pending { background: #f59e0b; box-shadow: 0 0 0 3px rgba(245, 158, 11, 0.15); }
+.metric-dot.online { background: var(--color-success); box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.15); }
+.metric-dot.offline { background: var(--color-danger); box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.15); }
+.metric-dot.ready { background: var(--color-primary-600); box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.15); }
+.metric-dot.pending { background: var(--color-warning); box-shadow: 0 0 0 3px rgba(245, 158, 11, 0.15); }
 
 .metric-label {
   font-size: 12px;
-  color: #94a3b8;
+  color: var(--corp-text-tertiary);
   margin-bottom: 1px;
 }
 
 .metric-value {
   font-size: 13.5px;
   font-weight: 600;
-  color: #0f172a;
+  color: var(--corp-text-primary);
 }
 
-.metric-value.online { color: #15803d; }
-.metric-value.offline { color: #b91c1c; }
-.metric-value.ready { color: #2563eb; }
-.metric-value.pending { color: #b45309; }
+.metric-value.online { color: var(--color-success-text); }
+.metric-value.offline { color: var(--color-danger-text); }
+.metric-value.ready { color: var(--color-primary-600); }
+.metric-value.pending { color: var(--color-warning-text); }
 
 /* 模块主体 */
 .module-body {
@@ -383,15 +383,15 @@ onMounted(async () => {
 .section-title {
   font-size: 13px;
   font-weight: 600;
-  color: #0f172a;
+  color: var(--corp-text-primary);
   margin-bottom: 14px;
   padding-bottom: 8px;
-  border-bottom: 1px solid #f1f5f9;
+  border-bottom: 1px solid var(--color-gray-100);
 }
 
 .form-tip {
   font-size: 12px;
-  color: #64748b;
+  color: var(--corp-text-secondary);
   margin-top: 4px;
   line-height: 1.5;
 }
@@ -399,11 +399,11 @@ onMounted(async () => {
 .offline-hint {
   margin: 8px 0 12px;
   padding: 8px 12px;
-  background: #fef2f2;
-  border: 1px solid #fecaca;
+  background: var(--color-danger-bg);
+  border: 1px solid var(--color-danger-bg); /* 原 #fecaca 浅红边框，令牌无 exact 匹配，对齐 --color-danger-bg */
   border-radius: 6px;
   font-size: 12px;
-  color: #b91c1c;
+  color: var(--color-danger-text);
 }
 
 .form-actions {
@@ -412,7 +412,7 @@ onMounted(async () => {
   gap: 10px;
   justify-content: flex-end;
   padding-top: 16px;
-  border-top: 1px solid #f1f5f9;
+  border-top: 1px solid var(--color-gray-100);
   margin-top: 4px;
 }
 
@@ -422,7 +422,7 @@ onMounted(async () => {
 }
 
 .hit-test-results {
-  border-top: 1px solid #f1f5f9;
+  border-top: 1px solid var(--color-gray-100);
   padding-top: 16px;
 }
 
@@ -433,15 +433,15 @@ onMounted(async () => {
   margin-bottom: 12px;
   font-size: 13px;
   font-weight: 600;
-  color: #0f172a;
+  color: var(--corp-text-primary);
 }
 
 .results-count {
   font-size: 12px;
-  color: #64748b;
+  color: var(--corp-text-secondary);
   font-weight: 500;
   padding: 2px 8px;
-  background: #f1f5f9;
+  background: var(--color-gray-100);
   border-radius: 4px;
 }
 
@@ -455,9 +455,9 @@ onMounted(async () => {
 
 .hit-card {
   padding: 12px;
-  border: 1px solid #e5e7eb;
+  border: 1px solid var(--corp-border-light);
   border-radius: 6px;
-  background: #fafbfc;
+  background: var(--corp-bg-sunken);
 }
 
 .hit-card-header {
@@ -471,7 +471,7 @@ onMounted(async () => {
 .hit-title {
   font-size: 13px;
   font-weight: 600;
-  color: #0f172a;
+  color: var(--corp-text-primary);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -480,13 +480,13 @@ onMounted(async () => {
 .hit-score {
   font-size: 12px;
   font-weight: 600;
-  color: #2563eb;
+  color: var(--color-primary-600);
   flex-shrink: 0;
 }
 
 .hit-content {
   font-size: 12.5px;
-  color: #475569;
+  color: var(--color-gray-600);
   line-height: 1.6;
   white-space: pre-wrap;
 }

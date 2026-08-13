@@ -106,8 +106,8 @@ onMounted(loadConfig)
 .strategy-panel {
   display: flex;
   flex-direction: column;
-  background: #fff;
-  border: 1px solid #e5e7eb;
+  background: var(--bg-surface);
+  border: 1px solid var(--corp-border-light);
   border-radius: 8px;
   box-shadow: 0 1px 2px rgba(15, 23, 42, 0.03);
   overflow: hidden;
@@ -119,8 +119,8 @@ onMounted(loadConfig)
   justify-content: space-between;
   gap: 16px;
   padding: 14px 20px;
-  border-bottom: 1px solid #f1f5f9;
-  background: #fafbfc;
+  border-bottom: 1px solid var(--color-gray-100);
+  background: var(--corp-bg-sunken);
 }
 
 .panel-title {
@@ -131,7 +131,7 @@ onMounted(loadConfig)
 }
 
 .panel-title :deep(.el-icon) {
-  color: #64748b;
+  color: var(--corp-text-secondary);
   flex-shrink: 0;
 }
 
@@ -139,14 +139,14 @@ onMounted(loadConfig)
   margin: 0;
   font-size: 14px;
   font-weight: 600;
-  color: #0f172a;
+  color: var(--corp-text-primary);
 }
 
 .panel-desc {
   display: block;
   margin-top: 2px;
   font-size: 12px;
-  color: #94a3b8;
+  color: var(--corp-text-tertiary);
 }
 
 .panel-body {
@@ -155,7 +155,7 @@ onMounted(loadConfig)
 
 .form-tip {
   font-size: 12px;
-  color: #64748b;
+  color: var(--corp-text-secondary);
   margin-top: 4px;
   line-height: 1.5;
 }
@@ -166,7 +166,7 @@ onMounted(loadConfig)
   gap: 10px;
   justify-content: flex-end;
   padding-top: 16px;
-  border-top: 1px solid #f1f5f9;
+  border-top: 1px solid var(--color-gray-100);
   margin-top: 4px;
 }
 

@@ -105,6 +105,6 @@ function renderChart(trend: AiCallStats['dailyTrend']) {
 
 <style scoped>
 .stat-card { text-align: center; padding: 10px; }
-.stat-value { font-size: 28px; font-weight: bold; color: #409eff; }
-.stat-label { font-size: 14px; color: #909399; margin-top: 5px; }
+.stat-value { font-size: 28px; font-weight: bold; color: var(--color-action); }
+.stat-label { font-size: 14px; color: var(--corp-text-secondary); margin-top: 5px; }
 </style>

@@ -28,7 +28,8 @@
     </div>
 
     <div v-if="filteredIssues.length === 0" class="empty-state">
-      <el-icon :size="32" color="#9ca3af"><Document /></el-icon>
+      <!-- 对齐 --corp-text-tertiary -->
+      <el-icon :size="32" color="var(--corp-text-tertiary)"><Document /></el-icon>
       <p>{{ issues.length === 0 ? '暂无审查结果' : '无匹配结果' }}</p>
     </div>
 

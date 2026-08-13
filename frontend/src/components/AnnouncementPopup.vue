@@ -4,7 +4,7 @@
     <div v-if="showUrgentDialog && currentUrgentIndex < urgentList.length" class="urgent-dialog-overlay" @click.self="preventClose">
       <div class="urgent-dialog">
         <div class="urgent-header">
-          <el-icon :size="24" color="#f56c6c"><WarningFilled /></el-icon>
+          <el-icon :size="24" color="var(--color-danger)"><WarningFilled /></el-icon>
           <h2>紧急通知</h2>
           <el-tag type="danger" effect="dark" size="large">紧急</el-tag>
         </div>
@@ -343,7 +343,7 @@ defineExpose({
 .urgent-dialog {
   width: 700px;
   max-height: 80vh;
-  background: #fff;
+  background: var(--bg-surface);
   border-radius: 12px;
   box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
   display: flex;
@@ -356,14 +356,14 @@ defineExpose({
   align-items: center;
   gap: 12px;
   padding: 24px 32px 16px;
-  border-bottom: 1px solid #ebeef5;
+  border-bottom: 1px solid var(--corp-border-light);
 }
 
 .urgent-header h2 {
   margin: 0;
   font-size: 20px;
   font-weight: 600;
-  color: #f56c6c;
+  color: var(--color-danger);
   flex: 1;
 }
 
@@ -376,12 +376,12 @@ defineExpose({
 .urgent-content h3 {
   margin: 0 0 16px;
   font-size: 18px;
-  color: #303133;
+  color: var(--corp-text-primary);
 }
 
 .urgent-footer {
   padding: 16px 32px;
-  border-top: 1px solid #ebeef5;
+  border-top: 1px solid var(--corp-border-light);
   display: flex;
   justify-content: center;
 }
@@ -390,8 +390,8 @@ defineExpose({
   padding: 8px;
   text-align: center;
   font-size: 12px;
-  color: #909399;
-  background: #f5f7fa;
+  color: var(--color-gray-400);
+  background: var(--bg-body);
 }
 
 /* 普通公告面板 */
@@ -402,7 +402,7 @@ defineExpose({
   z-index: 9999;
   width: 400px;
   max-height: 600px;
-  background: #fff;
+  background: var(--bg-surface);
   border-radius: 12px;
   box-shadow: 0 8px 30px rgba(0, 0, 0, 0.15);
   display: flex;
@@ -421,7 +421,7 @@ defineExpose({
   margin: 0;
   font-size: 16px;
   font-weight: 600;
-  color: #111827;
+  color: var(--corp-text-primary);
   display: flex;
   align-items: center;
   gap: 8px;
@@ -441,17 +441,17 @@ defineExpose({
 
 .announcement-item {
   padding: 16px 20px;
-  border-bottom: 1px solid #f0f0f0;
+  border-bottom: 1px solid var(--corp-border-light);
   transition: background 0.2s;
 }
 
 .announcement-item:hover {
-  background: #f9fafb;
+  background: var(--bg-surface-hover);
 }
 
 .announcement-item.urgent {
-  background: #fef2f2;
-  border-left: 3px solid #f56c6c;
+  background: var(--color-danger-bg);
+  border-left: 3px solid var(--color-danger);
 }
 
 .item-header {
@@ -463,19 +463,19 @@ defineExpose({
 
 .item-time {
   font-size: 12px;
-  color: #909399;
+  color: var(--color-gray-400);
 }
 
 .item-title {
   margin: 0 0 8px;
   font-size: 14px;
   font-weight: 500;
-  color: #303133;
+  color: var(--corp-text-primary);
 }
 
 .item-preview {
   font-size: 13px;
-  color: #606266;
+  color: var(--color-gray-500);
   line-height: 1.5;
   margin-bottom: 12px;
   max-height: 60px;
@@ -501,7 +501,7 @@ defineExpose({
 .detail-title {
   font-size: 16px;
   font-weight: 600;
-  color: #303133;
+  color: var(--corp-text-primary);
 }
 
 /* Markdown 渲染样式 */
@@ -526,20 +526,20 @@ defineExpose({
 .markdown-body :deep(blockquote) {
   margin: 12px 0;
   padding: 8px 16px;
-  border-left: 4px solid #409eff;
-  background: #f5f7fa;
-  color: #606266;
+  border-left: 4px solid var(--color-primary-500);
+  background: var(--bg-body);
+  color: var(--color-gray-500);
 }
 
 .markdown-body :deep(code) {
-  background: #f5f7fa;
+  background: var(--bg-body);
   padding: 2px 6px;
   border-radius: 4px;
   font-size: 0.9em;
 }
 
 .markdown-body :deep(pre) {
-  background: #f5f7fa;
+  background: var(--bg-body);
   padding: 12px;
   border-radius: 6px;
   overflow-x: auto;

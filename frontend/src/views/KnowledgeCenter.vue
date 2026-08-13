@@ -78,8 +78,8 @@ function switchTab(key: string) {
   display: flex;
   gap: 4px;
   padding: 10px 20px;
-  background: #fff;
-  border-bottom: 1px solid #f0f0f0;
+  background: var(--bg-surface);
+  border-bottom: 1px solid var(--corp-border-light);
   flex-shrink: 0;
   flex-wrap: wrap;
 }
@@ -91,7 +91,7 @@ function switchTab(key: string) {
   padding: 8px 14px;
   border: none;
   background: transparent;
-  color: #6b7280;
+  color: var(--corp-text-secondary);
   font-size: 13px;
   font-weight: 500;
   cursor: pointer;
@@ -100,13 +100,13 @@ function switchTab(key: string) {
 }
 
 .kc-tab-item:hover {
-  color: #111827;
-  background: #f3f4f6;
+  color: var(--corp-text-primary);
+  background: var(--color-gray-100);
 }
 
 .kc-tab-item.active {
-  color: #2563eb;
-  background: #eff6ff;
+  color: var(--color-primary-600);
+  background: var(--color-primary-50);
 }
 
 .kc-content {

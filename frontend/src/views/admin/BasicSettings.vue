@@ -176,7 +176,7 @@ onMounted(() => {
 
 .page-intro {
   padding: 4px 0 4px 12px;
-  border-left: 3px solid #2563eb;
+  border-left: 3px solid var(--color-primary-600);
   margin-bottom: 4px;
 }
 
@@ -184,20 +184,20 @@ onMounted(() => {
   margin: 0 0 4px;
   font-size: 16px;
   font-weight: 600;
-  color: #0f172a;
+  color: var(--corp-text-primary);
 }
 
 .page-intro p {
   margin: 0;
   font-size: 12.5px;
-  color: #64748b;
+  color: var(--corp-text-secondary);
   line-height: 1.5;
 }
 
 /* 通用卡片 */
 .settings-card {
-  background: #fff;
-  border: 1px solid #e5e7eb;
+  background: var(--bg-surface);
+  border: 1px solid var(--corp-border-light);
   border-radius: 8px;
   box-shadow: 0 1px 2px rgba(15, 23, 42, 0.03);
   overflow: hidden;
@@ -208,12 +208,12 @@ onMounted(() => {
   align-items: center;
   gap: 12px;
   padding: 14px 20px;
-  border-bottom: 1px solid #f1f5f9;
-  background: #fafbfc;
+  border-bottom: 1px solid var(--color-gray-100);
+  background: var(--corp-bg-sunken);
 }
 
 .card-header :deep(.el-icon) {
-  color: #64748b;
+  color: var(--corp-text-secondary);
   flex-shrink: 0;
 }
 
@@ -221,14 +221,14 @@ onMounted(() => {
   margin: 0;
   font-size: 14px;
   font-weight: 600;
-  color: #0f172a;
+  color: var(--corp-text-primary);
 }
 
 .card-desc {
   display: block;
   margin-top: 2px;
   font-size: 12px;
-  color: #94a3b8;
+  color: var(--corp-text-tertiary);
 }
 
 .card-body {
@@ -257,19 +257,19 @@ onMounted(() => {
 
 .unit-label {
   font-size: 12px;
-  color: #64748b;
+  color: var(--corp-text-secondary);
 }
 
 .form-tip {
   font-size: 12px;
-  color: #64748b;
+  color: var(--corp-text-secondary);
   margin-top: 4px;
   line-height: 1.5;
 }
 
 /* 保存面板 */
 .save-card {
-  background: #fafbfc;
+  background: var(--corp-bg-sunken);
 }
 
 .save-body {
@@ -289,7 +289,7 @@ onMounted(() => {
 .save-divider {
   width: 1px;
   height: 16px;
-  background: #e5e7eb;
+  background: var(--corp-border-light);
 }
 
 .save-item {
@@ -300,13 +300,13 @@ onMounted(() => {
 
 .save-label {
   font-size: 12px;
-  color: #94a3b8;
+  color: var(--corp-text-tertiary);
 }
 
 .save-value {
   font-size: 13px;
   font-weight: 500;
-  color: #0f172a;
+  color: var(--corp-text-primary);
 }
 
 /* Element Plus 覆盖 */

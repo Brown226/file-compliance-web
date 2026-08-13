@@ -46,7 +46,7 @@
               <div v-for="f in ocrDegradedFiles" :key="f" style="margin-bottom:2px;">
                 ⚠️ {{ f }}
               </div>
-              <p style="margin:4px 0 0; color:#856404;">请手动检查这些文件中可能的合规问题。</p>
+              <p style="margin:4px 0 0; color:var(--color-warning-text);">请手动检查这些文件中可能的合规问题。</p>
             </div>
           </template>
         </el-alert>
@@ -65,7 +65,7 @@
               <div v-for="f in ragDegradedFiles" :key="f" style="margin-bottom:2px;">
                 ⚠️ {{ f }}
               </div>
-              <p style="margin:4px 0 0; color:#0c5460;">RAG 不可用，已切换为 LLM 直审，结果可信度可能降低。</p>
+              <p style="margin:4px 0 0; color:var(--color-success-text);">RAG 不可用，已切换为 LLM 直审，结果可信度可能降低。</p>
             </div>
           </template>
         </el-alert>
@@ -84,7 +84,7 @@
               <div v-for="(w, i) in libEmptyWarnings" :key="i" style="margin-bottom:2px;">
                 ⚠️ {{ w }}
               </div>
-              <p style="margin:4px 0 0; color:#856404;">「未发现问题」可能是「没审到」而非「真合规」，请补充标准库/审点库数据后重新审查。</p>
+              <p style="margin:4px 0 0; color:var(--color-warning-text);">「未发现问题」可能是「没审到」而非「真合规」，请补充标准库/审点库数据后重新审查。</p>
             </div>
           </template>
         </el-alert>
@@ -107,7 +107,7 @@
             </button>
           </div>
           <div v-else-if="files.length === 0" class="empty-file-hint">
-            <el-icon :size="24" color="#C0C4CC"><FolderOpened /></el-icon>
+            <el-icon :size="24" color="var(--corp-border)"><FolderOpened /></el-icon>
             <span>暂无文件，请先上传文档</span>
           </div>
           <span v-else class="hint-text"><el-icon :size="14"><Document /></el-icon> 文件预览区 · 选中文本可进行专项审查</span>
@@ -167,7 +167,7 @@
           title="等待文件加载"
           description="上传文件后将在此处显示预览内容"
           :icon-size="64"
-          icon-color="#DCDFE6"
+          icon-color="var(--corp-border-light)"
           class="file-preview-empty-state"
         />
 
@@ -231,7 +231,7 @@
                 :value="f.id"
               >
                 <span><el-icon :size="14"><component :is="getFileIconComponent(f.fileType)" /></el-icon> {{ f.fileName }}</span>
-                <span style="float: right; color: #9CA3AF; font-size: 11px;">{{ getFileIssueCount(f.id) }}</span>
+                <span style="float: right; color: var(--corp-text-tertiary); font-size: var(--text-sm);">{{ getFileIssueCount(f.id) }}</span>
               </el-option>
             </el-select>
           </div>
@@ -333,7 +333,7 @@
 
             <!-- ===== 审查通过（无问题）===== -->
             <div v-if="task?.status === 'COMPLETED' && issueDetails.length === 0" class="summary-pass">
-              <el-icon color="#67c23a" :size="24"><CircleCheckFilled /></el-icon>
+              <el-icon color="var(--color-success)" :size="24"><CircleCheckFilled /></el-icon>
               <span>审查完成，未发现需要处理的问题</span>
             </div>
 
@@ -357,7 +357,7 @@
               title="审查通过"
               description="未发现需要处理的问题，文档质量良好"
               variant="success"
-              icon-color="#67C23A"
+              icon-color="var(--color-success)"
               :icon-size="56"
             >
               <template #actions>
@@ -390,7 +390,7 @@
               @locate-text="handleLocateTextFromIssueList"
               @locate-bbox="handleLocateBboxFromIssueList"
               @open-clause="handleOpenClauseFromIssueList"
-              @cancel-fp="handleCancelFalsePositiveFromIssueList"
+              @cancel-fp="handleCancelFalsePositive"
               @open-fp-dialog="(detail) => handleFalsePositive(detail)"
               @batch-false-positive="handleBatchFalsePositiveFromIssueList"
               @batch-adopt="handleBatchAdoptFromIssueList"
@@ -1316,12 +1316,12 @@ onUnmounted(() => {
 <style scoped>
 .task-results-view {
   /* 使用视口高度精确计算：
-   * 100vh - header(52px) - main-content上下padding(12px*2=24px)
+   * 100vh - header(var(--corp-header-height) = 52px)
    * 不依赖flex链路，确保任何情况下都填满可用空间 */
-  height: calc(100vh - 76px);
+  height: calc(100vh - var(--corp-header-height));
   display: flex;
   flex-direction: column;
-  background: #F5F7FA;
+  background: var(--bg-surface-active);
   overflow: hidden;
 }
 
@@ -1330,8 +1330,8 @@ onUnmounted(() => {
   display: flex;
   align-items: center;
   padding: 12px 20px;
-  background: white;
-  border-bottom: 1px solid #E5E7EB;
+  background: var(--bg-surface);
+  border-bottom: 1px solid var(--corp-border-light);
 }
 
 .step-item {
@@ -1344,49 +1344,49 @@ onUnmounted(() => {
   width: 24px;
   height: 24px;
   border-radius: 50%;
-  border: 2px solid #D1D5DB;
+  border: 2px solid var(--corp-border);
   display: flex;
   align-items: center;
   justify-content: center;
   font-size: 12px;
   font-weight: 600;
-  color: #9CA3AF;
+  color: var(--corp-text-tertiary);
 }
 
 .step-item.active .step-circle {
-  border-color: #3B82F6;
-  color: #3B82F6;
+  border-color: var(--color-primary-500);
+  color: var(--color-primary-500);
 }
 
 .step-item.completed .step-circle {
-  background: #10B981;
-  border-color: #10B981;
-  color: white;
+  background: var(--color-success);
+  border-color: var(--color-success);
+  color: var(--bg-surface);
 }
 
 .step-label {
   font-size: 13px;
   font-weight: 600;
-  color: #9CA3AF;
+  color: var(--corp-text-tertiary);
 }
 
 .step-item.active .step-label {
-  color: #3B82F6;
+  color: var(--color-primary-500);
 }
 
 .step-item.completed .step-label {
-  color: #10B981;
+  color: var(--color-success);
 }
 
 .step-line {
   flex: 1;
   height: 2px;
-  background: #D1D5DB;
+  background: var(--corp-border);
   margin: 0 12px;
 }
 
 .step-line.active {
-  background: #3B82F6;
+  background: var(--color-primary-500);
 }
 
 /* 加载状态 */
@@ -1397,7 +1397,7 @@ onUnmounted(() => {
   align-items: center;
   justify-content: center;
   gap: 16px;
-  color: #909399;
+  color: var(--corp-text-secondary);
 }
 
 .loading-text {
@@ -1408,9 +1408,9 @@ onUnmounted(() => {
 .inline-review-progress {
   margin: 8px 12px 0;
   padding: 10px 12px;
-  border: 1px solid #E5E7EB;
-  border-radius: 8px;
-  background: #FAFBFC;
+  border: 1px solid var(--corp-border-light);
+  border-radius: var(--radius-md);
+  background: var(--bg-surface-hover);
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
 }
 
@@ -1430,34 +1430,34 @@ onUnmounted(() => {
 .progress-title {
   font-size: 13px;
   font-weight: 600;
-  color: #303133;
+  color: var(--corp-text-primary);
 }
 
 .progress-percent {
   font-size: 13px;
   font-weight: 700;
-  color: #409EFF;
-  background: #ECF5FF;
+  color: var(--color-primary-500);
+  background: var(--color-primary-50);
   padding: 1px 8px;
-  border-radius: 10px;
+  border-radius: var(--radius-lg);
 }
 
 .progress-details {
   margin-top: 8px;
   padding-top: 8px;
-  border-top: 1px dashed #EBEEF5;
+  border-top: 1px dashed var(--corp-border-light);
 }
 
 .progress-step {
   font-size: 12px;
   font-weight: 600;
-  color: #606266;
+  color: var(--color-gray-700);
   margin: 4px 0 1px;
 }
 
 .progress-message {
-  font-size: 11px;
-  color: #909399;
+  font-size: var(--text-sm);
+  color: var(--corp-text-secondary);
   margin: 0 0 6px;
   line-height: 1.4;
 }
@@ -1466,12 +1466,12 @@ onUnmounted(() => {
   display: flex;
   align-items: center;
   gap: 6px;
-  font-size: 11px;
-  color: #909399;
+  font-size: var(--text-sm);
+  color: var(--corp-text-secondary);
   margin-bottom: 6px;
   padding: 4px 8px;
-  background: #F5F7FA;
-  border-radius: 4px;
+  background: var(--bg-surface-active);
+  border-radius: var(--radius-sm);
 }
 
 .chunk-filename {
@@ -1487,12 +1487,12 @@ onUnmounted(() => {
   align-items: center;
   gap: 4px;
   font-size: 12px;
-  color: #E6A23C;
+  color: var(--color-warning);
   font-weight: 600;
   margin: 0;
   padding: 4px 8px;
-  background: #FDF6EC;
-  border-radius: 4px;
+  background: var(--color-warning-bg);
+  border-radius: var(--radius-sm);
 }
 
 /* 主内容区（紧凑模式：最大化核心内容展示） */
@@ -1510,9 +1510,9 @@ onUnmounted(() => {
 .left-panel {
   display: flex;
   flex-direction: column;
-  background: white;
-  border-radius: 8px;
-  border: 1px solid #E4E7ED;
+  background: var(--bg-surface);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--corp-border-light);
   overflow: hidden;
   min-height: 0;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
@@ -1525,13 +1525,13 @@ onUnmounted(() => {
 
 .panel-header {
   padding: 8px 12px;
-  border-bottom: 1px solid #E5E7EB;
-  background: #F9FAFB;
+  border-bottom: 1px solid var(--corp-border-light);
+  background: var(--bg-surface-hover);
 }
 
 .hint-text {
   font-size: 12px;
-  color: #909399;
+  color: var(--corp-text-secondary);
   display: flex;
   align-items: center;
   gap: 6px;
@@ -1542,7 +1542,7 @@ onUnmounted(() => {
   align-items: center;
   gap: 8px;
   font-size: 13px;
-  color: #C0C4CC;
+  color: var(--corp-border);
 }
 
 .file-preview-empty-state {
@@ -1551,8 +1551,8 @@ onUnmounted(() => {
   align-items: center;
   justify-content: center;
   padding: 40px 20px;
-  background: #FAFCFF;
-  border-radius: 8px;
+  background: var(--bg-surface-hover);
+  border-radius: var(--radius-md);
   margin: 12px;
   min-height: 400px;
 }
@@ -1571,9 +1571,9 @@ onUnmounted(() => {
   gap: 4px;
   padding: 4px 10px;
   font-size: 12px;
-  color: #6B7280;
-  background: #F3F4F6;
-  border: 1px solid #E5E7EB;
+  color: var(--corp-text-secondary);
+  background: var(--bg-surface-active);
+  border: 1px solid var(--corp-border-light);
   border-radius: 6px;
   cursor: pointer;
   white-space: nowrap;
@@ -1581,15 +1581,15 @@ onUnmounted(() => {
 }
 
 .file-tab:hover {
-  background: #EFF6FF;
-  border-color: #BFDBFE;
-  color: #3B82F6;
+  background: var(--color-primary-50);
+  border-color: var(--color-primary-200);
+  color: var(--color-primary-500);
 }
 
 .file-tab.active {
-  background: #3B82F6;
-  border-color: #3B82F6;
-  color: white;
+  background: var(--color-primary-500);
+  border-color: var(--color-primary-500);
+  color: var(--bg-surface);
 }
 
 .file-tab-icon {
@@ -1605,8 +1605,8 @@ onUnmounted(() => {
 .file-tab-count {
   background: rgba(0, 0, 0, 0.1);
   padding: 0 5px;
-  border-radius: 8px;
-  font-size: 10px;
+  border-radius: var(--radius-md);
+  font-size: var(--text-sm);
   font-weight: 600;
 }
 
@@ -1630,7 +1630,7 @@ onUnmounted(() => {
   align-items: center;
   justify-content: center;
   gap: 10px;
-  color: var(--corp-text-secondary, #6B7280);
+  color: var(--corp-text-secondary);
   font-size: 13px;
 }
 
@@ -1640,9 +1640,9 @@ onUnmounted(() => {
   min-width: 0; /* 关键：允许flex子项收缩 */
   display: flex;
   flex-direction: column;
-  background: white;
-  border-radius: 8px;
-  border: 1px solid #E4E7ED;
+  background: var(--bg-surface);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--corp-border-light);
   overflow-y: hidden;
   overflow-x: auto;
   min-height: 0; /* 关键：允许在flex容器中正确收缩 */
@@ -1654,7 +1654,7 @@ onUnmounted(() => {
   justify-content: space-between;
   align-items: center;
   padding: 8px 12px;
-  border-bottom: 1px solid #E5E7EB;
+  border-bottom: 1px solid var(--corp-border-light);
 }
 
 .header-left {
@@ -1680,9 +1680,9 @@ onUnmounted(() => {
   font-size: 13px;
   padding: 7px 14px;
   border-radius: 6px;
-  color: #374151 !important;
-  background: #FFFFFF !important;
-  border: 1px solid #D1D5DB !important;
+  color: var(--color-gray-700) !important;
+  background: var(--bg-surface) !important;
+  border: 1px solid var(--corp-border) !important;
   transition: all 0.15s ease;
 }
 
@@ -1690,16 +1690,16 @@ onUnmounted(() => {
 .export-action-btn:focus,
 .header-action-btn:hover,
 .header-action-btn:focus {
-  color: #2563EB !important;
-  background: #F9FAFB !important;
-  border-color: #93C5FD !important;
+  color: var(--color-primary-600) !important;
+  background: var(--bg-surface-hover) !important;
+  border-color: var(--color-primary-300) !important;
 }
 
 /* ===== 分隔线：区分导出组和导航 ===== */
 .header-divider {
   width: 1px;
   height: 22px;
-  background: #E2E8F0;
+  background: var(--corp-border-light);
   margin: 0 4px;
 }
 
@@ -1710,7 +1710,7 @@ onUnmounted(() => {
   gap: 4px;
   font-size: 13px;
   font-weight: 500;
-  color: #64748B;
+  color: var(--corp-text-secondary);
   background: none;
   border: none;
   cursor: pointer;
@@ -1721,14 +1721,14 @@ onUnmounted(() => {
 }
 
 .back-btn:hover {
-  color: #334155;
-  background: #F1F5F9;
+  color: var(--color-gray-700);
+  background: var(--bg-surface-active);
 }
 
 .panel-title {
   font-size: 15px;
   font-weight: 600;
-  color: #111827;
+  color: var(--corp-text-primary);
   margin: 0;
   white-space: nowrap;
 }
@@ -1740,8 +1740,8 @@ onUnmounted(() => {
   display: flex;
   gap: 4px;
   padding: 6px 12px;
-  background: #F9FAFB;
-  border-bottom: 1px solid #E5E7EB;
+  background: var(--bg-surface-hover);
+  border-bottom: 1px solid var(--corp-border-light);
 }
 
 .tab-item {
@@ -1752,7 +1752,7 @@ onUnmounted(() => {
   padding: 8px 14px;
   font-size: 13px;
   font-weight: 500;
-  color: #6B7280;
+  color: var(--corp-text-secondary);
   border: none;
   background: transparent;
   border-radius: 6px 6px 0 0;
@@ -1761,13 +1761,13 @@ onUnmounted(() => {
 }
 
 .tab-item:hover {
-  color: #2563EB;
+  color: var(--color-primary-600);
   background: rgba(37, 99, 235, 0.06);
 }
 
 .tab-item.active {
-  color: #2563EB;
-  background: #FFFFFF;
+  color: var(--color-primary-600);
+  background: var(--bg-surface);
   font-weight: 600;
 }
 
@@ -1779,7 +1779,7 @@ onUnmounted(() => {
   bottom: 0;
   z-index: 3;
   height: 3px;
-  background: #2563EB;
+  background: var(--color-primary-600);
   border-radius: 3px 3px 0 0;
   box-shadow: 0 -1px 4px rgba(37, 99, 235, 0.25);
 }
@@ -1797,7 +1797,7 @@ onUnmounted(() => {
 }
 
 .tab-badge :deep(.el-badge__content) {
-  font-size: 10px;
+  font-size: var(--text-sm);
   padding: 0 4px;
   height: 16px;
   line-height: 16px;
@@ -1817,16 +1817,16 @@ onUnmounted(() => {
   gap: 6px;
   padding: 8px 12px;
   margin-bottom: 12px;
-  background: #F0F9FF;
-  border: 1px solid #BAE6FD;
+  background: var(--color-primary-50);
+  border: 1px solid var(--color-primary-200);
   border-radius: 6px;
   font-size: 12px;
-  color: #0369A1;
+  color: var(--color-primary-700);
   line-height: 1.5;
 }
 
 .tab-description-bar .el-icon {
-  color: #0EA5E9;
+  color: var(--color-primary-500);
   flex-shrink: 0;
 }
 
@@ -1841,16 +1841,18 @@ onUnmounted(() => {
   gap: 8px;
   padding: 16px;
   background: rgba(103, 194, 58, 0.06);
-  border-radius: 8px;
+  border-radius: var(--radius-md);
   font-size: 14px;
-  color: #67c23a;
+  color: var(--color-success);
   font-weight: 500;
 }
 
-/* 响应式 */
+/* 响应式（1200px 断点合并：column 布局优先；原重复断点的 left-panel 32% 宽度覆盖已删除） */
 @media (max-width: 1200px) {
   .main-content {
     flex-direction: column;
+    gap: 12px;
+    padding: 8px;
   }
 
   .left-panel,
@@ -1886,14 +1888,14 @@ onUnmounted(() => {
 .divider-line {
   width: 2px;
   height: 100%;
-  background-color: #E5E7EB;
+  background-color: var(--corp-border-light);
   border-radius: 1px;
   transition: background-color 0.2s ease, width 0.2s ease;
 }
 
 .resize-divider:hover .divider-line,
 .resize-divider.active .divider-line {
-  background-color: #3B82F6;
+  background-color: var(--color-primary-500);
   width: 3px;
 }
 
@@ -1913,7 +1915,7 @@ onUnmounted(() => {
 
 .handle-dots {
   font-size: 14px;
-  color: #3B82F6;
+  color: var(--color-primary-500);
   font-weight: bold;
   letter-spacing: -1px;
   writing-mode: vertical-rl;
@@ -2085,13 +2087,13 @@ onUnmounted(() => {
   .left-panel {
     height: 35vh;
     min-height: 200px;
-    border-radius: 4px;
+    border-radius: var(--radius-sm);
   }
 
   .right-panel {
     height: calc(65vh - 12px);
     min-height: 350px;
-    border-radius: 4px;
+    border-radius: var(--radius-sm);
   }
 
   .panel-header {
@@ -2105,19 +2107,6 @@ onUnmounted(() => {
 }
 
 /* ====== 标准引用自检报告样式（已下沉到 SelfCheckReportPanel 子组件）====== */
-
-/* 响应式布局优化 */
-@media (max-width: 1200px) {
-  .main-content {
-    gap: 12px;
-    padding: 8px;
-  }
-
-  .left-panel {
-    flex: 0 0 32%;
-    max-width: 360px;
-  }
-}
 
 @media (max-width: 1024px) {
   .main-content {
@@ -2232,8 +2221,8 @@ onUnmounted(() => {
 
 /* OPT-011: 封面信息卡片 */
 .cover-info-card {
-  border-bottom: 1px solid #ebeef5;
-  background: #fafbfc;
+  border-bottom: 1px solid var(--corp-border-light);
+  background: var(--bg-surface-hover);
 }
 .cover-info-card :deep(.el-collapse) {
   border: none;
@@ -2261,11 +2250,11 @@ onUnmounted(() => {
 }
 .cover-label {
   font-weight: 600;
-  color: #1f2937;
+  color: var(--color-gray-800);
   white-space: nowrap;
 }
 .cover-title-text {
-  color: #6b7280;
+  color: var(--corp-text-secondary);
   font-size: 12px;
   overflow: hidden;
   text-overflow: ellipsis;

@@ -3,26 +3,28 @@
    CSS 变量定义在 .agent-layout 上，子元素继承。
 */
 
-/* === CSS 变量（亮色）=== */
+/* === CSS 变量（亮色）===
+   全部引用全局设计系统令牌（styles/variables.css :root），全局改主题时局部自动跟随。
+   rgba 透明度效果与暗色块（全局无暗色令牌）保留局部字面量。 */
 .agent-layout {
-  --bg: #ffffff;
-  --bg-panel: #f5f5f5;
-  --bg-hover: #eeeeee;
-  --bg-selected: #e8e8e8;
-  --border: #e0e0e0;
-  --text: #1a1a1a;
-  --text-muted: #6b7280;
-  --text-dim: #9ca3af;
-  --accent: #2563eb;
-  --accent-hover: #1d4ed8;
-  --user-bg: #eff6ff;
-  --assistant-bg: #ffffff;
-  --tool-bg: #f9fafb;
+  --bg: var(--bg-surface);
+  --bg-panel: var(--bg-surface-active);
+  --bg-hover: var(--bg-surface-hover);
+  --bg-selected: var(--color-gray-200);
+  --border: var(--corp-border-light);
+  --text: var(--corp-text-primary);
+  --text-muted: var(--corp-text-secondary);
+  --text-dim: var(--corp-text-tertiary);
+  --accent: var(--color-primary-600);
+  --accent-hover: var(--color-primary-700);
+  --user-bg: var(--color-primary-50);
+  --assistant-bg: var(--bg-surface);
+  --tool-bg: var(--color-gray-50);
   --bg-subtle: rgba(0, 0, 0, 0.03);
   --font-mono: "JetBrains Mono", "Fira Code", "Consolas", ui-monospace, "PingFang SC", "Microsoft YaHei", monospace;
-  --danger: #dc2626;
-  --warning: #ea580c;
-  --success: #16a34a;
+  --danger: var(--color-danger-600);
+  --warning: var(--severity-major);
+  --success: var(--color-success-600);
 
   /* 布局变量（对齐参考：右面板默认 clamp(360,42vw,640)，min 300 / max 1200） */
   --sidebar-width: 260px;

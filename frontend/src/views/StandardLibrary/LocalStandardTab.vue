@@ -815,27 +815,25 @@ onMounted(() => {
   font-size: 15px;
 }
 
-/* 表格优化 */
+/* 表格优化（2026-08-12：字号/表头底色对齐全局 element-overrides 标准） */
 .manage-card :deep(.el-table) {
   --el-table-border-color: var(--el-border-color-lighter);
-  --el-table-header-bg-color: var(--el-fill-color-light);
   border-radius: 8px;
   overflow: hidden;
 }
 
 .manage-card :deep(.el-table th.el-table__cell) {
   font-weight: 600;
-  font-size: 15px;
-  color: var(--el-text-color-regular);
+  font-size: var(--text-sm);
+  color: var(--corp-text-secondary);
 }
 
 .manage-card :deep(.el-table td.el-table__cell) {
-  font-size: 15px;
+  font-size: var(--text-base);
 }
 
 /* 分页器样式 */
 .manage-card :deep(.el-pagination) {
-  --el-pagination-font-size: 15px;
   --el-pagination-button-bg-color: var(--el-fill-color-light);
 }
 

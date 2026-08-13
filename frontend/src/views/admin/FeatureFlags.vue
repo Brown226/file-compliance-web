@@ -113,13 +113,13 @@ onMounted(loadFlags)
   margin: 0 0 6px;
   font-size: 16px;
   font-weight: 600;
-  color: #1f2937;
+  color: var(--color-gray-800);
 }
 
 .page-header p {
   margin: 0;
   font-size: 13px;
-  color: #6b7280;
+  color: var(--corp-text-secondary);
 }
 
 .flag-name {
@@ -131,13 +131,13 @@ onMounted(loadFlags)
 .flag-label {
   font-size: 14px;
   font-weight: 600;
-  color: #1f2937;
+  color: var(--color-gray-800);
 }
 
 .flag-key {
   font-size: 12px;
-  color: #6b7280;
-  background: #f3f4f6;
+  color: var(--corp-text-secondary);
+  background: var(--color-gray-100);
   padding: 1px 6px;
   border-radius: 4px;
   width: fit-content;
@@ -148,15 +148,15 @@ onMounted(loadFlags)
   flex-direction: column;
   gap: 2px;
   font-size: 12px;
-  color: #6b7280;
+  color: var(--corp-text-secondary);
 }
 
 .flag-meta-empty {
-  color: #d1d5db;
+  color: var(--color-gray-300);
 }
 
 .flag-meta-time {
   font-size: 11px;
-  color: #9ca3af;
+  color: var(--corp-text-tertiary);
 }
 </style>

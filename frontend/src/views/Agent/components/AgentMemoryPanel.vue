@@ -38,7 +38,8 @@
       </div>
 
       <div v-else-if="memories.length === 0" class="empty-state">
-        <el-icon :size="32" color="#9ca3af"><Collection /></el-icon>
+        <!-- 对齐 --corp-text-tertiary -->
+        <el-icon :size="32" color="var(--corp-text-tertiary)"><Collection /></el-icon>
         <p>暂无记忆</p>
         <p class="empty-hint">Agent 会在对话中自动保存您的偏好</p>
       </div>

@@ -150,18 +150,18 @@ function onCancel() {
 .ask-user-card {
   width: 420px;
   max-width: 92vw;
-  background: var(--surface, #fff);
+  background: var(--surface, var(--bg-surface));
   border-radius: 12px;
   box-shadow: 0 8px 30px rgba(0, 0, 0, 0.18);
   padding: 18px 20px 20px;
-  color: var(--text, #1f2329);
+  color: var(--text, var(--corp-text-primary));
 }
 .ask-user-header {
   display: flex;
   align-items: center;
   gap: 6px;
   font-weight: 600;
-  color: var(--primary, #2f6fed);
+  color: var(--primary, var(--color-primary-600));
 }
 .ask-user-question {
   margin: 12px 0 14px;
@@ -173,7 +173,7 @@ function onCancel() {
   align-items: center;
   gap: 4px;
   font-size: 12px;
-  color: #909399;
+  color: var(--text-dim);
   margin: -6px 0 10px;
 }
 .ask-user-actions {
@@ -190,26 +190,26 @@ function onCancel() {
   cursor: pointer;
 }
 .ask-btn.confirm {
-  background: var(--primary, #2f6fed);
-  color: #fff;
+  background: var(--primary, var(--color-primary-600));
+  color: var(--corp-text-inverse);
 }
 .ask-btn.confirm:disabled {
   opacity: 0.5;
   cursor: not-allowed;
 }
 .ask-btn.cancel {
-  background: var(--bg-hover, #f0f0f0);
-  color: var(--text, #1f2329);
+  background: var(--bg-hover, var(--bg-surface-active));
+  color: var(--text, var(--corp-text-primary));
 }
 .ask-user-input,
 .ask-user-editor {
   width: 100%;
-  border: 1px solid var(--border, #dcdfe6);
+  border: 1px solid var(--border, var(--corp-border-light));
   border-radius: 8px;
   padding: 8px 10px;
   font-size: 14px;
-  background: var(--bg, #fff);
-  color: var(--text, #1f2329);
+  background: var(--bg, var(--bg-surface));
+  color: var(--text, var(--corp-text-primary));
   resize: vertical;
   box-sizing: border-box;
 }
@@ -220,17 +220,17 @@ function onCancel() {
 }
 .ask-opt {
   text-align: left;
-  border: 1px solid var(--border, #dcdfe6);
-  background: var(--bg, #fff);
-  color: var(--text, #1f2329);
+  border: 1px solid var(--border, var(--corp-border-light));
+  background: var(--bg, var(--bg-surface));
+  color: var(--text, var(--corp-text-primary));
   border-radius: 8px;
   padding: 9px 12px;
   font-size: 14px;
   cursor: pointer;
 }
 .ask-opt.active {
-  border-color: var(--primary, #2f6fed);
-  background: var(--primary-light, #eaf1fe);
-  color: var(--primary, #2f6fed);
+  border-color: var(--primary, var(--color-primary-600));
+  background: var(--primary-light, var(--color-primary-50));
+  color: var(--primary, var(--color-primary-600));
 }
 </style>

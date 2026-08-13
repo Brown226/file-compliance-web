@@ -63,7 +63,7 @@ const hasCsv = computed(() => Boolean(props.result?.csv))
   flex-direction: column;
   gap: 8px;
   padding: 8px 10px;
-  border-top: 1px solid rgba(34, 197, 94, 0.15);
+  border-top: 1px solid color-mix(in srgb, var(--color-success) 15%, transparent);
   background: var(--bg-subtle);
 }
 .table-view-stats {
@@ -78,8 +78,8 @@ const hasCsv = computed(() => Boolean(props.result?.csv))
   margin-left: auto;
   padding: 1px 6px;
   border-radius: 4px;
-  background: rgba(34, 197, 94, 0.12);
-  color: #16a34a;
+  background: color-mix(in srgb, var(--color-success) 12%, transparent);
+  color: var(--color-success-600);
   font-size: 10px;
 }
 .table-card {

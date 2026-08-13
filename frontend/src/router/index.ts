@@ -35,7 +35,7 @@ const routes: Array<RouteRecordRaw> = [
         path: 'review-center',
         name: 'ReviewCenter',
         component: () => import('../views/ReviewCenter.vue'),
-        meta: { title: '审查中心' }
+        meta: { title: '审查中心', menu: { icon: 'DataBoard', group: 'main', order: 0 } }
       },
       { path: 'workspace', redirect: '/review-center' },
       {
@@ -48,13 +48,13 @@ const routes: Array<RouteRecordRaw> = [
         path: 'review',
         name: 'SmartReview',
         component: () => import('../views/ReviewEntry.vue'),
-        meta: { title: '智能审查' }
+        meta: { title: '智能审查', menu: { icon: 'DocumentAdd', group: 'main', order: 1 } }
       },
       {
         path: 'review/:id',
         name: 'TaskResults',
         component: () => import('../views/TaskResultsView.vue'),
-        meta: { title: '审查结果', hidden: true }
+        meta: { title: '审查结果', hidden: true, activeMenu: '/review-center' }
       },
       {
         path: 'tasks/details/:id',
@@ -76,14 +76,14 @@ const routes: Array<RouteRecordRaw> = [
         path: 'agent',
         name: 'AgentChat',
         component: () => import('@/views/Agent/AgentChat.vue'),
-        meta: { title: 'Agent 审查助手', hideHeader: true }
+        meta: { title: 'Agent 审查助手', hideHeader: true, menu: { icon: 'MagicStick', group: 'main', order: 3 } }
       },
       // ===== 知识中心 =====
       {
         path: 'knowledge',
         name: 'KnowledgeCenter',
         component: () => import('../views/KnowledgeCenter.vue'),
-        meta: { title: '知识中心' }
+        meta: { title: '知识中心', menu: { icon: 'Collection', group: 'main', order: 2 } }
       },
       { path: 'admin/standards', redirect: '/knowledge' },
       { path: 'admin/knowledge', redirect: '/knowledge?tab=maxkb' },
@@ -93,7 +93,7 @@ const routes: Array<RouteRecordRaw> = [
         path: 'feedback',
         name: 'MyFeedbacks',
         component: () => import('../views/MyFeedbacks.vue'),
-        meta: { title: '反馈意见' }
+        meta: { title: '反馈意见', menu: { icon: 'ChatLineRound', group: 'main', order: 4 } }
       },
       {
         path: 'feedback/submit',
@@ -105,13 +105,13 @@ const routes: Array<RouteRecordRaw> = [
         path: 'feedback/:id',
         name: 'FeedbackDetail',
         component: () => import('../views/FeedbackDetail.vue'),
-        meta: { title: '反馈详情', hidden: true }
+        meta: { title: '反馈详情', hidden: true, activeMenu: '/feedback' }
       },
       {
         path: 'announcements',
         name: 'Announcements',
         component: () => import('../views/AnnouncementManagement.vue'),
-        meta: { title: '系统公告' }
+        meta: { title: '系统公告', menu: { icon: 'Bell', group: 'admin', adminOnly: true } }
       },
 
       // ===== 管理员路由（ADMIN/MANAGER 可见）=====
@@ -119,13 +119,13 @@ const routes: Array<RouteRecordRaw> = [
         path: 'accuracy-dashboard',
         name: 'AccuracyDashboard',
         component: () => import('../views/AccuracyDashboard.vue'),
-        meta: { title: '审查质量看板', requiresAdminOrManager: true }
+        meta: { title: '审查质量看板', requiresAdminOrManager: true, menu: { icon: 'DataLine', group: 'admin' } }
       },
       {
         path: 'admin',
         name: 'UnifiedPanel',
         component: () => import('../views/UnifiedPanel.vue'),
-        meta: { title: '统一管理面板', requiresAdminOrManager: true }
+        meta: { title: '统一管理面板', requiresAdminOrManager: true, menu: { icon: 'Setting', group: 'admin' } }
       },
       {
         path: 'admin/standards',

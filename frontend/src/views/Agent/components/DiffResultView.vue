@@ -116,16 +116,16 @@ function typeLabel(type: string): string {
   flex-wrap: wrap;
   gap: 6px 12px;
   padding: 8px 10px;
-  border-top: 1px solid rgba(34, 197, 94, 0.15);
+  border-top: 1px solid color-mix(in srgb, var(--color-success) 15%, transparent);
   background: var(--bg-subtle);
 }
 .stat {
   font-family: var(--font-mono);
   font-size: 11px;
 }
-.stat.added { color: #16a34a; }
-.stat.removed { color: #dc2626; }
-.stat.modified { color: #d97706; }
+.stat.added { color: var(--color-success-600); }
+.stat.removed { color: var(--color-danger-600); }
+.stat.modified { color: var(--color-warning-600); }
 .stat.unchanged { color: var(--text-dim); }
 .stat.total { color: var(--text-muted); }
 
@@ -133,12 +133,12 @@ function typeLabel(type: string): string {
 .diff-summary {
   padding: 8px 10px;
   border-top: 1px solid var(--border);
-  background: rgba(217, 119, 6, 0.05);
+  background: color-mix(in srgb, var(--color-warning-600) 5%, transparent);
 }
 .diff-summary-title {
   font-size: 11px;
   font-weight: 600;
-  color: #d97706;
+  color: var(--color-warning-600);
   margin-bottom: 4px;
 }
 .diff-summary-body {
@@ -153,7 +153,7 @@ function typeLabel(type: string): string {
 }
 .diff-change {
   padding: 6px 10px;
-  border-top: 1px solid rgba(128, 128, 128, 0.12);
+  border-top: 1px solid color-mix(in srgb, var(--color-gray-400) 12%, transparent);
 }
 .diff-change:first-child { border-top: none; }
 .change-head {
@@ -169,9 +169,9 @@ function typeLabel(type: string): string {
   border-radius: 3px;
   flex-shrink: 0;
 }
-.badge-added { background: rgba(22, 163, 74, 0.12); color: #16a34a; }
-.badge-removed { background: rgba(220, 38, 38, 0.12); color: #dc2626; }
-.badge-modified { background: rgba(217, 119, 6, 0.12); color: #d97706; }
+.badge-added { background: color-mix(in srgb, var(--color-success-600) 12%, transparent); color: var(--color-success-600); }
+.badge-removed { background: color-mix(in srgb, var(--color-danger-600) 12%, transparent); color: var(--color-danger-600); }
+.badge-modified { background: color-mix(in srgb, var(--color-warning-600) 12%, transparent); color: var(--color-warning-600); }
 .change-section {
   font-size: 11px;
   color: var(--text-dim);
@@ -197,16 +197,16 @@ function typeLabel(type: string): string {
   margin-top: 2px;
 }
 .added-text {
-  background: rgba(22, 163, 74, 0.06);
-  border-left: 3px solid #16a34a;
+  background: color-mix(in srgb, var(--color-success-600) 6%, transparent);
+  border-left: 3px solid var(--color-success-600);
   color: var(--text);
 }
 .removed-text {
-  background: rgba(220, 38, 38, 0.05);
-  border-left: 3px solid #dc2626;
+  background: color-mix(in srgb, var(--color-danger-600) 5%, transparent);
+  border-left: 3px solid var(--color-danger-600);
   color: var(--text-muted);
   text-decoration: line-through;
-  text-decoration-color: rgba(220, 38, 38, 0.4);
+  text-decoration-color: color-mix(in srgb, var(--color-danger-600) 40%, transparent);
 }
 .arrow-mark {
   display: inline-block;
@@ -219,8 +219,8 @@ function typeLabel(type: string): string {
 /* 空态 */
 .diff-empty {
   padding: 12px 10px;
-  border-top: 1px solid rgba(34, 197, 94, 0.15);
-  color: #16a34a;
+  border-top: 1px solid color-mix(in srgb, var(--color-success) 15%, transparent);
+  color: var(--color-success-600);
   font-size: 12px;
 }
 .diff-empty-icon {
@@ -230,7 +230,7 @@ function typeLabel(type: string): string {
   line-height: 16px;
   text-align: center;
   border-radius: 50%;
-  background: rgba(22, 163, 74, 0.15);
+  background: color-mix(in srgb, var(--color-success-600) 15%, transparent);
   margin-right: 6px;
   font-size: 10px;
 }

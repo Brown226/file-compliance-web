@@ -136,7 +136,7 @@
     <transition name="slide-fade">
       <div class="batch-actions-enhanced" v-if="selectedRows.length > 0">
         <div class="batch-left">
-          <el-icon :size="18" color="#409EFF"><Select /></el-icon>
+          <el-icon :size="18" color="var(--color-primary-500)"><Select /></el-icon>
           <span class="batch-text">
             已选择 <strong>{{ selectedRows.length }}</strong> 项
           </span>
@@ -211,7 +211,7 @@
                   :text-inside="true"
                   :format="(p: number) => `${p}%`"
                   status=""
-                  color="#2563eb"
+                  color="var(--color-primary-600)"
                 />
                 <span class="progress-label">审查中</span>
               </div>
@@ -292,7 +292,7 @@
                     <el-dropdown-item
                       command="delete"
                       divided
-                      style="color: #F56C6C"
+                      style="color: var(--color-danger)"
                     >
                       <el-icon><Delete /></el-icon>
                       删除任务
@@ -311,8 +311,8 @@
               <svg viewBox="0 0 120 100" fill="none" class="empty-svg">
                 <rect x="20" y="15" width="80" height="70" rx="6" stroke="var(--color-gray-200)" stroke-width="2" fill="var(--color-gray-50)"/>
                 <path d="M35 38H85M35 50H75M35 62H60" stroke="var(--color-gray-300)" stroke-width="2" stroke-linecap="round"/>
-                <circle cx="78" cy="68" r="14" fill="var(--color-warning-50)" stroke="var(--color-warning-500)" stroke-width="1.5"/>
-                <path d="M78 63V70M78 73V74" stroke="var(--color-warning-700)" stroke-width="2" stroke-linecap="round"/>
+                <circle cx="78" cy="68" r="14" fill="var(--color-warning-bg)" stroke="var(--color-warning)" stroke-width="1.5"/>
+                <path d="M78 63V70M78 73V74" stroke="var(--color-warning-600)" stroke-width="2" stroke-linecap="round"/>
               </svg>
               <p>未找到匹配的审查任务</p>
               <p class="empty-hint">尝试调整筛选条件或重置过滤器</p>
@@ -426,41 +426,25 @@ onMounted(() => {
 })
 </script>
 <style scoped>
-/* ===== Swiss Industrial Data 椋庢牸 =====
-   璁捐鍘熷垯锛氭暟鎹负涓績銆佸己缃戞牸甯冨眬銆佸崟涓€钃濊壊寮鸿皟锛?2563eb锛夈€?
-   缁嗙嚎鍒嗛殧锛?px #e5e7eb锛夈€佹渶灏戦槾褰便€佺粺涓€ 4px 鍦嗚
+/* ===== 任务历史页样式（Swiss Industrial 设计语言）=====
+   设计原则：数据为中心、强网格布局、单一蓝色强调（#2563eb）、
+   细线分隔（1px #e5e7eb）、最小阴影、统一 4px 圆角
 */
 .task-history {
-  --si-accent: #2563eb;
-  --si-accent-bg: #eff6ff;
-  --si-text-primary: #111827;
-  --si-text-regular: #374151;
-  --si-text-secondary: #6b7280;
-  --si-text-muted: #9ca3af;
-  --si-border: #e5e7eb;
-  --si-border-light: #f3f4f6;
-  --si-bg-surface: #ffffff;
-  --si-bg-hover: #f9fafb;
-  --si-success: #16a34a;
-  --si-success-bg: #f0fdf4;
-  --si-danger: #dc2626;
-  --si-danger-bg: #fef2f2;
-  --si-warning: #d97706;
-  --si-warning-bg: #fffbeb;
   padding: 0;
   background: transparent;
-  color: var(--si-text-primary);
+  color: var(--corp-text-primary);
   font-feature-settings: 'tnum';
 }
 
-/* ===== 椤甸潰鏍囬鍖?===== */
+/* ===== 页面标题区 ===== */
 .page-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
   margin-bottom: 20px;
   padding-bottom: 16px;
-  border-bottom: 1px solid var(--si-border);
+  border-bottom: 1px solid var(--corp-border-light);
 }
 
 .page-title {
@@ -468,17 +452,17 @@ onMounted(() => {
   font-size: 20px;
   font-weight: 600;
   line-height: 1.4;
-  color: var(--si-text-primary);
+  color: var(--corp-text-primary);
   letter-spacing: -0.01em;
 }
 
-/* ===== 杩囨护鏍?===== */
+/* ===== 过滤栏 ===== */
 .filter-bar-enhanced {
   margin-bottom: 16px;
   padding: 14px 16px;
-  background: var(--si-bg-surface);
-  border: 1px solid var(--si-border);
-  border-radius: 4px;
+  background: var(--bg-surface);
+  border: 1px solid var(--corp-border-light);
+  border-radius: var(--radius-sm);
   display: flex;
   justify-content: space-between;
   align-items: center;
@@ -507,18 +491,8 @@ onMounted(() => {
   min-width: 240px;
 }
 
-.search-input :deep(.el-input__wrapper) {
-  border-radius: 4px;
-  box-shadow: none;
-}
-
 .filter-select {
   width: 140px !important;
-}
-
-.filter-input :deep(.el-input__wrapper) {
-  border-radius: 4px;
-  box-shadow: none;
 }
 
 .advanced-toggle {
@@ -529,7 +503,7 @@ onMounted(() => {
 .advanced-filter-enhanced {
   margin-top: 12px;
   padding-top: 12px;
-  border-top: 1px solid var(--si-border-light);
+  border-top: 1px solid var(--bg-surface-active);
   width: 100%;
 }
 
@@ -539,16 +513,16 @@ onMounted(() => {
   flex-wrap: wrap;
 }
 
-/* ===== 鎵归噺鎿嶄綔鏍?===== */
+/* ===== 批量操作栏 ===== */
 .batch-actions-enhanced {
   display: flex;
   justify-content: space-between;
   align-items: center;
   padding: 10px 16px;
   margin-bottom: 12px;
-  background: var(--si-accent-bg);
-  border: 1px solid var(--si-accent);
-  border-radius: 4px;
+  background: var(--color-primary-50);
+  border: 1px solid var(--color-primary-600);
+  border-radius: var(--radius-sm);
 }
 
 .batch-left {
@@ -559,11 +533,11 @@ onMounted(() => {
 
 .batch-text {
   font-size: 13px;
-  color: var(--si-text-regular);
+  color: var(--color-gray-700);
 }
 
 .batch-text strong {
-  color: var(--si-accent);
+  color: var(--color-primary-600);
   font-size: 15px;
   font-weight: 700;
   margin: 0 2px;
@@ -601,36 +575,35 @@ onMounted(() => {
   max-height: 80px;
 }
 
-/* ===== 琛ㄦ牸 ===== */
+/* ===== 表格 ===== */
 .table-wrapper {
-  background: var(--si-bg-surface);
-  border: 1px solid var(--si-border);
-  border-radius: 4px;
+  background: var(--bg-surface);
+  border: 1px solid var(--corp-border-light);
+  border-radius: var(--radius-sm);
   overflow: hidden;
 }
 
 :deep(.table-wrapper .el-table) {
   font-size: 13px;
-  --el-table-border-color: var(--si-border-light);
-  --el-table-header-bg-color: var(--si-bg-hover);
-  --el-table-row-hover-bg-color: var(--si-bg-hover);
+  --el-table-border-color: var(--bg-surface-active);
+  --el-table-header-bg-color: var(--bg-surface-hover);
+  --el-table-row-hover-bg-color: var(--bg-surface-hover);
 }
 
 :deep(.table-wrapper .el-table th.el-table__cell) {
   height: 44px;
   padding: 8px 0;
   font-weight: 600;
-  color: var(--si-text-secondary);
+  color: var(--corp-text-secondary);
   font-size: 12px;
-  letter-spacing: 0.02em;
-  background: var(--si-bg-hover);
-  border-bottom: 1px solid var(--si-border);
+  background: var(--bg-surface-hover);
+  border-bottom: 1px solid var(--corp-border-light);
 }
 
 :deep(.table-wrapper .el-table td.el-table__cell) {
   height: 48px;
   padding: 8px 0;
-  border-bottom: 1px solid var(--si-border-light);
+  border-bottom: 1px solid var(--bg-surface-active);
 }
 
 :deep(.table-wrapper .el-table .cell) {
@@ -649,7 +622,7 @@ onMounted(() => {
   top: 0;
   bottom: 0;
   width: 2px;
-  background: var(--si-accent);
+  background: var(--color-primary-600);
 }
 
 :deep(.el-table__inner-wrapper::before) {
@@ -660,96 +633,95 @@ onMounted(() => {
   font-size: 13px;
   line-height: 1.5;
   font-weight: 600;
-  color: var(--si-text-primary);
+  color: var(--corp-text-primary);
 }
 
 .plan-summary-cell {
   font-size: 13px;
-  color: var(--si-text-secondary);
+  color: var(--corp-text-secondary);
 }
 
-/* ===== 鐘舵€佹爣绛?===== */
+/* ===== 状态标签 ===== */
 .status-tag {
   display: inline-flex;
   align-items: center;
   justify-content: center;
   min-width: 56px;
   padding: 3px 10px;
-  border-radius: 3px;
+  border-radius: var(--radius-md);
   font-size: 12px;
   font-weight: 600;
   line-height: 1.4;
   border: 1px solid transparent;
-  letter-spacing: 0.02em;
 }
 
 .status-completed {
-  color: var(--si-success);
-  background: var(--si-success-bg);
-  border-color: #bbf7d0;
+  color: var(--color-success-600);
+  background: var(--color-success-bg);
+  border-color: var(--color-success-bg);
 }
 
 .status-processing {
-  color: var(--si-accent);
-  background: var(--si-accent-bg);
-  border-color: #bfdbfe;
+  color: var(--color-primary-600);
+  background: var(--color-primary-50);
+  border-color: var(--color-primary-200);
 }
 
 .status-pending {
-  color: var(--si-warning);
-  background: var(--si-warning-bg);
-  border-color: #fde68a;
+  color: var(--color-warning-600);
+  background: var(--color-warning-bg);
+  border-color: var(--color-warning-bg);
 }
 
 .status-failed {
-  color: var(--si-danger);
-  background: var(--si-danger-bg);
-  border-color: #fecaca;
+  color: var(--color-danger-600);
+  background: var(--color-danger-bg);
+  border-color: var(--color-danger-bg);
 }
 
-/* 杩涘害鏉?*/
+/* 进度条 */
 .status-progress {
   text-align: center;
 }
 
 .status-progress :deep(.el-progress-bar__outer) {
   border-radius: 2px;
-  background-color: var(--si-border-light);
+  background-color: var(--bg-surface-active);
 }
 
 .status-progress :deep(.el-progress-bar__inner) {
-  background: var(--si-accent);
+  background: var(--color-primary-600);
   border-radius: 2px;
 }
 
 .progress-label {
   display: block;
   margin-top: 3px;
-  font-size: 11px;
-  color: var(--si-accent);
+  font-size: var(--text-sm);
+  color: var(--color-primary-600);
   font-weight: 600;
 }
 
-/* ===== 鏁板瓧鍒?===== */
+/* ===== 数字列 ===== */
 .count-num {
   font-size: 14px;
   font-weight: 600;
-  color: var(--si-text-regular);
+  color: var(--color-gray-700);
   font-variant-numeric: tabular-nums;
 }
 
 .count-num.has-issues {
-  color: var(--si-danger);
+  color: var(--color-danger-600);
 }
 
-/* ===== 鏃堕棿鍒?===== */
+/* ===== 时间列 ===== */
 .time-cell {
   font-size: 12px;
-  color: var(--si-text-muted);
+  color: var(--corp-text-tertiary);
   font-variant-numeric: tabular-nums;
 }
 
-/* ===== 鎿嶄綔鎸夐挳 ===== */
+/* ===== 操作按钮 ===== */
 .action-btns {
   display: flex;
   gap: 6px;
@@ -761,7 +733,7 @@ onMounted(() => {
   font-size: 12px;
   padding: 0 10px;
   height: 28px;
-  border-radius: 3px;
+  border-radius: var(--radius-md);
 }
 
 .primary-action {
@@ -770,18 +742,18 @@ onMounted(() => {
 
 .more-action {
   font-weight: 500;
-  background-color: var(--si-bg-hover);
-  border-color: var(--si-border);
-  color: var(--si-text-secondary);
+  background-color: var(--bg-surface-hover);
+  border-color: var(--corp-border-light);
+  color: var(--corp-text-secondary);
 }
 
 .more-action:hover {
-  background-color: var(--si-accent-bg);
-  border-color: var(--si-accent);
-  color: var(--si-accent);
+  background-color: var(--color-primary-50);
+  border-color: var(--color-primary-600);
+  color: var(--color-primary-600);
 }
 
-/* ===== 绌虹姸鎬?===== */
+/* ===== 空状态 ===== */
 .empty-state {
   text-align: center;
   padding: 48px 0 32px;
@@ -795,7 +767,7 @@ onMounted(() => {
 }
 
 .empty-state p {
-  color: var(--si-text-secondary);
+  color: var(--corp-text-secondary);
   font-size: 14px;
   margin: 0 0 16px;
   font-weight: 500;
@@ -803,21 +775,21 @@ onMounted(() => {
 
 .empty-hint {
   font-size: 12px !important;
-  color: var(--si-text-muted) !important;
+  color: var(--corp-text-tertiary) !important;
   margin: -10px 0 16px !important;
   font-weight: 400 !important;
 }
 
-/* ===== 鍒嗛〉 ===== */
+/* ===== 分页 ===== */
 .pagination-enhanced {
   margin-top: 16px;
   padding: 12px 16px;
   display: flex;
   justify-content: space-between;
   align-items: center;
-  background: var(--si-bg-surface);
-  border: 1px solid var(--si-border);
-  border-radius: 4px;
+  background: var(--bg-surface);
+  border: 1px solid var(--corp-border-light);
+  border-radius: var(--radius-sm);
 }
 
 .pagination-left {
@@ -827,7 +799,7 @@ onMounted(() => {
 }
 
 .total-count {
-  color: var(--si-accent);
+  color: var(--color-primary-600);
   font-size: 15px;
   font-weight: 700;
   margin: 0 2px;
@@ -846,19 +818,19 @@ onMounted(() => {
 .pagination-component :deep(.el-pager li),
 .pagination-component :deep(.btn-prev),
 .pagination-component :deep(.btn-next) {
-  border-radius: 3px;
+  border-radius: var(--radius-md);
 }
 
-/* ===== 琛ㄦ牸琛?hover ===== */
+/* ===== 表格行 hover ===== */
 .task-history :deep(.el-table__body tr:hover > td) {
-  background-color: var(--si-bg-hover) !important;
+  background-color: var(--bg-surface-hover) !important;
 }
 
 .task-history :deep(.el-table__body tr) {
   transition: background 0.15s ease;
 }
 
-/* ===== 鍝嶅簲寮?===== */
+/* ===== 响应式 ===== */
 @media (max-width: 1200px) {
   .filter-bar-enhanced {
     gap: 12px;
@@ -884,7 +856,7 @@ onMounted(() => {
   .filter-right {
     justify-content: space-between;
     padding-top: 10px;
-    border-top: 1px dashed var(--si-border);
+    border-top: 1px dashed var(--corp-border-light);
   }
   .search-box {
     min-width: auto;
@@ -907,7 +879,7 @@ onMounted(() => {
     gap: 8px;
   }
   .search-input :deep(.el-input__wrapper) {
-    border-radius: 4px;
+    border-radius: var(--radius-md);
   }
   .filter-right {
     flex-wrap: wrap;

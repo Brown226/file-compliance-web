@@ -68,7 +68,7 @@ onMounted(loadReport)
 <style scoped>
 .report-print-page {
   min-height: 100vh;
-  background: #e5e7eb;
+  background: var(--corp-border-light);
   padding: 16px;
   display: flex;
   flex-direction: column;
@@ -84,34 +84,34 @@ onMounted(loadReport)
 }
 
 .error-text {
-  color: #dc2626;
+  color: var(--color-danger-600);
   font-size: 13px;
 }
 
 .report-sheet {
   width: 210mm;
   min-height: 297mm;
-  background: #ffffff;
+  background: var(--bg-surface);
   padding: 20mm 18mm;
   box-shadow: 0 2px 12px rgba(0, 0, 0, 0.08);
   font-family: "Microsoft YaHei", "PingFang SC", "SimSun", sans-serif;
   font-size: 12pt;
   line-height: 1.75;
-  color: #1f2937;
+  color: var(--color-gray-800);
 }
 
 .loading-state,
 .error-state {
   text-align: center;
   padding: 80px 0;
-  color: #6b7280;
+  color: var(--corp-text-secondary);
 }
 
 /* Markdown 内容打印友好样式 */
 .markdown-content :deep(h1) {
   font-size: 22pt;
   text-align: center;
-  border-bottom: 2px solid #1f2937;
+  border-bottom: 2px solid var(--color-gray-800);
   padding-bottom: 10px;
   margin: 0 0 24px;
 }
@@ -120,7 +120,7 @@ onMounted(loadReport)
   font-size: 16pt;
   margin-top: 28px;
   margin-bottom: 12px;
-  border-left: 4px solid #1f2937;
+  border-left: 4px solid var(--color-gray-800);
   padding-left: 10px;
 }
 
@@ -128,7 +128,7 @@ onMounted(loadReport)
   font-size: 13pt;
   margin-top: 20px;
   margin-bottom: 8px;
-  color: #111827;
+  color: var(--corp-text-primary);
 }
 
 .markdown-content :deep(p) {
@@ -146,7 +146,7 @@ onMounted(loadReport)
 }
 
 .markdown-content :deep(pre) {
-  background: #f5f5f5;
+  background: var(--bg-body);
   padding: 8px 12px;
   border-radius: 4px;
   font-family: "Consolas", "Microsoft YaHei", monospace;
@@ -169,26 +169,26 @@ onMounted(loadReport)
 
 .markdown-content :deep(th),
 .markdown-content :deep(td) {
-  border: 1px solid #d1d5db;
+  border: 1px solid var(--corp-border);
   padding: 6px 10px;
   text-align: left;
 }
 
 .markdown-content :deep(th) {
-  background: #f3f4f6;
+  background: var(--color-gray-100);
   font-weight: 600;
 }
 
 .markdown-content :deep(hr) {
   border: none;
-  border-top: 1px solid #d1d5db;
+  border-top: 1px solid var(--corp-border);
   margin: 16px 0;
 }
 
 .markdown-content :deep(blockquote) {
-  border-left: 3px solid #9ca3af;
+  border-left: 3px solid var(--corp-text-tertiary);
   padding-left: 12px;
-  color: #4b5563;
+  color: var(--color-gray-600);
   margin: 8px 0;
 }
 
@@ -203,7 +203,7 @@ onMounted(loadReport)
   }
 
   .report-print-page {
-    background: #ffffff;
+    background: var(--bg-surface);
     padding: 0;
   }
 

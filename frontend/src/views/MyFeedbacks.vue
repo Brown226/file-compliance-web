@@ -349,29 +349,29 @@ onMounted(() => {
 .stat-value {
   font-size: 28px;
   font-weight: 700;
-  color: #303133;
+  color: var(--corp-text-primary);
 }
 
 .stat-label {
   font-size: 14px;
-  color: #909399;
+  color: var(--color-gray-400);
   margin-top: 4px;
 }
 
 .stat-pending .stat-value {
-  color: #e6a23c;
+  color: var(--color-warning);
 }
 
 .stat-in-progress .stat-value {
-  color: #409eff;
+  color: var(--color-primary-500);
 }
 
 .stat-resolved .stat-value {
-  color: #67c23a;
+  color: var(--color-success);
 }
 
 .stat-closed .stat-value {
-  color: #909399;
+  color: var(--color-gray-400);
 }
 
 .filter-section {
@@ -392,7 +392,7 @@ onMounted(() => {
 }
 
 .text-muted {
-  color: #c0c4cc;
+  color: var(--color-gray-300);
 }
 
 .pagination-wrapper {

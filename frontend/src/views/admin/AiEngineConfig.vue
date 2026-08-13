@@ -71,8 +71,8 @@ const currentTab = computed(() => tabs.find(item => item.key === activeTab.value
   justify-content: space-between;
   gap: 16px;
   padding: 14px 20px;
-  background: #fff;
-  border-bottom: 1px solid #eef2f7;
+  background: var(--bg-surface);
+  border-bottom: 1px solid var(--color-gray-100); /* 原 #eef2f7 浅灰边框，对齐 --color-gray-100 */
   position: sticky;
   top: 0;
   z-index: 2;
@@ -81,7 +81,7 @@ const currentTab = computed(() => tabs.find(item => item.key === activeTab.value
 .nav-pills {
   display: flex;
   gap: 4px;
-  background: #f1f5f9;
+  background: var(--color-gray-100);
   padding: 4px;
   border-radius: 10px;
 }
@@ -91,7 +91,7 @@ const currentTab = computed(() => tabs.find(item => item.key === activeTab.value
   border: none;
   border-radius: 7px;
   background: transparent;
-  color: #64748b;
+  color: var(--corp-text-secondary);
   font-size: 13px;
   font-weight: 500;
   cursor: pointer;
@@ -100,19 +100,19 @@ const currentTab = computed(() => tabs.find(item => item.key === activeTab.value
 }
 
 .engine-pill:hover {
-  color: #1e293b;
+  color: var(--color-gray-800);
 }
 
 .engine-pill.active {
-  background: #fff;
-  color: #0f172a;
+  background: var(--bg-surface);
+  color: var(--corp-text-primary);
   font-weight: 600;
   box-shadow: 0 1px 2px rgba(15, 23, 42, 0.08), 0 0 0 1px rgba(15, 23, 42, 0.04);
 }
 
 .nav-hint {
   font-size: 12px;
-  color: #94a3b8;
+  color: var(--corp-text-tertiary);
   font-weight: 500;
   letter-spacing: 0.01em;
   white-space: nowrap;
@@ -126,7 +126,7 @@ const currentTab = computed(() => tabs.find(item => item.key === activeTab.value
   flex: 1;
   min-height: 0;
   overflow-y: auto;
-  background: #f8fafc;
+  background: var(--corp-bg-sunken);
 }
 
 /* === Provider 配置：公共组件内嵌形态 === */

@@ -34,7 +34,7 @@ import KnowledgeStrategyPanel from './KnowledgeStrategyPanel.vue'
 
 .page-intro {
   padding: 4px 0 4px 12px;
-  border-left: 3px solid #2563eb;
+  border-left: 3px solid var(--color-primary-600);
   margin-bottom: 4px;
 }
 
@@ -42,13 +42,13 @@ import KnowledgeStrategyPanel from './KnowledgeStrategyPanel.vue'
   margin: 0 0 4px;
   font-size: 16px;
   font-weight: 600;
-  color: #0f172a;
+  color: var(--corp-text-primary);
 }
 
 .page-intro p {
   margin: 0;
   font-size: 12.5px;
-  color: #64748b;
+  color: var(--corp-text-secondary);
   line-height: 1.5;
 }
 
@@ -60,8 +60,8 @@ import KnowledgeStrategyPanel from './KnowledgeStrategyPanel.vue'
 }
 
 .module-card {
-  background: #fff;
-  border: 1px solid #e5e7eb;
+  background: var(--bg-surface);
+  border: 1px solid var(--corp-border-light);
   border-radius: 8px;
   box-shadow: 0 1px 2px rgba(15, 23, 42, 0.03);
   overflow: hidden;

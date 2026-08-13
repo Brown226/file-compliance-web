@@ -189,16 +189,16 @@ function renderTrendChart() {
     xAxis: {
       type: 'category',
       data: trend.map((t) => t.date),
-      axisLine: { lineStyle: { color: '#e2e8f0' } },
-      axisLabel: { color: '#64748b', fontSize: 11 },
+      axisLine: { lineStyle: { color: '#E5E7EB' /* 对齐 --corp-border-light */ } },
+      axisLabel: { color: '#6B7280', fontSize: 11 } /* 对齐 --color-gray-500 */,
       axisTick: { show: false },
     },
     yAxis: {
       type: 'value',
       min: 0,
       max: 1,
-      splitLine: { lineStyle: { color: '#f1f5f9' } },
-      axisLabel: { color: '#64748b', formatter: (v: number) => (v * 100).toFixed(0) + '%' },
+      splitLine: { lineStyle: { color: '#F5F5F5' /* 对齐 --color-gray-100 */ } },
+      axisLabel: { color: '#6B7280' /* 对齐 --color-gray-500 */, formatter: (v: number) => (v * 100).toFixed(0) + '%' },
     },
     series: [{
       name: '精确率',
@@ -207,7 +207,7 @@ function renderTrendChart() {
       symbol: 'circle',
       symbolSize: 6,
       data: trend.map((t) => t.precision),
-      itemStyle: { color: '#2563eb' },
+      itemStyle: { color: '#2563EB' /* 对齐 --color-primary-600 */ },
       lineStyle: { width: 2.5 },
       areaStyle: {
         color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
@@ -277,13 +277,13 @@ onBeforeUnmount(() => {
   margin: 0;
   font-size: 22px;
   font-weight: 600;
-  color: #0f172a;
+  color: var(--corp-text-primary);
   letter-spacing: -0.3px;
 }
 
 .header-sub {
   font-size: 12px;
-  color: #94a3b8;
+  color: var(--corp-text-tertiary);
   margin-left: 8px;
   font-weight: 400;
 }
@@ -296,8 +296,8 @@ onBeforeUnmount(() => {
 
 .control-group {
   display: inline-flex;
-  background: #fff;
-  border: 1px solid #e2e8f0;
+  background: var(--bg-surface);
+  border: 1px solid var(--corp-border-light);
   border-radius: 6px;
   padding: 2px;
 }
@@ -305,7 +305,7 @@ onBeforeUnmount(() => {
 .ctrl-btn {
   padding: 5px 12px;
   font-size: 13px;
-  color: #64748b;
+  color: var(--corp-text-secondary);
   background: transparent;
   border: none;
   border-radius: 4px;
@@ -314,12 +314,12 @@ onBeforeUnmount(() => {
 }
 
 .ctrl-btn:hover {
-  color: #0f172a;
+  color: var(--corp-text-primary);
 }
 
 .ctrl-btn.active {
-  color: #2563eb;
-  background: #eff6ff;
+  color: var(--color-primary-600);
+  background: var(--color-primary-50);
   font-weight: 500;
 }
 
@@ -329,17 +329,17 @@ onBeforeUnmount(() => {
   display: flex;
   align-items: center;
   justify-content: center;
-  color: #64748b;
-  background: #fff;
-  border: 1px solid #e2e8f0;
+  color: var(--corp-text-secondary);
+  background: var(--bg-surface);
+  border: 1px solid var(--corp-border-light);
   border-radius: 6px;
   cursor: pointer;
   transition: all 0.2s ease;
 }
 
 .icon-refresh:hover {
-  color: #2563eb;
-  border-color: #bfdbfe;
+  color: var(--color-primary-600);
+  border-color: var(--color-primary-200);
 }
 
 .icon-refresh.spinning :deep(.el-icon) {
@@ -355,8 +355,8 @@ onBeforeUnmount(() => {
 .kpi-wall {
   display: grid;
   grid-template-columns: repeat(5, 1fr);
-  background: #fff;
-  border: 1px solid #e2e8f0;
+  background: var(--bg-surface);
+  border: 1px solid var(--corp-border-light);
   border-radius: 10px;
   overflow: hidden;
 }
@@ -376,19 +376,19 @@ onBeforeUnmount(() => {
   top: 18%;
   bottom: 18%;
   width: 1px;
-  background: #f1f5f9;
+  background: var(--color-gray-100);
 }
 
 .kpi-label {
   font-size: 12px;
-  color: #64748b;
+  color: var(--corp-text-secondary);
   font-weight: 500;
 }
 
 .kpi-value {
   font-size: 30px;
   font-weight: 700;
-  color: #0f172a;
+  color: var(--corp-text-primary);
   line-height: 1.1;
   letter-spacing: -0.5px;
 }
@@ -397,16 +397,16 @@ onBeforeUnmount(() => {
   font-size: 14px;
   font-weight: 600;
   margin-left: 3px;
-  color: #94a3b8;
+  color: var(--corp-text-tertiary);
 }
 
 .kpi-hint {
   font-size: 11px;
-  color: #94a3b8;
+  color: var(--corp-text-tertiary);
   margin-top: 2px;
 }
 
-.kpi-precision .kpi-value { color: #2563eb; }
+.kpi-precision .kpi-value { color: var(--color-primary-600); }
 
 /* 图表区 */
 .chart-grid {
@@ -416,8 +416,8 @@ onBeforeUnmount(() => {
 }
 
 .chart-panel {
-  background: #fff;
-  border: 1px solid #e2e8f0;
+  background: var(--bg-surface);
+  border: 1px solid var(--corp-border-light);
   border-radius: 10px;
   padding: 18px;
   display: flex;
@@ -435,12 +435,12 @@ onBeforeUnmount(() => {
 .panel-title {
   font-size: 15px;
   font-weight: 600;
-  color: #0f172a;
+  color: var(--corp-text-primary);
 }
 
 .panel-meta {
   font-size: 12px;
-  color: #94a3b8;
+  color: var(--corp-text-tertiary);
 }
 
 .chart-box {
@@ -469,12 +469,12 @@ onBeforeUnmount(() => {
 .rule-rank {
   font-size: 12px;
   font-weight: 600;
-  color: #94a3b8;
+  color: var(--corp-text-tertiary);
   text-align: center;
 }
 
 .rule-name {
-  color: #334155;
+  color: var(--color-gray-700);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -482,14 +482,14 @@ onBeforeUnmount(() => {
 
 .rule-bar-wrap {
   height: 6px;
-  background: #f1f5f9;
+  background: var(--color-gray-100);
   border-radius: 3px;
   overflow: hidden;
 }
 
 .rule-bar {
   height: 100%;
-  background: #2563eb;
+  background: var(--color-primary-600);
   border-radius: 3px;
   transition: width 0.6s ease;
 }
@@ -497,7 +497,7 @@ onBeforeUnmount(() => {
 .rule-count {
   text-align: right;
   font-weight: 600;
-  color: #0f172a;
+  color: var(--corp-text-primary);
 }
 
 /* 空状态 */
@@ -508,14 +508,14 @@ onBeforeUnmount(() => {
   align-items: center;
   justify-content: center;
   gap: 12px;
-  color: #94a3b8;
+  color: var(--corp-text-tertiary);
   font-size: 13px;
 }
 
 .empty-line {
   width: 120px;
   height: 1px;
-  background: linear-gradient(90deg, transparent, #cbd5e1, transparent);
+  background: linear-gradient(90deg, transparent, var(--color-gray-300), transparent);
 }
 
 /* 响应式 */

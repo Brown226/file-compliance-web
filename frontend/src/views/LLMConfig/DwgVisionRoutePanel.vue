@@ -193,7 +193,7 @@ defineExpose({
 <style scoped>
 .route-panel {
   margin-top: 12px;
-  border-top: 1px dashed #e4e7ed;
+  border-top: 1px dashed var(--corp-border-light);
   padding-top: 8px;
 }
 
@@ -203,7 +203,7 @@ defineExpose({
   gap: 6px;
   font-size: 14px;
   font-weight: 500;
-  color: #303133;
+  color: var(--corp-text-primary);
 }
 
 .count-tag {
@@ -212,19 +212,19 @@ defineExpose({
 
 .route-hint {
   font-size: 12px;
-  color: #64748b;
+  color: var(--corp-text-secondary);
   line-height: 1.6;
   margin-bottom: 12px;
   padding: 8px 12px;
-  background: #f8fafc;
+  background: var(--corp-bg-sunken);
   border-radius: 4px;
 }
 
 .empty-hint {
   font-size: 12px;
-  color: #b45309;
-  background: #fffbeb;
-  border: 1px solid #fde68a;
+  color: var(--color-warning-text);
+  background: var(--color-warning-bg);
+  border: 1px solid var(--color-warning-bg); /* 原 #fde68a 浅黄边框，对齐 --color-warning-bg */
   border-radius: 4px;
   padding: 10px 12px;
 }
@@ -240,7 +240,7 @@ defineExpose({
   align-items: center;
   gap: 12px;
   padding: 6px 0;
-  border-bottom: 1px solid #f1f5f9;
+  border-bottom: 1px solid var(--color-gray-100);
 }
 
 .route-row:last-child {
@@ -258,12 +258,12 @@ defineExpose({
 .dim-name {
   font-size: 13px;
   font-weight: 500;
-  color: #303133;
+  color: var(--corp-text-primary);
 }
 
 .dim-desc {
   font-size: 11px;
-  color: #94a3b8;
+  color: var(--corp-text-tertiary);
 }
 
 .route-controls {
@@ -284,7 +284,7 @@ defineExpose({
 
 .timeout-unit {
   font-size: 12px;
-  color: #64748b;
+  color: var(--corp-text-secondary);
 }
 
 .action-bar {

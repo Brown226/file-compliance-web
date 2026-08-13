@@ -127,9 +127,9 @@ function statusLabel(s: string): string {
   font-size: 11px;
   font-weight: 600;
 }
-.st-consistent { background: rgba(34, 197, 94, 0.14); color: #16a34a; }
-.st-inconsistent { background: rgba(239, 68, 68, 0.14); color: #dc2626; }
-.st-missing { background: rgba(249, 115, 22, 0.14); color: #ea580c; }
+.st-consistent { background: color-mix(in srgb, var(--color-success) 14%, transparent); color: var(--color-success-600); }
+.st-inconsistent { background: color-mix(in srgb, var(--color-danger) 14%, transparent); color: var(--color-danger-600); }
+.st-missing { background: color-mix(in srgb, var(--severity-major) 14%, transparent); color: var(--severity-major); }
 .crv-empty {
   padding: 10px;
   color: var(--text-dim);

@@ -399,7 +399,7 @@ function collectChildKbs(children: KbTreeNode[]): KbTreeNode[] {
   height: 300px;
   border-radius: 10px;
   border: 1.5px solid var(--corp-border-light);
-  background: #fff;
+  background: var(--bg-surface);
   overflow: hidden;
   box-shadow: 0 1px 4px rgba(0, 0, 0, 0.04);
 }
@@ -414,7 +414,7 @@ function collectChildKbs(children: KbTreeNode[]): KbTreeNode[] {
   gap: 6px;
   font-size: 13px;
   padding: 10px 14px;
-  background: linear-gradient(135deg, #f0f7ff 0%, #f8fafc 100%);
+  background: linear-gradient(135deg, var(--color-primary-50) 0%, var(--color-gray-50) 100%);
   color: var(--corp-primary);
 }
 
@@ -424,8 +424,8 @@ function collectChildKbs(children: KbTreeNode[]): KbTreeNode[] {
   gap: 6px;
   font-size: 13px;
   padding: 10px 14px;
-  background: linear-gradient(135deg, #f0fdf4 0%, #f8fafc 100%);
-  color: #16a34a;
+  background: linear-gradient(135deg, var(--color-success-bg) 0%, var(--color-gray-50) 100%);
+  color: var(--color-success);
 }
 
 .is-inline .filter-bar {
@@ -435,31 +435,31 @@ function collectChildKbs(children: KbTreeNode[]): KbTreeNode[] {
 .is-inline .selected-item {
   padding: 6px 10px;
   border-radius: 6px;
-  background: #f0fdf4;
-  border: 1px solid #dcfce7;
+  background: var(--color-success-bg);
+  border: 1px solid var(--color-success-bg);
   margin-bottom: 4px;
 }
 
 .is-inline .selected-item:hover {
-  background: #dcfce7;
-  border-color: #bbf7d0;
+  background: var(--color-success-bg);
+  border-color: var(--color-success-bg);
 }
 
-.is-inline .item-icon { color: #16a34a; }
-.is-inline .remove-btn:hover { color: #dc2626; }
+.is-inline .item-icon { color: var(--color-success); }
+.is-inline .remove-btn:hover { color: var(--color-danger-600); }
 .is-inline .empty-selected { padding: 40px 20px; font-size: 12px; color: var(--color-gray-400); }
 
 .is-inline .node-count {
-  background: #eff6ff;
-  color: #3b82f6;
+  background: var(--color-primary-50);
+  color: var(--color-primary-500);
   padding: 1px 6px;
   border-radius: 10px;
   font-size: 11px;
 }
 
 .is-inline .item-docs {
-  background: #f0fdf4;
-  color: #16a34a;
+  background: var(--color-success-bg);
+  color: var(--color-success);
   padding: 1px 6px;
   border-radius: 10px;
   font-size: 11px;
@@ -524,11 +524,11 @@ function collectChildKbs(children: KbTreeNode[]): KbTreeNode[] {
 }
 
 .icon-folder {
-  color: #e6a23c;
+  color: var(--color-warning);
 }
 
 .icon-knowledge {
-  color: #409eff;
+  color: var(--color-primary-500);
 }
 
 .node-label {
@@ -617,19 +617,19 @@ function collectChildKbs(children: KbTreeNode[]): KbTreeNode[] {
 .footer-actions { display: flex; gap: 8px; }
 
 /* ===== el-tree 深度样式修复 ===== */
-::deep(.el-tree-node__content) { height: 34px; border-radius: var(--radius-sm); pointer-events: auto !important; }
-::deep(.el-tree-node__content:hover) { background-color: var(--corp-primary-lighter); }
-::deep(.el-checkbox__inner) { border-radius: 3px; }
+:deep(.el-tree-node__content) { height: 34px; border-radius: var(--radius-sm); pointer-events: auto !important; }
+:deep(.el-tree-node__content:hover) { background-color: var(--corp-primary-lighter); }
+:deep(.el-checkbox__inner) { border-radius: 3px; }
 
 /* 修复树节点中文方块乱码 + 强制可交互 + 正确字体 */
-::deep(.el-tree),
-::deep(.el-tree-node),
-::deep(.el-tree-node__wrapper),
-::deep(.el-tree-node__expand-icon),
-::deep(.el-tree-node__content),
-::deep(.el-tree-node__label),
-::deep(.node-label),
-::deep(.node-icon) {
+:deep(.el-tree),
+:deep(.el-tree-node),
+:deep(.el-tree-node__wrapper),
+:deep(.el-tree-node__expand-icon),
+:deep(.el-tree-node__content),
+:deep(.el-tree-node__label),
+:deep(.node-label),
+:deep(.node-icon) {
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', 'Helvetica Neue', Helvetica, Arial, sans-serif !important;
   pointer-events: auto !important;
 }

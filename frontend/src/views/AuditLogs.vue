@@ -241,27 +241,27 @@ onMounted(() => {
 
 .page-intro {
   padding: 4px 0 4px 12px;
-  border-left: 3px solid #2563eb;
+  border-left: 3px solid var(--color-primary-600);
 }
 
 .page-intro h3 {
   margin: 0 0 4px;
   font-size: 16px;
   font-weight: 600;
-  color: #0f172a;
+  color: var(--corp-text-primary);
 }
 
 .page-intro p {
   margin: 0;
   font-size: 12.5px;
-  color: #64748b;
+  color: var(--corp-text-secondary);
   line-height: 1.5;
 }
 
 /* 过滤卡片 */
 .filter-card {
-  background: #fff;
-  border: 1px solid #e5e7eb;
+  background: var(--bg-surface);
+  border: 1px solid var(--corp-border-light);
   border-radius: 8px;
   box-shadow: 0 1px 2px rgba(15, 23, 42, 0.03);
   padding: 16px 20px;
@@ -286,8 +286,8 @@ onMounted(() => {
 
 /* 表格卡片 */
 .table-card {
-  background: #fff;
-  border: 1px solid #e5e7eb;
+  background: var(--bg-surface);
+  border: 1px solid var(--corp-border-light);
   border-radius: 8px;
   box-shadow: 0 1px 2px rgba(15, 23, 42, 0.03);
   overflow: hidden;
@@ -298,23 +298,23 @@ onMounted(() => {
   align-items: center;
   gap: 4px;
   padding: 12px 20px;
-  border-bottom: 1px solid #f1f5f9;
-  background: #fafbfc;
+  border-bottom: 1px solid var(--corp-border-light);
+  background: var(--bg-surface-hover);
 }
 
 .summary-label {
   font-size: 12px;
-  color: #64748b;
+  color: var(--corp-text-secondary);
 }
 
 .summary-value {
   font-size: 14px;
   font-weight: 600;
-  color: #0f172a;
+  color: var(--corp-text-primary);
 }
 
 .audit-table {
-  --el-table-header-bg-color: #fafbfc;
+  /* 表头底色交由全局 element-overrides 统一（透明底 + 次级色） */
 }
 
 .user-cell {
@@ -324,7 +324,7 @@ onMounted(() => {
 
 .user-name {
   font-weight: 500;
-  color: #0f172a;
+  color: var(--corp-text-primary);
 }
 
 .action-badge {
@@ -340,50 +340,50 @@ onMounted(() => {
 }
 
 .action-badge.create {
-  background: #f0fdf4;
-  color: #15803d;
-  border-color: #bbf7d0;
+  background: var(--color-success-bg);
+  color: var(--color-success-text);
+  border-color: var(--color-success-bg);
 }
 
 .action-badge.update {
-  background: #fffbeb;
-  color: #b45309;
-  border-color: #fde68a;
+  background: var(--color-warning-bg);
+  color: var(--color-warning-text);
+  border-color: var(--color-warning-bg);
 }
 
 .action-badge.patch {
-  background: #eff6ff;
-  color: #2563eb;
-  border-color: #bfdbfe;
+  background: var(--color-primary-50);
+  color: var(--color-primary-600);
+  border-color: var(--color-primary-200);
 }
 
 .action-badge.delete {
-  background: #fef2f2;
-  color: #b91c1c;
-  border-color: #fecaca;
+  background: var(--color-danger-bg);
+  color: var(--color-danger-text);
+  border-color: var(--color-danger-bg);
 }
 
 .action-badge.default {
-  background: #f1f5f9;
-  color: #64748b;
-  border-color: #e2e8f0;
+  background: var(--bg-surface-active);
+  color: var(--corp-text-secondary);
+  border-color: var(--corp-border-light);
 }
 
 .time-cell {
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
   font-size: 12.5px;
-  color: #475569;
+  color: var(--color-gray-600);
 }
 
 .details-cell {
-  color: #475569;
+  color: var(--color-gray-600);
   font-size: 13px;
 }
 
 /* 分页 */
 .pagination-container {
   padding: 12px 20px;
-  border-top: 1px solid #f1f5f9;
+  border-top: 1px solid var(--corp-border-light);
   display: flex;
   justify-content: flex-end;
 }

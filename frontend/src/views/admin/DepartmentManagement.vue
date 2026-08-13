@@ -954,8 +954,8 @@ onUnmounted(() => { document.removeEventListener('click', handleClickOutside) })
 .dept-tree-container { flex: 1; overflow-y: auto; position: relative; }
 .dept-node { display: flex; align-items: center; justify-content: space-between; width: 100%; padding-right: 8px; }
 .dept-name { display: flex; align-items: center; gap: 8px; font-weight: 500; font-size: 15px; }
-.dept-icon { color: #3B82F6; font-size: 16px; }
-.dept-count { font-size: 12px; font-weight: 500; color: #6B7280; background: rgba(0,0,0,0.04); padding: 3px 10px; border-radius: 10px; }
+.dept-icon { color: var(--color-primary-500); font-size: 16px; }
+.dept-count { font-size: 12px; font-weight: 500; color: var(--corp-text-secondary); background: rgba(0,0,0,0.04); padding: 3px 10px; border-radius: 10px; }
 .context-menu { position: fixed; background: #fff; border: 1px solid var(--el-border-color-light); border-radius: 8px; box-shadow: 0 4px 16px rgba(0,0,0,0.12); padding: 6px 0; z-index: 9999; min-width: 140px; }
 .context-item { display: flex; align-items: center; gap: 8px; padding: 8px 16px; font-size: 13px; cursor: pointer; transition: background 0.15s; }
 .context-item:hover { background: var(--el-fill-color-light); }
@@ -977,16 +977,16 @@ onUnmounted(() => { document.removeEventListener('click', handleClickOutside) })
 .employee-card.selected { background: var(--color-primary-50); border-color: var(--color-primary-300); }
 .card-left { display: flex; align-items: center; gap: 12px; margin-right: 14px; }
 .avatar-circle { width: 36px; height: 36px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 14px; font-weight: 600; color: #fff; flex-shrink: 0; }
-.avatar-admin { background: #ef4444; }
-.avatar-manager { background: #f59e0b; }
-.avatar-user { background: #3b82f6; }
+.avatar-admin { background: var(--color-danger); }
+.avatar-manager { background: var(--color-warning); }
+.avatar-user { background: var(--color-primary-500); }
 .card-info { flex: 1; min-width: 0; }
 .info-main { display: flex; align-items: center; gap: 10px; margin-bottom: 4px; }
 .emp-name { font-size: 14px; font-weight: 600; color: var(--corp-text-primary); }
 .role-badge { display: inline-flex; align-items: center; gap: 4px; padding: 2px 10px; border-radius: 12px; font-size: 12px; font-weight: 500; }
-.role-badge-admin { background: #fef2f2; color: #dc2626; }
-.role-badge-manager { background: #fffbeb; color: #d97706; }
-.role-badge-user { background: #eff6ff; color: #2563eb; }
+.role-badge-admin { background: var(--color-danger-bg); color: var(--color-danger-600); }
+.role-badge-manager { background: var(--color-warning-bg); color: var(--color-warning-600); }
+.role-badge-user { background: var(--color-primary-50); color: var(--color-primary-600); }
 .info-sub { display: flex; align-items: center; gap: 16px; font-size: 12px; color: var(--el-text-color-secondary); }
 .card-actions { display: flex; gap: 6px; flex-shrink: 0; }
 .card-actions .el-button { font-size: 13px; padding: 6px 8px; }
@@ -995,9 +995,9 @@ onUnmounted(() => { document.removeEventListener('click', handleClickOutside) })
 .role-card { display: flex; align-items: center; gap: 6px; padding: 8px 16px; border: 1.5px solid var(--el-border-color); border-radius: 8px; cursor: pointer; transition: all 0.15s; font-size: 13px; font-weight: 500; }
 .role-card:hover { border-color: var(--el-border-color-dark); }
 .role-card-active { border-color: var(--corp-primary); background: rgba(64,158,255,0.06); color: var(--corp-primary); }
-.role-dot-admin { background: #ef4444; }
-.role-dot-manager { background: #f59e0b; }
-.role-dot-user { background: #3b82f6; }
+.role-dot-admin { background: var(--color-danger); }
+.role-dot-manager { background: var(--color-warning); }
+.role-dot-user { background: var(--color-primary-500); }
 .batch-import-content { padding: 0 4px; }
 .template-section { margin-bottom: 16px; }
 .preview-section { margin-top: 16px; }

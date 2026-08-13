@@ -193,9 +193,9 @@ defineExpose({
 
 .legacy-hint {
   font-size: 12px;
-  color: #b45309;
-  background: #fffbeb;
-  border: 1px solid #fde68a;
+  color: var(--color-warning-text);
+  background: var(--color-warning-bg);
+  border: 1px solid var(--color-warning-bg); /* 原 #fde68a 浅黄边框，对齐 --color-warning-bg */
   border-radius: 6px;
   padding: 8px 12px;
   line-height: 1.5;
@@ -204,7 +204,7 @@ defineExpose({
 .form-tip {
   margin-top: 4px;
   font-size: 12px;
-  color: #64748b;
+  color: var(--corp-text-secondary);
   line-height: 1.5;
 }
 
@@ -216,12 +216,12 @@ defineExpose({
 }
 
 .test-btn {
-  border-color: #2563eb;
-  color: #2563eb;
+  border-color: var(--color-primary-600);
+  color: var(--color-primary-600);
 }
 
 .test-btn:hover {
-  background: #eff6ff;
+  background: var(--color-primary-50);
 }
 
 .test-result {
@@ -235,15 +235,15 @@ defineExpose({
 }
 
 .test-success {
-  background: #f0fdf4;
-  border: 1px solid #bbf7d0;
-  color: #15803d;
+  background: var(--color-success-bg);
+  border: 1px solid var(--color-success-bg); /* 原 #bbf7d0 浅绿边框，对齐 --color-success-bg */
+  color: var(--color-success-text);
 }
 
 .test-fail {
-  background: #fef2f2;
-  border: 1px solid #fecaca;
-  color: #b91c1c;
+  background: var(--color-danger-bg);
+  border: 1px solid var(--color-danger-bg); /* 原 #fecaca 浅红边框，对齐 --color-danger-bg */
+  color: var(--color-danger-text);
 }
 
 .result-detail {

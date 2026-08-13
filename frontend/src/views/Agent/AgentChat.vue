@@ -1740,7 +1740,7 @@ watch(sessionId, () => { refreshStats() })
   gap: 8px;
   height: 100%;
   padding: 0 8px;
-  font-size: 11px;
+  font-size: var(--text-sm);
   color: var(--text-muted);
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
@@ -1787,7 +1787,7 @@ watch(sessionId, () => { refreshStats() })
   min-width: 0;
 }
 .sip-title {
-  font-size: 11px;
+  font-size: var(--text-sm);
   font-weight: 700;
   color: var(--text);
   margin-bottom: 6px;
@@ -1860,7 +1860,7 @@ watch(sessionId, () => { refreshStats() })
   gap: 6px;
 }
 .auto-name-label {
-  font-size: 11px;
+  font-size: var(--text-sm);
   white-space: nowrap;
 }
 @media (max-width: 640px) {
@@ -2065,7 +2065,7 @@ watch(sessionId, () => { refreshStats() })
 .thinking-toggle:hover { color: var(--text); }
 .thinking-duration {
   margin-left: auto;
-  font-size: 11px;
+  font-size: var(--text-sm);
   color: var(--text-dim);
   font-variant-numeric: tabular-nums;
 }
@@ -2092,7 +2092,7 @@ watch(sessionId, () => { refreshStats() })
   padding-left: 4px;
 }
 .msg-time {
-  font-size: 10px;
+  font-size: var(--text-sm);
   color: var(--text-dim);
   font-variant-numeric: tabular-nums;
   margin-left: auto;
@@ -2118,7 +2118,7 @@ watch(sessionId, () => { refreshStats() })
   background: none;
   color: var(--text-dim);
   cursor: pointer;
-  font-size: 11px;
+  font-size: var(--text-sm);
   font-weight: 400;
   padding: 3px 8px;
   height: 22px;
@@ -2159,7 +2159,7 @@ watch(sessionId, () => { refreshStats() })
   display: flex;
   align-items: center;
   gap: 6px;
-  font-size: 11px;
+  font-size: var(--text-sm);
   color: var(--text-dim);
   margin-bottom: 4px;
 }
@@ -2239,21 +2239,21 @@ watch(sessionId, () => { refreshStats() })
 .file-chip.has-path:hover { background: var(--bg-hover); border-color: var(--accent); }
 .file-chip .el-icon { flex-shrink: 0; }
 /* 按类型区分标签颜色 */
-.file-chip.kind-image .el-icon { color: #10b981; }   /* 图片：绿 */
-.file-chip.kind-image { border-color: color-mix(in srgb, #10b981 35%, var(--border)); }
-.file-chip.kind-pdf .el-icon { color: #ef4444; }     /* PDF：红 */
-.file-chip.kind-pdf { border-color: color-mix(in srgb, #ef4444 35%, var(--border)); }
-.file-chip.kind-word .el-icon { color: #3b82f6; }    /* Word：蓝 */
-.file-chip.kind-word { border-color: color-mix(in srgb, #3b82f6 35%, var(--border)); }
-.file-chip.kind-excel .el-icon { color: #22c55e; }   /* Excel：绿 */
-.file-chip.kind-excel { border-color: color-mix(in srgb, #22c55e 35%, var(--border)); }
-.file-chip.kind-ppt .el-icon { color: #f97316; }     /* PPT：橙 */
-.file-chip.kind-ppt { border-color: color-mix(in srgb, #f97316 35%, var(--border)); }
+.file-chip.kind-image .el-icon { color: var(--color-success); }   /* 图片：绿 */
+.file-chip.kind-image { border-color: color-mix(in srgb, var(--color-success) 35%, var(--border)); }
+.file-chip.kind-pdf .el-icon { color: var(--color-danger); }     /* PDF：红 */
+.file-chip.kind-pdf { border-color: color-mix(in srgb, var(--color-danger) 35%, var(--border)); }
+.file-chip.kind-word .el-icon { color: var(--color-primary-500); }    /* Word：蓝 */
+.file-chip.kind-word { border-color: color-mix(in srgb, var(--color-primary-500) 35%, var(--border)); }
+.file-chip.kind-excel .el-icon { color: var(--color-success-600); }   /* Excel：绿 */
+.file-chip.kind-excel { border-color: color-mix(in srgb, var(--color-success-600) 35%, var(--border)); }
+.file-chip.kind-ppt .el-icon { color: var(--severity-major); }     /* PPT：橙 */
+.file-chip.kind-ppt { border-color: color-mix(in srgb, var(--severity-major) 35%, var(--border)); }
 .file-chip.kind-text .el-icon { color: var(--accent); } /* 文本：主题色 */
 .file-chip.kind-text { border-color: color-mix(in srgb, var(--accent) 30%, var(--border)); }
 .file-chip.kind-other .el-icon { color: var(--text-dim); }
 .file-name { max-width: 160px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.file-size { color: var(--text-dim); font-size: 11px; }
+.file-size { color: var(--text-dim); font-size: var(--text-sm); }
 .file-remove {
   display: flex;
   align-items: center;
@@ -2326,7 +2326,7 @@ watch(sessionId, () => { refreshStats() })
   display: flex;
   align-items: center;
   gap: 6px;
-  font-size: 11px;
+  font-size: var(--text-sm);
   font-weight: 600;
   color: var(--text-dim);
   margin-bottom: 6px;
@@ -2341,7 +2341,7 @@ watch(sessionId, () => { refreshStats() })
   border-radius: 9px;
   background: var(--bg-selected);
   color: var(--text);
-  font-size: 10px;
+  font-size: var(--text-sm);
 }
 .kb-source-list {
   display: flex;
@@ -2377,12 +2377,12 @@ watch(sessionId, () => { refreshStats() })
   border-radius: 4px;
   background: var(--bg-selected);
   color: var(--text-muted);
-  font-size: 10px;
+  font-size: var(--text-sm);
   font-family: var(--font-mono);
 }
 .kb-source-sim {
   flex-shrink: 0;
-  font-size: 10px;
+  font-size: var(--text-sm);
   color: var(--accent);
 }
 </style>

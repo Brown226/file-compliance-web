@@ -26,7 +26,7 @@
 }
 
 .el-card.el-card .el-card__header {
-  border-bottom: 1px solid #E5E7EB;
+  border-bottom: 1px solid var(--corp-border-light);
   font-weight: 700;
   padding: 12px 14px;
   font-size: var(--text-lg);
@@ -40,7 +40,7 @@
 .el-button.el-button--primary {
   background-color: var(--color-action);
   border-color: var(--color-action);
-  color: #ffffff;
+  color: var(--corp-text-inverse);
   border-radius: var(--radius-md);
   font-weight: 700;
   min-height: 32px;
@@ -57,8 +57,8 @@
   font-weight: 700;
 }
 .el-button.el-button--success:hover {
-  background-color: #059669;
-  border-color: #059669;
+  background-color: var(--color-success-600);
+  border-color: var(--color-success-600);
 }
 
 .el-button.el-button--warning {
@@ -67,8 +67,8 @@
   font-weight: 700;
 }
 .el-button.el-button--warning:hover {
-  background-color: #D97706;
-  border-color: #D97706;
+  background-color: var(--color-warning-600);
+  border-color: var(--color-warning-600);
 }
 
 .el-button.el-button--danger {
@@ -77,8 +77,8 @@
   font-weight: 700;
 }
 .el-button.el-button--danger:hover {
-  background-color: #DC2626;
-  border-color: #DC2626;
+  background-color: var(--color-danger-600);
+  border-color: var(--color-danger-600);
 }
 
 .el-button.el-button {
@@ -90,61 +90,59 @@
 /* 输入框 — Inset Shadow 边框 */
 .el-form-item .el-input__wrapper {
   border-radius: var(--radius-md);
-  box-shadow: 0 0 0 1px #E5E7EB inset;
+  box-shadow: 0 0 0 1px var(--corp-border-light) inset;
   transition: box-shadow var(--corp-transition-fast);
 }
 .el-form-item .el-input__wrapper:focus-within {
-  box-shadow: 0 0 0 1px #3B82F6 inset, 0 0 0 3px rgba(59, 130, 246, 0.1);
+  box-shadow: 0 0 0 1px var(--color-action) inset, 0 0 0 3px rgba(59, 130, 246, 0.1);
 }
 .el-input__inner::placeholder {
-  color: #9CA3AF;
+  color: var(--corp-text-tertiary);
 }
 
 /* Select 下拉框 */
 .el-form-item .el-select__wrapper {
   border-radius: var(--radius-md);
-  box-shadow: 0 0 0 1px #E5E7EB inset;
+  box-shadow: 0 0 0 1px var(--corp-border-light) inset;
 }
 .el-form-item .el-select__wrapper:focus-within {
-  box-shadow: 0 0 0 1px #3B82F6 inset, 0 0 0 3px rgba(59, 130, 246, 0.1);
+  box-shadow: 0 0 0 1px var(--color-action) inset, 0 0 0 3px rgba(59, 130, 246, 0.1);
 }
 
 /* Textarea */
 .el-form-item .el-textarea__inner {
   border-radius: var(--radius-md);
-  box-shadow: 0 0 0 1px #E5E7EB inset;
+  box-shadow: 0 0 0 1px var(--corp-border-light) inset;
 }
 .el-form-item .el-textarea__inner:focus {
-  box-shadow: 0 0 0 1px #3B82F6 inset, 0 0 0 3px rgba(59, 130, 246, 0.1);
+  box-shadow: 0 0 0 1px var(--color-action) inset, 0 0 0 3px rgba(59, 130, 246, 0.1);
 }
 
 /* 表格 — 紧凑、无边框感 */
 .el-table {
-  --el-table-border-color: #F0F0F0;
-  --el-table-row-hover-bg-color: #FAFAFA;
+  --el-table-border-color: var(--corp-border-light);
+  --el-table-row-hover-bg-color: var(--bg-surface-hover);
   --el-table-header-bg-color: transparent;
   font-size: var(--text-sm);
 }
 
 .el-table th.el-table__cell {
   background-color: transparent;
-  color: #666666;
-  font-weight: 800;
-  font-size: 11px;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-  border-bottom: 1px solid #EEEEEE;
+  color: var(--corp-text-secondary);
+  font-weight: 600;
+  font-size: var(--text-sm);
+  border-bottom: 1px solid var(--corp-border-light);
 }
 
 .el-table td.el-table__cell {
   font-size: var(--text-sm);
-  color: #374151;
-  border-bottom: 1px solid #F0F0F0;
+  color: var(--color-gray-700);
+  border-bottom: 1px solid var(--corp-border-light);
   padding: 8px 0;
 }
 
 .el-table tr:hover > td.el-table__cell {
-  background-color: #FAFAFA;
+  background-color: var(--bg-surface-hover);
 }
 
 /* Tag 标签 — 全圆角 Pill */
@@ -165,7 +163,7 @@
 }
 
 .el-dialog__header {
-  border-bottom: 1px solid #E5E7EB;
+  border-bottom: 1px solid var(--corp-border-light);
   padding-bottom: 12px;
   margin-right: 0;
 }
@@ -173,39 +171,39 @@
 .el-dialog__title {
   font-weight: 700;
   font-size: var(--text-lg);
-  color: #111827;
+  color: var(--corp-text-primary);
 }
 
 .el-dialog__body {
-  color: #374151;
+  color: var(--color-gray-700);
   font-size: var(--text-base);
 }
 
 /* Steps 步骤条 */
 .el-steps .el-step__line {
-  background-color: #E5E7EB;
+  background-color: var(--corp-border-light);
 }
 .el-step__head.is-wait .el-step__icon.is-icon {
-  background: #F5F5F5;
-  color: #9CA3AF;
-  border: 2px solid #E5E7EB;
+  background: var(--bg-surface-active);
+  color: var(--corp-text-tertiary);
+  border: 2px solid var(--corp-border-light);
 }
 .el-step__head.is-process .el-step__icon,
 .el-step__head.is-finish .el-step__icon {
-  border: 2px solid #3B82F6;
+  border: 2px solid var(--corp-primary);
 }
 .el-step__title.is-text {
   font-weight: 600;
-  color: #374151;
+  color: var(--color-gray-700);
 }
 .el-step__head.is-wait + .el-step__main .el-step__title {
-  color: #9CA3AF;
+  color: var(--corp-text-tertiary);
 }
 
 /* Progress 进度条 */
 .el-progress-bar__outer {
   border-radius: var(--radius-md);
-  background-color: #E5E7EB;
+  background-color: var(--corp-border-light);
 }
 .el-progress-bar__inner {
   border-radius: var(--radius-md);
@@ -217,12 +215,56 @@
   border-radius: var(--radius-sm);
 }
 
-/* Message / Notification */
+/* Message / Notification — 简约白卡（2026-08-12 从 App.vue 归位，样式源唯一）
+   注意：本块不得声明 position / transform，避免覆盖 App.vue 的 fixed 顶部居中定位 */
 .el-message.el-message {
-  border-radius: var(--radius-md);
-  box-shadow: var(--shadow-card);
-  backface-visibility: hidden;
-  transform: translateZ(0);
+  background: var(--bg-surface);
+  border: 1px solid rgba(15, 23, 42, 0.06);
+  border-left: 3px solid var(--color-primary-600);
+  border-radius: var(--radius-xl);
+  box-shadow: 0 2px 8px rgba(15, 23, 42, 0.07), 0 1px 2px rgba(15, 23, 42, 0.04);
+  padding: 11px 20px;
+  min-width: 260px;
+  max-width: 480px;
+  margin-bottom: 10px;
+}
+.el-message.el-message:hover {
+  box-shadow: 0 4px 12px rgba(15, 23, 42, 0.1), 0 2px 4px rgba(15, 23, 42, 0.06);
+}
+.el-message.el-message .el-message__content {
+  color: var(--color-gray-700);
+  font-weight: 500;
+  font-size: 13.5px;
+  line-height: 1.6;
+  letter-spacing: 0.2px;
+}
+.el-message.el-message .el-message__icon {
+  font-size: 17px;
+  color: var(--color-primary-600);
+}
+.el-message.el-message--info {
+  border-left-color: var(--color-primary-500);
+}
+.el-message.el-message--info .el-message__icon {
+  color: var(--color-primary-500);
+}
+.el-message.el-message--success {
+  border-left-color: var(--color-success);
+}
+.el-message.el-message--success .el-message__icon {
+  color: var(--color-success);
+}
+.el-message.el-message--warning {
+  border-left-color: var(--color-warning);
+}
+.el-message.el-message--warning .el-message__icon {
+  color: var(--color-warning);
+}
+.el-message.el-message--error {
+  border-left-color: var(--color-danger);
+}
+.el-message.el-message--error .el-message__icon {
+  color: var(--color-danger);
 }
 .el-notification.el-notification {
   border-radius: var(--radius-md);
@@ -231,7 +273,7 @@
 
 /* Form 表单 */
 .el-form-item__label {
-  color: #374151;
+  color: var(--color-gray-700);
   font-weight: 600;
   font-size: var(--text-sm);
 }
@@ -241,10 +283,10 @@
   border-right: none;
 }
 .el-tabs__item.is-active.is-active {
-  color: #3B82F6;
+  color: var(--corp-primary);
 }
 .el-tabs__active-bar.el-tabs__active-bar {
-  background-color: #3B82F6;
+  background-color: var(--corp-primary);
 }
 
 /* Dropdown 下拉菜单 */
@@ -258,7 +300,7 @@
 /* Tooltip / Popover */
 .el-tooltip__trigger:focus-visible,
 .el-tooltip__trigger:focus {
-  outline-color: #3B82F6;
+  outline-color: var(--color-action);
 }
 .el-popover.el-popover {
   border-radius: var(--radius-md);
@@ -276,7 +318,7 @@
   color: var(--corp-text-primary);
   padding: var(--space-5) var(--space-6);
   margin-bottom: 0;
-  border-bottom: 1px solid #E5E7EB;
+  border-bottom: 1px solid var(--corp-border-light);
 }
 .el-drawer__body {
   padding: var(--space-6);
@@ -286,7 +328,7 @@
 /* Upload 上传组件 */
 .el-upload-dragger {
   border-radius: var(--radius-md);
-  border: 2px dashed #E5E7EB;
+  border: 2px dashed var(--corp-border-light);
   background: var(--bg-surface-hover);
   transition: border-color var(--corp-transition-fast), background var(--corp-transition-fast);
 }

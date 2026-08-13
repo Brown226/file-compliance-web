@@ -13,17 +13,11 @@
 
     <!-- 状态筛选 -->
     <div class="filter-bar">
-      <div class="filter-pills">
-        <button
-          v-for="tab in statusTabs"
-          :key="tab.name"
-          class="filter-pill"
-          :class="{ active: statusFilter === tab.name }"
-          @click="handleStatusChange(tab.name)"
-        >
+      <el-radio-group v-model="statusFilter" size="small" @change="handleStatusChange">
+        <el-radio-button v-for="tab in statusTabs" :key="tab.name" :value="tab.name">
           {{ tab.label }}
-        </button>
-      </div>
+        </el-radio-button>
+      </el-radio-group>
       <div class="list-meta">共 {{ total }} 条公告</div>
     </div>
 
@@ -33,23 +27,22 @@
         :data="announcements"
         style="width: 100%"
         row-key="id"
-        :header-cell-style="{ background: '#f8fafc', color: '#475569', fontWeight: 600 }"
       >
         <el-table-column prop="title" label="标题" min-width="220" show-overflow-tooltip />
 
         <el-table-column label="紧急程度" width="110" align="center">
           <template #default="{ row }">
-            <span class="badge" :class="`urgency-${row.urgency.toLowerCase()}`">
+            <el-tag size="small" :type="urgencyTagType(row.urgency)">
               {{ urgencyLabel(row.urgency) }}
-            </span>
+            </el-tag>
           </template>
         </el-table-column>
 
         <el-table-column label="状态" width="100" align="center">
           <template #default="{ row }">
-            <span class="badge" :class="`status-${row.status.toLowerCase()}`">
+            <el-tag size="small" :type="statusTagType(row.status)">
               {{ statusLabel(row.status) }}
-            </span>
+            </el-tag>
           </template>
         </el-table-column>
 
@@ -68,31 +61,31 @@
         <el-table-column label="操作" width="200" align="center" fixed="right">
           <template #default="{ row }">
             <div class="action-group">
-              <button
+              <el-button
                 v-if="row.status === 'DRAFT'"
-                class="action-btn primary"
+                link type="primary" size="small"
                 @click="handleEdit(row)"
-              >编辑</button>
-              <button
+              >编辑</el-button>
+              <el-button
                 v-if="row.status === 'DRAFT'"
-                class="action-btn success"
+                link type="success" size="small"
                 @click="handlePublish(row)"
-              >发布</button>
-              <button
+              >发布</el-button>
+              <el-button
                 v-if="row.status === 'PUBLISHED'"
-                class="action-btn"
+                link type="primary" size="small"
                 @click="handleView(row)"
-              >查看</button>
-              <button
+              >查看</el-button>
+              <el-button
                 v-if="row.status === 'PUBLISHED'"
-                class="action-btn warning"
+                link type="warning" size="small"
                 @click="handleWithdraw(row)"
-              >撤回</button>
-              <button
+              >撤回</el-button>
+              <el-button
                 v-if="row.status === 'DRAFT' || row.status === 'WITHDRAWN'"
-                class="action-btn danger"
+                link type="danger" size="small"
                 @click="handleDelete(row)"
-              >删除</button>
+              >删除</el-button>
             </div>
           </template>
         </el-table-column>
@@ -564,9 +557,9 @@ onMounted(() => {
 
 <style scoped>
 .announcement-management {
-  padding: 20px 24px 32px;
-  background: #f8fafc;
-  min-height: calc(100vh - 60px);
+  padding: var(--space-6) var(--space-8) var(--space-10);
+  background: var(--bg-body);
+  min-height: 100%;
 }
 
 /* 页面标题栏 */
@@ -574,21 +567,21 @@ onMounted(() => {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 20px;
+  margin-bottom: var(--space-6);
 }
 
 .header-title h1 {
   margin: 0;
-  font-size: 22px;
+  font-size: var(--text-2xl);
   font-weight: 600;
-  color: #0f172a;
+  color: var(--corp-text-primary);
   letter-spacing: -0.3px;
 }
 
 .header-sub {
-  font-size: 13px;
-  color: #64748b;
-  margin-top: 4px;
+  font-size: var(--text-base);
+  color: var(--corp-text-secondary);
+  margin-top: var(--space-1);
   display: block;
 }
 
@@ -597,80 +590,21 @@ onMounted(() => {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 14px;
-}
-
-.filter-pills {
-  display: flex;
-  gap: 8px;
-}
-
-.filter-pill {
-  padding: 6px 16px;
-  font-size: 13px;
-  color: #64748b;
-  background: #fff;
-  border: 1px solid #e2e8f0;
-  border-radius: 999px;
-  cursor: pointer;
-  transition: all 0.15s ease;
-}
-
-.filter-pill:hover {
-  color: #0f172a;
-  border-color: #cbd5e1;
-}
-
-.filter-pill.active {
-  color: #fff;
-  background: #2563eb;
-  border-color: #2563eb;
-  font-weight: 500;
+  margin-bottom: var(--space-5);
 }
 
 .list-meta {
-  font-size: 13px;
-  color: #94a3b8;
+  font-size: var(--text-base);
+  color: var(--corp-text-tertiary);
 }
 
-/* 表格卡片 */
+/* 表格卡片（表头/行边框样式由全局 element-overrides 统一） */
 .table-card {
-  background: #fff;
-  border: 1px solid #e2e8f0;
-  border-radius: 10px;
+  background: var(--bg-surface);
+  border: 1px solid var(--corp-border-light);
+  border-radius: var(--radius-lg);
   overflow: hidden;
 }
-
-.table-card :deep(.el-table__header th) {
-  font-weight: 600;
-  border-bottom: 1px solid #e2e8f0 !important;
-}
-
-.table-card :deep(.el-table__row td) {
-  border-bottom: 1px solid #f1f5f9 !important;
-}
-
-.table-card :deep(.el-table__row:last-child td) {
-  border-bottom: none !important;
-}
-
-/* 状态徽章 */
-.badge {
-  display: inline-flex;
-  align-items: center;
-  padding: 3px 10px;
-  border-radius: 999px;
-  font-size: 12px;
-  font-weight: 500;
-}
-
-.urgency-normal { background: #f1f5f9; color: #475569; }
-.urgency-important { background: #fff7ed; color: #c2410c; }
-.urgency-urgent { background: #fef2f2; color: #b91c1c; }
-
-.status-draft { background: #f1f5f9; color: #475569; }
-.status-published { background: #f0fdf4; color: #15803d; }
-.status-withdrawn { background: #fffbeb; color: #a16207; }
 
 /* 操作按钮组 */
 .action-group {
@@ -679,65 +613,47 @@ onMounted(() => {
   gap: 10px;
 }
 
-.action-btn {
-  padding: 0;
-  font-size: 13px;
-  color: #2563eb;
-  background: transparent;
-  border: none;
-  cursor: pointer;
-  transition: color 0.15s ease;
-}
-
-.action-btn:hover { color: #1d4ed8; }
-.action-btn.success { color: #16a34a; }
-.action-btn.success:hover { color: #15803d; }
-.action-btn.warning { color: #ca8a04; }
-.action-btn.warning:hover { color: #a16207; }
-.action-btn.danger { color: #dc2626; }
-.action-btn.danger:hover { color: #b91c1c; }
-
 /* 空状态 */
 .empty-state {
   padding: 60px 0;
   text-align: center;
-  color: #94a3b8;
+  color: var(--corp-text-tertiary);
 }
 
 .empty-icon {
-  margin-bottom: 12px;
-  color: #cbd5e1;
+  margin-bottom: var(--space-4);
+  color: var(--corp-border);
 }
 
 .empty-state p {
-  margin: 0 0 4px;
-  font-size: 15px;
-  color: #64748b;
+  margin: 0 0 var(--space-1);
+  font-size: var(--text-lg);
+  color: var(--corp-text-secondary);
 }
 
 .empty-state span {
-  font-size: 12px;
+  font-size: var(--text-sm);
 }
 
 /* 分页 */
 .pagination-wrap {
-  margin-top: 20px;
+  margin-top: var(--space-6);
   display: flex;
   justify-content: center;
 }
 
 /* 对话框 */
 .announcement-dialog :deep(.el-dialog__body) {
-  padding: 0 24px;
+  padding: 0 var(--space-8);
 }
 
 .announcement-dialog :deep(.el-dialog__footer) {
-  padding: 16px 24px 24px;
-  border-top: 1px solid #f1f5f9;
+  padding: var(--space-6) var(--space-8) var(--space-8);
+  border-top: 1px solid var(--corp-border-light);
 }
 
 .dialog-section {
-  margin-bottom: 20px;
+  margin-bottom: var(--space-6);
 }
 
 .dialog-section:last-child {
@@ -750,20 +666,20 @@ onMounted(() => {
   gap: 10px;
   font-size: 14px;
   font-weight: 600;
-  color: #0f172a;
-  margin-bottom: 14px;
+  color: var(--corp-text-primary);
+  margin-bottom: var(--space-5);
 }
 
 .section-tip {
-  font-size: 12px;
+  font-size: var(--text-sm);
   font-weight: 400;
-  color: #94a3b8;
+  color: var(--corp-text-tertiary);
 }
 
 .form-grid {
   display: grid;
   grid-template-columns: 1fr 240px;
-  gap: 16px;
+  gap: var(--space-6);
 }
 
 .form-grid .full-width {
@@ -778,8 +694,8 @@ onMounted(() => {
 
 /* Markdown 编辑器 */
 .markdown-editor-wrap {
-  border: 1px solid #e2e8f0;
-  border-radius: 8px;
+  border: 1px solid var(--corp-border-light);
+  border-radius: var(--radius-md);
   overflow: hidden;
 }
 
@@ -787,45 +703,45 @@ onMounted(() => {
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 8px 12px;
-  background: #f8fafc;
-  border-bottom: 1px solid #e2e8f0;
+  padding: var(--space-2) var(--space-4);
+  background: var(--bg-surface-hover);
+  border-bottom: 1px solid var(--corp-border-light);
 }
 
 .toolbar-group {
   display: flex;
-  gap: 4px;
+  gap: var(--space-1);
 }
 
 .toolbar-divider {
   width: 1px;
   height: 20px;
-  background: #e2e8f0;
+  background: var(--corp-border-light);
 }
 
 .md-tool {
   min-width: 28px;
   height: 28px;
-  padding: 0 8px;
-  font-size: 13px;
-  color: #475569;
-  background: #fff;
-  border: 1px solid #e2e8f0;
-  border-radius: 4px;
+  padding: 0 var(--space-2);
+  font-size: var(--text-base);
+  color: var(--color-gray-700);
+  background: var(--bg-surface);
+  border: 1px solid var(--corp-border-light);
+  border-radius: var(--radius-sm);
   cursor: pointer;
-  transition: all 0.15s ease;
+  transition: color var(--corp-transition-fast), border-color var(--corp-transition-fast), background var(--corp-transition-fast);
 }
 
 .md-tool:hover {
-  color: #2563eb;
-  border-color: #bfdbfe;
-  background: #eff6ff;
+  color: var(--color-primary-600);
+  border-color: var(--color-primary-200);
+  background: var(--color-primary-50);
 }
 
 .md-tool.preview-toggle.active {
-  color: #2563eb;
-  background: #eff6ff;
-  border-color: #bfdbfe;
+  color: var(--color-primary-600);
+  background: var(--color-primary-50);
+  border-color: var(--color-primary-200);
 }
 
 .md-tabs {
@@ -841,54 +757,54 @@ onMounted(() => {
 }
 
 .markdown-preview {
-  padding: 16px;
+  padding: var(--space-6);
   min-height: 300px;
   max-height: 500px;
   overflow-y: auto;
-  background: #fff;
+  background: var(--bg-surface);
 }
 
 .markdown-preview :deep(h1),
 .markdown-preview :deep(h2),
 .markdown-preview :deep(h3) {
-  margin-top: 16px;
-  margin-bottom: 8px;
-  color: #0f172a;
+  margin-top: var(--space-6);
+  margin-bottom: var(--space-2);
+  color: var(--corp-text-primary);
 }
 
 .markdown-preview :deep(p) {
-  margin-bottom: 12px;
+  margin-bottom: var(--space-4);
   line-height: 1.6;
-  color: #334155;
+  color: var(--color-gray-700);
 }
 
 .markdown-preview :deep(ul),
 .markdown-preview :deep(ol) {
-  padding-left: 24px;
-  margin-bottom: 12px;
-  color: #334155;
+  padding-left: var(--space-8);
+  margin-bottom: var(--space-4);
+  color: var(--color-gray-700);
 }
 
 .markdown-preview :deep(blockquote) {
-  margin: 12px 0;
-  padding: 8px 16px;
-  border-left: 4px solid #2563eb;
-  background: #f8fafc;
-  color: #475569;
+  margin: var(--space-4) 0;
+  padding: var(--space-2) var(--space-6);
+  border-left: 4px solid var(--color-primary-600);
+  background: var(--bg-surface-hover);
+  color: var(--color-gray-700);
 }
 
 .markdown-preview :deep(code) {
-  background: #f1f5f9;
+  background: var(--bg-surface-active);
   padding: 2px 6px;
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   font-size: 0.9em;
-  color: #0f172a;
+  color: var(--corp-text-primary);
 }
 
 .markdown-preview :deep(pre) {
-  background: #f1f5f9;
-  padding: 12px;
-  border-radius: 6px;
+  background: var(--bg-surface-active);
+  padding: var(--space-4);
+  border-radius: var(--radius-md);
   overflow-x: auto;
 }
 

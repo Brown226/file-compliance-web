@@ -231,18 +231,18 @@ function renderActivityChart() {
 
   activityChart.setOption({
     tooltip: { trigger: 'axis' },
-    legend: { data: ['活跃用户', '任务提交数'], top: 0, right: 0, textStyle: { color: '#64748b' } },
+    legend: { data: ['活跃用户', '任务提交数'], top: 0, right: 0, textStyle: { color: '#6B7280' /* 对齐 --color-gray-500 */ } },
     grid: { left: '2%', right: '3%', bottom: '4%', top: '14%', containLabel: true },
     xAxis: {
       type: 'category',
       data: trend.map((t) => t.date),
-      axisLine: { lineStyle: { color: '#e2e8f0' } },
-      axisLabel: { color: '#64748b', fontSize: 11 },
+      axisLine: { lineStyle: { color: '#E5E7EB' /* 对齐 --corp-border-light */ } },
+      axisLabel: { color: '#6B7280', fontSize: 11 } /* 对齐 --color-gray-500 */,
       axisTick: { show: false },
     },
     yAxis: [
-      { type: 'value', name: '活跃用户', position: 'left', splitLine: { lineStyle: { color: '#f1f5f9' } }, axisLabel: { color: '#64748b' } },
-      { type: 'value', name: '任务数', position: 'right', splitLine: { show: false }, axisLabel: { color: '#64748b' } },
+      { type: 'value', name: '活跃用户', position: 'left', splitLine: { lineStyle: { color: '#F5F5F5' /* 对齐 --color-gray-100 */ } }, axisLabel: { color: '#6B7280' /* 对齐 --color-gray-500 */ } },
+      { type: 'value', name: '任务数', position: 'right', splitLine: { show: false }, axisLabel: { color: '#6B7280' /* 对齐 --color-gray-500 */ } },
     ],
     series: [
       {
@@ -252,7 +252,7 @@ function renderActivityChart() {
         symbol: 'circle',
         symbolSize: 5,
         data: trend.map((t) => t.activeUsers),
-        itemStyle: { color: '#2563eb' },
+        itemStyle: { color: '#2563EB' /* 对齐 --color-primary-600 */ },
         lineStyle: { width: 2 },
         areaStyle: { color: 'rgba(37,99,235,0.12)' },
       },
@@ -261,7 +261,7 @@ function renderActivityChart() {
         type: 'bar',
         yAxisIndex: 1,
         data: trend.map((t) => t.taskCount),
-        itemStyle: { color: '#94a3b8', borderRadius: [4, 4, 0, 0] },
+        itemStyle: { color: '#9CA3AF' /* 对齐 --color-gray-400 */, borderRadius: [4, 4, 0, 0] },
         barMaxWidth: 18,
       },
     ],
@@ -307,20 +307,20 @@ function renderLlmChart() {
 
   llmChart.setOption({
     tooltip: { trigger: 'axis' },
-    legend: { data: ['输入 Tokens', '输出 Tokens'], top: 0, right: 0, textStyle: { color: '#64748b' } },
+    legend: { data: ['输入 Tokens', '输出 Tokens'], top: 0, right: 0, textStyle: { color: '#6B7280' /* 对齐 --color-gray-500 */ } },
     grid: { left: '2%', right: '3%', bottom: '4%', top: '14%', containLabel: true },
     xAxis: {
       type: 'category',
       data: byDay.map((d) => d.date),
-      axisLine: { lineStyle: { color: '#e2e8f0' } },
-      axisLabel: { color: '#64748b', fontSize: 11 },
+      axisLine: { lineStyle: { color: '#E5E7EB' /* 对齐 --corp-border-light */ } },
+      axisLabel: { color: '#6B7280', fontSize: 11 } /* 对齐 --color-gray-500 */,
       axisTick: { show: false },
     },
     yAxis: {
       type: 'value',
       name: 'Token 数',
-      splitLine: { lineStyle: { color: '#f1f5f9' } },
-      axisLabel: { color: '#64748b', formatter: (v: number) => formatTokenCount(v) },
+      splitLine: { lineStyle: { color: '#F5F5F5' /* 对齐 --color-gray-100 */ } },
+      axisLabel: { color: '#6B7280' /* 对齐 --color-gray-500 */, formatter: (v: number) => formatTokenCount(v) },
     },
     series: [
       {
@@ -328,7 +328,7 @@ function renderLlmChart() {
         type: 'bar',
         stack: 'tokens',
         data: byDay.map((d) => d.promptTokens),
-        itemStyle: { color: '#2563eb' },
+        itemStyle: { color: '#2563EB' /* 对齐 --color-primary-600 */ },
         barMaxWidth: 20,
       },
       {
@@ -336,7 +336,7 @@ function renderLlmChart() {
         type: 'bar',
         stack: 'tokens',
         data: byDay.map((d) => d.completionTokens),
-        itemStyle: { color: '#94a3b8' },
+        itemStyle: { color: '#9CA3AF' /* 对齐 --color-gray-400 */ },
         barMaxWidth: 20,
       },
     ],
@@ -421,8 +421,8 @@ onBeforeUnmount(() => {
 .rail-panel,
 .metric-panel,
 .dept-panel {
-  background: #fff;
-  border: 1px solid #e2e8f0;
+  background: var(--bg-surface);
+  border: 1px solid var(--corp-border-light);
   border-radius: 10px;
   padding: 18px;
 }
@@ -437,13 +437,13 @@ onBeforeUnmount(() => {
 .panel-title {
   font-size: 15px;
   font-weight: 600;
-  color: #0f172a;
+  color: var(--corp-text-primary);
 }
 
 .control-group {
   display: inline-flex;
-  background: #f8fafc;
-  border: 1px solid #e2e8f0;
+  background: var(--corp-bg-sunken);
+  border: 1px solid var(--corp-border-light);
   border-radius: 6px;
   padding: 2px;
 }
@@ -451,7 +451,7 @@ onBeforeUnmount(() => {
 .ctrl-btn {
   padding: 5px 12px;
   font-size: 13px;
-  color: #64748b;
+  color: var(--corp-text-secondary);
   background: transparent;
   border: none;
   border-radius: 4px;
@@ -460,12 +460,12 @@ onBeforeUnmount(() => {
 }
 
 .ctrl-btn:hover {
-  color: #0f172a;
+  color: var(--corp-text-primary);
 }
 
 .ctrl-btn.active {
-  color: #2563eb;
-  background: #eff6ff;
+  color: var(--color-primary-600);
+  background: var(--color-primary-50);
   font-weight: 500;
 }
 
@@ -475,17 +475,17 @@ onBeforeUnmount(() => {
   display: flex;
   align-items: center;
   justify-content: center;
-  color: #64748b;
+  color: var(--corp-text-secondary);
   background: transparent;
-  border: 1px solid #e2e8f0;
+  border: 1px solid var(--corp-border-light);
   border-radius: 6px;
   cursor: pointer;
   transition: all 0.2s ease;
 }
 
 .icon-refresh:hover {
-  color: #2563eb;
-  border-color: #bfdbfe;
+  color: var(--color-primary-600);
+  border-color: var(--color-primary-200);
 }
 
 .icon-refresh.spinning :deep(.el-icon) {
@@ -511,14 +511,14 @@ onBeforeUnmount(() => {
   gap: 8px;
   font-size: 15px;
   font-weight: 600;
-  color: #0f172a;
+  color: var(--corp-text-primary);
 }
 
 .online-pulse {
   width: 8px;
   height: 8px;
   border-radius: 50%;
-  background: #22c55e;
+  background: var(--color-success);
   box-shadow: 0 0 0 0 rgba(34, 197, 94, 0.4);
   animation: pulse 2s infinite;
 }
@@ -534,11 +534,11 @@ onBeforeUnmount(() => {
   align-items: center;
   gap: 16px;
   font-size: 13px;
-  color: #64748b;
+  color: var(--corp-text-secondary);
 }
 
 .rail-meta strong {
-  color: #0f172a;
+  color: var(--corp-text-primary);
   font-weight: 600;
 }
 
@@ -557,20 +557,20 @@ onBeforeUnmount(() => {
   align-items: center;
   gap: 8px;
   padding: 6px 10px 6px 6px;
-  background: #f8fafc;
-  border: 1px solid #e2e8f0;
+  background: var(--corp-bg-sunken);
+  border: 1px solid var(--corp-border-light);
   border-radius: 999px;
   transition: all 0.2s ease;
 }
 
 .user-chip:hover {
-  border-color: #bfdbfe;
-  background: #eff6ff;
+  border-color: var(--color-primary-200);
+  background: var(--color-primary-50);
 }
 
 .user-avatar {
-  background: #2563eb;
-  color: white;
+  background: var(--color-primary-600);
+  color: var(--corp-text-inverse);
   font-weight: 600;
   flex-shrink: 0;
 }
@@ -584,24 +584,24 @@ onBeforeUnmount(() => {
 .user-name {
   font-size: 13px;
   font-weight: 600;
-  color: #0f172a;
+  color: var(--corp-text-primary);
 }
 
 .user-meta {
   font-size: 11px;
-  color: #64748b;
+  color: var(--corp-text-secondary);
 }
 
 .online-dot {
   width: 7px;
   height: 7px;
   border-radius: 50%;
-  background: #22c55e;
+  background: var(--color-success);
   flex-shrink: 0;
 }
 
 .rail-empty {
-  color: #94a3b8;
+  color: var(--corp-text-tertiary);
   font-size: 13px;
   padding: 18px 0;
   text-align: center;
@@ -627,7 +627,7 @@ onBeforeUnmount(() => {
 
 .mini-metric {
   padding: 10px;
-  background: #f8fafc;
+  background: var(--corp-bg-sunken);
   border-radius: 8px;
   text-align: center;
 }
@@ -635,20 +635,20 @@ onBeforeUnmount(() => {
 .mini-value {
   font-size: 18px;
   font-weight: 700;
-  color: #0f172a;
+  color: var(--corp-text-primary);
   line-height: 1.2;
 }
 
 .mini-unit {
   font-size: 11px;
   font-weight: 500;
-  color: #94a3b8;
+  color: var(--corp-text-tertiary);
   margin-left: 2px;
 }
 
 .mini-label {
   font-size: 11px;
-  color: #64748b;
+  color: var(--corp-text-secondary);
   margin-top: 4px;
 }
 
@@ -670,20 +670,20 @@ onBeforeUnmount(() => {
   align-items: center;
   gap: 12px;
   padding: 10px 0;
-  border-bottom: 1px solid #f1f5f9;
+  border-bottom: 1px solid var(--color-gray-100);
 }
 
 .dept-rank {
   font-size: 12px;
   font-weight: 700;
-  color: #94a3b8;
+  color: var(--corp-text-tertiary);
   text-align: center;
 }
 
 .dept-name {
   font-size: 13px;
   font-weight: 500;
-  color: #334155;
+  color: var(--color-gray-700);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -704,12 +704,12 @@ onBeforeUnmount(() => {
 
 .bar-label {
   font-size: 11px;
-  color: #94a3b8;
+  color: var(--corp-text-tertiary);
 }
 
 .dept-bar-wrap {
   height: 6px;
-  background: #f1f5f9;
+  background: var(--color-gray-100);
   border-radius: 3px;
   overflow: hidden;
 }
@@ -720,13 +720,13 @@ onBeforeUnmount(() => {
   transition: width 0.6s ease;
 }
 
-.dept-bar.task { background: #2563eb; }
-.dept-bar.user { background: #94a3b8; }
+.dept-bar.task { background: var(--color-primary-600); }
+.dept-bar.user { background: var(--color-gray-400); }
 
 .bar-value {
   font-size: 12px;
   font-weight: 600;
-  color: #0f172a;
+  color: var(--corp-text-primary);
   text-align: right;
 }
 
@@ -738,14 +738,14 @@ onBeforeUnmount(() => {
   align-items: center;
   justify-content: center;
   gap: 12px;
-  color: #94a3b8;
+  color: var(--corp-text-tertiary);
   font-size: 13px;
 }
 
 .empty-line {
   width: 120px;
   height: 1px;
-  background: linear-gradient(90deg, transparent, #cbd5e1, transparent);
+  background: linear-gradient(90deg, transparent, var(--color-gray-300), transparent);
 }
 
 /* 响应式 */

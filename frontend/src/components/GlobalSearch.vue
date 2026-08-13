@@ -42,7 +42,7 @@
           </div>
 
           <div v-else-if="query" class="search-empty">
-            <el-icon :size="40" color="#d1d5db"><Search /></el-icon>
+            <el-icon :size="40" color="var(--color-gray-300)"><Search /></el-icon>
             <p>未找到匹配结果</p>
           </div>
 
@@ -181,6 +181,8 @@ const categoryLabel = (cat: string) => {
   return map[cat] || cat
 }
 
+// JS 运行时色值：CSS 中无法用 var()，此处硬编码为 design tokens（variables.css）的等价实际值
+// #2563EB=--color-primary-600  #10B981=--color-success  #F59E0B=--color-warning  #6B7280=--color-gray-500
 const categoryColor = (cat: string) => {
   const map: Record<string, string> = {
     task: '#2563EB',
@@ -232,7 +234,7 @@ defineExpose({ open, close, visible })
   max-height: 480px;
   background: var(--bg-surface);
   border-radius: var(--radius-lg);
-  box-shadow: var(--shadow-lg);
+  box-shadow: var(--shadow-elevated);
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -311,7 +313,7 @@ defineExpose({ open, close, visible })
 }
 
 .item-title mark {
-  background: #FEF08A;
+  background: var(--color-warning-bg);
   padding: 0 2px;
   border-radius: 2px;
 }

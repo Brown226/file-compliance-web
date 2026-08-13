@@ -439,18 +439,18 @@ onMounted(() => {
 }
 
 .stat-icon.total {
-  background: #ecf5ff;
-  color: #409eff;
+  background: var(--color-primary-50);
+  color: var(--color-primary-500);
 }
 
 .stat-icon.recent {
-  background: #f0f9eb;
-  color: #67c23a;
+  background: var(--color-success-bg);
+  color: var(--color-success);
 }
 
 .stat-icon.type {
-  background: #fdf6ec;
-  color: #e6a23c;
+  background: var(--color-warning-bg);
+  color: var(--color-warning);
 }
 
 .stat-content {
@@ -533,7 +533,7 @@ onMounted(() => {
 }
 
 :deep(.fp-row-clickable:hover > td) {
-  background-color: #f5f7fa !important;
+  background-color: var(--bg-surface-active) !important;
 }
 
 /* 自定义空状态 */
@@ -549,11 +549,11 @@ onMounted(() => {
   width: 80px;
   height: 80px;
   border-radius: 50%;
-  background: linear-gradient(135deg, #f0f9ff, #e0f2fe);
+  background: linear-gradient(135deg, var(--color-primary-50), var(--color-primary-100));
   display: flex;
   align-items: center;
   justify-content: center;
-  color: #3b82f6;
+  color: var(--color-primary-500);
   margin-bottom: 16px;
 }
 
@@ -577,20 +577,20 @@ onMounted(() => {
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  color: #3b82f6;
+  color: var(--color-primary-500);
   font-size: 14px;
   font-weight: 500;
   text-decoration: none;
   padding: 8px 18px;
   border-radius: 8px;
-  border: 1px solid #bfdbfe;
-  background: #eff6ff;
+  border: 1px solid var(--color-primary-200);
+  background: var(--color-primary-50);
   transition: all 0.2s ease;
 }
 
 .empty-action:hover {
-  background: #dbeafe;
-  border-color: #93c5fd;
+  background: var(--color-primary-100);
+  border-color: var(--color-primary-300);
 }
 
 /* 详情抽屉 */
@@ -617,7 +617,7 @@ onMounted(() => {
   line-height: 1.7;
   color: var(--corp-text-primary);
   padding: 12px 16px;
-  background: #f9fafb;
+  background: var(--bg-surface-hover);
   border-radius: 8px;
   border: 1px solid var(--corp-border-light);
   word-break: break-all;

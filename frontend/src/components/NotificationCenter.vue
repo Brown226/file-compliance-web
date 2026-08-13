@@ -58,7 +58,7 @@
 
               <div v-if="filteredNotifications.length === 0" class="empty-state">
                 <div class="empty-illustration">
-                  <el-icon :size="40" color="#d1d5db"><Bell /></el-icon>
+                  <el-icon :size="40" color="var(--color-gray-300)"><Bell /></el-icon>
                 </div>
                 <p class="empty-text">暂无通知</p>
                 <p class="empty-subtext">新通知将在此处显示</p>
@@ -68,13 +68,13 @@
             <!-- 系统公告 Tab -->
             <div v-else class="announcement-list">
               <div v-if="announcementLoading" class="loading-state">
-                <el-icon :size="28" class="is-loading" color="#409eff"><Loading /></el-icon>
+                <el-icon :size="28" class="is-loading" color="var(--color-primary-500)"><Loading /></el-icon>
                 <p>加载中...</p>
               </div>
 
               <div v-else-if="announcementHistory.length === 0" class="empty-state">
                 <div class="empty-illustration">
-                  <el-icon :size="40" color="#d1d5db"><Document /></el-icon>
+                  <el-icon :size="40" color="var(--color-gray-300)"><Document /></el-icon>
                 </div>
                 <p class="empty-text">暂无公告</p>
                 <p class="empty-subtext">系统公告将在此处展示</p>
@@ -434,16 +434,19 @@ function formatTimeAgoStr(dateStr: string | null): string {
   return formatTimeAgo(dateStr)
 }
 
+// JS 运行时色值：CSS 中无法用 var()，此处硬编码为 design tokens（variables.css）的等价实际值
+// #3B82F6=--color-primary-500  #F59E0B=--color-warning  #9CA3AF=--color-gray-400
+// #10B981=--color-success  #EF4444=--color-danger
 const typeConfig = (type: string) => {
   const map: Record<string, { color: string; icon: any }> = {
-    task: { color: '#409eff', icon: Tickets },
-    warning: { color: '#e6a23c', icon: Warning },
-    info: { color: '#909399', icon: InfoFilled },
-    message: { color: '#67c23a', icon: ChatDotRound },
-    system: { color: '#f56c6c', icon: Setting },
-    success: { color: '#67c23a', icon: Check },
+    task: { color: '#3B82F6', icon: Tickets },
+    warning: { color: '#F59E0B', icon: Warning },
+    info: { color: '#9CA3AF', icon: InfoFilled },
+    message: { color: '#10B981', icon: ChatDotRound },
+    system: { color: '#EF4444', icon: Setting },
+    success: { color: '#10B981', icon: Check },
   }
-  return map[type] || { color: '#909399', icon: InfoFilled }
+  return map[type] || { color: '#9CA3AF', icon: InfoFilled }
 }
 
 const typeColor = (type: string) => typeConfig(type).color
@@ -526,10 +529,11 @@ async function markAnnouncementRead(id: string) {
 }
 
 function urgencyColor(urgency: string): string {
+  // JS 运行时色值：等价于令牌 --color-danger / --color-warning / --color-primary-500
   switch (urgency) {
-    case 'URGENT': return '#f56c6c'
-    case 'IMPORTANT': return '#e6a23c'
-    default: return '#409eff'
+    case 'URGENT': return '#EF4444'
+    case 'IMPORTANT': return '#F59E0B'
+    default: return '#3B82F6'
   }
 }
 
@@ -613,7 +617,7 @@ defineExpose({
 .notification-panel {
   width: 420px;
   max-height: calc(100vh - 72px);
-  background: #fff;
+  background: var(--bg-surface);
   border-radius: 16px;
   box-shadow:
     0 20px 60px rgba(0, 0, 0, 0.15),
@@ -628,14 +632,14 @@ defineExpose({
   justify-content: space-between;
   align-items: center;
   padding: 18px 20px 12px;
-  border-bottom: 1px solid #f3f4f6;
+  border-bottom: 1px solid var(--color-gray-100);
 }
 
 .panel-header h3 {
   margin: 0;
   font-size: 16px;
   font-weight: 600;
-  color: #111827;
+  color: var(--corp-text-primary);
   letter-spacing: -0.01em;
 }
 
@@ -664,7 +668,7 @@ defineExpose({
   overflow-y: auto;
   padding: 8px 0;
   scrollbar-width: thin;
-  scrollbar-color: #e5e7eb transparent;
+  scrollbar-color: var(--corp-border-light) transparent;
 }
 
 .notification-list::-webkit-scrollbar,
@@ -674,7 +678,7 @@ defineExpose({
 
 .notification-list::-webkit-scrollbar-thumb,
 .announcement-list::-webkit-scrollbar-thumb {
-  background: #e5e7eb;
+  background: var(--corp-border-light);
   border-radius: 3px;
 }
 
@@ -693,19 +697,19 @@ defineExpose({
 
 .notification-item:hover,
 .announcement-item:hover {
-  background: #f9fafb;
-  border-left-color: #d1d5db;
+  background: var(--bg-surface-hover);
+  border-left-color: var(--corp-border);
 }
 
 .notification-item.unread,
 .announcement-item.unread {
-  background: linear-gradient(135deg, #f0f7ff 0%, #fafbff 100%);
-  border-left-color: #409eff;
+  background: linear-gradient(135deg, var(--color-primary-50) 0%, var(--bg-surface) 100%);
+  border-left-color: var(--color-primary-500);
 }
 
 .notification-item.unread:hover,
 .announcement-item.unread:hover {
-  background: linear-gradient(135deg, #e8f4fd 0%, #f5f8ff 100%);
+  background: linear-gradient(135deg, var(--color-primary-100) 0%, var(--bg-surface) 100%);
 }
 
 .item-indicator {
@@ -723,8 +727,8 @@ defineExpose({
   width: 8px;
   height: 8px;
   border-radius: 50%;
-  background: #409eff;
-  box-shadow: 0 0 0 2px #fff;
+  background: var(--color-primary-500);
+  box-shadow: 0 0 0 2px var(--bg-surface);
   z-index: 1;
 }
 
@@ -733,7 +737,7 @@ defineExpose({
 }
 
 .indicator-dot.urgent-dot {
-  background: #f56c6c;
+  background: var(--color-danger);
 }
 
 @keyframes nc-pulse {
@@ -767,7 +771,7 @@ defineExpose({
 .item-title {
   font-size: 13.5px;
   font-weight: 600;
-  color: #111827;
+  color: var(--corp-text-primary);
   line-height: 1.3;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -777,7 +781,7 @@ defineExpose({
 .item-desc {
   margin: 4px 0 0;
   font-size: 12.5px;
-  color: #6b7280;
+  color: var(--color-gray-500);
   line-height: 1.45;
   display: -webkit-box;
   -webkit-line-clamp: 2;
@@ -795,13 +799,13 @@ defineExpose({
 
 .item-time {
   font-size: 11.5px;
-  color: #9ca3af;
+  color: var(--color-gray-400);
   white-space: nowrap;
 }
 
 .item-action-hint {
   font-size: 11.5px;
-  color: #409eff;
+  color: var(--color-primary-500);
   font-weight: 500;
   white-space: nowrap;
 }
@@ -836,7 +840,7 @@ defineExpose({
   height: 72px;
   margin: 0 auto 16px;
   border-radius: 50%;
-  background: #f9fafb;
+  background: var(--bg-surface-hover);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -846,19 +850,19 @@ defineExpose({
   margin: 0 0 4px;
   font-size: 14px;
   font-weight: 500;
-  color: #6b7280;
+  color: var(--color-gray-500);
 }
 
 .empty-subtext {
   margin: 0;
   font-size: 12.5px;
-  color: #9ca3af;
+  color: var(--color-gray-400);
 }
 
 .loading-state {
   padding: 48px 20px;
   text-align: center;
-  color: #9ca3af;
+  color: var(--color-gray-400);
 }
 
 .loading-state p {
@@ -870,7 +874,7 @@ defineExpose({
   padding: 12px 18px;
   display: flex;
   justify-content: center;
-  border-top: 1px solid #f3f4f6;
+  border-top: 1px solid var(--color-gray-100);
 }
 
 /* 详情对话框 */
@@ -882,12 +886,12 @@ defineExpose({
 
 .detail-time {
   font-size: 12px;
-  color: #9ca3af;
+  color: var(--color-gray-400);
 }
 
 .notif-detail-content .detail-desc {
   font-size: 14px;
-  color: #374151;
+  color: var(--color-gray-700);
   line-height: 1.65;
   margin: 0 0 16px;
 }
@@ -896,7 +900,7 @@ defineExpose({
   margin: 0 0 8px;
   font-size: 13px;
   font-weight: 600;
-  color: #6b7280;
+  color: var(--color-gray-500);
   text-transform: uppercase;
   letter-spacing: 0.05em;
 }
@@ -904,9 +908,9 @@ defineExpose({
 .detail-extra p {
   margin: 0;
   font-size: 14px;
-  color: #4b5563;
+  color: var(--color-gray-600);
   line-height: 1.6;
-  background: #f9fafb;
+  background: var(--bg-surface-hover);
   padding: 12px 16px;
   border-radius: 8px;
 }
@@ -923,13 +927,13 @@ defineExpose({
   margin-top: 18px;
   margin-bottom: 10px;
   font-weight: 600;
-  color: #111827;
+  color: var(--corp-text-primary);
 }
 
 .markdown-body :deep(p) {
   margin-bottom: 12px;
   line-height: 1.7;
-  color: #374151;
+  color: var(--color-gray-700);
 }
 
 .markdown-body :deep(ul),
@@ -946,14 +950,14 @@ defineExpose({
 .markdown-body :deep(blockquote) {
   margin: 14px 0;
   padding: 10px 18px;
-  border-left: 4px solid #409eff;
-  background: #f5f7fa;
+  border-left: 4px solid var(--color-primary-500);
+  background: var(--bg-body);
   border-radius: 0 8px 8px 0;
-  color: #4b5563;
+  color: var(--color-gray-600);
 }
 
 .markdown-body :deep(code) {
-  background: #f3f4f6;
+  background: var(--color-gray-100);
   padding: 2px 7px;
   border-radius: 4px;
   font-size: 0.88em;
@@ -961,11 +965,11 @@ defineExpose({
 }
 
 .markdown-body :deep(pre) {
-  background: #1f2937;
+  background: var(--color-gray-800);
   padding: 16px;
   border-radius: 8px;
   overflow-x: auto;
-  color: #e5e7eb;
+  color: var(--color-gray-200);
 }
 
 .markdown-body :deep(pre code) {

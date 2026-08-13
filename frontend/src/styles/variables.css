@@ -32,14 +32,17 @@
   --color-action: #3B82F6;
   --color-action-hover: #2563EB;
 
-  /* === 语义色 === */
+  /* === 语义色（含深阶，供 hover/active 态统一引用） === */
   --color-success: #10B981;
+  --color-success-600: #059669;
   --color-success-bg: #DCFCE7;
   --color-success-text: #166534;
   --color-warning: #F59E0B;
+  --color-warning-600: #D97706;
   --color-warning-bg: #FEF3C7;
   --color-warning-text: #92400E;
   --color-danger: #EF4444;
+  --color-danger-600: #DC2626;
   --color-danger-bg: #FEE2E2;
   --color-danger-text: #991B1B;
   --color-info: #3B82F6;

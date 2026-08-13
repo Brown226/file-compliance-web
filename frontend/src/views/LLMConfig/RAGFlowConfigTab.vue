@@ -167,8 +167,8 @@ onMounted(loadConfig)
   justify-content: space-between;
   gap: 16px;
   padding: 14px 20px;
-  border-bottom: 1px solid #f1f5f9;
-  background: #fafbfc;
+  border-bottom: 1px solid var(--color-gray-100);
+  background: var(--corp-bg-sunken);
 }
 
 .module-title {
@@ -179,7 +179,7 @@ onMounted(loadConfig)
 }
 
 .module-title :deep(.el-icon) {
-  color: #64748b;
+  color: var(--corp-text-secondary);
   flex-shrink: 0;
 }
 
@@ -187,14 +187,14 @@ onMounted(loadConfig)
   margin: 0;
   font-size: 14px;
   font-weight: 600;
-  color: #0f172a;
+  color: var(--corp-text-primary);
 }
 
 .module-desc {
   display: block;
   margin-top: 2px;
   font-size: 12px;
-  color: #94a3b8;
+  color: var(--corp-text-tertiary);
 }
 
 .module-status {
@@ -206,18 +206,18 @@ onMounted(loadConfig)
 }
 
 .module-status.ready {
-  background: #f0fdf4;
-  color: #15803d;
+  background: var(--color-success-bg);
+  color: var(--color-success-text);
 }
 
 .module-status.pending {
-  background: #fffbeb;
-  color: #b45309;
+  background: var(--color-warning-bg);
+  color: var(--color-warning-text);
 }
 
 .module-status.offline {
-  background: #f1f5f9;
-  color: #64748b;
+  background: var(--color-gray-100);
+  color: var(--corp-text-secondary);
 }
 
 /* 模块主体 */
@@ -227,7 +227,7 @@ onMounted(loadConfig)
 
 .form-tip {
   font-size: 12px;
-  color: #64748b;
+  color: var(--corp-text-secondary);
   margin-top: 4px;
   line-height: 1.5;
 }
@@ -235,11 +235,11 @@ onMounted(loadConfig)
 .offline-hint {
   margin: 8px 0 12px;
   padding: 8px 12px;
-  background: #fef2f2;
-  border: 1px solid #fecaca;
+  background: var(--color-danger-bg);
+  border: 1px solid var(--color-danger-bg); /* 原 #fecaca 浅红边框，对齐 --color-danger-bg */
   border-radius: 6px;
   font-size: 12px;
-  color: #b91c1c;
+  color: var(--color-danger-text);
 }
 
 .form-actions {
@@ -248,7 +248,7 @@ onMounted(loadConfig)
   gap: 10px;
   justify-content: flex-end;
   padding-top: 16px;
-  border-top: 1px solid #f1f5f9;
+  border-top: 1px solid var(--color-gray-100);
   margin-top: 4px;
 }
 

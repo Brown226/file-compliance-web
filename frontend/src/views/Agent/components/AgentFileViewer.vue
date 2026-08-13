@@ -494,11 +494,11 @@ watch(() => props.filePath, load, { immediate: true })
   padding: 5px 10px;
   border-radius: 6px;
   background: var(--accent);
-  color: #fff;
+  color: var(--corp-text-inverse);
   font-size: 11px;
 }
 .fv-locate-notice.is-miss {
-  background: var(--warning, #e6a23c);
+  background: var(--warning, var(--color-warning));
 }
 .fv-locate-close {
   display: flex;
@@ -534,7 +534,7 @@ watch(() => props.filePath, load, { immediate: true })
 /* P2-⑬ 行级批注：行号定位高亮（背景 + 左侧竖线，3s 后自动清除） */
 .fv-lines-highlight {
   background-color: rgba(var(--accent-rgb, 64, 158, 255), 0.12);
-  box-shadow: inset 3px 0 0 var(--accent, #409eff);
+  box-shadow: inset 3px 0 0 var(--accent, var(--color-action));
   border-radius: 2px;
 }
 .fv-dim-text { color: var(--text-dim); }

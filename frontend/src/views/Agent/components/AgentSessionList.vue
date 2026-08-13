@@ -21,7 +21,8 @@
       </div>
 
       <div v-else-if="sessions.length === 0" class="empty-state">
-        <el-icon :size="26" color="#c0c4cc"><ChatDotRound /></el-icon>
+        <!-- 对齐 --corp-text-tertiary -->
+        <el-icon :size="26" color="var(--corp-text-tertiary)"><ChatDotRound /></el-icon>
         <p>暂无历史会话</p>
       </div>
 
@@ -527,12 +528,12 @@ defineExpose({ refresh: loadSessions })
 .action-btn:hover {
   background: var(--bg-selected);
   color: var(--accent);
-  border-color: rgba(37, 99, 235, 0.35);
+  border-color: color-mix(in srgb, var(--accent) 35%, transparent);
 }
 .action-btn.danger:hover {
-  background: rgba(239, 68, 68, 0.08);
-  color: #ef4444;
-  border-color: rgba(239, 68, 68, 0.35);
+  background: color-mix(in srgb, var(--color-danger) 8%, transparent);
+  color: var(--color-danger);
+  border-color: color-mix(in srgb, var(--color-danger) 35%, transparent);
 }
 
 /* 行内删除确认 */
@@ -562,9 +563,9 @@ defineExpose({ refresh: loadSessions })
   flex-shrink: 0;
 }
 .confirm-btn.danger {
-  background: #ef4444;
-  border-color: #ef4444;
-  color: #fff;
+  background: var(--color-danger);
+  border-color: var(--color-danger);
+  color: var(--corp-text-inverse);
   font-weight: 600;
 }
 

@@ -424,7 +424,7 @@ onBeforeUnmount(() => document.removeEventListener('mousedown', onDocMouseDown))
   background: var(--accent);
   border: none;
   border-radius: 8px;
-  color: #fff;
+  color: var(--corp-text-inverse);
   cursor: pointer;
   font-size: 13px;
   font-weight: 600;
@@ -450,10 +450,10 @@ onBeforeUnmount(() => document.removeEventListener('mousedown', onDocMouseDown))
   justify-content: center;
   gap: 6px;
   padding: 8px 14px;
-  background: rgba(239, 68, 68, 0.08);
-  border: 1px solid rgba(239, 68, 68, 0.3);
+  background: color-mix(in srgb, var(--color-danger) 8%, transparent);
+  border: 1px solid color-mix(in srgb, var(--color-danger) 30%, transparent);
   border-radius: 9px;
-  color: #ef4444;
+  color: var(--color-danger);
   cursor: pointer;
   font-size: 12px;
   font-weight: 600;

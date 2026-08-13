@@ -72,8 +72,8 @@ defineExpose({
 
 <style scoped>
 .ocr-status-bar {
-  background: #fff;
-  border: 1px solid #e5e7eb;
+  background: var(--bg-surface);
+  border: 1px solid var(--corp-border-light);
   border-radius: 8px;
   padding: 12px 20px;
   box-shadow: 0 1px 2px rgba(15, 23, 42, 0.03);
@@ -89,17 +89,17 @@ defineExpose({
   width: 8px;
   height: 8px;
   border-radius: 50%;
-  background: #cbd5e1;
+  background: var(--color-gray-300);
   flex-shrink: 0;
 }
 
 .status-dot.status-ok {
-  background: #10b981;
+  background: var(--color-success);
   box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.15);
 }
 
 .status-dot.status-err {
-  background: #ef4444;
+  background: var(--color-danger);
   box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.15);
 }
 
@@ -114,12 +114,12 @@ defineExpose({
 .status-label {
   font-size: 13.5px;
   font-weight: 600;
-  color: #0f172a;
+  color: var(--corp-text-primary);
 }
 
 .status-value {
   font-size: 12.5px;
-  color: #64748b;
+  color: var(--corp-text-secondary);
   font-weight: 500;
 }
 
@@ -129,16 +129,16 @@ defineExpose({
   gap: 16px 24px;
   margin-top: 10px;
   padding-top: 10px;
-  border-top: 1px solid #f1f5f9;
+  border-top: 1px solid var(--color-gray-100);
 }
 
 .detail-item {
   font-size: 12px;
-  color: #475569;
+  color: var(--color-gray-600);
 }
 
 .detail-item label {
-  color: #94a3b8;
+  color: var(--corp-text-tertiary);
   margin-right: 6px;
   font-weight: 500;
 }

@@ -48,85 +48,6 @@ body > .el-message {
   transition: none !important;
 }
 
-/* 单条消息 */
-body > .el-message-container .el-message,
-body > .el-message {
-  margin-bottom: 12px !important;
-  background: linear-gradient(135deg, #ffffff 0%, #f8fafc 100%) !important;
-  border: 1px solid #e2e8f0 !important;
-  border-left: 4px solid var(--color-primary-600) !important;
-  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.08), 0 4px 12px rgba(0, 0, 0, 0.04) !important;
-  border-radius: 10px !important;
-  padding: 14px 24px !important;
-  min-width: 280px !important;
-  max-width: 560px !important;
-  /* 避免 hover 时 transform 抖动：hover 仅增强阴影 */
-}
-
-body > .el-message-container .el-message:hover,
-body > .el-message:hover {
-  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.12), 0 6px 16px rgba(0, 0, 0, 0.06) !important;
-}
-
-body > .el-message-container .el-message .el-message__content,
-body > .el-message .el-message__content {
-  color: #1e293b !important;
-  font-weight: 500 !important;
-  font-size: 14px !important;
-  line-height: 1.5 !important;
-  letter-spacing: 0.3px !important;
-}
-
-body > .el-message-container .el-message .el-message__icon,
-body > .el-message .el-message__icon {
-  font-size: 18px !important;
-  color: var(--color-primary-600) !important;
-}
-
-/* info 类型消息 */
-body > .el-message-container .el-message.el-message--info,
-body > .el-message.el-message--info {
-  border-left-color: #3b82f6 !important;
-}
-
-body > .el-message-container .el-message.el-message--info .el-message__icon,
-body > .el-message.el-message--info .el-message__icon {
-  color: #3b82f6 !important;
-}
-
-/* success 类型消息 */
-body > .el-message-container .el-message.el-message--success,
-body > .el-message.el-message--success {
-  border-left-color: #10b981 !important;
-}
-
-body > .el-message-container .el-message.el-message--success .el-message__icon,
-body > .el-message.el-message--success .el-message__icon {
-  color: #10b981 !important;
-}
-
-/* warning 类型消息 */
-body > .el-message-container .el-message.el-message--warning,
-body > .el-message.el-message--warning {
-  border-left-color: #f59e0b !important;
-}
-
-body > .el-message-container .el-message.el-message--warning .el-message__icon,
-body > .el-message.el-message--warning .el-message__icon {
-  color: #f59e0b !important;
-}
-
-/* error 类型消息 */
-body > .el-message-container .el-message.el-message--error,
-body > .el-message.el-message--error {
-  border-left-color: #ef4444 !important;
-}
-
-body > .el-message-container .el-message.el-message--error .el-message__icon,
-body > .el-message.el-message--error .el-message__icon {
-  color: #ef4444 !important;
-}
-
 /* 通知组件 */
 body > .el-notification {
   right: 24px !important;
@@ -153,7 +74,7 @@ body > .el-notification {
 
 /* 弹窗基础样式 */
 .el-message-box {
-  background: #fff !important;
+  background: var(--bg-surface) !important;
   border-radius: 8px !important;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15) !important;
   padding: 20px !important;
@@ -188,7 +109,7 @@ body > .el-notification {
 .el-message-box__message p {
   margin: 0 !important;
   line-height: 1.6 !important;
-  color: #303133 !important;
+  color: var(--color-gray-700) !important;
 }
 
 /* 底部按钮 */

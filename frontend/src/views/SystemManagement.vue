@@ -91,8 +91,8 @@ const navGroups = [
   gap: 24px;
   padding: 28px 30px;
   border-radius: 18px;
-  background: linear-gradient(135deg, #0f172a 0%, #1e293b 55%, #334155 100%);
-  color: #f8fafc;
+  background: linear-gradient(135deg, var(--color-gray-900) 0%, var(--color-gray-800) 55%, var(--color-gray-700) 100%);
+  color: var(--color-gray-50);
   box-shadow: 0 18px 48px rgba(15, 23, 42, 0.18);
 }
 
@@ -141,12 +141,12 @@ const navGroups = [
 .group-header h3 {
   margin: 0 0 4px;
   font-size: 18px;
-  color: #0f172a;
+  color: var(--corp-text-primary);
 }
 
 .group-header p {
   margin: 0;
-  color: #64748b;
+  color: var(--corp-text-secondary);
   font-size: 13px;
 }
 
@@ -157,8 +157,8 @@ const navGroups = [
 }
 
 .nav-card {
-  border: 1px solid #e2e8f0;
-  background: #ffffff;
+  border: 1px solid var(--corp-border-light);
+  background: var(--bg-surface);
   border-radius: 16px;
   padding: 20px;
   text-align: left;
@@ -168,12 +168,12 @@ const navGroups = [
 
 .nav-card:hover {
   transform: translateY(-2px);
-  border-color: #94a3b8;
+  border-color: var(--color-gray-400);
   box-shadow: 0 12px 30px rgba(15, 23, 42, 0.08);
 }
 
 .nav-card.active {
-  border-color: #2563eb;
+  border-color: var(--color-primary-600);
   box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.08);
 }
 
@@ -190,8 +190,8 @@ const navGroups = [
 
 .nav-badge {
   font-size: 11px;
-  color: #475569;
-  background: #f1f5f9;
+  color: var(--color-gray-600);
+  background: var(--bg-surface-active);
   border-radius: 999px;
   padding: 4px 10px;
   font-weight: 600;
@@ -200,14 +200,14 @@ const navGroups = [
 .nav-label {
   font-size: 16px;
   font-weight: 700;
-  color: #0f172a;
+  color: var(--corp-text-primary);
   margin-bottom: 6px;
 }
 
 .nav-desc {
   font-size: 13px;
   line-height: 1.6;
-  color: #64748b;
+  color: var(--corp-text-secondary);
 }
 
 @media (max-width: 960px) {

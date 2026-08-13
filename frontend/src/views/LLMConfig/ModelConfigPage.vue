@@ -58,8 +58,8 @@ import VisionModelTab from './VisionModelTab.vue'
 
 /* 通用卡片 */
 .config-card {
-  background: #fff;
-  border: 1px solid #e5e7eb;
+  background: var(--bg-surface);
+  border: 1px solid var(--corp-border-light);
   border-radius: 8px;
   box-shadow: 0 1px 2px rgba(15, 23, 42, 0.03);
   overflow: hidden;
@@ -71,20 +71,20 @@ import VisionModelTab from './VisionModelTab.vue'
   justify-content: space-between;
   gap: 12px;
   padding: 14px 20px;
-  border-bottom: 1px solid #f1f5f9;
-  background: #fafbfc;
+  border-bottom: 1px solid var(--color-gray-100);
+  background: var(--corp-bg-sunken);
 }
 
 .card-header h4 {
   margin: 0;
   font-size: 14px;
   font-weight: 600;
-  color: #0f172a;
+  color: var(--corp-text-primary);
 }
 
 .card-sub {
   font-size: 12px;
-  color: #94a3b8;
+  color: var(--corp-text-tertiary);
   font-weight: 500;
 }
 

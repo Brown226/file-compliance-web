@@ -662,13 +662,13 @@ onMounted(loadSkills)
 .btn.primary {
   background: var(--accent);
   border-color: var(--accent);
-  color: #fff;
+  color: var(--corp-text-inverse);
   font-weight: 600;
 }
 
 .btn.primary:hover {
   background: var(--accent);
-  color: #fff;
+  color: var(--corp-text-inverse);
   opacity: 0.9;
 }
 
@@ -678,9 +678,9 @@ onMounted(loadSkills)
 }
 
 .btn.danger:hover {
-  background: color-mix(in srgb, var(--danger, #ef4444) 10%, transparent);
-  border-color: var(--danger, #ef4444);
-  color: var(--danger, #ef4444);
+  background: color-mix(in srgb, var(--danger, var(--color-danger)) 10%, transparent);
+  border-color: var(--danger, var(--color-danger));
+  color: var(--danger, var(--color-danger));
 }
 
 /* ===== Footer ===== */

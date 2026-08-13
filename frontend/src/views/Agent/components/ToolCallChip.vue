@@ -202,11 +202,11 @@ const durationText = computed(() => {
   font-family: var(--font-mono);
   font-weight: 600;
   font-size: 11px;
-  color: #16a34a;
+  color: var(--color-success-600);
   flex-shrink: 0;
   white-space: nowrap;
 }
-.tool-call-block[data-status='error'] .tool-name { color: #f87171; }
+.tool-call-block[data-status='error'] .tool-name { color: var(--color-danger); }
 
 /* 预览文本（对齐参考：等宽 11px text-dim ellipsis 占满剩余） */
 .tool-preview {
@@ -247,22 +247,22 @@ const durationText = computed(() => {
   overflow: auto;
   max-height: 300px;
   background: var(--bg-subtle);
-  border-top: 1px solid rgba(34, 197, 94, 0.2);
+  border-top: 1px solid color-mix(in srgb, var(--color-success) 20%, transparent);
   white-space: pre-wrap;
   word-break: break-all;
 }
 .tool-call-block[data-status='error'] .input-pre {
-  border-top-color: rgba(248, 113, 113, 0.25);
+  border-top-color: color-mix(in srgb, var(--color-danger) 25%, transparent);
 }
 
 /* 配对 result（对齐参考 PairedResult：淡绿底 + pre + 空态 italic） */
 .paired-result {
-  border-top: 1px solid rgba(34, 197, 94, 0.15);
+  border-top: 1px solid color-mix(in srgb, var(--color-success) 15%, transparent);
   background: var(--bg-subtle);
 }
 .paired-result.is-error {
-  border-top-color: rgba(248, 113, 113, 0.3);
-  background: rgba(248, 113, 113, 0.04);
+  border-top-color: color-mix(in srgb, var(--color-danger) 30%, transparent);
+  background: color-mix(in srgb, var(--color-danger) 4%, transparent);
 }
 .paired-result pre {
   margin: 0;
@@ -282,19 +282,19 @@ const durationText = computed(() => {
   opacity: 0.6;
 }
 .paired-result.is-error pre {
-  color: #f87171;
+  color: var(--color-danger);
 }
 
 .error-pre {
   margin: 0;
   padding: 8px 10px;
-  border-top: 1px solid rgba(248, 113, 113, 0.25);
-  color: #f87171;
+  border-top: 1px solid color-mix(in srgb, var(--color-danger) 25%, transparent);
+  color: var(--color-danger);
   font-size: 12px;
   line-height: 1.5;
   white-space: pre-wrap;
   word-break: break-all;
-  background: rgba(248, 113, 113, 0.04);
+  background: color-mix(in srgb, var(--color-danger) 4%, transparent);
 }
 
 .running-hint {

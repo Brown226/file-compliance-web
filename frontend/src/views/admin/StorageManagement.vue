@@ -271,27 +271,27 @@ onMounted(() => {
 
 .page-intro {
   padding: 4px 0 4px 12px;
-  border-left: 3px solid #2563eb;
+  border-left: 3px solid var(--color-primary-600);
 }
 
 .page-intro h3 {
   margin: 0 0 4px;
   font-size: 16px;
   font-weight: 600;
-  color: #0f172a;
+  color: var(--corp-text-primary);
 }
 
 .page-intro p {
   margin: 0;
   font-size: 12.5px;
-  color: #64748b;
+  color: var(--corp-text-secondary);
   line-height: 1.5;
 }
 
 /* 通用卡片 */
 .settings-card {
-  background: #fff;
-  border: 1px solid #e5e7eb;
+  background: var(--bg-surface);
+  border: 1px solid var(--corp-border-light);
   border-radius: 8px;
   box-shadow: 0 1px 2px rgba(15, 23, 42, 0.03);
   overflow: hidden;
@@ -303,8 +303,8 @@ onMounted(() => {
   justify-content: space-between;
   gap: 16px;
   padding: 14px 20px;
-  border-bottom: 1px solid #f1f5f9;
-  background: #fafbfc;
+  border-bottom: 1px solid var(--color-gray-100);
+  background: var(--corp-bg-sunken);
 }
 
 .header-title {
@@ -313,11 +313,11 @@ onMounted(() => {
   gap: 10px;
   font-size: 14px;
   font-weight: 600;
-  color: #0f172a;
+  color: var(--corp-text-primary);
 }
 
 .header-title :deep(.el-icon) {
-  color: #64748b;
+  color: var(--corp-text-secondary);
 }
 
 .card-body {
@@ -333,7 +333,7 @@ onMounted(() => {
 
 .path-label {
   font-size: 12px;
-  color: #94a3b8;
+  color: var(--corp-text-tertiary);
   white-space: nowrap;
   padding-top: 2px;
 }
@@ -341,7 +341,7 @@ onMounted(() => {
 .path-value {
   font-size: 13px;
   font-weight: 500;
-  color: #0f172a;
+  color: var(--corp-text-primary);
   word-break: break-all;
   line-height: 1.5;
 }
@@ -352,7 +352,7 @@ onMounted(() => {
   align-items: center;
   gap: 28px;
   padding-bottom: 20px;
-  border-bottom: 1px solid #f1f5f9;
+  border-bottom: 1px solid var(--color-gray-100);
   margin-bottom: 18px;
 }
 
@@ -364,20 +364,20 @@ onMounted(() => {
 .total-value {
   font-size: 32px;
   font-weight: 700;
-  color: #0f172a;
+  color: var(--corp-text-primary);
   line-height: 1;
 }
 
 .total-unit {
   font-size: 14px;
   font-weight: 500;
-  color: #64748b;
+  color: var(--corp-text-secondary);
   margin-left: 4px;
 }
 
 .total-label {
   font-size: 12px;
-  color: #64748b;
+  color: var(--corp-text-secondary);
   margin-top: 6px;
 }
 
@@ -387,19 +387,19 @@ onMounted(() => {
 
 .progress-track {
   height: 10px;
-  background: #f1f5f9;
+  background: var(--color-gray-100);
   border-radius: 5px;
   overflow: hidden;
   display: flex;
 }
 
 .progress-used {
-  background: #2563eb;
+  background: var(--color-primary-600);
   transition: width 0.3s ease;
 }
 
 .progress-orphaned {
-  background: #94a3b8;
+  background: var(--color-gray-400);
   transition: width 0.3s ease;
 }
 
@@ -422,15 +422,15 @@ onMounted(() => {
   border-radius: 50%;
 }
 
-.legend-dot.used { background: #2563eb; }
-.legend-dot.orphaned { background: #94a3b8; }
+.legend-dot.used { background: var(--color-primary-600); }
+.legend-dot.orphaned { background: var(--color-gray-400); }
 
 .legend-label {
-  color: #64748b;
+  color: var(--corp-text-secondary);
 }
 
 .legend-value {
-  color: #0f172a;
+  color: var(--corp-text-primary);
   font-weight: 500;
 }
 
@@ -448,8 +448,8 @@ onMounted(() => {
   gap: 14px;
   padding: 16px;
   border-radius: 6px;
-  border: 1px solid #e5e7eb;
-  background: #fafbfc;
+  border: 1px solid var(--corp-border-light);
+  background: var(--corp-bg-sunken);
 }
 
 .detail-icon {
@@ -460,9 +460,9 @@ onMounted(() => {
   align-items: center;
   justify-content: center;
   font-size: 18px;
-  background: #fff;
-  color: #64748b;
-  border: 1px solid #e5e7eb;
+  background: var(--bg-surface);
+  color: var(--corp-text-secondary);
+  border: 1px solid var(--corp-border-light);
 }
 
 .detail-info {
@@ -472,37 +472,37 @@ onMounted(() => {
 .detail-value {
   font-size: 18px;
   font-weight: 700;
-  color: #0f172a;
+  color: var(--corp-text-primary);
   line-height: 1.2;
 }
 
 .detail-unit {
   font-size: 12px;
   font-weight: 500;
-  color: #64748b;
+  color: var(--corp-text-secondary);
   margin-left: 2px;
 }
 
 .detail-label {
   font-size: 12px;
-  color: #64748b;
+  color: var(--corp-text-secondary);
   margin-top: 2px;
 }
 
 .detail-count {
   font-size: 11px;
-  color: #94a3b8;
+  color: var(--corp-text-tertiary);
   margin-top: 2px;
 }
 
 .detail-card.has-orphaned {
-  border-color: #fecaca;
-  background: #fef2f2;
+  border-color: var(--color-danger-bg);
+  background: var(--color-danger-bg);
 }
 
 .detail-card.has-orphaned .detail-icon {
-  color: #b91c1c;
-  border-color: #fecaca;
+  color: var(--color-danger-text);
+  border-color: var(--color-danger-bg);
 }
 
 /* 清理区 */
@@ -512,8 +512,8 @@ onMounted(() => {
   justify-content: space-between;
   gap: 16px;
   padding: 14px 16px;
-  background: #fffbeb;
-  border: 1px solid #fde68a;
+  background: var(--color-warning-bg);
+  border: 1px solid var(--color-warning-bg); /* 原 #fde68a 浅黄边框，对齐 --color-warning-bg */
   border-radius: 6px;
   flex-wrap: wrap;
 }
@@ -527,12 +527,12 @@ onMounted(() => {
 .cleanup-title {
   font-size: 13px;
   font-weight: 600;
-  color: #b45309;
+  color: var(--color-warning-text);
 }
 
 .cleanup-desc {
   font-size: 12px;
-  color: #d97706;
+  color: var(--color-warning-600);
 }
 
 .cleanup-actions {
@@ -548,15 +548,15 @@ onMounted(() => {
   justify-content: center;
   gap: 10px;
   padding: 24px;
-  color: #15803d;
+  color: var(--color-success-text);
   font-size: 14px;
-  background: #f0fdf4;
-  border: 1px solid #bbf7d0;
+  background: var(--color-success-bg);
+  border: 1px solid var(--color-success-bg); /* 原 #bbf7d0 浅绿边框，对齐 --color-success-bg */
   border-radius: 6px;
 }
 
 .no-orphaned :deep(.el-icon) {
-  color: #22c55e;
+  color: var(--color-success);
 }
 
 @media (max-width: 720px) {

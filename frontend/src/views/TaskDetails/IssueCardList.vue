@@ -323,6 +323,7 @@ const emit = defineEmits<{
   cancelFp: [detail: IssueDetail]
   locateText: [payload: { detail: IssueDetail; elementId: string }]
   batchFalsePositive: [issueIds: string[], reason?: string]
+  batchAdopt: [issueIds: string[]]
   // Task 42: dwg-vision 专属事件透传
   locateBbox: [detail: IssueDetail]
   openClause: [detail: IssueDetail]
@@ -653,10 +654,9 @@ const handleBatchAdopt = async () => {
       .filter((issue: IssueDetail) => issue.suggestedText && !issue.isFalsePositive)
       .map((issue: IssueDetail) => issue.id)
 
-    // 触发父组件事件
+    // 触发父组件事件（真实采纳结果与提示由父组件 handleBatchAdoptFromIssueList 完成后给出，
+    // 2026-08 修复：此前此处无条件弹"已提交 N 条采纳请求"，与父组件结果提示重复）
     emit('batchAdopt', adoptableIds)
-
-    ElMessage.success(`已提交 ${adoptableIds.length} 条采纳请求`)
 
     // 延迟清空选择，让用户看到反馈
     setTimeout(() => {
