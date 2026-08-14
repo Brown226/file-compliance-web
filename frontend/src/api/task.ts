@@ -36,8 +36,17 @@ export function getTaskDetailsApi(id: string) {
 }
 
 // 获取任务审查进度
+export interface ReviewStageItem {
+  stageKey: string
+  status: 'PENDING' | 'RUNNING' | 'DONE' | 'FAILED' | 'SKIPPED'
+  attemptCount: number
+  error?: string | null
+  fileName?: string | null
+  updatedAt?: string
+}
+
 export function getTaskProgressApi(id: string) {
-  return request.get<{ progress: number; status: string; completedFiles: number; totalFiles: number }>(`/tasks/${id}/progress`)
+  return request.get<{ progress: number; status: string; completedFiles: number; totalFiles: number; stages?: ReviewStageItem[] }>(`/tasks/${id}/progress`)
 }
 
 // 导出任务审查报告(Excel)

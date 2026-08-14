@@ -267,6 +267,9 @@
           :live-issue-count="totalLiveIssueCount"
         />
 
+        <!-- 方案A：审查阶段进度（阶段状态机可视化） -->
+        <ReviewStageProgress :stages="reviewStages" :reviewing="reviewing" />
+
         <div v-if="locateFeedback" class="locate-feedback">
           <el-alert
             :title="locateFeedback.message"
@@ -454,8 +457,10 @@ import {
 import {
   getTaskByIdApi,
   getTaskDetailsApi,
+  getTaskProgressApi,
   toggleFalsePositiveApi,
   toggleAdoptApi,
+  type ReviewStageItem,
 } from '@/api/task'
 import { useWebSocket, type WsMessage } from '@/composables/useWebSocket'
 import request from '@/utils/request'
@@ -465,6 +470,7 @@ import DwgPreviewPanel from '@/views/TaskDetails/DwgPreviewPanel.vue'
 import FalsePositiveDialog from '@/views/TaskDetails/FalsePositiveDialog.vue'
 import ExportMenu from '@/views/TaskDetails/ExportMenu.vue'
 import ReviewProgressBar from '@/views/TaskDetails/ReviewProgressBar.vue'
+import ReviewStageProgress from '@/views/TaskDetails/ReviewStageProgress.vue'
 import SelfCheckReportPanel from '@/views/TaskDetails/SelfCheckReportPanel.vue'
 import StatsDashboard from '@/views/TaskDetails/StatsDashboard.vue'
 import OverviewIssueList from '@/views/TaskDetails/OverviewIssueList.vue'
@@ -485,6 +491,17 @@ const allDetails = ref<TaskDetail[]>([])
 const files = ref<TaskFile[]>([])
 const loading = ref(false)
 const loadingMessage = ref('正在加载审查结果...')
+
+// ===== 方案A：审查阶段状态（stage_update 实时 + 轮询兜底） =====
+const reviewStages = ref<ReviewStageItem[]>([])
+const upsertStage = (stage: ReviewStageItem) => {
+  const idx = reviewStages.value.findIndex((s) => s.stageKey === stage.stageKey)
+  if (idx >= 0) {
+    reviewStages.value[idx] = { ...reviewStages.value[idx], ...stage }
+  } else {
+    reviewStages.value.push(stage)
+  }
+}
 
 // ===== 文件预览/选择（提前声明，供 useSelfCheck 和 useTextLocator 使用）=====
 const selectedFileId = ref<string | null>(null)
@@ -936,6 +953,20 @@ const handleWsMessage = (msg: WsMessage) => {
       if (msg.progressType === 'completed' || msg.progressType === 'failed') {
         finishReview()
       }
+      // 方案A：阶段状态更新（stage_update：{ step: stageKey, message, fileName }）
+      if (msg.progressType === 'stage_update' && msg.step) {
+        const stageKey = msg.step as string
+        const message = msg.message as string
+        const isFail = message.includes('阶段失败')
+        const isDone = message.includes('阶段完成')
+        upsertStage({
+          stageKey,
+          status: isFail ? 'FAILED' : isDone ? 'DONE' : 'RUNNING',
+          attemptCount: 1,
+          error: isFail ? message : null,
+          fileName: msg.fileName ?? null,
+        })
+      }
       // P0-4: OCR 降级告警
       if (msg.progressType === 'ocr_degraded' && msg.fileName) {
         if (!ocrDegradedFiles.value.includes(msg.fileName)) {
@@ -983,6 +1014,12 @@ const startPollFallback = () => {
           switchToFileContext(files.value[0].id)
         }
         finishReview()
+      }
+      // 方案A：阶段状态轮询兜底（WS 断连时进度条仍可更新）
+      const progRes = await getTaskProgressApi(taskId.value).catch(() => null)
+      const progData = progRes?.data as any
+      if (progData?.stages?.length) {
+        reviewStages.value = progData.stages
       }
     } catch (_) {
       // polling error — swallow, retry next tick
@@ -1042,10 +1079,16 @@ const fetchData = async (silent = false) => {
     loading.value = true
   }
   try {
-    const [taskRes, detailsRes] = await Promise.all([
+    const [taskRes, detailsRes, progressRes] = await Promise.all([
       getTaskByIdApi(taskId.value),
       getTaskDetailsApi(taskId.value),
+      // 方案A：阶段状态摘要（页面加载/重新审查后初始化展示）
+      getTaskProgressApi(taskId.value).catch(() => null),
     ])
+    const progressData = progressRes?.data as any
+    if (progressData?.stages?.length) {
+      reviewStages.value = progressData.stages
+    }
     task.value = taskRes.data
     // P1-7: 从 stats.warnings 恢复空库告警（轮询/刷新页面后仍可见）
     const taskStatsWarnings = (task.value as any)?.stats?.warnings
