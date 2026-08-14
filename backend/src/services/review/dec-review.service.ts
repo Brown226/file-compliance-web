@@ -21,6 +21,7 @@
 
 import { PipelineContext, PipelineReviewConfig } from '../review-pipeline/types';
 import { ReviewIssue, SourceReference } from '../llm/llm.service';
+import { StageRunnerHandle } from './stage-runner.service';
 import { CompletenessReviewService } from './completeness-review.service';
 import { FactCheckService } from './fact-check.service';
 import { TextStyleCheckService } from './text-style-check.service';
@@ -37,60 +38,123 @@ export interface DecReviewResult {
 }
 
 export class DecReviewService {
+  /**
+   * DEC 双分支审查编排（方案A：7 阶段状态机）
+   *
+   * 阶段：completeness → compliance（3 分支并行）→ smart_judge → image_text → text_cross
+   *       → rule_fallback（SKIPPED 例外）→ merge
+   * 阶段记录开关：ctx.stageRunner 注入时启用（生产路径，review.service 注入）；
+   * 未注入时纯执行不落库（默认 no-op，兼容现有测试）。
+   */
   static async runDecStrategy(
     text: string,
     ctx: PipelineContext,
     config: PipelineReviewConfig,
   ): Promise<DecReviewResult> {
+    const runner = (ctx as any).stageRunner as StageRunnerHandle | undefined;
+    const stage = <T extends ReviewIssue[] | null | undefined>(
+      key: string,
+      fn: (resumed?: ReviewIssue[]) => Promise<T>,
+      opts?: { allowSkip?: boolean },
+    ): Promise<T> => {
+      if (!runner) return fn() as Promise<T>;
+      return runner.runStage(key, fn, opts);
+    };
+
     console.log(`[DecReview] 开始 DEC 双分支审查，审点数: ${ctx.checkpoints?.length || 0}`);
 
-    // ===== 双分支并行 =====
-    const [completenessResult, complianceResult] = await Promise.all([
-      this.runCompletenessBranch(text, ctx, config),
-      this.runComplianceBranch(text, ctx, config),
-    ]);
+    // ===== 阶段 1：完整性分支（骨架级） =====
+    let completenessSources: SourceReference[] | undefined;
+    const completenessIssues = await stage('completeness', async () => {
+      const r = await this.runCompletenessBranch(text, ctx, config);
+      completenessSources = r.sources;
+      return r.issues;
+    });
+    const completenessResult = { issues: completenessIssues, sources: completenessSources };
 
-    console.log(`[DecReview] 完整性: ${completenessResult.issues.length} 条，遵从性: ${complianceResult.issues.length} 条`);
+    // ===== 阶段 2：遵从性-第一层 3 分支并行（合规/事实/文本） =====
+    const complianceIssues = await stage('compliance', async () => {
+      return this.runComplianceFirstLayer(text, ctx, config);
+    });
+    console.log(`[DecReview] 第一层 3 分支合计: ${complianceIssues.length} 条`);
 
-    // ===== 合并结果 =====
-    const allIssues: ReviewIssue[] = [
-      ...completenessResult.issues.map(i => ({ ...i, reviewSource: 'COMPLETENESS' as any })),
-      // DEC-1 修复：不覆盖已有的 RULE_FALLBACK 标记（runComplianceBranch 已打标），仅无标记时补 COMPLIANCE
-      ...complianceResult.issues.map(i => ({ ...i, reviewSource: (i as any).reviewSource || 'COMPLIANCE' as any })),
-    ];
+    // ===== 阶段 3：智能判标（第二层 ①） =====
+    let allComplianceIssues = await stage('smart_judge', async (resumed) => {
+      const base = resumed || complianceIssues;
+      return SmartJudgeService.judge(base, ctx);
+    });
+
+    // ===== 阶段 4：图文复核（第二层 ②，无图纸零噪音） =====
+    allComplianceIssues = await stage('image_text', async (resumed) => {
+      const base = resumed || allComplianceIssues;
+      return ImageTextCheckService.check(base, ctx, text);
+    });
+
+    // ===== 阶段 5：文本交叉复核（第二层 ③） =====
+    allComplianceIssues = await stage('text_cross', async (resumed) => {
+      const base = resumed || allComplianceIssues;
+      return TextCrossCheckService.check(base, ctx);
+    });
+
+    console.log(`[DecReview] 第二层交叉复核后: ${allComplianceIssues.length} 条`);
+
+    // ===== 阶段 6：规则兜底（第三层；失败/无产出 → SKIPPED，不阻塞主流程） =====
+    const ruleIssues = await stage('rule_fallback', async (resumed) => {
+      const base = resumed || allComplianceIssues;
+      const issues = await this.runRuleFallback(text, ctx, base);
+      return issues;
+    }, { allowSkip: true });
+    console.log(`[DecReview] 第三层规则兜底: ${(ruleIssues || []).length} 条`);
+
+    // ===== 阶段 7：合并（reviewSource 标记） =====
+    const mergedIssues = await stage('merge', async () => {
+      const merged: ReviewIssue[] = [
+        ...(completenessResult?.issues || []).map(i => ({ ...i, reviewSource: 'COMPLETENESS' as any })),
+        // DEC-1 修复：不覆盖已有的 RULE_FALLBACK 标记，仅无标记时补 COMPLIANCE
+        ...allComplianceIssues.map(i => ({ ...i, reviewSource: (i as any).reviewSource || 'COMPLIANCE' as any })),
+        ...(ruleIssues || []).map(i => ({ ...i, reviewSource: 'RULE_FALLBACK' as any })),
+      ];
+      return merged;
+    });
+
+    console.log(`[DecReview] 完整性: ${completenessResult?.issues?.length || 0} 条，遵从性: ${mergedIssues.length} 条`);
 
     return {
-      issues: allIssues,
+      issues: mergedIssues,
       engine: 'dec-review',
-      sources: [...(completenessResult.sources || []), ...(complianceResult.sources || [])],
+      sources: [...(completenessResult?.sources || [])],
     };
   }
 
   /**
    * 分支A：完整性审核（骨架级，5min）
+   *
+   * 失败语义：注入 stage runner（生产）时抛错 → 阶段 FAILED（修假完成）；
+   * 未注入（单测/无状态场景）时返回空，保持兼容。
    */
   private static async runCompletenessBranch(
     text: string,
     ctx: PipelineContext,
     config: PipelineReviewConfig,
   ): Promise<{ issues: ReviewIssue[]; sources?: SourceReference[] }> {
+    const runner = (ctx as any).stageRunner as StageRunnerHandle | undefined;
     try {
       return await CompletenessReviewService.check(text, ctx, config);
     } catch (e) {
+      if (runner) throw e;
       console.error('[DecReview] 完整性审核失败:', e);
       return { issues: [] };
     }
   }
 
   /**
-   * 分支B：遵从性审核（内容级，30min，3 分支并行 + 3 层交叉复核 + 规则兜底）
+   * 分支B 第一层：遵从性 3 分支并行（合规/事实/文本）
    */
-  private static async runComplianceBranch(
+  private static async runComplianceFirstLayer(
     text: string,
     ctx: PipelineContext,
     config: PipelineReviewConfig,
-  ): Promise<{ issues: ReviewIssue[]; sources?: SourceReference[] }> {
-    // ===== 第一层：3 分支并行 =====
+  ): Promise<ReviewIssue[]> {
     const complianceCheckpoints = (ctx.checkpoints || []).filter(c => c.auditDimension === 'compliance');
     const factCheckpoints = (ctx.checkpoints || []).filter(c => c.auditDimension === 'fact');
     const textCheckpoints = (ctx.checkpoints || []).filter(c => c.auditDimension === 'text');
@@ -103,26 +167,7 @@ export class DecReviewService {
       this.runTextStyleCheck(text, ctx, textCheckpoints, config),
     ]);
 
-    let allComplianceIssues = [...complianceIssues, ...factIssues, ...textIssues];
-    console.log(`[DecReview] 第一层 3 分支合计: ${allComplianceIssues.length} 条`);
-
-    // ===== 第二层：3 层交叉复核 =====
-    // ① 智能判标
-    allComplianceIssues = await SmartJudgeService.judge(allComplianceIssues, ctx);
-    // ② 图文复核（结构化先行：图纸标准引用/关键参数 vs 设计文本；视觉模型扩展点见 ImageTextCheckService）
-    allComplianceIssues = await ImageTextCheckService.check(allComplianceIssues, ctx, text);
-    // ③ 文本复核
-    allComplianceIssues = await TextCrossCheckService.check(allComplianceIssues, ctx);
-
-    console.log(`[DecReview] 第二层交叉复核后: ${allComplianceIssues.length} 条`);
-
-    // ===== 第三层：规则兜底 =====
-    const ruleIssues = await this.runRuleFallback(text, ctx, allComplianceIssues);
-    console.log(`[DecReview] 第三层规则兜底: ${ruleIssues.length} 条`);
-
-    return {
-      issues: [...allComplianceIssues, ...ruleIssues.map(i => ({ ...i, reviewSource: 'RULE_FALLBACK' as any }))],
-    };
+    return [...complianceIssues, ...factIssues, ...textIssues];
   }
 
   /**
@@ -197,7 +242,7 @@ export class DecReviewService {
     text: string,
     ctx: PipelineContext,
     existingIssues: ReviewIssue[],
-  ): Promise<ReviewIssue[]> {
+  ): Promise<ReviewIssue[] | null> {
     try {
       // 构建规则引擎需要的 FileContext
       const ruleIssues = await runAllRules({
@@ -233,8 +278,9 @@ export class DecReviewService {
       console.log(`[DecReview] 规则兜底: 规则检出 ${ruleIssues.length} 条，去重后新增 ${newIssues.length} 条`);
       return newIssues;
     } catch (e) {
-      console.error('[DecReview] 规则兜底执行失败，返回空:', e);
-      return [];
+      // 返回 null 表示"执行失败"（stage runner 记 SKIPPED，不阻塞主流程）；调用方以空数组兜底
+      console.error('[DecReview] 规则兜底执行失败，降级跳过:', e);
+      return null;
     }
   }
 }

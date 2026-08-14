@@ -182,3 +182,46 @@ describe('DecReviewService（DEC 双分支审查编排）', () => {
     expect(result.issues.length).toBeGreaterThanOrEqual(1);
   });
 });
+
+describe('DecReviewService（方案A：stage runner 注入）', () => {
+  function makeFakeRunner() {
+    const calls: string[] = [];
+    const runner: any = {
+      enabled: true,
+      mode: 'DEC_REVIEW',
+      runStage: vi.fn(async (key: string, fn: any, opts?: any) => {
+        calls.push(key);
+        return fn();
+      }),
+      markSkipped: vi.fn(),
+    };
+    return { runner, calls };
+  }
+
+  it('注入 runner 后按 7 阶段顺序执行：completeness → compliance → smart_judge → image_text → text_cross → rule_fallback → merge', async () => {
+    const { runner, calls } = makeFakeRunner();
+    const ctx = makeCtx({ checkpoints: [COMPLIANCE_CP], stageRunner: runner });
+    await DecReviewService.runDecStrategy('设计文本', ctx, makeConfig());
+    expect(calls).toEqual([
+      'completeness', 'compliance', 'smart_judge', 'image_text', 'text_cross', 'rule_fallback', 'merge',
+    ]);
+  });
+
+  it('完整性分支失败且注入 runner → 显式抛错（修假完成，不再静默返回空）', async () => {
+    const { runner } = makeFakeRunner();
+    const ctx = makeCtx({ checkpoints: [COMPLIANCE_CP], stageRunner: runner });
+    const completenessSpy2 = vi.spyOn(CompletenessReviewService, 'check').mockRejectedValue(new Error('完整性服务崩溃'));
+    await expect(DecReviewService.runDecStrategy('设计文本', ctx, makeConfig())).rejects.toThrow('完整性服务崩溃');
+    completenessSpy2.mockRestore();
+  });
+
+  it('规则兜底失败（runner 注入）→ 降级为 null 不抛错，整体结果正常', async () => {
+    const { runner } = makeFakeRunner();
+    const ctx = makeCtx({ checkpoints: [COMPLIANCE_CP], stageRunner: runner });
+    const rulesSpy = vi.spyOn(rulesModule, 'runAllRules').mockRejectedValue(new Error('规则引擎崩溃'));
+    const result = await DecReviewService.runDecStrategy('设计文本', ctx, makeConfig());
+    expect(result.issues.length).toBeGreaterThanOrEqual(1);
+    expect(result.issues.every(i => (i as any).reviewSource !== 'RULE_FALLBACK')).toBe(true);
+    rulesSpy.mockRestore();
+  });
+});

@@ -9,6 +9,7 @@ import { TextExtractionService } from '../review-pipeline/text-extraction.servic
 import { ReviewPlan, ReviewEvidenceSource, normalizeEvidenceSources, isReviewObjective } from '../../types/review-plan';
 import { ReviewModeType } from '../review-pipeline/types';
 import { resolveFilePath } from '../../config/upload';
+import { StageRunner } from '../review/stage-runner.service';
 
 export class TaskService {
   /** 将前端 entryModule 映射为 ReviewMode 枚举值 */
@@ -572,6 +573,9 @@ export class TaskService {
     if (task.status === 'COMPLETED') progress = 100;
     if (task.status === 'PENDING') progress = 0;
 
+    // 方案A：阶段状态机摘要（前端轮询兜底展示阶段进度）
+    const stages = await StageRunner.getTaskStageSummary(taskId);
+
     return {
       taskId: task.id,
       title: task.title,
@@ -582,6 +586,7 @@ export class TaskService {
       totalDetails,
       progress,
       files,
+      stages,
     };
   }
 

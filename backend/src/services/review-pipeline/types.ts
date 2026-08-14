@@ -186,6 +186,8 @@ export interface PipelineContext {
     auditDimension: string;
     checkPrompt: string | null;
   }>;
+  /** 方案A：审查阶段状态机句柄（review.service 注入；undefined = 阶段记录关闭，纯执行不落库） */
+  stageRunner?: import('../review/stage-runner.service').StageRunnerHandle;
 
 }
 

@@ -22,6 +22,7 @@ import { StandardRefCheckService } from '../review-pipeline/standard-ref-check.s
 import { getModeCapabilitiesConfig } from '../review-pipeline/mode-config.service';
 import { getMaxConcurrentReviews } from '../../utils/system-config';
 import { normalizeText } from './falsePositiveLibrary.service';
+import { StageRunner, StageRunnerHandle } from './stage-runner.service';
 
 /**
  * �����ŷ��� - ���׶η�����������
@@ -540,6 +541,14 @@ export class ReviewService {
           }
         }
       }
+
+      // ===== 方案A：任务级 preload 阶段标记（DEC_REVIEW 审点预加载；alwaysRun 每次执行保证审点新鲜） =====
+      if (reviewMode === 'DEC_REVIEW') {
+        await StageRunner.handle(taskId, undefined, reviewMode).runStage('preload', async () => {
+          return (decCheckpoints || []).map(c => c.id);
+        }, { alwaysRun: true }).catch((e: any) => console.warn('[Stage] preload 标记失败:', e.message));
+      }
+
       // ===== 加载条文库条目（供 LIBRARY_REVIEW 语义路径使用） =====
       // 仅当未升级为 DEC_REVIEW（审点库为空/无审点字段）时才需要；
       // 已升级场景由 DEC 双分支消费 checkpoints，此处跳过避免重复查询。
@@ -596,6 +605,8 @@ const fileContexts = task.files.map(file => {
           reviewPoints,
           corePurposes,
           userId: (task as any).creatorId,
+          // 方案A：阶段状态机句柄（文件级；DEC 内部 7 细粒度阶段，其他模式 fast/ai）
+          stageRunner: StageRunner.handle(taskId, file.id, reviewMode as string),
         };
 
         // �� DWG ǰ�� WASM ���ݣ�ʹ�� DwgHandlerService ͳһ����
@@ -645,6 +656,12 @@ const fileContexts = task.files.map(file => {
           const fpLibrarySet = new Set<string>();
           for (const fp of allFps) {
             fpLibrarySet.add(normalizeText(fp.originalText));
+          }
+          // 方案A：任务级 preload 阶段标记（非 DEC 模式；DEC 的 preload 在审点预加载段已标记）
+          if (reviewMode !== 'DEC_REVIEW') {
+            await StageRunner.handle(taskId, undefined, reviewMode as string).runStage('preload', async () => {
+              return fpLibrarySet.size > 0 ? [...fpLibrarySet].slice(0, 50) : [];
+            }, { alwaysRun: true }).catch((e: any) => console.warn('[Stage] preload 标记失败:', e.message));
           }
           if (fpLibrarySet.size > 0) {
             for (const { ctx } of fileContexts) {
@@ -895,7 +912,9 @@ const fileContexts = task.files.map(file => {
       const phase1FailedCount = fastFailedCount;
       const successCount = needsAI ? slowSuccessCount : fastSuccessCount;
       const failedCount = needsAI ? (phase1FailedCount + slowFailedCount) : fastFailedCount;
-      const newStatus = (failedCount >= totalFiles) ? 'FAILED' : 'COMPLETED';
+      // 方案A：阶段状态机 — 存在 FAILED 阶段记录（DEC 细粒度阶段 / ai 阶段失败）→ 任务 FAILED（修假完成）
+      const hasStageFailed = await StageRunner.hasFailedStage(taskId);
+      const newStatus = (hasStageFailed || failedCount >= totalFiles) ? 'FAILED' : 'COMPLETED';
 
       // �־û�ʵ��ʹ�õ� AI ������Ϣ�������¼
       const primaryEngine = enginesUsed.size > 0 ? Array.from(enginesUsed).join('+') : (needsAI ? 'none' : undefined);
@@ -1259,6 +1278,15 @@ const fileContexts = task.files.map(file => {
       allFastIssues.push(...stdRefData);
     }
 
+    // ===== 方案A：fast 阶段标记（幂等，每次执行；规则+标准引用结果已写库，skipDuplicates 保护） =====
+    try {
+      await (ctx as any).stageRunner?.runStage('fast', async () => {
+        return allFastIssues as any[];
+      }, { alwaysRun: true });
+    } catch (e: any) {
+      console.warn(`[Stage] ${taskId} fast 阶段标记失败（不影响主流程）:`, e.message);
+    }
+
     // ���ı�ʱд�뾯��
     if (!fastResult.textLength && allFastIssues.length === 0) {
       const isDwg = file.fileType.toLowerCase() === 'dwg';
@@ -1526,8 +1554,24 @@ const fileContexts = task.files.map(file => {
     ctx.scene = ctx.scene || getModeScene(ctx.reviewMode);
 
     let aiResult;
+    const stageRunner = (ctx as any).stageRunner as StageRunnerHandle | undefined;
     try {
-      aiResult = await handler(ctx);
+      if (stageRunner && ctx.reviewMode !== 'DEC_REVIEW') {
+        // 方案A：ai 阶段（断点续跑：已有 DONE 记录 → 跳过 handler，直接复用裁剪产物）
+        const issues = await stageRunner.runStage('ai', async (resumed) => {
+          if (resumed) return resumed;
+          const r = await handler(ctx);
+          return r.aiIssues || [];
+        });
+        aiResult = {
+          aiIssues: issues || [],
+          usedEngine: 'resumed',
+          degraded: false,
+        };
+      } else {
+        // DEC_REVIEW：内部 7 细粒度阶段由 DecReviewService 管理（替代 ai 单节点）
+        aiResult = await handler(ctx);
+      }
     } catch (e) {
       console.error(`[Review] handler ִ��ʧ��: ${ctx.fileName}`, e);
       throw e;

@@ -262,6 +262,40 @@ model TaskDetail {
   @@map("task_details")
 }
 
+// ===== 方案A：审查阶段状态机（ReviewStage，2026-08-13 新增）=====
+// 通用阶段表：记录每个审查任务的阶段执行状态与中间产物（issues 快照），
+// 支撑断点续跑（重试时跳过 DONE 阶段）、阶段可观测（前端进度条）与审计追溯。
+// - taskId + fileId + stageKey 唯一；fileId=NULL 表示任务级阶段（如 preload 审点预加载）
+// - payload 只存裁剪后的核心字段（见 stage-runner.service.ts trimIssuesPayload），512KB 防御上限
+// - RUNNING 视为可重跑（幂等：DONE 阶段重跑无副作用，最终落库走 task_details 唯一约束）
+enum ReviewStageStatus {
+  PENDING
+  RUNNING
+  DONE
+  FAILED
+  SKIPPED // 业务跳过（无审点/无文本/无图纸），不算失败
+}
+
+model ReviewStage {
+  id           String             @id @default(uuid())
+  taskId       String
+  fileId       String? // NULL = 任务级阶段（审点预加载）
+  mode         String // reviewMode 快照（LIBRARY_REVIEW/DEC_REVIEW/...）
+  stageKey     String // preload/fast/ai（通用）| completeness/compliance/smart_judge/image_text/text_cross/rule_fallback/merge（DEC 专属）
+  status       ReviewStageStatus  @default(PENDING)
+  attemptCount Int                @default(0)
+  payload      Json? // 阶段产物 issues 快照（核心字段，见 3.4 裁剪规则）
+  error        String? // 失败原因（message + 截断 stack）
+  startedAt    DateTime?
+  finishedAt   DateTime?
+  createdAt    DateTime           @default(now())
+  updatedAt    DateTime           @updatedAt
+
+  @@unique([taskId, fileId, stageKey])
+  @@index([taskId, status])
+  @@map("review_stages")
+}
+
 model AuditLog {
   id        String   @id @default(uuid())
   action    String
