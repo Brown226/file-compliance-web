@@ -28,6 +28,8 @@ export interface SourceReference {
   document_name: string
   similarity: number
   content: string
+  /** P0-2（OPT-016 接通）：来源未通过真实性校验（检索结果中不存在），前端标"引用存疑" */
+  unverified?: boolean
 }
 
 export interface IssueDetail {
@@ -52,6 +54,8 @@ export interface IssueDetail {
   sourceReferences?: SourceReference[]
   isFalsePositive?: boolean
   fpReason?: string
+  /** P2-2: 是否已采纳建议（单条采纳按钮） */
+  adopted?: boolean
   // 合同审查专属字段
   riskLevel?: 'HIGH' | 'MEDIUM' | 'LOW'
   clauseType?: string

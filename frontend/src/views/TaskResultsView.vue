@@ -89,6 +89,25 @@
           </template>
         </el-alert>
       </div>
+      <!-- P0-4: 持久化降级原因横幅（task.degradedReason，刷新后依然可见） -->
+      <div v-if="task?.degradedReason" class="ocr-degraded-banner">
+        <el-alert
+          :title="'本次审查存在降级：' + task.degradedReason.split('; ').length + ' 项环节未完整执行'"
+          type="warning"
+          show-icon
+          :closable="true"
+          @close="task.degradedReason = null"
+        >
+          <template #default>
+            <div style="margin-top:4px; font-size:13px;">
+              <div v-for="(r, i) in task.degradedReason.split('; ')" :key="i" style="margin-bottom:2px;">
+                ⚠️ {{ r }}
+              </div>
+              <p style="margin:4px 0 0; color:var(--color-warning-text);">「未发现问题」可能是「没审到」而非「真合规」，请结合人工检查确认。</p>
+            </div>
+          </template>
+        </el-alert>
+      </div>
       <!-- 左侧：文件预览 -->
       <div class="left-panel" :style="leftPanelStyle" ref="leftPanel">
         <div class="panel-header">
@@ -335,9 +354,30 @@
             />
 
             <!-- ===== 审查通过（无问题）===== -->
-            <div v-if="task?.status === 'COMPLETED' && issueDetails.length === 0" class="summary-pass">
-              <el-icon color="var(--color-success)" :size="24"><CircleCheckFilled /></el-icon>
-              <span>审查完成，未发现需要处理的问题</span>
+            <!-- P0-6：存在空库告警/跳过文件时，绿屏降级为警示态并展示原因（"没审到"≠"通过"） -->
+            <div v-if="task?.status === 'COMPLETED' && issueDetails.length === 0" class="summary-pass" :class="{ 'summary-pass-warn': reviewIncomplete }">
+              <el-icon :color="reviewIncomplete ? 'var(--color-warning)' : 'var(--color-success)'" :size="24">
+                <component :is="reviewIncomplete ? WarningFilled : CircleCheckFilled" />
+              </el-icon>
+              <span>{{ reviewIncomplete
+                ? '审查完成，未发现明确问题——但存在未完整审查项（见下方说明）'
+                : '审查完成，未发现需要处理的问题' }}</span>
+            </div>
+
+            <!-- P0-6：未完整审查原因明细（空库告警 + 跳过文件 + NO_RESULT 覆盖范围说明） -->
+            <div v-if="reviewIncomplete" class="incomplete-review-detail">
+              <div v-for="(w, i) in libEmptyWarnings" :key="`lib-${i}`" class="incomplete-review-item">
+                <el-icon :size="13"><WarningFilled /></el-icon>
+                <span>{{ w }}</span>
+              </div>
+              <div v-if="fileStatusSummary.skipped > 0" class="incomplete-review-item">
+                <el-icon :size="13"><WarningFilled /></el-icon>
+                <span>{{ fileStatusSummary.skipped }} 个文件因无可用文本未执行 AI 审查，请人工检查</span>
+              </div>
+              <div v-for="item in noResultDetailItems" :key="item.fileId || item.reason" class="incomplete-review-item is-muted">
+                <el-icon :size="13"><InfoFilled /></el-icon>
+                <span><b>{{ item.fileName }}</b>：{{ item.reason }}</span>
+              </div>
             </div>
 
             <!-- ===== 问题预览列表 ===== -->
@@ -353,14 +393,16 @@
 
           <!-- Tab 2: 问题清单（DEC_REVIEW 时拆为完整性+遵从性双清单，共用此内容区）-->
           <div v-if="showIssueListTab" class="tab-pane" style="height:100%; display:flex; flex-direction:column;">
-            <!-- 审查通过空状态 -->
+            <!-- 审查通过空状态（P0-6：存在未完整审查项时降级为警示态） -->
             <EmptyState
               v-if="!loading && task?.status === 'COMPLETED' && currentTabIssues.length === 0"
-              :icon="CircleCheckFilled"
-              title="审查通过"
-              description="未发现需要处理的问题，文档质量良好"
-              variant="success"
-              icon-color="var(--color-success)"
+              :icon="reviewIncomplete ? WarningFilled : CircleCheckFilled"
+              :title="reviewIncomplete ? '审查基本通过（部分未完整）' : '审查通过'"
+              :description="reviewIncomplete
+                ? '未发现需要处理的问题，但存在空库告警或跳过文件（见审查摘要页说明），请结合人工检查确认'
+                : '未发现需要处理的问题，文档质量良好'"
+              :variant="reviewIncomplete ? 'warning' : 'success'"
+              :icon-color="reviewIncomplete ? 'var(--color-warning)' : 'var(--color-success)'"
               :icon-size="56"
             >
               <template #actions>
@@ -395,6 +437,7 @@
               @open-clause="handleOpenClauseFromIssueList"
               @cancel-fp="handleCancelFalsePositive"
               @open-fp-dialog="(detail) => handleFalsePositive(detail)"
+              @toggle-adopt="handleToggleAdoptFromIssueList"
               @batch-false-positive="handleBatchFalsePositiveFromIssueList"
               @batch-adopt="handleBatchAdoptFromIssueList"
             />
@@ -858,10 +901,15 @@ const issueListRef = ref<InstanceType<typeof IssueCardList> | null>(null)
 // ===== 审查统计（使用 Composable）=====
 const {
   reviewSummary, reviewPlanSummary,
-  filteredDetails, noResultEntries, issueDetails, noResultReasons,
+  filteredDetails, noResultEntries, issueDetails, noResultReasons, noResultDetailItems,
   totalIssuesExclSummary, errorIssues, warningIssues, infoIssues, standardRefIssues,
   fileStatusSummary, tabBadges, getTabBadge,
 } = useReviewStats(task, allDetails, files, filterFileId, runtimeFileStatus)
+
+// ===== P0-6（整改报告）：审查是否"未完整"——存在空库告警或跳过文件时，绿屏降级为警示态 =====
+const reviewIncomplete = computed(() =>
+  libEmptyWarnings.value.length > 0 || fileStatusSummary.value.skipped > 0
+)
 
 // ===== DEC_REVIEW 双清单过滤（依赖 issueDetails，须在 useReviewStats 之后）=====
 const completenessIssues = computed(() =>
@@ -1304,6 +1352,19 @@ const handleBatchAdoptFromIssueList = async (issueIds: string[]) => {
   } catch (e: any) {
     console.error('批量采纳失败:', e)
     ElMessage.error('批量采纳失败')
+  }
+}
+
+// P2-2: 单条采纳/取消采纳（不限文件类型）
+const handleToggleAdoptFromIssueList = async (detail: TaskDetail) => {
+  const next = !detail.adopted
+  try {
+    await toggleAdoptApi(detail.id, { adopted: next })
+    detail.adopted = next
+    ElMessage.success(next ? '已采纳该建议' : '已取消采纳')
+  } catch (e: any) {
+    console.error('采纳操作失败:', e)
+    ElMessage.error('采纳操作失败')
   }
 }
 
@@ -1888,6 +1949,42 @@ onUnmounted(() => {
   font-size: 14px;
   color: var(--color-success);
   font-weight: 500;
+}
+
+/* P0-6：存在未完整审查项时绿屏降级为警示态 */
+.summary-pass-warn {
+  background: rgba(230, 162, 60, 0.08);
+  color: var(--color-warning);
+}
+
+/* P0-6：未完整审查原因明细 */
+.incomplete-review-detail {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 10px;
+  padding: 12px 16px;
+  background: rgba(230, 162, 60, 0.05);
+  border: 1px solid rgba(230, 162, 60, 0.25);
+  border-radius: var(--radius-md);
+  font-size: 12.5px;
+  color: var(--corp-text-secondary);
+}
+
+.incomplete-review-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  line-height: 1.6;
+}
+
+.incomplete-review-item.is-muted {
+  opacity: 0.85;
+}
+
+.incomplete-review-item b {
+  color: var(--corp-text-primary);
+  font-weight: 600;
 }
 
 /* 响应式（1200px 断点合并：column 布局优先；原重复断点的 left-panel 32% 宽度覆盖已删除） */

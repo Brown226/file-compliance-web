@@ -160,6 +160,17 @@
               <el-icon :size="14"><WarningFilled /></el-icon>
             </el-button>
           </el-tooltip>
+          <!-- P2-2: 单条采纳建议（不限文件类型，此前仅 docx 有批量采纳入口） -->
+          <el-tooltip :content="detail.adopted ? '取消采纳' : '采纳建议'" placement="top" :show-after="300">
+            <el-button
+              circle
+              size="small"
+              :class="['adopt-action-btn', { 'is-adopted': detail.adopted }]"
+              @click="emit('toggleAdopt', detail)"
+            >
+              <el-icon :size="14"><CircleCheckFilled /></el-icon>
+            </el-button>
+          </el-tooltip>
         </div>
         <!-- 展开箭头 -->
         <el-icon class="expand-arrow" :class="{ rotated: cardExpanded }"><ArrowDown /></el-icon>
@@ -329,6 +340,9 @@
                 <template #title>
                   <span class="source-title">
                     {{ ref.document_name || `参考文档 ${idx + 1}` }}
+                    <el-tag size="small" type="warning" effect="plain" round v-if="ref.unverified" title="该引用未在检索结果/原文中核实，可能由 AI 编造">
+                      引用存疑
+                    </el-tag>
                     <el-tag size="small" type="info" effect="plain" round v-if="ref.similarity != null">
                       {{ (Math.min(ref.similarity, 1) * 100).toFixed(1) }}%
                     </el-tag>
@@ -423,6 +437,8 @@ const emit = defineEmits<{
   copyHandleId: [handleId: string]
   openFpDialog: [detail: IssueDetail]
   cancelFp: [detail: IssueDetail]
+  /** P2-2: 单条采纳/取消采纳 */
+  toggleAdopt: [detail: IssueDetail]
   toggleSelect: [issueId: string, isSelected: boolean]
   selectFileById: [fileId: string]
   // Task 42: dwg-vision 专属事件

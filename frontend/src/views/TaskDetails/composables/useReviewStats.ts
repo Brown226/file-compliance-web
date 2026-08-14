@@ -154,6 +154,15 @@ export function useReviewStats(
       .filter(Boolean)
   )
 
+  // P0-6（整改报告）：NO_RESULT 原因带文件维度，供结果页"未完整审查"警示渲染
+  const noResultDetailItems = computed(() =>
+    noResultEntries.value.map((d: any) => ({
+      fileId: d.fileId,
+      fileName: files.value.find((f: any) => f.id === d.fileId)?.fileName || '任务级',
+      reason: d.description || '未记录原因',
+    }))
+  )
+
   const totalIssuesExclSummary = computed(() => issueDetails.value.length)
   const errorIssues = computed(() => issueDetails.value.filter((d: any) => d.severity === 'error'))
   const warningIssues = computed(() => issueDetails.value.filter((d: any) => d.severity === 'warning'))
@@ -226,6 +235,7 @@ export function useReviewStats(
     noResultEntries,
     issueDetails,
     noResultReasons,
+    noResultDetailItems,
     totalIssuesExclSummary,
     errorIssues,
     warningIssues,

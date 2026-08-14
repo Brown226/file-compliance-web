@@ -206,6 +206,7 @@
                   @copy-handle-id="(handleId: string) => $emit('copyHandleId', handleId)"
                   @open-fp-dialog="(detail: IssueDetail) => $emit('openFpDialog', detail)"
                   @cancel-fp="(detail: IssueDetail) => $emit('cancelFp', detail)"
+                  @toggle-adopt="(detail: IssueDetail) => $emit('toggleAdopt', detail)"
                   @toggle-select="toggleIssueSelection"
                   @select-file-by-id="(fileId: string) => $emit('selectFileById', fileId)"
                   @locate-bbox="(detail: IssueDetail) => $emit('locateBbox', detail)"
@@ -244,6 +245,7 @@
                 @copy-handle-id="(handleId) => $emit('copyHandleId', handleId)"
                 @open-fp-dialog="(detail) => $emit('openFpDialog', detail)"
                 @cancel-fp="(detail) => $emit('cancelFp', detail)"
+                @toggle-adopt="(detail) => $emit('toggleAdopt', detail)"
                 @toggle-select="toggleIssueSelection"
                 @select-file-by-id="(fileId) => $emit('selectFileById', fileId)"
                 @locate-bbox="(detail) => $emit('locateBbox', detail)"
@@ -269,6 +271,7 @@
             @copy-handle-id="(handleId) => $emit('copyHandleId', handleId)"
             @open-fp-dialog="(detail) => $emit('openFpDialog', detail)"
             @cancel-fp="(detail) => $emit('cancelFp', detail)"
+            @toggle-adopt="(detail) => $emit('toggleAdopt', detail)"
             @toggle-select="toggleIssueSelection"
             @select-file-by-id="(fileId) => $emit('selectFileById', fileId)"
             @locate-bbox="(detail) => $emit('locateBbox', detail)"
@@ -321,6 +324,8 @@ const emit = defineEmits<{
   copyHandleId: [handleId: string]
   openFpDialog: [detail: IssueDetail]
   cancelFp: [detail: IssueDetail]
+  /** P2-2: 单条采纳透传 */
+  toggleAdopt: [detail: IssueDetail]
   locateText: [payload: { detail: IssueDetail; elementId: string }]
   batchFalsePositive: [issueIds: string[], reason?: string]
   batchAdopt: [issueIds: string[]]

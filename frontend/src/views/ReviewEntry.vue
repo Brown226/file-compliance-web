@@ -7,6 +7,13 @@
         <p>根据文档类型和审查需求，选择对应的审查策略</p>
       </div>
 
+      <!-- P2-1: 推荐引导（面向非技术用户，替代开发者备注） -->
+      <div class="entry-guide">
+        <el-icon :size="15"><InfoFilled /></el-icon>
+        <span>不确定怎么选？</span>
+        <span class="guide-tip">技术文档/设计文件→「以库审文」；参照他人文档写作→「以文审文」；长文档前后参数核对→「上下文一致性」；合同→「合同风险审查」；纯格式检查→「仅规则审查」</span>
+      </div>
+
       <!-- 常用审查 -->
       <div class="module-section">
         <h3 class="section-title">常用审查</h3>
@@ -77,7 +84,7 @@
 import { computed, ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import {
-  Document, Fold, Link, EditPen, Stamp, CircleCheck, View, List,
+  Document, Fold, Link, EditPen, Stamp, CircleCheck, View, List, InfoFilled,
 } from '@element-plus/icons-vue'
 import SmartReviewLegacy from './SmartReview.vue'
 import SelfCheck from './SelfCheck/index.vue'
@@ -111,7 +118,7 @@ const commonModules: ModuleItem[] = [
     scenario: '终稿发布前的文字把关',
     icon: EditPen,
     color: '#059669',
-    techHint: '纯 LLM 驱动，覆盖 TYPO/FLUENCY/CONSISTENCY 三类文字问题',
+    techHint: '同时检查错别字、语句通顺和标点问题，适合发布前的最后把关',
     featureKey: 'entry.PROOFREAD',
   },
   {
@@ -121,7 +128,7 @@ const commonModules: ModuleItem[] = [
     scenario: '技术文档 vs 知识库、规范要点核查',
     icon: Document,
     color: '#2563eb',
-    techHint: '知识库走 RAG + DEC 双分支增强；条文库作为 AI 审查点逐条匹配',
+    techHint: '以标准库/知识库为依据，逐条比对文件是否合规；开启审点后还会做完整性+遵从性双重核查',
     featureKey: 'entry.LIBRARY',
   },
   {
@@ -131,7 +138,7 @@ const commonModules: ModuleItem[] = [
     scenario: '借鉴多份文档写作后的一致性核查',
     icon: Fold,
     color: '#7c3aed',
-    techHint: '上传参照文件，AI 语义级比对差异与遗漏',
+    techHint: '上传参照文件，逐项比对差异与遗漏，适合检查"照抄后改漏了"的地方',
     featureKey: 'entry.DOC_REVIEW',
   },
   {
@@ -141,7 +148,7 @@ const commonModules: ModuleItem[] = [
     scenario: '长文档或跨文件参数核对',
     icon: Link,
     color: '#0891b2',
-    techHint: 'Map-Reduce 架构：先抽取结构化摘要，再跨分片做 C1-C4 一致性比对',
+    techHint: '先抽取全文关键参数再统一比对：同一参数在不同章节/文件出现多个值会被发现（含单位换算容差）',
     featureKey: 'entry.CONSISTENCY',
   },
   {
@@ -151,7 +158,7 @@ const commonModules: ModuleItem[] = [
     scenario: '批量初筛、格式与编码合规底线检查',
     icon: List,
     color: '#475569',
-    techHint: '20 组内置规则（命名/编码/格式/完整性/一致性/DWG/合同），规则开关与严重度来自 review_rules 表',
+    techHint: '内置 20 组规则：命名/编码/格式/完整性/一致性/图纸/合同，可在提交前勾选范围；速度快、结果确定',
     featureKey: 'entry.RULE_ONLY',
   },
 ]
@@ -164,7 +171,7 @@ const specialModules: ModuleItem[] = [
     scenario: '核电工程合同业主/承包商风险审查',
     icon: Stamp,
     color: '#dc2626',
-    techHint: '独立 prompt 与结果结构（riskLevel + clauseType + recommendation），不复用以文审文逻辑',
+    techHint: '站在业主或承包商立场识别不利条款与缺失保护条款，结果带风险等级与修改建议',
     featureKey: 'entry.CONTRACT',
   },
   {
@@ -174,7 +181,7 @@ const specialModules: ModuleItem[] = [
     scenario: '核查设计文件中的标准是否现行有效',
     icon: CircleCheck,
     color: '#4f46e5',
-    techHint: '独立端点 /api/self-check，不走 7 模式 handler',
+    techHint: '逐条提取文件中的标准编号与标准库比对：编号错误、已废止、版本不符都会被标记',
     featureKey: 'entry.SELF_CHECK',
   },
   {
@@ -185,7 +192,7 @@ const specialModules: ModuleItem[] = [
     icon: View,
     color: '#d97706',
     linkTo: '/dwg-vision',
-    techHint: '视觉模型 + 图纸结构化提取',
+    techHint: '用视觉模型识别图纸标题栏、符号与标注，检查图纸合规性',
     featureKey: 'entry.DWG_VISION',
   },
 ]
@@ -254,6 +261,26 @@ const selectModule = (item: ModuleItem) => {
   margin: 0;
   font-size: 14px;
   color: #6b7280;
+}
+
+/* P2-1: 推荐引导条（面向非技术用户） */
+.entry-guide {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin-bottom: 24px;
+  padding: 10px 14px;
+  background: rgba(37, 99, 235, 0.05);
+  border: 1px solid rgba(37, 99, 235, 0.18);
+  border-radius: 8px;
+  font-size: 13px;
+  color: #2563eb;
+  line-height: 1.6;
+}
+
+.entry-guide .guide-tip {
+  color: #4b5563;
+  flex: 1;
 }
 
 /* ===== 分区 ===== */

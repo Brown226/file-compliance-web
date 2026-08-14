@@ -15,8 +15,8 @@
     </div>
 
     <div class="batch-actions">
-      <!-- 批量确认建议 -->
-      <el-button-group v-if="selectedCount > 0 && isDocxSelected">
+      <!-- 批量确认建议（P2-2: 放开 docx 限制——此前 PDF/DWG/XLS/PPT 任务无采纳入口） -->
+      <el-button-group v-if="selectedCount > 0">
         <el-button
           type="success"
           size="small"

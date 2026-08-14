@@ -36,7 +36,8 @@ export function getDashboardTrendApi(days?: number) {
 // ==================== OPT-015: 审查质量指标 ====================
 
 export interface ReviewPrecision {
-  precision: number
+  /** P1-4: 无反馈时为 null（避免"100% 精确率"假象） */
+  precision: number | null
   totalIssues: number
   usefulCount: number
   falsePositiveCount: number
@@ -46,13 +47,16 @@ export interface ReviewPrecision {
 
 export interface ReviewTrendPoint {
   date: string
-  precision: number
+  precision: number | null
   totalIssues: number
   feedbackCount: number
 }
 
 export interface TopFalsePositiveRule {
   issueType: string
+  /** P1-4: 按 (issueType, ruleCode) 分组 */
+  ruleCode: string | null
+  /** P1-4: 聚合 sum(count)，标记 N 次计 N */
   count: number
 }
 

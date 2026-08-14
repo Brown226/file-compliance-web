@@ -68,11 +68,11 @@
         <div v-if="!loading && metrics && metrics.topFalsePositiveRules.length > 0" class="rules-ranking">
           <div
             v-for="(rule, idx) in metrics.topFalsePositiveRules"
-            :key="rule.issueType"
+            :key="`${rule.issueType}-${rule.ruleCode || ''}`"
             class="rule-row"
           >
             <span class="rule-rank">{{ idx + 1 }}</span>
-            <span class="rule-name">{{ getIssueTypeLabelSafe(rule.issueType) }}</span>
+            <span class="rule-name">{{ getIssueTypeLabelSafe(rule.issueType) }}<span v-if="rule.ruleCode" class="rule-code">{{ rule.ruleCode }}</span></span>
             <div class="rule-bar-wrap">
               <div class="rule-bar" :style="{ width: `${(rule.count / maxRuleCount) * 100}%` }"></div>
             </div>
@@ -111,9 +111,10 @@ const kpiItems = computed(() => {
     {
       key: 'precision',
       label: '精确率',
-      value: m ? (m.precision.precision * 100).toFixed(1) : '—',
+      // P1-4: 无反馈时后端返回 null，展示"—"而非假 100%
+      value: m && m.precision.precision != null ? (m.precision.precision * 100).toFixed(1) : '—',
       unit: '%',
-      hint: '有用标记 / (有用标记 + 误报标记)',
+      hint: '有用标记 / (有用标记 + 误报标记)；暂无反馈数据时显示 —',
     },
     {
       key: 'useful',
@@ -181,8 +182,9 @@ function renderTrendChart() {
       formatter: (p: any) => {
         const point = trend[p[0].dataIndex]
         if (!point) return ''
-        const pct = (point.precision * 100).toFixed(1)
-        return `${point.date}<br/>精确率: ${pct}%<br/>反馈数: ${point.feedbackCount}`
+        // P1-4: 当日无反馈 precision 为 null
+        const pct = point.precision != null ? (point.precision * 100).toFixed(1) : '—'
+        return `${point.date}<br/>精确率: ${pct}%<br/>反馈数: ${point.feedbackCount}<br/>问题数: ${point.totalIssues}`
       },
     },
     grid: { left: '2%', right: '3%', bottom: '4%', top: '10%', containLabel: true },
@@ -206,6 +208,8 @@ function renderTrendChart() {
       smooth: true,
       symbol: 'circle',
       symbolSize: 6,
+      // P1-4: null 日（无反馈）断线而非假 0/100
+      connectNulls: false,
       data: trend.map((t) => t.precision),
       itemStyle: { color: '#2563EB' /* 对齐 --color-primary-600 */ },
       lineStyle: { width: 2.5 },
@@ -478,6 +482,15 @@ onBeforeUnmount(() => {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.rule-code {
+  margin-left: 6px;
+  font-size: 11px;
+  color: var(--color-gray-400);
+  background: var(--color-gray-100);
+  border-radius: 4px;
+  padding: 0 5px;
 }
 
 .rule-bar-wrap {

@@ -40,6 +40,8 @@ export interface Task {
   reviewSpecificationId?: string | null
   reviewPlan?: ReviewPlan | null
   reviewSpecification?: { id: string; name: string; status: 'DRAFT' | 'PUBLISHED' | 'ARCHIVED' } | null
+  /** P0-4: 本次审查降级原因汇总（RAG 零命中/不可用等），"没审到"可追溯 */
+  degradedReason?: string | null
   createdAt: string
   updatedAt: string
   completedAt?: string | null
