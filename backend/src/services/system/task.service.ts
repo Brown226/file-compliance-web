@@ -702,20 +702,43 @@ export class TaskService {
 
   /**
    * 重新审核任务：清除旧审查结果，重置状态，重新触发审查流程
+   *
+   * P0-1 修复（2026-08-14，整改报告 P0-1）：
+   * 1. 主动重审 = 全新审查：同时清除 review_stages 阶段记录。
+   *    此前只删 taskDetail，ai/DEC 阶段命中旧 DONE 记录会跳过执行、
+   *    复用旧轮裁剪 payload（旧 AI 结论 + 丢失 locateMeta/sourceReferences 定位溯源），
+   *    导致"规则是新的、AI 是旧的"新旧结果混排。
+   *    （失败重试路径不经过本方法、不删阶段，断点续跑语义不受影响）
+   * 2. SELF_CHECK 任务直接拒绝重审：SELF_CHECK 有独立端点 /api/self-check/run，
+   *    REVIEW_HANDLERS.SELF_CHECK 是 stub（仅打警告返回空）——若被重审触发，
+   *    会产出"审查完成、无问题"的假合规信号。
    */
   static async reReviewTask(taskId: string): Promise<Task> {
+    const existing = await prisma.task.findUnique({
+      where: { id: taskId },
+      select: { reviewMode: true },
+    });
+    if (existing?.reviewMode === 'SELF_CHECK') {
+      throw new Error('SELF_CHECK 任务使用独立执行端点，不支持重新审查');
+    }
+
     // 1. 删除旧的审查结果
     await prisma.taskDetail.deleteMany({
       where: { taskId }
     });
 
-    // 2. 重置文件错误计数
+    // 2. 清除阶段状态记录（主动重审 = 全新阶段，见方法头注释）
+    await prisma.reviewStage.deleteMany({
+      where: { taskId }
+    });
+
+    // 3. 重置文件错误计数
     await prisma.taskFile.updateMany({
       where: { taskId },
       data: { errorCount: 0 }
     });
 
-    // 3. 重新触发审查
+    // 4. 重新触发审查
     return this.startTaskReview(taskId);
   }
 

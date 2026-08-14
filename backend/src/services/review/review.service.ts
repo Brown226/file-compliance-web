@@ -4,7 +4,7 @@ import { LlmService } from '../llm/llm.service';
 import { PipelineContext, ReviewModeType } from '../review-pipeline';
 import { REVIEW_HANDLERS, getModeScene, getModeDisplayName } from '../review-pipeline/review-handlers';
 import { TextExtractionService } from '../review-pipeline/text-extraction.service';
-import { RuleEngineService } from '../llm/rule-engine.service';
+import { runAllRules } from '../rules';
 import { CrossFileConsistencyService } from './cross-file-consistency.service';
 import { IntraFileConsistencyService } from './intra-file-consistency.service';
 import { SectionAggregationService } from './section-aggregation.service';
@@ -23,6 +23,35 @@ import { getModeCapabilitiesConfig } from '../review-pipeline/mode-config.servic
 import { getMaxConcurrentReviews } from '../../utils/system-config';
 import { normalizeText } from './falsePositiveLibrary.service';
 import { StageRunner, StageRunnerHandle } from './stage-runner.service';
+
+/**
+ * P1-2: 误报命中判定 —— (归一化文本, ruleCode) 二元组
+ * fpMap: 归一化文本 → ruleCode 集合（集合含 null 表示该文本任意规则上下文均命中）
+ * 与误报库写入侧（normalizedText 列）同口径，消除"同名文本不同规则上下文互相误伤"
+ */
+function isFpRuleHit(
+  fpMap: Map<string, Set<string | null>> | null | undefined,
+  originalText: string,
+  ruleCode?: string | null,
+): boolean {
+  if (!fpMap || fpMap.size === 0) return false;
+  const codes = fpMap.get(normalizeText(originalText || ''));
+  if (!codes) return false;
+  return codes.has(null) || (ruleCode != null && codes.has(ruleCode));
+}
+
+/**
+ * P1-3: AI 产出与已落库确定性规则产出的归一化碰撞判定（相等或互相包含——AI 复制的原文片段
+ * 可能比规则匹配段长）。命中即丢弃 AI 条目，保证"规则优先"语义跨模式成立。
+ */
+function collidesWithRule(norm: string, ruleNormSet: Set<string>): boolean {
+  if (!norm) return false;
+  if (ruleNormSet.has(norm)) return true;
+  for (const rn of ruleNormSet) {
+    if (norm.includes(rn) || rn.includes(norm)) return true;
+  }
+  return false;
+}
 
 /**
  * �����ŷ��� - ���׶η�����������
@@ -110,12 +139,19 @@ export class ReviewService {
     ruleCode?: string | null;
     issueType?: string;
     sourceReferences?: any;
+    _sourceDowngraded?: boolean;
   }): { confidence: string; confidenceSource: string } {
     if (issue.ruleCode?.startsWith('STD_')) {
       return { confidence: 'STD_MATCH', confidenceSource: 'standard_ref' };
     }
     if (issue.ruleCode) {
       return { confidence: 'RULE_EXACT', confidenceSource: 'rule_engine' };
+    }
+    // P0-2 修复（OPT-016 接通）：validateSources 判为"来源全部未验证"的 issue，
+    // 降级为 AI_INFERRED（落库 reviewStatus=PENDING_REVIEW 转人工复核），
+    // 防止 LLM 编造来源仍伪装 AI_WITH_SOURCES → CONFIRMED。
+    if ((issue as any)._sourceDowngraded) {
+      return { confidence: 'AI_INFERRED', confidenceSource: 'ai_unverified_sources' };
     }
     return {
       confidence: issue.sourceReferences ? 'AI_WITH_SOURCES' : 'AI_INFERRED',
@@ -392,8 +428,6 @@ export class ReviewService {
       }
 
       const intraFileConsistency = !!executionPlan.intraFileConsistency;
-      const reviewPoints: string[] = [];
-      const corePurposes: string[] = [];
 
       // ������֪ʶ�ӿ� ID
       let maxkbKnowledgeIds: string[] | undefined;
@@ -602,8 +636,6 @@ const fileContexts = task.files.map(file => {
           semanticItems,
           checkpoints: decCheckpoints,
           intraFileConsistency,
-          reviewPoints,
-          corePurposes,
           userId: (task as any).creatorId,
           // 方案A：阶段状态机句柄（文件级；DEC 内部 7 细粒度阶段，其他模式 fast/ai）
           stageRunner: StageRunner.handle(taskId, file.id, reviewMode as string),
@@ -629,6 +661,34 @@ const fileContexts = task.files.map(file => {
       // 获取阶段2的并发限制（从 basic_settings 读取，默认 3）
       const maxConcurrent = await getMaxConcurrentReviews();
 
+      // P1-1（整改报告）：误报库任务级预加载移到 fast 阶段前，对所有模式生效——
+      // 此前在 needsAI 分支内，规则引擎/标准引用/DWG 产出不消费误报库（标记规则类误报后下次照报）
+      // P1-2：映射结构升级为 (归一化文本 → ruleCode 集合)，过滤按二元组匹配，不跨规则上下文误伤
+      let fpLibraryMap: Map<string, Set<string | null>> | null = null;
+      try {
+        const allFps = await prisma.falsePositiveLibrary.findMany({ select: { originalText: true, ruleCode: true, normalizedText: true } });
+        fpLibraryMap = new Map<string, Set<string | null>>();
+        for (const fp of allFps) {
+          const key = (fp as any).normalizedText || normalizeText(fp.originalText);
+          if (!fpLibraryMap.has(key)) fpLibraryMap.set(key, new Set());
+          fpLibraryMap.get(key)!.add((fp as any).ruleCode || null);
+        }
+        // 方案A：任务级 preload 阶段标记（非 DEC 模式；DEC 的 preload 在审点预加载段已标记）
+        if (reviewMode !== 'DEC_REVIEW') {
+          await StageRunner.handle(taskId, undefined, reviewMode as string).runStage('preload', async () => {
+            return fpLibraryMap && fpLibraryMap.size > 0 ? [...fpLibraryMap.keys()].slice(0, 50) : [];
+          }, { alwaysRun: true }).catch((e: any) => console.warn('[Stage] preload 标记失败:', e.message));
+        }
+        if (fpLibraryMap && fpLibraryMap.size > 0) {
+          for (const { ctx } of fileContexts) {
+            (ctx as any).fpLibraryMap = fpLibraryMap;
+          }
+        }
+      } catch (e) {
+        console.warn('[Review] preload false positive library failed, continue:', e);
+        fpLibraryMap = null;
+      }
+
       // P1-D: 流水线化 — 删除原 fastPhasePromises + Promise.all 硬同步点
       // 每文件阶段1完成立即进入阶段2（同一 worker 内顺序执行，不同文件并行）
       // 长尾 PDF 不再阻塞其他文件启动 AI 审查
@@ -649,27 +709,6 @@ const fileContexts = task.files.map(file => {
           }
         } catch (e) {
           console.warn('[Review] LLM config check error:', e);
-        }
-        // P0-1: task-level preload false positive library to memory, shared by all file contexts
-        try {
-          const allFps = await prisma.falsePositiveLibrary.findMany({ select: { originalText: true } });
-          const fpLibrarySet = new Set<string>();
-          for (const fp of allFps) {
-            fpLibrarySet.add(normalizeText(fp.originalText));
-          }
-          // 方案A：任务级 preload 阶段标记（非 DEC 模式；DEC 的 preload 在审点预加载段已标记）
-          if (reviewMode !== 'DEC_REVIEW') {
-            await StageRunner.handle(taskId, undefined, reviewMode as string).runStage('preload', async () => {
-              return fpLibrarySet.size > 0 ? [...fpLibrarySet].slice(0, 50) : [];
-            }, { alwaysRun: true }).catch((e: any) => console.warn('[Stage] preload 标记失败:', e.message));
-          }
-          if (fpLibrarySet.size > 0) {
-            for (const { ctx } of fileContexts) {
-              (ctx as any).fpLibrarySet = fpLibrarySet;
-            }
-          }
-        } catch (e) {
-          console.warn('[Review] preload false positive library failed, continue:', e);
         }
         WebSocketService.emitTaskProgress(taskId, {
           type: 'phase2_start', step: 'AI review phase', progress: 45,
@@ -780,6 +819,7 @@ const fileContexts = task.files.map(file => {
       let slowSuccessCount = 0;
       let slowFailedCount = 0;
       const enginesUsed = new Set<string>(); // �ռ������ļ�ʵ��ʹ�õ� AI ����
+      const degradedReasons: string[] = []; // P0-4: 收集各文件降级原因（落库 task.degradedReason）
       for (const result of slowPhaseResults) {
         const isError = 'error' in result;
         if (isError) {
@@ -794,11 +834,13 @@ const fileContexts = task.files.map(file => {
           if (usedEngine) enginesUsed.add(usedEngine);
           // OPT-027: RAG 降级时发送 WebSocket 告警事件
           if ((result as any).degraded) {
+            const reason = (result as any).degradedReason || 'RAG 不可用，已切换为 LLM 直审';
+            degradedReasons.push(`${result.fileName}: ${reason}`);
             WebSocketService.emitTaskProgress(taskId, {
               type: 'rag_degraded',
               step: 'AI审查降级',
               progress: 80,
-              message: (result as any).degradedReason || 'RAG 不可用，已切换为 LLM 直审',
+              message: reason,
               fileName: result.fileName,
               phase: 'phase2',
               timestamp: Date.now(),
@@ -923,6 +965,8 @@ const fileContexts = task.files.map(file => {
         data: {
           status: newStatus,
           ...(primaryEngine ? { aiEngineUsed: primaryEngine } : {}),
+          // P0-4: 降级原因落库（结果页/任务列表可追溯"本次审查哪些环节没审到"，刷新后不丢失）
+          ...(degradedReasons.length > 0 ? { degradedReason: degradedReasons.join('; ') } : {}),
         },
       });
 
@@ -1141,7 +1185,7 @@ const fileContexts = task.files.map(file => {
         // CONSISTENCY 模式：无前缀时不跑规则（避免跑全部规则产生噪音）；
         // RULE_ONLY 模式：无前缀则跑全部规则（保留原行为）
         if (ctx.reviewMode === 'RULE_ONLY' || prefixes.length > 0) {
-          const baseIssues = await RuleEngineService.runAllRules(
+          const baseIssues = await runAllRules(
             {
               fileName: ctx.fileName, filePath: ctx.filePath, fileType: ctx.fileType,
               extractedText: ctx.extractedText, pdfPages: ctx.pdfPages,
@@ -1173,8 +1217,26 @@ const fileContexts = task.files.map(file => {
     // ����д�������
     const allFastIssues: any[] = [];
 
-    if (fastResult.ruleIssues.length > 0) {
-      const ruleData = fastResult.ruleIssues.map((issue) => {
+    // P1-1/P1-2（整改报告）：规则/标准引用产出同样消费误报库（此前仅 AI 路径过滤，
+    // 用户标记规则类误报后下次审查原样重现）；按 (归一化文本, ruleCode) 二元组匹配
+    let ruleIssuesToWrite = fastResult.ruleIssues;
+    let stdRefIssuesToWrite = fastResult.stdRefIssues;
+    let fpFilteredFastCount = 0;
+    if (ctx.fpLibraryMap && ctx.fpLibraryMap.size > 0) {
+      const filterByFp = (issues: any[]) => issues.filter((issue: any) => {
+        const hit = isFpRuleHit(ctx.fpLibraryMap, issue.originalText, issue.ruleCode);
+        if (hit) fpFilteredFastCount++;
+        return !hit;
+      });
+      ruleIssuesToWrite = filterByFp(ruleIssuesToWrite);
+      stdRefIssuesToWrite = filterByFp(stdRefIssuesToWrite);
+      if (fpFilteredFastCount > 0) {
+        console.log(`[Review] ${file.fileName} 规则/标准引用产出被误报库过滤 ${fpFilteredFastCount} 条`);
+      }
+    }
+
+    if (ruleIssuesToWrite.length > 0) {
+      const ruleData = ruleIssuesToWrite.map((issue) => {
         const meta = this.buildLocateMeta(ctx.extractedText, issue, { fileId: file.id });
         if (meta) this.enrichDwgHandle(issue, meta, ctx);
         if (meta && meta.absolute && !meta.hint?.pageHint) {
@@ -1225,8 +1287,8 @@ const fileContexts = task.files.map(file => {
       allFastIssues.push(...ruleData);
     }
 
-    if (fastResult.stdRefIssues.length > 0) {
-      const stdRefData = fastResult.stdRefIssues.map((issue) => {
+    if (stdRefIssuesToWrite.length > 0) {
+      const stdRefData = stdRefIssuesToWrite.map((issue) => {
         const meta = this.buildLocateMeta(ctx.extractedText, issue, { fileId: file.id });
         if (meta) this.enrichDwgHandle(issue, meta, ctx);
         if (meta && meta.absolute && !meta.hint?.pageHint) {
@@ -1373,8 +1435,31 @@ const fileContexts = task.files.map(file => {
     ctx: PipelineContext,
     fileIndex: number,
     totalFiles: number,
-  ): Promise<{ aiIssues: any[]; usedEngine?: string; skippedNoText?: boolean }> {
+  ): Promise<{ aiIssues: any[]; usedEngine?: string; skippedNoText?: boolean; degraded?: boolean; degradedReason?: string }> {
     const fileProgress = Math.round((fileIndex / totalFiles) * 100);
+
+    // P1-3：加载本文件已落库的确定性产出（规则引擎/标准引用）原文集合，
+    // AI 产出落库前与其归一化碰撞去重——"规则优先"语义从仅 TYPO/CONTRACT 两个 handler
+    // 扩展到所有模式（此前 CONSISTENCY 等模式规则与 AI 对同一缺陷各报一条）
+    let ruleNormSet: Set<string> | null = null;
+    try {
+      const ruleDetails = await prisma.taskDetail.findMany({
+        where: {
+          taskId,
+          fileId: file.id,
+          reviewSource: { in: ['RULE_ENGINE', 'RULE_LIBRARY', 'STANDARD_REF'] },
+        },
+        select: { originalText: true },
+      });
+      ruleNormSet = new Set<string>();
+      for (const d of ruleDetails) {
+        const t = (d.originalText || '').trim();
+        if (t) ruleNormSet.add(normalizeText(t));
+      }
+    } catch (e) {
+      console.warn('[Review] 加载已落库规则结果失败（跳过跨源去重）:', e);
+      ruleNormSet = null;
+    }
 
     // �����ļ��׶�2��ʼ
     WebSocketService.emitTaskProgress(taskId, {
@@ -1402,14 +1487,23 @@ const fileContexts = task.files.map(file => {
 
       // 2. �÷�Ƭ������ʱ����д�� DB
       if (issues && issues.length > 0) {
-        // P0-1: 过滤误报库中的 issue，减少 LLM 幻觉风险
+        // P0-1/P1-2: 过滤误报库中的 issue（(归一化文本, ruleCode) 二元组），减少 LLM 幻觉风险
         let filteredByFp = 0;
-        if (ctx.fpLibrarySet && ctx.fpLibrarySet.size > 0) {
+        if (ctx.fpLibraryMap && ctx.fpLibraryMap.size > 0) {
           const beforeCount = issues.length;
-          issues = issues.filter((issue: any) => !ctx.fpLibrarySet!.has(normalizeText(issue.originalText)));
+          issues = issues.filter((issue: any) => !isFpRuleHit(ctx.fpLibraryMap, issue.originalText, issue.ruleCode));
           filteredByFp = beforeCount - issues.length;
           if (filteredByFp > 0) {
             console.log(`[Review] 分片 ${chunkIndex} 过滤 ${filteredByFp} 条误报 (${file.fileName})`);
+          }
+        }
+
+        // P1-3: 与已落库规则/标准引用结果碰撞去重（规则优先，跨模式生效）
+        if (ruleNormSet && ruleNormSet.size > 0) {
+          const beforeCount = issues.length;
+          issues = issues.filter((issue: any) => !collidesWithRule(normalizeText(issue.originalText || ''), ruleNormSet!));
+          if (issues.length < beforeCount) {
+            console.log(`[Review] 分片 ${chunkIndex} 与规则结果去重 ${beforeCount - issues.length} 条 (${file.fileName})`);
           }
         }
 
@@ -1611,15 +1705,25 @@ const fileContexts = task.files.map(file => {
     // �˴��������ף�ʹ���ڴ��Ǽ�飬���޷�Ƭ�ɹ�д����һ����д�루��������� onChunkProgress ȫ��ʧ��ʱ�ı��ף�
     if (slowResult.aiIssues.length > 0 && !anyChunkWritten) {
       try {
-        // P0-1: 过滤误报库中的 issue（兜底路径）
-        if (ctx.fpLibrarySet && ctx.fpLibrarySet.size > 0) {
+        // P0-1/P1-2: 过滤误报库中的 issue（兜底路径，二元组匹配）
+        if (ctx.fpLibraryMap && ctx.fpLibraryMap.size > 0) {
           const beforeCount = slowResult.aiIssues.length;
           slowResult.aiIssues = slowResult.aiIssues.filter(
-            (issue: any) => !ctx.fpLibrarySet!.has(normalizeText(issue.originalText))
+            (issue: any) => !isFpRuleHit(ctx.fpLibraryMap, issue.originalText, issue.ruleCode)
           );
           const fallbackFiltered = beforeCount - slowResult.aiIssues.length;
           if (fallbackFiltered > 0) {
             console.log(`[Review] 兜底路径过滤 ${fallbackFiltered} 条误报 (${file.fileName})`);
+          }
+        }
+        // P1-3: 兜底路径同样与已落库规则结果碰撞去重
+        if (ruleNormSet && ruleNormSet.size > 0) {
+          const beforeCount = slowResult.aiIssues.length;
+          slowResult.aiIssues = slowResult.aiIssues.filter(
+            (issue: any) => !collidesWithRule(normalizeText(issue.originalText || ''), ruleNormSet!)
+          );
+          if (slowResult.aiIssues.length < beforeCount) {
+            console.log(`[Review] 兜底路径与规则结果去重 ${beforeCount - slowResult.aiIssues.length} 条 (${file.fileName})`);
           }
         }
 
@@ -1727,7 +1831,14 @@ const fileContexts = task.files.map(file => {
     });
 
 
-    return { aiIssues: slowResult.aiIssues, usedEngine: slowResult.usedEngine, skippedNoText };
+    return {
+      aiIssues: slowResult.aiIssues,
+      usedEngine: slowResult.usedEngine,
+      skippedNoText,
+      // P0-4: 透传降级标记（此前缺失导致任务级 degraded 收集/WS 告警是死代码）
+      degraded: slowResult.degraded,
+      degradedReason: slowResult.degradedReason,
+    };
   }
 
   /**
@@ -1769,161 +1880,5 @@ const fileContexts = task.files.map(file => {
     });
   }
 
-  // ==================== ����Ϊ�������������������ԣ� ====================
-
-  /**
-   * @deprecated ʹ�� runFileFastPhase + runFileSlowPhase ���
-   */
-  static async processFile(
-    taskId: string,
-    file: { id: string; fileName: string; filePath: string; fileType: string },
-    reviewMode: string = 'LIBRARY_REVIEW',
-    maxkbKnowledgeId?: string,
-    maxkbKnowledgeIds?: string[],
-    onProgress?: (chunkLength: number, issues: any[], chunkIndex: number, totalChunks: number, engine: string) => Promise<void>,
-  ): Promise<void> {
-    const absolutePath = resolveFilePath(file.filePath);
-
-    const ctx: PipelineContext = {
-      taskId,
-      fileId: file.id,
-      fileName: file.fileName,
-      filePath: absolutePath,
-      fileType: file.fileType,
-      extractedText: '',
-      reviewMode: reviewMode as any,
-      maxkbKnowledgeId: maxkbKnowledgeId || undefined,
-      maxkbKnowledgeIds: maxkbKnowledgeIds || undefined,
-      onChunkProgress: onProgress,
-    };
-
-    // Ԥ��ȡ�ı���������� WASM ������������
-    if (!ctx.extractedText || ctx.extractedText.trim().length === 0) {
-      try {
-        const parsed = await ParserService.parseFileWithResult(absolutePath, file.fileType);
-        if (parsed.text?.trim()) ctx.extractedText = parsed.text;
-        if (parsed.result) ctx.parseResult = parsed.result;
-      } catch (e) { /* ignore */ }
-    }
-
-    // ��������
-    try {
-      const cfg = await prisma.systemConfig.findUnique({ where: { key: 'pipeline_review_config' } });
-      if (cfg?.value) ctx.pipelineConfig = cfg.value as any;
-    } catch (e) { /* ignore */ }
-
-    // ���ز����ļ�
-    if (reviewMode === 'DOC_REVIEW') {
-      const groups = await prisma.refFileGroup.findMany({ where: { taskId }, include: { refFiles: true } });
-      if (groups.length > 0) {
-        ctx.refFileGroup = {
-          groupId: groups[0].id,
-          groupName: groups[0].groupName,
-          refFiles: groups[0].refFiles.map((rf: any) => ({
-            id: rf.id,
-            fileName: rf.fileName,
-            filePath: resolveFilePath(rf.filePath),
-            fileType: rf.fileType,
-            extractedText: rf.extractedText || undefined,
-          })),
-        };
-      }
-    }
-
-    // д���ı�����
-    await prisma.taskFile.update({
-      where: { id: file.id },
-      data: { textLength: ctx.extractedText?.length || 0, processedLength: 0 },
-    }).catch(() => { /* ignore */ });
-
-    // ʹ�� handler ִ�� AI ���
-    try {
-      const handler = REVIEW_HANDLERS[reviewMode as ReviewModeType];
-      if (!handler) throw new Error(`δ֪���ģʽ: ${reviewMode}`);
-      ctx.scene = ctx.scene || getModeScene(reviewMode as ReviewModeType);
-      const aiResult = await handler(ctx);
-      const result: { ruleIssues: any[]; aiIssues: any[]; stdRefIssues: any } = { ruleIssues: [], aiIssues: aiResult.aiIssues || [], stdRefIssues: undefined };
-
-      // д AI ���
-      if (result.aiIssues.length > 0) {
-        await prisma.taskDetail.createMany({
-          data: result.aiIssues.map((issue: any) => ({
-            taskId, fileId: file.id,
-            issueType: issue.issueType,
-            ruleCode: issue.ruleCode || null,
-            severity: issue.severity || 'warning',
-            originalText: issue.originalText,
-            suggestedText: issue.suggestedText || null,
-            description: issue.description || null,
-            plainLanguage: issue.plainLanguage || null,
-            cadHandleId: issue.cadHandleId || null,
-            standardRef: issue.standardRef || null,
-            sourceReferences: issue.sourceReferences ? JSON.stringify(issue.sourceReferences) : null,
-            matchLevel: (issue as any).matchLevel || null,
-            similarity: (issue as any).similarity || null,
-            diffRanges: issue.diffRanges ? JSON.stringify(issue.diffRanges) : null,
-          })) as any,
-        });
-      }
-
-      // ���ı�����
-      if (!ctx.extractedText && result.ruleIssues.length === 0 && result.aiIssues.length === 0) {
-        await prisma.taskDetail.create({
-          data: {
-            taskId, fileId: file.id,
-            issueType: 'VIOLATION', ruleCode: null, severity: 'warning',
-            originalText: file.fileName,
-            description: '�ļ������޷���ȡ��������ɨ�����ͼƬ�� PDF�������˹���顣',
-          },
-        });
-      }
-
-      // DWG ����������ߴ��ע�ͱ�׼���ã��� cadHandleId��
-      if (file.fileType.toLowerCase() === 'dwg') {
-        const parseResult = ctx.parseResult;
-        if (parseResult && ctx.extractedText?.trim()) {
-          const dwgDetails: any[] = [];
-
-          if (parseResult.structure.dimensions?.length) {
-            for (const dim of parseResult.structure.dimensions) {
-              dwgDetails.push({
-                taskId, fileId: file.id,
-                issueType: 'VIOLATION' as const,
-                ruleCode: null, severity: 'info' as const,
-                originalText: dim.text || dim.measurement || '',
-                suggestedText: null,
-                description: `ͼ��: ${dim.layer}, ����: ${dim.entity_type}`,
-                cadHandleId: dim.handle || null,
-              });
-            }
-          }
-
-          if ((parseResult.structure as any).standardRefs?.length) {
-            for (const ref of (parseResult.structure as any).standardRefs) {
-              dwgDetails.push({
-                taskId, fileId: file.id,
-                issueType: 'VIOLATION' as const,
-                ruleCode: 'DWG_STDREF_001' as const,
-                severity: 'info' as const,
-                originalText: ref.fullMatch || ref.standardNo,
-                suggestedText: null,
-                description: `DWG ��׼����: ${ref.standardNo}${ref.standardName ? ` (${ref.standardName})` : ''}`,
-                cadHandleId: ref.cadHandleId || null,
-              });
-            }
-          }
-
-          if (dwgDetails.length > 0) {
-            await prisma.taskDetail.createMany({ data: dwgDetails });
-          }
-        }
-      }
-
-      await this.updateFileErrorCount(file.id);
-    } catch (error) {
-      console.error(`[Review] Handler ִ��ʧ��: ${file.fileName}`, error);
-      await this.createErrorDetail(taskId, file.id, file.fileName, error);
-    }
-  }
 }
 

@@ -86,6 +86,54 @@ describe('P2-9 跨规则去重（dedupeCrossRuleIssues）', () => {
     ];
     expect(dedupeCrossRuleIssues(input)).toHaveLength(2);
   });
+
+  // ===== P1-3：归一化碰撞 + 扩展重叠族 =====
+  it('P1-3 归一化碰撞：FORMAT_006（±10 字上下文）与 PUNCT_001（2 字匹配段）文本形态不同也去重', () => {
+    const input = [
+      issue('FORMAT_006', '本段文字包含半角逗号,混用标点的一段上下文内容', 'info'),
+      issue('PUNCT_001', '逗号,', 'warning'),
+    ];
+    const out = dedupeCrossRuleIssues(input);
+    expect(out).toHaveLength(1);
+    expect(out[0].ruleCode).toBe('PUNCT_001');
+  });
+
+  it('P1-3 扩展族：ATTR_001 与 UNIT_004 命中同一图册编号 → 保留 severity 更高者', () => {
+    const input = [
+      issue('ATTR_001', '图册编号: JGJ-01-2020 缺失', 'error'),
+      issue('UNIT_004', '图册编号: JGJ-01-2020', 'warning'),
+    ];
+    const out = dedupeCrossRuleIssues(input);
+    expect(out).toHaveLength(1);
+    expect(out[0].ruleCode).toBe('ATTR_001');
+  });
+
+  it('P1-3 扩展族：HEADER_002 与 CODE_003 命中同一空页眉 → 归一化后去重', () => {
+    const input = [
+      issue('HEADER_002', '第 3 页页眉为空', 'warning'),
+      issue('CODE_003', '第3页页眉为空', 'warning'),
+    ];
+    const out = dedupeCrossRuleIssues(input);
+    expect(out).toHaveLength(1);
+  });
+
+  it('P1-3 同 severity 碰撞 → 保留 ruleCode 字典序小者（确定性）', () => {
+    const input = [
+      issue('NAME_006', '文件名含特殊字符！', 'warning'),
+      issue('CODE_004', '文件名含特殊字符!', 'warning'),
+    ];
+    const out = dedupeCrossRuleIssues(input);
+    expect(out).toHaveLength(1);
+    expect(out[0].ruleCode).toBe('CODE_004');
+  });
+
+  it('P1-3 不同归一化文本 → 不去重', () => {
+    const input = [
+      issue('FORMAT_006', '上下文甲,含半角逗号', 'info'),
+      issue('PUNCT_001', '另一处,标点', 'warning'),
+    ];
+    expect(dedupeCrossRuleIssues(input)).toHaveLength(2);
+  });
 });
 
 describe('P2-12 contract_rule_thresholds 死配置接通', () => {

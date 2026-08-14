@@ -18,6 +18,7 @@ import prisma from '../../config/db';
 import { LlmService } from '../llm/llm.service';
 import { TextExtractionService } from '../review-pipeline/text-extraction.service';
 import { resolveFilePath } from '../../config/upload';
+import { normalizeText } from './falsePositiveLibrary.service'; // P1-3: 归一化口径与主链路一致
 
 /** LLM 提取出的系统描述实体 */
 interface SystemEntity {
@@ -99,7 +100,11 @@ export class SectionAggregationService {
 
     console.log(`[SemanticAgg] 发现 ${inconsistencies.length} 个语义不一致`);
 
-    // 5. 写入 TaskDetail（每个相关文件写一条）
+    // P1-3：落库前与已落库的一致性规则条目（CROSS_CONSIST_001/INTRA_CONSIST_001/CONSIST_*）
+    // 归一化碰撞去重——消除"同一参数不一致被语义层与正则层各报一次"的双报
+    const existingConsistencyNorms = await this.loadExistingConsistencyNorms(taskId);
+
+    // 5. 写入 TaskDetail（每个相关文件写一条；与正则层重复的整组过滤）
     const details = inconsistencies.flatMap((inc) => {
       const valuesDesc = inc.entries
         .map((e) => `${e.fileName}: "${e.value}"`)
@@ -115,19 +120,55 @@ export class SectionAggregationService {
         suggestedText: null as string | null,
         description: `[语义] 系统"${inc.systemName}"的参数"${inc.paramName}"在不同文件中描述不一致: ${valuesDesc}。判定理由: ${inc.reason}`,
       }));
-    });
+    }).filter((d) => !this.collidesWithExisting(d.originalText || '', existingConsistencyNorms));
 
     if (details.length > 0) {
       await prisma.taskDetail.createMany({ data: details });
     }
 
-    // 更新相关文件错误计数
-    const affectedFileIds = new Set(inconsistencies.flatMap((inc) => inc.entries.map((e) => e.fileId)));
+    // 更新相关文件错误计数（基于过滤后实际落库的条目）
+    const affectedFileIds = new Set(details.map((d) => d.fileId));
     for (const fileId of affectedFileIds) {
       await this.updateFileErrorCount(fileId);
     }
 
     return details.length;
+  }
+
+  /**
+   * P1-3：加载本任务已落库的一致性规则条目原文（归一化），供语义层去重
+   */
+  private static async loadExistingConsistencyNorms(taskId: string): Promise<Set<string>> {
+    const norms = new Set<string>();
+    try {
+      const rows = await prisma.taskDetail.findMany({
+        where: {
+          taskId,
+          ruleCode: { startsWith: 'CONSIST' }, // 覆盖 CROSS_CONSIST_001 / INTRA_CONSIST_001 / CONSIST_*
+        },
+        select: { originalText: true },
+      });
+      for (const r of rows) {
+        const t = (r.originalText || '').trim();
+        if (t) norms.add(normalizeText(t));
+      }
+    } catch (e) {
+      console.warn('[SemanticAgg] 加载已落库一致性条目失败（跳过去重）:', e);
+    }
+    return norms;
+  }
+
+  /**
+   * P1-3：归一化碰撞判定（相等或互相包含——语义层 context 是整句、正则层是"参数名: 值"短文本）
+   */
+  private static collidesWithExisting(norm: string, existing: Set<string>): boolean {
+    if (!norm || existing.size === 0) return false;
+    const n = normalizeText(norm);
+    if (existing.has(n)) return true;
+    for (const ex of existing) {
+      if (n.includes(ex) || ex.includes(n)) return true;
+    }
+    return false;
   }
 
   /**

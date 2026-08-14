@@ -20,6 +20,11 @@ export interface StandardClause {
   category: string;
   /** DEC-2：审点工程化判定 prompt（由 CheckpointExtractor 加工产出，注入逐条核对 prompt） */
   checkPrompt?: string;
+  /**
+   * P1-5：本条条文专用的待审文本（章节块映射结果）。
+   * 为空/缺省时回退用 checkClauses 的全局 text（兼容既有调用与测试）。
+   */
+  textOverride?: string;
 }
 
 export interface CheckResult {
@@ -78,20 +83,23 @@ export class StandardClauseCheckService {
   ): Promise<CheckResult> {
     // DEC-2: 审点加工出的 checkPrompt 作为审查提示注入（无则留空行，不改变原有行为）
     const checkPromptSection = clause.checkPrompt ? `审查提示：${clause.checkPrompt}` : '';
+    // P1-5: 章节块映射——有 textOverride 用命中块文本，否则用全局 text（兼容）
+    const reviewText = clause.textOverride || text;
     const userContent = CLAUSE_CHECK_USER_PROMPT
       .replace(/\{clauseCode\}/g, clause.code)
       .replace(/\{clauseTitle\}/g, clause.title)
       .replace(/\{clauseContent\}/g, clause.content)
       .replace(/\{checkPrompt\}/g, checkPromptSection)
-      .replace(/\{text\}/g, text);
+      .replace(/\{text\}/g, reviewText);
 
     try {
-      const rawResponse = await this.callLlmRaw(
-        CLAUSE_CHECK_SYSTEM_PROMPT,
-        userContent,
-        options?.temperature ?? 0,
-        options?.timeout ?? 60,
-      );
+      // P2-3: 改用 LlmService.chat 主入口（此前自建 fetch 调 /chat/completions，
+      // 无 taskId/mode/traceId 上报、无 LlmCallLog 留痕、无限流——DEC 合规分支在 LLM 看板统计不到）
+      const rawResponse = await LlmService.chat(userContent, {
+        systemPrompt: CLAUSE_CHECK_SYSTEM_PROMPT,
+        temperature: options?.temperature ?? 0,
+        timeout: options?.timeout ?? 60,
+      });
       return this.parseRawResponse(rawResponse, clause);
     } catch (e) {
       console.warn(`[StandardClauseCheck] 条文 ${clause.code} 核对失败:`, (e as Error).message);
@@ -174,54 +182,6 @@ export class StandardClauseCheckService {
   }
 
   /**
-   * 直接调用 LLM chat/completions API，返回原始文本
-   *
-   * 复用 LlmService.getLlmConfig() 解析 providerId 引用（阶段 4 改造后，
-   * llm_chat_model 不再直接存 apiBaseUrl/apiKey，而是引用 LlmProfile）。
-   */
-  private static async callLlmRaw(
-    systemPrompt: string,
-    userContent: string,
-    temperature: number,
-    timeoutSec: number,
-  ): Promise<string> {
-    const config = await LlmService.getLlmConfig();
-    if (!config) {
-      throw new Error('LLM 未配置，请在系统配置中设置 LLM API');
-    }
-
-    const url = `${config.apiBaseUrl.replace(/\/+$/, '')}/chat/completions`;
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), timeoutSec * 1000);
-
-    const fetchResponse = await fetch(url, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        ...(config.apiKey ? { 'Authorization': `Bearer ${config.apiKey}` } : {}),
-      },
-      body: JSON.stringify({
-        model: config.modelName,
-        messages: [
-          { role: 'system', content: systemPrompt },
-          { role: 'user', content: userContent },
-        ],
-        temperature,
-        response_format: { type: 'json_object' },
-      }),
-      signal: controller.signal,
-    });
-    clearTimeout(timeoutId);
-
-    if (!fetchResponse.ok) {
-      throw new Error(`LLM API 返回 ${fetchResponse.status}`);
-    }
-
-    const data = await fetchResponse.json();
-    return data.choices?.[0]?.message?.content || '';
-  }
-
-  /**
    * 解析 LLM 原始 JSON 响应为 CheckResult
    */
   private static parseRawResponse(
@@ -278,131 +238,4 @@ export class StandardClauseCheckService {
     };
   }
 
-  // ==================== Task 8.5: Researcher 多轮检索 ====================
-
-  /** 检索质量评估阈值（字符数） */
-  private static readonly MIN_CONTENT_THRESHOLD = parseInt(process.env.AGENT_MIN_CONTENT_THRESHOLD || '100', 10);
-
-  /** Researcher 最大循环次数（与 OpenSpec MAX_RESEARCH_LOOPS=3 一致） */
-  private static readonly MAX_RESEARCH_LOOPS = parseInt(process.env.AGENT_MAX_RESEARCH_LOOPS || '3', 10);
-
-  /** 是否启用 Researcher 多轮检索 */
-  private static readonly ENABLE_RESEARCHER = process.env.AGENT_ENABLE_RESEARCHER !== 'false';
-
-  private static evaluateRetrievalQuality(context: string, loopCount: number): { shouldStop: boolean; reason: string } {
-    if (!context || context.trim().length === 0) return { shouldStop: false, reason: '检索结果为空' };
-    if (context.length >= this.MIN_CONTENT_THRESHOLD) return { shouldStop: true, reason: '检索内容充足' };
-    if (loopCount >= this.MAX_RESEARCH_LOOPS) return { shouldStop: true, reason: '已达最大循环次数' };
-    return { shouldStop: false, reason: `检索内容不足(${context.length}字 < ${this.MIN_CONTENT_THRESHOLD}字)` };
-  }
-
-  private static generateNextQuery(originalQuery: string, previousContext: string, loopCount: number): string {
-    if (loopCount === 0) return originalQuery;
-    const keywords = previousContext.split(/[\s,，。；;、\n]+/).filter(w => w.length >= 2).slice(0, 5);
-    const mainKeyword = originalQuery.split(/[\s,，。；;、\n]+/)[0] || originalQuery;
-    return `${mainKeyword} ${keywords.join(' ')}`.trim();
-  }
-
-  static async checkSingleClauseWithResearch(
-    clause: StandardClause, text: string,
-    options?: { temperature?: number; timeout?: number; retrieveFunction?: (query: string) => Promise<string> },
-  ): Promise<CheckResult> {
-    let context = '';
-    for (let loopCount = 0; loopCount < this.MAX_RESEARCH_LOOPS; loopCount++) {
-      const query = this.generateNextQuery(`${clause.code} ${clause.title} ${clause.content}`, context, loopCount);
-      if (options?.retrieveFunction) {
-        const newContext = await options.retrieveFunction(query);
-        if (newContext && newContext.length > context.length) context = newContext;
-      }
-      const { shouldStop, reason } = this.evaluateRetrievalQuality(context, loopCount);
-      if (shouldStop) { console.log(`[StandardClauseCheck] Researcher: ${reason}（第${loopCount + 1}轮）`); break; }
-      else console.log(`[StandardClauseCheck] ${reason}（第${loopCount + 1}轮）`);
-    }
-    const contextSection = context ? `\n\n【相关参考信息】\n${context}` : '';
-    const userContent = `## 标准条文\n${clause.code} ${clause.title}\n${clause.content}${contextSection}\n\n## 待审查文档\n${text}`;
-    try {
-      const rawResponse = await this.callLlmRaw(CLAUSE_CHECK_SYSTEM_PROMPT, userContent, options?.temperature ?? 0, options?.timeout ?? 60);
-      return this.parseRawResponse(rawResponse, clause);
-    } catch (e) {
-      return {
-        clauseId: clause.id, clauseCode: clause.code, clauseTitle: clause.title, clauseContent: clause.content,
-        status: 'UNVERIFIED', description: `出错: ${(e as Error).message}`, suggestion: null, originalText: null,
-      };
-    }
-  }
-
-  // ==================== Task 8.6: Auditor 复核 ====================
-
-  private static readonly MAX_AUDIT_LOOPS = parseInt(process.env.AGENT_MAX_AUDIT_LOOPS || '2', 10);
-  private static readonly ENABLE_AUDITOR = process.env.AGENT_ENABLE_AUDITOR !== 'false';
-
-  private static readonly AUDITOR_SYSTEM_PROMPT = '你是文件合规审查复核专家。对已审查出的问题项进行二次复核，判断是否准确。只输出 JSON：{"decision":"CONFIRMED|REJECTED|UNCERTAIN","reason":"..."}';
-
-  static async auditCheckResult(
-    result: CheckResult, text: string,
-    options?: { temperature?: number; timeout?: number },
-  ): Promise<{ decision: 'CONFIRMED' | 'REJECTED' | 'UNCERTAIN'; reason: string; revisedResult?: CheckResult }> {
-    if (result.status === 'COMPLIANT') return { decision: 'CONFIRMED', reason: '合规项无需复核' };
-    const userContent = `## 审查结论\n条文：${result.clauseCode}\n结论：${result.status}\n描述：${result.description || '无'}\n\n## 文档原文\n${text}\n\n请复核：`;
-    for (let loop = 0; loop < this.MAX_AUDIT_LOOPS; loop++) {
-      try {
-        const rawResponse = await this.callLlmRaw(this.AUDITOR_SYSTEM_PROMPT, userContent, options?.temperature ?? 0, options?.timeout ?? 30);
-        const match = rawResponse.match(/"decision"\s*:\s*"(CONFIRMED|REJECTED|UNCERTAIN)"/);
-        const reasonMatch = rawResponse.match(/"reason"\s*:\s*"([^"]+)"/);
-        const decision = (match?.[1] as any) || 'UNCERTAIN';
-        const reason = reasonMatch?.[1] || '无法解析';
-        if (decision === 'CONFIRMED') return { decision, reason, revisedResult: result };
-        if (decision === 'REJECTED' && loop < this.MAX_AUDIT_LOOPS - 1) {
-          result.status = 'UNVERIFIED';
-          result.description = `[Auditor驳回] ${reason}`;
-          continue;
-        }
-        return { decision, reason, revisedResult: result };
-      } catch (e) {
-        return { decision: 'UNCERTAIN', reason: '复核出错', revisedResult: result };
-      }
-    }
-    return { decision: 'UNCERTAIN', reason: '已达最大复核次数', revisedResult: result };
-  }
-
-  static async checkClausesWithAudit(
-    clauses: StandardClause[], text: string,
-    options?: { temperature?: number; timeout?: number; concurrency?: number; retrieveFunction?: (query: string) => Promise<string> },
-  ): Promise<{
-    results: CheckResult[]; compliant: number; nonCompliant: number; unverified: number;
-    auditorStats: { confirmed: number; rejected: number; uncertain: number };
-  }> {
-    const concurrency = options?.concurrency ?? 3;
-    const results: CheckResult[] = [];
-    let compliant = 0, nonCompliant = 0, unverified = 0;
-    const auditorStats = { confirmed: 0, rejected: 0, uncertain: 0 };
-
-    for (let i = 0; i < clauses.length; i += concurrency) {
-      const batch = clauses.slice(i, i + concurrency);
-      const batchResults = await Promise.all(batch.map(async (clause) => {
-        const result = this.ENABLE_RESEARCHER
-          ? await this.checkSingleClauseWithResearch(clause, text, options)
-          : await this.checkSingleClause(clause, text, options);
-
-        if (this.ENABLE_AUDITOR && (result.status === 'NON_COMPLIANT' || result.status === 'UNVERIFIED')) {
-          const audit = await this.auditCheckResult(result, text, options);
-          if (audit.decision === 'CONFIRMED') auditorStats.confirmed++;
-          else if (audit.decision === 'REJECTED') auditorStats.rejected++;
-          else auditorStats.uncertain++;
-          return audit.revisedResult || result;
-        }
-        return result;
-      }));
-
-      for (const r of batchResults) {
-        results.push(r);
-        if (r.status === 'COMPLIANT') compliant++;
-        else if (r.status === 'NON_COMPLIANT') nonCompliant++;
-        else unverified++;
-      }
-    }
-
-    console.log(`[StandardClauseCheck] 完成: ${compliant}合规, ${nonCompliant}不符合, ${unverified}不确定 | [Auditor] ${auditorStats.confirmed}确认, ${auditorStats.rejected}驳回`);
-    return { results, compliant, nonCompliant, unverified, auditorStats };
-  }
 }

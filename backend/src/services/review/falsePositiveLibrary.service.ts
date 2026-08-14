@@ -63,9 +63,11 @@ class FalsePositiveLibraryService {
     taskId?: string
     taskTitle?: string
   }) {
-    // 检查是否已存在相同原文的记录
+    // P1-2：写读口径统一——按归一化文本匹配（此前写入侧精确匹配、消费侧归一化匹配，
+    // 同一文本因标点/全半角差异在库中分裂多条、count 计数错位）
+    const normalized = normalizeText(detail.originalText);
     const existing = await prisma.falsePositiveLibrary.findFirst({
-      where: { originalText: detail.originalText },
+      where: { normalizedText: normalized },
     })
 
     if (existing) {
@@ -83,6 +85,7 @@ class FalsePositiveLibraryService {
       return prisma.falsePositiveLibrary.create({
         data: {
           originalText: detail.originalText,
+          normalizedText: normalized,
           fpReason: detail.fpReason,
           issueType: detail.issueType,
           ruleCode: detail.ruleCode,
@@ -100,8 +103,9 @@ class FalsePositiveLibraryService {
    * 删除误报记录（取消标记时调用）
    */
   static async remove(originalText: string) {
+    // P1-2：与写入侧同口径（归一化匹配）
     const existing = await prisma.falsePositiveLibrary.findFirst({
-      where: { originalText },
+      where: { normalizedText: normalizeText(originalText) },
     })
 
     if (!existing) return null
@@ -150,25 +154,49 @@ class FalsePositiveLibraryService {
    */
   static async isInLibrary(text: string): Promise<boolean> {
     const count = await prisma.falsePositiveLibrary.count({
-      where: { originalText: text },
+      where: { normalizedText: normalizeText(text) },
     })
     return count > 0
   }
 
   /**
    * 批量检查多个文本是否在误报库中
-   * 一次加载全量误报库到内存，归一化匹配，避免逐条查库
+   * 一次加载全量误报库到内存，归一化匹配（P1-2：按 (归一化文本, ruleCode) 二元组，
+   * 同一文本不同规则上下文不再互相误伤）
+   * @returns Map<归一化文本, Set<ruleCode|null>>（null 表示任意规则上下文均命中）
    */
   static async batchCheck(texts: string[]): Promise<Map<string, boolean>> {
     const allFps = await prisma.falsePositiveLibrary.findMany({
-      select: { originalText: true },
+      select: { originalText: true, ruleCode: true, normalizedText: true },
     });
-    const fpSet = new Set(allFps.map(fp => normalizeText(fp.originalText)));
+    const fpMap = new Map<string, Set<string | null>>();
+    for (const fp of allFps) {
+      const key = fp.normalizedText || normalizeText(fp.originalText);
+      if (!fpMap.has(key)) fpMap.set(key, new Set());
+      fpMap.get(key)!.add(fp.ruleCode || null);
+    }
     const result = new Map<string, boolean>();
     for (const text of texts) {
-      result.set(text, fpSet.has(normalizeText(text)));
+      result.set(text, fpMap.has(normalizeText(text)));
     }
     return result;
+  }
+
+  /**
+   * P1-2：加载误报库为 (归一化文本 → ruleCode 集合) 映射，供审查主流程过滤使用
+   * 与 batchCheck 同口径；ruleCode 集合含 null 表示该文本任意规则上下文均命中
+   */
+  static async loadFpRuleMap(): Promise<Map<string, Set<string | null>>> {
+    const allFps = await prisma.falsePositiveLibrary.findMany({
+      select: { originalText: true, ruleCode: true, normalizedText: true },
+    });
+    const fpMap = new Map<string, Set<string | null>>();
+    for (const fp of allFps) {
+      const key = fp.normalizedText || normalizeText(fp.originalText);
+      if (!fpMap.has(key)) fpMap.set(key, new Set());
+      fpMap.get(key)!.add(fp.ruleCode || null);
+    }
+    return fpMap;
   }
 }
 

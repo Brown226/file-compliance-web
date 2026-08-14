@@ -29,6 +29,7 @@ import { StandardClauseCheckService } from '../standard/standard-clause-check.se
 import { SmartJudgeService } from './cross-review/smart-judge.service';
 import { ImageTextCheckService } from './cross-review/image-text-check.service';
 import { TextCrossCheckService } from './cross-review/text-cross-check.service';
+import { ChunkSplitterService, SectionChunk } from './chunk-splitter.service'; // P1-5: 章节感知切块
 import { runAllRules } from '../rules';
 
 export interface DecReviewResult {
@@ -183,16 +184,49 @@ export class DecReviewService {
     config: PipelineReviewConfig,
   ): Promise<ReviewIssue[]> {
     if (checkpoints.length === 0) return [];
+
+    // P1-5：条文→章节块映射——按 TOC 章节切块后，条文只注入"命中块"而非全文。
+    // 此前每条条文 prompt 都拼整篇 extractedText：O(审点数)×全文 token，超上下文窗口
+    // 被截断 → 后段条文静默漏报。匹配不到相关章节的条文回退全文注入（保证不漏审）。
+    let sectionChunks: SectionChunk[] | null = null;
+    try {
+      const { chunks } = ChunkSplitterService.splitTextBySection(text);
+      if (chunks.length > 0) sectionChunks = chunks;
+    } catch (e) {
+      console.warn('[DecReview] 章节切块失败，条文回退全文注入:', e);
+      sectionChunks = null;
+    }
+
     // 适配 StandardClause 类型：id/code/title/content/category
     // DEC-2 修复：透传 checkPrompt（审点工程化字段），由 checkSingleClause 注入用户 prompt
-    const clauses = checkpoints.map(c => ({
-      id: c.id,
-      code: c.clauseCode || c.id,
-      title: c.clauseCode || '',
-      content: c.clauseText,
-      category: c.auditDimension,
-      checkPrompt: c.checkPrompt || '',
-    }));
+    const clauses = checkpoints.map(c => {
+      const clause: any = {
+        id: c.id,
+        code: c.clauseCode || c.id,
+        title: c.clauseCode || '',
+        content: c.clauseText,
+        category: c.auditDimension,
+        checkPrompt: c.checkPrompt || '',
+      };
+      // P1-5: 条文关键词 → 命中章节块（归一化包含匹配；条文无关键词时回退全文）
+      if (sectionChunks && c.clauseText) {
+        const keywords = this.extractClauseKeywords(c.clauseText);
+        const hits = sectionChunks.filter(chunk => {
+          const norm = chunk.text.replace(/[\s\u3000\t\r\n]+/g, '');
+          return keywords.some(k => k.length >= 2 && norm.includes(k));
+        });
+        if (hits.length > 0) {
+          // 命中块按原文顺序拼接，最多取 5 块（含相邻上下文已由章节边界保证）
+          hits.sort((a, b) => a.startIndex - b.startIndex);
+          const joined = hits.slice(0, 5).map(h => h.text).join('\n\n---\n\n');
+          if (joined.length > 0) {
+            clause.textOverride = joined;
+          }
+        }
+      }
+      return clause;
+    });
+
     const { results } = await StandardClauseCheckService.checkClauses(clauses, text, {
       temperature: 0.1,
       timeout: config.llmTimeout || 60,
@@ -204,6 +238,18 @@ export class DecReviewService {
       if (issue) issues.push(issue);
     }
     return issues;
+  }
+
+  /**
+   * P1-5：从条文文本提取匹配关键词（取前 3 个 2-8 字片段，覆盖编号+主题词）
+   */
+  private static extractClauseKeywords(clauseText: string): string[] {
+    const cleaned = clauseText
+      .replace(/[，。、；：""''（）【】《》,.:;'"()\[\]{}<>！？!?]/g, ' ')
+      .split(/\s+/)
+      .filter(w => w.length >= 2 && w.length <= 8);
+    // 去重保序，最多取 3 个
+    return Array.from(new Set(cleaned)).slice(0, 3);
   }
 
   /**

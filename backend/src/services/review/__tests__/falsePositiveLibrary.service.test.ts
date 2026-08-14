@@ -44,11 +44,11 @@ describe('FalsePositiveLibraryService.syncFromTaskDetail', () => {
     expect(args.data.fpReason).toBe('旧原因');
   });
 
-  it('原文不存在时走 create 并写入完整字段', async () => {
+  it('原文不存在时走 create 并写入完整字段（含 P1-2 归一化字段）', async () => {
     findFirstMock.mockResolvedValue(null);
     createMock.mockResolvedValue({ id: 'fp-new' } as any);
     await FalsePositiveLibraryService.syncFromTaskDetail({
-      originalText: '新原文',
+      originalText: '新原文，带标点。',
       fpReason: '原因',
       issueType: 'TYPO',
       ruleCode: 'TYPO-1',
@@ -60,9 +60,11 @@ describe('FalsePositiveLibraryService.syncFromTaskDetail', () => {
     });
     expect(createMock).toHaveBeenCalledTimes(1);
     const args = createMock.mock.calls[0][0];
-    expect(args.data.originalText).toBe('新原文');
+    expect(args.data.originalText).toBe('新原文，带标点。');
     expect(args.data.ruleCode).toBe('TYPO-1');
     expect(args.data.markedByName).toBe('用户甲');
+    // P1-2：写入侧带归一化原文（与消费侧同口径）
+    expect(args.data.normalizedText).toBe('新原文带标点');
   });
 });
 
@@ -113,7 +115,7 @@ describe('FalsePositiveLibraryService.remove', () => {
   });
 });
 
-describe('FalsePositiveLibraryService.batchCheck', () => {
+describe('FalsePositiveLibraryService.batchCheck / loadFpRuleMap（P1-2 二元组口径）', () => {
   let findManyMock: ReturnType<typeof vi.spyOn>;
 
   beforeEach(() => {
@@ -125,14 +127,25 @@ describe('FalsePositiveLibraryService.batchCheck', () => {
     findManyMock.mockRestore();
   });
 
-  it('命中文本映射为 true，未命中为 false', async () => {
+  it('batchCheck：归一化匹配（标点/空白差异命中）', async () => {
     findManyMock.mockResolvedValue([
-      { originalText: '已知误报 A', count: 1 },
-      { originalText: '已知误报 B', count: 2 },
+      { originalText: '已知误报 A', normalizedText: '已知误报a', ruleCode: 'TYPO-1' },
+      { originalText: '已知误报 B', normalizedText: '已知误报b', ruleCode: null },
     ] as any);
-    const result = await FalsePositiveLibraryService.batchCheck(['已知误报 A', '新文本', '已知误报 B']);
+    const result = await FalsePositiveLibraryService.batchCheck(['已知误报 A', '已知误报A！', '新文本']);
     expect(result.get('已知误报 A')).toBe(true);
-    expect(result.get('已知误报 B')).toBe(true);
+    expect(result.get('已知误报A！')).toBe(true);
     expect(result.get('新文本')).toBe(false);
+  });
+
+  it('loadFpRuleMap：返回 (归一化文本 → ruleCode 集合)，ruleCode 为 null 记入集合', async () => {
+    findManyMock.mockResolvedValue([
+      { originalText: 'A', normalizedText: 'a', ruleCode: 'TYPO-1' },
+      { originalText: 'B', normalizedText: 'b', ruleCode: null },
+    ] as any);
+    const map = await FalsePositiveLibraryService.loadFpRuleMap();
+    expect(map.get('a')).toEqual(new Set(['TYPO-1']));
+    expect(map.get('b')).toEqual(new Set([null]));
+    expect(map.has('c')).toBe(false);
   });
 });

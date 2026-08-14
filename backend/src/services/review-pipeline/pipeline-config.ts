@@ -43,21 +43,4 @@ export function getEffectiveConfig(ctx: PipelineContext): PipelineReviewConfig {
  */
 export { getMaxConcurrentReviews };
 
-/**
- * 检查某阶段是否应该运行
- * @param ctx Pipeline 上下文
- * @param defaultEnabled 默认启用状态
- * @param stageName 阶段名称：'rules' | 'ai' | 'stdRef'
- */
-export function shouldRunStage(
-  ctx: PipelineContext,
-  defaultEnabled: boolean,
-  _stageName: 'rules' | 'ai' | 'stdRef',
-): boolean {
-  if (ctx.executionOverrides?.stages && _stageName in ctx.executionOverrides.stages) {
-    return ctx.executionOverrides.stages[_stageName] !== false;
-  }
-  return defaultEnabled;
-}
-
 

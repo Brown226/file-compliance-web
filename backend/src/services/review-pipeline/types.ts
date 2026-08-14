@@ -143,8 +143,6 @@ export interface PipelineContext {
     totalChunks: number,
     engine: string,
   ) => Promise<void>;
-  /** 阶段1（规则+标准引用）完成后的回调，允许立即返回快速结果 */
-  onFastResult?: (fastResult: { ruleIssues: RuleIssue[]; stdRefIssues: ReviewIssue[] }) => void;
   /** 是否启用文件内一致性检查 */
   intraFileConsistency?: boolean;
   /** 条文库条目（从 rule_library_items 加载，用于 AI 语义审查） */
@@ -173,8 +171,10 @@ export interface PipelineContext {
   coverInfo?: CoverInfo;
   /** 任务创建者 ID（用于记忆系统注入） */
   userId?: string;
-  /** 预加载的归一化误报原文集合（任务级预加载，内存归一化匹配） */
+  /** 预加载的归一化误报原文集合（任务级预加载，内存归一化匹配）——历史字段，新代码用 fpLibraryMap */
   fpLibrarySet?: Set<string>;
+  /** P1-2: 误报库映射（归一化文本 → ruleCode 集合），审查过滤按 (文本, ruleCode) 二元组匹配 */
+  fpLibraryMap?: Map<string, Set<string | null>>;
   /** OCR 降级原因（非空表示 OCR 服务不可用或失败，审查应生成告警） */
   ocrDegradedReason?: string;
   /** DEC_REVIEW 专用：预加载的审点库（rule_library_items 记录，V3.2 合并后唯一载体） */

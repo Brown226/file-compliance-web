@@ -15,6 +15,7 @@ import { resolveFilePath } from '../../config/upload';
 import { parallelLimit } from '../../utils/parallel';
 import { getModeCapabilitiesConfig, ParamToleranceConfig } from '../review-pipeline/mode-config.service';
 import { getToleranceForUnit } from '../review-pipeline/param-tolerance';
+import { convertToBaseUnit, withinTolerance } from './unit-convert'; // P1-5: 共享单位换算（替代私有 2 维实现）
 import { LlmService, TextChunk } from '../llm/llm.service';
 import { PromptLoader } from '../prompts';
 import { CONSISTENCY_DIMENSIONS } from '../prompts';
@@ -1227,29 +1228,23 @@ ${fileBlocks}
 
     // 如果两个都能解析为数值，比较数值
     if (a.numeric !== null && b.numeric !== null) {
-      // 先尝试单位统一
-      const aInBase = this.convertToBaseUnit(a.numeric, a.unit);
-      const bInBase = this.convertToBaseUnit(b.numeric, b.unit);
+      // P1-5: 单位换算统一走共享模块（此前私有实现仅支持温压 2 维，
+      // "5mm vs 0.5cm" 在 intra 判定一致、在 cross 判定不一致）
+      const aBase = convertToBaseUnit(a.numeric, a.unit);
+      const bBase = convertToBaseUnit(b.numeric, b.unit);
 
-      if (aInBase !== null && bInBase !== null) {
-        const diff = Math.abs(aInBase - bInBase);
-        const avg = (Math.abs(aInBase) + Math.abs(bInBase)) / 2;
-        // 按单位选择容差（默认 1%）
+      if (aBase && bBase && aBase.dimension === bBase.dimension) {
+        // 按单位选择容差（默认 1%）；P1-5: withinTolerance 分母统一为 max
+        //（此前 avg 与 intra 的 max 口径相反，1% 边界值两服务判定不同）
         const tol = getToleranceForUnit(a.unit, paramTolerance);
-        if (avg > 0 && diff / avg < tol) {
-          return true;
-        }
-        // 零值特殊处理
-        if (aInBase === 0 && bInBase === 0) {
+        if (withinTolerance(aBase.value, bBase.value, tol)) {
           return true;
         }
       }
 
-      // 直接数值比较（无单位转换时）
-      const diff = Math.abs(a.numeric - b.numeric);
-      const avg = (Math.abs(a.numeric) + Math.abs(b.numeric)) / 2;
+      // 直接数值比较（无单位转换或未知单位时）；同样 max 口径
       const tol = getToleranceForUnit(a.unit, paramTolerance);
-      if (avg > 0 && diff / avg < tol) {
+      if (withinTolerance(a.numeric, b.numeric, tol)) {
         return true;
       }
     }
@@ -1271,46 +1266,6 @@ ${fileBlocks}
     }
     return { original: value, numeric: null, unit: '' };
   }
-
-  /**
-   * 尝试将带单位的值转换为基准单位
-   * 目前支持温度和压力的常见单位换算
-   */
-  private static convertToBaseUnit(value: number, unit: string): number | null {
-    const normalizedUnit = unit.toLowerCase().replace(/\s/g, '');
-
-    // 温度：都以 °C 为基准
-    if (['°c', '℃', '度', 'oc'].includes(normalizedUnit)) {
-      return value; // 已经是摄氏度
-    }
-    if (['°f', '℉', 'of'].includes(normalizedUnit)) {
-      return (value - 32) * 5 / 9; // 华氏度转摄氏度
-    }
-    if (normalizedUnit === 'k') {
-      return value - 273.15; // 开尔文转摄氏度
-    }
-
-    // 压力：都以 MPa 为基准
-    if (['mpa', '兆帕'].includes(normalizedUnit)) {
-      return value;
-    }
-    if (['kpa', '千帕'].includes(normalizedUnit)) {
-      return value / 1000;
-    }
-    if (['pa', '帕'].includes(normalizedUnit)) {
-      return value / 1000000;
-    }
-    if (normalizedUnit === 'bar') {
-      return value * 0.1;
-    }
-    if (['atm', '标准大气压'].includes(normalizedUnit)) {
-      return value * 0.101325;
-    }
-
-    // 无单位或未知单位，不做转换
-    return null;
-  }
-
 
   /**
    * 判断是否为有效的参数名

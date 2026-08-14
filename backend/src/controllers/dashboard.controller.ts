@@ -1,4 +1,5 @@
 import { Request, Response, NextFunction } from 'express';
+import prisma from '../config/db';
 import { DashboardService } from '../services/system/dashboard.service';
 import { ReviewMetricsService } from '../services/review/review-metrics.service';
 import { dashboardExtendedService } from '../services/system/dashboard-extended.service';
@@ -64,6 +65,16 @@ export class DashboardController {
 
       if (!feedbackType || !['useful', 'false_positive', 'missed'].includes(feedbackType)) {
         error(res, 'feedbackType 必须为 useful/false_positive/missed', 400);
+        return;
+      }
+
+      // P1-4: detailId↔taskId 一致性校验（checkDetailAccess 已校验归属，这里防参数错位）
+      const detail = await prisma.taskDetail.findUnique({
+        where: { id: detailId },
+        select: { taskId: true },
+      });
+      if (!detail || detail.taskId !== taskId) {
+        error(res, '问题条目与任务不匹配', 404);
         return;
       }
 

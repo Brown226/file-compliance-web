@@ -361,39 +361,95 @@ function mergeSeverityMaps(
 }
 
 /**
- * 跨规则去重（P2-9）：同一缺陷被两条规则同时命中时，只保留一条。
+ * 跨规则去重（P2-9 / P1-3）：同一缺陷被两条规则同时命中时，只保留一条。
  *
  * 映射表语义：key 为"被丢弃方"的 ruleCode，dropWhenSameText 为"保留方"的 ruleCode 列表。
- * 仅当被丢弃方与任一保留方命中的 originalText 完全相同时才去重（位置代理 = 原文）。
- * 例如：同一半角逗号夹中文字符，FORMAT_006（半角/全角标点混用，info）与
- * PUNCT_001（中英文标点混用，warning）同时命中 → 保留 PUNCT_001，丢弃 FORMAT_006。
+ * P1-3 修复：
+ * 1. 碰撞判定从"originalText 完全相等"升级为"归一化碰撞"（去空白/标点）——
+ *    此前 FORMAT_006 的 originalText 是 ±10 字上下文窗口、PUNCT_001 是 2 字匹配段，
+ *    完全相等永不触发，跨规则去重是"测试通过但生产失效"的死代码；
+ * 2. 扩展重叠族：ATTR_001/UNIT_004（同图册编号正则）、HEADER_002/CODE_003（同空页眉）、
+ *    NAME_006/CODE_004（同坏文件名）；
+ * 3. 碰撞时保留 severity 更高者（同 severity 保留 ruleCode 字典序小者，确定性）。
  */
 const CROSS_RULE_DEDUP_MAP: Record<string, { dropWhenSameText: string[] }> = {
   'FORMAT_006': { dropWhenSameText: ['PUNCT_001'] },
+  'ATTR_001':   { dropWhenSameText: ['UNIT_004'] },
+  'HEADER_002': { dropWhenSameText: ['CODE_003'] },
+  'NAME_006':   { dropWhenSameText: ['CODE_004'] },
 };
+
+const SEVERITY_RANK: Record<string, number> = { error: 3, warning: 2, info: 1 };
+
+/** P1-3: 归一化碰撞键（去空白/标点，对齐误报库 normalizeText 的宽松度） */
+function normForDedup(text: string): string {
+  return text
+    .replace(/[\s\u3000\t\r\n]+/g, '')
+    .replace(/[，。、；：""''（）【】《》…—～,.:;'"()\[\]{}<>！？!?]/g, '')
+    .toLowerCase();
+}
+
+/**
+ * P1-3: 归一化碰撞判定——相等或互相包含均视为同一缺陷。
+ * 必要性：FORMAT_006 的 originalText 是 ±10 字上下文窗口、PUNCT_001 是 2 字匹配段，
+ * 完全相等永不触发（P2-9 去重在生产失效的根因）。
+ */
+function normCollide(a: string, b: string): boolean {
+  if (a === b) return true;
+  if (a.length >= b.length) return a.includes(b);
+  return b.includes(a);
+}
+
+/** 规则所属去重组（不在映射表内的规则返回 null，不参与跨规则去重） */
+function dedupGroupOf(ruleCode: string): string | null {
+  for (const [drop, cfg] of Object.entries(CROSS_RULE_DEDUP_MAP)) {
+    if (ruleCode === drop || cfg.dropWhenSameText.includes(ruleCode)) return drop;
+  }
+  return null;
+}
 
 /**
  * 对聚合后的规则输出做跨规则去重（纯函数，便于单测）。
- * 被丢弃方命中与任一保留方相同的 originalText 时丢弃；否则原样保留。
+ * 同组规则归一化原文碰撞时保留 severity 更高者；否则原样保留。
  */
 export function dedupeCrossRuleIssues(issues: RuleIssue[]): RuleIssue[] {
-  // 收集"保留方"命中过的原文集合
-  const keeperTexts = new Set<string>();
-  for (const issue of issues) {
-    const cfg = CROSS_RULE_DEDUP_MAP[issue.ruleCode];
-    if (cfg) continue; // 被丢弃方本身不算保留方
-    if (!issue.originalText) continue;
-    for (const c of Object.values(CROSS_RULE_DEDUP_MAP)) {
-      if (c.dropWhenSameText.includes(issue.ruleCode)) keeperTexts.add(issue.originalText);
-    }
-  }
-  if (keeperTexts.size === 0) return issues;
+  if (issues.length < 2) return issues;
 
-  return issues.filter((issue) => {
-    const cfg = CROSS_RULE_DEDUP_MAP[issue.ruleCode];
-    if (!cfg || !issue.originalText) return true;
-    return !keeperTexts.has(issue.originalText);
-  });
+  const rank = (s?: string) => SEVERITY_RANK[s as string] || 0;
+  const keep: RuleIssue[] = [];
+  for (const issue of issues) {
+    const group = issue.ruleCode ? dedupGroupOf(issue.ruleCode) : null;
+    const norm = issue.originalText ? normForDedup(issue.originalText) : '';
+    if (!group || !norm) {
+      keep.push(issue);
+      continue;
+    }
+
+    // 与已保留的同组条目做碰撞判定：
+    // - 同 ruleCode（不同位置实例）：仅"完全相等"才视为同一处（避免相邻窗口文本包含误伤）
+    // - 跨 ruleCode（FORMAT_006 窗口 vs PUNCT_001 匹配段）：归一化包含判定
+    const conflictIdx = keep.findIndex((k) => {
+      if (!k.ruleCode || !k.originalText) return false;
+      if (dedupGroupOf(k.ruleCode) !== group) return false;
+      const kNorm = normForDedup(k.originalText);
+      if (k.ruleCode === issue.ruleCode) return kNorm === norm;
+      return normCollide(kNorm, norm);
+    });
+    if (conflictIdx < 0) {
+      keep.push(issue);
+      continue;
+    }
+
+    const existing = keep[conflictIdx];
+    const existingBetter =
+      rank(existing.severity) > rank(issue.severity) ||
+      (rank(existing.severity) === rank(issue.severity) && (existing.ruleCode || '') <= (issue.ruleCode || ''));
+    if (!existingBetter) {
+      keep[conflictIdx] = issue; // 新条目 severity 更高（或字典序更小），替换
+    }
+    // 否则丢弃当前 issue（已有条目更优）
+  }
+  return keep;
 }
 
 /**

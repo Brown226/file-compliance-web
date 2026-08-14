@@ -64,7 +64,14 @@ export class AiReviewService {
       const { validateSources } = await import('../standard/source-validation.service');
       const validated = validateSources(enriched, ragChunkTexts, text);
       await ctx.onChunkProgress?.(text.length, enriched, 0, 1, 'rag-llm');
-      return { issues: validated.issues, engine: 'rag-llm', sources: result.sourceReferences };
+      return {
+        issues: validated.issues,
+        engine: 'rag-llm',
+        sources: result.sourceReferences,
+        // P0-4: 透传知识库零命中降级（任务级落库 degradedReason，结果页可见）
+        degraded: (result as any).degraded,
+        degradedReason: (result as any).degradedReason,
+      };
     } catch (e) {
       console.error('[Pipeline] RAG review failed, degrading to LLM:', e);
       // OPT-027: RAG 失败时降级到纯 LLM，并标记 degraded
@@ -1112,10 +1119,14 @@ export class AiReviewService {
       const maxRefChars = contextWindow - outputBudget - systemPrompt.length - chunkSize - safetyMargin;
 
       if (refTextsJoined.length > maxRefChars) {
-        // 参照文件超长，尝试 Embedding 智能检索
+        // 参照文件超长：机械分段后按上下文预算截断（P0-5 修复——此前分段结果 refChunks
+        // 算而不用，per-clause 仍注入全文 refTextsJoined → 上下文溢出 → 该条款静默返回 []，
+        // 长模板合同的条款级审查可能整批丢失）
         try {
           refChunks = [];
+          let usedChars = 0;
           for (const refText of refTextsJoined.split('\n\n---\n\n')) {
+            if (usedChars >= maxRefChars) break;
             const paras = refText.split('\n').reduce((acc: string[], line: string) => {
               if (!line.trim()) { acc.push(''); return acc; }
               const last = acc.length > 0 ? acc[acc.length - 1] : '';
@@ -1126,10 +1137,19 @@ export class AiReviewService {
               }
               return acc;
             }, ['']);
-            refChunks.push(...paras.filter((p: string) => p.length >= 50));
+            for (const p of paras.filter((x: string) => x.length >= 50)) {
+              if (usedChars + p.length > maxRefChars) {
+                refChunks.push(p.substring(0, Math.max(0, maxRefChars - usedChars)));
+                usedChars = maxRefChars;
+                break;
+              }
+              refChunks.push(p);
+              usedChars += p.length + 4; // +4 近似分隔符
+            }
           }
+          console.log(`[ContractReview] 参照文件超长，分段截断为 ${refChunks.length} 段（预算 ${maxRefChars} 字符）`);
         } catch (e: any) {
-          console.warn(`[ContractReview] 参照文件 Embedding 失败，降级截断: ${e.message}`);
+          console.warn(`[ContractReview] 参照文件分段失败，降级截断: ${e.message}`);
           refChunks = null;
           refTextsJoined = refTextsJoined.substring(0, Math.floor(maxRefChars));
         }
@@ -1182,7 +1202,9 @@ export class AiReviewService {
             // P2-12: 法条由"既定事实"降级为"候选线索"——系统按条款类型推断，可能不准确，
             // 需 LLM 自行判断是否适用，避免错误法条被当作权威上下文引导结论。
             const userContent = `【条款】${clause.clauseNo} ${clause.clauseTitle}\n${clause.clauseContent}\n\n【法律依据参考，可能不准确，请勿直接引用，需自行判断该法条是否适用；不适用则不引用或标注存疑】${legalBasis}`
-              + (refTextsJoined ? `\n\n【参照文件】\n${refTextsJoined}` : '')
+              // P0-5: 参照超长时注入分段截断结果（此前注入全文导致上下文溢出、条款静默丢失）
+              + (refChunks && refChunks.length > 0 ? `\n\n【参照文件（截断）】\n${refChunks.join('\n\n---\n\n')}` : '')
+              + (!refChunks && refTextsJoined ? `\n\n【参照文件】\n${refTextsJoined}` : '')
               + (ragContext ? `\n\n【知识库上下文】\n${ragContext}` : '')
               + `\n\n${mergedUserPromptTemplate}`;
             try {

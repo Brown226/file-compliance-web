@@ -49,6 +49,9 @@ export interface KnowledgeTreeNode {
 export interface RAGReviewResult {
   issues: ReviewIssue[];
   sourceReferences: SourceReference[];
+  /** P0-4: 本次 RAG 审查是否降级（如知识库零命中），供任务级降级落库/结果页提示 */
+  degraded?: boolean;
+  degradedReason?: string;
 }
 
 /** RAG 审查选项 */
@@ -370,19 +373,21 @@ export class RAGService {
         }
 
         console.log(`[RAG] 分片 ${i + 1}: 检测到 ${issues.length} 个问题`);
-        return { issues, sources };
+        return { issues, sources, zeroHit: standardContext === '' }; // P0-4: zeroHit 标记该片知识库零命中
       } catch (e: any) {
         console.warn(`[RAG] 分片 ${i + 1} 审查失败:`, e.message);
-        return { issues: [] as ReviewIssue[], sources: [] as SourceReference[] };
+        return { issues: [] as ReviewIssue[], sources: [] as SourceReference[], zeroHit: false };
       }
     });
 
     // 合并并行结果
     const allIssues: ReviewIssue[] = [];
     const allSources: SourceReference[] = [];
+    let zeroHitChunks = 0; // P0-4: 统计零命中分片数（全部零命中 → 降级标记）
     for (const r of chunkResults) {
       allIssues.push(...r.issues);
       allSources.push(...r.sources);
+      if ((r as any).zeroHit) zeroHitChunks++;
     }
 
     console.log(`[RAG] 审查完成: ${allIssues.length} 个问题, ${allSources.length} 条引用来源`);
@@ -390,6 +395,10 @@ export class RAGService {
     return {
       issues: allIssues,
       sourceReferences: allSources,
+      // P0-4: 知识库零命中显式化——杜绝"无参照审查结果被当成有依据合规结论"的静默漏报
+      ...(zeroHitChunks === totalChunks && totalChunks > 0
+        ? { degraded: true, degradedReason: '知识库未检索到相关内容，本次为无参照通用审查（结论无标准依据，请结合人工检查）' }
+        : {}),
     };
   }
 
