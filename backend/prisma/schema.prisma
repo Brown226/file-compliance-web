@@ -120,6 +120,7 @@ model Task {
   ruleLibraryId       String?        @map("rule_library_id")  // 关联的规则库 ID
   ruleLibrary         RuleLibrary?   @relation(fields: [ruleLibraryId], references: [id], onDelete: SetNull)
   aiEngineUsed        String?        @map("ai_engine_used")   // 实际使用的 AI 引擎（如 llm-direct, llm-with-knowledge, rag-llm 等）
+  degradedReason      String?        @map("degraded_reason")  // P0-4：本次审查降级原因汇总（RAG 不可用/零命中/OCR 降级等），结果页可追溯"没审到"
   files              TaskFile[]
   details            TaskDetail[]
   taskStandards      TaskStandard[]
@@ -309,6 +310,39 @@ model AuditLog {
   @@map("audit_logs")
 }
 
+/// 登录审计（AD 域认证配套，2026-08-11 新增）
+/// 记录每次登录尝试的成功/失败，供内网合规追溯 + 暴力破解检测
+model LoginAudit {
+  id        String   @id @default(uuid())
+  username  String // 登录尝试的用户名（工号）
+  success   Boolean // true=登录成功，false=失败
+  channel   String   @default("local") // local=本地密码 / ad=AD域认证 / ad_fallback=AD故障降级本地
+  reason    String? // 失败原因：bad_credentials / user_not_found / ad_unreachable / locked 等
+  ipAddress String?
+  userAgent String?
+  createdAt DateTime @default(now())
+
+  @@index([username, createdAt])
+  @@index([ipAddress, createdAt])
+  @@map("login_audits")
+}
+
+/// 登录失败锁定状态（防暴力破解）
+/// 同一 username 或 IP 连续失败达到阈值后锁定，到期自动失效
+model LoginFailLock {
+  id        String   @id @default(uuid())
+  username  String?
+  ipAddress String?
+  failCount Int      @default(0) // 连续失败次数
+  lockedAt  DateTime? // 锁定开始时间（null=未锁定）
+  lockUntil DateTime? // 锁定截止时间
+  updatedAt DateTime @updatedAt
+
+  @@unique([username])
+  @@unique([ipAddress])
+  @@map("login_fail_locks")
+}
+
 model SystemConfig {
   id        String   @id @default(uuid())
   key       String   @unique
@@ -411,9 +445,10 @@ model TerminologyWhitelist {
 model FalsePositiveLibrary {
   id            String   @id @default(uuid())
   originalText  String             @db.Text  // 被标记为误报的原文
+  normalizedText String?           @db.Text  // P1-2: 归一化原文（写入/查询统一口径，消除标点/全半角分裂）
   fpReason      String?            @db.Text  // 误报原因
   issueType     String?            // 问题分类
-  ruleCode      String?            // 规则代码
+  ruleCode      String?            // 规则代码（P1-2: 消费侧按 (归一化文本, ruleCode) 二元组过滤）
   severity      String?            // 严重度
   markedById    String?            // 标记人用户ID
   markedByName  String?            // 标记人姓名（冗余存储便于显示）
@@ -424,6 +459,7 @@ model FalsePositiveLibrary {
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 
+  @@unique([normalizedText]) // P1-2: 归一化唯一（Postgres 唯一索引允许多个 NULL，存量未回填行不冲突）
   @@index([originalText])
   @@index([issueType])
   @@index([lastMarkedAt])

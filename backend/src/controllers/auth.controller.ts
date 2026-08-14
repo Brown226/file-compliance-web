@@ -5,22 +5,83 @@ import { TokenService } from '../services/auth/token.service';
 import { AuthRequest } from '../middlewares/auth.middleware';
 import { success, error } from '../utils/response';
 import { validatePasswordComplexity } from '../utils/password-validator';
+import { authenticateWithAd, getAdConfig } from '../services/auth/ldap-auth.service';
+import { LoginAuditService } from '../services/auth/login-audit.service';
+
+// 本地密码 fallback 通道的保留账号：AD 故障/未启用时管理员仍可登录，避免系统锁死
+const AD_LOCAL_FALLBACK_USERS = new Set(['admin']);
 
 export const login = async (req: Request, res: Response): Promise<void> => {
+  const ipAddress = req.ip || req.socket?.remoteAddress;
+  const userAgent = req.headers['user-agent'] as string | undefined;
+
   try {
     const { username, password } = req.body;
 
     if (!username || !password) {
+      LoginAuditService.record({ username: username || 'unknown', success: false, channel: 'local', reason: 'missing_input', ipAddress, userAgent });
       error(res, '请提供用户名和密码', 400);
       return;
     }
 
-    // 查找用户
+    // 登录前锁定检查：防暴力破解（同 username 或 IP 连续失败达阈值）
+    const lockCheck = await LoginAuditService.checkLocked(username, ipAddress);
+    if (lockCheck.locked) {
+      LoginAuditService.record({ username, success: false, channel: 'local', reason: 'locked', ipAddress, userAgent });
+      error(res, '登录失败次数过多，账号已锁定 15 分钟，请稍后再试', 423);
+      return;
+    }
+
+    const adConfig = getAdConfig();
+    const isAdminAccount = AD_LOCAL_FALLBACK_USERS.has(username);
+
+    // AD 认证路径（启用且非保留账号）：
+    // - 验证通过 + 本地有账号 → 登录
+    // - 验证通过 + 本地无账号 → 拒绝（需管理员建档，符合内网管控）
+    // - 密码错误 → 拒绝
+    // - AD 服务不可达 → fallback 本地密码
+    let adResult: { ok: boolean; user?: any; reason?: string; error?: Error } | null = null;
+    let adAttempted = false;
+    if (adConfig.enabled && !isAdminAccount) {
+      adAttempted = true;
+      adResult = await authenticateWithAd(
+        username,
+        password,
+        async (uname) => prisma.user.findUnique({ where: { username: uname } }),
+      );
+
+      if (adResult.ok && adResult.user) {
+        // AD 认证通过：密码由域管控，无需本地弱口令检测
+        LoginAuditService.record({ username, success: true, channel: 'ad', ipAddress, userAgent });
+        LoginAuditService.clearFailures(username, ipAddress);
+        return finishLogin(res, adResult.user, true);
+      }
+      if (adResult.reason === 'user_not_found') {
+        // AD 验证通过但本地未建档 → 拒绝（这是"身份有效但未授权"，不计数失败锁定，避免管理员误锁）
+        LoginAuditService.record({ username, success: false, channel: 'ad', reason: 'user_not_found', ipAddress, userAgent });
+        error(res, 'AD 账号验证通过，但系统未找到该用户，请联系管理员建档', 401);
+        return;
+      }
+      if (adResult.reason === 'ad_failed') {
+        // 密码错误（AD 拒绝）→ 记失败 + 计数
+        LoginAuditService.record({ username, success: false, channel: 'ad', reason: 'bad_credentials', ipAddress, userAgent });
+        await LoginAuditService.recordFailure(username, ipAddress);
+        error(res, '用户名或密码错误', 401);
+        return;
+      }
+      // reason === 'ad_unreachable' → 降级本地密码（记审计后继续）
+      LoginAuditService.record({ username, success: false, channel: 'ad', reason: 'ad_unreachable', ipAddress, userAgent });
+    }
+
+    // 本地密码验证（现状逻辑：AD 未启用 / 管理员账号 / AD 故障 fallback）
+    const localChannel: 'local' | 'ad_fallback' = adAttempted ? 'ad_fallback' : 'local';
     const user = await prisma.user.findUnique({
       where: { username },
     });
 
     if (!user) {
+      LoginAuditService.record({ username, success: false, channel: localChannel, reason: 'bad_credentials', ipAddress, userAgent });
+      await LoginAuditService.recordFailure(username, ipAddress);
       error(res, '用户名或密码错误', 401);
       return;
     }
@@ -28,14 +89,19 @@ export const login = async (req: Request, res: Response): Promise<void> => {
     // 验证密码
     const isPasswordValid = await bcrypt.compare(password, user.passwordHash);
     if (!isPasswordValid) {
+      LoginAuditService.record({ username, success: false, channel: localChannel, reason: 'bad_credentials', ipAddress, userAgent });
+      await LoginAuditService.recordFailure(username, ipAddress);
       error(res, '用户名或密码错误', 401);
       return;
     }
 
-    // 密码弱口令检测：已存在但密码不满足复杂度要求时自动标记强制改密
+    // 登录成功：记审计 + 清零失败计数
+    LoginAuditService.record({ username, success: true, channel: localChannel, ipAddress, userAgent });
+    await LoginAuditService.clearFailures(username, ipAddress);
+
+    // 本地通道：对明文密码做弱口令检测，不满足则标记强制改密
     let mustChangePassword = user.mustChangePassword;
     if (!mustChangePassword) {
-      const { validatePasswordComplexity } = await import('../utils/password-validator');
       const check = validatePasswordComplexity(password);
       if (!check.valid) {
         mustChangePassword = true;
@@ -47,39 +113,51 @@ export const login = async (req: Request, res: Response): Promise<void> => {
       }
     }
 
-    // 更新最近登录时间（看板在线/活跃度统计用），异步执行不阻塞登录
-    prisma.user.update({
-      where: { id: user.id },
-      data: { lastLoginAt: new Date() },
-    }).catch((e: any) => console.warn('[Auth] 更新 lastLoginAt 失败:', e.message));
-
-    // 生成 Token
-    const payload = {
-      id: user.id,
-      username: user.username,
-      role: user.role,
-      departmentId: user.departmentId,
-    };
-    
-    const token = TokenService.generateToken(payload);
-
-    success(res, {
-      token,
-      mustChangePassword,
-      user: {
-        id: user.id,
-        username: user.username,
-        name: user.name,
-        role: user.role,
-        departmentId: user.departmentId,
-        mustChangePassword,
-      },
-    }, '登录成功');
+    // 本地通道：第三参传 false（非 AD，走本地弱口令检测已在上方处理）
+    return finishLogin(res, user, false, mustChangePassword);
   } catch (err) {
     console.error('Login Error:', err);
     error(res, '服务器内部错误', 500);
   }
 };
+
+/**
+ * 登录成功公共出口：生成 token + 返回用户信息
+ * @param adAuth 是否 AD 认证路径（true 时跳过本地弱口令检测，密码由域管控）
+ * @param mustChangePassword 强制改密标记（本地通道由调用方计算传入；AD 通道恒 false）
+ */
+async function finishLogin(res: Response, user: any, adAuth: boolean, mustChangePassword = false): Promise<void> {
+  const finalMustChange = adAuth ? false : mustChangePassword;
+
+  // 更新最近登录时间（看板在线/活跃度统计用），异步执行不阻塞登录
+  prisma.user.update({
+    where: { id: user.id },
+    data: { lastLoginAt: new Date() },
+  }).catch((e: any) => console.warn('[Auth] 更新 lastLoginAt 失败:', e.message));
+
+  // 生成 Token
+  const payload = {
+    id: user.id,
+    username: user.username,
+    role: user.role,
+    departmentId: user.departmentId,
+  };
+
+  const token = TokenService.generateToken(payload);
+
+  success(res, {
+    token,
+    mustChangePassword: finalMustChange,
+    user: {
+      id: user.id,
+      username: user.username,
+      name: user.name,
+      role: user.role,
+      departmentId: user.departmentId,
+      mustChangePassword: finalMustChange,
+    },
+  }, '登录成功');
+}
 
 export const logout = async (req: Request, res: Response): Promise<void> => {
   try {
