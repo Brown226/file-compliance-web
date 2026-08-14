@@ -129,7 +129,6 @@ async function deleteItem(id: string) {
   try {
     await deleteAgentSaveApi(id)
     saves.value = saves.value.filter((s) => s.id !== id)
-    // [无弹窗] 成功提示已移除：ElMessage.success('已删除')
   } catch (e: any) {
     ElMessage.error(`删除失败：${e?.message || '未知错误'}`)
   }
@@ -161,7 +160,6 @@ async function copyItem(item: SavedItem) {
 async function copyText(text: string) {
   try {
     await navigator.clipboard.writeText(text)
-    // [无弹窗] 成功提示已移除：ElMessage.success('已复制')
   } catch {
     /* 剪贴板不可用静默失败 */
   }

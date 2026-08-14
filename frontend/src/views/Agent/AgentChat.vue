@@ -639,7 +639,7 @@ function toggleTheme() {
     localStorage.setItem(THEME_STORAGE_KEY, isDark.value ? '1' : '0')
   } catch { /* ignore */ }
 }
-const { messages, sendMessage, stop, regenerate, isLoading, status, error, sessionId, loadHistory, clearSession, startNewSession, modelKey, toolPreset, thinkingLevel, setSettings, pendingAskAnswer } = useAgentChat()
+const { messages, sendMessage, stop, regenerate, isLoading, status, error, sessionId, loadHistory, startNewSession, modelKey, toolPreset, thinkingLevel, setSettings, pendingAskAnswer } = useAgentChat()
 
 const sessionListRef = ref<InstanceType<typeof AgentSessionList> | null>(null)
 
@@ -860,7 +860,6 @@ async function saveMessage(message: UIMessage) {
       sourceMessageId: message.id,
     })
     msgSaved[message.id] = true
-    // [无弹窗] 成功提示已移除：ElMessage.success('已收藏')
   } catch (e: any) {
     ElMessage.error(`收藏失败：${e?.message || '未知错误'}`)
   }
@@ -949,7 +948,6 @@ async function handleAutoName() {
   try {
     await autoNameSessionApi(sessionId.value)
     autoNameStatus.value = 'success'
-    // [无弹窗] 成功提示已移除：ElMessage.success('会话标题已更新')
     sessionListRef.value?.refresh?.()
     setTimeout(() => { autoNameStatus.value = 'idle' }, 2000)
   } catch (e) {
@@ -1024,7 +1022,6 @@ async function handleCompact() {
   try {
     const d = (await compactSessionApi(sessionId.value)).data
     if (d.truncatedMessages > 0) {
-      // [无弹窗] 成功提示已移除：ElMessage.success(`已压缩 ${d.truncatedMessages} 条早期消息，约省 ${for
     } else {
       ElMessage.info('当前消息量未达压缩阈值，无需压缩')
     }
@@ -1053,7 +1050,6 @@ async function handleSelectSession(sid: string) {
         thinkingLevel: detail.thinkingLevel,
       })
     } catch { /* 设置加载失败不阻断 */ }
-    // [无弹窗] 成功提示已移除：ElMessage.success('已切换到历史会话')
   } catch (e) {
     ElMessage.error('加载会话历史失败：' + (e as Error).message)
   }
@@ -1404,7 +1400,6 @@ async function customUpload(options: { file: File }) {
       path: data?.data?.filePath,
       kind: getFileKind(file.name),
     })
-    // [无弹窗] 成功提示已移除：ElMessage.success(`${file.name} 上传成功`)
   } catch (e) {
     ElMessage.error((e as Error)?.message || '上传失败')
   } finally { uploading.value = false }

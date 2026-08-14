@@ -41,21 +41,3 @@ export function scrubSensitive(text: string): string {
   }
   return result;
 }
-
-/**
- * 对文本进行脱敏处理，并截断超长内容。
- * 在 scrubSensitive 基础上，额外对超过 500 字符的完整文本做截断，
- * 适用于日志输出场景。
- *
- * @param text - 原始文本
- * @returns 脱敏并截断后的文本
- */
-export function scrubForLog(text: string): string {
-  const scrubbed = scrubSensitive(text);
-
-  if (scrubbed.length > 500) {
-    return `${scrubbed.slice(0, 500)}...[truncated ${scrubbed.length - 500} chars]`;
-  }
-
-  return scrubbed;
-}

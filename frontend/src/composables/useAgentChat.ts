@@ -84,12 +84,6 @@ export function useAgentChat() {
     sessionId.value = sid
   }
 
-  /** 清空当前对话（开新会话） */
-  function clearSession(): void {
-    messages.value = [] as any
-    sessionId.value = null
-  }
-
   /**
    * 新建会话：生成新的 sessionId（UUID）并清空消息。
    * 关键：不再把 sessionId 置 null——否则发送首条消息时后端因无 sessionId 无法持久化，
@@ -115,7 +109,7 @@ export function useAgentChat() {
     messages, status, error, sendMessage, stop, regenerate,
     isLoading, sessionId,
     modelKey, toolPreset, thinkingLevel, setSettings,
-    loadHistory, clearSession, startNewSession,
+    loadHistory, startNewSession,
     pendingAskAnswer,
   }
 }

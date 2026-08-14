@@ -78,14 +78,6 @@ export class SteeringService {
   }
 
   /**
-   * 清除 session 下所有 steering 指令。
-   */
-  static async clear(sessionId: string): Promise<void> {
-    const key = `${KEY_PREFIX}${sessionId}`;
-    await redisClient.del(key);
-  }
-
-  /**
    * 将 SteeringInstruction 数组渲染为 system prompt 中的段落。
    * 若无指令则返回空字符串。
    */

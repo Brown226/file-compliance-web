@@ -152,7 +152,6 @@ async function submit() {
     const res = await submitBatchApi(files)
     const id = (res?.data as any)?.id ?? res?.data?.id
     currentJob.value = { id, status: 'PENDING', progress: 0 } as any
-    // [无弹窗] 成功提示已移除：ElMessage.success('批量任务已提交')
     startPoll(id)
   } catch (e: any) {
     ElMessage.error(`提交失败：${e?.message || '未知错误'}`)
@@ -191,7 +190,6 @@ async function cancel() {
   if (!currentJob.value) return
   try {
     await cancelBatchApi(currentJob.value.id)
-    // [无弹窗] 成功提示已移除：ElMessage.success('已取消')
     stopPoll()
   } catch (e: any) {
     ElMessage.error(`取消失败：${e?.message || '未知错误'}`)

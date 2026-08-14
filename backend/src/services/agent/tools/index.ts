@@ -25,6 +25,7 @@ import { ToolCacheService, CACHEABLE_TOOLS } from '../tool-cache/tool-cache.serv
 import { runBeforeToolHooks, runAfterToolHooks } from '../tool-hook/tool-hook.service';
 import { registerDefaultToolHooks } from '../tool-hook/register-tool-hooks';
 import { TRUNCATABLE_TOOLS, truncateWrapper } from './truncate';
+import { isRetryable, calcBackoff } from '../retry/retry-strategy';
 import type { ToolContext } from './file';
 
 // P1-⑫ 工具拦截钩子首用例：模块加载时注册默认钩子（llm_review_chunk 审查结果去重），
@@ -32,7 +33,6 @@ import type { ToolContext } from './file';
 registerDefaultToolHooks();
 
 export type { ToolContext };
-export { createFileTools, createReviewTools, createKnowledgeTools, createPipelineTools, createMemoryTools };
 
 /**
  * 缓存包装器 — 对可缓存工具的 execute 做缓存拦截
@@ -88,7 +88,6 @@ function retryWrapper(
   execute: (args: any, options?: any) => Promise<any>,
 ): (args: any, options?: any) => Promise<any> {
   // P0 #1（接通纸面能力）：接入 retry-strategy 纯函数（isRetryable / calcBackoff）
-  const { isRetryable, calcBackoff } = require('../retry/retry-strategy');
   return async (args: any, options?: any) => {
     const t0 = Date.now();
     try {

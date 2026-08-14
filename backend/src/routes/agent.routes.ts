@@ -25,6 +25,7 @@ import { requireRole } from '../middlewares/rbac.middleware';
 import { AgentService } from '../services/agent/agent.service';
 import { LlmService } from '../services/llm/llm.service';
 import { QASessionService } from '../services/agent/qa-session.service';
+import { sessionStore } from '../services/agent/session-store';
 import { SessionStatsService } from '../services/agent/session-stats.service';
 import { MemoryService } from '../services/agent/memory/memory.service';
 import { SkillsService } from '../services/agent/skills/skills.service';
@@ -84,10 +85,7 @@ router.post('/chat/stream', async (req: AuthRequest, res: Response) => {
   });
   res.on('close', onClientClose);
   try {
-    const userId = req.user?.id;
-    if (!userId) {
-      return res.status(401).json({ success: false, message: '未认证' });
-    }
+    const userId = req.user.id;
 
     const messages = req.body?.messages;
     if (!Array.isArray(messages) || messages.length === 0) {
@@ -137,10 +135,7 @@ router.post('/chat/stream', async (req: AuthRequest, res: Response) => {
       // 2026-08-11 修复：区分「会话不存在」与「存在但越权」——
       // 前端 startNewSession() 用 crypto.randomUUID() 生成新会话 id 并随首条消息传入，
       // 此时会话在后端尚不存在，应自动创建而非 403（此前新会话首条消息必失败）。
-      const rawSession = await prisma.qASession.findUnique({
-        where: { id: sessionId },
-        select: { id: true, userId: true },
-      });
+      const rawSession = await sessionStore.getByIdWithOwner(sessionId);
       if (!rawSession) {
         // 会话 id 不存在 → 前端新会话场景，自动创建并绑定当前用户
         await QASessionService.ensureSession(sessionId, userId, undefined, {
@@ -408,11 +403,6 @@ router.post('/upload', agentUpload.single('file'), (req: AuthRequest, res: Respo
       return res.status(400).json({ success: false, message: '未接收到文件（FormData 字段名必须为 file）' });
     }
 
-    const userId = req.user?.id;
-    if (!userId) {
-      return res.status(401).json({ success: false, message: '未认证' });
-    }
-
     // 修复死代码：原实现读 (req as any).__agentGeneratedSessionId（从未被设置，恒为空串）。
     // multer 的 diskStorage destination 回调执行时 req.body 已含非文件字段，
     // 但此处不生成新 sessionId——新会话 ID 由前端在 /chat/stream 前用
@@ -486,10 +476,7 @@ function parseChunkIndexQuery(raw: unknown): number | null {
 
 router.get('/files/read', async (req: AuthRequest, res: Response) => {
   try {
-    const userId = req.user?.id;
-    if (!userId) {
-      return res.status(401).json({ success: false, message: '未认证' });
-    }
+    const userId = req.user.id;
 
     const filePath = (req.query.filePath as string) || '';
     if (!filePath) {
@@ -618,10 +605,7 @@ router.get('/files/read', async (req: AuthRequest, res: Response) => {
  */
 router.get('/sessions', async (req: AuthRequest, res: Response) => {
   try {
-    const userId = req.user?.id;
-    if (!userId) {
-      return res.status(401).json({ success: false, message: '未认证' });
-    }
+    const userId = req.user.id;
 
     const limit = Math.min(parseInt(String(req.query?.limit ?? '50'), 10) || 50, 200);
     const sessions = await QASessionService.listSessions(userId, limit);
@@ -639,10 +623,7 @@ router.get('/sessions', async (req: AuthRequest, res: Response) => {
  */
 router.get('/sessions/:sessionId', async (req: AuthRequest, res: Response) => {
   try {
-    const userId = req.user?.id;
-    if (!userId) {
-      return res.status(401).json({ success: false, message: '未认证' });
-    }
+    const userId = req.user.id;
 
     const sessionId = String(req.params.sessionId || '');
     if (!sessionId) {
@@ -670,10 +651,7 @@ router.get('/sessions/:sessionId', async (req: AuthRequest, res: Response) => {
  */
 router.get('/sessions/:sessionId/messages', async (req: AuthRequest, res: Response) => {
   try {
-    const userId = req.user?.id;
-    if (!userId) {
-      return res.status(401).json({ success: false, message: '未认证' });
-    }
+    const userId = req.user.id;
 
     const sessionId = String(req.params.sessionId || '');
     if (!sessionId) {
@@ -700,10 +678,7 @@ router.get('/sessions/:sessionId/messages', async (req: AuthRequest, res: Respon
  */
 router.patch('/sessions/:sessionId', async (req: AuthRequest, res: Response) => {
   try {
-    const userId = req.user?.id;
-    if (!userId) {
-      return res.status(401).json({ success: false, message: '未认证' });
-    }
+    const userId = req.user.id;
 
     const sessionId = String(req.params.sessionId || '');
     if (!sessionId) {
@@ -770,10 +745,7 @@ router.patch('/sessions/:sessionId', async (req: AuthRequest, res: Response) => 
  */
 router.delete('/sessions/:sessionId', async (req: AuthRequest, res: Response) => {
   try {
-    const userId = req.user?.id;
-    if (!userId) {
-      return res.status(401).json({ success: false, message: '未认证' });
-    }
+    const userId = req.user.id;
 
     const sessionId = String(req.params.sessionId || '');
     if (!sessionId) {
@@ -801,8 +773,7 @@ router.delete('/sessions/:sessionId', async (req: AuthRequest, res: Response) =>
  */
 router.post('/sessions/:sessionId/duplicate', async (req: AuthRequest, res: Response) => {
   try {
-    const userId = req.user?.id;
-    if (!userId) return res.status(401).json({ success: false, message: '未认证' });
+    const userId = req.user.id;
 
     const sessionId = String(req.params.sessionId || '');
     if (!sessionId) return res.status(400).json({ success: false, message: 'sessionId 不能为空' });
@@ -833,10 +804,7 @@ router.post('/sessions/:sessionId/duplicate', async (req: AuthRequest, res: Resp
  */
 router.get('/sessions/:sessionId/stats', async (req: AuthRequest, res: Response) => {
   try {
-    const userId = req.user?.id;
-    if (!userId) {
-      return res.status(401).json({ success: false, message: '未认证' });
-    }
+    const userId = req.user.id;
 
     const sessionId = String(req.params.sessionId || '');
     if (!sessionId) {
@@ -867,10 +835,7 @@ router.get('/sessions/:sessionId/stats', async (req: AuthRequest, res: Response)
  */
 router.post('/sessions/:sessionId/auto-name', async (req: AuthRequest, res: Response) => {
   try {
-    const userId = req.user?.id;
-    if (!userId) {
-      return res.status(401).json({ success: false, message: '未认证' });
-    }
+    const userId = req.user.id;
 
     const sessionId = String(req.params.sessionId || '');
     if (!sessionId) {
@@ -958,10 +923,7 @@ router.post('/sessions/:sessionId/auto-name', async (req: AuthRequest, res: Resp
  */
 router.get('/memory', async (req: AuthRequest, res: Response) => {
   try {
-    const userId = req.user?.id;
-    if (!userId) {
-      return res.status(401).json({ success: false, message: '未认证' });
-    }
+    const userId = req.user.id;
 
     const type = req.query?.type as string | undefined;
     const scope = req.query?.scope as string | undefined;
@@ -990,10 +952,7 @@ router.get('/memory', async (req: AuthRequest, res: Response) => {
  */
 router.put('/memory/:memoryId', async (req: AuthRequest, res: Response) => {
   try {
-    const userId = req.user?.id;
-    if (!userId) {
-      return res.status(401).json({ success: false, message: '未认证' });
-    }
+    const userId = req.user.id;
 
     const memoryId = String(req.params.memoryId || '');
     if (!memoryId) {
@@ -1034,10 +993,7 @@ router.put('/memory/:memoryId', async (req: AuthRequest, res: Response) => {
  */
 router.delete('/memory/:memoryId', async (req: AuthRequest, res: Response) => {
   try {
-    const userId = req.user?.id;
-    if (!userId) {
-      return res.status(401).json({ success: false, message: '未认证' });
-    }
+    const userId = req.user.id;
 
     const memoryId = String(req.params.memoryId || '');
     if (!memoryId) {
@@ -1068,10 +1024,7 @@ router.delete('/memory/:memoryId', async (req: AuthRequest, res: Response) => {
  */
 router.post('/steer', async (req: AuthRequest, res: Response) => {
   try {
-    const userId = req.user?.id;
-    if (!userId) {
-      return res.status(401).json({ success: false, message: '未认证' });
-    }
+    const userId = req.user.id;
 
     const { sessionId, message } = req.body || {};
     if (!sessionId || typeof sessionId !== 'string') {
@@ -1114,9 +1067,6 @@ router.post('/steer', async (req: AuthRequest, res: Response) => {
  */
 router.post('/summary', async (req: AuthRequest, res: Response) => {
   try {
-    const userId = req.user?.id;
-    if (!userId) return res.status(401).json({ success: false, message: '未认证' });
-
     const { issues, level = 'quick', context } = req.body || {};
     if (!Array.isArray(issues) || issues.length === 0) {
       return res.status(400).json({ success: false, message: 'issues 必须为非空数组' });
@@ -1293,8 +1243,7 @@ router.delete('/worktrees', requireRole('ADMIN'), async (req: AuthRequest, res: 
  */
 router.post('/sessions/:id/compact', async (req: AuthRequest, res: Response) => {
   try {
-    const userId = req.user?.id;
-    if (!userId) return res.status(401).json({ success: false, message: '未认证' });
+    const userId = req.user.id;
 
     const sessionId = String(req.params.id || '');
     const session = await QASessionService.getSession(sessionId, userId);
@@ -1795,10 +1744,7 @@ router.post('/providers/catalog', requireRole('ADMIN'), async (req: AuthRequest,
  */
 router.post('/issues/false-positive', async (req: AuthRequest, res: Response) => {
   try {
-    const userId = req.user?.id;
-    if (!userId) {
-      return res.status(401).json({ success: false, message: '未认证' });
-    }
+    const userId = req.user.id;
 
     const { originalText, reason, issueType, ruleCode, severity } = req.body || {};
     if (typeof originalText !== 'string' || originalText.trim().length === 0) {
@@ -1839,8 +1785,7 @@ router.post('/issues/false-positive', async (req: AuthRequest, res: Response) =>
  */
 router.post('/saves', async (req: AuthRequest, res: Response) => {
   try {
-    const userId = req.user?.id;
-    if (!userId) return res.status(401).json({ success: false, message: '未认证' });
+    const userId = req.user.id;
     const { type, title, content, sourceSessionId, sourceMessageId } = req.body || {};
     if (!title || typeof title !== 'string' || !content || typeof content !== 'string') {
       return res.status(400).json({ success: false, message: 'title 和 content 必填' });
@@ -1873,8 +1818,7 @@ router.post('/saves', async (req: AuthRequest, res: Response) => {
 
 router.get('/saves', async (req: AuthRequest, res: Response) => {
   try {
-    const userId = req.user?.id;
-    if (!userId) return res.status(401).json({ success: false, message: '未认证' });
+    const userId = req.user.id;
     const type = req.query.type;
     
     const items = await prisma.savedItem.findMany({
@@ -1894,8 +1838,7 @@ router.get('/saves', async (req: AuthRequest, res: Response) => {
 
 router.delete('/saves/:id', async (req: AuthRequest, res: Response) => {
   try {
-    const userId = req.user?.id;
-    if (!userId) return res.status(401).json({ success: false, message: '未认证' });
+    const userId = req.user.id;
     
     const result = await prisma.savedItem.deleteMany({ where: { id: String(req.params.id), userId } });
     if (result.count === 0) return res.status(404).json({ success: false, message: '收藏不存在' });
@@ -1908,8 +1851,7 @@ router.delete('/saves/:id', async (req: AuthRequest, res: Response) => {
 
 router.get('/search', async (req: AuthRequest, res: Response) => {
   try {
-    const userId = req.user?.id;
-    if (!userId) return res.status(401).json({ success: false, message: '未认证' });
+    const userId = req.user.id;
     const q = String(req.query.q || '').trim();
     if (!q) return res.json({ success: true, data: [] });
     // 防超长 ILIKE 拖垮数据库查询
@@ -2002,8 +1944,7 @@ function isWithinAllowedRoot(resolvedPath: string, roots: string[]): boolean {
  */
 router.get('/directories/browse', async (req: AuthRequest, res: Response) => {
   try {
-    const userId = req.user?.id;
-    if (!userId) return res.status(401).json({ success: false, message: '未认证' });
+    const userId = req.user.id;
 
     const roots = getAllowedDirRoots(userId);
     // 缺省 path → 返回白名单根目录列表
@@ -2098,8 +2039,7 @@ const BATCH_TASKS: BatchTask[] = ['extract', 'chunk', 'summarize', 'review', 'kn
  */
 router.post('/batch', async (req: AuthRequest, res: Response) => {
   try {
-    const userId = req.user?.id;
-    if (!userId) return res.status(401).json({ success: false, message: '未认证' });
+    const userId = req.user.id;
 
     const files = (req.body || {}).files;
     if (!Array.isArray(files) || files.length === 0 || files.length > 10) {
@@ -2138,8 +2078,7 @@ router.post('/batch', async (req: AuthRequest, res: Response) => {
  */
 router.get('/batch/:jobId', async (req: AuthRequest, res: Response) => {
   try {
-    const userId = req.user?.id;
-    if (!userId) return res.status(401).json({ success: false, message: '未认证' });
+    const userId = req.user.id;
     const record = await getBatchJob(String(req.params.jobId), userId);
     if (!record) return res.status(404).json({ success: false, message: '批次不存在' });
     return res.json({ success: true, data: record });
@@ -2156,8 +2095,7 @@ router.get('/batch/:jobId', async (req: AuthRequest, res: Response) => {
  */
 router.get('/batch', async (req: AuthRequest, res: Response) => {
   try {
-    const userId = req.user?.id;
-    if (!userId) return res.status(401).json({ success: false, message: '未认证' });
+    const userId = req.user.id;
     const page = Math.max(1, parseInt(String(req.query.page || '1'), 10) || 1);
     const pageSize = Math.min(50, Math.max(1, parseInt(String(req.query.pageSize || '20'), 10) || 20));
     const data = await listBatchJobs(userId, page, pageSize);
@@ -2173,8 +2111,7 @@ router.get('/batch', async (req: AuthRequest, res: Response) => {
  */
 router.post('/batch/:jobId/cancel', async (req: AuthRequest, res: Response) => {
   try {
-    const userId = req.user?.id;
-    if (!userId) return res.status(401).json({ success: false, message: '未认证' });
+    const userId = req.user.id;
     const ok = await cancelBatchJob(String(req.params.jobId), userId);
     if (!ok) return res.status(404).json({ success: false, message: '批次不存在' });
     return res.json({ success: true, data: { cancelled: true } });
@@ -2192,10 +2129,7 @@ router.post('/batch/:jobId/cancel', async (req: AuthRequest, res: Response) => {
  */
 router.get('/sessions/:id/pending-ask', async (req: AuthRequest, res: Response) => {
   try {
-    const userId = req.user?.id;
-    if (!userId) {
-      return res.status(401).json({ success: false, message: '未认证' });
-    }
+    const userId = req.user.id;
 
     const sid = String(req.params.id || '');
     if (!sid) {

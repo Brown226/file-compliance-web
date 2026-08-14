@@ -183,7 +183,6 @@ async function toggleSkill(skill: AgentSkill) {
     const next = skill.disabled
     await setSkillEnabledApi(skill.name, next)
     skill.disabled = !next
-    // [无弹窗] 成功提示已移除：ElMessage.success(next ? `已启用 ${skill.name}` : `已禁用 ${skill.
   } catch (e: any) {
     ElMessage.error(`切换失败：${e?.message || e}`)
   } finally {
@@ -220,7 +219,6 @@ async function handleSave() {
         description: form.value.description,
         content: form.value.content,
       })
-      // [无弹窗] 成功提示已移除：ElMessage.success('已保存')
     } else {
       if (!/^[a-z0-9_-]+$/.test(form.value.name)) {
         ElMessage.warning('名称仅允许小写字母/数字/下划线/中划线')
@@ -231,7 +229,6 @@ async function handleSave() {
         description: form.value.description,
         content: form.value.content,
       })
-      // [无弹窗] 成功提示已移除：ElMessage.success('已创建')
     }
     addMode.value = false
     if (form.value.name) selectedName.value = form.value.name
@@ -251,7 +248,6 @@ async function handleDelete(name: string) {
       cancelButtonText: '取消',
     })
     await deleteSkillApi(name)
-    // [无弹窗] 成功提示已移除：ElMessage.success('已删除')
     addMode.value = false
     if (selectedName.value === name) selectedName.value = ''
     await loadSkills()

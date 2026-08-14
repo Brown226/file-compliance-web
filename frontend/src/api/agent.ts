@@ -91,13 +91,12 @@ export interface AgentModelOption {
 }
 
 export interface AgentModelsResponse {
-  defaultKey: string | null
   models: AgentModelOption[]
 }
 
-/** 可用模型列表（含系统默认） */
-export function listAgentModelsApi(scope?: string) {
-  return request.get<AgentModelsResponse>('/agent/models', { params: scope ? { scope } : {} })
+/** 可用模型列表 */
+export function listAgentModelsApi() {
+  return request.get<AgentModelsResponse>('/agent/models')
 }
 
 // ===== LLM 供应商配置（ModelsConfig 弹窗数据源，2026-08-04 新增）=====
@@ -305,11 +304,6 @@ export function listSkillsApi() {
   return request.get<AgentSkill[]>('/agent/skills')
 }
 
-/** 读取单个 skill */
-export function getSkillApi(name: string) {
-  return request.get<AgentSkill>(`/agent/skills/${name}`)
-}
-
 /** 新建 skill */
 export function createSkillApi(data: { name: string; description: string; content: string }) {
   return request.post<AgentSkill>('/agent/skills', data)
@@ -418,11 +412,6 @@ export function submitBatchApi(files: BatchFileInput[]) {
 /** 查询批量任务 */
 export function getBatchApi(id: string) {
   return request.get<BatchJobRecord>(`/agent/batch/${id}`)
-}
-
-/** 批量任务列表 */
-export function listBatchApi(params?: { page?: number; pageSize?: number }) {
-  return request.get<{ records: BatchJobRecord[]; total: number; page: number; pageSize: number }>('/agent/batch', { params })
 }
 
 /** 取消批量任务 */

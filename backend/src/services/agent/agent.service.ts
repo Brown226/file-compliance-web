@@ -288,7 +288,7 @@ export class AgentService {
     // 5. Task 7.6：注入已上传文件列表到 systemPrompt
     //    查 uploads/agent_temp/{userId}/{sessionId}/ 目录，把文件路径告知 Agent，
     //    让 Agent 知道用户已上传哪些文件，可直接用 extract_text 工具提取文本。
-    const filesSection = AgentService.buildUploadedFilesSection(userId, sessionId || '');
+    const filesSection = AgentService.buildUploadedFilesSection(userId);
 
     // Task 13.6：注入 steering 指令到 systemPrompt
     let pendingSteering: any[] = [];
@@ -625,7 +625,7 @@ export class AgentService {
     const model = provider.chat(config.modelName);
     const tools = createAllTools({ userId, sessionId: sessionId || '' });
 
-    const filesSection = AgentService.buildUploadedFilesSection(userId, sessionId || '');
+    const filesSection = AgentService.buildUploadedFilesSection(userId);
     const systemPrompt = filesSection ? `${AGENT_SYSTEM_PROMPT}\n\n${filesSection}` : AGENT_SYSTEM_PROMPT;
 
     // 消息格式兼容（与 chatStream 一致）
@@ -741,7 +741,6 @@ export class AgentService {
    * 按 providerId 从 system_configs.llm_profiles 读取 LLM 供应商配置
    */
   private static async findLlmProfile(providerId: string): Promise<{ apiBase?: string; apiKey?: string; model?: string; provider?: string; timeout?: number } | null> {
-    const { default: prisma } = await import('../../config/db');
     const cfg = await prisma.systemConfig.findUnique({ where: { key: 'llm_profiles' } });
     if (!cfg?.value) return null;
     const raw = typeof cfg.value === 'string' ? JSON.parse(cfg.value) : cfg.value;
@@ -893,7 +892,6 @@ export class AgentService {
    */
   private static async buildOfficeTemplateSection(): Promise<string> {
     try {
-      const prisma = (await import('../../config/db')).default;
       const cfg = await prisma.systemConfig.findUnique({ where: { key: 'agent_template_keys' } });
       const raw = cfg?.value
         ? (typeof cfg.value === 'string' ? cfg.value : '')
@@ -958,8 +956,7 @@ export class AgentService {
    *
    * @returns 文件列表段落；无文件时返回空串
    */
-  private static buildUploadedFilesSection(userId: string, _sessionId: string): string {
-    void _sessionId; // sessionId 不再作为存储目录维度，仅保留参数签名兼容调用方
+  private static buildUploadedFilesSection(userId: string): string {
     if (!userId) return '';
     const userDir = path.join(getUploadDir(), 'agent_temp', userId);
     if (!fs.existsSync(userDir)) return '';

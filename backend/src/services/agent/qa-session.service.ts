@@ -20,6 +20,7 @@
  */
 
 import prisma from '../../config/db';
+import { sessionStore } from './session-store';
 
 /** 会话列表项（含最近消息预览） */
 export interface SessionListItem {
@@ -135,9 +136,7 @@ export class QASessionService {
    * 查询单个会话（含权限校验）
    */
   static async getSession(sessionId: string, userId: string): Promise<SessionDetail | null> {
-    const session = await prisma.qASession.findFirst({
-      where: { id: sessionId, userId },
-    });
+    const session = await sessionStore.getForUser(sessionId, userId);
     if (!session) return null;
 
     return {
@@ -158,10 +157,7 @@ export class QASessionService {
    */
   static async listMessages(sessionId: string, userId: string): Promise<MessageItem[]> {
     // 权限校验：确认会话属于该用户
-    const session = await prisma.qASession.findFirst({
-      where: { id: sessionId, userId },
-      select: { id: true },
-    });
+    const session = await sessionStore.getForUser(sessionId, userId);
     if (!session) {
       throw new Error('会话不存在或无权访问');
     }
@@ -233,11 +229,8 @@ export class QASessionService {
     userId: string,
     settings: { modelKey?: string | null; toolPreset?: string; thinkingLevel?: string | null },
   ): Promise<void> {
-    const exists = await prisma.qASession.findUnique({
-      where: { id: sessionId },
-      select: { id: true, userId: true },
-    });
-    if (!exists || exists.userId !== userId) return;
+    const exists = await sessionStore.getForUser(sessionId, userId);
+    if (!exists) return;
     const data: any = {};
     if (settings.modelKey !== undefined) data.modelKey = settings.modelKey;
     if (settings.toolPreset !== undefined) data.toolPreset = settings.toolPreset;
@@ -367,10 +360,7 @@ export class QASessionService {
    */
   static async deleteSession(sessionId: string, userId: string): Promise<boolean> {
     // 权限校验：确认会话属于该用户
-    const session = await prisma.qASession.findFirst({
-      where: { id: sessionId, userId },
-      select: { id: true },
-    });
+    const session = await sessionStore.getForUser(sessionId, userId);
     if (!session) {
       throw new Error('会话不存在或无权访问');
     }
@@ -396,9 +386,7 @@ export class QASessionService {
    */
   static async duplicateSession(sessionId: string, userId: string): Promise<SessionDetail> {
     // 权限校验 + 读取源会话
-    const source = await prisma.qASession.findFirst({
-      where: { id: sessionId, userId },
-    });
+    const source = await sessionStore.getForUser(sessionId, userId);
     if (!source) {
       throw new Error('会话不存在或无权访问');
     }
@@ -463,9 +451,7 @@ export class QASessionService {
     title: string,
   ): Promise<SessionDetail | null> {
     // 权限校验
-    const session = await prisma.qASession.findFirst({
-      where: { id: sessionId, userId },
-    });
+    const session = await sessionStore.getForUser(sessionId, userId);
     if (!session) {
       throw new Error('会话不存在或无权访问');
     }

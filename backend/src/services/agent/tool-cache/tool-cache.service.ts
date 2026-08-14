@@ -137,12 +137,4 @@ export class ToolCacheService {
     const key = await this.cacheKey(toolName, args, userId);
     await redisClient.set(key, result, CACHE_TTL);
   }
-
-  /**
-   * 缓存预热（简化实现）
-   * 当前直接返回 0，后续可按需实现预加载逻辑
-   */
-  static async warmup(_userId: string, _fileType: string): Promise<number> {
-    return 0;
-  }
 }

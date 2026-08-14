@@ -309,7 +309,6 @@ async function markFalsePositive(issue: AgentIssue) {
       reason: 'Agent 审查结果误报反馈',
     })
     fpDone.value.add(key)
-    // [无弹窗] 成功提示已移除：ElMessage.success(res?.added ? '已加入误报库' : '误报库已更新（该原文此前已被标记）
   } catch (e: any) {
     ElMessage.error(`标记失败：${e?.message || '未知错误'}`)
   } finally {

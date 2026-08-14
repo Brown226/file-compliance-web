@@ -163,7 +163,6 @@ async function handleSave() {
       value: editingMemory.value.value.trim(),
       confidence: editingMemory.value.confidence,
     })
-    // [无弹窗] 成功提示已移除：ElMessage.success('记忆已更新')
     editDialogVisible.value = false
     await loadMemories()
   } catch (e: any) {
@@ -182,7 +181,6 @@ async function handleDelete(memory: MemoryItem) {
     )
     await deleteMemoryApi(memory.id)
     memories.value = memories.value.filter(m => m.id !== memory.id)
-    // [无弹窗] 成功提示已移除：ElMessage.success('记忆已删除')
   } catch (e: any) {
     if (e !== 'cancel' && e?.message !== 'cancel') {
       ElMessage.error(`删除失败: ${e?.message || e}`)
