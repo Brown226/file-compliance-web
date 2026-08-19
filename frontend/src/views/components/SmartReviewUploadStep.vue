@@ -346,15 +346,16 @@ const getFileMeta = (fileName: string) => {
 
 .reference-upload :deep(.el-upload-dragger) {
   padding: 24px 20px;
-  border-radius: 8px;
-  border: 2px dashed #D1D5DB;
-  background: #F9FAFB;
+  border-radius: 12px;
+  border: 1.5px dashed #d8dae0;
+  background: #fafbfc;
   transition: border-color 0.2s, background 0.2s;
 }
 
-.reference-upload :deep(.el-upload-dragger:hover) {
-  border-color: #10B981;
-  background: #F0FDF4;
+.reference-upload :deep(.el-upload-dragger:hover),
+.reference-upload :deep(.el-upload-dragger.is-dragover) {
+  border-color: #4e6ef2;
+  background: #f0f3ff;
 }
 
 .reference-upload .upload-icon {
@@ -429,22 +430,17 @@ const getFileMeta = (fileName: string) => {
 }
 
 .upload-dragger :deep(.el-upload-dragger) {
-  padding: 44px 20px;
-  border-radius: 8px;
-  border: 2px dashed #D1D5DB;
-  background: #FAFBFC;
+  padding: 32px 20px;
+  border-radius: 12px;
+  border: 1.5px dashed #d8dae0;
+  background: #fafbfc;
   transition: border-color 0.2s, background 0.2s;
 }
 
-.upload-dragger :deep(.el-upload-dragger:hover) {
-  border-color: #2563EB;
-  background: #EFF6FF;
-}
-
+.upload-dragger :deep(.el-upload-dragger:hover),
 .upload-dragger :deep(.el-upload-dragger.is-dragover) {
-  border-color: #2563EB;
-  border-style: solid;
-  background: #DBEAFE;
+  border-color: #4e6ef2;
+  background: #f0f3ff;
 }
 
 /* 隐藏 el-upload 内部的文件列表（使用自定义列表） */

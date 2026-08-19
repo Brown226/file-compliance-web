@@ -1706,16 +1706,17 @@ function handleOpenClause(detail: IssueDetail) {
 
 /* ===== 上传区 ===== */
 .dwg-upload :deep(.el-upload-dragger) {
-  border-radius: var(--radius-lg);
-  border: 1.5px dashed var(--corp-border);
-  background: var(--bg-surface-hover);
-  padding: 24px 16px;
-  transition: all 0.25s;
+  border-radius: 12px;
+  border: 1.5px dashed #d8dae0;
+  background: #fafbfc;
+  padding: 28px 20px;
+  transition: border-color 0.2s, background 0.2s;
 }
 
-.dwg-upload :deep(.el-upload-dragger:hover) {
-  border-color: var(--color-primary-600);
-  background: var(--color-primary-50);
+.dwg-upload :deep(.el-upload-dragger:hover),
+.dwg-upload :deep(.el-upload-dragger.is-dragover) {
+  border-color: #4e6ef2;
+  background: #f0f3ff;
 }
 
 .upload-inner {

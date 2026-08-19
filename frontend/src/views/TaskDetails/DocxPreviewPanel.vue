@@ -298,6 +298,21 @@ watch(() => props.locateTarget, () => {
   font-size: 14px;
   line-height: 1.8;
   color: var(--color-gray-700);
+  background: #f5f6f7;
+}
+
+/* docx-preview 默认会给 .docx-wrapper 加一层灰色背景，
+   这里统一改为浅色背景 + 白色文档页，避免“下面叠一层灰色” */
+.docx-content :deep(.docx-wrapper) {
+  background: transparent !important;
+  padding: 16px 0 !important;
+}
+
+.docx-content :deep(.docx-wrapper > .docx) {
+  background: #fff !important;
+  border-radius: 8px;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.06);
+  margin: 0 auto 16px !important;
 }
 
 .docx-content :deep(h1) { font-size: 1.8em; font-weight: 700; margin: 20px 0 12px; color: var(--color-gray-800); }

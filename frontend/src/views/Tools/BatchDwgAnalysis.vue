@@ -416,6 +416,16 @@ function goBack() {
 
 .batch-upload :deep(.el-upload-dragger) {
   padding: 32px 20px;
+  border-radius: 12px;
+  border: 1.5px dashed #d8dae0;
+  background: #fafbfc;
+  transition: border-color 0.2s, background 0.2s;
+}
+
+.batch-upload :deep(.el-upload-dragger:hover),
+.batch-upload :deep(.el-upload-dragger.is-dragover) {
+  border-color: #4e6ef2;
+  background: #f0f3ff;
 }
 
 .upload-inner {

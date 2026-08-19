@@ -713,16 +713,16 @@ onMounted(() => {
 
 .upload-area--compact :deep(.el-upload-dragger) {
   padding: 28px 20px;
-  border-radius: 10px;
-  border-style: dashed;
-  border-color: var(--el-border-color);
-  background: var(--el-fill-color-blank);
-  transition: all 0.2s;
+  border-radius: 12px;
+  border: 1.5px dashed #d8dae0;
+  background: #fafbfc;
+  transition: border-color 0.2s, background 0.2s;
 }
 
-.upload-area--compact :deep(.el-upload-dragger:hover) {
-  border-color: var(--el-color-primary);
-  background: var(--el-color-primary-light-9);
+.upload-area--compact :deep(.el-upload-dragger:hover),
+.upload-area--compact :deep(.el-upload-dragger.is-dragover) {
+  border-color: #4e6ef2;
+  background: #f0f3ff;
 }
 
 .upload-compact-inner {

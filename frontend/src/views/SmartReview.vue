@@ -3,20 +3,29 @@
     <div v-if="currentStep === 0" class="review-flow">
       <!-- 顶部：任务标题 -->
       <div class="flow-section flow-section--title">
-        <label class="title-label">
+        <div class="title-label">
           任务标题 <span class="required-mark">*</span>
+        </div>
+        <div class="title-input-row">
+          <el-input
+            v-model="form.title"
+            :placeholder="autoTitlePreview"
+            size="large"
+            clearable
+            maxlength="100"
+            show-word-limit
+            class="title-input"
+          />
           <el-button
-            link
             type="primary"
-            size="small"
+            size="large"
             class="auto-title-btn"
             @click="fillAutoTitle"
           >
             <el-icon><MagicStick /></el-icon>
             {{ form.title ? '重新生成' : '自动生成' }}
           </el-button>
-        </label>
-        <el-input v-model="form.title" :placeholder="autoTitlePreview" size="large" clearable maxlength="100" show-word-limit />
+        </div>
       </div>
 
       <!-- 中部：上传文件 -->
@@ -422,31 +431,50 @@ onMounted(async () => {
 .review-flow {
   display: flex;
   flex-direction: column;
-  gap: var(--space-6);
+  gap: 16px;
   max-width: var(--corp-max-width);
   margin: 0 auto;
-  padding: var(--space-8) var(--space-8) var(--space-12);
+  padding: 24px;
+  background: #f5f6f7;
+  min-height: 100vh;
 }
 .flow-section {
-  background: var(--bg-surface);
-  border-radius: var(--radius-xl);
-  box-shadow: var(--shadow-surface);
-  padding: var(--space-8);
+  background: #fff;
+  border: none;
+  border-radius: 16px;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.03), 0 4px 12px rgba(0, 0, 0, 0.03);
+  padding: 22px 24px;
 }
 @media (max-width: 900px) {
-  .review-flow { padding: var(--space-6) var(--space-4) var(--space-10); }
-  .flow-section { padding: var(--space-6); }
+  .review-flow { padding: 16px; }
+  .flow-section { padding: 18px 16px; }
 }
 
 /* ---- 标题 ---- */
-.title-label { display: flex; align-items: center; gap: 10px; font-size: 14px; font-weight: 600; color: var(--color-gray-700); margin-bottom: 8px; }
-.title-label .required-mark { margin-right: auto; }
-.auto-title-btn { margin-left: auto; font-weight: 400; }
-.required-mark { color: var(--color-danger); margin-left: 2px; font-weight: 700; }
+.title-label { font-size: 14px; font-weight: 600; color: #1f2329; margin-bottom: 10px; }
+.title-input-row { display: flex; gap: 10px; align-items: center; }
+.title-input { flex: 1; }
+.auto-title-btn {
+  background: #f0f3ff;
+  border: 1px solid #dfe5ff;
+  color: #4e6ef2;
+  border-radius: 10px;
+  font-weight: 500;
+  white-space: nowrap;
+  box-shadow: none;
+  padding: 0 18px;
+  height: 40px;
+}
+.auto-title-btn:hover {
+  background: #e4e9ff;
+  border-color: #c7d2ff;
+  color: #4e6ef2;
+}
+.required-mark { color: #e5484d; margin-left: 2px; font-weight: 700; }
 
 /* ---- 提交按钮 ---- */
-.submit-bar { margin-top: var(--space-8); display: flex; justify-content: flex-end; padding-top: var(--space-6); border-top: 1px solid var(--corp-border-light); }
-.submit-btn { padding: 12px 36px; font-size: var(--text-lg); font-weight: 600; border-radius: var(--radius-md); min-width: 160px; }
+.submit-bar { margin-top: 16px; display: flex; justify-content: flex-end; padding-top: 16px; border-top: 1px solid #f0f1f3; }
+.submit-btn { padding: 12px 36px; font-size: 15px; font-weight: 600; border-radius: 10px; min-width: 160px; background: #4e6ef2; border-color: #4e6ef2; box-shadow: 0 2px 8px rgba(78, 110, 242, 0.2); }
 
 /* ---- 配置区 ---- */
 .review-items-section { margin-top: var(--space-1); }

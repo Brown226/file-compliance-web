@@ -17,7 +17,7 @@
                     <el-icon v-else><Document /></el-icon>
                   </span>
                   <span class="node-label">{{ data.name }}</span>
-                  <span v-if="data.type === 'knowledge'" class="node-count">({{ data.documentCount || 0 }}篇)</span>
+                  <span class="node-count">({{ getNodeDocumentCount(data) }}篇)</span>
                 </span>
               </template>
             </el-tree>
@@ -66,7 +66,7 @@
                       <el-icon v-else><Document /></el-icon>
                     </span>
                     <span class="node-label">{{ data.name }}</span>
-                    <span v-if="data.type === 'knowledge'" class="node-count">({{ data.documentCount || 0 }}篇)</span>
+                    <span class="node-count">({{ getNodeDocumentCount(data) }}篇)</span>
                   </span>
                 </template>
               </el-tree>
@@ -219,12 +219,12 @@ async function loadTree() {
     treeData.value = rawArr.map((node: any): KbTreeNode => ({
       id: node.id,
       name: node.name,
-      type: node.type === 'dataset' ? 'folder' : 'knowledge',
+      type: node.type === 'folder' || node.type === 'dataset' ? 'folder' : 'knowledge',
       documentCount: node.documentCount,
       children: node.children?.map((child: any): KbTreeNode => ({
         id: child.id,
         name: child.name,
-        type: child.type === 'dataset' ? 'folder' : 'knowledge',
+        type: child.type === 'folder' || child.type === 'dataset' ? 'folder' : 'knowledge',
         documentCount: child.documentCount,
         children: child.children,
       })),
@@ -346,6 +346,15 @@ function flattenNodes(nodes: KbTreeNode[]): KbTreeNode[] {
     if (n.children?.length) result.push(...flattenNodes(n.children))
   }
   return result
+}
+
+/** 获取节点文档数：知识库直接用 documentCount；文件夹递归汇总子节点 */
+function getNodeDocumentCount(node: KbTreeNode): number {
+  if (typeof node.documentCount === 'number' && node.documentCount > 0) return node.documentCount
+  if (node.children?.length) {
+    return node.children.reduce((sum, child) => sum + getNodeDocumentCount(child), 0)
+  }
+  return node.documentCount || 0
 }
 
 /** 获取所有被选中的叶子节点（仅 knowledge 类型） */

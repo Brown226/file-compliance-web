@@ -405,10 +405,10 @@ const selectModule = (item: ModuleItem) => {
   gap: 12px;
   padding: 12px 20px;
   background: #fff;
-  border: 1px solid #e5e7eb;
-  border-radius: 10px;
-  margin-bottom: 20px;
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.03);
+  border: none;
+  border-radius: 14px;
+  margin-bottom: 16px;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.03), 0 4px 12px rgba(0, 0, 0, 0.03);
 }
 
 .selected-label {
@@ -419,7 +419,7 @@ const selectModule = (item: ModuleItem) => {
 .selected-name {
   font-size: 14px;
   font-weight: 600;
-  color: #2563eb;
+  color: #1f2329;
   flex: 1;
 }
 
