@@ -237,6 +237,16 @@ function hookWrapper(
   };
 }
 
+// P2-3：工具集按 (userId, sessionId) 短时缓存
+// 同一会话的多轮对话每轮 chatStream 都会调用 createAllTools（30 工具 × 5 层包装
+// 每次重建有固定开销），同会话连续请求复用缓存结果。
+// 缓存 key 必须含 sessionId：ask_user（挂起存储）、extract_user_preferences（查历史）、
+// save_memory（source 字段）实质依赖 sessionId，按 userId 缓存会导致跨会话串状态。
+// TTL 10min + LRU 上限 200 条，防会话切换后旧条目无限累积。
+const toolsCache = new Map<string, { tools: any; ts: number }>();
+const TOOLS_CACHE_TTL_MS = 10 * 60 * 1000;
+const TOOLS_CACHE_MAX = 200;
+
 /**
  * 创建全部工具集（合并所有子模块）
  * @param context userId / sessionId，注入到每个工具
@@ -256,6 +266,15 @@ function hookWrapper(
  * - truncateWrapper 在 cacheWrapper 内侧：缓存中存的即截断态结果，命中/未命中行为一致
  */
 export function createAllTools(context: ToolContext) {
+  // P2-3：命中缓存直接返回（同一会话多轮请求复用；LRU 更新保持最近使用序）
+  const cacheKey = `${context.userId || ''}:${context.sessionId || ''}`;
+  const cached = toolsCache.get(cacheKey);
+  if (cached && Date.now() - cached.ts < TOOLS_CACHE_TTL_MS) {
+    toolsCache.delete(cacheKey);
+    toolsCache.set(cacheKey, cached);
+    return cached.tools;
+  }
+
   const tools = {
     ...createFileTools(context),
     ...createReviewTools(context),
@@ -299,6 +318,13 @@ export function createAllTools(context: ToolContext) {
     wrappedExecute = injectionGuardWrapper(name, wrappedExecute);
 
     (toolDef as any).execute = wrappedExecute;
+  }
+
+  // P2-3：写入缓存（TTL + LRU 上限淘汰）
+  toolsCache.set(cacheKey, { tools, ts: Date.now() });
+  if (toolsCache.size > TOOLS_CACHE_MAX) {
+    const oldestKey = toolsCache.keys().next().value;
+    if (oldestKey !== undefined) toolsCache.delete(oldestKey);
   }
 
   return tools;

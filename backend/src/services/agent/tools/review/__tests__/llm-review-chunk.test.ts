@@ -180,8 +180,10 @@ describe('backfillStandardRefs (P1-⑦)', () => {
   const std = { id: 'std-1', standardNo: 'GB/T 15834', standardName: '标点符号用法' };
 
   it('ruleCode 存在且 standardRef 为空 → 按 clauseCode 精确匹配回填', async () => {
+    // P1-2 适配：新实现一次拉取标准全部审点 + 内存匹配（不再逐 ruleCode 传 keyword 查询），
+    // mock 判定与真实工具语义一致：不传 standardId=列标准，传 standardId=查审点
     const searchTool = fakeSearchTool((args: any) => {
-      if (args.keyword === undefined) {
+      if (!args.standardId) {
         return { mode: 'list_standards', standards: [std] };
       }
       return {
@@ -195,13 +197,15 @@ describe('backfillStandardRefs (P1-⑦)', () => {
   });
 
   it('无 clauseCode 精确命中时取第一个模糊命中', async () => {
+    // P1-2 适配：模糊命中改为内存匹配（字段包含 ruleCode 即命中）；
+    // mock 审点 clauseText 含 'TYPO_001' 使模糊命中 clauseCode=TYPO_002 的审点
     const searchTool = fakeSearchTool((args: any) => {
-      if (args.keyword === undefined) {
+      if (!args.standardId) {
         return { mode: 'list_standards', standards: [std] };
       }
       return {
         mode: 'list_checkpoints',
-        checkpoints: [{ clauseCode: 'TYPO_002', clauseText: '其他' }],
+        checkpoints: [{ clauseCode: 'TYPO_002', clauseText: 'TYPO_001 相关错别字' }],
       };
     });
     const issues = [mkIssue('帐号', { ruleCode: 'TYPO_001' })];
@@ -248,7 +252,7 @@ describe('backfillStandardRefs (P1-⑦)', () => {
 
   it('查不到任何审点 → 保持为空', async () => {
     const searchTool = fakeSearchTool((args: any) => {
-      if (args.keyword === undefined) {
+      if (!args.standardId) {
         return { mode: 'list_standards', standards: [std] };
       }
       return { mode: 'list_checkpoints', checkpoints: [] };
@@ -265,20 +269,20 @@ describe('backfillStandardRefs (P1-⑦)', () => {
       standardName: `标准${i}`,
     }));
     const searchTool = fakeSearchTool((args: any) => {
-      if (args.keyword === undefined) return { mode: 'list_standards', standards };
+      if (!args.standardId) return { mode: 'list_standards', standards };
       return { mode: 'list_checkpoints', checkpoints: [] };
     });
-    // 50 个不同 ruleCode → 若全量反查将是 50 标准 × 50 ruleCode = 2500 次
+    // 50 个不同 ruleCode → P1-2 优化后仅 1 次列标准 + 并发 10 次标准审点查询
     const issues = Array.from({ length: 50 }, (_, i) =>
       mkIssue(`原文${i}`, { ruleCode: `RULE_${i}` }),
     );
     const result = await backfillStandardRefs(issues, searchTool as any);
 
-    // 查询预算 60 内截断（list_standards 1 次 + checkpoint 查询 ≤60 次）
+    // 查询次数 = 1（list_standards）+ 10（标准并发）≤ 61；且多于纯列表查询
     const callCount = searchTool.execute.mock.calls.length;
-    expect(callCount).toBeLessThanOrEqual(61);
+    expect(callCount).toBeLessThanOrEqual(11);
     expect(callCount).toBeGreaterThan(1);
-    // 预算用尽后查不到的都保持空
+    // 审点为空 → 全部保持空
     for (const issue of result) {
       expect(issue.standardRef).toBeUndefined();
     }
@@ -286,7 +290,7 @@ describe('backfillStandardRefs (P1-⑦)', () => {
 
   it('相同 ruleCode 只反查一次（按 ruleCode 去重）', async () => {
     const searchTool = fakeSearchTool((args: any) => {
-      if (args.keyword === undefined) return { mode: 'list_standards', standards: [std] };
+      if (!args.standardId) return { mode: 'list_standards', standards: [std] };
       return { mode: 'list_checkpoints', checkpoints: [] };
     });
     const issues = [
@@ -295,7 +299,7 @@ describe('backfillStandardRefs (P1-⑦)', () => {
       mkIssue('原文C', { ruleCode: 'TYPO_001' }),
     ];
     await backfillStandardRefs(issues, searchTool as any);
-    // list_standards 1 次 + 只对首个 ruleCode 查询（缓存命中后不再重复查）
+    // 列标准 1 次 + 并发拉 1 个标准的审点 = 2 次（标准数=1，ruleCode 去重不影响查询数）
     expect(searchTool.execute.mock.calls.length).toBeLessThanOrEqual(2);
   });
 });

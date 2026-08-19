@@ -39,7 +39,9 @@ export async function acquireLlmToken(model: string): Promise<void> {
     }
     if (count > limit) {
       // 当前窗已满，sleep 到下一窗
-      const sleepMs = 1000 - (Date.now() % 1000);
+      // P1-4：加随机 jitter（0~300ms）分散等待者，避免所有被限流的请求同时醒来
+      // 挤在下一秒窗口起点形成 thundering herd（原本全挤在 1000-now%1000 同一点）
+      const sleepMs = (1000 - (Date.now() % 1000)) + Math.floor(Math.random() * 300);
       await new Promise(r => setTimeout(r, sleepMs));
       // 递归重试（下一窗）
       return acquireLlmToken(model);

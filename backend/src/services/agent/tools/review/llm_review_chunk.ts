@@ -22,6 +22,7 @@
  */
 
 import { z } from 'zod';
+import crypto from 'crypto';
 import { PromptLoader } from '../../../prompts';
 import { LlmService, type ReviewIssue } from '../../../llm/llm.service';
 import type { ToolContext } from '../file/upload_file';
@@ -91,39 +92,50 @@ export async function backfillStandardRefs(
       return issues;
     }
 
-    // 2. 按 ruleCode 去重反查，找到即停（逐标准早退）
-    //    N+1 防护：标准数量截断（最多 10 个）+ 总查询预算（60 次），
-    //    原实现最坏 50 标准 × 50 ruleCode = 2500 次串行 DB 查询，阻塞工具执行路径
+    // 2. 并发拉取每个标准的全部审点（一次查询一个标准），内存匹配所有 ruleCode。
+    //    P1-2 优化：原实现「逐标准 × 逐 ruleCode」最多 10×60=600 次串行 DB 查询，
+    //    改为并发 ≤10 次查询 + 内存过滤，查询预算从 60 次降为 10 次，大幅减少阻塞。
     const MAX_BACKFILL_STANDARDS = 10;
-    const MAX_BACKFILL_QUERIES = 60;
     const standards = listResult.standards.slice(0, MAX_BACKFILL_STANDARDS);
-    let queryBudget = MAX_BACKFILL_QUERIES;
+    const ruleCodes = [...new Set(missing.map((i) => String(i.ruleCode).trim()).filter(Boolean))];
+    if (ruleCodes.length === 0) return issues;
+
+    const stdResults = await Promise.all(
+      standards.map(async (std) => {
+        try {
+          const cpRes = (await searchTool.execute(
+            {
+              standardId: std.id,
+              topNumber: 100, // 取足审点供内存匹配（上限 100，与原工具 schema 一致）
+            },
+            { toolCallId: "llm_review_backfill", messages: [], context: {} },
+          )) as BackfillSearchResult;
+          if (cpRes.mode !== 'list_checkpoints') return null;
+          return { std, checkpoints: cpRes.checkpoints };
+        } catch {
+          // 单标准查询失败不影响其他标准（与原先的逐条 try 语义一致）
+          return null;
+        }
+      }),
+    );
+
+    // 3. 内存匹配：优先 clauseCode 精确匹配，其次模糊包含，取第一个命中
     const refByRuleCode = new Map<string, string | null>();
-    for (const issue of missing) {
-      const ruleCode = String(issue.ruleCode).trim();
-      if (!ruleCode || refByRuleCode.has(ruleCode)) continue;
-
+    for (const ruleCode of ruleCodes) {
+      const lower = ruleCode.toLowerCase();
       let ref: string | null = null;
-      for (const std of standards) {
-        if (ref || queryBudget <= 0) break;
-        queryBudget -= 1;
-        if (ref) break;
-        const cpRes = (await searchTool.execute(
-          {
-            standardId: std.id,
-            keyword: ruleCode,
-            topNumber: 50,
-          },
-          { toolCallId: "llm_review_backfill", messages: [], context: {} },
-        )) as BackfillSearchResult;
-        if (cpRes.mode !== 'list_checkpoints' || cpRes.checkpoints.length === 0) continue;
-
-        // 优先 clauseCode 精确匹配，其次取第一个模糊命中
-        const lower = ruleCode.toLowerCase();
-        const exact = cpRes.checkpoints.find(
-          (cp) => cp.clauseCode && cp.clauseCode.trim().toLowerCase() === lower,
+      for (const entry of stdResults) {
+        if (!entry || ref) continue;
+        const { std, checkpoints } = entry;
+        const exact = checkpoints.find(
+          (cp: any) => cp.clauseCode && cp.clauseCode.trim().toLowerCase() === lower,
         );
-        const hit = exact || cpRes.checkpoints[0];
+        const hit = exact || checkpoints.find((cp: any) => {
+          const kw = lower;
+          return [cp.clauseCode, cp.clauseText, cp.checkPrompt]
+            .filter(Boolean)
+            .some((f: any) => String(f).toLowerCase().includes(kw));
+        });
         if (hit) {
           const stdNo = std.standardNo || '';
           const stdName = std.standardName || std.title || '';
@@ -134,7 +146,7 @@ export async function backfillStandardRefs(
       refByRuleCode.set(ruleCode, ref);
     }
 
-    // 3. 回填（仅当仍为空，绝不覆盖）
+    // 4. 回填（仅当仍为空，绝不覆盖）
     for (const issue of missing) {
       const ruleCode = String(issue.ruleCode).trim();
       const ref = refByRuleCode.get(ruleCode);
@@ -235,7 +247,10 @@ export function enrichLocateMeta(issues: ReviewIssue[], text: string): ReviewIss
  * - mode: 审查模式（如 contract_review / doc_review / consistency）
  * - context: 额外上下文（如知识库检索结果）
  */
-export function createLlmReviewChunkTool(_context: ToolContext) {
+export function createLlmReviewChunkTool(context: ToolContext) {
+  // P1-2：工具实例复用——search_standard_checkpoints 工具在工厂创建时构建一次，
+  // 供 standardRef 反查回填复用（原实现每次 execute 现场 new 一个）。
+  const searchTool = createSearchStandardCheckpointsTool(context);
   return tool({
     description: '对文本片段执行 LLM 审查。可指定 focus 聚焦特定维度（如条款一致性、金额规范、签字栏），可传入 context 作为参考知识。返回结构化的 ReviewIssue[] 数组。',
     inputSchema: z.object({
@@ -277,21 +292,37 @@ export function createLlmReviewChunkTool(_context: ToolContext) {
       if (text.length > MAX_REVIEW_TEXT_CHARS) {
         console.warn(`[llm_review_chunk] text 超长（${text.length} 字符），截断至 ${MAX_REVIEW_TEXT_CHARS}`);
       }
+      const reviewText = text.length > MAX_REVIEW_TEXT_CHARS
+        ? text.slice(0, MAX_REVIEW_TEXT_CHARS)
+        : text;
+      // P0-1（Agent 缓存激活）：传 documentId + textHash 让 reviewText 的 LLM 结果缓存生效。
+      // 缓存键 = docId + chunkIdx + textHash + model + temperature，不含 focus/context——
+      // 因此指纹必须覆盖审查参数（text+focus+mode+context），否则不同审查点会串缓存。
+      // chunkIndex=0：Agent 场景无分片概念，每次调用即一个独立"文档块"。
+      const reviewFingerprint = crypto
+        .createHash('md5')
+        .update(`${reviewText}\u0000${focus || ''}\u0000${module}\u0000${context || ''}`)
+        .digest('hex');
       let issues = await LlmService.reviewText(
-        text.length > MAX_REVIEW_TEXT_CHARS
-          ? text.slice(0, MAX_REVIEW_TEXT_CHARS)
-          : text,
+        reviewText,
         {
           systemPrompt,
           mode: module,
           skipUserTemplate: true,
           maxTokens: 2048,
           timeout: 90,
+          documentId: `agent:${reviewFingerprint}`,
+          positionInfo: {
+            chunkIndex: 0,
+            chunkStartIndex: 0,
+            totalChunks: 1,
+          },
+          traceId: (context as any)?.sessionId || undefined,
         },
       );
 
       // 6. 后处理：ruleCode 存在但 standardRef 为空时，反查审点库回填（查不到保持空，不覆盖已有引用）
-      const searchTool = createSearchStandardCheckpointsTool(_context);
+      //    P1-2：复用工厂创建的 searchTool 实例（并发查询 ≤10 次）
       await backfillStandardRefs(issues, searchTool);
 
       // 7. 后处理：P2-⑧ 误报库过滤（与 review-pipeline 的 fpLibrarySet 归一化匹配同一语义）

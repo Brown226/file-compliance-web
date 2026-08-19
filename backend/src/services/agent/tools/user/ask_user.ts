@@ -73,7 +73,7 @@ export function createAskUserTool(context: ToolContext) {
         toolCallId: requestId,
         createdAt: Date.now(),
       };
-      AskUserService.setPending(context.sessionId, pending as any);
+      await AskUserService.setPending(context.sessionId, pending as any);
       return {
         status: 'awaiting_user',
         requestId,

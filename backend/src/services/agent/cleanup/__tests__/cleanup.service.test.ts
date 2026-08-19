@@ -8,10 +8,25 @@
  * - 清理后用户目录若为空则删除
  */
 
-import { describe, it, expect, afterEach } from 'vitest';
+import { describe, it, expect, afterEach, vi } from 'vitest';
 import * as fs from 'fs';
 import * as path from 'path';
 import { CleanupService } from '../cleanup.service';
+
+// —— 隔离 agent_temp 根目录：cleanup 测试扫描整个 agent_temp，
+//    与其他测试文件（如 extract-chunk-document 创建 2026-08-11 固定日期目录）
+//    共享 uploads/agent_temp 时会产生并发竞态（计数多删）。
+//    这里把 getAgentTempRoot 指到系统临时目录下的独立根，互不干扰。 ——
+vi.mock('../../tools/file/paths', async (importOriginal) => {
+  const orig = await importOriginal<typeof import('../../tools/file/paths')>();
+  const os = await import('os');
+  const testRoot = path.join(os.tmpdir(), `agent-temp-cleanup-test-${process.pid}-${Date.now()}`);
+  return {
+    ...orig,
+    getAgentTempRoot: () => testRoot,
+  };
+});
+
 import { getAgentTempRoot } from '../../tools/file/paths';
 
 const TEST_USER = 'test-cleanup-user';
