@@ -19,6 +19,7 @@
 
 import { PipelineContext } from '../../review-pipeline/types';
 import { ReviewIssue } from '../../llm/llm.service';
+import { DwgVisionService } from '../../file/dwg-vision.service';
 
 /** 标准号识别：国标/行标/地标编号，如 GB 50016-2014、JGJ/T 231-2021 */
 const STD_REF_PATTERN = /\b(?:GB|JGJ|JG|CJ|CJJ|DL|HG|SH|SY|JT|TB|GY|YS|CB|SL|NB|DB)\s*[T\/／]?\s*\d+(?:\.\d+)?(?:[-—－]\d{4})?\b/gi;
@@ -45,8 +46,33 @@ export class ImageTextCheckService {
       return issues;
     }
 
-    // TODO(视觉扩展)：options.imageBase64 存在时调用 DwgVisionService.analyze 做视觉复核，
-    // 视觉结果与结构化结果合并后返回。图片链路（前端 WASM 渲染上传）打通后启用。
+    // 视觉复核（图片链路打通后启用）：options.imageBase64 存在时调用 DwgVisionService.analyze
+    if (_options?.imageBase64) {
+      try {
+        console.log('[ImageTextCheck] 启动视觉复核...');
+        const visionResult = await DwgVisionService.analyze(
+          _options.imageBase64,
+          ['compliance'],
+          text, // refText — 设计文本作为参照文本传入
+          { jobKey: ctx.traceId },
+        );
+        if (visionResult?.compliance?.issues) {
+          for (const issue of visionResult.compliance.issues) {
+            newIssues.push({
+              issueType: 'CONSISTENCY',
+              severity: 'warning',
+              originalText: issue.violation || '',
+              description: `视觉复核: ${issue.note || ''}`,
+              ruleCode: 'IMG_TXT_VISION',
+              reviewSource: 'IMAGE_TEXT',
+            } as ReviewIssue);
+          }
+        }
+        console.log(`[ImageTextCheck] 视觉复核完成: ${visionResult?.compliance?.issues?.length || 0} 条问题`);
+      } catch (e: any) {
+        console.warn(`[ImageTextCheck] 视觉复核失败（降级跳过）: ${e.message}`);
+      }
+    }
 
     const newIssues: ReviewIssue[] = [];
 

@@ -168,24 +168,29 @@ const handleLibraryReview: ReviewHandler = async (ctx) => {
     ]);
     // 基于 issueType + 归一化全文 精确去重（保持原行为，不引入模糊匹配）
     // RAG 结果在前，规范库结果在后，dedupIssues 保留先出现的
-    const mergedIssues = dedupIssues([...ragResult.issues, ...specResult.issues], {
+    let mergedIssues = dedupIssues([...ragResult.issues, ...specResult.issues], {
       enableFuzzy: false,
     });
+    // 术语白名单过滤
+    mergedIssues = await TerminologyService.filterTerminologyIssues(text, mergedIssues);
     return { aiIssues: mergedIssues, usedEngine: `${ragResult.engine}+${specResult.engine}` };
   }
 
   if (hasKnowledge) {
     const result = await AiReviewService.runAIReview(text, ctx, scene, config);
+    result.issues = await TerminologyService.filterTerminologyIssues(text, result.issues);
     return { aiIssues: result.issues, usedEngine: result.engine, sources: result.sources };
   }
 
   if (hasSemanticSpec) {
     console.log(`[Handler] 条文库单独审查: ${ctx.semanticItems!.length}条条文`);
     const result = await AiReviewService.runSemanticSpecReview(text, ctx, config);
+    result.issues = await TerminologyService.filterTerminologyIssues(text, result.issues);
     return { aiIssues: result.issues, usedEngine: result.engine };
   }
 
   const result = await AiReviewService.runLLMOnlyStrategy(text, ctx, scene, config);
+  result.issues = await TerminologyService.filterTerminologyIssues(text, result.issues);
   return { aiIssues: result.issues, usedEngine: result.engine, sources: result.sources };
 };
 

@@ -1,4 +1,4 @@
-import prisma from '../../config/db';
+﻿import prisma from '../../config/db';
 import { ParserService } from '../file/parser.service';
 import { LlmService } from '../llm/llm.service';
 import { PipelineContext, ReviewModeType } from '../review-pipeline';
@@ -23,21 +23,46 @@ import { getModeCapabilitiesConfig } from '../review-pipeline/mode-config.servic
 import { getMaxConcurrentReviews } from '../../utils/system-config';
 import { normalizeText } from './falsePositiveLibrary.service';
 import { StageRunner, StageRunnerHandle } from './stage-runner.service';
+import { levenshteinDistance } from '../../utils/issue-dedup';
 
 /**
- * P1-2: 误报命中判定 —— (归一化文本, ruleCode) 二元组
+ * P1-2: 误报命中判定 —— (归一化文本, ruleCode) 二元组，未命中时对 warning 及以下 severity 增加 Levenshtein 模糊匹配
  * fpMap: 归一化文本 → ruleCode 集合（集合含 null 表示该文本任意规则上下文均命中）
  * 与误报库写入侧（normalizedText 列）同口径，消除"同名文本不同规则上下文互相误伤"
+ *
+ * 模糊匹配：当 fpMap 条目数 ≤ 1000 时，对 warning 及以下 severity 的 issue，
+ * 若原文长度 ≥ 6 且与某条 fpMap key 的 Levenshtein 距离 ≤ 2，视为命中。
  */
 function isFpRuleHit(
   fpMap: Map<string, Set<string | null>> | null | undefined,
   originalText: string,
   ruleCode?: string | null,
+  severity?: string | null,
 ): boolean {
   if (!fpMap || fpMap.size === 0) return false;
-  const codes = fpMap.get(normalizeText(originalText || ''));
-  if (!codes) return false;
-  return codes.has(null) || (ruleCode != null && codes.has(ruleCode));
+  const normalized = normalizeText(originalText || '');
+
+  // 第一步：精确匹配（(归一化文本, ruleCode) 二元组）
+  const codes = fpMap.get(normalized);
+  if (codes) {
+    if (codes.has(null) || (ruleCode != null && codes.has(ruleCode))) {
+      return true;
+    }
+  }
+
+  // 第二步：对 warning 及以下 severity 的 issue 启用 Levenshtein 模糊匹配
+  // 性能保护：fpMap 超过 1000 条时不启用模糊匹配
+  if (severity === 'warning' || severity === 'info' || severity === 'prompt') {
+    if (fpMap.size <= 1000 && normalized.length >= 6) {
+      for (const fpKey of fpMap.keys()) {
+        if (fpKey.length >= 6 && levenshteinDistance(normalized, fpKey) <= 2) {
+          return true;
+        }
+      }
+    }
+  }
+
+  return false;
 }
 
 /**
@@ -1224,7 +1249,7 @@ const fileContexts = task.files.map(file => {
     let fpFilteredFastCount = 0;
     if (ctx.fpLibraryMap && ctx.fpLibraryMap.size > 0) {
       const filterByFp = (issues: any[]) => issues.filter((issue: any) => {
-        const hit = isFpRuleHit(ctx.fpLibraryMap, issue.originalText, issue.ruleCode);
+        const hit = isFpRuleHit(ctx.fpLibraryMap, issue.originalText, issue.ruleCode, issue.severity);
         if (hit) fpFilteredFastCount++;
         return !hit;
       });
@@ -1491,7 +1516,7 @@ const fileContexts = task.files.map(file => {
         let filteredByFp = 0;
         if (ctx.fpLibraryMap && ctx.fpLibraryMap.size > 0) {
           const beforeCount = issues.length;
-          issues = issues.filter((issue: any) => !isFpRuleHit(ctx.fpLibraryMap, issue.originalText, issue.ruleCode));
+          issues = issues.filter((issue: any) => !isFpRuleHit(ctx.fpLibraryMap, issue.originalText, issue.ruleCode, issue.severity));
           filteredByFp = beforeCount - issues.length;
           if (filteredByFp > 0) {
             console.log(`[Review] 分片 ${chunkIndex} 过滤 ${filteredByFp} 条误报 (${file.fileName})`);
@@ -1511,6 +1536,10 @@ const fileContexts = task.files.map(file => {
           // OPT-029: originalText fidelity check
           if (issue.originalText && ctx.extractedText) {
             const fidelity = validateOriginalText(issue.originalText, ctx.extractedText, { enableFuzzy: ctx.extractedText.length < 100000 });
+            if (fidelity.confidence === 'not_found') {
+              // 原文在文档中完全不存在（LLM 幻觉），丢弃该 issue——因为按幻觉原文高亮定位会误导用户
+              return null;
+            }
             if (fidelity.confidence === 'fuzzy' && fidelity.correctedText) {
               issue.originalText = fidelity.correctedText;
             }
@@ -1561,7 +1590,7 @@ const fileContexts = task.files.map(file => {
             // 无标记时保持 'AI'。此前写死 'AI' 导致前端 DEC 双清单按 reviewSource 过滤永远为空。
             reviewSource: (issue as any).reviewSource || 'AI',
           };
-        });
+        }).filter((x): x is NonNullable<typeof x> => x !== null);
 
         // ��ǿ�棺���񱣻� + ���Ի��� + ʧ��ʱ�ӳ�����
         let dbWriteSuccess = false;
@@ -1709,7 +1738,7 @@ const fileContexts = task.files.map(file => {
         if (ctx.fpLibraryMap && ctx.fpLibraryMap.size > 0) {
           const beforeCount = slowResult.aiIssues.length;
           slowResult.aiIssues = slowResult.aiIssues.filter(
-            (issue: any) => !isFpRuleHit(ctx.fpLibraryMap, issue.originalText, issue.ruleCode)
+            (issue: any) => !isFpRuleHit(ctx.fpLibraryMap, issue.originalText, issue.ruleCode, issue.severity)
           );
           const fallbackFiltered = beforeCount - slowResult.aiIssues.length;
           if (fallbackFiltered > 0) {
@@ -1732,6 +1761,10 @@ const fileContexts = task.files.map(file => {
           // OPT-029: originalText fidelity check (fallback path)
           if (issue.originalText && ctx.extractedText) {
             const fidelity = validateOriginalText(issue.originalText, ctx.extractedText, { enableFuzzy: ctx.extractedText.length < 100000 });
+            if (fidelity.confidence === 'not_found') {
+              // 原文在文档中完全不存在（LLM 幻觉），丢弃该 issue
+              return null;
+            }
             if (fidelity.confidence === 'fuzzy' && fidelity.correctedText) {
               issue.originalText = fidelity.correctedText;
             }
@@ -1777,7 +1810,7 @@ const fileContexts = task.files.map(file => {
             // DEC-1 修复：透传 handler 层 reviewSource 标记（DEC 的 COMPLETENESS/COMPLIANCE/RULE_FALLBACK），无标记保持 'AI'
             reviewSource: (issue as any).reviewSource || 'AI',
           };
-        });
+        }).filter((x): x is NonNullable<typeof x> => x !== null);
         await prisma.taskDetail.createMany({
           data: aiData.map((item) => this.stripDbUnsupportedFields(item)) as any,
         });

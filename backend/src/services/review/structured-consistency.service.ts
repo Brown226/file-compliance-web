@@ -20,6 +20,46 @@ import { LlmService, ReviewIssue, TextChunk } from '../llm/llm.service';
 import { PipelineContext, PipelineReviewConfig } from '../review-pipeline/types';
 import { PromptLoader, consistencyDimensionsBlock } from '../prompts';
 import { parallelLimit } from '../../utils/parallel';
+import { z } from 'zod';
+
+// ============================================================
+// Zod Schema 定义 — LLM 输出校验收口
+// ============================================================
+
+/** LLM 抽取阶段 — 单个条目 schema（宽松校验，仅确保字段类型正确） */
+const ExtractItemSchema = z.object({
+  name: z.string().optional(),
+  value: z.string().optional(),
+  lineHint: z.number().optional(),
+  fingerprint: z.string().optional(),
+  code: z.string().optional(),
+  context: z.string().optional(),
+  ref: z.string().optional(),
+  key: z.string().optional(),
+  subject: z.string().optional(),
+  claim: z.string().optional(),
+}).passthrough();
+
+/** LLM 抽取阶段 — 顶层 JSON schema */
+const ExtractResultSchema = z.object({
+  params: z.array(ExtractItemSchema).optional().default([]),
+  codes: z.array(ExtractItemSchema).optional().default([]),
+  refs: z.array(ExtractItemSchema).optional().default([]),
+  meta: z.array(ExtractItemSchema).optional().default([]),
+  facts: z.array(ExtractItemSchema).optional().default([]),
+}).passthrough();
+
+/** LLM 比对阶段 — 单条 issue schema */
+const CompareIssueSchema = z.object({
+  issueType: z.string().optional(),
+  originalText: z.string().optional(),
+  suggestedText: z.string().optional(),
+  description: z.string().optional(),
+  ruleCode: z.string().optional(),
+  standardRef: z.string().optional(),
+  plain_language: z.string().optional(),
+  plainLanguage: z.string().optional(),
+}).passthrough();
 
 // ============================================================
 // 类型定义
@@ -323,14 +363,33 @@ export class StructuredConsistencyService {
 
       const parsed: RawExtractResult = JSON.parse(objMatch[0]);
 
+      // Zod schema 校验收口：校验通过后，由各分类 parse* 函数独立处理
+      // 注意：.passthrough() 宽松模式不会拒绝非数组字段，但会 strip 掉不认识的字段。
+      // 对于 LLM 把数组写成字符串/对象的畸形情况，zod 会校验失败。
+      // 我们降级处理：校验失败时不返回空，而是用 safeArray 逐个字段兜底
+      let validated: z.infer<typeof ExtractResultSchema>;
+      const zodResult = ExtractResultSchema.safeParse(parsed);
+      if (zodResult.success) {
+        validated = zodResult.data;
+      } else {
+        console.warn('[StructConsist] 抽取结果 schema 校验失败，逐字段降级兜底:', zodResult.error.issues);
+        validated = {
+          params: this.safeArray(parsed.params, 'params'),
+          codes: this.safeArray(parsed.codes, 'codes'),
+          refs: this.safeArray(parsed.refs, 'refs'),
+          meta: this.safeArray(parsed.meta, 'meta'),
+          facts: this.safeArray(parsed.facts, 'facts'),
+        };
+      }
+
       // P1-5: 逐分类隔离——每个分类独立解析+独立 try/catch。
       // 之前任一分类类型异常（如 params 不是数组）会让整个 JSON.parse 的 map/filter 抛错，
       // 导致整片抽取结果被丢弃（单分类崩溃吞整片）。现在单分类畸形只丢该分类，不影响其余 4 类。
-      const params = this.parseExtractParams(parsed.params, chunk);
-      const codes = this.parseExtractCodes(parsed.codes, chunk);
-      const refs = this.parseExtractRefs(parsed.refs, chunk);
-      const meta = this.parseExtractMeta(parsed.meta, chunk);
-      const facts = this.parseExtractFacts(parsed.facts, chunk);
+      const params = this.parseExtractParams(validated.params, chunk);
+      const codes = this.parseExtractCodes(validated.codes, chunk);
+      const refs = this.parseExtractRefs(validated.refs, chunk);
+      const meta = this.parseExtractMeta(validated.meta, chunk);
+      const facts = this.parseExtractFacts(validated.facts, chunk);
 
       return { params, codes, refs, meta, facts };
     } catch (e) {
@@ -659,27 +718,28 @@ export class StructuredConsistencyService {
 
       const issues: ReviewIssue[] = [];
       for (const item of parsed) {
-        // P1-5: 逐条隔离——单条畸形条目只丢弃该条，不影响其余条目。
+        // Zod schema 逐条校验：校验失败只丢弃该条，不影响其余条目
         // 之前任一 null/非对象条目会让整片解析失败返回 []（静默漏报整片）。
-        try {
-          if (!item || typeof item !== 'object' || Array.isArray(item)) continue;
-          const it = item as Record<string, any>;
-          const originalText = it.originalText != null ? String(it.originalText).trim() : '';
-          if (!originalText) continue; // 无原文的条目无定位价值，丢弃
-
-          const issueType = it.issueType != null ? String(it.issueType) : 'CONSISTENCY';
-          issues.push({
-            issueType: validTypes.includes(issueType) ? issueType : 'CONSISTENCY',
-            originalText,
-            suggestedText: it.suggestedText != null ? String(it.suggestedText) : undefined,
-            description: it.description != null ? String(it.description) : undefined,
-            ruleCode: it.ruleCode != null ? String(it.ruleCode) : undefined,
-            standardRef: it.standardRef != null ? String(it.standardRef) : undefined,
-            plainLanguage: it.plain_language != null ? String(it.plain_language) : (it.plainLanguage != null ? String(it.plainLanguage) : undefined),
-          });
-        } catch (e) {
-          console.warn('[StructConsist] 比对结果单条解析失败，丢弃该条:', e);
+        const zodItem = CompareIssueSchema.safeParse(item);
+        if (!zodItem.success) {
+          console.warn('[StructConsist] 比对结果单条 schema 校验失败，丢弃该条:', zodItem.error.issues, 'item:', JSON.stringify(item).slice(0, 200));
+          continue;
         }
+
+        const it = zodItem.data;
+        const originalText = it.originalText?.trim() || '';
+        if (!originalText) continue; // 无原文的条目无定位价值，丢弃
+
+        const issueType = it.issueType || 'CONSISTENCY';
+        issues.push({
+          issueType: validTypes.includes(issueType) ? issueType : 'CONSISTENCY',
+          originalText,
+          suggestedText: it.suggestedText || undefined,
+          description: it.description || undefined,
+          ruleCode: it.ruleCode || undefined,
+          standardRef: it.standardRef || undefined,
+          plainLanguage: it.plain_language || it.plainLanguage || undefined,
+        });
       }
       return issues;
     } catch (e) {

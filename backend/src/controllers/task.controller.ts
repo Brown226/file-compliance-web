@@ -1,4 +1,4 @@
-import { Request, Response } from 'express';
+﻿import { Request, Response } from 'express';
 import path from 'path';
 import fs from 'fs';
 import { TaskService } from '../services/system/task.service';
@@ -10,6 +10,29 @@ import { success, error, paginated } from '../utils/response';
 
 export const createTask = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
+    // 检查 feature flag 门禁：如果该审查模式的入口被禁用，则拒绝创建任务
+    const modeToFlagKey: Record<string, string> = {
+      'LIBRARY_REVIEW': 'entry.LIBRARY',
+      'TYPO_GRAMMAR': 'entry.PROOFREAD',
+      'CONSISTENCY': 'entry.CONSISTENCY',
+      'DOC_REVIEW': 'entry.DOC_REVIEW',
+      'CONTRACT_REVIEW': 'entry.CONTRACT',
+      'SELF_CHECK': 'entry.SELF_CHECK',
+      'RULE_ONLY': 'entry.RULE_ONLY',
+    };
+    const reviewModeFromBody = req.body.reviewMode as string | undefined;
+    if (reviewModeFromBody) {
+      const flagKey = modeToFlagKey[reviewModeFromBody];
+      if (flagKey) {
+        const { isFeatureEnabled } = await import('../services/system/feature-flag.service');
+        const enabled = await isFeatureEnabled(flagKey);
+        if (!enabled) {
+          res.status(403).json({ success: false, message: `该审查模式已被管理员禁用（${flagKey}=false），请在 AI 引擎配置中启用` });
+          return;
+        }
+      }
+    }
+
     const { title, description, standardId, standardIds, maxkbKnowledgeId, maxkbKnowledgeIds,
       perspective, selectedTemplateId, intraFileConsistency,
       reviewPlan, reviewSpecificationId, ruleLibraryId, entryModule, reviewMode, contractStance } = req.body;

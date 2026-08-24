@@ -61,17 +61,32 @@ export class ReviewMetricsService {
       if (options.endDate) where.createdAt.lte = options.endDate;
     }
 
+    // 当 reviewMode 存在时，查出该模式下所有 Task 的 id，用于过滤 feedback 和 taskDetail
+    let taskIds: string[] | undefined;
+    if (options?.reviewMode) {
+      const tasks = await prisma.task.findMany({
+        where: { reviewMode: options.reviewMode as any },
+        select: { id: true },
+      });
+      taskIds = tasks.map(t => t.id);
+    }
+
+    const feedbackWhere = taskIds ? { ...where, taskId: { in: taskIds } } : where;
+
     const [usefulCount, falsePositiveCount, missedCount, totalIssues] = await Promise.all([
-      prisma.reviewFeedback.count({ where: { ...where, feedbackType: 'useful' } }),
-      prisma.reviewFeedback.count({ where: { ...where, feedbackType: 'false_positive' } }),
-      prisma.reviewFeedback.count({ where: { ...where, feedbackType: 'missed' } }),
+      prisma.reviewFeedback.count({ where: { ...feedbackWhere, feedbackType: 'useful' } }),
+      prisma.reviewFeedback.count({ where: { ...feedbackWhere, feedbackType: 'false_positive' } }),
+      prisma.reviewFeedback.count({ where: { ...feedbackWhere, feedbackType: 'missed' } }),
       prisma.taskDetail.count({
-        where: issueWhere(options?.startDate || options?.endDate ? {
-          createdAt: {
-            ...(options?.startDate ? { gte: options.startDate } : {}),
-            ...(options?.endDate ? { lte: options.endDate } : {}),
-          }
-        } : {}),
+        where: {
+          ...(taskIds ? { taskId: { in: taskIds } } : {}),
+          ...issueWhere(options?.startDate || options?.endDate ? {
+            createdAt: {
+              ...(options?.startDate ? { gte: options.startDate } : {}),
+              ...(options?.endDate ? { lte: options.endDate } : {}),
+            }
+          } : {}),
+        },
       }),
     ]);
 

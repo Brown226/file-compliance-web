@@ -52,7 +52,16 @@ export class StandardRefCheckService {
       select: { id: true, standardNo: true, standardName: true, standardIdent: true, standardStatus: true },
     });
 
-    if (standards.length === 0) return [];
+    if (standards.length === 0) {
+      console.warn('[StandardRefCheck] 标准库为空，跳过标准引用检查');
+      return [{
+        issueType: 'COMPLETENESS',
+        ruleCode: 'STD_000',
+        severity: 'warning',
+        originalText: '',
+        description: '标准库为空，无法进行标准引用检查，请管理员导入标准规范',
+      }];
+    }
 
     const checkLibrary: StandardCheckItem[] = standards
       .filter(s => s.standardNo)
