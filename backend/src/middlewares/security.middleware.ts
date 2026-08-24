@@ -11,11 +11,11 @@ import { Request, Response, NextFunction } from 'express';
 // ===== Rate Limiting =====
 
 /**
- * 全局 API 限流：每 IP 每 15 分钟最多 300 次请求
+ * 全局 API 限流：每 IP 每 15 分钟最多 500 次请求
  */
 export const globalLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 分钟
-  max: 300,
+  max: 500,
   standardHeaders: true,
   legacyHeaders: false,
   message: { code: 429, message: '请求过于频繁，请稍后再试', data: null },

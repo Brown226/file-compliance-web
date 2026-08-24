@@ -118,13 +118,23 @@ export const probeModelCapabilities = async (req: AuthRequest, res: Response): P
       return;
     }
 
+    // 优先实时探测；探测失败时降级读取 Provider 配置里已填的能力元数据
+    // （部分网关 /models 只返回 id 列表不带 capabilities，此时配置值即为有效能力）
     const caps = await LlmService.probeModelCapabilities(profile.apiBase, profile.apiKey || '', profile.model);
+    const configuredCaps = (profile.capabilities as {
+      contextWindowTokens?: number;
+      maxOutputTokens?: number;
+      reasoning?: boolean;
+    }) || {};
+    const contextWindow = caps?.contextWindow ?? configuredCaps.contextWindowTokens ?? 0;
+    const maxOutput = caps?.maxOutput ?? configuredCaps.maxOutputTokens ?? 0;
+    const reasoning = caps?.reasoning ?? configuredCaps.reasoning ?? false;
     success(res, {
-      probed: !!caps,
+      probed: !!caps || contextWindow > 0 || maxOutput > 0,
       model: profile.model,
-      contextWindow: caps?.contextWindow ?? 0,
-      maxOutput: caps?.maxOutput ?? 0,
-      reasoning: caps?.reasoning ?? false,
+      contextWindow,
+      maxOutput,
+      reasoning,
     });
   } catch (err: any) {
     console.error('Probe Model Capabilities Error:', err);

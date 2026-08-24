@@ -279,6 +279,9 @@ export function createAllTools(context: ToolContext) {
     ...createFileTools(context),
     ...createReviewTools(context),
     ...createKnowledgeTools(context),
+    // TODO: 在此处添加 mode-capabilities 门禁检查，确保 Agent 建任务时受 mode-capabilities 约束。
+    // 说明：create_pipeline_task 工具注册点即门禁挂载点。当前 mode-capabilities 检查在
+    // processTask 处理期已生效，故此处仅预留挂载点，不写完整门禁逻辑（避免重复检查）。
     ...createPipelineTools(context),
     ...createMemoryTools(context),
     batch_process: createBatchProcessTool(context),

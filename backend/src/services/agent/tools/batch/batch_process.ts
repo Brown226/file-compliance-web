@@ -25,6 +25,7 @@ import type { ToolContext } from '../file/upload_file';
 import { parseDocument } from '../file/parse-document';
 import { LlmService } from '../../../llm/llm.service';
 import { getChunkConcurrency } from '../../../../utils/system-config';
+import FalsePositiveLibraryService from '../../../review/falsePositiveLibrary.service';
 
 const { tool } = require('@ai-sdk/provider-utils') as typeof import('@ai-sdk/provider-utils');
 
@@ -115,6 +116,9 @@ async function doReview(filePath: string): Promise<NonNullable<BatchFileResult['
   if (!text.trim()) return { issueCount: 0, issues: [] };
   try {
     const issues = await LlmService.reviewText(truncate(text, 20000), {
+      // NOTE(后续可补)：此内联简化 prompt 未加入 standardRef（标准依据引用）约束。
+      // 若需与主审查链路对齐，应注入 standardContext 或在 systemPrompt 中要求
+      // 每条输出 standardRef（如 "GB/T 50265-2010 第5.2.1条"），此处留待后续补充。
       systemPrompt:
         '你是文件审查专家。请审查以下文本中的合规问题（违规/缺失/错误），输出 JSON 数组。' +
         '每条：{"issueType":"VIOLATION|COMPLETENESS|CONSISTENCY|TYPO","originalText":"原文","description":"说明","severity":"error|warning|info"}',
@@ -122,9 +126,23 @@ async function doReview(filePath: string): Promise<NonNullable<BatchFileResult['
       maxTokens: 2048,
       timeout: 60,
     });
+
+    // ★ 误报过滤：命中误报库的 issue 直接剔除，避免再次上报已确认的误报。
+    // batchCheck 基于 (归一化文本, ruleCode) 二元组匹配，与主审查链路同口径；
+    // 误报库查询失败不阻断审查，降级为不过滤。
+    let effectiveIssues = issues;
+    try {
+      const fpMap = await FalsePositiveLibraryService.batchCheck(
+        issues.map(i => i.originalText || ''),
+      );
+      effectiveIssues = issues.filter(i => !fpMap.get(i.originalText || ''));
+    } catch (e: any) {
+      console.warn(`[Batch] 误报过滤失败，跳过: ${e.message}`);
+    }
+
     return {
-      issueCount: issues.length,
-      issues: issues.slice(0, 20).map(i => ({
+      issueCount: effectiveIssues.length,
+      issues: effectiveIssues.slice(0, 20).map(i => ({
         issueType: i.issueType,
         severity: i.severity,
         description: truncate(i.description || '', 200),

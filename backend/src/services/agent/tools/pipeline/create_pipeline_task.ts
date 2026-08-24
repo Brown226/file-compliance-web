@@ -2,10 +2,9 @@
  * create_pipeline_task 工具 — Agent 委托复杂审查给 pipeline（Bull 队列 + ReviewService.processTask）
  *
  * 工作方式：
- * 1. 创建 Task 记录（指定 reviewMode + creatorId）
- * 2. 为每个 filePath 创建 TaskFile 记录（关联到 uploads/agent_temp 的文件）
- * 3. 调 addReviewJob(taskId) 入 Bull 队列
- * 4. 返回 taskId，Agent 可用 get_task_status / get_task_results 轮询结果
+ * 1. 复用 TaskService.createTask 创建 Task 记录（指定 reviewMode + creatorId，统一知识库 JSON 格式与服务端校验）
+ * 2. createTask 内部为每个 filePath 创建 TaskFile 记录（关联到 uploads/agent_temp 的文件）并入 Bull 队列
+ * 3. 返回 taskId，Agent 可用 get_task_status / get_task_results 轮询结果
  *
  * 使用场景：
  * - 复杂审查（如多文件交叉验证、DEC 三维度审查）委托给 pipeline
@@ -31,9 +30,8 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { z } from 'zod';
 import { getAgentTempRoot } from '../file/paths';
-import { getUploadDir } from '../../../../config/upload';
-import prisma from '../../../../config/db';
-import { addReviewJob } from '../../../../services/system/queue.service';
+import { TaskService } from '../../../system/task.service';
+import { isFeatureEnabled } from '../../../system/feature-flag.service';
 import type { ToolContext } from '../file/upload_file';
 
 const { tool } = require('@ai-sdk/provider-utils') as typeof import('@ai-sdk/provider-utils');
@@ -71,6 +69,30 @@ export function createCreatePipelineTaskTool(context: ToolContext) {
       perspective: z.string().optional().describe('审查立场（如甲方/乙方）'),
     }),
     execute: async ({ title, reviewMode, filePaths, standardId, knowledgeId, ruleLibraryId, perspective }): Promise<CreatePipelineTaskResult> => {
+      // 0. 检查 feature flag 门禁（如果该审查模式的入口被禁用，则拒绝创建任务）
+      const modeToFlagKey: Record<string, string> = {
+        'LIBRARY_REVIEW': 'entry.LIBRARY',
+        'TYPO_GRAMMAR': 'entry.PROOFREAD',
+        'CONSISTENCY': 'entry.CONSISTENCY',
+        'DOC_REVIEW': 'entry.DOC_REVIEW',
+        'CONTRACT_REVIEW': 'entry.CONTRACT',
+        'SELF_CHECK': 'entry.SELF_CHECK',
+        'RULE_ONLY': 'entry.RULE_ONLY',
+      };
+      const flagKey = modeToFlagKey[reviewMode];
+      if (flagKey) {
+        const enabled = await isFeatureEnabled(flagKey);
+        if (!enabled) {
+          return {
+            taskId: '',
+            status: 'FAILED',
+            fileCount: 0,
+            jobEnqueued: false,
+            message: `该审查模式已被管理员禁用（${flagKey}=false），请在 AI 引擎配置中启用后再试`,
+          };
+        }
+      }
+
       // 1. 校验文件路径安全（必须在当前用户 agent_temp 目录内）
       const uploadsRoot = getAgentTempRoot();
       const normalizedRoot = path.resolve(uploadsRoot);
@@ -100,67 +122,50 @@ export function createCreatePipelineTaskTool(context: ToolContext) {
         };
       }
 
-      // 2. 创建 Task 记录
-      const task = await prisma.task.create({
-        data: {
-          title,
-          creatorId: context.userId,
-          reviewMode: reviewMode as any,
-          standardId: standardId || null,
-          maxkbKnowledgeId: knowledgeId || null,
-          ruleLibraryId: ruleLibraryId || null,
-          perspective: perspective || null,
-          status: 'PROCESSING',  // 直接进入处理中（文件已存在）
-        },
-      });
-
-      // 3. 创建 TaskFile 记录（关联 agent_temp 下的文件）
-      await prisma.taskFile.createMany({
-        data: validFilePaths.map(fp => {
-          const fileName = path.basename(fp);
-          const ext = path.extname(fileName).toLowerCase().replace('.', '');
-          // 把绝对路径转为 /uploads/ 相对路径，便于后续静态服务访问（用配置化的上传根，与工具路径根一致）
-          const uploadDir = getUploadDir();
-          const relativePath = '/uploads/' + path.relative(uploadDir, fp).replace(/\\/g, '/');
-          return {
-            taskId: task.id,
-            fileName,
-            filePath: relativePath,
-            fileSize: fs.statSync(fp).size,
-            fileType: ext || 'unknown',
-            status: 'PENDING',
-          };
-        }),
-      });
-
-      // 4. 入 Bull 队列（降级模式会同步执行）
-      let jobEnqueued = false;
-      try {
-        await addReviewJob(task.id);
-        jobEnqueued = true;
-        console.log(`[Agent:create_pipeline_task] 任务已入队: ${task.id} (mode=${reviewMode}, files=${validFilePaths.length})`);
-      } catch (e) {
-        console.error(`[Agent:create_pipeline_task] 入队失败: ${task.id}`, (e as Error).message);
-        // 入队失败时更新 Task 状态为 FAILED
-        await prisma.task.update({
-          where: { id: task.id },
-          data: { status: 'FAILED' },
-        }).catch(() => { /* ignore */ });
+      // 2. 创建 Task 记录 —— 复用 TaskService.createTask（统一知识库格式与校验）
+      //    ★ 知识库格式统一：将 knowledgeId 放入 maxkbKnowledgeIds 数组，交由 TaskService
+      //    ★ 按「多库 JSON 序列化」规则写入 maxkbKnowledgeId 字段（task.service.ts 存储策略）。
+      //    ★ 同时获得 TaskService 的服务端校验（files 非空 / RULE_ONLY 前缀约束等）。
+      //
+      //    agent_temp 已落盘文件映射为 Multer 兼容对象，让 createTask 生成 /uploads/agent_temp/...
+      //    的 TaskFile 记录，并内部完成入 Bull 队列（失败自动回滚状态不发异常）。
+      const files = validFilePaths.map(fp => {
+        // fp = {uploadDir}/agent_temp/{userId}/{date}/{basename}
+        const relUser = path.relative(getAgentTempRoot(), fp).replace(/\\/g, '/'); // {userId}/{date}/{basename}
+        const seg = relUser.split('/');
+        const dateDir = seg[1] || '';
+        const basename = seg.slice(2).join('/') || path.basename(fp);
         return {
-          taskId: task.id,
-          status: 'FAILED',
-          fileCount: validFilePaths.length,
-          jobEnqueued: false,
-          message: `入队失败: ${(e as Error).message}`,
-        };
-      }
+          originalname: basename,
+          // 拼接 date 子目录，配合 creatorUsername 组装出正确路径
+          filename: dateDir ? `${dateDir}/${basename}` : basename,
+          size: fs.statSync(fp).size,
+        } as any;
+      });
+
+      const task = await TaskService.createTask({
+        title,
+        creatorId: context.userId,
+        // 使 createTask 生成的 filePath 落到 /uploads/agent_temp/{userId}/... 而非默认用户目录
+        creatorUsername: `agent_temp/${context.userId}`,
+        reviewMode: reviewMode as string,
+        standardId: standardId || undefined,
+        // 统一知识库格式：数组写入 → TaskService JSON 序列化（与前端多选知识库一致）
+        maxkbKnowledgeIds: knowledgeId ? [knowledgeId] : [],
+        ruleLibraryId: ruleLibraryId || undefined,
+        perspective: perspective || undefined,
+        files: files as any,
+      });
+
+      // createTask 内部已完成 TaskFile 记录 + 入队，返回 PROCESSING（files>0 且非 COMPARE 延迟）
+      console.log(`[Agent:create_pipeline_task] 任务已创建(复用 TaskService): ${task.id} (mode=${reviewMode}, files=${validFilePaths.length})`);
 
       return {
         taskId: task.id,
-        status: 'PROCESSING',
+        status: task.status as string,
         fileCount: validFilePaths.length,
-        jobEnqueued,
-        message: `任务已创建并入队，可用 get_task_status 轮询进度`,
+        jobEnqueued: task.status === 'PROCESSING',
+        message: `任务已创建并委托给 pipeline 处理（复用 TaskService），可用 get_task_status 轮询进度`,
       };
     },
   });
