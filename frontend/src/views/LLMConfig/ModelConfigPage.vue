@@ -1,117 +1,312 @@
 <template>
   <div class="model-config-page">
-    <!-- 顶部：OCR 状态条 -->
-    <OcrStatusBar class="ocr-bar" />
-
-    <!-- 主配置区：对话模型 -->
-    <section class="config-card main-card">
-      <div class="card-header">
-        <h4>对话模型</h4>
-        <span class="card-sub">主推理 · 审查核心 LLM</span>
+    <!-- 右侧配置主区（一级导航在 AiEngineConfig 左侧） -->
+    <div class="model-main">
+      <!-- 内容区顶部细标签（二级导航，消除双左导航） -->
+      <div class="model-tabs" role="tablist">
+        <button
+          v-for="tab in modelTabs"
+          :key="tab.key"
+          class="model-tab-item"
+          :class="{ active: activeModelTab === tab.key }"
+          @click="activeModelTab = tab.key"
+        >
+          <el-icon :size="15"><component :is="tab.icon" /></el-icon>
+          <span>{{ tab.label }}</span>
+        </button>
       </div>
-      <div class="card-body">
-        <ChatModelTab />
+
+      <div class="model-config-panel">
+        <AdminPanel :title="currentModelTab?.title">
+          <template #actions>
+            <div class="model-actions">
+              <el-button :loading="testLoading" @click="handleTest">
+                <el-icon><Connection /></el-icon>
+                测试连接
+              </el-button>
+              <el-button type="primary" :loading="saveLoading" @click="handleSave">
+                <el-icon><Check /></el-icon>
+                保存配置
+              </el-button>
+            </div>
+          </template>
+
+          <p class="panel-desc">{{ currentModelTab?.description }}</p>
+          <OcrStatusBar v-if="activeModelTab === 'vision'" class="ocr-bar-compact" />
+
+          <div class="form-stage">
+            <ChatModelTab ref="chatRef" v-show="activeModelTab === 'chat'" />
+            <EmbeddingModelTab ref="embeddingRef" v-show="activeModelTab === 'embedding'" />
+            <VisionModelTab ref="visionRef" v-show="activeModelTab === 'vision'" />
+            <RerankModelTab ref="rerankRef" v-show="activeModelTab === 'rerank'" />
+          </div>
+
+          <!-- 统一结果提示 -->
+          <div v-if="testResult" class="test-result" :class="testResult.success ? 'test-success' : 'test-fail'">
+            <el-icon><component :is="testResult.success ? CircleCheckFilled : CircleCloseFilled" /></el-icon>
+            <span>{{ testResult.success ? '连接成功' : '连接失败' }}</span>
+            <span v-if="testResult.message" class="result-detail">{{ testResult.message }}</span>
+            <span v-if="testResult.latency !== undefined" class="result-latency">延迟: {{ testResult.latency }}ms</span>
+          </div>
+        </AdminPanel>
       </div>
-    </section>
-
-    <!-- 辅助配置区：Embedding + 视觉 -->
-    <div class="aux-grid">
-      <section class="config-card">
-        <div class="card-header">
-          <h4>Embedding 模型</h4>
-          <span class="card-sub">向量化</span>
-        </div>
-        <div class="card-body">
-          <EmbeddingModelTab />
-        </div>
-      </section>
-
-      <section class="config-card">
-        <div class="card-header">
-          <h4>视觉模型</h4>
-          <span class="card-sub">扫描件 OCR</span>
-        </div>
-        <div class="card-body">
-          <VisionModelTab />
-        </div>
-      </section>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import OcrStatusBar from './OcrStatusBar.vue'
+import { ref, computed } from 'vue'
+import { ChatDotRound, Cpu, View, Sort, Connection, Check, CircleCheckFilled, CircleCloseFilled } from '@element-plus/icons-vue'
+import AdminPanel from '@/components/admin/AdminPanel.vue'
 import ChatModelTab from './ChatModelTab.vue'
 import EmbeddingModelTab from './EmbeddingModelTab.vue'
 import VisionModelTab from './VisionModelTab.vue'
+import RerankModelTab from './RerankModelTab.vue'
+import OcrStatusBar from './OcrStatusBar.vue'
+
+const modelTabs = [
+  {
+    key: 'chat',
+    label: '对话模型',
+    title: '对话模型',
+    description: '主推理模型，用于文件审查与问答',
+    icon: ChatDotRound,
+  },
+  {
+    key: 'embedding',
+    label: 'Embedding',
+    title: 'Embedding 模型',
+    description: '用于知识库文档向量化',
+    icon: Cpu,
+  },
+  {
+    key: 'vision',
+    label: '视觉模型',
+    title: '视觉模型',
+    description: '用于扫描件 OCR 与图纸识别',
+    icon: View,
+  },
+  {
+    key: 'rerank',
+    label: '重排序',
+    title: 'Rerank 重排序模型',
+    description: '用于知识库检索结果的二次精排，提升召回准确率',
+    icon: Sort,
+  },
+] as const
+
+const activeModelTab = ref<'chat' | 'embedding' | 'vision' | 'rerank'>('chat')
+const currentModelTab = computed(() => modelTabs.find((t) => t.key === activeModelTab.value))
+
+const chatRef = ref<InstanceType<typeof ChatModelTab>>()
+const embeddingRef = ref<InstanceType<typeof EmbeddingModelTab>>()
+const visionRef = ref<InstanceType<typeof VisionModelTab>>()
+const rerankRef = ref<InstanceType<typeof RerankModelTab>>()
+
+const testLoading = ref(false)
+const saveLoading = ref(false)
+const testResult = ref<{ success: boolean; message?: string; latency?: number } | null>(null)
+
+const currentRef = computed(() => {
+  switch (activeModelTab.value) {
+    case 'chat':
+      return chatRef.value
+    case 'embedding':
+      return embeddingRef.value
+    case 'vision':
+      return visionRef.value
+    case 'rerank':
+      return rerankRef.value
+    default:
+      return undefined
+  }
+})
+
+async function handleTest() {
+  const inst = currentRef.value
+  if (!inst || typeof inst.handleTest !== 'function') {
+    return
+  }
+  testLoading.value = true
+  testResult.value = null
+  try {
+    testResult.value = await inst.handleTest()
+  } finally {
+    testLoading.value = false
+  }
+}
+
+async function handleSave() {
+  const inst = currentRef.value
+  if (!inst || typeof inst.handleSave !== 'function') {
+    return
+  }
+  saveLoading.value = true
+  try {
+    await inst.handleSave()
+  } finally {
+    saveLoading.value = false
+  }
+}
 </script>
 
 <style scoped>
 .model-config-page {
-  padding: 20px 24px 32px;
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-  max-width: 1200px;
-  margin: 0 auto;
+  height: 100%;
+  min-height: 0;
+  padding: 20px 24px;
+  overflow-y: auto;
 }
 
-/* 通用卡片 */
-.config-card {
+/* === 内容区顶部细标签（二级导航） === */
+.model-tabs {
+  display: inline-flex;
+  gap: 2px;
+  margin-bottom: 16px;
+  padding: 3px;
   background: var(--bg-surface);
   border: 1px solid var(--corp-border-light);
-  border-radius: 8px;
-  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.03);
-  overflow: hidden;
+  border-radius: 10px;
 }
 
-.card-header {
+.model-tab-item {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 14px 20px;
-  border-bottom: 1px solid var(--color-gray-100);
-  background: var(--corp-bg-sunken);
-}
-
-.card-header h4 {
-  margin: 0;
-  font-size: 14px;
-  font-weight: 600;
-  color: var(--corp-text-primary);
-}
-
-.card-sub {
-  font-size: 12px;
-  color: var(--corp-text-tertiary);
+  gap: 6px;
+  padding: 7px 16px;
+  border: none;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--corp-text-secondary);
+  font-size: 13px;
   font-weight: 500;
+  cursor: pointer;
+  transition: color var(--corp-transition-base), background var(--corp-transition-base);
 }
 
-.card-body {
-  padding: 16px 20px 4px;
+.model-tab-item:hover {
+  color: var(--corp-text-primary);
+  background: var(--bg-surface-hover);
 }
 
-/* 辅助配置两列 */
-.aux-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 16px;
-  align-items: stretch;
+.model-tab-item.active {
+  color: var(--color-primary-600);
+  background: var(--color-primary-50);
+  font-weight: 600;
 }
 
-.aux-grid .config-card {
+/* === 配置卡片美化（仅本页范围，:deep 覆盖 AdminPanel）=== */
+.model-config-panel {
+  border-radius: var(--radius-xl);
+}
+
+.model-config-panel :deep(.admin-panel) {
+  border-radius: 14px;
+  box-shadow:
+    0 1px 2px rgba(15, 23, 42, 0.04),
+    0 8px 24px rgba(15, 23, 42, 0.06);
+  border: 1px solid rgba(229, 231, 235, 0.6);
+  transition: box-shadow var(--corp-transition-base);
+}
+
+.model-config-panel :deep(.admin-panel):hover {
+  box-shadow:
+    0 1px 2px rgba(15, 23, 42, 0.04),
+    0 12px 32px rgba(15, 23, 42, 0.08);
+}
+
+/* 卡片头：浅蓝渐变 + 更精致的分隔 */
+.model-config-panel :deep(.admin-panel__header) {
+  padding: 18px 24px;
+  background: linear-gradient(180deg, #F8FAFF 0%, var(--bg-surface) 100%);
+  border-bottom: 1px solid var(--corp-border-light);
+}
+
+.model-config-panel :deep(.admin-panel__title) {
+  font-size: 17px;
+  font-weight: 700;
+}
+
+.model-config-panel :deep(.admin-panel__title::before) {
+  width: 4px;
+  height: 18px;
+  border-radius: 2px;
+  background: linear-gradient(180deg, var(--color-primary-500), var(--color-primary-700));
+}
+
+/* 卡片体：内边距加大、留白更舒适 */
+.model-config-panel :deep(.admin-panel__body) {
+  padding: 24px 28px 28px;
+}
+
+.panel-desc {
+  margin: 0 0 18px;
+  font-size: var(--text-sm);
+  color: var(--corp-text-secondary);
+  line-height: 1.6;
+  padding-bottom: 14px;
+  border-bottom: 1px dashed var(--corp-border-light);
+}
+
+.ocr-bar-compact {
+  border-radius: var(--radius-lg);
+  padding: 10px 14px;
+  margin-bottom: 14px;
+}
+
+/* 统一操作区（位于卡片头部 actions 插槽内） */
+.model-actions {
   display: flex;
-  flex-direction: column;
+  justify-content: flex-end;
+  gap: var(--space-3);
 }
 
-.aux-grid .card-body {
-  flex: 1;
+.test-result {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  border-radius: var(--radius-lg);
+  font-size: var(--text-sm);
+  font-weight: 500;
+  margin-top: var(--space-5);
 }
 
-@media (max-width: 900px) {
-  .aux-grid {
-    grid-template-columns: 1fr;
+.test-success {
+  background: var(--color-success-bg);
+  color: var(--color-success-text);
+}
+
+.test-fail {
+  background: var(--color-danger-bg);
+  color: var(--color-danger-text);
+}
+
+.result-detail {
+  font-weight: 400;
+  opacity: 0.9;
+}
+
+.result-latency {
+  margin-left: auto;
+  font-size: 12px;
+  padding: 2px 10px;
+  background: rgba(0, 0, 0, 0.05);
+  border-radius: 999px;
+}
+
+@media (max-width: 768px) {
+  .model-tabs {
+    width: 100%;
+    overflow-x: auto;
+  }
+
+  .model-tab-item {
+    flex-shrink: 0;
+  }
+
+  .model-actions {
+    flex-direction: column;
   }
 }
 </style>

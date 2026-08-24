@@ -422,7 +422,9 @@ onMounted(() => {
 
 .page-intro {
   padding: 4px 0 4px 12px;
-  border-left: 3px solid var(--color-primary-600);
+  border-left: 4px solid transparent;
+  border-image: linear-gradient(180deg, var(--color-primary-400), var(--color-primary-600)) 1;
+  border-radius: 2px;
 }
 
 .page-intro h3 {

@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
+    "typecheck": "npx --package typescript@5.6.3 --package vue-tsc@2.2.12 -- vue-tsc --noEmit",
     "check:mojibake": "node ../scripts/scan-mojibake.js",
     "preview": "vite preview",
     "test": "vitest run",
@@ -52,7 +53,7 @@
     "unplugin-vue-components": "^32.1.0",
     "vite": "^6.4.3",
     "vitest": "^2.1.9",
-    "vue-tsc": "^2.2.12"
+    "vue-tsc": "^3.3.11"
   },
   "allowScripts": {
     "vue-demi@0.14.10": true

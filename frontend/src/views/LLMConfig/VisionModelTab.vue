@@ -2,15 +2,15 @@
   <div class="engine-tab">
     <section class="config-section">
       <div v-if="!config.providerId && hasLegacyFields" class="legacy-hint">
-        检测到旧配置结构，后端启动时会自动迁移为 Provider 引用。若仍未迁移，请重启后端服务。
+        检测到旧配置结构，后端启动时会自动迁移为 Provider 引用。
       </div>
 
       <div v-if="visionProviders.length === 0 && providers.length > 0" class="legacy-hint">
-        没有符合视觉用途的 Provider。请先在 Provider 配置中将用途设为「视觉」或「通用」，并勾选 image 模态（如 Qwen-VL、GLM-4V、GPT-4o）。
+        没有检测到支持视觉的 Provider。请在 Provider 配置中为模型勾选「image」输入模态（或将用途设为「视觉」/「通用」）。
       </div>
 
-      <el-form :model="config" label-width="110px" label-position="left">
-        <el-form-item label="Provider" required>
+      <el-form :model="config" label-width="100px" label-position="left">
+        <el-form-item label="选择 Provider" required class="provider-field">
           <el-select
             v-model="config.providerId"
             placeholder="选择支持视觉的 Provider"
@@ -33,78 +33,63 @@
           <div class="form-tip">仅展示能力库标记为「图片（视觉）」的 Provider。</div>
         </el-form-item>
 
-        <el-form-item label="超时时间">
-          <div class="inline-number">
-            <el-input-number v-model="config.timeout" :min="30" :max="300" controls-position="right" />
-            <span class="unit-label">秒</span>
+        <div class="param-group">
+          <div class="param-group__title">视觉识别参数</div>
+          <div class="param-row">
+            <el-form-item label="超时时间">
+              <div class="inline-number">
+                <el-input-number v-model="config.timeout" :min="30" :max="300" controls-position="right" />
+                <span class="unit-label">秒</span>
+              </div>
+              <div class="form-tip">建议 120 秒以上</div>
+            </el-form-item>
+
+            <el-form-item label="模型类型">
+              <el-radio-group v-model="config.modelType" @change="handleModelTypeChange">
+                <el-radio-button value="instruct">Instruct</el-radio-button>
+                <el-radio-button value="thinking">Thinking</el-radio-button>
+              </el-radio-group>
+            </el-form-item>
+
+            <el-form-item label="最大输出 Tokens">
+              <el-input-number
+                v-model="config.maxTokens"
+                :min="1"
+                :step="256"
+                controls-position="right"
+                @change="() => (manuallyEdited.maxTokens = true)"
+              />
+              <div class="form-tip">指令型默认 4096，推理型默认 16384</div>
+            </el-form-item>
+
+            <el-form-item label="Temperature">
+              <div class="inline-number">
+                <el-input-number
+                  v-model="config.temperature"
+                  :min="0"
+                  :max="2"
+                  :step="0.1"
+                  :precision="1"
+                  controls-position="right"
+                  @change="() => (manuallyEdited.temperature = true)"
+                />
+              </div>
+              <div class="form-tip">视觉识别建议使用低温度</div>
+            </el-form-item>
           </div>
-          <div class="form-tip">视觉识别耗时较长，建议 120 秒以上。</div>
-        </el-form-item>
 
-        <el-form-item label="模型类型">
-          <el-radio-group v-model="config.modelType" @change="handleModelTypeChange">
-            <el-radio-button value="instruct">Instruct（指令型）</el-radio-button>
-            <el-radio-button value="thinking">Thinking（推理型）</el-radio-button>
-          </el-radio-group>
-          <div class="form-tip">指令型适合常规识别；推理型适合复杂图纸或需要逐步推理的场景。切换时若未手动改过下方的 Tokens / Temperature，将自动填入对应默认值。</div>
-        </el-form-item>
-
-        <el-form-item label="最大输出 Tokens">
-          <el-input-number
-            v-model="config.maxTokens"
-            :min="1"
-            :step="256"
-            controls-position="right"
-            @change="() => (manuallyEdited.maxTokens = true)"
-          />
-          <div class="form-tip">模型单次回复的最大 token 数。指令型默认 4096，推理型默认 16384。</div>
-        </el-form-item>
-
-        <el-form-item label="Temperature">
-          <el-input-number
-            v-model="config.temperature"
-            :min="0"
-            :max="2"
-            :step="0.1"
-            :precision="1"
-            controls-position="right"
-            @change="() => (manuallyEdited.temperature = true)"
-          />
-          <div class="form-tip">取值 0-2。越低越确定，越高越发散。视觉识别建议使用低温度。</div>
-        </el-form-item>
-
-        <el-form-item label="随机种子">
-          <el-input-number
-            v-model="config.seed"
-            :min="0"
-            :value-on-clear="null"
-            controls-position="right"
-            placeholder="留空表示不设置"
-          />
-          <div class="form-tip">固定种子可复现结果。留空表示不设置（每次随机）。</div>
-        </el-form-item>
+          <el-form-item label="随机种子">
+            <el-input-number
+              v-model="config.seed"
+              :min="0"
+              :value-on-clear="null"
+              controls-position="right"
+              placeholder="留空表示不设置"
+            />
+            <div class="form-tip">固定种子可复现结果，留空表示随机</div>
+          </el-form-item>
+        </div>
       </el-form>
-
-      <div class="action-bar">
-        <el-button @click="handleTest" :loading="testLoading" class="test-btn">
-          <el-icon><Connection /></el-icon>
-          测试连接
-        </el-button>
-        <el-button type="primary" :loading="saveLoading" @click="handleSave">
-          <el-icon><Check /></el-icon>
-          保存配置
-        </el-button>
-      </div>
-
-      <div v-if="connectionTestResult" class="test-result" :class="connectionTestResult.success ? 'test-success' : 'test-fail'">
-        <el-icon><component :is="connectionTestResult.success ? CircleCheckFilled : CircleCloseFilled" /></el-icon>
-        <span>{{ connectionTestResult.success ? '连接成功' : '连接失败' }}</span>
-        <span v-if="connectionTestResult.message" class="result-detail">{{ connectionTestResult.message }}</span>
-        <span v-if="connectionTestResult.latency !== undefined" class="result-latency">延迟: {{ connectionTestResult.latency }}ms</span>
-      </div>
-
-      <!-- Task 30.2: DWG 维度模型路由（高级配置，默认折叠） -->
-      <DwgVisionRoutePanel ref="routePanelRef" />
     </section>
   </div>
 </template>
@@ -112,7 +97,6 @@
 <script setup lang="ts">
 import { computed, reactive, ref, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
-import { Check, Connection, CircleCheckFilled, CircleCloseFilled } from '@element-plus/icons-vue'
 import { getSystemConfigApi, saveSystemConfigApi, testLlmConnectionApi, getLlmProfilesApi, type LlmProfile } from '@/api/system'
 
 interface VisionModelConfig {
@@ -146,7 +130,6 @@ const config = reactive<VisionModelConfig>({
   seed: null,
 })
 
-// 跟踪用户是否手动改过对应字段；未手动改过时切换 modelType 自动填默认值
 const manuallyEdited = reactive({
   maxTokens: false,
   temperature: false,
@@ -154,12 +137,11 @@ const manuallyEdited = reactive({
 
 const originalConfig = ref('')
 
-// 视觉 Tab：只展示用途为 vision/all 且支持 image 输入的 Provider
 const visionProviders = computed(() =>
-  providers.value.filter(
-    (p) =>
-      ['vision', 'all'].includes(p.usage || 'chat') &&
-      p.capabilities?.inputModalities?.includes('image')
+  providers.value.filter((p) =>
+    // 明确标记为视觉用途（vision/all），或能力声明支持 image 输入（即使 usage 默认 chat 也可作视觉模型）
+    ['vision', 'all'].includes(p.usage || '') ||
+    p.capabilities?.inputModalities?.includes('image')
   )
 )
 
@@ -167,7 +149,6 @@ const normalizedConfig = computed(() => JSON.stringify(config))
 const hasUnsavedChanges = computed(() => normalizedConfig.value !== originalConfig.value)
 const selectedProvider = computed(() => providers.value.find((p) => p.id === config.providerId))
 
-// 切换模型类型：仅在用户未手动改过 maxTokens / temperature 时自动填充对应默认值
 function handleModelTypeChange(value: VisionModelType) {
   const defaults = MODEL_DEFAULTS[value]
   if (!manuallyEdited.maxTokens) {
@@ -212,7 +193,7 @@ const handleTest = async () => {
   try {
     const { data: testResult } = await testLlmConnectionApi({
       providerId: config.providerId,
-      modelType: 'chat', // 视觉模型走 chat/completions 端点
+      modelType: 'chat',
     })
     const latency = Date.now() - startTime
     connectionTestResult.value = {
@@ -234,6 +215,7 @@ const handleTest = async () => {
   } finally {
     testLoading.value = false
   }
+  return connectionTestResult.value
 }
 
 async function loadProviders() {
@@ -248,20 +230,17 @@ onMounted(async () => {
   await loadProviders()
   try {
     const { data } = await getSystemConfigApi('llm_vision_model')
-    let v = data?.value || data
+    let v: any = (data as any)?.value || data
     if (typeof v === 'string') v = JSON.parse(v)
     if (v && typeof v === 'object') {
-      // 检测旧结构
       if (!v.providerId && (v.apiKey || v.modelName)) {
         hasLegacyFields.value = true
       }
       if (v.providerId !== undefined) config.providerId = v.providerId
       if (v.timeout !== undefined) config.timeout = v.timeout
-      // 兼容旧配置：无 modelType 时默认 instruct + 默认值（已在初始化时设置）
       if (v.modelType === 'instruct' || v.modelType === 'thinking') {
         config.modelType = v.modelType
       }
-      // 已存在的显式值视为用户已编辑，切换 modelType 时不再覆盖
       if (typeof v.maxTokens === 'number') {
         config.maxTokens = v.maxTokens
         manuallyEdited.maxTokens = true
@@ -279,6 +258,8 @@ onMounted(async () => {
 })
 
 defineExpose({
+  handleSave,
+  handleTest,
   get hasUnsavedChanges() {
     return hasUnsavedChanges.value
   },
@@ -305,7 +286,7 @@ defineExpose({
   font-size: 12px;
   color: var(--color-warning-text);
   background: var(--color-warning-bg);
-  border: 1px solid var(--color-warning-bg); /* 原 #fde68a 浅黄边框，对齐 --color-warning-bg */
+  border: 1px solid var(--color-warning-bg);
   border-radius: 6px;
   padding: 8px 12px;
   line-height: 1.5;
@@ -322,6 +303,49 @@ defineExpose({
   font-size: 12px;
   color: var(--corp-text-tertiary);
   flex-shrink: 0;
+}
+
+/* Provider 字段限宽（与对话模型统一） */
+.provider-field {
+  max-width: 560px;
+}
+
+/* 参数分组：与对话模型统一 */
+.param-group {
+  background: var(--bg-surface-hover);
+  border: 1px solid var(--corp-border-light);
+  border-radius: 12px;
+  padding: 16px 20px 0;
+}
+
+.param-group__title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--color-primary-700);
+  margin-bottom: 4px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.param-group__title::before {
+  content: '';
+  width: 3px;
+  height: 13px;
+  border-radius: 2px;
+  background: var(--color-primary-500);
+}
+
+.param-group :deep(.el-form-item__label) {
+  font-weight: 600;
+  color: var(--color-gray-700);
+}
+
+.param-row {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px 24px;
+  margin-bottom: 12px;
 }
 
 .inline-number {
@@ -341,55 +365,9 @@ defineExpose({
   line-height: 1.5;
 }
 
-.action-bar {
-  display: flex;
-  justify-content: flex-end;
-  gap: 10px;
-  padding-top: 4px;
-}
-
-.test-btn {
-  border-color: var(--color-primary-600);
-  color: var(--color-primary-600);
-}
-
-.test-btn:hover {
-  background: var(--color-primary-50);
-}
-
-.test-result {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 8px 12px;
-  border-radius: 6px;
-  font-size: 13px;
-  font-weight: 500;
-}
-
-.test-success {
-  background: var(--color-success-bg);
-  border: 1px solid var(--color-success-bg); /* 原 #bbf7d0 浅绿边框，对齐 --color-success-bg */
-  color: var(--color-success-text);
-}
-
-.test-fail {
-  background: var(--color-danger-bg);
-  border: 1px solid var(--color-danger-bg); /* 原 #fecaca 浅红边框，对齐 --color-danger-bg */
-  color: var(--color-danger-text);
-}
-
-.result-detail {
-  font-weight: 400;
-  font-size: 12px;
-  opacity: 0.9;
-}
-
-.result-latency {
-  margin-left: auto;
-  font-size: 12px;
-  padding: 2px 8px;
-  background: rgba(0, 0, 0, 0.05);
-  border-radius: 999px;
+@media (max-width: 640px) {
+  .param-row {
+    grid-template-columns: 1fr;
+  }
 }
 </style>

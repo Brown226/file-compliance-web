@@ -944,7 +944,7 @@ onUnmounted(() => { document.removeEventListener('click', handleClickOutside) })
 
 <style scoped>
 .department-management { padding: 20px; height: calc(100vh - 80px); overflow-y: auto; }
-.page-header { margin-bottom: 20px; }
+.page-header { margin-bottom: 20px; padding-left: 12px; border-left: 4px solid transparent; border-image: linear-gradient(180deg, var(--color-primary-400), var(--color-primary-600)) 1; border-radius: 2px; }
 .page-header h2 { font-size: 20px; font-weight: 600; color: var(--corp-text-primary); margin: 0; }
 .content-area { min-height: calc(100% - 60px); }
 .dept-layout { display: flex; gap: 20px; height: calc(100vh - 220px); }

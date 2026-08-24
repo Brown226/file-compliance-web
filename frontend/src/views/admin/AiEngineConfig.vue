@@ -1,23 +1,21 @@
 <template>
   <div class="ai-engine-config">
-    <!-- 导航：左胶囊 + 右提示 -->
-    <nav class="engine-nav">
-      <div class="nav-pills">
-        <button
-          v-for="item in tabs"
-          :key="item.key"
-          class="engine-pill"
-          :class="{ active: activeTab === item.key }"
-          @click="activeTab = item.key"
-        >
-          {{ item.label }}
-        </button>
-      </div>
-      <span class="nav-hint">{{ currentTab?.hint }}</span>
-    </nav>
+    <!-- 左侧竖导航 + 右侧内容（设置类应用经典范式） -->
+    <aside class="engine-sider">
+      <button
+        v-for="item in tabs"
+        :key="item.key"
+        class="engine-sider-item"
+        :class="{ active: activeTab === item.key }"
+        @click="activeTab = item.key"
+      >
+        <el-icon :size="17"><component :is="item.icon" /></el-icon>
+        <span>{{ item.label }}</span>
+      </button>
+    </aside>
 
-    <!-- 内容区：直接渲染子页面（子页面自带标题与卡片） -->
-    <section class="engine-panel">
+    <!-- 内容区：右侧配置舞台 -->
+    <section class="engine-main">
       <ModelConfigPage v-if="activeTab === 'models'" />
       <KnowledgeConfigPage v-else-if="activeTab === 'knowledge'" />
       <!-- Provider 配置：统一使用公共组件（参考项目 pi 两级树风格，内嵌形态） -->
@@ -29,7 +27,8 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { ref } from 'vue'
+import { Cpu, Collection, Setting } from '@element-plus/icons-vue'
 import ModelConfigPage from '@/views/LLMConfig/ModelConfigPage.vue'
 import KnowledgeConfigPage from '@/views/LLMConfig/KnowledgeConfigPage.vue'
 import ProviderConfigPanel from '@/components/provider-config/ProviderConfigPanel.vue'
@@ -38,92 +37,91 @@ const tabs = [
   {
     key: 'models',
     label: '模型配置',
-    hint: '对话 / Embedding / 视觉 / OCR',
+    icon: Cpu,
   },
   {
     key: 'knowledge',
     label: '知识库配置',
-    hint: 'MaxKB + RAGFlow 双源检索',
+    icon: Collection,
   },
   {
     key: 'profiles',
     label: 'Provider 配置',
-    hint: '凭证数据源 · 支持批量扫描',
+    icon: Setting,
   },
 ] as const
 
 const activeTab = ref<'models' | 'knowledge' | 'profiles'>('models')
-const currentTab = computed(() => tabs.find(item => item.key === activeTab.value))
 </script>
 
 <style scoped>
 .ai-engine-config {
   display: flex;
-  flex-direction: column;
-  gap: 0;
   height: 100%;
+  min-height: 0;
 }
 
-/* === 顶部导航条 === */
-.engine-nav {
+/* === 左侧竖导航栏 === */
+.engine-sider {
+  width: 168px;
+  flex-shrink: 0;
+  background: var(--bg-surface);
+  border-right: 1px solid var(--corp-border-light);
+  padding: 12px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  overflow-y: auto;
+}
+
+.engine-sider-item {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-  padding: 14px 20px;
-  background: var(--bg-surface);
-  border-bottom: 1px solid var(--color-gray-100); /* 原 #eef2f7 浅灰边框，对齐 --color-gray-100 */
-  position: sticky;
-  top: 0;
-  z-index: 2;
-}
-
-.nav-pills {
-  display: flex;
-  gap: 4px;
-  background: var(--color-gray-100);
-  padding: 4px;
-  border-radius: 10px;
-}
-
-.engine-pill {
-  padding: 6px 16px;
+  gap: 10px;
+  padding: 10px 12px;
   border: none;
-  border-radius: 7px;
+  border-radius: 8px;
   background: transparent;
   color: var(--corp-text-secondary);
   font-size: 13px;
   font-weight: 500;
   cursor: pointer;
-  white-space: nowrap;
-  transition: all 0.18s cubic-bezier(0.4, 0, 0.2, 1);
+  text-align: left;
+  position: relative;
+  transition: color var(--corp-transition-base), background var(--corp-transition-base);
 }
 
-.engine-pill:hover {
-  color: var(--color-gray-800);
-}
-
-.engine-pill.active {
-  background: var(--bg-surface);
+.engine-sider-item:hover {
   color: var(--corp-text-primary);
+  background: var(--bg-surface-hover);
+}
+
+.engine-sider-item.active {
+  color: var(--color-primary-600);
+  background: var(--color-primary-50);
   font-weight: 600;
-  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.08), 0 0 0 1px rgba(15, 23, 42, 0.04);
 }
 
-.nav-hint {
-  font-size: 12px;
-  color: var(--corp-text-tertiary);
-  font-weight: 500;
-  letter-spacing: 0.01em;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  max-width: 40%;
+/* 激活态：左侧品牌蓝渐变竖条（克制的记忆点） */
+.engine-sider-item.active::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 20%;
+  bottom: 20%;
+  width: 3px;
+  border-radius: 2px;
+  background: linear-gradient(180deg, var(--color-primary-400), var(--color-primary-600));
 }
 
-/* === 内容区：纯净容器，由子页面自管布局 === */
-.engine-panel {
+.engine-sider-item.active :deep(.el-icon) {
+  color: var(--color-primary-600);
+}
+
+/* === 右侧内容区 === */
+.engine-main {
   flex: 1;
+  min-width: 0;
   min-height: 0;
   overflow-y: auto;
   background: var(--corp-bg-sunken);
@@ -138,14 +136,21 @@ const currentTab = computed(() => tabs.find(item => item.key === activeTab.value
 }
 
 @media (max-width: 768px) {
-  .engine-nav {
-    padding: 12px 14px;
+  .ai-engine-config {
     flex-direction: column;
-    align-items: stretch;
-    gap: 10px;
   }
-  .nav-hint {
-    max-width: 100%;
+
+  .engine-sider {
+    width: 100%;
+    flex-direction: row;
+    overflow-x: auto;
+    border-right: none;
+    border-bottom: 1px solid var(--corp-border-light);
+    padding: 8px 10px;
+  }
+
+  .engine-sider-item {
+    flex-shrink: 0;
   }
 }
 </style>

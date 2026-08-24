@@ -1,12 +1,14 @@
 <template>
-  <div class="admin-panel">
-    <!-- 顶部 Tab -->
-    <div class="admin-tabs">
+  <div class="admin-page">
+    <!-- 顶部主导航 Tab -->
+    <div class="admin-tabs" role="tablist">
       <button
         v-for="tab in tabs"
         :key="tab.key"
         class="admin-tab-item"
         :class="{ active: activeTab === tab.key }"
+        role="tab"
+        :aria-selected="activeTab === tab.key"
         @click="activeTab = tab.key"
       >
         <el-icon :size="16"><component :is="tab.icon" /></el-icon>
@@ -16,72 +18,72 @@
 
     <!-- Tab 1: 系统健康 -->
     <div v-show="activeTab === 'health'" class="tab-content">
+      <PageIntro :title="pageIntro.title" :description="pageIntro.description" />
+
       <div class="health-grid">
-        <!-- 服务状态 -->
-        <div class="health-card status-card">
-          <div class="status-card-header">
-            <h3>服务状态</h3>
-            <div class="status-actions">
-              <span v-if="lastHealthCheck" class="last-check">{{ lastHealthCheck }}</span>
-              <el-tooltip content="重新检测" placement="top">
-                <el-button size="small" :icon="Refresh" circle :loading="healthLoading" @click="fetchHealth" />
-              </el-tooltip>
-            </div>
-          </div>
+        <AdminPanel title="服务状态">
+          <template #actions>
+            <span v-if="lastHealthCheck" class="last-check">最近检测 {{ lastHealthCheck }}</span>
+            <el-tooltip content="重新检测" placement="top">
+              <el-button size="small" :icon="Refresh" circle :loading="healthLoading" @click="fetchHealth" />
+            </el-tooltip>
+          </template>
           <div class="status-list">
-            <div class="status-item" v-for="s in serviceStatus" :key="s.name">
+            <div class="status-item" v-for="s in serviceStatus" :key="s.name" :class="{ 'is-error': s.ok === false }">
               <span class="status-dot" :class="dotClass(s)"></span>
               <span class="status-name">{{ s.name }}</span>
               <el-tooltip v-if="s.error" :content="s.error" placement="top">
-                <span class="status-val" :class="s.ok === false ? 'val-error' : ''">{{ statusText(s) }}</span>
+                <span class="status-val" :class="{ 'val-error': s.ok === false }">{{ statusText(s) }}</span>
               </el-tooltip>
-              <span v-else class="status-val" :class="s.ok === false ? 'val-error' : ''">{{ statusText(s) }}</span>
+              <span v-else class="status-val" :class="{ 'val-error': s.ok === false }">{{ statusText(s) }}</span>
             </div>
           </div>
-        </div>
-        <!-- 关键指标 -->
-        <div class="health-card metrics-card">
-          <h3>关键指标</h3>
+        </AdminPanel>
+
+        <AdminPanel title="关键指标">
           <div class="metrics-grid">
             <div class="metric" v-for="m in metrics" :key="m.label">
               <div class="metric-value">{{ m.value }}</div>
               <div class="metric-label">{{ m.label }}</div>
             </div>
           </div>
-        </div>
+        </AdminPanel>
       </div>
-      <!-- 快捷入口 -->
-      <div class="quick-links">
-        <h3>快捷入口</h3>
+
+      <AdminPanel title="快捷入口">
         <div class="links-grid">
           <div class="quick-link" @click="$router.push('/knowledge')">
-            <el-icon :size="20"><Collection /></el-icon>
-            <span>知识中心</span>
+            <span class="quick-link__icon"><el-icon :size="18"><Collection /></el-icon></span>
+            <span class="quick-link__label">知识中心</span>
           </div>
           <div class="quick-link" @click="$router.push('/agent')">
-            <el-icon :size="20"><MagicStick /></el-icon>
-            <span>Agent 助手</span>
+            <span class="quick-link__icon"><el-icon :size="18"><MagicStick /></el-icon></span>
+            <span class="quick-link__label">Agent 助手</span>
           </div>
           <div class="quick-link" @click="$router.push('/review-center')">
-            <el-icon :size="20"><DataBoard /></el-icon>
-            <span>审查中心</span>
+            <span class="quick-link__icon"><el-icon :size="18"><DataBoard /></el-icon></span>
+            <span class="quick-link__label">审查中心</span>
           </div>
           <div class="quick-link" @click="$router.push('/announcements')">
-            <el-icon :size="20"><Bell /></el-icon>
-            <span>系统公告</span>
+            <span class="quick-link__icon"><el-icon :size="18"><Bell /></el-icon></span>
+            <span class="quick-link__label">系统公告</span>
           </div>
         </div>
-      </div>
+      </AdminPanel>
     </div>
 
     <!-- Tab 2: 审查配置 -->
     <div v-show="activeTab === 'review-config'" class="tab-content">
-      <div class="config-nav">
+      <PageIntro :title="pageIntro.title" :description="pageIntro.description" />
+
+      <div class="config-nav" role="tablist">
         <button
           v-for="item in reviewConfigItems"
           :key="item.id"
           class="config-nav-item"
           :class="{ active: activeConfig === item.id }"
+          role="tab"
+          :aria-selected="activeConfig === item.id"
           @click="activeConfig = item.id"
         >
           {{ item.name }}
@@ -95,12 +97,16 @@
 
     <!-- Tab 3: 系统设置 -->
     <div v-show="activeTab === 'system'" class="tab-content">
-      <div class="config-nav">
+      <PageIntro :title="pageIntro.title" :description="pageIntro.description" />
+
+      <div class="config-nav" role="tablist">
         <button
           v-for="item in systemItems"
           :key="item.id"
           class="config-nav-item"
           :class="{ active: activeSystem === item.id }"
+          role="tab"
+          :aria-selected="activeSystem === item.id"
           @click="activeSystem = item.id"
         >
           {{ item.name }}
@@ -120,9 +126,11 @@
 
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
-import { Monitor, Setting, Operation, Collection, ChatDotRound, DataBoard, Bell, Refresh } from '@element-plus/icons-vue'
+import { Monitor, Setting, Operation, Collection, MagicStick, DataBoard, Bell, Refresh } from '@element-plus/icons-vue'
 import { getDashboardStatsApi, getSystemHealthApi } from '@/api/dashboard'
 import { useUserStore } from '@/stores/user'
+import PageIntro from '@/components/admin/PageIntro.vue'
+import AdminPanel from '@/components/admin/AdminPanel.vue'
 import DepartmentManagement from './admin/DepartmentManagement.vue'
 import ReviewRules from './ReviewRules.vue'
 import AiEngineConfig from './admin/AiEngineConfig.vue'
@@ -144,6 +152,25 @@ const tabs = [
 const activeTab = ref('health')
 const activeConfig = ref('departments')
 const activeSystem = ref('aiEngine')
+
+/** 当前页签的页头文案（PageIntro） */
+const pageIntro = computed(() => {
+  const map: Record<string, { title: string; description: string }> = {
+    health: {
+      title: '运行状态一览',
+      description: '后端 API 与各依赖服务的实时健康度，以及平台关键数据概览',
+    },
+    'review-config': {
+      title: '审查配置',
+      description: '管理组织架构、员工账号与审查规则，在此统一维护审查基准',
+    },
+    system: {
+      title: '系统设置',
+      description: '配置 AI 引擎、存储、基础参数，并查看审计日志与反馈',
+    },
+  }
+  return map[activeTab.value]
+})
 
 const reviewConfigItems = [
   { id: 'departments', name: '部门与员工' },
@@ -244,7 +271,7 @@ onMounted(async () => {
 </script>
 
 <style scoped>
-.admin-panel {
+.admin-page {
   height: 100%;
   display: flex;
   flex-direction: column;
@@ -252,11 +279,11 @@ onMounted(async () => {
   background: var(--bg-body);
 }
 
-/* === 顶部 Tab（2026-08-12：去毛玻璃，纯白表面 + 品牌蓝激活条） === */
+/* === 顶部主导航 Tab：通栏白条 + 激活项粘连内容区 + 顶部品牌蓝指示线 === */
 .admin-tabs {
   display: flex;
   gap: var(--space-1);
-  padding: var(--space-5) var(--space-8) 0;
+  padding: 2px var(--space-8) 0;
   background: var(--bg-surface);
   border-bottom: 1px solid var(--corp-border-light);
   flex-shrink: 0;
@@ -265,36 +292,48 @@ onMounted(async () => {
 .admin-tab-item {
   display: flex;
   align-items: center;
-  gap: 7px;
-  padding: 11px 22px;
+  gap: 8px;
+  padding: 12px 22px 12px;
   border: none;
+  border-top: 1px solid transparent;
   background: transparent;
   color: var(--corp-text-secondary);
-  font-size: 14px;
+  font-size: var(--text-base);
   font-weight: 500;
   cursor: pointer;
   border-radius: var(--radius-lg) var(--radius-lg) 0 0;
-  transition: color var(--corp-transition-base), background var(--corp-transition-base), border-color var(--corp-transition-base);
-  border-bottom: 2.5px solid transparent;
   position: relative;
+  transition: color var(--corp-transition-base), background var(--corp-transition-base);
 }
 
 .admin-tab-item:hover {
   color: var(--corp-text-primary);
-  background: rgba(37, 99, 235, 0.04);
+  background: var(--bg-surface-hover);
 }
 
 .admin-tab-item.active {
   color: var(--color-primary-700);
-  border-bottom-color: var(--color-primary-600);
-  background: var(--color-primary-50);
+  background: var(--bg-body);
+  border-top-color: var(--corp-border-light);
   font-weight: 600;
+}
+
+/* 激活项顶部品牌蓝指示线 */
+.admin-tab-item.active::before {
+  content: '';
+  position: absolute;
+  top: -2px;
+  left: 16px;
+  right: 16px;
+  height: 2px;
+  border-radius: 0 0 2px 2px;
+  background: linear-gradient(90deg, var(--color-primary-600), var(--color-primary-400));
 }
 
 .tab-content {
   flex: 1;
   overflow: auto;
-  padding: var(--space-8);
+  padding: var(--space-6) var(--space-8) var(--space-8);
 }
 
 /* === 系统健康 === */
@@ -302,71 +341,37 @@ onMounted(async () => {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: var(--space-6);
-  margin-bottom: var(--space-8);
-}
-
-.health-card {
-  background: var(--bg-surface);
-  border-radius: var(--radius-xl);
-  padding: var(--space-8);
-  box-shadow: var(--shadow-card);
-  transition: box-shadow var(--corp-transition-base);
-}
-
-.health-card:hover {
-  box-shadow: var(--border-inset), 0 4px 12px rgba(15, 23, 42, 0.08);
-}
-
-.health-card h3 {
-  font-size: var(--text-lg);
-  font-weight: 600;
-  color: var(--corp-text-primary);
-  margin: 0 0 18px;
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-}
-
-.health-card h3::before {
-  content: '';
-  width: 3px;
-  height: 16px;
-  background: var(--color-primary-600);
-  border-radius: 2px;
-}
-
-.status-card-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: var(--space-1);
-}
-
-.status-actions {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
+  margin-bottom: var(--space-6);
 }
 
 .last-check {
   font-size: var(--text-sm);
   color: var(--corp-text-tertiary);
+  margin-right: var(--space-1);
 }
 
-.status-list { display: flex; flex-direction: column; gap: var(--space-5); }
+/* 服务状态行 */
+.status-list { display: flex; flex-direction: column; gap: var(--space-2); }
 
 .status-item {
   display: flex;
   align-items: center;
-  gap: var(--space-4);
-  font-size: 14px;
-  padding: var(--space-2) var(--space-4);
+  gap: var(--space-3);
+  font-size: var(--text-base);
+  padding: 9px var(--space-4);
   border-radius: var(--radius-md);
+  border: 1px solid transparent;
   background: var(--bg-surface-hover);
-  transition: background var(--corp-transition-fast);
+  transition: background var(--corp-transition-fast), border-color var(--corp-transition-fast);
 }
 
 .status-item:hover { background: var(--bg-surface-active); }
+
+/* 异常行：整行浅红提示 */
+.status-item.is-error {
+  background: var(--color-danger-bg);
+  border-color: rgba(239, 68, 68, 0.18);
+}
 
 .status-dot {
   width: 9px;
@@ -377,13 +382,11 @@ onMounted(async () => {
 
 .status-dot.ok {
   background: var(--color-success);
-  box-shadow: 0 0 8px rgba(34,197,94,0.5);
   animation: pulse-green 2s infinite;
 }
 
 .status-dot.error {
   background: var(--color-danger);
-  box-shadow: 0 0 8px rgba(239,68,68,0.5);
   animation: pulse-red 1.5s infinite;
 }
 
@@ -394,148 +397,178 @@ onMounted(async () => {
 
 @keyframes pulse-gray {
   0%, 100% { opacity: 1; }
-  50% { opacity: 0.35; }
+  50% { opacity: 0.4; }
 }
 
 @keyframes pulse-green {
-  0%, 100% { box-shadow: 0 0 4px rgba(34,197,94,0.4); }
-  50% { box-shadow: 0 0 10px rgba(34,197,94,0.6); }
+  0%, 100% { box-shadow: 0 0 0 0 rgba(34, 197, 94, 0.45); }
+  50% { box-shadow: 0 0 0 4px rgba(34, 197, 94, 0); }
 }
 
 @keyframes pulse-red {
-  0%, 100% { box-shadow: 0 0 4px rgba(239,68,68,0.4); }
-  50% { box-shadow: 0 0 10px rgba(239,68,68,0.7); }
+  0%, 100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.45); }
+  50% { box-shadow: 0 0 0 4px rgba(239, 68, 68, 0); }
 }
 
-.status-name { flex: 1; color: var(--color-gray-700); font-weight: 500; }
-.status-val { font-size: var(--text-sm); color: var(--corp-text-secondary); font-weight: 500; }
-.status-val.val-error { color: var(--color-danger); cursor: help; }
+.status-name {
+  flex: 1;
+  color: var(--color-gray-700);
+  font-weight: 500;
+}
 
+.status-item.is-error .status-name {
+  color: var(--color-danger-text);
+}
+
+.status-val {
+  font-size: var(--text-sm);
+  color: var(--corp-text-secondary);
+  font-weight: 500;
+}
+
+.status-val.val-error {
+  color: var(--color-danger);
+  cursor: help;
+}
+
+/* 关键指标：KPI 汇总条（统一后台数据汇总记忆点） */
 .metrics-grid {
   display: grid;
   grid-template-columns: repeat(2, 1fr);
-  gap: var(--space-5);
+  gap: var(--space-4);
 }
 
 .metric {
-  text-align: center;
-  padding: 18px var(--space-4);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 16px var(--space-4) 14px;
   background: var(--bg-surface-hover);
-  border-radius: var(--radius-xl);
+  border-radius: var(--radius-lg);
   border: 1px solid var(--corp-border-light);
-  transition: transform var(--corp-transition-base), box-shadow var(--corp-transition-base);
+  transition: transform var(--corp-transition-base), box-shadow var(--corp-transition-base), border-color var(--corp-transition-base);
 }
 
 .metric:hover {
   transform: translateY(-2px);
-  box-shadow: 0 2px 8px rgba(15, 23, 42, 0.08);
+  border-color: var(--color-primary-200);
+  box-shadow: 0 4px 12px rgba(37, 99, 235, 0.1);
 }
 
 .metric-value {
-  font-size: 28px;
+  font-size: 26px;
   font-weight: 700;
+  line-height: 1.1;
   color: var(--color-primary-600);
+  font-variant-numeric: tabular-nums;
 }
 
-.metric-label { font-size: var(--text-sm); color: var(--corp-text-secondary); margin-top: var(--space-1); font-weight: 500; }
+.metric-label {
+  font-size: var(--text-sm);
+  color: var(--corp-text-secondary);
+  font-weight: 500;
+}
 
 /* === 快捷入口 === */
-.quick-links {
-  background: var(--bg-surface);
-  border-radius: var(--radius-xl);
-  padding: var(--space-8);
-  box-shadow: var(--shadow-card);
-}
-
-.quick-links h3 {
-  font-size: var(--text-lg);
-  font-weight: 600;
-  color: var(--corp-text-primary);
-  margin: 0 0 18px;
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-}
-
-.quick-links h3::before {
-  content: '';
-  width: 3px;
-  height: 16px;
-  background: var(--color-primary-600);
-  border-radius: 2px;
-}
-
-.links-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: var(--space-5); }
+.links-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: var(--space-4); }
 
 .quick-link {
   display: flex;
   flex-direction: column;
   align-items: center;
   gap: 10px;
-  padding: 20px var(--space-4);
+  padding: 18px var(--space-4);
   border-radius: var(--radius-lg);
   background: var(--bg-surface-hover);
   border: 1px solid var(--corp-border-light);
   cursor: pointer;
-  transition: background var(--corp-transition-base), color var(--corp-transition-base), transform var(--corp-transition-base), box-shadow var(--corp-transition-base), border-color var(--corp-transition-base);
+  transition: background var(--corp-transition-base), border-color var(--corp-transition-base), transform var(--corp-transition-base), box-shadow var(--corp-transition-base);
+}
+
+.quick-link__icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border-radius: var(--radius-lg);
+  background: var(--color-primary-50);
+  color: var(--color-primary-600);
+  transition: background var(--corp-transition-base), color var(--corp-transition-base);
+}
+
+.quick-link:hover {
+  background: var(--color-primary-50);
+  border-color: var(--color-primary-200);
+  transform: translateY(-3px);
+  box-shadow: 0 4px 12px rgba(37, 99, 235, 0.12);
+}
+
+.quick-link:hover .quick-link__icon {
+  background: var(--color-primary-600);
+  color: var(--bg-surface);
+}
+
+.quick-link__label {
   font-size: var(--text-base);
   font-weight: 500;
   color: var(--color-gray-700);
 }
 
-.quick-link:hover {
-  background: var(--color-primary-50);
+.quick-link:hover .quick-link__label {
   color: var(--color-primary-700);
-  transform: translateY(-3px);
-  box-shadow: 0 4px 12px rgba(37,99,235,0.12);
-  border-color: var(--color-primary-200);
 }
 
-/* === 配置子导航：胶囊分段控件 === */
+/* === 配置子导航：分段控件（灰底容器 + 白底激活，与内层导航统一） === */
+/* 激活态不再用实心品牌蓝——「实心蓝」留给真正的操作按钮（保存/测试），
+   导航层级靠位置与缩进区分，视觉语言统一为「灰底胶囊 + 白底浮起项」。 */
 .config-nav {
   display: inline-flex;
   gap: var(--space-1);
-  margin-bottom: var(--space-6);
   padding: var(--space-1);
-  background: var(--bg-surface-active);
-  border-radius: var(--radius-md);
+  margin-bottom: var(--space-5);
+  background: var(--color-gray-100);
   border: 1px solid var(--corp-border-light);
+  border-radius: var(--radius-xl);
+  box-shadow: var(--shadow-card);
 }
 
 .config-nav-item {
-  padding: 9px 20px;
+  padding: 8px 20px;
   border: none;
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-lg);
   background: transparent;
   color: var(--corp-text-secondary);
   font-size: var(--text-base);
   font-weight: 500;
   cursor: pointer;
   transition: color var(--corp-transition-base), background var(--corp-transition-base), box-shadow var(--corp-transition-base);
-  position: relative;
 }
 
 .config-nav-item:hover {
   color: var(--corp-text-primary);
-  background: var(--bg-surface);
+  background: var(--bg-surface-hover);
 }
 
 .config-nav-item.active {
   background: var(--bg-surface);
-  color: var(--color-primary-700);
+  color: var(--color-primary-600);
   font-weight: 600;
-  box-shadow: 0 1px 4px rgba(15, 23, 42, 0.08);
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.08), 0 0 0 1px rgba(15, 23, 42, 0.06);
 }
 
+/* 配置内容舞台：白卡容器 */
 .config-content {
   background: var(--bg-surface);
   border-radius: var(--radius-xl);
   box-shadow: var(--shadow-card);
-  min-height: 400px;
+  min-height: 420px;
   overflow: hidden;
 }
 
 @media (max-width: 768px) {
+  .admin-tabs { padding-left: var(--space-4); padding-right: var(--space-4); }
+  .tab-content { padding: var(--space-5) var(--space-4); }
   .health-grid { grid-template-columns: 1fr; }
   .links-grid { grid-template-columns: repeat(2, 1fr); }
   .config-nav { flex-wrap: wrap; }

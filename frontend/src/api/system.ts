@@ -26,13 +26,16 @@ export function sendLlmTestApi(data: any) {
 
 // ==================== LLM Profiles 管理 ====================
 
-export type ProviderUsage = 'chat' | 'embedding' | 'vision' | 'all'
+export type ProviderUsage = 'chat' | 'embedding' | 'vision' | 'rerank' | 'all'
 
 export interface ModelCapabilities {
   inputModalities: ('text' | 'image')[]
   supportsToolCalling: boolean
   contextWindowTokens: number
   maxOutputTokens: number
+  reasoning?: boolean
+  supportsEmbedding?: boolean
+  supportsRerank?: boolean
 }
 
 export interface LlmProfile {

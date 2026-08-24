@@ -34,8 +34,10 @@ import KnowledgeStrategyPanel from './KnowledgeStrategyPanel.vue'
 
 .page-intro {
   padding: 4px 0 4px 12px;
-  border-left: 3px solid var(--color-primary-600);
+  border-left: 4px solid transparent;
+  border-image: linear-gradient(180deg, var(--color-primary-400), var(--color-primary-600)) 1;
   margin-bottom: 4px;
+  border-radius: 2px;
 }
 
 .page-intro h3 {
@@ -62,11 +64,17 @@ import KnowledgeStrategyPanel from './KnowledgeStrategyPanel.vue'
 .module-card {
   background: var(--bg-surface);
   border: 1px solid var(--corp-border-light);
-  border-radius: 8px;
-  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.03);
+  border-radius: 12px;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.03), 0 6px 20px rgba(15, 23, 42, 0.04);
   overflow: hidden;
   display: flex;
   flex-direction: column;
+  transition: box-shadow var(--corp-transition-base), transform var(--corp-transition-base);
+}
+
+.module-card:hover {
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.03), 0 10px 28px rgba(15, 23, 42, 0.07);
+  transform: translateY(-1px);
 }
 
 @media (max-width: 960px) {

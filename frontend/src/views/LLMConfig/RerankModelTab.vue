@@ -1,34 +1,30 @@
 <template>
   <div class="engine-tab">
     <section class="config-section">
-      <div v-if="!config.providerId && hasLegacyFields" class="legacy-hint">
-        检测到旧配置结构，后端启动时会自动迁移为 Provider 引用。
-      </div>
-
       <el-form :model="config" label-width="100px" label-position="left">
         <div class="param-group">
-          <div class="param-group__title">Embedding 配置</div>
+          <div class="param-group__title">Rerank 配置</div>
           <el-form-item label="Provider" required class="provider-field">
             <el-select
               v-model="config.providerId"
-              placeholder="选择 Provider"
+              placeholder="选择支持重排序的 Provider"
               clearable
               filterable
               style="width:100%"
             >
               <el-option
-                v-for="p in filteredProviders"
+                v-for="p in rerankProviders"
                 :key="p.id"
                 :label="`[${p.name}] ${p.model || '未设置模型'}`"
                 :value="p.id"
               />
             </el-select>
-            <div class="form-tip">凭证从 Provider 配置继承。</div>
+            <div class="form-tip">仅展示能力库标记为「重排序（Rerank）」的 Provider。凭证从 Provider 配置继承。</div>
           </el-form-item>
 
-          <el-form-item label="向量维度">
-            <el-input-number v-model="config.dimensions" :min="0" :max="8192" controls-position="right" />
-            <div class="form-tip">0 表示自动检测。常用：bge-m3=1024，Qwen3=4096。</div>
+          <el-form-item label="返回条数 TopK">
+            <el-input-number v-model="config.topK" :min="1" :max="50" controls-position="right" />
+            <div class="form-tip">重排序后保留的相关文档条数，默认 8</div>
           </el-form-item>
         </div>
       </el-form>
@@ -41,9 +37,9 @@ import { computed, reactive, ref, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import { getSystemConfigApi, saveSystemConfigApi, testLlmConnectionApi, getLlmProfilesApi, type LlmProfile } from '@/api/system'
 
-interface EmbeddingModelConfig {
+interface RerankModelConfig {
   providerId: string
-  dimensions: number
+  topK: number
 }
 
 const saveLoading = ref(false)
@@ -52,9 +48,9 @@ const connectionTestResult = ref<{ success: boolean; message?: string; latency?:
 const providers = ref<LlmProfile[]>([])
 const hasLegacyFields = ref(false)
 
-const config = reactive<EmbeddingModelConfig>({
+const config = reactive<RerankModelConfig>({
   providerId: '',
-  dimensions: 1024,
+  topK: 8,
 })
 
 const originalConfig = ref('')
@@ -62,14 +58,19 @@ const normalizedConfig = computed(() => JSON.stringify(config))
 const hasUnsavedChanges = computed(() => normalizedConfig.value !== originalConfig.value)
 const selectedProvider = computed(() => providers.value.find((p) => p.id === config.providerId))
 
-const filteredProviders = computed(() =>
-  providers.value.filter((p) => p.isEnabled && ['embedding', 'all'].includes(p.usage || 'chat'))
+/** 重排序 Provider：明确标记 rerank 用途，或能力声明支持 rerank */
+const rerankProviders = computed(() =>
+  providers.value.filter(
+    (p) =>
+      p.isEnabled &&
+      (p.usage === 'rerank' || p.capabilities?.supportsRerank === true),
+  )
 )
 
 const summary = computed(() => [
   { label: 'Provider', value: selectedProvider.value?.name || '未设置' },
-  { label: '模型', value: selectedProvider.value?.model || '未设置' },
-  { label: '向量维度', value: String(config.dimensions) },
+  { label: '模型', value: selectedProvider.value?.model || '未配置' },
+  { label: 'TopK', value: String(config.topK) },
 ])
 
 const handleSave = async () => {
@@ -79,9 +80,19 @@ const handleSave = async () => {
   }
   saveLoading.value = true
   try {
-    await saveSystemConfigApi('embedding_model', config)
+    const sel = selectedProvider.value
+    // 写入 providerId + 展开凭证（兼容后端 getRerankConfig 独立读取 apiBaseUrl/apiKey/modelName）
+    await saveSystemConfigApi('reranker_model', {
+      serviceType: 'openai',
+      providerId: config.providerId,
+      apiBaseUrl: sel?.apiBase || '',
+      apiKey: sel?.apiKey || '',
+      modelName: sel?.model || '',
+      topK: config.topK,
+      timeout: 30,
+    })
     originalConfig.value = JSON.stringify(config)
-    ElMessage.success('Embedding 模型配置保存成功')
+    ElMessage.success('Rerank 模型配置保存成功')
   } catch (e: any) {
     ElMessage.error(`保存失败: ${e.message || '未知错误'}`)
   } finally {
@@ -100,7 +111,8 @@ const handleTest = async () => {
   try {
     const { data: testResult } = await testLlmConnectionApi({
       providerId: config.providerId,
-      modelType: 'embedding',
+      modelType: 'rerank',
+      topK: config.topK,
     })
     const latency = Date.now() - startTime
     connectionTestResult.value = {
@@ -136,18 +148,15 @@ async function loadProviders() {
 onMounted(async () => {
   await loadProviders()
   try {
-    const { data } = await getSystemConfigApi('embedding_model')
+    const { data } = await getSystemConfigApi('reranker_model')
     const configData = typeof data?.value === 'string' ? JSON.parse(data.value) : (data?.value || data)
     if (configData && typeof configData === 'object') {
-      if (!configData.providerId && (configData.apiKey || configData.modelName)) {
-        hasLegacyFields.value = true
-      }
       if (configData.providerId !== undefined) config.providerId = configData.providerId
-      if (configData.dimensions !== undefined) config.dimensions = configData.dimensions
+      if (typeof configData.topK === 'number') config.topK = configData.topK
     }
     originalConfig.value = JSON.stringify(config)
   } catch (e) {
-    console.error('加载 Embedding 配置失败', e)
+    console.error('加载 Rerank 配置失败', e)
   }
 })
 
@@ -176,17 +185,17 @@ defineExpose({
   gap: 14px;
 }
 
-/* 参数分组：与对话模型统一 */
+/* Provider 字段限宽（与对话/Embedding 统一） */
+.provider-field {
+  max-width: 560px;
+}
+
+/* 参数分组：与其他模型 tab 统一 */
 .param-group {
   background: var(--bg-surface-hover);
   border: 1px solid var(--corp-border-light);
   border-radius: 12px;
   padding: 16px 20px 0;
-}
-
-/* Provider 字段限宽（与对话模型统一） */
-.provider-field {
-  max-width: 560px;
 }
 
 .param-group__title {
@@ -210,16 +219,6 @@ defineExpose({
 .param-group :deep(.el-form-item__label) {
   font-weight: 600;
   color: var(--color-gray-700);
-}
-
-.legacy-hint {
-  font-size: 12px;
-  color: var(--color-warning-text);
-  background: var(--color-warning-bg);
-  border: 1px solid var(--color-warning-bg);
-  border-radius: 6px;
-  padding: 8px 12px;
-  line-height: 1.5;
 }
 
 .form-tip {

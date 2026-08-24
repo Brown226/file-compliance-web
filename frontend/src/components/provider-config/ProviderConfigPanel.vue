@@ -213,6 +213,14 @@
                 <input v-model="currentModel.imageInput" type="checkbox" class="pcfg-check-input" />
                 图片输入（Image input）
               </label>
+              <label class="pcfg-check-label">
+                <input v-model="currentModel.embeddingInput" type="checkbox" class="pcfg-check-input" />
+                向量（Embedding）
+              </label>
+              <label class="pcfg-check-label">
+                <input v-model="currentModel.rerankInput" type="checkbox" class="pcfg-check-input" />
+                重排序（Rerank）
+              </label>
             </div>
 
             <!-- 思考等级映射（推理模型时显示） -->
@@ -343,6 +351,8 @@ interface TreeModel {
   name?: string
   reasoning?: boolean
   imageInput?: boolean
+  embeddingInput?: boolean
+  rerankInput?: boolean
   thinkingLevelMap?: Record<string, string | null>
   contextWindow?: number
   maxTokens?: number
@@ -458,6 +468,8 @@ async function loadConfig() {
         name: p.model || undefined,
         reasoning: !!p.capabilities?.reasoning,
         imageInput: (p.capabilities?.inputModalities ?? []).includes('image'),
+        embeddingInput: p.usage === 'embedding' || p.capabilities?.supportsEmbedding === true,
+        rerankInput: p.capabilities?.supportsRerank === true,
         thinkingLevelMap: (p as any).thinkingLevelMap,
         contextWindow: p.capabilities?.contextWindowTokens,
         maxTokens: p.capabilities?.maxOutputTokens,
@@ -510,10 +522,13 @@ async function autoEnrichCapabilities() {
       for (const m of pv.models) {
         const dm = models.find((x) => x.id === m.id)
         if (!dm) continue
+        const dmId = (dm.id || '').toLowerCase()
         if (m.contextWindow === undefined && dm.contextWindow) m.contextWindow = dm.contextWindow
         if (m.maxTokens === undefined && dm.maxTokens) m.maxTokens = dm.maxTokens
         if (m.reasoning === undefined && dm.reasoning) m.reasoning = true
         if (m.imageInput === undefined && dm.inputModalities?.includes('image')) m.imageInput = true
+        if (m.embeddingInput === undefined && (dm.inputModalities?.includes('embedding') || dmId.includes('embed'))) m.embeddingInput = true
+        if (m.rerankInput === undefined && (dm.inputModalities?.includes('rerank') || dmId.includes('rerank'))) m.rerankInput = true
       }
     } catch {
       // 供应商不可达或 /models 无权限：静默跳过，字段保持原样，用户可手动拉取
@@ -635,11 +650,15 @@ function addDiscoveredModels() {
   for (const dm of selectedModels) {
     if (pv.models.some((m) => m.id === dm.id)) continue
     // 自动回填上游 /models 返回的能力信息（上下文窗口/最大输出/推理/图片输入）
+    // 向量/重排序按模型 id 特征（embed/rerank）与返回类型自动识别
+    const idLower = dm.id.toLowerCase()
     pv.models.push({
       id: dm.id,
       name: dm.id,
       reasoning: dm.reasoning,
       imageInput: dm.inputModalities?.includes('image'),
+      embeddingInput: dm.inputModalities?.includes('embedding') || idLower.includes('embed'),
+      rerankInput: dm.inputModalities?.includes('rerank') || idLower.includes('rerank'),
       contextWindow: dm.contextWindow,
       maxTokens: dm.maxTokens,
     })
@@ -664,6 +683,8 @@ async function handleCatalog() {
     if (!model.name && rec.name) { model.name = rec.name; applied++ }
     if (model.reasoning === undefined && rec.reasoning) { model.reasoning = true; applied++ }
     if (!model.imageInput && rec.input?.includes('image')) { model.imageInput = true; applied++ }
+    if (model.embeddingInput === undefined && (rec.input?.includes('embedding') || rec.input?.includes('vector'))) { model.embeddingInput = true; applied++ }
+    if (model.rerankInput === undefined && rec.input?.includes('rerank')) { model.rerankInput = true; applied++ }
     if (model.contextWindow === undefined && rec.contextWindow) { model.contextWindow = rec.contextWindow; applied++ }
     if (model.maxTokens === undefined && rec.maxTokens) { model.maxTokens = rec.maxTokens; applied++ }
     catalog.value = {
@@ -757,11 +778,23 @@ async function handleSave() {
         const inputModalities = m.imageInput
           ? Array.from(new Set([...origInput.filter((x) => x !== 'image'), 'image']))
           : origInput.filter((x) => x !== 'image')
+        // 用途推导：勾选「向量」→ embedding；否则保留原值；勾选图片但未选向量 → vision
+        const prevUsage = orig.usage
+        let usage = prevUsage
+        if (m.embeddingInput) {
+          usage = 'embedding'
+        } else if (prevUsage === 'embedding') {
+          usage = m.imageInput ? 'vision' : 'chat'
+        } else if (m.imageInput && !['vision', 'all', 'embedding'].includes(prevUsage || '')) {
+          usage = 'vision'
+        }
         const capabilities: Record<string, any> = {
           ...(orig.capabilities ?? {}),
           reasoning: !!m.reasoning,
           inputModalities,
         }
+        if (m.embeddingInput !== undefined) capabilities.supportsEmbedding = m.embeddingInput
+        if (m.rerankInput !== undefined) capabilities.supportsRerank = m.rerankInput
         if (m.contextWindow !== undefined) capabilities.contextWindowTokens = m.contextWindow
         if (m.maxTokens !== undefined) capabilities.maxOutputTokens = m.maxTokens
 
@@ -776,7 +809,7 @@ async function handleSave() {
           isActive: orig.isActive ?? false,
           isEnabled: orig.isEnabled ?? true,
           timeout: orig.timeout ?? 60,
-          usage: orig.usage,
+          usage,
           capabilities,
         }
         if (m.thinkingLevelMap) profile.thinkingLevelMap = m.thinkingLevelMap

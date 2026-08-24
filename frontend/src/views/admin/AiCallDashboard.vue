@@ -104,6 +104,17 @@ function renderChart(trend: AiCallStats['dailyTrend']) {
 </script>
 
 <style scoped>
+.ai-call-dashboard { padding: 4px 0; }
+.ai-call-dashboard > h2 {
+  margin: 0 0 20px;
+  padding-left: 12px;
+  border-left: 4px solid transparent;
+  border-image: linear-gradient(180deg, var(--color-primary-400), var(--color-primary-600)) 1;
+  border-radius: 2px;
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--corp-text-primary);
+}
 .stat-card { text-align: center; padding: 10px; }
 .stat-value { font-size: 28px; font-weight: bold; color: var(--color-action); }
 .stat-label { font-size: 14px; color: var(--corp-text-secondary); margin-top: 5px; }

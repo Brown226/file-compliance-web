@@ -2,11 +2,12 @@
   <div class="engine-tab">
     <section class="config-section">
       <div v-if="!config.providerId && hasLegacyFields" class="legacy-hint">
-        检测到旧配置结构，后端启动时会自动迁移为 Provider 引用。若仍未迁移，请重启后端服务。
+        检测到旧配置结构，后端启动时会自动迁移为 Provider 引用。
       </div>
 
-      <el-form :model="config" label-width="110px" label-position="left">
-        <el-form-item label="选择 Provider" required>
+      <el-form :model="config" label-width="100px" label-position="left">
+        <!-- Provider -->
+        <el-form-item label="选择 Provider" required class="provider-field">
           <el-select
             v-model="config.providerId"
             placeholder="选择已配置的 Provider"
@@ -28,42 +29,40 @@
               </div>
             </el-option>
           </el-select>
-          <div class="form-tip">
-            选择 Provider 后，凭证（API Key / Base URL / 模型名）自动从 Provider 配置继承。
-          </div>
+          <div class="form-tip">凭证从 Provider 配置继承。切换 Provider 时会自动探测模型能力。</div>
         </el-form-item>
 
-        <div v-if="probedCaps?.probed" class="probe-banner">
+        <!-- 探测状态 -->
+        <div v-if="probedCaps?.probed" class="cap-status success">
           <el-icon><CircleCheckFilled /></el-icon>
           <span>
-            已自动探测模型能力：最大输出 {{ formatTokens(probedCaps.maxOutput) }} · 上下文窗口 {{ formatTokens(probedCaps.contextWindow) }}
+            已探测：最大输出 {{ formatTokens(probedCaps.maxOutput) }} · 上下文窗口 {{ formatTokens(probedCaps.contextWindow) }}
             <el-tag v-if="probedCaps.reasoning" size="small" type="warning" effect="plain" class="reasoning-tag">推理模型</el-tag>
           </span>
-          <span class="probe-note">运行时以探测值为准，下方参数仅作探测失败时的兜底</span>
         </div>
-        <div v-else-if="probeDone && config.providerId" class="probe-banner probe-miss">
+        <div v-else-if="probeDone && config.providerId" class="cap-status warning">
           <el-icon><CircleCloseFilled /></el-icon>
-          <span>该 Provider 未提供模型能力元数据，请手动填写下方参数</span>
+          <span>未探测到能力元数据，已启用下方手动参数</span>
         </div>
 
-        <div class="param-row">
+        <!-- 生成参数分组 -->
+        <div class="param-group">
+          <div class="param-group__title">生成参数</div>
+          <div class="param-row">
           <el-form-item label="最大输出 Tokens">
-            <el-input-number
-              v-model="config.maxTokens"
-              :min="1"
-              :max="1000000"
-              controls-position="right"
-              :disabled="probedCaps?.probed"
-              @input="userTouchedMaxTokens = true"
-            />
-            <div class="form-tip">
-              <span v-if="probedCaps?.probed" class="cap-hint">自动探测，无需手动配置</span>
-              <template v-else>
-                单次回复长度上限（探测失败时的兜底值）
-                <span v-if="capDefaults.maxOutputTokens > 0" class="cap-hint">
-                  · 模型库默认 {{ capDefaults.maxOutputTokens }}
-                </span>
-              </template>
+            <div class="inline-number">
+              <el-input-number
+                v-model="config.maxTokens"
+                :min="1"
+                :max="1000000"
+                controls-position="right"
+                :disabled="probedCaps?.probed"
+                @input="userTouchedMaxTokens = true"
+              />
+              <span class="unit-label">tokens</span>
+            </div>
+            <div v-if="capDefaults.maxOutputTokens > 0" class="form-tip">
+              模型库默认 {{ capDefaults.maxOutputTokens }} tokens
             </div>
           </el-form-item>
 
@@ -80,63 +79,28 @@
               />
               <span class="unit-label">字符</span>
             </div>
-            <div class="form-tip">
-              <span v-if="probedCaps?.probed" class="cap-hint">自动探测，无需手动配置</span>
-              <span v-else-if="capDefaults.contextWindowTokens > 0">
-                模型库 {{ (capDefaults.contextWindowTokens / 1000).toFixed(0) }}K tokens（已按 1.5 倍换算为字符）
-              </span>
-              <span v-else>探测失败时的兜底值，128K 模型填 200000</span>
+            <div v-if="capDefaults.contextWindowTokens > 0" class="form-tip">
+              模型库 {{ (capDefaults.contextWindowTokens / 1000).toFixed(0) }}K tokens
             </div>
           </el-form-item>
 
           <el-form-item label="超时时间">
             <div class="inline-number">
-              <el-input-number
-                v-model="config.timeout"
-                :min="10"
-                :max="300"
-                controls-position="right"
-              />
+              <el-input-number v-model="config.timeout" :min="10" :max="300" controls-position="right" />
               <span class="unit-label">秒</span>
             </div>
           </el-form-item>
-        </div>
 
-        <el-form-item label="温度值">
-          <div class="slider-wrapper">
-            <el-slider
-              v-model="config.temperature"
-              :min="0"
-              :max="1"
-              :step="0.05"
-              :marks="tempMarks"
-            />
-            <div class="temp-labels">
-              <span>精确</span>
+          <el-form-item label="温度">
+            <div class="temp-compact">
+              <el-slider v-model="config.temperature" :min="0" :max="1" :step="0.05" />
               <span class="temp-value">{{ config.temperature.toFixed(2) }}</span>
-              <span>发散</span>
             </div>
-          </div>
-        </el-form-item>
+            <div class="form-tip">0=精确，1=发散</div>
+          </el-form-item>
+        </div>
+        </div><!-- /param-group -->
       </el-form>
-
-      <div class="action-bar">
-        <el-button @click="handleTestConnection" :loading="testLoading" class="test-btn">
-          <el-icon><Connection /></el-icon>
-          测试连接
-        </el-button>
-        <el-button type="primary" :loading="saveLoading" @click="handleSave">
-          <el-icon><Check /></el-icon>
-          保存配置
-        </el-button>
-      </div>
-
-      <div v-if="connectionTestResult" class="test-result" :class="connectionTestResult.success ? 'test-success' : 'test-fail'">
-        <el-icon><component :is="connectionTestResult.success ? CircleCheckFilled : CircleCloseFilled" /></el-icon>
-        <span>{{ connectionTestResult.success ? '连接成功' : '连接失败' }}</span>
-        <span v-if="connectionTestResult.message" class="result-detail">{{ connectionTestResult.message }}</span>
-        <span v-if="connectionTestResult.latency !== undefined" class="result-latency">延迟: {{ connectionTestResult.latency }}ms</span>
-      </div>
     </section>
   </div>
 </template>
@@ -144,7 +108,7 @@
 <script setup lang="ts">
 import { computed, reactive, ref, onMounted, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Check, Connection, CircleCheckFilled, CircleCloseFilled } from '@element-plus/icons-vue'
+import { CircleCheckFilled, CircleCloseFilled } from '@element-plus/icons-vue'
 import {
   getSystemConfigApi,
   saveSystemConfigApi,
@@ -170,16 +134,11 @@ const testLoading = ref(false)
 const connectionTestResult = ref<{ success: boolean; message?: string; latency?: number } | null>(null)
 const providers = ref<LlmProfile[]>([])
 const hasLegacyFields = ref(false)
-// 用户是否手动调整过这两个字段（防止自动填充覆盖用户输入）
 const userTouchedMaxTokens = ref(false)
 const userTouchedContextLength = ref(false)
-// 加载已完成（避免初始回填被误判为用户修改）
 const configLoaded = ref(false)
-// 后端自动探测的模型能力（探测成功时运行时以此为准，手动参数仅作兜底）
 const probedCaps = ref<ProbedModelCaps | null>(null)
 const probeDone = ref(false)
-
-const tempMarks = { 0: '0', 0.5: '0.5', 1: '1' }
 
 const config = reactive<ChatModelConfig>({
   providerId: '',
@@ -191,17 +150,14 @@ const config = reactive<ChatModelConfig>({
 })
 
 const originalConfig = ref<string>('')
-
 const normalizedConfig = computed(() => JSON.stringify(config))
 const hasUnsavedChanges = computed(() => normalizedConfig.value !== originalConfig.value)
-
 const selectedProvider = computed(() => providers.value.find((p) => p.id === config.providerId))
 
 const filteredProviders = computed(() =>
   providers.value.filter((p) => p.isEnabled && ['chat', 'all'].includes(p.usage || 'chat'))
 )
 
-// 模型能力库提供的默认值（用于 UI 提示与自动填充）
 const capDefaults = computed(() => {
   const caps = selectedProvider.value?.capabilities
   return {
@@ -210,18 +166,14 @@ const capDefaults = computed(() => {
   }
 })
 
-// 选择 Provider 或切换 Provider 时，自动填充能力库默认值
-// 仅在用户未手动调整过该字段时填充，避免覆盖用户输入
 watch(
   () => config.providerId,
   () => {
     if (!configLoaded.value) return
     const caps = capDefaults.value
-    // 最大输出 Tokens
     if (!userTouchedMaxTokens.value && caps.maxOutputTokens > 0) {
       config.maxTokens = caps.maxOutputTokens
     }
-    // 上下文窗口（模型库单位为 tokens，配置字段单位为字符，按 1.5 倍换算）
     if (!userTouchedContextLength.value && caps.contextWindowTokens > 0) {
       config.contextLength = Math.round(caps.contextWindowTokens * 1.5)
     }
@@ -248,7 +200,6 @@ function formatTokens(n: number): string {
   return `${n} tokens`
 }
 
-/** 探测模型能力并回填配置（探测成功时同步写入配置字段，保证旧版读取路径也拿到正确值） */
 async function probeCaps() {
   probedCaps.value = null
   probeDone.value = false
@@ -258,7 +209,6 @@ async function probeCaps() {
     probedCaps.value = data
     if (data?.probed) {
       if (data.maxOutput > 0) config.maxTokens = data.maxOutput
-      // 配置字段单位为字符，按 1.5 倍换算
       if (data.contextWindow > 0) config.contextLength = Math.round(data.contextWindow * 1.5)
     }
   } catch {
@@ -268,7 +218,6 @@ async function probeCaps() {
   }
 }
 
-// 切换 Provider 时自动探测
 watch(
   () => config.providerId,
   () => {
@@ -276,7 +225,7 @@ watch(
   }
 )
 
-const handleTestConnection = async () => {
+const handleTest = async () => {
   if (!config.providerId) {
     ElMessage.warning('请先选择 Provider')
     return
@@ -309,6 +258,7 @@ const handleTestConnection = async () => {
   } finally {
     testLoading.value = false
   }
+  return connectionTestResult.value
 }
 
 const handleSave = async () => {
@@ -318,7 +268,6 @@ const handleSave = async () => {
   }
   saveLoading.value = true
   try {
-    // 先测试，失败时给用户确认机会
     const { data: testResult } = await testLlmConnectionApi({
       providerId: config.providerId,
       modelType: 'chat',
@@ -358,7 +307,7 @@ onMounted(async () => {
   await loadProviders()
   try {
     const { data } = await getSystemConfigApi('llm_chat_model')
-    let configData = data?.value || data
+    let configData: any = (data as any)?.value || data
     if (typeof configData === 'string') {
       try {
         configData = JSON.parse(configData)
@@ -369,11 +318,9 @@ onMounted(async () => {
     }
 
     if (configData && typeof configData === 'object') {
-      // 检测旧结构（无 providerId 但有 apiKey/modelName）
       if (!configData.providerId && (configData.apiKey || configData.modelName)) {
         hasLegacyFields.value = true
       }
-      // 仅加载新结构字段，忽略旧凭证字段
       if (configData.providerId !== undefined) config.providerId = configData.providerId
       if (configData.temperature !== undefined) config.temperature = configData.temperature
       if (configData.maxTokens !== undefined) config.maxTokens = configData.maxTokens
@@ -381,15 +328,12 @@ onMounted(async () => {
       if (configData.timeout !== undefined) config.timeout = configData.timeout
       if (configData.enabled !== undefined) config.enabled = configData.enabled
 
-      // 已加载配置视为用户已调整：不触发自动覆盖
       if (configData.maxTokens !== undefined) userTouchedMaxTokens.value = true
       if (configData.contextLength !== undefined) userTouchedContextLength.value = true
     }
     originalConfig.value = JSON.stringify(config)
     configLoaded.value = true
-    // 自动探测模型能力（探测成功会自动回填 maxTokens/contextLength）
     await probeCaps()
-    // 探测失败时降级：若该 Provider 无已保存值，用模型库预置值填充
     if (!probedCaps.value?.probed && config.providerId && capDefaults.value) {
       const caps = capDefaults.value
       if (!userTouchedMaxTokens.value && caps.maxOutputTokens > 0) {
@@ -406,6 +350,8 @@ onMounted(async () => {
 })
 
 defineExpose({
+  handleSave,
+  handleTest,
   get hasUnsavedChanges() {
     return hasUnsavedChanges.value
   },
@@ -428,11 +374,16 @@ defineExpose({
   gap: 14px;
 }
 
+/* Provider 字段限宽，避免下拉独占整行造成宽度跳跃 */
+.provider-field {
+  max-width: 560px;
+}
+
 .legacy-hint {
   font-size: 12px;
   color: var(--color-warning-text);
   background: var(--color-warning-bg);
-  border: 1px solid var(--color-warning-bg); /* 原 #fde68a 浅黄边框，对齐 --color-warning-bg */
+  border: 1px solid var(--color-warning-bg);
   border-radius: 6px;
   padding: 8px 12px;
   line-height: 1.5;
@@ -451,39 +402,75 @@ defineExpose({
   flex-shrink: 0;
 }
 
-.probe-banner {
+.cap-status {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 8px 12px;
-  margin-bottom: 12px;
+  padding: 6px 12px;
+  margin-bottom: 2px;
   font-size: 13px;
+  border-radius: 6px;
+  line-height: 1.5;
+  width: fit-content;
+}
+
+.cap-status.success {
   color: var(--color-success-text);
   background: var(--color-success-bg);
-  border: 1px solid var(--color-success-bg); /* 原 #bbf7d0 浅绿边框，对齐 --color-success-bg */
-  border-radius: 6px;
+  border: 1px solid var(--color-success-bg);
 }
 
-.probe-banner.probe-miss {
+.cap-status.warning {
   color: var(--color-warning-text);
   background: var(--color-warning-bg);
-  border-color: var(--color-warning-bg); /* 原 #fde68a 浅黄边框，对齐 --color-warning-bg */
-}
-
-.probe-note {
-  margin-left: auto;
-  font-size: 12px;
-  color: var(--corp-text-secondary);
+  border: 1px solid var(--color-warning-bg);
 }
 
 .reasoning-tag {
   margin-left: 6px;
 }
 
+/* 生成参数分组：浅色底容器 + 分组标题 */
+.param-group {
+  background: var(--bg-surface-hover);
+  border: 1px solid var(--corp-border-light);
+  border-radius: 12px;
+  padding: 16px 20px 4px;
+}
+
+.param-group__title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--color-primary-700);
+  margin-bottom: 4px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.param-group__title::before {
+  content: '';
+  width: 3px;
+  height: 13px;
+  border-radius: 2px;
+  background: var(--color-primary-500);
+}
+
 .param-row {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 16px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px 24px;
+  margin-bottom: 12px;
+}
+
+/* 参数项：加轻微悬浮感 */
+.param-group :deep(.el-form-item) {
+  margin-bottom: 16px;
+}
+
+.param-group :deep(.el-form-item__label) {
+  font-weight: 600;
+  color: var(--color-gray-700);
 }
 
 .inline-number {
@@ -503,91 +490,35 @@ defineExpose({
   line-height: 1.5;
 }
 
-.cap-hint {
-  color: var(--color-primary-600);
-  font-weight: 500;
-  margin-left: 2px;
-}
-
-.slider-wrapper {
-  width: 100%;
-  padding-right: 16px;
-}
-
-.temp-labels {
+.temp-compact {
   display: flex;
-  justify-content: space-between;
-  margin-top: 6px;
-  font-size: 12px;
-  color: var(--corp-text-secondary);
+  align-items: center;
+  gap: 12px;
+  flex: 1;
+  min-width: 0;
+}
+
+.temp-compact :deep(.el-slider) {
+  flex: 1;
 }
 
 .temp-value {
+  flex-shrink: 0;
+  min-width: 44px;
+  text-align: right;
   font-weight: 600;
   color: var(--color-primary-600);
-}
-
-.action-bar {
-  display: flex;
-  justify-content: flex-end;
-  gap: 10px;
-  padding-top: 4px;
-}
-
-.test-btn {
-  border-color: var(--color-primary-600);
-  color: var(--color-primary-600);
-}
-
-.test-btn:hover {
-  background: var(--color-primary-50);
-}
-
-.test-result {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 8px 12px;
-  border-radius: 6px;
-  font-size: 13px;
-  font-weight: 500;
-}
-
-.test-success {
-  background: var(--color-success-bg);
-  border: 1px solid var(--color-success-bg); /* 原 #bbf7d0 浅绿边框，对齐 --color-success-bg */
-  color: var(--color-success-text);
-}
-
-.test-fail {
-  background: var(--color-danger-bg);
-  border: 1px solid var(--color-danger-bg); /* 原 #fecaca 浅红边框，对齐 --color-danger-bg */
-  color: var(--color-danger-text);
-}
-
-.result-detail {
-  font-weight: 400;
-  font-size: 12px;
-  opacity: 0.9;
-}
-
-.result-latency {
-  margin-left: auto;
-  font-size: 12px;
-  padding: 2px 8px;
-  background: rgba(0, 0, 0, 0.05);
-  border-radius: 999px;
-}
-
-@media (max-width: 900px) {
-  .param-row {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
+  font-size: 14px;
 }
 
 @media (max-width: 640px) {
   .param-row {
     grid-template-columns: 1fr;
+  }
+
+  .temp-compact {
+    flex-direction: column;
+    align-items: stretch;
   }
 }
 </style>

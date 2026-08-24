@@ -107,6 +107,10 @@ onMounted(loadFlags)
 
 .page-header {
   margin-bottom: 20px;
+  padding-left: 12px;
+  border-left: 4px solid transparent;
+  border-image: linear-gradient(180deg, var(--color-primary-400), var(--color-primary-600)) 1;
+  border-radius: 2px;
 }
 
 .page-header h3 {
