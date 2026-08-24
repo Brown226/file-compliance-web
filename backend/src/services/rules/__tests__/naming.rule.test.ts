@@ -13,9 +13,9 @@ function makeCtx(fileName: string, fileType?: string): FileContext {
 describe('checkNaming', () => {
   // ===== 正例：应检出 =====
 
-  it('NAME_001: 检出中文文件名', () => {
+  it('NAME_001 已移除：中文文件名不再报错（2026-08 噪音清理）', () => {
     const issues = checkNaming(makeCtx('设计说明.docx'));
-    expect(issues.some(i => i.ruleCode === 'NAME_001')).toBe(true);
+    expect(issues.some(i => i.ruleCode === 'NAME_001')).toBe(false);
   });
 
   it('NAME_002: 检出含空格的文件名', () => {
@@ -72,10 +72,10 @@ describe('checkNaming', () => {
     expect(issues.filter(i => i.ruleCode === 'NAME_010')).toHaveLength(0);
   });
 
-  it('中文文件名不继续检查编码格式', () => {
+  it('中文文件名不继续检查编码格式（门控保留）', () => {
     const issues = checkNaming(makeCtx('中文名称.dwg'));
-    // 有 NAME_001 但不应有 NAME_008 等编码格式错误
-    expect(issues.some(i => i.ruleCode === 'NAME_001')).toBe(true);
+    // NAME_001 不再产出（噪音清理），但门控保留：不应有 NAME_008 等编码格式错误
+    expect(issues.some(i => i.ruleCode === 'NAME_001')).toBe(false);
     expect(issues.filter(i => i.ruleCode === 'NAME_008')).toHaveLength(0);
   });
 
@@ -111,10 +111,10 @@ import { checkNaming } from '../naming.rule';
 
 describe('Naming Rule (NAME)', () => {
   // 正例：应检测出问题的文件名
-  it('应该检测到文件名中的中文括号', () => {
+  it('全角括号中文文件名不再报编码格式错误（2026-08 噪音清理后门控生效）', () => {
     const issues = checkNaming({ fileName: '文件（2024）v2.docx', fileType: 'docx' } as any);
-    expect(issues.length).toBeGreaterThan(0);
-    expect(issues[0].ruleCode).toContain('NAME');
+    // NAME_001 已移除；全角括号不触发半角正则的 NAME_009；中文门控跳过编码检查
+    expect(issues.length).toBe(0);
   });
 
   it('应该检测到文件名中的空格', () => {
@@ -122,15 +122,14 @@ describe('Naming Rule (NAME)', () => {
     expect(issues.length).toBeGreaterThan(0);
   });
 
-  it('应该检测到缺少项目编码', () => {
+  it('纯中文文件名不再报缺少项目编码（2026-08 噪音清理）', () => {
     const issues = checkNaming({ fileName: '设计说明.pdf', fileType: 'pdf' } as any);
-    expect(issues.length).toBeGreaterThan(0);
-    expect(issues.some(i => i.ruleCode?.includes('NAME'))).toBe(true);
+    expect(issues.some(i => i.ruleCode?.includes('NAME'))).toBe(false);
   });
 
-  it('应该检测到缺少版本号', () => {
+  it('含中文的混合文件名不再报缺少版本号（2026-08 噪音清理）', () => {
     const issues = checkNaming({ fileName: 'GB50265-2024-设计说明.pdf', fileType: 'pdf' } as any);
-    expect(issues.length).toBeGreaterThan(0);
+    expect(issues.length).toBe(0);
   });
 
   it('应该检测到非法字符', () => {

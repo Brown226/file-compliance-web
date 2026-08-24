@@ -19,9 +19,9 @@ describe('Attribute Rule (ATTR)', () => {
 
   /* ===== 正例：应检出的缺失/错误 ===== */
 
-  it('ATTR_001: should detect missing album code', () => {
+  it('ATTR_001 已移除：非封面文本不再报图册编号缺失（2026-08 噪音清理）', () => {
     const issues = checkCoverAttributes(ctx('这是一个封面，但没有图册编号。'));
-    expect(issues.some(i => i.ruleCode === 'ATTR_001')).toBe(true);
+    expect(issues.some(i => i.ruleCode === 'ATTR_001')).toBe(false);
   });
 
   it('ATTR_002: should detect invalid version format', () => {
@@ -34,19 +34,19 @@ describe('Attribute Rule (ATTR)', () => {
     expect(issues.some(i => i.ruleCode === 'ATTR_003')).toBe(true);
   });
 
-  it('ATTR_004: should detect missing project number', () => {
+  it('ATTR_004 已移除：不再报工程号缺失（2026-08 噪音清理）', () => {
     const issues = checkCoverAttributes(ctx('图册编号：FJ24A00AC-JPS02\n版次：A\n状态：CFC'));
-    expect(issues.some(i => i.ruleCode === 'ATTR_004')).toBe(true);
+    expect(issues.some(i => i.ruleCode === 'ATTR_004')).toBe(false);
   });
 
-  it('ATTR_005: should detect missing sub-item number', () => {
+  it('ATTR_005 已移除：不再转子项号缺失（2026-08 噪音清理）', () => {
     const issues = checkCoverAttributes(ctx('图册编号：FJ24A00AC-JPS02\n版次：A\n状态：CFC\n工程号：PJ001'));
-    expect(issues.some(i => i.ruleCode === 'ATTR_005')).toBe(true);
+    expect(issues.some(i => i.ruleCode === 'ATTR_005')).toBe(false);
   });
 
-  it('ATTR_006: should detect missing sub-item name', () => {
+  it('ATTR_006 已移除：不再报子项名称缺失（2026-08 噪音清理）', () => {
     const issues = checkCoverAttributes(ctx('图册编号：FJ24A00AC-JPS02\n版次：A\n状态：CFC\n工程号：PJ001\n子项号：S01'));
-    expect(issues.some(i => i.ruleCode === 'ATTR_006')).toBe(true);
+    expect(issues.some(i => i.ruleCode === 'ATTR_006')).toBe(false);
   });
 
   it('ATTR_007: should detect non-standard design stage', () => {
@@ -59,9 +59,9 @@ describe('Attribute Rule (ATTR)', () => {
     expect(issues.some(i => i.ruleCode === 'ATTR_008')).toBe(true);
   });
 
-  it('ATTR_009: should detect missing album name', () => {
+  it('ATTR_009 已移除：不再报图册名称缺失（2026-08 噪音清理）', () => {
     const issues = checkCoverAttributes(ctx('图册编号：FJ24A00AC-JPS02\n版次：A\n状态：CFC\n工程号：PJ001'));
-    expect(issues.some(i => i.ruleCode === 'ATTR_009')).toBe(true);
+    expect(issues.some(i => i.ruleCode === 'ATTR_009')).toBe(false);
   });
 
   it('ATTR_010: should detect unreasonable volume count', () => {
@@ -116,9 +116,9 @@ describe('Attribute Rule (ATTR)', () => {
     expect(issues.some(i => i.ruleCode === 'ATTR_002')).toBe(false);
   });
 
-  it('should detect missing album code when text has no match', () => {
+  it('ATTR_001 已移除：无匹配文本也不报（2026-08 噪音清理）', () => {
     const issues = checkCoverAttributes(ctx('版次：A\n状态：CFC\n工程号：PJ001'));
-    expect(issues.some(i => i.ruleCode === 'ATTR_001')).toBe(true);
+    expect(issues.some(i => i.ruleCode === 'ATTR_001')).toBe(false);
   });
 
 });

@@ -19,26 +19,26 @@ function makeCtx(text: string): FileContext {
 }
 
 describe('checkPunctuation', () => {
-  // ===== PUNCT_004 引号/括号配对 =====
+  // ===== PUNCT_004 引号/括号配对（2026-08 噪音清理：全文统计无定位已移除） =====
 
-  it('PUNCT_004: 左引号多于右引号应检出（修复前永不触发）', () => {
+  it('PUNCT_004 已移除：引号不配对不再报（全文统计无法定位）', () => {
     const issues = checkPunctuation(makeCtx('他说：“今天天气很好。明天也要出门。'));
-    expect(issues.some(i => i.ruleCode === 'PUNCT_004')).toBe(true);
+    expect(issues.some(i => i.ruleCode === 'PUNCT_004')).toBe(false);
   });
 
-  it('PUNCT_004: 右引号多于左引号应检出', () => {
+  it('PUNCT_004 已移除：右引号多余不再报', () => {
     const issues = checkPunctuation(makeCtx('他今天出门了。”这句话有点奇怪。'));
-    expect(issues.some(i => i.ruleCode === 'PUNCT_004')).toBe(true);
+    expect(issues.some(i => i.ruleCode === 'PUNCT_004')).toBe(false);
   });
 
-  it('PUNCT_004: 引号配对不报错', () => {
+  it('PUNCT_004 已移除：引号配对正常也不报', () => {
     const issues = checkPunctuation(makeCtx('他说：“今天天气很好。”大家都很高兴。'));
     expect(issues.some(i => i.ruleCode === 'PUNCT_004')).toBe(false);
   });
 
-  it('PUNCT_004: 中文括号不配对应检出', () => {
+  it('PUNCT_004 已移除：括号不配对不再报', () => {
     const issues = checkPunctuation(makeCtx('这是（一个未闭合的括号。'));
-    expect(issues.some(i => i.ruleCode === 'PUNCT_004')).toBe(true);
+    expect(issues.some(i => i.ruleCode === 'PUNCT_004')).toBe(false);
   });
 
   // ===== PUNCT_003 连续重复标点 / 省略号 =====

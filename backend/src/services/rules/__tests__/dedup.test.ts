@@ -166,20 +166,38 @@ describe('P2-12 contract_rule_thresholds 死配置接通', () => {
       key: 'contract_rule_thresholds',
       value: { payment_advance_ratio_max: 0.5 },
     });
+    mockFindMany.mockResolvedValue([
+      { ruleCode: 'CONTRACT_PAYMENT', enabled: true, severity: 'warning', config: null },
+      { ruleCode: 'CONTRACT_PENALTY', enabled: true, severity: 'warning', config: null },
+      { ruleCode: 'CONTRACT_WARRANTY', enabled: true, severity: 'warning', config: null },
+      { ruleCode: 'CONTRACT_PRICE', enabled: true, severity: 'warning', config: null },
+      { ruleCode: 'CONTRACT_LIABILITY', enabled: true, severity: 'warning', config: null },
+      { ruleCode: 'CONTRACT_PAYMENT_001', enabled: true, severity: 'warning', config: null },
+    ]);
     const ctx = makeCtx({
       reviewMode: 'CONTRACT_REVIEW' as any,
       extractedText: '预付款比例 50%，支付方式详见付款计划。',
     });
+    invalidateRuleConfigCache();
     const issues = await runAllRules(ctx);
     expect(issues.some(i => i.ruleCode === 'CONTRACT_PAYMENT_001')).toBe(false);
   });
 
   it('runAllRules：无 DB 配置时内置默认生效（预付款 50% > 30% 报 CONTRACT_PAYMENT_001）', async () => {
     mockSystemConfigFindUnique.mockResolvedValue(null);
+    mockFindMany.mockResolvedValue([
+      { ruleCode: 'CONTRACT_PAYMENT', enabled: true, severity: 'warning', config: null },
+      { ruleCode: 'CONTRACT_PENALTY', enabled: true, severity: 'warning', config: null },
+      { ruleCode: 'CONTRACT_WARRANTY', enabled: true, severity: 'warning', config: null },
+      { ruleCode: 'CONTRACT_PRICE', enabled: true, severity: 'warning', config: null },
+      { ruleCode: 'CONTRACT_LIABILITY', enabled: true, severity: 'warning', config: null },
+      { ruleCode: 'CONTRACT_PAYMENT_001', enabled: true, severity: 'warning', config: null },
+    ]);
     const ctx = makeCtx({
       reviewMode: 'CONTRACT_REVIEW' as any,
       extractedText: '预付款比例 50%，支付方式详见付款计划。',
     });
+    invalidateRuleConfigCache();
     const issues = await runAllRules(ctx);
     expect(issues.some(i => i.ruleCode === 'CONTRACT_PAYMENT_001')).toBe(true);
   });

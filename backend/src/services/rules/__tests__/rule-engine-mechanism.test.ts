@@ -80,31 +80,33 @@ describe('规则引擎机制（P1-8）', () => {
         { id: 'r2', ruleCode: 'NAME_002', enabled: false, severity: 'warning', config: null },
       ]);
       const map = await loadRuleConfigsFromDB();
-      expect(map.get('NAME')!.enabled).toBe(false);
+      // 修复后语义：前缀下至少有一条规则启用 → 前缀启用（不再"任一禁用则禁用"）
+      expect(map.get('NAME')!.enabled).toBe(true);
       expect(map.get('NAME_002')!.enabled).toBe(false);
     });
   });
 
   describe('Bug1: options.severityMap 被静默丢弃', () => {
+    // 2026-08 噪音清理后 NAME_001 不再产出，severityMap 载体改用 NAME_002（空格检查）
     it('runAllRules 中调用方 severityMap 应覆盖 DB 配置', async () => {
-      // DB: NAME_001 = error
+      // DB: NAME_002 = error
       mockFindMany.mockResolvedValue([
-        { id: 'r1', ruleCode: 'NAME_001', enabled: true, severity: 'error', config: null },
+        { id: 'r1', ruleCode: 'NAME_002', enabled: true, severity: 'error', config: null },
       ]);
-      const issues = await runAllRules(makeCtx(), {
-        severityMap: new Map([['NAME_001', 'info']]), // 调用方要求降为 info
+      const issues = await runAllRules(makeCtx({ fileName: 'report v2.pdf', filePath: '/test/report v2.pdf' }), {
+        severityMap: new Map([['NAME_002', 'info']]), // 调用方要求降为 info
       });
-      const nameIssue = issues.find(i => i.ruleCode === 'NAME_001');
+      const nameIssue = issues.find(i => i.ruleCode === 'NAME_002');
       expect(nameIssue).toBeDefined();
       expect(nameIssue!.severity).toBe('info'); // 旧实现会丢 options，得到 DB 的 error
     });
 
     it('未传 severityMap 时 DB 配置生效（默认路径不回归）', async () => {
       mockFindMany.mockResolvedValue([
-        { id: 'r1', ruleCode: 'NAME_001', enabled: true, severity: 'error', config: null },
+        { id: 'r1', ruleCode: 'NAME_002', enabled: true, severity: 'error', config: null },
       ]);
-      const issues = await runAllRules(makeCtx());
-      const nameIssue = issues.find(i => i.ruleCode === 'NAME_001');
+      const issues = await runAllRules(makeCtx({ fileName: 'report v2.pdf', filePath: '/test/report v2.pdf' }));
+      const nameIssue = issues.find(i => i.ruleCode === 'NAME_002');
       expect(nameIssue).toBeDefined();
       expect(nameIssue!.severity).toBe('error');
     });
@@ -112,6 +114,7 @@ describe('规则引擎机制（P1-8）', () => {
     it('DB 前缀禁用时规则整体跳过', async () => {
       mockFindMany.mockResolvedValue([
         { id: 'r1', ruleCode: 'NAME_001', enabled: false, severity: 'error', config: null },
+        { id: 'r2', ruleCode: 'NAME_002', enabled: false, severity: 'error', config: null },
       ]);
       const issues = await runAllRules(makeCtx());
       expect(issues.some(i => i.ruleCode.startsWith('NAME_'))).toBe(false);

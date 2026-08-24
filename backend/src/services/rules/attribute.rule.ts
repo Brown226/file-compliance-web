@@ -9,45 +9,9 @@ export function checkCoverAttributes(ctx: FileContext, config?: any): RuleIssue[
   const issues: RuleIssue[] = [];
   const text = ctx.extractedText || '';
 
-  // ATTR_001: 图册(文件)编号检查
-  const albumCodeMatch = text.match(/(?:图册|文件)\s*(?:编号|号)[：:\s]*([A-Z0-9\-]+)/i);
-  if (!albumCodeMatch) {
-    issues.push({
-      issueType: 'COMPLETENESS', ruleCode: 'ATTR_001', severity: 'error',
-      originalText: '(未检测到)',
-      description: '封面未检测到图册(文件)编号，请确认是否已填写。',
-    });
-  }
-
-  // ATTR_004: 工程号检查
-  const projectNoMatch = text.match(/工程号[：:\s]*([A-Z0-9]+)/i);
-  if (!projectNoMatch || projectNoMatch[1].trim().length < 3) {
-    issues.push({
-      issueType: 'COMPLETENESS', ruleCode: 'ATTR_004', severity: 'error',
-      originalText: projectNoMatch ? projectNoMatch[1] : '(未检测到)',
-      description: '封面工程号为空或格式错误，请填写正确的工程号。',
-    });
-  }
-
-  // ATTR_005: 子项号/系统号检查
-  const subItemMatch = text.match(/子项号[：:\s]*([A-Z0-9]+)/i) || text.match(/系统号[：:\s]*([A-Z0-9]+)/i);
-  if (!subItemMatch || subItemMatch[1].trim().length < 2) {
-    issues.push({
-      issueType: 'COMPLETENESS', ruleCode: 'ATTR_005', severity: 'warning',
-      originalText: subItemMatch ? subItemMatch[1] : '(未检测到)',
-      description: '封面子项号/系统号为空，请确认是否已填写。',
-    });
-  }
-
-  // ATTR_006: 子项/系统名称检查
-  const subNameMatch = text.match(/(?:子项|系统)\s*名称[：:\s]*([^\n\r]{2,})/);
-  if (!subNameMatch || subNameMatch[1].trim().length < 2) {
-    issues.push({
-      issueType: 'COMPLETENESS', ruleCode: 'ATTR_006', severity: 'warning',
-      originalText: subNameMatch ? subNameMatch[1] : '(未检测到)',
-      description: '封面子项/系统名称为空，请确认是否已填写。',
-    });
-  }
+  // 2026-08 噪音清理：移除 ATTR_001/004/005/006/009 五项「未检测到即报」的封面缺失检查。
+  // 这类检查强绑定核电图册封面版式，非封面文档 100% 误报，实测为 RULE_ONLY 最大噪音源。
+  // 仅保留「有值才校验格式」的条目（ATTR_002/003/007/008/010），对任意文档均无副作用。
 
   // ATTR_003: 状态代码检查
   const statusCodes: string[] = config?.statusCodes || ['CFC', 'PRE', 'IFA', 'IFU', 'DES'];
@@ -105,15 +69,7 @@ export function checkCoverAttributes(ctx: FileContext, config?: any): RuleIssue[
     }
   }
 
-  // ATTR_009: 图册名称检查
-  const nameMatch = text.match(/(?:图册|文件)\s*名称[：:\s]*([^\n\r]{2,})/);
-  if (!nameMatch || nameMatch[1].trim().length < 2) {
-    issues.push({
-      issueType: 'COMPLETENESS', ruleCode: 'ATTR_009', severity: 'warning',
-      originalText: '(未检测到)',
-      description: '封面未检测到图册(文件)名称，请确认是否已填写。',
-    });
-  }
+  // ATTR_009 已移除（2026-08 噪音清理）：「未检测到图册名称即报」同属封面版式强绑定噪音
 
   // ATTR_010: 册数合理性检查
   const volumeMatch = text.match(/共\s*(\d+)\s*册.*?第\s*(\d+)\s*册|第\s*(\d+)\s*册.*?共\s*(\d+)\s*册/);

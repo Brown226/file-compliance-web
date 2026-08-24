@@ -34,9 +34,9 @@ describe('Format Rule (FORMAT)', () => {
 
   /* ===== FORMAT 正例 ===== */
 
-  it('FORMAT_001: should detect missing cover fields', () => {
+  it('FORMAT_001 已移除：非封面文本不再报封面缺字段（2026-08 噪音清理）', () => {
     const issues = checkFormatRules(ctx('随意文本，没有封面必填字段'));
-    expect(issues.some(i => i.ruleCode === 'FORMAT_001')).toBe(true);
+    expect(issues.some(i => i.ruleCode === 'FORMAT_001')).toBe(false);
   });
 
   it('FORMAT_002: should detect missing table of contents columns', () => {

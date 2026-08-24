@@ -156,34 +156,9 @@ export function checkPunctuation(ctx: FileContext, _config?: any): RuleIssue[] {
     count7++;
   }
 
-  // ===== 4. 引号/括号不配对 =====
-  // 中文引号配对检查（分别统计左右引号；修复前左右共用同一正则，条件恒等永不触发，2026-08）
-  const leftDoubleQuote = (text.match(/“/g) || []).length;
-  const rightDoubleQuote = (text.match(/”/g) || []).length;
-  if (leftDoubleQuote !== rightDoubleQuote && leftDoubleQuote + rightDoubleQuote > 0) {
-    issues.push({
-      issueType: 'PUNCTUATION',
-      ruleCode: 'PUNCT_004',
-      severity: 'warning',
-      originalText: '""',
-      suggestedText: '',
-      description: `中文引号不配对：左引号 ${leftDoubleQuote} 个，右引号 ${rightDoubleQuote} 个`,
-    });
-  }
-
-  // 中文括号配对检查
-  const leftParen = (text.match(/（/g) || []).length;
-  const rightParen = (text.match(/）/g) || []).length;
-  if (leftParen !== rightParen && leftParen + rightParen > 0) {
-    issues.push({
-      issueType: 'PUNCTUATION',
-      ruleCode: 'PUNCT_004',
-      severity: 'warning',
-      originalText: '（）',
-      suggestedText: '',
-      description: `中文括号不配对：左括号 ${leftParen} 个，右括号 ${rightParen} 个`,
-    });
-  }
+  // PUNCT_004 已移除（2026-08 噪音清理）：引号/括号配对原为全文数量统计——
+  // 只报一条且无定位信息，PDF 提取丢字符时必然误报，用户无法定位修复。
+  // 如需恢复建议改为逐段扫描并报告首个失配位置。
 
   return issues;
 }

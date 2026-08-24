@@ -21,15 +21,10 @@ export function checkNaming(ctx: FileContext, config?: any): RuleIssue[] {
     return issues; // 扩展名不对则不再继续检查
   }
 
-  // NAME_001: 包含中文字符
-  if (/[\u4e00-\u9fff]/.test(nameWithoutExt)) {
-    issues.push({
-      issueType: 'NAMING', ruleCode: 'NAME_001', severity: 'error',
-      originalText: name,
-      suggestedText: nameWithoutExt.replace(/[\u4e00-\u9fff]+/g, '') + '.' + ctx.fileType,
-      description: '文件名包含中文字符，应使用规范编码命名。',
-    });
-  }
+  // NAME_001 已移除（2026-08 噪音清理）：「文件名含中文字符」在国内工程场景属常态，
+  // 报 error 噪音大于价值。但保留「含中文则跳过编码格式检查」的门控语义——
+  // 中文文件名不可能匹配编码格式，不门控会把噪音原样转移到 NAME_004~007。
+  const hasChineseError = /[\u4e00-\u9fff]/.test(nameWithoutExt);
 
   // NAME_002: 包含空格
   if (/\s/.test(nameWithoutExt)) {
@@ -49,9 +44,6 @@ export function checkNaming(ctx: FileContext, config?: any): RuleIssue[] {
       description: '文件名包含非法特殊字符，仅保留字母、数字、连字符(-)和括号()。',
     });
   }
-
-  // 如果已经有中文字符错误，后续格式检查意义不大（中文文件名不可能匹配编码格式）
-  const hasChineseError = issues.some(i => i.ruleCode === 'NAME_001');
 
   if (!hasChineseError) {
     // 根据文件类型选择正则检查

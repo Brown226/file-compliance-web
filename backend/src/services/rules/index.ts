@@ -43,6 +43,9 @@ const RULE_CONFIG_CACHE_TTL_MS = 60_000; // 60秒缓存
 let ruleConfigCache: Map<string, { enabled: boolean; severity: string; config?: any }> | null = null;
 let ruleConfigCacheTimestamp = 0;
 
+// 单条 ruleCode 级别的 enabled 映射（用于运行阶段精确跳过已禁用的规则）
+let ruleCodeEnabledCache: Map<string, boolean> | null = null;
+
 // ===== 合同规则阈值缓存（P2-12）：system_configs.contract_rule_thresholds 的运行时缓存 =====
 let contractThresholdCache: Record<string, any> | null = null;
 let contractThresholdCacheTimestamp = 0;
@@ -51,6 +54,7 @@ let contractThresholdCacheTimestamp = 0;
 export function invalidateRuleConfigCache(): void {
   ruleConfigCache = null;
   ruleConfigCacheTimestamp = 0;
+  ruleCodeEnabledCache = null;
   contractThresholdCache = null;
   contractThresholdCacheTimestamp = 0;
 }
@@ -292,14 +296,14 @@ export async function loadRuleConfigsFromDB(): Promise<Map<string, { enabled: bo
     }
 
     // 第二遍：按注册表前缀聚合（用于规则级 enabled 判断）
-    // 同前缀多条规则：任一禁用则整体禁用；severity 取最严重
+    // 同前缀多条规则：只要还有至少一条规则启用，前缀就不禁用；severity 取最严重
     for (const rule of rules) {
       const prefix = matchRulePrefix(rule.ruleCode);
       const existing = configMap.get(prefix);
 
       if (existing) {
-        // 前缀聚合：只更新 enabled（任一禁用则禁用），不覆盖 severity/config（粒度已由完整 ruleCode 保留）
-        if (!rule.enabled) existing.enabled = false;
+        // 前缀聚合：只要前缀下还有至少一条规则启用，enabled 就保持 true
+        if (rule.enabled) existing.enabled = true;
       } else {
         configMap.set(prefix, {
           enabled: rule.enabled,
@@ -307,6 +311,12 @@ export async function loadRuleConfigsFromDB(): Promise<Map<string, { enabled: bo
           config: rule.config as any || undefined,
         });
       }
+    }
+
+    // 构建单条 ruleCode 级别的 enabled 映射（用于运行阶段精确跳过已禁用的规则）
+    ruleCodeEnabledCache = new Map<string, boolean>();
+    for (const rule of rules) {
+      ruleCodeEnabledCache.set(rule.ruleCode, rule.enabled);
     }
 
     ruleConfigCache = configMap;
@@ -473,11 +483,25 @@ export async function runAllRules(ctx: FileContext, options?: RunRulesOptions): 
     // 检查规则执行条件
     if (!rule.condition(ctx)) continue;
 
-    // 检查数据库中规则是否已禁用
+    // 检查数据库中规则是否已禁用（前缀级 + 单条 ruleCode 级）
     if (dbConfigMap) {
       const ruleConfig = dbConfigMap.get(rule.prefix);
       if (ruleConfig && !ruleConfig.enabled) {
         continue;
+      }
+      // 单条 ruleCode 级别检查：如果 DB 中该前缀对应的完整规则被禁用，则跳过
+      if (ruleCodeEnabledCache) {
+        // 从 registry 中查找该规则前缀对应的所有 ruleCode，检查是否全部禁用
+        // 该前缀下所有规则均被禁用时，才跳过
+        let anyEnabled = false;
+        for (const [ruleCode, enabled] of ruleCodeEnabledCache) {
+          const prefix = matchRulePrefix(ruleCode);
+          if (prefix === rule.prefix && enabled) {
+            anyEnabled = true;
+            break;
+          }
+        }
+        if (!anyEnabled) continue;
       }
     }
 

@@ -41,8 +41,8 @@ export function checkFormatRules(ctx: FileContext, config?: any): RuleIssue[] {
   const issues: RuleIssue[] = [];
   const text = ctx.extractedText || '';
 
-  // FORMAT_001: 封面必填字段完整性
-  issues.push(...checkFormatCoverFields(text, config));
+  // FORMAT_001 已移除（2026-08 噪音清理）：封面必填字段完整性检查强绑定核电图册封面版式，
+  // 非封面文档 100% 误报，实测为 RULE_ONLY 最大噪音源之一。extractCoverArea 保留（其他模块引用）。
 
   // FORMAT_002: 目录表头规范性
   issues.push(...checkFormatTableOfContents(text));
@@ -61,48 +61,6 @@ export function checkFormatRules(ctx: FileContext, config?: any): RuleIssue[] {
 
   // OPT-014/OPT-034: FORMAT_006 半角/全角标点混用检测
   issues.push(...checkFormatPunctuationConsistency(text, config));
-
-  return issues;
-}
-
-/**
- * FORMAT_001: 检测封面区域必填字段是否完整存在
- * 必填项: 专业、工种(区分)、版次、状态、设计阶段、工程号、子项号
- * 注意: 图册名称由 ATTR_009 专门检查，避免重复告警
- */
-function checkFormatCoverFields(text: string, config?: any): RuleIssue[] {
-  const issues: RuleIssue[] = [];
-
-  // 尝试定位封面区域（通常在文本的前30%或包含"封面"/"图 册"等关键词）
-  const coverArea = extractCoverArea(text);
-
-  // 封面必填字段列表及对应的正则模式
-  const requiredFields: Array<{ label: string; pattern: RegExp; code: string }> = config?.requiredFields || [
-    { label: '专业', pattern: /专\s*业[：:\s]/, code: 'FORMAT_001' },
-    { label: '工种', pattern: /工\s*种[：:\s]/, code: 'FORMAT_001' },       // 工种和专业是不同字段
-    { label: '版次', pattern: /版\s*次[：:\s]/, code: 'FORMAT_001' },
-    { label: '状态', pattern: /状\s*态[：:\s]|状态码/, code: 'FORMAT_001' },
-    { label: '设计阶段', pattern: /设\s*计\s*阶\s*段[：:\s]/, code: 'FORMAT_001' },
-    { label: '工程号', pattern: /工\s*程\s*号[：:\s]|工程编码/, code: 'FORMAT_001' },
-    { label: '子项号', pattern: /子\s*项\s*号[：:\s]/, code: 'FORMAT_001' },
-    // 图册名称由 ATTR_009 专门检查，此处不再重复
-  ];
-
-  const missingFields: string[] = [];
-  for (const field of requiredFields) {
-    if (!field.pattern.test(coverArea)) {
-      missingFields.push(field.label);
-    }
-  }
-
-  if (missingFields.length > 0) {
-    issues.push({
-      issueType: 'VIOLATION', ruleCode: 'FORMAT_001',
-      severity: missingFields.includes('专业') || missingFields.includes('版次') ? 'error' : 'warning',
-      originalText: `(缺失: ${missingFields.join(', ')})`,
-      description: `封面缺少必要字段: ${missingFields.join('、')}。核电工程图册封面应包含完整的属性信息，确保各审批环节可追溯。`,
-    });
-  }
 
   return issues;
 }
