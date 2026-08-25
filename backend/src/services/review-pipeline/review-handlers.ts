@@ -21,6 +21,11 @@ export type ReviewHandler = (ctx: PipelineContext) => Promise<{
   aiIssues: ReviewIssue[];
   sources?: SourceReference[];
   usedEngine?: string;
+  /** 降级标记：service 层发生降级（RAG→LLM 直审、参照比对→普通审查、Agent→旧策略）时原样透传。
+   *  修复 P2-13：此前该标记在 handler 处被丢弃，编排层的 WS rag_degraded 告警与
+   *  task.degradedReason 落库对 AI 模式全部失效。 */
+  degraded?: boolean;
+  degradedReason?: string;
 }>;
 
 /**
@@ -173,13 +178,30 @@ const handleLibraryReview: ReviewHandler = async (ctx) => {
     });
     // 术语白名单过滤
     mergedIssues = await TerminologyService.filterTerminologyIssues(text, mergedIssues);
-    return { aiIssues: mergedIssues, usedEngine: `${ragResult.engine}+${specResult.engine}` };
+    // 降级标记透传（修复 P2-13）
+    const ragDegraded = (ragResult as any).degraded as boolean | undefined;
+    const specDegraded = (specResult as any).degraded as boolean | undefined;
+    const reasons = [
+      ragDegraded ? ((ragResult as any).degradedReason as string | undefined) : null,
+      specDegraded ? ((specResult as any).degradedReason as string | undefined) : null,
+    ].filter(Boolean) as string[];
+    return {
+      aiIssues: mergedIssues,
+      usedEngine: `${ragResult.engine}+${specResult.engine}`,
+      ...(reasons.length > 0 ? { degraded: true, degradedReason: reasons.join('；') } : {}),
+    };
   }
 
   if (hasKnowledge) {
     const result = await AiReviewService.runAIReview(text, ctx, scene, config);
     result.issues = await TerminologyService.filterTerminologyIssues(text, result.issues);
-    return { aiIssues: result.issues, usedEngine: result.engine, sources: result.sources };
+    return {
+      aiIssues: result.issues,
+      usedEngine: result.engine,
+      sources: result.sources,
+      degraded: (result as any).degraded || undefined,
+      degradedReason: (result as any).degradedReason || undefined,
+    };
   }
 
   if (hasSemanticSpec) {

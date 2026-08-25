@@ -152,6 +152,7 @@ export class AiReviewService {
 
     // ���д�����Ƭ���������������� AI ��飩
     const CONCURRENT_LIMIT = await getChunkConcurrency();
+    let failedChunks = 0;
     const chunkResults = await parallelLimit(chunks, CONCURRENT_LIMIT, async (chunk, _idx) => {
       try {
         let llmIssues: ReviewIssue[];
@@ -198,11 +199,16 @@ export class AiReviewService {
         await ctx.onChunkProgress?.(chunk.text.length, llmIssues, chunk.chunkIndex, totalChunks, knowledgeContext ? 'llm-with-knowledge' : 'llm-direct');
         return llmIssues;
       } catch (e: any) {
-        console.warn(`[Pipeline] LLM ����Ƭ ${chunk.chunkIndex + 1}/${totalChunks} ʧ��:`, e.message);
-        return [];
+        console.warn(`[Pipeline] LLM ����Ƭ ${chunk.chunkIndex + 1}/${totalChunks} ʧ��:`, e.message); failedChunks++; return [];
       }
     });
     for (const r of chunkResults) issues.push(...r);
+
+    // 全败判定（修复 P1：此前全部分片失败仍正常返回空 issues，用户看到「完成、0 问题」假象）。
+    // 抛错后：RAG 链路会捕获并标记 degraded 返回；纯 LLM 模式则文件级 FAILED，失败可见。
+    if (totalChunks > 0 && failedChunks === totalChunks) {
+      throw new Error(`[ALL_CHUNKS_FAILED] LLM 直审全部 ${totalChunks} 个分片调用失败`);
+    }
 
     const engineName = knowledgeContext ? 'llm-with-knowledge' : 'llm-direct';
     return { issues, engine: engineName };
@@ -336,6 +342,7 @@ export class AiReviewService {
       const totalChunks = chunks.length;
 
       // 短文本单分片路径：跳过 parallelLimit 无意义开销
+      let failedChunks = 0;
       let chunkResults: ReviewIssue[][];
       if (totalChunks === 1) {
         try {
@@ -358,6 +365,7 @@ export class AiReviewService {
           chunkResults = [llmIssues];
         } catch (e: any) {
           console.warn(`[Pipeline] LLM 单分片调用失败:`, e.message);
+          failedChunks++;
           chunkResults = [[]];
         }
       } else {
@@ -381,16 +389,19 @@ export class AiReviewService {
           await ctx.onChunkProgress?.(chunk.text.length, llmIssues, chunk.chunkIndex, totalChunks, 'llm-direct');
           return llmIssues;
         } catch (e: any) {
-          console.warn(`[Pipeline] LLM ����Ƭ ${chunk.chunkIndex + 1}/${totalChunks} ʧ��:`, e.message);
-          return [];
+          console.warn(`[Pipeline] LLM ����Ƭ ${chunk.chunkIndex + 1}/${totalChunks} ʧ��:`, e.message); failedChunks++; return [];
         }
       });
       }
       for (const r of chunkResults) issues.push(...r);
+      // 全败判定（修复 P1）：所有分片均失败时显式抛错，避免「零问题假合规」
+      if (totalChunks > 0 && failedChunks === totalChunks) {
+        throw new Error(`[ALL_CHUNKS_FAILED] LLM 直调全部 ${totalChunks} 个分片调用失败`);
+      }
       return { issues: StandardTraceabilityService.enrichWithStandardRef(issues), engine: 'llm-direct' };
     } catch (e) {
       console.error('[Pipeline] LLM ֱ�ӵ���ʧ��:', e);
-      return { issues: [], engine: 'none' };
+      throw e;
     }
   }
 
@@ -470,6 +481,7 @@ export class AiReviewService {
       // 用更高并发抵消 chunk 数量增多带来的轮次增加
       // C1: getChunkConcurrency(scene) 内置场景化下限保护（typo_grammar=4, doc_review=3）
       const CONCURRENT_LIMIT = await getChunkConcurrency(scene);
+      let failedChunks = 0;
       const chunkResults = await parallelLimit(chunks, CONCURRENT_LIMIT, async (chunk) => {
         try {
           let userTpl = await PromptLoader.loadUserPrompt(scene, 'default');
@@ -498,8 +510,7 @@ export class AiReviewService {
           await ctx.onChunkProgress?.(chunk.text.length, llmIssues, chunk.chunkIndex, totalChunks, 'llm-only');
           return llmIssues;
         } catch (e: any) {
-          console.warn(`[Pipeline] LLM ����Ƭ ${chunk.chunkIndex + 1}/${totalChunks} ʧ��:`, e.message);
-          return [];
+          console.warn(`[Pipeline] LLM ����Ƭ ${chunk.chunkIndex + 1}/${totalChunks} ʧ��:`, e.message); failedChunks++; return [];
         }
       });
       const issues: ReviewIssue[] = [];
@@ -508,12 +519,17 @@ export class AiReviewService {
       // ���Ƭȥ�أ��� originalText ǰ 60 �ַ�ȥ�أ��� semantic-spec ��ͬ���ԣ�
       // 分片去重：精确去重 + 模糊去重（Levenshtein ≤ 2，长度 ≥ 4）
       // 统一使用 dedupIssues 工具，与 handleTypoGrammar / handleLibraryReview 保持一致
+      // 全败判定（修复 P1）：所有分片均失败时显式抛错，避免「零问题假合规」
+      if (totalChunks > 0 && failedChunks === totalChunks) {
+        throw new Error(`[ALL_CHUNKS_FAILED] LLM 审查全部 ${totalChunks} 个分片调用失败`);
+      }
+
       const deduped = dedupIssues(issues);
 
       return { issues: StandardTraceabilityService.enrichWithStandardRef(deduped), engine: 'llm-direct' };
     } catch (e) {
       console.error('[Pipeline] LLM ����ʧ��:', e);
-      return { issues: [], engine: 'none' };
+      throw e;
     }
   }
 
