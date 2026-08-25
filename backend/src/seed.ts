@@ -242,6 +242,34 @@ async function seed() {
 
     // ===== 正文编码校验 (TYPO确定性) — 基于真实测试文件错误分析报告新增 =====
     { ruleCode: 'TYPO_001', name: '正文内可疑编码', category: 'TYPO', description: '文档内发现与文件名项目编码部分匹配但不完全一致的ID-code编码，可能是编码错误', severity: 'warning', enabled: true },
+
+    // ===== 格式规范补充 (FORMAT) — 修复：代码已实现但此前未播种，severity 被前缀聚合错误抬级 =====
+    { ruleCode: 'FORMAT_006', name: '中英文标点混用', category: 'FORMAT', description: '中文语境中使用半角标点(如 , . ; :)，建议统一为对应全角标点', severity: 'info', enabled: true },
+    { ruleCode: 'FORMAT_008', name: 'Unicode上标字符', category: 'FORMAT', description: '正文使用 Unicode 上标字符(如 ²³)，建议改为规范表示形式', severity: 'info', enabled: true },
+    { ruleCode: 'FORMAT_009', name: 'Unicode下标字符', category: 'FORMAT', description: '正文使用 Unicode 下标字符，建议改为规范表示形式', severity: 'info', enabled: true },
+
+    // ===== 标点规范 (PUNCTUATION) — 修复：此前零播种导致管理面板不可见、无法停用 =====
+    { ruleCode: 'PUNCT_001', name: '中英文标点混用', category: 'PUNCTUATION', description: '中文语境中混用半角逗号/句号/冒号/分号，应统一使用全角标点', severity: 'warning', enabled: true },
+    { ruleCode: 'PUNCT_002', name: '全半角括号混用', category: 'PUNCTUATION', description: '同一处所中英文括号混用(如"(内容）")，应统一为同一种括号', severity: 'warning', enabled: true },
+    { ruleCode: 'PUNCT_003', name: '连续重复标点', category: 'PUNCTUATION', description: '出现连续重复标点(如 。。、！！)，通常为笔误，建议删去多余标点', severity: 'info', enabled: true },
+
+    // ===== 内部编码校验 (ENCODING) — 同上，补播已实现未入库规则 =====
+    { ruleCode: 'INTERNAL_CODE_001', name: '正文内工程编码可疑', category: 'ENCODING', description: '正文中出现与文件名项目编码部分匹配但不完全一致的工程编码，可能是编码错误', severity: 'warning', enabled: true },
+
+    // ===== 图纸审查 (DWG) — 六个前缀此前均未播种 =====
+    { ruleCode: 'DWG_TITLE_001', name: '图签标题栏不完整', category: 'DWG', description: '图纸未检测到标题栏或标题栏缺少必填字段，请检查图签完整性', severity: 'warning', enabled: true },
+    { ruleCode: 'DWG_LAYER_001', name: '图层命名不规范', category: 'DWG', description: '图层命名不符合规范(如中英文混用、非法字符)，建议统一命名规范', severity: 'warning', enabled: true },
+    { ruleCode: 'DWG_DIM_001', name: '尺寸标注异常', category: 'DWG', description: '尺寸标注缺失、重叠或样式不规范，请检查标注完整性与规范性', severity: 'warning', enabled: true },
+    { ruleCode: 'DWG_STDREF_001', name: '标准引用缺失', category: 'DWG', description: '图纸中未检测到标准规范引用，建议检查是否需要引用相关设计标准', severity: 'warning', enabled: true },
+    { ruleCode: 'DWG_SCALE_001', name: '比例标注缺失或非标', category: 'DWG', description: '图纸未检测到比例标注或比例格式非标准，建议在标题栏中规范标注', severity: 'warning', enabled: true },
+    { ruleCode: 'DWG_OVERLAP_001', name: '图元重叠干涉', category: 'DWG', description: '检测到图元元素重叠或干涉，可能影响图纸可读性，建议调整布局', severity: 'warning', enabled: true },
+
+    // ===== 合同规则 (VIOLATION) — 阈值类规则此前无法经面板启停 =====
+    { ruleCode: 'CONTRACT_PAYMENT_001', name: '预付款比例超限', category: 'VIOLATION', description: '合同预付款比例超出允许上限(默认30%)，存在资金风险', severity: 'error', enabled: true },
+    { ruleCode: 'CONTRACT_PENALTY_001', name: '违约金比例超限', category: 'VIOLATION', description: '合同违约金比例超出允许上限(默认20%)，条款风险较高', severity: 'error', enabled: true },
+    { ruleCode: 'CONTRACT_WARRANTY_001', name: '质保期约定超限', category: 'VIOLATION', description: '质保期约定超出常规年限(默认24个月)，请确认是否符合公司政策', severity: 'warning', enabled: true },
+    { ruleCode: 'CONTRACT_INSURANCE_001', name: '缺少保险条款', category: 'VIOLATION', description: '合同缺少保险条款，核电工程合同应明确工程保险、第三方责任险等', severity: 'warning', enabled: true },
+    { ruleCode: 'CONTRACT_DISPUTE_001', name: '缺少争议解决条款', category: 'VIOLATION', description: '合同缺少争议解决条款', severity: 'warning', enabled: true },
   ];
 
   for (const rule of defaultRules) {

@@ -237,6 +237,7 @@ frontend/*.tgz
 .workbuddy/
 .codebuddy/
 .playwright-mcp/
+.superpowers/
 
 # Benchmark data (large generated files)
 backend/benchmarks/
