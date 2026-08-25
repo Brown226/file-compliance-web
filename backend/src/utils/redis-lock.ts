@@ -34,6 +34,8 @@ export class RedisLock {
   private lockValue: string;
   private timeout: number;
   private acquired: boolean = false;
+  /** 最近一次 acquire() 因 Redis 异常失败的错误。供调用方区分「并发冲突」与「锁服务故障」。 */
+  public lastError: unknown = null;
   private watchdogTimer: ReturnType<typeof setInterval> | null = null;
   private extendInterval: number;
 
@@ -60,6 +62,7 @@ export class RedisLock {
    * @returns 是否成功获取锁
    */
   async acquire(): Promise<boolean> {
+    this.lastError = null;
     try {
       // ioredis 类型定义不支持 NX+EX 组合，使用 as any 绕过
       const client = redisClient.getClient() as any;
@@ -72,6 +75,8 @@ export class RedisLock {
 
       return this.acquired;
     } catch (e) {
+      // 记录故障原因：调用方据此区分「未抢到锁（并发冲突）」与「Redis 异常（锁服务故障）」
+      this.lastError = e;
       console.error('[RedisLock] 获取锁失败:', e);
       return false;
     }
@@ -161,7 +166,7 @@ export async function withLock<T>(
   fn: () => Promise<T>,
   timeout: number = 30,
   autoExtend: boolean = true,
-): Promise<{ acquired: boolean; result?: T }> {
+): Promise<{ acquired: boolean; result?: T; error?: unknown }> {
   const lock = new RedisLock(lockKey, timeout, autoExtend);
   if (await lock.acquire()) {
     try {
@@ -171,5 +176,6 @@ export async function withLock<T>(
       await lock.release();
     }
   }
-  return { acquired: false };
+  // error 非空 = 锁服务本身故障（Redis 异常）；error 为空 = 正常并发冲突（他人持有锁）
+  return { acquired: false, error: lock.lastError ?? undefined };
 }

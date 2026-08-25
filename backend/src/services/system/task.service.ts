@@ -124,7 +124,7 @@ export class TaskService {
     selectedTemplateId?: string;  // 选择的审查模板ID
     intraFileConsistency?: boolean;  // 文件内一致性检查
     entryModule?: string;             // 前端入口模块（LIBRARY/CONSISTENCY/PROOFREAD/RULE_ONLY/DOC_REVIEW）
-    reviewMode?: string;              // 直接指定审查模式（如 SELF_CHECK）
+    reviewMode?: string;              // 直接指定审查模式（SELF_CHECK 除外：它只走独立端点）
     files?: Express.Multer.File[];
     dwgParsedData?: Record<string, any>;  // 前端 WASM 解析的 DWG 数据（按文件名映射）
   }): Promise<Task> {
@@ -153,13 +153,19 @@ export class TaskService {
         throw new Error('仅规则执行模式必须指定审查规范集或启用的规则前缀');
       }
     }
-    // 优先使用前端直接传的 reviewMode（如 SELF_CHECK），否则从 entryModule 或 reviewPlan 推导
-    const validReviewModes = ['LIBRARY_REVIEW', 'DOC_REVIEW', 'CONSISTENCY', 'TYPO_GRAMMAR', 'RULE_ONLY', 'SELF_CHECK', 'CONTRACT_REVIEW', 'DEC_REVIEW'];
+    // 优先使用前端直接传的 reviewMode，否则从 entryModule 或 reviewPlan 推导。
+    // SELF_CHECK 不在白名单：它有独立端点 /api/self-check/run（SelfCheckService），
+    // 经通用管道执行会被 REVIEW_HANDLERS.SELF_CHECK stub 吃掉，产出「零问题假合规」报告。
+    const validReviewModes = ['LIBRARY_REVIEW', 'DOC_REVIEW', 'CONSISTENCY', 'TYPO_GRAMMAR', 'RULE_ONLY', 'CONTRACT_REVIEW', 'DEC_REVIEW'];
     const resolvedReviewMode = (reviewMode && validReviewModes.includes(reviewMode))
       ? reviewMode
       : entryModule
         ? this.mapEntryModule(entryModule)
         : this.resolvePipelineSelector(normalizedReviewPlan);
+    // 防御性兜底：entryModule/plan 推导出 SELF_CHECK 时同样拦截
+    if ((resolvedReviewMode as string) === 'SELF_CHECK') {
+      throw new Error('SELF_CHECK 模式请使用独立端点 POST /api/self-check/run，不支持经通用任务管道创建');
+    }
     // 合同审查（CONTRACT_REVIEW）允许无模板直接审查，不需要等待参照文件上传
     const isContractReview = resolvedReviewMode === 'CONTRACT_REVIEW';
     const shouldDelayReview = normalizedReviewPlan.objective === 'COMPARE' && !isContractReview;

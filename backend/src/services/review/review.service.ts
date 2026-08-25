@@ -1,4 +1,4 @@
-﻿import prisma from '../../config/db';
+import prisma from '../../config/db';
 import { ParserService } from '../file/parser.service';
 import { LlmService } from '../llm/llm.service';
 import { PipelineContext, ReviewModeType } from '../review-pipeline';
@@ -376,7 +376,7 @@ export class ReviewService {
    */
   static async processTask(taskId: string): Promise<void> {
     // 防重复提交锁：同一 taskId 不能同时被处理
-    const { acquired } = await withLock(
+    const { acquired, error } = await withLock(
       `review:task:${taskId}`,
       async () => { await ReviewService._processTaskImpl(taskId); },
       300, // 5 分钟超时（长任务）
@@ -384,6 +384,24 @@ export class ReviewService {
     );
 
     if (!acquired) {
+      if (error) {
+        // 锁服务故障 ≠ 并发冲突：此处静默返回会让任务永久卡 PROCESSING（Bull job 却记 completed）。
+        // 显式置 FAILED，让用户与运维可感知、可重试（修复 P1：Redis 故障任务假死）。
+        console.error(`[Review] task ${taskId} 获取分布式锁失败（Redis 异常），显式置为 FAILED`, error);
+        try {
+          await prisma.task.update({ where: { id: taskId }, data: { status: 'FAILED' } });
+          WebSocketService.emitTaskProgress(taskId, {
+            type: 'error',
+            step: '锁服务异常',
+            progress: 0,
+            message: '系统锁服务暂时不可用（Redis 异常），任务未执行，请稍后重试。',
+            timestamp: Date.now(),
+          });
+        } catch (markErr) {
+          console.error(`[Review] task ${taskId} 置 FAILED 失败:`, markErr);
+        }
+        return;
+      }
       console.warn(`[Review] task ${taskId} already being processed by another worker, skipping`);
       return;
     }
@@ -1384,8 +1402,8 @@ const fileContexts = task.files.map(file => {
           reviewSource: 'SYSTEM',
           originalText: file.fileName,
           description: isDwg
-            ? 'DWG �ļ�δ����ȡ�ı����ݣ�ǰ�� WASM ��������δ�ɹ�����ͼֽ�����ܲ������������˹���顣'
-            : '�ļ������޷���ȡ��������ɨ�����ͼƬ�� PDF���� OCR ʶ��δ�ܳɹ���ȡ���֡������˹���顣',
+            ? 'DWG 图纸未能提取到文本内容（前端 WASM 解析未成功返回图签文本，图纸可能不含文字层），无法执行规则与标准引用检查，请人工检查。'
+            : '文件内容无法提取（可能为扫描件或图片型 PDF，且 OCR 识别未能成功提取文字），无法执行规则与标准引用检查，请人工检查。',
         },
       }).catch((e) => { console.warn(`[Review] ���ı�����д��ʧ��:`, e); });
     } else if (fastResult.textLength > 0 && allFastIssues.length === 0) {
@@ -1393,7 +1411,7 @@ const fileContexts = task.files.map(file => {
         taskId,
         file.id,
         file.fileName,
-        '�������ͱ�׼���ü���δ�������⡣�ý����������ȫ�Ϲ棬����ʾ��ǰ��������׼��δ������ȷ���⡣',
+        '规则引擎与标准引用检查均未发现问题。该文件看起来完全合规；同时提示：当前启用的规则集/标准库可能未覆盖该文件的内容类型，建议结合 AI 审查结果综合判断。',
       );
     }
 

@@ -110,11 +110,19 @@ export function clearCapabilitiesCache(): void {
 export async function saveModeCapabilitiesConfig(config: Record<string, any>): Promise<void> {
   const toSave: ModeCapabilitiesConfig = {};
   for (const [mode, cfg] of Object.entries(config)) {
+    // 白名单过滤：未知模式 key 不落库，防止垃圾数据永久污染 system_configs
+    if (!Object.prototype.hasOwnProperty.call(DEFAULT_MODE_CONFIGS, mode)) {
+      console.warn(`[ModeConfig] 保存配置时忽略未知模式: ${mode}`);
+      continue;
+    }
     const c = cfg as any;
     toSave[mode] = {
       enabled: c.enabled,
       rules: c.rules,
-      standardRef: !!c.standardRef,
+      // 原样保存、不做 !! 强转（修复 P1：undefined 曾被强转成 false 显式落库，
+      // 导致「只更新 enabled」的部分保存会静默关闭标准引用检查）。
+      // undefined 字段经 JSON.stringify 丢弃 → 读回合并时视为「无覆盖」，保持默认值。
+      standardRef: c.standardRef,
       ai: c.ai,
       aiStrategy: c.aiStrategy,
       crossFile: c.crossFile,

@@ -46,6 +46,11 @@ export class ImageTextCheckService {
       return issues;
     }
 
+    // 修复 TDZ：newIssues 必须在视觉复核分支之前声明。
+    // 原声明位于下方「标准引用一致性」段前，视觉分支内 newIssues.push 会触发
+    // ReferenceError，且被本分支 catch 吞掉伪装成「视觉复核失败」——视觉结果将永远静默丢失。
+    const newIssues: ReviewIssue[] = [];
+
     // 视觉复核（图片链路打通后启用）：options.imageBase64 存在时调用 DwgVisionService.analyze
     if (_options?.imageBase64) {
       try {
@@ -73,8 +78,6 @@ export class ImageTextCheckService {
         console.warn(`[ImageTextCheck] 视觉复核失败（降级跳过）: ${e.message}`);
       }
     }
-
-    const newIssues: ReviewIssue[] = [];
 
     // ===== 1. 标准引用一致性 =====
     if (dwg.standardRefs && dwg.standardRefs.length > 0) {

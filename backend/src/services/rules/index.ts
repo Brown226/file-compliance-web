@@ -297,6 +297,7 @@ export async function loadRuleConfigsFromDB(): Promise<Map<string, { enabled: bo
 
     // 第二遍：按注册表前缀聚合（用于规则级 enabled 判断）
     // 同前缀多条规则：只要还有至少一条规则启用，前缀就不禁用；severity 取最严重
+    const sevRank: Record<string, number> = { error: 3, warning: 2, info: 1 };
     for (const rule of rules) {
       const prefix = matchRulePrefix(rule.ruleCode);
       const existing = configMap.get(prefix);
@@ -304,6 +305,12 @@ export async function loadRuleConfigsFromDB(): Promise<Map<string, { enabled: bo
       if (existing) {
         // 前缀聚合：只要前缀下还有至少一条规则启用，enabled 就保持 true
         if (rule.enabled) existing.enabled = true;
+        // severity 取最严重（与上方注释一致）。
+        // 修复 P1：原实现只保留首行 severity——未播种的规则（如 FORMAT_006/008/009）
+        // 走前缀兜底时会错误继承首行级别（info 被抬成 error，或 error 被压成 info）。
+        if ((sevRank[rule.severity] || 0) > (sevRank[existing.severity] || 0)) {
+          existing.severity = rule.severity;
+        }
       } else {
         configMap.set(prefix, {
           enabled: rule.enabled,

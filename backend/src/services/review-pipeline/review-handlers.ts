@@ -342,10 +342,11 @@ export const REVIEW_HANDLERS: Record<ReviewModeType, ReviewHandler> = {
   CONSISTENCY:    handleConsistency,
   DOC_REVIEW:     handleDocReview,
   CONTRACT_REVIEW: handleContractReview,  // 合同风险审查：完全独立的 handler
-  // SELF_CHECK 不走 handler 映射表，有独立的 SelfCheckController 处理
+  // SELF_CHECK 不走 handler 映射表，有独立的 SelfCheckController 处理。
+  // 修复 P1：原 stub 返回空数组 → 漏堵入口产出「审查完成、0 问题」假合规报告。
+  // 现显式抛错：handler 抛错会被编排层捕获 → 文件/任务 FAILED，失败可见。
   SELF_CHECK:     async (_ctx) => {
-    console.warn('[Handler] SELF_CHECK 被 processTask 误调用，请使用独立的 /api/self-check/run 端点');
-    return { aiIssues: [], usedEngine: 'self_check' };
+    throw new Error('SELF_CHECK 模式不支持经通用审查管道执行（产出恒为空的假合规报告），请使用独立端点 POST /api/self-check/run');
   },
   DEC_REVIEW:     handleDecReview,
 };

@@ -36,10 +36,11 @@ import type { ToolContext } from '../file/upload_file';
 
 const { tool } = require('@ai-sdk/provider-utils') as typeof import('@ai-sdk/provider-utils');
 
-/** 有效的审查模式（与 TaskService.createTask 一致） */
+/** 有效的审查模式（与 TaskService.createTask 一致）。
+ *  SELF_CHECK 已移除：它有独立端点 /api/self-check/run，经通用管道执行只会产出假合规空报告。 */
 const VALID_REVIEW_MODES = [
   'LIBRARY_REVIEW', 'DOC_REVIEW', 'CONSISTENCY', 'TYPO_GRAMMAR',
-  'RULE_ONLY', 'SELF_CHECK', 'CONTRACT_REVIEW', 'DEC_REVIEW',
+  'RULE_ONLY', 'CONTRACT_REVIEW', 'DEC_REVIEW',
 ] as const;
 
 /** 创建结果 */
@@ -60,7 +61,7 @@ export function createCreatePipelineTaskTool(context: ToolContext) {
     inputSchema: z.object({
       title: z.string().min(1).max(200).describe('任务标题'),
       reviewMode: z.enum(VALID_REVIEW_MODES).describe(
-        '审查模式：LIBRARY_REVIEW（规则库审查）/ DOC_REVIEW（文档审查）/ CONSISTENCY（一致性）/ TYPO_GRAMMAR（校对）/ RULE_ONLY（仅规则）/ SELF_CHECK（自检）/ CONTRACT_REVIEW（合同审查）/ DEC_REVIEW（DEC 三维度）'
+        '审查模式：LIBRARY_REVIEW（规则库审查）/ DOC_REVIEW（文档审查）/ CONSISTENCY（一致性）/ TYPO_GRAMMAR（校对）/ RULE_ONLY（仅规则）/ CONTRACT_REVIEW（合同审查）/ DEC_REVIEW（DEC 三维度）。注意：SELF_CHECK 自检不走此工具，请引导用户使用独立自检入口'
       ),
       filePaths: z.array(z.string()).min(1).max(20).describe('文件路径数组（uploads/agent_temp 下的绝对路径，由 upload_file 返回，最多 20 个）'),
       standardId: z.string().optional().describe('标准 ID（DEC_REVIEW 等模式需要）'),
@@ -76,7 +77,6 @@ export function createCreatePipelineTaskTool(context: ToolContext) {
         'CONSISTENCY': 'entry.CONSISTENCY',
         'DOC_REVIEW': 'entry.DOC_REVIEW',
         'CONTRACT_REVIEW': 'entry.CONTRACT',
-        'SELF_CHECK': 'entry.SELF_CHECK',
         'RULE_ONLY': 'entry.RULE_ONLY',
       };
       const flagKey = modeToFlagKey[reviewMode];
