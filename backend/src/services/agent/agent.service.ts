@@ -246,48 +246,11 @@ export class AgentService {
   }): Promise<any> {
     const { messages, userId, sessionId, modelKey, toolPreset, toolNames, thinkingLevel, pendingAskAnswer, signal } = params;
 
-    // 1. 读取 LLM 配置（LlmService.getLlmConfig 是静态方法，带 5 分钟缓存）
-    const config = await LlmService.getLlmConfig();
-    if (!config) {
-      throw new Error('LLM 未配置，请先在系统设置中配置 LLM 引擎');
-    }
-
-    // 1.5 会话模型 override：modelKey 格式 <providerId>::<modelName>
-    //     从 system_configs.llm_profiles 找 provider，未找到/未传时用系统默认
-    let effConfig = config;
-    if (modelKey) {
-      const sepIdx = modelKey.indexOf('::');
-      const providerId = sepIdx > 0 ? modelKey.slice(0, sepIdx) : '';
-      const modelName = sepIdx > 0 ? modelKey.slice(sepIdx + 2) : '';
-      if (providerId && modelName) {
-        const profile = await AgentService.findLlmProfile(providerId).catch(() => null);
-        if (profile && profile.apiKey && profile.model) {
-          effConfig = {
-            ...config,
-            apiBaseUrl: profile.apiBase || config.apiBaseUrl,
-            apiKey: profile.apiKey,
-            modelName,
-          };
-          console.log(`[Agent] 会话模型 override: ${modelKey}`);
-        }
-      }
-    }
-
-    // 2. 创建 OpenAI 兼容 provider（项目用的是 OpenAI 兼容协议）
-    //    name 固定为 'review-agent'，便于日志区分 Agent 调用与普通 LLM 调用
-    const provider = createOpenAI({
-      baseURL: effConfig.apiBaseUrl,
-      apiKey: effConfig.apiKey,
-      name: 'review-agent',
-    });
-
-    // 3. 用 .chat() 创建 Chat Completions API 模型（关键修复！）
-    //    Vercel AI SDK v7 的 createOpenAI()() 默认走 Responses API (/v1/responses)，
-    //    但 CNPE 网关只支持 Chat Completions API (/v1/chat/completions)。
-    //    必须用 provider.chat(modelName) 显式指定，否则工具调用解析失败。
-    //    thinkingLevel 通过 streamText 的 providerOptions.openai.reasoningEffort 透传
-    const model = provider.chat(effConfig.modelName);
-    console.log('[Agent] 模型: ' + effConfig.modelName + ' baseURL=' + effConfig.apiBaseUrl + ' (使用 .chat())');
+    // 1~3. 解析生效 LLM 配置（系统默认 + 会话 modelKey override）并创建模型实例
+    //      （P0-2 公共层抽取：resolveEffConfig / createChatModel，与兑底链路共用；
+    //       thinkingLevel 通过 streamText 的 providerOptions.openai.reasoningEffort 透传）
+    const effConfig = await AgentService.resolveEffConfig(modelKey);
+    const model = AgentService.createChatModel(effConfig);
 
     // 4. 创建工具集 + 按 toolNames/toolPreset 过滤（Task 25：预设开关）
     //    toolNames 显式白名单优先；否则按 preset 展开；都不传 = 全部工具（兼容旧行为）
@@ -295,60 +258,12 @@ export class AgentService {
     const filterList = toolNames && toolNames.length > 0 ? toolNames : AgentService.presetToToolNames(toolPreset);
     const tools = filterList ? AgentService.filterTools(allTools, filterList) : allTools;
 
-    // 5. Task 7.6：注入已上传文件列表到 systemPrompt
-    //    查 uploads/agent_temp/{userId}/{sessionId}/ 目录，把文件路径告知 Agent，
-    //    让 Agent 知道用户已上传哪些文件，可直接用 extract_text 工具提取文本。
-    const filesSection = AgentService.buildUploadedFilesSection(userId);
+    // 5. 系统提示词组装（基础 + 已上传文件 + steering + skills + 办公模板；P0-2 公共层抽取）
+    let { systemPrompt, pendingSteering } = await AgentService.buildSystemPrompt(userId, sessionId);
 
-    // Task 13.6：注入 steering 指令到 systemPrompt
-    let pendingSteering: any[] = [];
-    if (sessionId) {
-      pendingSteering = await SteeringService.getPending(sessionId).catch(() => []);
-    }
-    const steeringSection = SteeringService.buildSystemPromptSection(pendingSteering);
-
-    let systemPrompt = AGENT_SYSTEM_PROMPT;
-    if (filesSection) systemPrompt += '\n\n' + filesSection;
-    if (steeringSection) systemPrompt += '\n\n' + steeringSection;
-    const skillsSection = AgentService.buildSkillsSection();
-    if (skillsSection) systemPrompt += '\n\n' + skillsSection;
-
-    // Task 7（Prompt 模板化）：加载 Agent 办公模板段落（AGENT_TEMPLATE_KEYS 配置）
-    // 模板作为追加段落注入，不改动 AGENT_SYSTEM_PROMPT 本体；加载失败静默跳过
-    const officeTemplateSection = await AgentService.buildOfficeTemplateSection();
-    if (officeTemplateSection) systemPrompt += '\n\n' + officeTemplateSection;
-
-    // 6. 消息格式兼容：UIMessage（前端 useChat v4，有 parts 数组）或 ModelMessage（curl 测试，有 content）
-    //    Vercel AI SDK v7 的 streamText 需要 ModelMessage 格式。
-    //    - 如果消息有 parts 字段（UIMessage），用 convertToModelMessages 转换
-    //    - 如果消息有 content 字段（ModelMessage），直接使用
-    //    - convertToModelMessages 失败时手动提取 parts 里的 text
-    let modelMessages: any[];
-    // P1-1：旧消息工具 output 瘦身（保留最近 3 轮完整，更早的 tool output 截断正文）
-    // 长会话历史里工具输出（提取的全文/审查结果）占请求体大头，而旧轮工具结果已被
-    // LLM 消费过，回放只需结构不需要全文。截断发生在后端，不影响前端历史回看渲染。
-    AgentService.trimStaleToolOutputs(messages);
-    const hasParts = messages.some((m: any) => Array.isArray(m?.parts));
-    if (hasParts) {
-      // UIMessage 格式，用 SDK 转换
-      try {
-        modelMessages = await convertToModelMessages(messages, {
-          tools,
-          ignoreIncompleteToolCalls: true,
-        });
-      } catch (e) {
-        console.warn('[Agent] convertToModelMessages 失败，手动转换:', (e as Error).message);
-        modelMessages = messages.map((m: any) => ({
-          role: m.role,
-          content: Array.isArray(m.parts)
-            ? m.parts.filter((p: any) => p.type === 'text').map((p: any) => p.text).join('')
-            : '',
-        }));
-      }
-    } else {
-      // 已经是 ModelMessage 格式（curl 测试或旧格式），直接使用
-      modelMessages = messages as any;
-    }
+    // 6. 消息格式兼容：UIMessage → ModelMessage（含旧消息工具 output 瘦身；P0-2 公共层抽取）。
+    // 后续压缩会重新赋值，故用 let
+    let modelMessages = await AgentService.toModelMessages(messages, tools);
 
     // Task 44：ask_user 恢复注入
     // 前端在用户回复挂起问题后，带 pendingAskAnswer 重发 chat/stream。
@@ -429,13 +344,15 @@ export class AgentService {
       }
     }
 
-    // Task 13.7：上下文压缩 — 超 84k token 时对早期消息做 LLM 摘要
+    // Task 13.7：上下文压缩 — 超 84k token 时对早期消息做摘要（P1-1：缓存化/后台预计算）
     // 仅在超过 3 轮对话时检查（避免单轮审查触发无意义压缩）
     if (modelMessages.length > 6) {
       const systemLen = systemPrompt.length;
       if (CompactionService.needsCompaction(modelMessages, systemLen)) {
         console.log(`[Agent] 触发上下文压缩: messages=${modelMessages.length} tokens≈${CompactionService.estimateTokens(modelMessages)}`);
-        const compaction = await CompactionService.compact(modelMessages);
+        // P1-1：改用 compactWithCache——缓存命中秒回；未命中立即机械折叠 + 后台预计算，
+        // 不再在请求路径上同步等 LLM 摘要（原实现最多阻塞 90s）
+        const compaction = await CompactionService.compactWithCache(sessionId, modelMessages);
         if (compaction.truncatedMessages && compaction.truncatedMessages > 0) {
           if (compaction.summary) {
             systemPrompt = systemPrompt + '\n\n## 历史对话摘要\n' + compaction.summary;
@@ -515,78 +432,40 @@ export class AgentService {
         console.error('[Agent] streamText onError:', (error as Error)?.message || error);
       },
       onFinish: ({ usage, finishReason, text, steps }: any) => {
-        // Task 7.7：补写 LlmCallLog，字段映射参考 llm.service.ts:recordLlmCall
-        // Vercel AI SDK v7 的 LanguageModelUsage：inputTokens / outputTokens / totalTokens
-        // 映射到 LlmCallLog：promptTokens / completionTokens / totalTokens
-        const promptTokens = usage?.inputTokens ?? 0;
-        const completionTokens = usage?.outputTokens ?? 0;
-        const totalTokens = usage?.totalTokens ?? 0;
-        // 缓存统计：Vercel AI SDK 部分 provider 返回 inputCacheReadTokens / inputCacheCreationTokens
-        const cacheReadTokens = usage?.inputCacheReadTokens ?? 0;
-        const cacheWriteTokens = usage?.inputCacheCreationTokens ?? 0;
-        // finishReason 为 'error' 时记 failed，其余记 success
-        const status = finishReason === 'error' ? 'failed' : 'success';
+        // Task 7.7：补写 LlmCallLog（P0-2 公共层抽取，与 generateText 兜底链路共用；
+        // messagesSummary 分段截断防全量大字符串序列化）
+        AgentService.writeAgentCallLog({
+          effConfig,
+          startTime,
+          usage,
+          finishReason,
+          text,
+          systemPrompt,
+          modelMessages,
+          steps,
+          sessionId,
+          note: needFallback ? 'first-step-abnormal' : undefined,
+        });
 
-        // Task 7.5：用 modelMessages 而非原始 messages 拼 promptFull（modelMessages 已含 content）
-        const messagesSummary = (modelMessages ?? [])
-          .map((m: any) => `[${m.role}] ${typeof m.content === 'string' ? m.content : JSON.stringify(m.content ?? '')}`)
-          .join('\n');
-        // P0 #1（接通纸面能力）：写入日志前脱敏，避免敏感信息（路径/token/密钥/邮箱）落库
-        const promptFull = scrubSensitive(`${systemPrompt}\n\n--- messages ---\n${messagesSummary}`).slice(0, 60000);
-        const completionFull = scrubSensitive(text ?? '').slice(0, 60000);
+        // Task 14.3：持久化 assistant 消息到 QAMessage（fire-and-forget；P0-2 抽取共用）
+        AgentService.persistAssistantFromSteps(
+          sessionId,
+          userId,
+          text,
+          finishReason === 'error' ? 'failed' : 'completed',
+          steps,
+        );
 
-        // Task 7.5：汇总工具调用情况到 errorMsg（便于从 LlmCallLog 排查工具调用问题）
-        const totalSteps = steps?.length ?? 0;
-        const totalToolCalls = steps?.reduce((sum: number, s: any) => sum + (s.toolCalls?.length ?? 0), 0) ?? 0;
-        const totalToolResults = steps?.reduce((sum: number, s: any) => sum + (s.toolResults?.length ?? 0), 0) ?? 0;
-        const agentTrace = `steps=${totalSteps} toolCalls=${totalToolCalls} toolResults=${totalToolResults} fallback=${needFallback}`;
-
-        // fire-and-forget 写入（与 LlmService.recordLlmCall 模式一致，失败不影响主流程）
-        prisma.llmCallLog
-          .create({
-            data: {
-              taskId: null,
-              mode: 'agent',
-              model: config.modelName,
-              provider: config.provider ?? 'openai-compat',
-              promptTokens,
-              completionTokens,
-              totalTokens,
-              cacheReadTokens,
-              cacheWriteTokens,
-              latencyMs: Date.now() - startTime,
-              status,
-              errorMsg: status === 'failed'
-                ? `finishReason: ${finishReason}; ${agentTrace}`
-                : needFallback
-                  ? `finishReason: ${finishReason}; ${agentTrace} (兜底已触发)`
-                  : null,
-              promptFull,
-              completionFull,
-              ragChunks: Prisma.DbNull,
-              traceId: sessionId || null,
-            },
-          })
-          .catch((e: Error) => {
-            console.warn('[Agent] 写入 LlmCallLog 失败:', (e as Error).message);
-          });
-
-        // Task 14.3：持久化 assistant 消息到 QAMessage（fire-and-forget）
-        // - 用 text 作为 content（Vercel AI SDK v7 的最终文本输出）
-        // - finishReason 为 'error' 时记 failed，否则 completed
-        // - sessionId 为空时跳过
-        // - debug 存工具调用过程（toolCalls），供前端历史回看渲染 ToolCallChip
-        if (sessionId && text) {
-          const toolCalls = AgentService.extractToolCallsFromSteps(steps);
+        // P1-1：错误且无任何输出时补一条占位失败消息——保证会话历史可见失败痕迹，
+        // 用户可重新发送或切换模型重试（此前错误轮次在历史里凭空消失）
+        if (sessionId && finishReason === 'error' && !text) {
           QASessionService.persistAssistantMessage(
             sessionId,
             userId,
-            text,
-            finishReason === 'error' ? 'failed' : 'completed',
-            AgentService.extractSourcesFromSteps(steps),
-            toolCalls.length > 0 ? { toolCalls } : undefined,
+            '（生成失败：模型流式调用异常，请重新发送或切换模型重试）',
+            'failed',
           ).catch((e: Error) => {
-            console.warn(`[Agent:QASession] 持久化 assistant 消息失败: sessionId=${sessionId}`, (e as Error).message);
+            console.warn(`[Agent:QASession] 持久化失败占位消息出错: sessionId=${sessionId}`, (e as Error).message);
           });
         }
 
@@ -598,8 +477,10 @@ export class AgentService {
     }));
 
     // 10. 返回 result 对象（不在这里调 toUIMessageStreamResponse，留给路由层处理）
-    //     Task 7.5：如果首步异常 needFallback=true，路由层会在流结束后检测到
-    //     （目前兜底逻辑在路由层用 generateText 重试，见 agent.routes.ts）
+    //     P0 修复说明：needFallback 场景（首步 finishReason="other" 零产出）的兜底
+    //     由路由层的「流内容嗅探」实现——chat.routes 在写 SSE 头前缓冲字节，
+    //     流结束时仍未出现任何内容事件则取消透传并走两级降级链。本标志仅用于
+    //     LlmCallLog.errorMsg 观测记录。
     return result;
   }
 
@@ -676,45 +557,22 @@ export class AgentService {
     // P1-3：记录调用起始时间，供 LlmCallLog 计算 latencyMs
     const startTime = Date.now();
 
-    const config = await LlmService.getLlmConfig();
-    if (!config) {
-      throw new Error('LLM 未配置，请先在系统设置中配置 LLM 引擎');
-    }
-
-    const provider = createOpenAI({
-      baseURL: config.apiBaseUrl,
-      apiKey: config.apiKey,
-      name: 'review-agent',
-    });
-    const model = provider.chat(config.modelName);
+    // P0-2 公共层抽取：配置/模型/提示词组装与主链路完全一致。
+    // 此前兑底缺 steering/skills/办公模板段落，导致降级回答丢失上下文——本次顺带修复。
+    const effConfig = await AgentService.resolveEffConfig(undefined);
+    const model = AgentService.createChatModel(effConfig);
     const tools = createAllTools({ userId, sessionId: sessionId || '' });
+    const { systemPrompt } = await AgentService.buildSystemPrompt(userId, sessionId);
 
-    const filesSection = AgentService.buildUploadedFilesSection(userId);
-    const systemPrompt = filesSection ? `${AGENT_SYSTEM_PROMPT}\n\n${filesSection}` : AGENT_SYSTEM_PROMPT;
+    // 消息格式兼容（P0-2 公共层抽取，与 chatStream 一致）
+    const modelMessages = await AgentService.toModelMessages(messages, tools);
 
-    // 消息格式兼容（与 chatStream 一致）
-    let modelMessages: any[];
-    const hasParts = messages.some((m: any) => Array.isArray(m?.parts));
-    if (hasParts) {
-      try {
-        modelMessages = await convertToModelMessages(messages, {
-          tools,
-          ignoreIncompleteToolCalls: true,
-        });
-      } catch (e) {
-        console.warn('[Agent] chatWithGenerateText convertToModelMessages 失败，手动转换:', (e as Error).message);
-        modelMessages = messages.map((m: any) => ({
-          role: m.role,
-          content: Array.isArray(m.parts)
-            ? m.parts.filter((p: any) => p.type === 'text').map((p: any) => p.text).join('')
-            : '',
-        }));
-      }
-    } else {
-      modelMessages = messages as any;
-    }
+    console.log('[Agent] generateText 兜底启动，model=' + effConfig.modelName);
 
-    console.log('[Agent] generateText 兜底启动，model=' + config.modelName);
+    // P0 #1：调 LLM 前接入全局 QPS 限流（与主链路一致）
+    await acquireLlmToken(effConfig.modelName).catch((e: any) => {
+      console.warn('[Agent] QPS 限流调用异常（继续）:', (e as Error)?.message || e);
+    });
 
     // generateText 会自动执行工具调用循环（与 streamText 的循环逻辑一致，但非流式）
     const result = await generateText({
@@ -723,6 +581,7 @@ export class AgentService {
       messages: modelMessages,
       tools,
       abortSignal: signal,
+      maxOutputTokens: effConfig.modelMaxOutput ?? effConfig.maxTokens ?? 4096,
       stopWhen: isStepCount(10),
       onToolExecutionEnd: ({ toolCall, toolOutput, toolExecutionMs }: any) => {
         // 工具执行过程由 QAMessage.parts 承载，AgentTrace 链路已移除（2026-08-03）
@@ -739,62 +598,28 @@ export class AgentService {
     console.log(`[Agent] generateText 完成: finishReason=${result.finishReason} ` +
       `steps=${result.steps?.length} toolCalls=[${toolNames.join(',')}] textLen=${result.text?.length ?? 0}`);
 
-    // P1-3：兜底链路补写 LlmCallLog（与 chatStream onFinish 同构，字段映射一致）
-    // 原实现兜底路径无调用日志，AI 调用看板查不到降级期间的调用，排查成本高。
-    try {
-      const usage: any = result.usage ?? {};
-      const messagesSummary = (modelMessages ?? [])
-        .map((m: any) => `[${m.role}] ${typeof m.content === 'string' ? m.content : JSON.stringify(m.content ?? '')}`)
-        .join('\n');
-      const promptFull = scrubSensitive(`${systemPrompt}\n\n--- messages ---\n${messagesSummary}`).slice(0, 60000);
-      const completionFull = scrubSensitive(result.text ?? '').slice(0, 60000);
-      const totalSteps = result.steps?.length ?? 0;
-      const totalToolCalls = result.steps?.reduce((sum: number, s: any) => sum + (s.toolCalls?.length ?? 0), 0) ?? 0;
-      const totalToolResults = result.steps?.reduce((sum: number, s: any) => sum + (s.toolResults?.length ?? 0), 0) ?? 0;
-      const agentTrace = `steps=${totalSteps} toolCalls=${totalToolCalls} toolResults=${totalToolResults} mode=generateText-fallback`;
-      const status = result.finishReason === 'error' ? 'failed' : 'success';
-      prisma.llmCallLog
-        .create({
-          data: {
-            taskId: null,
-            mode: 'agent',
-            model: config.modelName,
-            provider: config.provider ?? 'openai-compat',
-            promptTokens: usage.inputTokens ?? 0,
-            completionTokens: usage.outputTokens ?? 0,
-            totalTokens: usage.totalTokens ?? 0,
-            cacheReadTokens: usage.inputCacheReadTokens ?? 0,
-            cacheWriteTokens: usage.inputCacheCreationTokens ?? 0,
-            latencyMs: Date.now() - startTime,
-            status,
-            errorMsg: status === 'failed' ? `finishReason: ${result.finishReason}; ${agentTrace}` : null,
-            promptFull,
-            completionFull,
-            ragChunks: Prisma.DbNull,
-            traceId: sessionId || null,
-          },
-        })
-        .catch((e: Error) => {
-          console.warn('[Agent] 兜底链路写入 LlmCallLog 失败:', (e as Error).message);
-        });
-    } catch (e) {
-      console.warn('[Agent] 兜底链路补写 LlmCallLog 异常（不影响主流程）:', (e as Error).message);
-    }
+    // P1-3：兜底链路补写 LlmCallLog（P0-2 公共层抽取，与主链路 onFinish 共用同一实现）
+    AgentService.writeAgentCallLog({
+      effConfig,
+      startTime,
+      usage: result.usage ?? {},
+      finishReason: result.finishReason,
+      text: result.text,
+      systemPrompt,
+      modelMessages,
+      steps: result.steps,
+      sessionId,
+      note: 'generateText-fallback',
+    });
 
-    // Task 14.3：兜底模式也持久化 assistant 消息（fire-and-forget）
-    if (sessionId && result.text) {
-      const toolCalls = AgentService.extractToolCallsFromSteps(result.steps);
-      QASessionService.persistAssistantMessage(
-        sessionId,
-        userId,
-        result.text,
-        result.finishReason === 'error' ? 'failed' : 'completed',
-        AgentService.extractSourcesFromSteps(result.steps),
-        toolCalls.length > 0 ? { toolCalls } : undefined,
-      ).catch((e: Error) => {
-        console.warn(`[Agent:QASession] 兜底模式持久化 assistant 消息失败: sessionId=${sessionId}`, (e as Error).message);
-      });
-    }
+    // Task 14.3：兜底模式也持久化 assistant 消息（fire-and-forget；P0-2 抽取共用）
+    AgentService.persistAssistantFromSteps(
+      sessionId,
+      userId,
+      result.text,
+      result.finishReason === 'error' ? 'failed' : 'completed',
+      result.steps,
+    );
 
     // 把 generateText 的最终 text 包装成 UIMessageStream（与 streamText 的 toUIMessageStreamResponse 兼容）
     // 前端 useChat 会收到：start → start-step → [tool-input/output 事件] → finish-step → text-start → text-delta(全文) → text-end → finish
@@ -840,6 +665,203 @@ export class AgentService {
         writer.write({ type: 'text-end', id: '0' });
         writer.write({ type: 'finish', finishReason: result.finishReason ?? 'stop' });
       },
+    });
+  }
+
+  // ==================== P0-2 公共层：主链路/兑底链路共用 ====================
+
+  /**
+   * 解析生效的 LLM 配置：系统默认（system_configs.llm_chat_model）+ 会话级
+   * modelKey override（格式 <providerId>::<modelName>，查 system_configs.llm_profiles）。
+   * 未配置时抛错（两条链路语义一致）。
+   */
+  private static async resolveEffConfig(modelKey?: string) {
+    const config = await LlmService.getLlmConfig();
+    if (!config) {
+      throw new Error('LLM 未配置，请先在系统设置中配置 LLM 引擎');
+    }
+    if (!modelKey) return config;
+    const sepIdx = modelKey.indexOf('::');
+    const providerId = sepIdx > 0 ? modelKey.slice(0, sepIdx) : '';
+    const modelName = sepIdx > 0 ? modelKey.slice(sepIdx + 2) : '';
+    if (!(providerId && modelName)) return config;
+    const profile = await AgentService.findLlmProfile(providerId).catch(() => null);
+    if (!(profile && profile.apiKey && profile.model)) return config;
+    console.log(`[Agent] 会话模型 override: ${modelKey}`);
+    return {
+      ...config,
+      apiBaseUrl: profile.apiBase || config.apiBaseUrl,
+      apiKey: profile.apiKey,
+      modelName,
+    };
+  }
+
+  /**
+   * 创建 OpenAI 兼容 Chat Completions 模型实例。
+   * 必须显式 .chat()：AI SDK v7 的 createOpenAI()() 默认走 Responses API，
+   * 而 CNPE 等网关仅支持 /v1/chat/completions。name 固定 review-agent 便于日志区分。
+   */
+  private static createChatModel(effConfig: any) {
+    const provider = createOpenAI({
+      baseURL: effConfig.apiBaseUrl,
+      apiKey: effConfig.apiKey,
+      name: 'review-agent',
+    });
+    const model = provider.chat(effConfig.modelName);
+    console.log('[Agent] 模型: ' + effConfig.modelName + ' baseURL=' + effConfig.apiBaseUrl + ' (使用 .chat())');
+    return model;
+  }
+
+  /**
+   * 组装系统提示词：基础提示词 + 已上传文件列表 + steering 干预指令 + skills + 办公模板。
+   * 返回 pendingSteering 供调用方在 onFinish 中标记消费。
+   */
+  private static async buildSystemPrompt(
+    userId: string,
+    sessionId?: string,
+  ): Promise<{ systemPrompt: string; pendingSteering: any[] }> {
+    const filesSection = AgentService.buildUploadedFilesSection(userId);
+    let pendingSteering: any[] = [];
+    if (sessionId) {
+      pendingSteering = await SteeringService.getPending(sessionId).catch(() => []);
+    }
+    const steeringSection = SteeringService.buildSystemPromptSection(pendingSteering);
+
+    let systemPrompt = AGENT_SYSTEM_PROMPT;
+    if (filesSection) systemPrompt += '\n\n' + filesSection;
+    if (steeringSection) systemPrompt += '\n\n' + steeringSection;
+    const skillsSection = AgentService.buildSkillsSection();
+    if (skillsSection) systemPrompt += '\n\n' + skillsSection;
+    const officeTemplateSection = await AgentService.buildOfficeTemplateSection();
+    if (officeTemplateSection) systemPrompt += '\n\n' + officeTemplateSection;
+    return { systemPrompt, pendingSteering };
+  }
+
+  /**
+   * UIMessage / ModelMessage 双格式兼容转换。
+   * 先做旧消息工具 output 瘦身（P1-1，保留最近 3 轮完整），再按需 convertToModelMessages；
+   * 转换失败降级为手动提取 text parts（不阻塞主流程）。
+   */
+  private static async toModelMessages(messages: any[], tools: Record<string, any>): Promise<any[]> {
+    AgentService.trimStaleToolOutputs(messages);
+    const hasParts = Array.isArray(messages) && messages.some((m: any) => Array.isArray(m?.parts));
+    if (!hasParts) {
+      return messages as any;
+    }
+    try {
+      return await convertToModelMessages(messages, {
+        tools,
+        ignoreIncompleteToolCalls: true,
+      });
+    } catch (e) {
+      console.warn('[Agent] convertToModelMessages 失败，手动转换:', (e as Error).message);
+      return messages.map((m: any) => ({
+        role: m.role,
+        content: Array.isArray(m.parts)
+          ? m.parts.filter((p: any) => p.type === 'text').map((p: any) => p.text).join('')
+          : '',
+      }));
+    }
+  }
+
+  /**
+   * Agent 链路 LlmCallLog 补写（chatStream onFinish 与 generateText 兜底共用），
+   * fire-and-forget：任何异常只告警不阻塞。
+   *
+   * P2-1 优化：messagesSummary 分段截断（每条 content 上限 2000 字符）后再拼接，
+   * 避免对超长对话做全量 JSON.stringify 后又 slice 丢弃的白耗。
+   */
+  private static writeAgentCallLog(params: {
+    effConfig: any;
+    startTime: number;
+    usage: any;
+    finishReason?: string;
+    text?: string;
+    systemPrompt: string;
+    modelMessages: any[];
+    steps?: any[];
+    sessionId?: string | null;
+    /** 附加标注（如 generateText-fallback / first-step-abnormal），拼进 errorMsg 便于排查 */
+    note?: string;
+  }): void {
+    const { effConfig, startTime, usage, finishReason, text, systemPrompt, modelMessages, steps, sessionId, note } = params;
+    try {
+      const promptTokens = usage?.inputTokens ?? 0;
+      const completionTokens = usage?.outputTokens ?? 0;
+      const totalTokens = usage?.totalTokens ?? 0;
+      const cacheReadTokens = usage?.inputCacheReadTokens ?? 0;
+      const cacheWriteTokens = usage?.inputCacheCreationTokens ?? 0;
+      const status = finishReason === 'error' ? 'failed' : 'success';
+
+      const messagesSummary = (modelMessages ?? [])
+        .map((m: any) => {
+          const raw = typeof m.content === 'string' ? m.content : JSON.stringify(m.content ?? '');
+          return `[${m.role}] ${raw.length > 2000 ? raw.slice(0, 2000) + '…(已截断)' : raw}`;
+        })
+        .join('\n');
+      // P0 #1：写入日志前脱敏，避免敏感信息（路径/token/密钥/邮箱）落库
+      const promptFull = scrubSensitive(`${systemPrompt}\n\n--- messages ---\n${messagesSummary}`).slice(0, 60000);
+      const completionFull = scrubSensitive(text ?? '').slice(0, 60000);
+
+      const totalSteps = steps?.length ?? 0;
+      const totalToolCalls = steps?.reduce((sum: number, s: any) => sum + (s.toolCalls?.length ?? 0), 0) ?? 0;
+      const totalToolResults = steps?.reduce((sum: number, s: any) => sum + (s.toolResults?.length ?? 0), 0) ?? 0;
+      const agentTrace = `steps=${totalSteps} toolCalls=${totalToolCalls} toolResults=${totalToolResults}`
+        + (note ? ` mode=${note}` : '');
+
+      prisma.llmCallLog
+        .create({
+          data: {
+            taskId: null,
+            mode: 'agent',
+            model: effConfig.modelName,
+            provider: (effConfig as any).provider ?? 'openai-compat',
+            promptTokens,
+            completionTokens,
+            totalTokens,
+            cacheReadTokens,
+            cacheWriteTokens,
+            latencyMs: Date.now() - startTime,
+            status,
+            errorMsg: status === 'failed' || note
+              ? `finishReason: ${finishReason}; ${agentTrace}`
+              : null,
+            promptFull,
+            completionFull,
+            ragChunks: Prisma.DbNull,
+            traceId: sessionId || null,
+          },
+        })
+        .catch((e: Error) => {
+          console.warn('[Agent] 写入 LlmCallLog 失败:', (e as Error).message);
+        });
+    } catch (e) {
+      console.warn('[Agent] 补写 LlmCallLog 异常（不影响主流程）:', (e as Error)?.message || e);
+    }
+  }
+
+  /**
+   * 从 steps 提取工具调用并持久化 assistant 消息到 QAMessage（fire-and-forget）。
+   * debug 存 toolCalls 供前端历史回看渲染 ToolCallChip；sources 承载知识引用溯源。
+   */
+  private static persistAssistantFromSteps(
+    sessionId: string | null | undefined,
+    userId: string,
+    text: string | undefined,
+    status: string,
+    steps?: any[],
+  ): void {
+    if (!sessionId || !text) return;
+    const toolCalls = AgentService.extractToolCallsFromSteps(steps);
+    QASessionService.persistAssistantMessage(
+      sessionId,
+      userId,
+      text,
+      status as any,
+      AgentService.extractSourcesFromSteps(steps),
+      toolCalls.length > 0 ? { toolCalls } : undefined,
+    ).catch((e: Error) => {
+      console.warn(`[Agent:QASession] 持久化 assistant 消息失败: sessionId=${sessionId}`, (e as Error).message);
     });
   }
 

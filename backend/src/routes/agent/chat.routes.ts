@@ -24,6 +24,102 @@ import { fixMojibake } from '../../services/agent/tools/file/filename';
 const router = Router();
 
 /**
+ * 两级降级链（Task 21.2）：chatWithGenerateText（保留工具调用）→ LlmService.chat（纯文本）。
+ * 把降级结果包成 UIMessageStream 写到 res（前端 useChat 可正常消费）。
+ *
+ * 供两处调用（P0 修复 needFallback 死开关后新增第二调用点）：
+ *   1. /chat/stream 主调抛异常且 headersSent=false（catch 分支，原内联逻辑）
+ *   2. 流式嗅探判定「零内容流」（streamText 正常结束但未产出任何文本/工具事件，
+ *      即 agent.service onStepFinish 标记的 needFallback 场景——此前该标志从未被消费）
+ *
+ * 前置条件：res 头尚未发送；调用方已清理 streamTimeout。
+ */
+async function respondWithFallbackChain(
+  req: AuthRequest,
+  res: Response,
+  controller: AbortController,
+): Promise<void> {
+  const sessionId: string = req.body?.sessionId || '';
+  const messages: any[] = req.body?.messages || [];
+  try {
+    let fallbackText = '';
+    let fallbackMode = '';
+
+    // 第一级兜底：chatWithGenerateText（非流式但保留工具调用循环）
+    try {
+      const uid = (req as any).user?.id || '';
+      const generateResult = await AgentService.chatWithGenerateText({
+        messages,
+        userId: uid,
+        sessionId,
+        signal: controller.signal,
+      });
+      fallbackText = typeof generateResult?.text === 'string' ? generateResult.text : '';
+      fallbackMode = 'generateText';
+      console.warn(`[Agent:Fallback] 降级到 chatWithGenerateText()，sessionId=${sessionId || 'none'}`);
+    } catch (genErr: any) {
+      console.error('[Agent:Fallback] generateText 兜底失败，继续降级到 LlmService.chat():', (genErr as Error)?.message || genErr);
+    }
+
+    // 第二级兜底：纯文本 LlmService.chat()
+    if (!fallbackText) {
+      const lastUserMsg = [...messages].reverse().find((m: any) => m?.role === 'user');
+      const userText = lastUserMsg
+        ? (Array.isArray(lastUserMsg.parts)
+          ? lastUserMsg.parts.filter((p: any) => p?.type === 'text').map((p: any) => p.text).join('')
+          : typeof lastUserMsg.content === 'string' ? lastUserMsg.content : '')
+        : '';
+
+      if (!userText) {
+        throw new Error('无法从 messages 提取用户消息');
+      }
+
+      fallbackText = await LlmService.chat(userText, {
+        systemPrompt: '你是文件合规审查助手。由于流式调用失败，请直接基于用户消息回复（无法调用工具）。',
+        mode: 'agent',
+        traceId: sessionId || undefined,
+      });
+      fallbackMode = 'LlmService.chat';
+    }
+
+    // 用 ai 包官方 pipeUIMessageStreamToResponse 直接把流写到 Express res
+    const { createUIMessageStream, pipeUIMessageStreamToResponse } = require('ai');
+    const fallbackStream = createUIMessageStream({
+      execute: async ({ writer }: { writer: any }) => {
+        writer.write({ type: 'text-start', id: 'fallback-text' });
+        writer.write({ type: 'text-delta', id: 'fallback-text', delta: fallbackText });
+        writer.write({ type: 'text-end', id: 'fallback-text' });
+        writer.write({ type: 'finish', finishReason: 'stop' });
+      },
+    });
+
+    await pipeUIMessageStreamToResponse({ response: res, stream: fallbackStream });
+    console.log(`[Agent:Fallback] 降级成功（${fallbackMode}）`);
+
+    // P1-1：降级产物也持久化为 assistant 消息（此前降级回答不入库，会话历史断档）
+    const uid = (req as any).user?.id || '';
+    if (sessionId && fallbackText && uid) {
+      QASessionService.persistAssistantMessage(sessionId, uid, fallbackText, 'completed')
+        .catch((e: Error) => console.warn('[Agent:Fallback] 持久化降级消息失败:', (e as Error).message));
+    }
+
+    if (sessionId) {
+      console.warn(`[Agent:Fallback] LLM 流式失败降级: sessionId=${sessionId} mode=${fallbackMode} fallbackLen=${fallbackText.length}`);
+    }
+  } catch (fallbackErr) {
+    console.error('[Agent:Fallback] 降级也失败:', (fallbackErr as Error)?.message);
+    if (!res.headersSent) {
+      res.status(500).json({
+        success: false,
+        message: `流式调用失败且降级也失败：${(fallbackErr as Error)?.message}`,
+      });
+    } else {
+      try { res.end(); } catch { /* 连接已断 */ }
+    }
+  }
+}
+
+/**
  * POST /api/agent/chat/stream — SSE 流式对话
  *
  * Body:
@@ -139,10 +235,17 @@ router.post('/chat/stream', async (req: AuthRequest, res: Response) => {
     // 1) 复制 status / headers（含 SSE 必需的 Content-Type: text/event-stream 等）
     // 2) 把 ReadableStream pipe 到 Express res
     const uiResponse = result.toUIMessageStreamResponse();
-    // 降级死逻辑修复：先读首块再写 SSE 头。
-    // 旧实现先 flush headers 再读流，streamText 首步异常（finishReason="other" 或
-    // 网络错误）时 headersSent 已为 true，下方 catch 的降级分支永不触发（兜底形同虚设）。
-    // 现在首块读取失败且头未发送 → 走降级重试；首块成功 → 写头 + 继续管道。
+    // P0 修复（needFallback 死开关）：先读首块再写 SSE 头的基础上，升级为「流内容嗅探」。
+    //
+    // 背景：agent.service onStepFinish 检测到首步 finishReason="other" 且无工具调用时置
+    // needFallback=true，但该标志从未被路由层消费——异常流照常透传给前端，用户拿到空回答。
+    // （minimax 类模型流式工具调用不兼容的典型表现：start/finish 空转，零 text-delta 零工具事件）
+    //
+    // 方案：在写头之前缓冲字节，直到看到第一个「内容事件」或流结束：
+    //   - 看到内容事件 → 健康流：写头 + 冲缓冲 + 继续增量转发（体验几乎无损）
+    //   - 流结束仍零内容 / 收到 error 事件 → 头未发送，取消上游并走两级降级链
+    //   - 缓冲超限仍未判定（异常但非空转的流）→ 从宽处理：按健康流转发
+    // 这样降级链在「流正常结束但零产出」场景下真正可达，且 headersSent=false 保证可重试。
     const webBody = uiResponse.body;
     if (!webBody) {
       res.end();
@@ -150,13 +253,62 @@ router.post('/chat/stream', async (req: AuthRequest, res: Response) => {
     }
 
     const reader = webBody.getReader();
-    let firstChunk: { done: boolean; value?: Uint8Array };
+    // 内容事件标记：出现任一即视为健康流（UIMessageStream 的 SSE data 为 JSON）
+    const CONTENT_MARKERS = [
+      '"type":"text-delta"',
+      '"type":"tool-input-available"',
+      '"type":"tool-output-available"',
+      '"type":"tool-output-error"',
+      '"type":"reasoning-delta"',
+    ];
+    // 判定窗口上限：超过此体积仍无内容标记的流按健康处理（防御性，避免无限缓冲）
+    const SNIFF_BUFFER_LIMIT = 64 * 1024;
+
+    let sawContent = false;
+    let streamDone = false;
+    const buffered: Uint8Array[] = [];
+    let bufferedBytes = 0;
+    const decoder = new TextDecoder();
+    let sniffText = '';
     try {
-      firstChunk = await reader.read();
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) {
+          streamDone = true;
+          break;
+        }
+        if (value) {
+          buffered.push(value);
+          bufferedBytes += value.byteLength;
+          sniffText += decoder.decode(value, { stream: true });
+        }
+        if (CONTENT_MARKERS.some((m) => sniffText.includes(m))) {
+          sawContent = true;
+          break;
+        }
+        if (sniffText.includes('"type":"error"')) {
+          // 上游显式 error 事件：视为失败流，走降级（sawContent 保持 false）
+          break;
+        }
+        if (bufferedBytes > SNIFF_BUFFER_LIMIT) {
+          // 超窗仍未判定：从宽按健康流转发（避免对超长前言流误杀）
+          sawContent = true;
+          break;
+        }
+      }
     } finally {
-      // 首块已产出（或流已结束），LLM 已开始响应——解除超时定时器，
+      // 嗅探结束（出内容/流出错/流结束），LLM 已开始响应——解除超时定时器，
       // 但客户端断开监听保持（断开时仍中止 LLM 后续工具循环）
       clearTimeout(streamTimeout);
+    }
+
+    if (!sawContent) {
+      // 零内容/error 流：头未发送，安全走两级降级链。
+      // 先取消上游读取（若流未自然结束），释放连接资源。
+      try { await reader.cancel(); } catch { /* 已结束则忽略 */ }
+      console.warn(`[Agent:Fallback] 嗅探到零内容/error 流（streamDone=${streamDone}），触发降级链`);
+      await respondWithFallbackChain(req, res, controller);
+      return;
     }
 
     res.status(uiResponse.status);
@@ -173,11 +325,13 @@ router.post('/chat/stream', async (req: AuthRequest, res: Response) => {
     // UIMessageStream 事件，未知类型会被原样 enqueue 导致流解析失败、请求中止，
     // assistant 消息不渲染。前端 sessionId 由 useAgentChat 用 crypto.randomUUID()
     // 自行生成并随请求体传入，无需后端回传。
-    if (firstChunk.done) {
+    for (const chunk of buffered) {
+      res.write(chunk);
+    }
+    if (streamDone) {
       res.end();
       return;
     }
-    res.write(firstChunk.value);
     while (true) {
       const { done, value } = await reader.read();
       if (done) break;
@@ -206,81 +360,20 @@ router.post('/chat/stream', async (req: AuthRequest, res: Response) => {
       return;
     }
 
-    // Task 21.2：LLM 整体失败降级 — 流未开始时（headersSent=false），
-    // 降级重试。P0 #1（接通纸面能力）：先降级到 AgentService.chatWithGenerateText()
-    // （非流式但保留工具调用循环，generateText 兜底），再失败才降级到纯文本 LlmService.chat()。
+    // Task 21.2：LLM 整体失败降级 — 流未开始时（headersSent=false）走两级降级链：
+    // 先降级到 AgentService.chatWithGenerateText()（非流式但保留工具调用循环），
+    // 再失败才降级到纯文本 LlmService.chat()。逻辑已抽取为 respondWithFallbackChain 共用
+    //（流嗅探判定「零内容/error 流」时也调用同一函数，见上方管道段）。
     if (!res.headersSent) {
       try {
         clearTimeout(streamTimeout);
-        const sessionId: string = req.body?.sessionId || '';
-        const messages: any[] = req.body?.messages || [];
-
-        let fallbackText = '';
-        let fallbackMode = '';
-
-        // 第一级兜底：chatWithGenerateText（保留工具调用能力，能处理上传文件/检索/规则）
-        try {
-          // catch 块内 try 无法访问外层 try 的 userId（块级作用域），重新取
-          const uid = (req as any).user?.id || '';
-          const generateResult = await AgentService.chatWithGenerateText({ messages, userId: uid, sessionId, signal: controller.signal });
-          // generateText result 的 text 字段为最终文本
-          fallbackText = typeof generateResult?.text === 'string' ? generateResult.text : '';
-          fallbackMode = 'generateText';
-          console.warn(`[Agent:Fallback] 降级到 chatWithGenerateText()，sessionId=${sessionId || 'none'}`);
-        } catch (genErr: any) {
-          console.error('[Agent:Fallback] generateText 兜底失败，继续降级到 LlmService.chat():', (genErr as Error)?.message || genErr);
-        }
-
-        // 第二级兜底：纯文本 LlmService.chat()（generateText 也失败时）
-        if (!fallbackText) {
-          // 从 messages 提取最后一条用户消息作为 prompt
-          const lastUserMsg = [...messages].reverse().find((m: any) => m?.role === 'user');
-          const userText = lastUserMsg
-            ? (Array.isArray(lastUserMsg.parts)
-              ? lastUserMsg.parts.filter((p: any) => p?.type === 'text').map((p: any) => p.text).join('')
-              : typeof lastUserMsg.content === 'string' ? lastUserMsg.content : '')
-            : '';
-
-          if (!userText) {
-            throw new Error('无法从 messages 提取用户消息');
-          }
-
-          // 调非流式 LLM
-          fallbackText = await LlmService.chat(userText, {
-            systemPrompt: '你是文件合规审查助手。由于流式调用失败，请直接基于用户消息回复（无法调用工具）。',
-            mode: 'agent',
-            traceId: sessionId || undefined,
-          });
-          fallbackMode = 'LlmService.chat';
-        }
-
-        // 把降级结果包成 UIMessageStream 格式（前端 useChat 能正常消费）
-        // 注意：createUIMessageStream 返回裸 ReadableStream（UI message chunk 流），
-        // 不能用 toUIMessageStreamResponse（那只存在于 streamText 的 result 上）。
-        // 用 ai 包官方 pipeUIMessageStreamToResponse 直接把流写到 Express res（处理 SSE headers + 编码）。
-        const { createUIMessageStream, pipeUIMessageStreamToResponse } = require('ai');
-        const fallbackStream = createUIMessageStream({
-          execute: async ({ writer }: { writer: any }) => {
-            writer.write({ type: 'text-start', id: 'fallback-text' });
-            writer.write({ type: 'text-delta', id: 'fallback-text', delta: fallbackText });
-            writer.write({ type: 'text-end', id: 'fallback-text' });
-            writer.write({ type: 'finish', finishReason: 'stop' });
-          },
-        });
-
-        await pipeUIMessageStreamToResponse({ response: res, stream: fallbackStream });
-        console.log(`[Agent:Fallback] 降级成功（${fallbackMode}）`);
-
-        // Task 21.3：降级事件记入后端日志（AgentTrace 链路已移除，2026-08-03）
-        if (sessionId) {
-          console.warn(`[Agent:Fallback] LLM 流式失败降级: sessionId=${sessionId} reason=${(e as Error)?.message || e} mode=${fallbackMode} fallbackLen=${fallbackText.length}`);
-        }
+        await respondWithFallbackChain(req, res, controller);
         return;
       } catch (fallbackErr) {
-        console.error('[Agent:Fallback] 降级也失败:', (fallbackErr as Error).message);
+        console.error('[Agent:Fallback] 降级链执行异常:', (fallbackErr as Error)?.message);
         res.status(500).json({
           success: false,
-          message: `流式调用失败且降级也失败：${(fallbackErr as Error).message}`,
+          message: `流式调用失败且降级也失败：${(fallbackErr as Error)?.message}`,
         });
       }
     } else {
