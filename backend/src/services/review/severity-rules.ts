@@ -8,7 +8,7 @@
 type Severity = 'error' | 'warning' | 'info';
 
 interface SeverityRule {
-  /** 该 issueType 允许的 severity 列表（按严重度降序） */
+  /** 该 issueType 允许的 severity 列表（按严重度升序：info < warning < error） */
   allowed: Severity[];
   /** 当 LLM 未输出 severity 时的默认值 */
   default: Severity;
@@ -44,6 +44,9 @@ const FALLBACK_RULE: SeverityRule = { allowed: ['info', 'warning', 'error'], def
 /** 统计：被修正的 severity 计数（用于日志/调优） */
 let correctedCount = 0;
 
+/** 严重度数值刻度（info=1 < warning=2 < error=3），用于钳制时计算最近合法值 */
+const SEVERITY_RANK: Record<Severity, number> = { info: 1, warning: 2, error: 3 };
+
 /**
  * 校验并修正 severity
  *
@@ -66,9 +69,17 @@ export function validateSeverity(issueType: string, severity: string | undefined
     return sev;
   }
 
-  // 不在允许范围内，降级到该类型允许的最高严重度
+  // 不在允许范围内：钳制到"距离最近"的合法严重度（同距取更轻者）。
+  // 修复 P0：旧实现固定取 allowed 末位（最严重值），导致 VIOLATION/COMPLETENESS
+  // 的 info 被强升为 error——LLM 判轻的问题被系统抬高严重级，error 统计虚高。
   correctedCount++;
-  const corrected = rule.allowed[rule.allowed.length - 1]; // 取最后一个（最严重的允许值）
+  let corrected = rule.allowed[0];
+  for (const candidate of rule.allowed) {
+    if (Math.abs(SEVERITY_RANK[candidate] - SEVERITY_RANK[sev])
+      < Math.abs(SEVERITY_RANK[corrected] - SEVERITY_RANK[sev])) {
+      corrected = candidate;
+    }
+  }
   if (correctedCount % 50 === 1) {
     console.log(`[SeverityRules] 已修正 ${correctedCount} 次不合理 severity（最近: ${issueType} ${severity}→${corrected}）`);
   }
