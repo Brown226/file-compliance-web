@@ -21,6 +21,10 @@
           <el-option label="警告" value="warning" />
           <el-option label="提示" value="info" />
         </el-select>
+        <!-- 2026-08-26 判标全模式扩展：只看待人工复核条目 -->
+        <el-select v-model="filterReviewStatus" placeholder="复核状态" clearable size="small" style="width:110px">
+          <el-option label="待复核" value="pending" />
+        </el-select>
         <el-input v-model="searchText" placeholder="搜索原文本/描述..." clearable size="small" style="width:200px">
           <template #prefix><el-icon><Search /></el-icon></template>
         </el-input>
@@ -345,6 +349,7 @@ const selectedFileIdRef = computed(() => props.selectedFileId)
 const {
   filterSeverity,
   filterCategory,
+  filterReviewStatus,
   searchText,
   filterDwgLayers,
   filterDwgEntityTypes,

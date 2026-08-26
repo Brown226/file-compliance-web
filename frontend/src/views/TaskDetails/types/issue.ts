@@ -73,4 +73,11 @@ export interface IssueDetail {
   reasoning?: string
   /** 置信度 0-1，低于 0.6 将标记待人工复核 */
   confidence?: number
+  // ===== 智能判标 / 人工复核状态（P1-6 + 2026-08-26 判标全模式扩展）=====
+  /** 落库复核状态：PENDING_REVIEW = 需人工复核（判标 LOW / AI 纯推断 / 合同 HIGH / 引用未定位） */
+  reviewStatus?: 'PENDING_REVIEW' | 'CONFIRMED' | null
+  /** 判标置信度（SmartJudgeService）：HIGH / MEDIUM / LOW；LOW 由待复核徽标承载 */
+  judgeConfidence?: 'HIGH' | 'MEDIUM' | 'LOW' | null
+  /** 判标理由（LOW 时卡内展示，解释为何判为疑似误报） */
+  judgeReason?: string | null
 }

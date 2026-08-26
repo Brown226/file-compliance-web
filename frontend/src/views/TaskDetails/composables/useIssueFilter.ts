@@ -6,6 +6,8 @@ export function useIssueFilter(details: Ref<IssueDetail[]>, selectedFileId: Ref<
   const filterSeverity = ref('')
   const filterCategory = ref('')
   const searchText = ref('')
+  /** 人工复核状态筛选（2026-08-26 判标全模式扩展）：'pending' = 只看待复核 */
+  const filterReviewStatus = ref('')
   
   // DWG 专属筛选
   const filterDwgLayers = ref<string[]>([])
@@ -45,6 +47,7 @@ export function useIssueFilter(details: Ref<IssueDetail[]>, selectedFileId: Ref<
   const hasActiveFilters = computed(() =>
     !!filterSeverity.value ||
     !!filterCategory.value ||
+    !!filterReviewStatus.value ||
     !!searchText.value.trim() ||
     filterDwgLayers.value.length > 0 ||
     filterDwgEntityTypes.value.length > 0 ||
@@ -63,6 +66,11 @@ export function useIssueFilter(details: Ref<IssueDetail[]>, selectedFileId: Ref<
     // 分类筛选
     if (filterCategory.value) {
       list = list.filter(d => d.issueType === filterCategory.value)
+    }
+
+    // 人工复核状态筛选（'pending' = 只看 PENDING_REVIEW 待复核条目）
+    if (filterReviewStatus.value === 'pending') {
+      list = list.filter(d => d.reviewStatus === 'PENDING_REVIEW')
     }
 
     // DWG 图层筛选
@@ -109,6 +117,7 @@ export function useIssueFilter(details: Ref<IssueDetail[]>, selectedFileId: Ref<
   const resetFilters = () => {
     filterSeverity.value = ''
     filterCategory.value = ''
+    filterReviewStatus.value = ''
     searchText.value = ''
     filterDwgLayers.value = []
     filterDwgEntityTypes.value = []
@@ -119,6 +128,7 @@ export function useIssueFilter(details: Ref<IssueDetail[]>, selectedFileId: Ref<
     // 状态
     filterSeverity,
     filterCategory,
+    filterReviewStatus,
     searchText,
     filterDwgLayers,
     filterDwgEntityTypes,

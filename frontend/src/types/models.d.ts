@@ -157,6 +157,8 @@ export interface TaskDetail {
   judgeConfidence?: 'HIGH' | 'MEDIUM' | 'LOW' | null
   /** 判标理由 */
   judgeReason?: string | null
+  /** 人工复核状态：PENDING_REVIEW = 需人工复核（判标 LOW / AI 纯推断 / 合同 HIGH / 引用未定位） */
+  reviewStatus?: 'PENDING_REVIEW' | 'CONFIRMED' | null
   /** DWG 解析元数据 */
   dwgMetadata?: DwgMetadata
   /** 标记建议是否已采纳 */

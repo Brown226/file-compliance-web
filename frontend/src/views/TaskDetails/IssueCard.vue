@@ -114,6 +114,13 @@
         <span v-if="detail.plainLanguage" class="plain-language-preview">
           · {{ detail.plainLanguage }}
         </span>
+        <!-- 2026-08-26：判标 LOW / 待复核条目卡内展示判标理由（此前仅 hover title 可见） -->
+        <span
+          v-if="detail.reviewStatus === 'PENDING_REVIEW' && detail.judgeReason"
+          class="judge-reason-preview"
+        >
+          <el-icon :size="12"><InfoFilled /></el-icon> 判标：{{ detail.judgeReason }}
+        </span>
         <!-- 折叠态预览：原文/建议首行 -->
         <div v-if="!cardExpanded" class="collapsed-preview">
           <div v-if="detail.originalText" class="collapsed-row original">
@@ -598,6 +605,21 @@ async function submitFeedback(type: FeedbackType) {
   line-height: 1.4;
   margin-top: 2px;
   display: block;
+}
+
+/* 2026-08-26：判标理由预览（待复核条目，卡内可见） */
+.judge-reason-preview {
+  display: flex;
+  align-items: flex-start;
+  gap: 4px;
+  margin-top: 4px;
+  padding: 4px 8px;
+  background: var(--color-warning-bg);
+  border-left: 2px solid var(--color-warning-600);
+  border-radius: 3px;
+  font-size: 12px;
+  color: var(--color-warning-text);
+  line-height: 1.4;
 }
 
 /* 折叠态预览：原文/建议首行 */
