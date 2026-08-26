@@ -19,6 +19,22 @@ import { EmbeddingService } from '../knowledge/embedding.service';
 import { TerminologyService } from '../standard/terminology.service';
 import { dedupIssues } from '../../utils/issue-dedup';
 
+/**
+ * P0 修复（漏报可见性）：部分分片失败时构造一条 SYSTEM 级提示 issue。
+ * 旧实现仅在全部分片失败时抛错，部分失败（超时/限流）静默吞掉——
+ * 对应文本段未被审查，用户却看到"审查完成"，无法区分"真无问题"与"没审到"。
+ */
+function buildPartialChunkNotice(failedChunks: number, totalChunks: number): ReviewIssue {
+  return {
+    issueType: 'COMPLETENESS',
+    ruleCode: 'CHUNK_PARTIAL_FAILED',
+    severity: 'warning',
+    originalText: `[AI 审查覆盖不完整：${failedChunks}/${totalChunks} 个文本分片处理失败]`,
+    description: `本次 AI 审查有 ${failedChunks}/${totalChunks} 个文本分片调用失败（超时或限流），对应文本段未被完整审查，结果可能遗漏该部分的问题。建议重新审查本文件，或对相关章节人工复核。`,
+    recommendation: '对失败分片对应的章节进行人工复核，或重新发起审查。',
+  } as ReviewIssue;
+}
+
 export class AiReviewService {
   // ==================== AI ���ʵ�� ====================
 
@@ -398,6 +414,10 @@ export class AiReviewService {
       if (totalChunks > 0 && failedChunks === totalChunks) {
         throw new Error(`[ALL_CHUNKS_FAILED] LLM 直调全部 ${totalChunks} 个分片调用失败`);
       }
+      // P0 修复（漏报可见性）：部分分片失败时附加 SYSTEM 提示，标记覆盖不完整
+      if (failedChunks > 0 && failedChunks < totalChunks) {
+        issues.push(buildPartialChunkNotice(failedChunks, totalChunks));
+      }
       return { issues: StandardTraceabilityService.enrichWithStandardRef(issues), engine: 'llm-direct' };
     } catch (e) {
       console.error('[Pipeline] LLM ֱ�ӵ���ʧ��:', e);
@@ -522,6 +542,10 @@ export class AiReviewService {
       // 全败判定（修复 P1）：所有分片均失败时显式抛错，避免「零问题假合规」
       if (totalChunks > 0 && failedChunks === totalChunks) {
         throw new Error(`[ALL_CHUNKS_FAILED] LLM 审查全部 ${totalChunks} 个分片调用失败`);
+      }
+      // P0 修复（漏报可见性）：部分分片失败时附加 SYSTEM 提示，标记覆盖不完整
+      if (failedChunks > 0 && failedChunks < totalChunks) {
+        issues.push(buildPartialChunkNotice(failedChunks, totalChunks));
       }
 
       const deduped = dedupIssues(issues);
@@ -1568,6 +1592,7 @@ export class AiReviewService {
 
     // ��������������Ƭ
     const CONCURRENT_LIMIT = await getChunkConcurrency();
+    let failedChunks = 0;
     const chunkResults = await parallelLimit(chunks, CONCURRENT_LIMIT, async (chunk) => {
       try {
         const userContent = userTpl.replace(/\$\{text\}/g, chunk.text);
@@ -1587,12 +1612,22 @@ export class AiReviewService {
         return issues;
       } catch (e) {
         console.warn('[SemanticSpec] ��Ƭ���ʧ��:', e instanceof Error ? e.message : e);
+        failedChunks++;
         return [];
       }
     });
     for (const r of chunkResults) allIssues.push(...r);
 
-    // 分片去重：基于 issueType + 归一化全文 精确去重（与其他策略保持一致）
+    // P0 修复（假合规）：全部分片失败时显式抛错，避免「审查完成、AI 0 问题」的空报告
+    // （与 runLLMOnlyStrategy / runLLMDirect 的 ALL_CHUNKS_FAILED 判定同口径）
+    if (chunks.length > 0 && failedChunks === chunks.length) {
+      throw new Error(`[ALL_CHUNKS_FAILED] 条文库语义审查全部 ${chunks.length} 个分片调用失败`);
+    }
+    // P0 修复（漏报可见性）：部分分片失败时附加 SYSTEM 提示，标记覆盖不完整
+    if (failedChunks > 0 && failedChunks < chunks.length) {
+      allIssues.push(buildPartialChunkNotice(failedChunks, chunks.length));
+    }
+
     const deduped = dedupIssues(allIssues, { enableFuzzy: false });
 
     return { issues: deduped, engine: 'semantic-spec' };
