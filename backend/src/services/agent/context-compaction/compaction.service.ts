@@ -24,8 +24,8 @@ export const KEEP_RECENT_ROUNDS = 3;
 /** LLM 摘要调用超时时间（秒） */
 export const SUMMARY_TIMEOUT_SECONDS = 90;
 
-/** 机械折叠降级时保留的最新消息数 */
-const FALLBACK_KEEP_COUNT = 20;
+/** 机械折叠降级时保留的最新消息数（session.routes.ts 手动压缩修剪 DB 共用此单一来源） */
+export const FALLBACK_KEEP_COUNT = 20;
 
 // ==================== P1-1：摘要缓存（把 LLM 摘要移出请求关键路径） ====================
 

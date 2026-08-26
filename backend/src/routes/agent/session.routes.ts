@@ -22,7 +22,7 @@ import { QASessionService } from '../../services/agent/qa-session.service';
 import { SessionStatsService } from '../../services/agent/session-stats.service';
 import { AskUserService } from '../../services/agent/ask-user/ask-user.service';
 import { LlmService } from '../../services/llm/llm.service';
-import { CompactionService } from '../../services/agent/context-compaction/compaction.service';
+import { CompactionService, FALLBACK_KEEP_COUNT } from '../../services/agent/context-compaction/compaction.service';
 import prisma from '../../config/db';
 
 const router = Router();
@@ -354,8 +354,9 @@ router.post('/sessions/:sessionId/auto-name', async (req: AuthRequest, res: Resp
 /**
  * POST /api/agent/sessions/:id/compact — 手动触发上下文压缩
  *
- * 对会话早期消息生成 LLM 摘要并替换（阻塞操作，可能耗时数秒）。
- * 与自动压缩共用 CompactionService.compact。
+ * P1-3：对齐主链路 chatStream 的 compactWithCache——缓存命中秒回
+ * （写摘要 + 修剪 DB 至最近 FALLBACK_KEEP_COUNT 条）；未命中即时
+ * 机械折叠 + 后台预计算，不阻塞用户。响应字段结构保持不变。
  */
 router.post('/sessions/:id/compact', async (req: AuthRequest, res: Response) => {
   try {
@@ -372,20 +373,17 @@ router.post('/sessions/:id/compact', async (req: AuthRequest, res: Response) => 
       .filter((m: any) => m.role === 'user' || m.role === 'assistant')
       .map((m: any) => ({ role: m.role, content: typeof m.content === 'string' ? m.content : JSON.stringify(m.content ?? '') }));
 
-    const result = await CompactionService.compact(chatMessages);
+    // P1-3：与主链路 compactWithCache 语义对齐——缓存命中写摘要+修剪至最近
+    // FALLBACK_KEEP_COUNT 条；未命中不动 DB（避免无摘要时物理删历史造成
+    // 不可逆丢失），后台预计算完成后下一轮收敛
+    const result = await CompactionService.compactWithCache(sessionId, chatMessages);
 
-    if (result.truncatedMessages && result.truncatedMessages > 0) {
-      
-      // 删除被压缩的早期消息（按时间正序取前 N 条），插入摘要 system 消息
-      const ordered = [...messages].sort((a: any, b: any) =>
-        new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
-      const toDelete = ordered.slice(0, result.truncatedMessages).map((m: any) => m.id);
-      if (toDelete.length > 0) {
-        await prisma.qAMessage.deleteMany({
-          where: { id: { in: toDelete }, sessionId },
-        });
-      }
-      if (result.summary) {
+    if (result.summary) {
+      // 幂等防重复：该会话已有系统摘要消息（[上下文摘要] 前缀）则跳过插入
+      const existingSummary = await prisma.qAMessage.findFirst({
+        where: { sessionId, role: 'system', content: { startsWith: '[上下文摘要]' } },
+      });
+      if (!existingSummary) {
         await prisma.qAMessage.create({
           data: {
             sessionId,
@@ -395,7 +393,18 @@ router.post('/sessions/:id/compact', async (req: AuthRequest, res: Response) => 
           },
         });
       }
+
+      // 修剪 DB：按 createdAt 正序，删除超出最近 FALLBACK_KEEP_COUNT 条的最旧消息（保留最近 20 条 + 摘要）
+      const ordered = [...messages].sort((a: any, b: any) =>
+        new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
+      const toDelete = ordered.slice(0, Math.max(0, ordered.length - FALLBACK_KEEP_COUNT)).map((m: any) => m.id);
+      if (toDelete.length > 0) {
+        await prisma.qAMessage.deleteMany({
+          where: { id: { in: toDelete }, sessionId },
+        });
+      }
     }
+    // 未命中（机械折叠 + 后台预计算）：不动 DB，仅返回折叠统计给前端
 
     return res.json({
       success: true,
