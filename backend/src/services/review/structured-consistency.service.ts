@@ -20,6 +20,7 @@ import { LlmService, ReviewIssue, TextChunk } from '../llm/llm.service';
 import { PipelineContext, PipelineReviewConfig } from '../review-pipeline/types';
 import { PromptLoader, consistencyDimensionsBlock } from '../prompts';
 import { parallelLimit } from '../../utils/parallel';
+import { VALID_ISSUE_TYPES } from '../../utils/issue-types';
 import { z } from 'zod';
 
 // ============================================================
@@ -714,7 +715,7 @@ export class StructuredConsistencyService {
       const parsed: unknown = JSON.parse(arrMatch[0]);
       if (!Array.isArray(parsed)) return [];
 
-      const validTypes = ['TYPO', 'VIOLATION', 'FORMAT', 'COMPLETENESS', 'CONSISTENCY', 'LAYOUT', 'NAMING', 'ENCODING', 'ATTRIBUTE', 'HEADER', 'PAGE', 'FLUENCY', 'CROSS_REFERENCE'];
+      const validTypes = VALID_ISSUE_TYPES as readonly string[];
 
       const issues: ReviewIssue[] = [];
       for (const item of parsed) {

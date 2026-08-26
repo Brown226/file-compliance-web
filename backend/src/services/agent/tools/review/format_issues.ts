@@ -7,32 +7,16 @@
  * 2. 确保 originalText 字段存在（没有的用空字符串，避免前端定位崩溃）
  * 3. 过滤掉不是对象或 null 的非法条目
  *
- * 13 种合法 issueType（与 llm.service.ts:119 / ReviewIssue 接口一致）：
+ * 13 种合法 issueType（与 utils/issue-types.ts 权威枚举一致）：
  *   TYPO / VIOLATION / FORMAT / COMPLETENESS / CONSISTENCY / LAYOUT /
  *   NAMING / ENCODING / ATTRIBUTE / HEADER / PAGE / FLUENCY / CROSS_REFERENCE
  */
 
 import { z } from 'zod';
 import type { ToolContext } from '../file/upload_file';
+import { VALID_ISSUE_TYPES_SET } from '../../../../utils/issue-types';
 
 const { tool } = require('@ai-sdk/provider-utils') as typeof import('@ai-sdk/provider-utils');
-
-/** 13 种合法 issueType 枚举（与 LlmService.parseReviewResult 的 validTypes 一致） */
-const VALID_ISSUE_TYPES = new Set([
-  'TYPO',
-  'VIOLATION',
-  'FORMAT',
-  'COMPLETENESS',
-  'CONSISTENCY',
-  'LAYOUT',
-  'NAMING',
-  'ENCODING',
-  'ATTRIBUTE',
-  'HEADER',
-  'PAGE',
-  'FLUENCY',
-  'CROSS_REFERENCE',
-]);
 
 /**
  * 创建 format_issues 工具
@@ -59,7 +43,7 @@ export function createFormatIssuesTool(_context: ToolContext) {
 
         // 校验 issueType：非法值归为 VIOLATION（保守策略，保留问题数据）
         let issueType = raw.issueType;
-        if (typeof issueType !== 'string' || !VALID_ISSUE_TYPES.has(issueType)) {
+        if (typeof issueType !== 'string' || !VALID_ISSUE_TYPES_SET.has(issueType)) {
           issueType = 'VIOLATION';
         }
 

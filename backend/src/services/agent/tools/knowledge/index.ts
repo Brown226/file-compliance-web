@@ -4,7 +4,7 @@
  * Task 9：3 个知识检索工具
  *   - search_knowledge: 调 MaxKB/RAGFlow 双源知识库做 RAG 检索（复用 RAGService.retrieve）
  *   - search_rule_library: 查询条文库 RuleLibrary（复用 RuleLibraryService）
- *   - search_standard_checkpoints: 查询审点库 StandardCheckpoint（复用 CheckpointService）
+ *   - search_standard_checkpoints: 查询审点库（复用 CheckpointService）
  */
 
 import { createSearchMaxkbKnowledgeTool } from './search_maxkb_knowledge';

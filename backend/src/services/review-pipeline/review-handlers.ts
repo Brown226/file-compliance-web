@@ -346,7 +346,7 @@ const handleDecReview: ReviewHandler = async (ctx) => {
   if (!text.trim()) return { aiIssues: [buildNoTextIssue(ctx)], usedEngine: 'none' };
 
   if (!ctx.checkpoints || ctx.checkpoints.length === 0) {
-    console.warn('[Handler] DEC_REVIEW: ctx.checkpoints 为空，请确认阶段0 已预加载审点库（StandardCheckpoint）');
+    console.warn('[Handler] DEC_REVIEW: ctx.checkpoints 为空，请确认阶段0 已预加载审点库（rule_library_items）');
   }
 
   const config = getEffectiveConfig(ctx);
