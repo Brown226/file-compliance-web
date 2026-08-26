@@ -32,46 +32,10 @@
 
     <!-- 主内容区：左右分栏 -->
     <div class="main-content">
-      <!-- OCR 降级告警横幅 -->
-      <div v-if="ocrDegradedFiles.length > 0" class="ocr-degraded-banner">
-        <el-alert
-          :title="`OCR 服务不可用：${ocrDegradedFiles.length} 个文件为扫描件但未能识别图片中的文字`"
-          type="warning"
-          show-icon
-          :closable="true"
-          @close="ocrDegradedFiles = []"
-        >
-          <template #default>
-            <div style="margin-top:4px; font-size:13px;">
-              <div v-for="f in ocrDegradedFiles" :key="f" style="margin-bottom:2px;">
-                ⚠️ {{ f }}
-              </div>
-              <p style="margin:4px 0 0; color:var(--color-warning-text);">请手动检查这些文件中可能的合规问题。</p>
-            </div>
-          </template>
-        </el-alert>
-      </div>
-      <!-- OPT-027: RAG 降级告警横幅 -->
-      <div v-if="ragDegradedFiles.length > 0" class="ocr-degraded-banner">
-        <el-alert
-          :title="`知识库检索降级：${ragDegradedFiles.length} 个文件的审查未使用 RAG 检索`"
-          type="info"
-          show-icon
-          :closable="true"
-          @close="ragDegradedFiles = []"
-        >
-          <template #default>
-            <div style="margin-top:4px; font-size:13px;">
-              <div v-for="f in ragDegradedFiles" :key="f" style="margin-bottom:2px;">
-                ⚠️ {{ f }}
-              </div>
-              <p style="margin:4px 0 0; color:var(--color-success-text);">RAG 不可用，已切换为 LLM 直审，结果可信度可能降低。</p>
-            </div>
-          </template>
-        </el-alert>
-      </div>
-      <!-- P1-7: 标准库/审点库为空告警横幅 -->
-      <div v-if="libEmptyWarnings.length > 0" class="ocr-degraded-banner">
+      <!-- ===== 审查降级/缺失告警（2026-08-26 分级化：按影响程度排序 + 级别标签）=====
+           critical > high > warning > info；渲染顺序即严重度降序，用户先看到最需要处理的 -->
+      <!-- P1-7: 标准库/审点库为空告警（最严重：AI 可能完全没审） -->
+      <div v-if="libEmptyWarnings.length > 0" class="degraded-banner degraded-banner--critical">
         <el-alert
           :title="`审查数据缺失：${libEmptyWarnings.length} 条告警 — 本次审查可能未完整执行`"
           type="warning"
@@ -80,17 +44,18 @@
           @close="libEmptyWarnings = []"
         >
           <template #default>
-            <div style="margin-top:4px; font-size:13px;">
-              <div v-for="(w, i) in libEmptyWarnings" :key="i" style="margin-bottom:2px;">
+            <div class="degraded-banner__body">
+              <el-tag size="small" type="danger" effect="dark" round class="degraded-banner__level">影响：高</el-tag>
+              <div v-for="(w, i) in libEmptyWarnings" :key="i" class="degraded-banner__item">
                 ⚠️ {{ w }}
               </div>
-              <p style="margin:4px 0 0; color:var(--color-warning-text);">「未发现问题」可能是「没审到」而非「真合规」，请补充标准库/审点库数据后重新审查。</p>
+              <p class="degraded-banner__tip degraded-banner__tip--critical">「未发现问题」可能是「没审到」而非「真合规」，请补充标准库/审点库数据后重新审查。</p>
             </div>
           </template>
         </el-alert>
       </div>
       <!-- P0-4: 持久化降级原因横幅（task.degradedReason，刷新后依然可见） -->
-      <div v-if="task?.degradedReason" class="ocr-degraded-banner">
+      <div v-if="task?.degradedReason" class="degraded-banner degraded-banner--high">
         <el-alert
           :title="'本次审查存在降级：' + task.degradedReason.split('; ').length + ' 项环节未完整执行'"
           type="warning"
@@ -99,11 +64,52 @@
           @close="task.degradedReason = null"
         >
           <template #default>
-            <div style="margin-top:4px; font-size:13px;">
-              <div v-for="(r, i) in task.degradedReason.split('; ')" :key="i" style="margin-bottom:2px;">
+            <div class="degraded-banner__body">
+              <el-tag size="small" type="warning" effect="dark" round class="degraded-banner__level">影响：较高</el-tag>
+              <div v-for="(r, i) in task.degradedReason.split('; ')" :key="i" class="degraded-banner__item">
                 ⚠️ {{ r }}
               </div>
-              <p style="margin:4px 0 0; color:var(--color-warning-text);">「未发现问题」可能是「没审到」而非「真合规」，请结合人工检查确认。</p>
+              <p class="degraded-banner__tip">「未发现问题」可能是「没审到」而非「真合规」，请结合人工检查确认。</p>
+            </div>
+          </template>
+        </el-alert>
+      </div>
+      <!-- OCR 降级告警横幅 -->
+      <div v-if="ocrDegradedFiles.length > 0" class="degraded-banner degraded-banner--warning">
+        <el-alert
+          :title="`OCR 服务不可用：${ocrDegradedFiles.length} 个文件为扫描件但未能识别图片中的文字`"
+          type="warning"
+          show-icon
+          :closable="true"
+          @close="ocrDegradedFiles = []"
+        >
+          <template #default>
+            <div class="degraded-banner__body">
+              <el-tag size="small" type="warning" effect="plain" round class="degraded-banner__level">影响：中</el-tag>
+              <div v-for="f in ocrDegradedFiles" :key="f" class="degraded-banner__item">
+                ⚠️ {{ f }}
+              </div>
+              <p class="degraded-banner__tip">请手动检查这些文件中可能的合规问题。</p>
+            </div>
+          </template>
+        </el-alert>
+      </div>
+      <!-- OPT-027: RAG 降级告警横幅 -->
+      <div v-if="ragDegradedFiles.length > 0" class="degraded-banner degraded-banner--info">
+        <el-alert
+          :title="`知识库检索降级：${ragDegradedFiles.length} 个文件的审查未使用 RAG 检索`"
+          type="info"
+          show-icon
+          :closable="true"
+          @close="ragDegradedFiles = []"
+        >
+          <template #default>
+            <div class="degraded-banner__body">
+              <el-tag size="small" type="info" effect="plain" round class="degraded-banner__level">影响：低</el-tag>
+              <div v-for="f in ragDegradedFiles" :key="f" class="degraded-banner__item">
+                ⚠️ {{ f }}
+              </div>
+              <p class="degraded-banner__tip degraded-banner__tip--info">RAG 不可用，已切换为 LLM 直审，结果可信度可能降低。</p>
             </div>
           </template>
         </el-alert>
@@ -2407,15 +2413,45 @@ onUnmounted(() => {
 }
 
 /* OCR 降级告警横幅 */
-.ocr-degraded-banner {
+.degraded-banner {
   position: absolute;
   top: 12px;
   left: 12px;
   right: 12px;
   z-index: 100;
 }
-.ocr-degraded-banner :deep(.el-alert) {
+.degraded-banner :deep(.el-alert) {
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+}
+/* 2026-08-26 分级化：严重度 → 左边框色 + 级别标签色，视觉可分辨优先级 */
+.degraded-banner--critical :deep(.el-alert) { border-left: 3px solid var(--color-danger-600, #dc2626); }
+.degraded-banner--high :deep(.el-alert) { border-left: 3px solid var(--color-warning-600, #d97706); }
+.degraded-banner--warning :deep(.el-alert) { border-left: 3px solid var(--color-warning-400, #fbbf24); }
+.degraded-banner--info :deep(.el-alert) { border-left: 3px solid var(--color-info, #409eff); }
+.degraded-banner__body {
+  margin-top: 4px;
+  font-size: 13px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.degraded-banner__level {
+  align-self: flex-start;
+  margin-bottom: 2px;
+}
+.degraded-banner__item {
+  margin-bottom: 2px;
+}
+.degraded-banner__tip {
+  margin: 4px 0 0;
+  color: var(--color-warning-text, #90640b);
+}
+.degraded-banner__tip--critical {
+  color: var(--color-danger-600, #b91c1c);
+  font-weight: 500;
+}
+.degraded-banner__tip--info {
+  color: var(--color-info-text, #1d4ed8);
 }
 </style>
 

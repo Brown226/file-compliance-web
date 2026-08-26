@@ -104,6 +104,8 @@ export function getModeCapabilitiesApi() {
     rules: boolean;
     standardRef: boolean;
     ai: boolean;
+    /** 智能判标开关（2026-08-26 扩展）：非 DEC 模式 AI 产出打置信度，LOW 转人工复核 */
+    smartJudge: boolean;
     aiStrategy: 'standard' | 'llmOnly' | 'refCompare' | 'multimodal';
     crossFile: boolean;
   }>>('/tasks/mode-capabilities')

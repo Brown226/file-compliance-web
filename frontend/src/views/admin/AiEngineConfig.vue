@@ -24,16 +24,19 @@
       <div v-else-if="activeTab === 'profiles'" class="provider-panel-wrap">
         <ProviderConfigPanel mode="inline" />
       </div>
+      <!-- 审查模式配置（2026-08-26：smartJudge 判标开关等） -->
+      <ModeConfigPanel v-else-if="activeTab === 'modes'" />
     </section>
   </div>
 </template>
 
 <script setup lang="ts">
 import { ref } from 'vue'
-import { Cpu, Collection, Setting } from '@element-plus/icons-vue'
+import { Cpu, Collection, Setting, DataAnalysis } from '@element-plus/icons-vue'
 import ModelConfigPage from '@/views/LLMConfig/ModelConfigPage.vue'
 import KnowledgeConfigPage from '@/views/LLMConfig/KnowledgeConfigPage.vue'
 import ProviderConfigPanel from '@/components/provider-config/ProviderConfigPanel.vue'
+import ModeConfigPanel from './ModeConfigPanel.vue'
 
 const tabs = [
   {
@@ -51,9 +54,14 @@ const tabs = [
     label: 'Provider 配置',
     icon: Setting,
   },
+  {
+    key: 'modes',
+    label: '审查模式',
+    icon: DataAnalysis,
+  },
 ] as const
 
-const activeTab = ref<'models' | 'knowledge' | 'profiles'>('models')
+const activeTab = ref<'models' | 'knowledge' | 'profiles' | 'modes'>('models')
 </script>
 
 <style scoped>
