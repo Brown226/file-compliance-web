@@ -26,7 +26,7 @@
           class="ask-user-input"
           type="text"
           placeholder="请输入…"
-          @keyup.enter="onSubmit(inputValue)"
+          @keyup.enter="onInputEnter"
         />
         <div class="ask-user-actions">
           <button class="ask-btn cancel" @click="onCancel">取消</button>
@@ -127,6 +127,12 @@ watch(
   },
 )
 
+/** IME 守卫：中文输入法候选上屏的 Enter 不提交（isComposing=true 时放行） */
+function onInputEnter(e: KeyboardEvent) {
+  if (e.isComposing) return
+  onSubmit(inputValue)
+}
+
 function onSubmit(answer: string) {
   clearTimeoutTimer()
   emit('submit', (answer || '').toString().trim())
@@ -150,7 +156,9 @@ function onCancel() {
 .ask-user-card {
   width: 420px;
   max-width: 92vw;
-  background: var(--surface, var(--bg-surface));
+  /* P0-5b：原 var(--surface, var(--bg-surface)) 的 --surface 全项目未定义、
+     fallback 指向全局浅色 → 暗色下弹窗恒定白底；改继承 .agent-layout(.dark) 的 --bg */
+  background: var(--bg);
   border-radius: 12px;
   box-shadow: 0 8px 30px rgba(0, 0, 0, 0.18);
   padding: 18px 20px 20px;
@@ -161,7 +169,7 @@ function onCancel() {
   align-items: center;
   gap: 6px;
   font-weight: 600;
-  color: var(--primary, var(--color-primary-600));
+  color: var(--accent, var(--color-primary-600));
 }
 .ask-user-question {
   margin: 12px 0 14px;
@@ -190,7 +198,7 @@ function onCancel() {
   cursor: pointer;
 }
 .ask-btn.confirm {
-  background: var(--primary, var(--color-primary-600));
+  background: var(--accent, var(--color-primary-600));
   color: var(--corp-text-inverse);
 }
 .ask-btn.confirm:disabled {
@@ -229,8 +237,8 @@ function onCancel() {
   cursor: pointer;
 }
 .ask-opt.active {
-  border-color: var(--primary, var(--color-primary-600));
-  background: var(--primary-light, var(--color-primary-50));
-  color: var(--primary, var(--color-primary-600));
+  border-color: var(--accent, var(--color-primary-600));
+  background: var(--user-bg, var(--color-primary-50));
+  color: var(--accent, var(--color-primary-600));
 }
 </style>

@@ -19,7 +19,7 @@
         rows="1"
         placeholder="输入问题或审查要求…（Enter 发送，Shift+Enter 换行）"
         @input="onInput"
-        @keydown.enter.exact.prevent="$emit('send')"
+        @keydown.enter.exact.prevent="onEnterSend"
         @keydown.shift.enter.exact="() => {}"
         @paste="onPasteImages"
       />
@@ -192,6 +192,15 @@ function onInput(e: Event) {
   emit('update:inputValue', ta.value)
   ta.style.height = 'auto'
   ta.style.height = `${Math.min(ta.scrollHeight, 220)}px`
+}
+
+/**
+ * Enter 发送（IME 守卫）：中文输入法拼音候选上屏按 Enter 时 isComposing=true，
+ * 直接 prevent + emit 会把半截拼音当消息发出。组合态回车只放行不发送。
+ */
+function onEnterSend(e: KeyboardEvent) {
+  if (e.isComposing) return
+  emit('send')
 }
 
 function onUpload(options: { file: File }) {
