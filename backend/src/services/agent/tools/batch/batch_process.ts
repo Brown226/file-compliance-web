@@ -6,7 +6,7 @@
  * - chunk：按章节分块（复用 LlmService.splitText + 章节边界）
  * - summarize：LLM 生成文档摘要（要点清单）
  * - review：调 AI 审查（复用 review-pipeline 的审查逻辑）
- * - knowledge：知识检索（search_knowledge 语义，用关键词/Embedding 抽要点）
+ * - knowledge：关键词提取（文本高频词，作为轻量检索线索；非完整 RAG，见 doKeywordExtract）
  *
  * 设计：
  * - 复用现有工具函数（parseDocument / LlmService.splitText），不重复造轮子
@@ -154,7 +154,11 @@ async function doReview(filePath: string): Promise<NonNullable<BatchFileResult['
   }
 }
 
-async function doKnowledge(filePath: string): Promise<NonNullable<BatchFileResult['knowledge']>> {
+/**
+ * 子任务：关键词提取（原名 doKnowledge——命名误导：实现是高频词统计而非知识库检索，
+ * 2026 修复：改名 doKeywordExtract 并让 description 如实写作「关键词提取」）
+ */
+async function doKeywordExtract(filePath: string): Promise<NonNullable<BatchFileResult['knowledge']>> {
   const parsed = await parseDocument(filePath);
   const text = (parsed.text || '').slice(0, 8000);
   if (!text.trim()) return { results: 0, snippets: [] };
@@ -219,7 +223,7 @@ export async function runBatchProcess(
             res.review = await doReview(file.filePath);
             break;
           case 'knowledge':
-            res.knowledge = await doKnowledge(file.filePath);
+            res.knowledge = await doKeywordExtract(file.filePath);
             break;
         }
       }

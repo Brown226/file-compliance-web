@@ -87,15 +87,12 @@ export function createSearchRuleLibraryTool(_context: ToolContext) {
         // 查指定规则库
         const lib = await RuleLibraryService.getById(libraryId);
         libraries = lib ? [lib] : [];
-        console.log(`[Agent:search_rule_library] 查指定规则库 ${libraryId}: ${libraries.length > 0 ? '命中' : '未找到'}`);
       } else {
         // 查所有 PUBLISHED 规则库
         libraries = await RuleLibraryService.list({ selectableOnly: true });
-        console.log(`[Agent:search_rule_library] 查所有 PUBLISHED 规则库: ${libraries.length} 个`);
       }
 
       if (libraries.length === 0) {
-        console.log('[Agent:search_rule_library] 无可用规则库，返回空结果');
         return { results: [], total: 0, searchedLibraries: [] };
       }
 
@@ -140,7 +137,8 @@ export function createSearchRuleLibraryTool(_context: ToolContext) {
       // 3. 限制返回数量
       const trimmed = allItems.slice(0, topNumber);
 
-      console.log(`[Agent:search_rule_library] 命中 ${allItems.length} 条，返回 ${trimmed.length} 条 (keyword=${keyword || '-'}, category=${category || '-'})`);
+      // P2：日志收敛——只在汇总处打一条，且不打印完整用户查询词（keyword/category 属用户检索内容，避免进服务器日志）
+      console.log(`[Agent:search_rule_library] 命中 ${allItems.length} 条，返回 ${trimmed.length} 条（library=${libraryId || 'all'}）`);
 
       return {
         results: trimmed,

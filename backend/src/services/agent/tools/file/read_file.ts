@@ -30,6 +30,7 @@ import { z } from 'zod';
 import { getAgentTempRoot } from './paths';
 import { fixMojibakePath } from './filename';
 import type { ToolContext } from './upload_file';
+import { parseDocument } from './parse-document';
 
 const { tool } = require('@ai-sdk/provider-utils') as typeof import('@ai-sdk/provider-utils');
 
@@ -55,34 +56,6 @@ interface ReadFileResult {
  */
 function wrapFileContent(numberedText: string): string {
   return `<file_content>${numberedText}</file_content>`;
-}
-
-/**
- * 调 doc-parser 提取二进制文档的纯文本
- * 复用 extract_text 的 doc-parser 调用逻辑
- */
-async function extractTextFromDocParser(filePath: string, ext: string): Promise<string> {
-  const fileBuffer = await fs.promises.readFile(filePath);
-  const formData = new FormData();
-  formData.append('file', new Blob([fileBuffer]), path.basename(filePath));
-  formData.append('file_type', ext);
-
-  const parserBaseUrl = process.env.PARSER_SERVICE_URL || 'http://localhost:8000';
-  const parseUrl = `${parserBaseUrl}/api/parse`;
-
-      // 修复：doc-parser 不可达时原实现无限挂起，加 90s 显式超时
-      const response = await fetch(parseUrl, { method: 'POST', body: formData, signal: AbortSignal.timeout(90_000) });
-  if (!response.ok) {
-    const errText = await response.text().catch(() => response.statusText);
-    throw new Error(`doc-parser 调用失败 (HTTP ${response.status}): ${errText}`);
-  }
-
-  const json: any = await response.json();
-  if (json.code !== 200) {
-    throw new Error(`doc-parser 解析失败: ${json.message || '未知错误'}`);
-  }
-
-  return json.data?.text || '';
 }
 
 /**
@@ -167,12 +140,12 @@ export function createReadFileTool(context: ToolContext) {
       const fileName = path.basename(filePath);
       const ext = path.extname(fileName).toLowerCase().replace('.', '');
 
-      // 提取文本（纯文本直接读，二进制调 doc-parser）
+      // 提取文本（纯文本直接读，二进制调 parse-document 统一入口）
       let text: string;
       if (PLAIN_TEXT_EXTS.includes(ext)) {
         text = await fs.promises.readFile(filePath, 'utf-8');
       } else {
-        text = await extractTextFromDocParser(filePath, ext);
+        text = (await parseDocument(filePath)).text || '';
       }
 
       // 计算窗口

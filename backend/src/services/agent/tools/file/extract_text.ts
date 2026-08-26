@@ -14,6 +14,7 @@ import { z } from 'zod';
 import { fixMojibakePath } from './filename';
 import { assertUserFilePath } from './paths';
 import type { ToolContext } from './upload_file';
+import { parseDocument } from './parse-document';
 
 const { tool } = require('@ai-sdk/provider-utils') as typeof import('@ai-sdk/provider-utils');
 
@@ -90,41 +91,15 @@ export function createExtractTextTool(context: ToolContext) {
         };
       }
 
-      // 二进制文档格式调 doc-parser
-      const fileBuffer = await fs.promises.readFile(filePath);
-      const formData = new FormData();
-      formData.append('file', new Blob([fileBuffer]), fileName);
-      formData.append('file_type', ext);
-
-      const parserBaseUrl = process.env.PARSER_SERVICE_URL || 'http://localhost:8000';
-      const parseUrl = `${parserBaseUrl}/api/parse`;
-
-      const response = await fetch(parseUrl, {
-        method: 'POST',
-        body: formData,
-        // 修复：doc-parser 不可达时原实现无限挂起（TCP 超时 1-2 分钟+），
-        // Agent 步骤卡死。加 90s 显式超时，超时后走降级路径。
-        signal: AbortSignal.timeout(90_000),
-      });
-
-      if (!response.ok) {
-        const errText = await response.text().catch(() => response.statusText);
-        throw new Error(`doc-parser 调用失败 (HTTP ${response.status}): ${errText}`);
-      }
-
-      const json: any = await response.json();
-
-      if (json.code !== 200) {
-        throw new Error(`doc-parser 解析失败: ${json.message || '未知错误'}`);
-      }
-
-      const data = json.data || {};
+      // 二进制文档格式调 doc-parser（统一走 parse-document 共享入口：90s 超时 + 错误归一，
+      // 2026 收敛：此处原有一份 FormData+fetch 内联拷贝，已移除）
+      const parsed = await parseDocument(filePath);
       // Task 22.1：用 <file_content> 标签包裹 text 和 markdown，防止文件内 prompt injection
       return {
-        text: wrapFileContent(data.text || ''),
-        structure: data.structure || {},
-        pages: data.metadata?.page_count,
-        markdown: data.markdown ? wrapFileContent(data.markdown) : undefined,
+        text: wrapFileContent(parsed.text || ''),
+        structure: parsed.structure || {},
+        pages: parsed.pageCount,
+        markdown: parsed.markdown ? wrapFileContent(parsed.markdown) : undefined,
       };
     },
   });
