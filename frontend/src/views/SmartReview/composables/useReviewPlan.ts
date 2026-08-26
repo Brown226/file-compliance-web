@@ -4,6 +4,7 @@ import type { EntryModule } from '../types/smart-review'
 import {
   OBJECTIVE_OPTIONS,
   EVIDENCE_SOURCE_OPTIONS,
+  DEFAULT_RULE_PREFIXES,
 } from '../constants/review-config'
 
 export function useReviewPlan(state: ReturnType<typeof useSmartReviewState>) {
@@ -152,8 +153,9 @@ export function useReviewPlan(state: ReturnType<typeof useSmartReviewState>) {
         draft.enhancements.intraFileConsistency = false
         draft.enhancements.crossFileConsistency = false
         draft.execution.profile = 'RULE_ONLY'
-        // 规则前缀默认全选（空数组 = 执行全部内置规则），防止从 CONSISTENCY 切换后残留 ['CONSIST']
-        state.enabledRulePrefixes.value = []
+        // 默认勾选高价值规则前缀（格式排版类默认关闭，用户可在面板手动补选）；
+        // 全部取消勾选 = 后端执行全部内置规则（review.service.ts 空前缀语义）
+        state.enabledRulePrefixes.value = [...DEFAULT_RULE_PREFIXES]
         break
 
       case 'CONTRACT':

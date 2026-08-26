@@ -39,9 +39,17 @@ export const EVIDENCE_SOURCE_OPTIONS: Record<ReviewObjective, Array<{ value: Rev
   PROOFREAD: [],
 }
 
+/**
+ * RULE_ONLY 默认勾选的规则前缀（高价值集）
+ *
+ * 收敛依据（2026-08-26 误报治理）：NAME/FORMAT/LAYOUT/HEADER/PAGE/ATTR 属
+ * 「文件规范/排版格式」类，对工程合规审查价值低且高频触发（如中英文混排空格、
+ * 缩进对齐、页眉页码），是用户反馈"价值不高"问题的主力。内容/逻辑/图纸类保留默认。
+ * 用户仍可在「规则范围」面板手动勾选被移出默认的格式类前缀；全部取消勾选时
+ * 后端执行全部内置规则（review.service.ts 空前缀语义，行为保持不变）。
+ */
 export const DEFAULT_RULE_PREFIXES = [
-  'NAME', 'FORMAT', 'LAYOUT', 'HEADER', 'PAGE', 'CODE', 'UNIT', 'ATTR', 'TYPO',
-  'CONSIST', 'COMPL',
+  'CODE', 'UNIT', 'TYPO', 'PUNCT', 'INTERNAL_CODE', 'COMPL', 'CONSIST',
   'DWG_TITLE', 'DWG_LAYER', 'DWG_DIM', 'DWG_STDREF', 'DWG_SCALE', 'DWG_OVERLAP',
 ]
 

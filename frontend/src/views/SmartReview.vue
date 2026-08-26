@@ -133,7 +133,7 @@
                 </div>
               </div>
               <div class="config-reason config-reason--info" style="margin-top: 8px;">
-                <el-icon><InfoFilled /></el-icon> 不勾选任何规则时执行全部内置规则；勾选后仅执行所选规则组。结果页将按检查项分组展示。
+                <el-icon><InfoFilled /></el-icon> 默认勾选高价值规则（内容/逻辑/图纸类），格式排版类默认关闭可自行勾选；全部取消勾选时执行全部内置规则。
               </div>
             </div>
 
