@@ -9,7 +9,7 @@
         没有检测到支持视觉的 Provider。请在 Provider 配置中为模型勾选「image」输入模态（或将用途设为「视觉」/「通用」）。
       </div>
 
-      <el-form :model="config" label-width="100px" label-position="left">
+      <el-form :model="config" label-width="140px" label-position="left">
         <el-form-item label="选择 Provider" required class="provider-field">
           <el-select
             v-model="config.providerId"
@@ -46,8 +46,8 @@
 
             <el-form-item label="模型类型">
               <el-radio-group v-model="config.modelType" @change="handleModelTypeChange">
-                <el-radio-button value="instruct">Instruct</el-radio-button>
-                <el-radio-button value="thinking">Thinking</el-radio-button>
+                <el-radio-button value="instruct">指令型</el-radio-button>
+                <el-radio-button value="thinking">推理型</el-radio-button>
               </el-radio-group>
             </el-form-item>
 
@@ -62,7 +62,7 @@
               <div class="form-tip">指令型默认 4096，推理型默认 16384</div>
             </el-form-item>
 
-            <el-form-item label="Temperature">
+            <el-form-item label="温度">
               <div class="inline-number">
                 <el-input-number
                   v-model="config.temperature"
@@ -321,19 +321,8 @@ defineExpose({
 .param-group__title {
   font-size: 13px;
   font-weight: 600;
-  color: var(--color-primary-700);
+  color: var(--color-gray-700);
   margin-bottom: 4px;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.param-group__title::before {
-  content: '';
-  width: 3px;
-  height: 13px;
-  border-radius: 2px;
-  background: var(--color-primary-500);
 }
 
 .param-group :deep(.el-form-item__label) {

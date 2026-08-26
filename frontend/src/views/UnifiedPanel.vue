@@ -49,27 +49,6 @@
           </div>
         </AdminPanel>
       </div>
-
-      <AdminPanel title="快捷入口">
-        <div class="links-grid">
-          <div class="quick-link" @click="$router.push('/knowledge')">
-            <span class="quick-link__icon"><el-icon :size="18"><Collection /></el-icon></span>
-            <span class="quick-link__label">知识中心</span>
-          </div>
-          <div class="quick-link" @click="$router.push('/agent')">
-            <span class="quick-link__icon"><el-icon :size="18"><MagicStick /></el-icon></span>
-            <span class="quick-link__label">Agent 助手</span>
-          </div>
-          <div class="quick-link" @click="$router.push('/review-center')">
-            <span class="quick-link__icon"><el-icon :size="18"><DataBoard /></el-icon></span>
-            <span class="quick-link__label">审查中心</span>
-          </div>
-          <div class="quick-link" @click="$router.push('/announcements')">
-            <span class="quick-link__icon"><el-icon :size="18"><Bell /></el-icon></span>
-            <span class="quick-link__label">系统公告</span>
-          </div>
-        </div>
-      </AdminPanel>
     </div>
 
     <!-- Tab 2: 审查配置 -->
@@ -126,7 +105,7 @@
 
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
-import { Monitor, Setting, Operation, Collection, MagicStick, DataBoard, Bell, Refresh } from '@element-plus/icons-vue'
+import { Monitor, Setting, Operation, Refresh } from '@element-plus/icons-vue'
 import { getDashboardStatsApi, getSystemHealthApi } from '@/api/dashboard'
 import { useUserStore } from '@/stores/user'
 import PageIntro from '@/components/admin/PageIntro.vue'
@@ -194,7 +173,7 @@ const systemItems = computed(() => {
 // 系统健康数据（实时探测，非写死）
 interface ServiceStatusItem {
   name: string
-  ok: boolean | null  // null = 检测中/未知
+  ok: boolean | null  // null = 未知（探测不可达或未完成）
   error?: string
 }
 
@@ -237,12 +216,13 @@ async function fetchHealth() {
 }
 
 function dotClass(s: ServiceStatusItem) {
-  if (s.ok === null) return 'checking'
+  if (s.ok === null) return healthLoading.value ? 'checking' : 'unknown'
   return s.ok ? 'ok' : 'error'
 }
 
 function statusText(s: ServiceStatusItem) {
-  if (s.ok === null) return '检测中'
+  // 探测进行中才是「检测中」；探测完成后仍为 null 说明该服务不可达
+  if (s.ok === null) return healthLoading.value ? '检测中' : '不可达'
   return s.ok ? '正常' : '异常'
 }
 
@@ -339,7 +319,7 @@ onMounted(async () => {
 /* === 系统健康 === */
 .health-grid {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: 1fr;
   gap: var(--space-6);
   margin-bottom: var(--space-6);
 }
@@ -395,6 +375,11 @@ onMounted(async () => {
   animation: pulse-gray 1.2s infinite;
 }
 
+/* 不可达：定格灰点，不做「检测中」的闪烁假象 */
+.status-dot.unknown {
+  background: var(--corp-text-tertiary);
+}
+
 @keyframes pulse-gray {
   0%, 100% { opacity: 1; }
   50% { opacity: 0.4; }
@@ -431,92 +416,30 @@ onMounted(async () => {
   cursor: help;
 }
 
-/* 关键指标：KPI 汇总条（统一后台数据汇总记忆点） */
+/* 关键指标：单行汇总条（只留数字与标签，不做卡片） */
 .metrics-grid {
   display: grid;
-  grid-template-columns: repeat(2, 1fr);
+  grid-template-columns: repeat(4, 1fr);
   gap: var(--space-4);
 }
 
 .metric {
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  padding: 16px var(--space-4) 14px;
-  background: var(--bg-surface-hover);
-  border-radius: var(--radius-lg);
-  border: 1px solid var(--corp-border-light);
-  transition: transform var(--corp-transition-base), box-shadow var(--corp-transition-base), border-color var(--corp-transition-base);
-}
-
-.metric:hover {
-  transform: translateY(-2px);
-  border-color: var(--color-primary-200);
-  box-shadow: 0 4px 12px rgba(37, 99, 235, 0.1);
+  gap: 4px;
 }
 
 .metric-value {
-  font-size: 26px;
-  font-weight: 700;
-  line-height: 1.1;
-  color: var(--color-primary-600);
+  font-size: 20px;
+  font-weight: 600;
+  line-height: 1.2;
+  color: var(--corp-text-primary);
   font-variant-numeric: tabular-nums;
 }
 
 .metric-label {
   font-size: var(--text-sm);
   color: var(--corp-text-secondary);
-  font-weight: 500;
-}
-
-/* === 快捷入口 === */
-.links-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: var(--space-4); }
-
-.quick-link {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 10px;
-  padding: 18px var(--space-4);
-  border-radius: var(--radius-lg);
-  background: var(--bg-surface-hover);
-  border: 1px solid var(--corp-border-light);
-  cursor: pointer;
-  transition: background var(--corp-transition-base), border-color var(--corp-transition-base), transform var(--corp-transition-base), box-shadow var(--corp-transition-base);
-}
-
-.quick-link__icon {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 40px;
-  height: 40px;
-  border-radius: var(--radius-lg);
-  background: var(--color-primary-50);
-  color: var(--color-primary-600);
-  transition: background var(--corp-transition-base), color var(--corp-transition-base);
-}
-
-.quick-link:hover {
-  background: var(--color-primary-50);
-  border-color: var(--color-primary-200);
-  transform: translateY(-3px);
-  box-shadow: 0 4px 12px rgba(37, 99, 235, 0.12);
-}
-
-.quick-link:hover .quick-link__icon {
-  background: var(--color-primary-600);
-  color: var(--bg-surface);
-}
-
-.quick-link__label {
-  font-size: var(--text-base);
-  font-weight: 500;
-  color: var(--color-gray-700);
-}
-
-.quick-link:hover .quick-link__label {
-  color: var(--color-primary-700);
 }
 
 /* === 配置子导航：分段控件（灰底容器 + 白底激活，与内层导航统一） === */
@@ -569,8 +492,7 @@ onMounted(async () => {
 @media (max-width: 768px) {
   .admin-tabs { padding-left: var(--space-4); padding-right: var(--space-4); }
   .tab-content { padding: var(--space-5) var(--space-4); }
-  .health-grid { grid-template-columns: 1fr; }
-  .links-grid { grid-template-columns: repeat(2, 1fr); }
+  .metrics-grid { grid-template-columns: repeat(2, 1fr); }
   .config-nav { flex-wrap: wrap; }
 }
 </style>

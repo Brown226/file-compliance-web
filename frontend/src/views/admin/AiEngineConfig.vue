@@ -1,20 +1,22 @@
 <template>
   <div class="ai-engine-config">
-    <!-- 左侧竖导航 + 右侧内容（设置类应用经典范式） -->
-    <aside class="engine-sider">
+    <!-- 顶部一级导航（分段控件，与统一面板子导航同款视觉语言） -->
+    <div class="engine-tabs" role="tablist">
       <button
         v-for="item in tabs"
         :key="item.key"
-        class="engine-sider-item"
+        class="engine-tab-item"
         :class="{ active: activeTab === item.key }"
+        role="tab"
+        :aria-selected="activeTab === item.key"
         @click="activeTab = item.key"
       >
-        <el-icon :size="17"><component :is="item.icon" /></el-icon>
+        <el-icon :size="15"><component :is="item.icon" /></el-icon>
         <span>{{ item.label }}</span>
       </button>
-    </aside>
+    </div>
 
-    <!-- 内容区：右侧配置舞台 -->
+    <!-- 内容区：配置舞台 -->
     <section class="engine-main">
       <ModelConfigPage v-if="activeTab === 'models'" />
       <KnowledgeConfigPage v-else-if="activeTab === 'knowledge'" />
@@ -57,68 +59,52 @@ const activeTab = ref<'models' | 'knowledge' | 'profiles'>('models')
 <style scoped>
 .ai-engine-config {
   display: flex;
+  flex-direction: column;
   height: 100%;
   min-height: 0;
 }
 
-/* === 左侧竖导航栏 === */
-.engine-sider {
-  width: 168px;
+/* === 顶部一级导航：灰底分段控件（与统一面板 config-nav 同款视觉） === */
+.engine-tabs {
+  align-self: flex-start;
+  display: inline-flex;
+  gap: var(--space-1);
+  padding: var(--space-1);
+  margin: 14px 20px 0;
+  background: var(--color-gray-100);
+  border: 1px solid var(--corp-border-light);
+  border-radius: var(--radius-xl);
   flex-shrink: 0;
-  background: var(--bg-surface);
-  border-right: 1px solid var(--corp-border-light);
-  padding: 12px 10px;
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  overflow-y: auto;
 }
 
-.engine-sider-item {
+.engine-tab-item {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 10px 12px;
+  gap: 6px;
+  padding: 7px 16px;
   border: none;
-  border-radius: 8px;
+  border-radius: var(--radius-lg);
   background: transparent;
   color: var(--corp-text-secondary);
   font-size: 13px;
   font-weight: 500;
   cursor: pointer;
-  text-align: left;
-  position: relative;
   transition: color var(--corp-transition-base), background var(--corp-transition-base);
 }
 
-.engine-sider-item:hover {
+.engine-tab-item:hover {
   color: var(--corp-text-primary);
   background: var(--bg-surface-hover);
 }
 
-.engine-sider-item.active {
+.engine-tab-item.active {
+  background: var(--bg-surface);
   color: var(--color-primary-600);
-  background: var(--color-primary-50);
   font-weight: 600;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.08), 0 0 0 1px rgba(15, 23, 42, 0.06);
 }
 
-/* 激活态：左侧品牌蓝渐变竖条（克制的记忆点） */
-.engine-sider-item.active::before {
-  content: '';
-  position: absolute;
-  left: 0;
-  top: 20%;
-  bottom: 20%;
-  width: 3px;
-  border-radius: 2px;
-  background: linear-gradient(180deg, var(--color-primary-400), var(--color-primary-600));
-}
-
-.engine-sider-item.active :deep(.el-icon) {
-  color: var(--color-primary-600);
-}
-
-/* === 右侧内容区 === */
+/* === 内容区 === */
 .engine-main {
   flex: 1;
   min-width: 0;
@@ -136,20 +122,13 @@ const activeTab = ref<'models' | 'knowledge' | 'profiles'>('models')
 }
 
 @media (max-width: 768px) {
-  .ai-engine-config {
-    flex-direction: column;
-  }
-
-  .engine-sider {
-    width: 100%;
-    flex-direction: row;
+  .engine-tabs {
+    align-self: stretch;
     overflow-x: auto;
-    border-right: none;
-    border-bottom: 1px solid var(--corp-border-light);
-    padding: 8px 10px;
+    margin: 12px 12px 0;
   }
 
-  .engine-sider-item {
+  .engine-tab-item {
     flex-shrink: 0;
   }
 }

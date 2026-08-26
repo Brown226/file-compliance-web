@@ -1,8 +1,8 @@
 <template>
   <div class="model-config-page">
-    <!-- 右侧配置主区（一级导航在 AiEngineConfig 左侧） -->
+    <!-- 右侧配置主区（一级导航在 AiEngineConfig 顶部） -->
     <div class="model-main">
-      <!-- 内容区顶部细标签（二级导航，消除双左导航） -->
+      <!-- 内容区顶部细标签（二级导航） -->
       <div class="model-tabs" role="tablist">
         <button
           v-for="tab in modelTabs"
@@ -195,43 +195,14 @@ async function handleSave() {
   font-weight: 600;
 }
 
-/* === 配置卡片美化（仅本页范围，:deep 覆盖 AdminPanel）=== */
+/* === 配置卡片（沿用 AdminPanel 全局默认，仅调整留白）=== */
 .model-config-panel {
   border-radius: var(--radius-xl);
 }
 
-.model-config-panel :deep(.admin-panel) {
-  border-radius: 14px;
-  box-shadow:
-    0 1px 2px rgba(15, 23, 42, 0.04),
-    0 8px 24px rgba(15, 23, 42, 0.06);
-  border: 1px solid rgba(229, 231, 235, 0.6);
-  transition: box-shadow var(--corp-transition-base);
-}
-
-.model-config-panel :deep(.admin-panel):hover {
-  box-shadow:
-    0 1px 2px rgba(15, 23, 42, 0.04),
-    0 12px 32px rgba(15, 23, 42, 0.08);
-}
-
-/* 卡片头：浅蓝渐变 + 更精致的分隔 */
+/* 卡片头留白 */
 .model-config-panel :deep(.admin-panel__header) {
   padding: 18px 24px;
-  background: linear-gradient(180deg, #F8FAFF 0%, var(--bg-surface) 100%);
-  border-bottom: 1px solid var(--corp-border-light);
-}
-
-.model-config-panel :deep(.admin-panel__title) {
-  font-size: 17px;
-  font-weight: 700;
-}
-
-.model-config-panel :deep(.admin-panel__title::before) {
-  width: 4px;
-  height: 18px;
-  border-radius: 2px;
-  background: linear-gradient(180deg, var(--color-primary-500), var(--color-primary-700));
 }
 
 /* 卡片体：内边距加大、留白更舒适 */

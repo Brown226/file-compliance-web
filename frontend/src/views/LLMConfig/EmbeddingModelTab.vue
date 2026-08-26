@@ -5,7 +5,7 @@
         检测到旧配置结构，后端启动时会自动迁移为 Provider 引用。
       </div>
 
-      <el-form :model="config" label-width="100px" label-position="left">
+      <el-form :model="config" label-width="140px" label-position="left">
         <div class="param-group">
           <div class="param-group__title">Embedding 配置</div>
           <el-form-item label="Provider" required class="provider-field">
@@ -192,19 +192,8 @@ defineExpose({
 .param-group__title {
   font-size: 13px;
   font-weight: 600;
-  color: var(--color-primary-700);
+  color: var(--color-gray-700);
   margin-bottom: 4px;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.param-group__title::before {
-  content: '';
-  width: 3px;
-  height: 13px;
-  border-radius: 2px;
-  background: var(--color-primary-500);
 }
 
 .param-group :deep(.el-form-item__label) {

@@ -40,14 +40,13 @@ defineProps<{
   min-width: 0;
 }
 
-/* 品牌蓝渐变竖条：后台页头统一签名 */
+/* 品牌蓝竖条：后台页头唯一签名（其余卡头/分组不再使用竖条） */
 .page-intro__bar {
   flex-shrink: 0;
   width: 4px;
   height: 26px;
   border-radius: 3px;
-  background: linear-gradient(180deg, var(--color-primary-400) 0%, var(--color-primary-600) 100%);
-  box-shadow: 0 1px 4px rgba(37, 99, 235, 0.25);
+  background: var(--color-primary-600);
 }
 
 .page-intro__text {
@@ -60,7 +59,7 @@ defineProps<{
 .page-intro__title {
   margin: 0;
   font-size: var(--text-xl);
-  font-weight: 700;
+  font-weight: 600;
   line-height: 1.3;
   color: var(--corp-text-primary);
   letter-spacing: 0.2px;

@@ -33,12 +33,11 @@ withDefaults(defineProps<{
   box-shadow: var(--shadow-card);
   border: 1px solid rgba(229, 231, 235, 0.5);
   overflow: hidden;
-  transition: box-shadow var(--corp-transition-base), transform var(--corp-transition-base);
+  transition: border-color var(--corp-transition-base);
 }
 
 .admin-panel:hover {
-  box-shadow: var(--border-inset), 0 10px 28px rgba(15, 23, 42, 0.06);
-  transform: translateY(-1px);
+  border-color: rgba(15, 23, 42, 0.16);
 }
 
 .admin-panel__header {
@@ -56,18 +55,6 @@ withDefaults(defineProps<{
   font-weight: 600;
   line-height: 1.4;
   color: var(--corp-text-primary);
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-}
-
-.admin-panel__title::before {
-  content: '';
-  flex-shrink: 0;
-  width: 3px;
-  height: 15px;
-  border-radius: 2px;
-  background: var(--color-primary-600);
 }
 
 .admin-panel__actions {
