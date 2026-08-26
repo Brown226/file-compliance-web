@@ -204,14 +204,21 @@ describe('安全与格式', () => {
 });
 
 describe('DOCX 受控替换', () => {
-  it('replace 模式走 DocxReplaceService', async () => {
+  it('replace 模式走 DocxReplaceService（P0-3 原子写:先替换到同目录 tmp 再 rename 覆盖）', async () => {
     replaceTextMock.mockResolvedValue(2);
     const fp = makeFile('m.docx', 'binary-content');
     const result = await tool.execute(
       { filePath: fp, mode: 'replace', oldText: '旧条款', newText: '新条款' },
       {} as any,
     );
-    expect(replaceTextMock).toHaveBeenCalledWith(fp, '旧条款', '新条款');
+    // P0-3：对 tmp 副本执行替换（原文件在替换期间保持完整旧版），成功后 rename 覆盖
+    expect(replaceTextMock).toHaveBeenCalledTimes(1);
+    const tmpPath = replaceTextMock.mock.calls[0][0] as string;
+    expect(tmpPath).toBe(`${fp}.docx-edit.tmp`);
+    expect(replaceTextMock.mock.calls[0][1]).toBe('旧条款');
+    expect(replaceTextMock.mock.calls[0][2]).toBe('新条款');
+    // tmp 已被 rename 覆盖 → 不再残留
+    expect(fs.existsSync(`${fp}.docx-edit.tmp`)).toBe(false);
     expect(result.format).toBe('docx');
     expect(result.replacements).toBe(2);
     expect(result.message).toContain('2 处替换');

@@ -251,16 +251,30 @@ export function createEditFileTool(context: ToolContext, descriptionOverride?: s
           throw new Error('replace 模式必须提供 oldText');
         }
         const newValue = typeof newText === 'string' ? newText : '';
-        // 写队列串行化（P2-⑲ 防并发写冲突），内部执行受控替换
+        // 写队列串行化（P2-⑲ 防并发写冲突）
+        // P0-3 原子写：先复制到同目录 tmp、对 tmp 做受控替换，成功后 rename 覆盖原文件。
+        //   （原实现 DocxReplaceService 内部 zip.writeZip 原地写回原文件，写中途崩溃会损坏原 DOCX；
+        //     tmp+rename 保证任意时刻原文件要么是完整旧版、要么是完整新版。）
         const replacements = await FileWriteQueueService.enqueue(normalizedPath, async () => {
+          const tmpPath = `${normalizedPath}.docx-edit.tmp`;
           try {
-            return DocxReplaceService.replaceText(normalizedPath, oldText, newValue);
-          } catch (e: any) {
-            // 把「原文未找到」的专用错误码转成友好提示
-            if (e?.message === 'DOCX_EXACT_TEXT_NOT_FOUND') {
-              throw new Error(`在 DOCX 中未找到要替换的文本「${oldText.slice(0, 50)}...」`);
+            await fs.promises.copyFile(normalizedPath, tmpPath);
+            let count: number;
+            try {
+              count = DocxReplaceService.replaceText(tmpPath, oldText, newValue);
+            } catch (e: any) {
+              // 把「原文未找到」的专用错误码转成友好提示
+              if (e?.message === 'DOCX_EXACT_TEXT_NOT_FOUND') {
+                throw new Error(`在 DOCX 中未找到要替换的文本「${oldText.slice(0, 50)}...」`);
+              }
+              throw e;
             }
-            throw e;
+            await fs.promises.rename(tmpPath, normalizedPath);
+            return count;
+          } catch (err) {
+            // 失败清理残留 tmp（与 text 分支的清理语义一致）
+            await fs.promises.unlink(tmpPath).catch(() => {});
+            throw err;
           }
         });
         return {
