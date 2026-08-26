@@ -21,6 +21,9 @@ export interface ModeConfigOverride {
   rules?: boolean;
   standardRef?: boolean;
   ai?: boolean;
+  /** 智能判标开关（2026-08-26 误报治理）：阶段2 AI 产出经 SmartJudgeService 打置信度，
+   *  LOW 转人工复核（PENDING_REVIEW）不丢弃。DEC 内部已含 smart_judge 阶段，无需重复开启。 */
+  smartJudge?: boolean;
   aiStrategy?: 'standard' | 'llmOnly' | 'refCompare' | 'contractReview' | 'decReview';
   crossFile?: boolean;
   paramTolerance?: ParamToleranceConfig;
@@ -43,18 +46,19 @@ const DEFAULT_MODE_CONFIGS: Record<ReviewModeType, {
   rules: boolean;
   standardRef: boolean;
   ai: boolean;
+  smartJudge: boolean;
   aiStrategy: 'standard' | 'llmOnly' | 'refCompare' | 'contractReview' | 'decReview';
   crossFile: boolean;
   paramTolerance?: ParamToleranceConfig;
 }> = {
-  LIBRARY_REVIEW: { enabled: true, rules: false, standardRef: true, ai: true, aiStrategy: 'standard', crossFile: false },
-  DOC_REVIEW:     { enabled: true, rules: false, standardRef: false, ai: true, aiStrategy: 'refCompare', crossFile: false },
-  CONTRACT_REVIEW: { enabled: true, rules: false, standardRef: false, ai: true, aiStrategy: 'contractReview', crossFile: false },
-  CONSISTENCY:    { enabled: true, rules: true,  standardRef: false, ai: true, aiStrategy: 'standard', crossFile: true, paramTolerance: { default: 0.01, byUnit: { 'MPa': 0.005, '℃': 0.02 } } },
-  TYPO_GRAMMAR:   { enabled: true, rules: false, standardRef: false, ai: true, aiStrategy: 'llmOnly', crossFile: false },
-  RULE_ONLY:    { enabled: true, rules: true,  standardRef: false, ai: false, aiStrategy: 'standard', crossFile: false },
-  SELF_CHECK:     { enabled: true, rules: false, standardRef: true, ai: false, aiStrategy: 'standard', crossFile: false },
-  DEC_REVIEW:     { enabled: true, rules: false, standardRef: false, ai: true, aiStrategy: 'decReview', crossFile: false },
+  LIBRARY_REVIEW: { enabled: true, rules: false, standardRef: true, ai: true, smartJudge: true, aiStrategy: 'standard', crossFile: false },
+  DOC_REVIEW:     { enabled: true, rules: false, standardRef: false, ai: true, smartJudge: true, aiStrategy: 'refCompare', crossFile: false },
+  CONTRACT_REVIEW: { enabled: true, rules: false, standardRef: false, ai: true, smartJudge: true, aiStrategy: 'contractReview', crossFile: false },
+  CONSISTENCY:    { enabled: true, rules: true,  standardRef: false, ai: true, smartJudge: true, aiStrategy: 'standard', crossFile: true, paramTolerance: { default: 0.01, byUnit: { 'MPa': 0.005, '℃': 0.02 } } },
+  TYPO_GRAMMAR:   { enabled: true, rules: false, standardRef: false, ai: true, smartJudge: true, aiStrategy: 'llmOnly', crossFile: false },
+  RULE_ONLY:    { enabled: true, rules: true,  standardRef: false, ai: false, smartJudge: false, aiStrategy: 'standard', crossFile: false },
+  SELF_CHECK:     { enabled: true, rules: false, standardRef: true, ai: false, smartJudge: false, aiStrategy: 'standard', crossFile: false },
+  DEC_REVIEW:     { enabled: true, rules: false, standardRef: false, ai: true, smartJudge: false, aiStrategy: 'decReview', crossFile: false },
 };
 
 /** 加载模式配置（合并默认配置 + DB 覆盖） */
@@ -88,6 +92,7 @@ export async function getModeCapabilitiesConfig(): Promise<Record<ReviewModeType
           if (cfg.rules !== undefined) result[mode].rules = cfg.rules;
           if (cfg.standardRef !== undefined) result[mode].standardRef = cfg.standardRef;
           if (cfg.ai !== undefined) result[mode].ai = cfg.ai;
+          if (cfg.smartJudge !== undefined) result[mode].smartJudge = cfg.smartJudge;
           if (cfg.aiStrategy !== undefined) result[mode].aiStrategy = cfg.aiStrategy;
           if (cfg.crossFile !== undefined) result[mode].crossFile = cfg.crossFile;
           if (cfg.paramTolerance !== undefined) result[mode].paramTolerance = cfg.paramTolerance;
@@ -124,6 +129,7 @@ export async function saveModeCapabilitiesConfig(config: Record<string, any>): P
       // undefined 字段经 JSON.stringify 丢弃 → 读回合并时视为「无覆盖」，保持默认值。
       standardRef: c.standardRef,
       ai: c.ai,
+      smartJudge: c.smartJudge,
       aiStrategy: c.aiStrategy,
       crossFile: c.crossFile,
       paramTolerance: c.paramTolerance,

@@ -1,6 +1,7 @@
 import prisma from '../../config/db';
 import { ParserService } from '../file/parser.service';
 import { LlmService } from '../llm/llm.service';
+import type { ReviewIssue } from '../llm/llm.service';
 import { PipelineContext, ReviewModeType } from '../review-pipeline';
 import { REVIEW_HANDLERS, getModeScene, getModeDisplayName } from '../review-pipeline/review-handlers';
 import { TextExtractionService } from '../review-pipeline/text-extraction.service';
@@ -20,6 +21,7 @@ import { TaskService } from '../system/task.service';
 import { DwgHandlerService } from '../file/dwg-handler.service';
 import { StandardRefCheckService } from '../review-pipeline/standard-ref-check.service';
 import { getModeCapabilitiesConfig } from '../review-pipeline/mode-config.service';
+import { SmartJudgeService } from './cross-review/smart-judge.service';
 import { getMaxConcurrentReviews } from '../../utils/system-config';
 import { normalizeText } from './falsePositiveLibrary.service';
 import { StageRunner, StageRunnerHandle } from './stage-runner.service';
@@ -405,6 +407,34 @@ export class ReviewService {
       console.warn(`[Review] task ${taskId} already being processed by another worker, skipping`);
       return;
     }
+  }
+
+  /**
+   * 误报治理（2026-08-26）：非 DEC 模式统一智能判标入口。
+   *
+   * 此前仅 DEC_REVIEW 内部调用 SmartJudgeService，LIBRARY/CONSISTENCY/TYPO/
+   * DOC/CONTRACT 的 LLM 输出原样落库，无置信度过滤——误报直接进用户视野。
+   * 现按 mode-config 的 smartJudge 开关（默认 5 个 AI 模式开启）对阶段2 产出
+   * 打 HIGH/MEDIUM/LOW 置信度；LOW 由落库层转 PENDING_REVIEW 人工复核，不丢弃。
+   *
+   * 失败语义：配置读取失败或判标 LLM 异常时保留原始 issue（SmartJudgeService
+   * 内部已按批容错），绝不因判标故障丢审查结果。
+   */
+  private static async runSmartJudgeIfEnabled(ctx: PipelineContext, issues: ReviewIssue[]): Promise<ReviewIssue[]> {
+    if (!issues || issues.length === 0) return issues;
+    if (!ctx.reviewMode || ctx.reviewMode === 'DEC_REVIEW') return issues;
+    try {
+      const modeConfigs = await getModeCapabilitiesConfig();
+      const cfg = (modeConfigs as any)[ctx.reviewMode];
+      if (!cfg?.smartJudge) return issues;
+    } catch (e) {
+      console.warn('[Review] 模式配置读取失败，跳过智能判标:', e);
+      return issues;
+    }
+    console.log(`[Review] ${ctx.fileName || ''} 智能判标开始（${issues.length} 条）`);
+    const judged = await SmartJudgeService.judge(issues, ctx);
+    console.log(`[Review] 智能判标完成：LOW 置信度 ${judged.filter(i => i.confidence === 'LOW').length} 条（转人工复核）`);
+    return judged;
   }
 
   private static async _processTaskImpl(taskId: string): Promise<void> {
@@ -1717,7 +1747,9 @@ const fileContexts = task.files.map(file => {
         const issues = await stageRunner.runStage('ai', async (resumed) => {
           if (resumed) return resumed;
           const r = await handler(ctx);
-          return r.aiIssues || [];
+          // 误报治理（2026-08-26）：非 DEC 模式统一智能判标。判标在 ai 阶段回调内执行，
+          // 产物随阶段存档 → 断点续跑复用时不会重复调 LLM。
+          return this.runSmartJudgeIfEnabled(ctx, r.aiIssues || []);
         });
         aiResult = {
           aiIssues: issues || [],
@@ -1727,9 +1759,12 @@ const fileContexts = task.files.map(file => {
       } else {
         // DEC_REVIEW：内部 7 细粒度阶段由 DecReviewService 管理（替代 ai 单节点）
         aiResult = await handler(ctx);
+        if (ctx.reviewMode !== 'DEC_REVIEW') {
+          aiResult.aiIssues = await this.runSmartJudgeIfEnabled(ctx, aiResult.aiIssues || []);
+        }
       }
     } catch (e) {
-      console.error(`[Review] handler ִ��ʧ��: ${ctx.fileName}`, e);
+      console.error(`[Review] handler 执行失败: ${ctx.fileName}`, e);
       throw e;
     }
 

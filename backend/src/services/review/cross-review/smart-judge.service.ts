@@ -4,30 +4,40 @@
  *
  * 调 LLM 对每条 issue 打分（HIGH/MEDIUM/LOW），过滤低置信度误报。
  * LLM 失败时保留原始结果（不丢弃）。
+ *
+ * 2026-08-26 扩展：接入全部 AI 模式（此前仅 DEC 内部调用），批间由串行
+ * for 循环改为 parallelLimit 并发（JUDGE_CONCURRENCY=3）——大文档数百条 issue
+ * 时串行会拖长审查时长数分钟。
  */
 
 import { PipelineContext } from '../../review-pipeline/types';
 import { LlmService, ReviewIssue } from '../../llm/llm.service';
+import { parallelLimit } from '../../../utils/parallel';
 
 const BATCH_SIZE = 10;
+const JUDGE_CONCURRENCY = 3;
 
 export class SmartJudgeService {
   static async judge(issues: ReviewIssue[], _ctx: PipelineContext): Promise<ReviewIssue[]> {
     if (issues.length === 0) return [];
 
-    // 分批调 LLM 打分
-    const scored: ReviewIssue[] = [];
+    // 分批调 LLM 打分（并发限流）
+    const batches: ReviewIssue[][] = [];
     for (let i = 0; i < issues.length; i += BATCH_SIZE) {
-      const batch = issues.slice(i, i + BATCH_SIZE);
+      batches.push(issues.slice(i, i + BATCH_SIZE));
+    }
+    const batchResults = await parallelLimit(batches, JUDGE_CONCURRENCY, async (batch) => {
       try {
-        const judged = await this.judgeBatch(batch, _ctx);
-        scored.push(...judged);
+        return await this.judgeBatch(batch, _ctx);
       } catch (e) {
         // LLM 失败时保留原始结果
         console.error('[SmartJudge] LLM 打分失败，保留原始结果:', e);
-        scored.push(...batch);
+        return batch;
       }
-    }
+    });
+
+    const scored: ReviewIssue[] = [];
+    for (const r of batchResults) scored.push(...r);
 
     // 不再过滤丢弃 LOW：LOW 保留并标记置信度，由落库层转为"待人工复核"（PENDING_REVIEW），
     // 避免"疑似误报"从用户视野中直接消失（2026-08 P1-6 修复）
