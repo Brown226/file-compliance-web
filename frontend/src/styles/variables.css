@@ -5,16 +5,18 @@
 
 :root {
   /* === 品牌色阶 === */
-  --color-primary-50: #EFF6FF;
-  --color-primary-100: #DBEAFE;
-  --color-primary-200: #BFDBFE;
-  --color-primary-300: #93C5FD;
-  --color-primary-400: #60A5FA;
-  --color-primary-500: #3B82F6;   /* 主色 — 蓝色 */
-  --color-primary-600: #2563EB;
-  --color-primary-700: #1D4ED8;
-  --color-primary-800: #1E40AF;
-  --color-primary-900: #1E3A8A;
+  /* 深海军蓝系：锚点 #16324F（与登录页品牌一致），H210 同族推导。
+     500 = Element Plus 交互主色，600 = 强调/激活，700 = 品牌深色。 */
+  --color-primary-50: #F4F7FA;
+  --color-primary-100: #E5EDF4;
+  --color-primary-200: #C7D7E6;
+  --color-primary-300: #9AB8D1;
+  --color-primary-400: #6390B8;
+  --color-primary-500: #3A6EA5;   /* 主色 — 深海军蓝 */
+  --color-primary-600: #27517C;
+  --color-primary-700: #16324F;
+  --color-primary-800: #10263C;
+  --color-primary-900: #0A1A2B;
 
   /* === 中性色阶 === */
   --color-gray-50: #FAFAFA;
@@ -28,9 +30,9 @@
   --color-gray-800: #1F2937;
   --color-gray-900: #111827;
 
-  /* === 操作色（蓝色主调） === */
-  --color-action: #3B82F6;
-  --color-action-hover: #2563EB;
+  /* === 操作色（海军蓝主调） === */
+  --color-action: #3A6EA5;
+  --color-action-hover: #27517C;
 
   /* === 语义色（含深阶，供 hover/active 态统一引用） === */
   --color-success: #10B981;
@@ -45,9 +47,9 @@
   --color-danger-600: #DC2626;
   --color-danger-bg: #FEE2E2;
   --color-danger-text: #991B1B;
-  --color-info: #3B82F6;
-  --color-info-bg: #EFF6FF;
-  --color-info-text: #1E40AF;
+  --color-info: #3A6EA5;
+  --color-info-bg: #EBF0F6;
+  --color-info-text: #27517C;
 
   /* === 审查严重级别专用色 === */
   --severity-critical: #DC2626;
@@ -118,18 +120,18 @@
   /* === 边框颜色 === */
   --corp-border-light: #E5E7EB;
   --corp-border: #D1D5DB;
-  --corp-border-focus: #3B82F6;
-  --focus-ring: 2px solid rgba(59, 130, 246, 0.6); /* WCAG 键盘焦点环（2026-08-13） */
+  --corp-border-focus: #3A6EA5;
+  --focus-ring: 2px solid rgba(58, 110, 165, 0.6); /* WCAG 键盘焦点环（2026-08-13） */
   --focus-ring-offset: 2px;
 
   /* === Element Plus 覆盖变量 === */
-  --el-color-primary: #3B82F6;
-  --el-color-primary-light-3: #60A5FA;
-  --el-color-primary-light-5: #93C5FD;
-  --el-color-primary-light-7: #BFDBFE;
-  --el-color-primary-light-8: #DBEAFE;
-  --el-color-primary-light-9: #EFF6FF;
-  --el-color-primary-dark-2: #2563EB;
+  --el-color-primary: #3A6EA5;
+  --el-color-primary-light-3: #7599C0;
+  --el-color-primary-light-5: #9CB6D2;
+  --el-color-primary-light-7: #C4D3E4;
+  --el-color-primary-light-8: #D7E2ED;
+  --el-color-primary-light-9: #EBF0F6;
+  --el-color-primary-dark-2: #2E5884;
   --el-color-success: #10B981;
   --el-color-warning: #F59E0B;
   --el-color-danger: #EF4444;
@@ -145,10 +147,10 @@
   --el-font-family: var(--font-family);
 
   /* === 品牌色别名 === */
-  --corp-primary: #3B82F6;
-  --corp-primary-hover: #2563EB;
-  --corp-primary-light: #DBEAFE;
-  --corp-primary-lighter: #EFF6FF;
+  --corp-primary: #3A6EA5;
+  --corp-primary-hover: #27517C;
+  --corp-primary-light: #E5EDF4;
+  --corp-primary-lighter: #F4F7FA;
 
   --corp-success: #10B981;
   --corp-success-light: #DCFCE7;
@@ -156,8 +158,8 @@
   --corp-danger-light: #FEE2E2;
   --corp-warning: #F59E0B;
   --corp-warning-light: #FEF3C7;
-  --corp-info: #3B82F6;
-  --corp-info-light: #EFF6FF;
+  --corp-info: #3A6EA5;
+  --corp-info-light: #EBF0F6;
 
   /* 背景层级扩展 */
   --corp-bg-panel: #FFFFFF;

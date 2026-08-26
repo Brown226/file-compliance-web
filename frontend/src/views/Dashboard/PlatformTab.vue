@@ -252,9 +252,9 @@ function renderActivityChart() {
         symbol: 'circle',
         symbolSize: 5,
         data: trend.map((t) => t.activeUsers),
-        itemStyle: { color: '#2563EB' /* 对齐 --color-primary-600 */ },
+        itemStyle: { color: '#27517C' /* 对齐 --color-primary-600 */ },
         lineStyle: { width: 2 },
-        areaStyle: { color: 'rgba(37,99,235,0.12)' },
+        areaStyle: { color: 'rgba(39,81,124,0.12)' },
       },
       {
         name: '任务提交数',
@@ -328,7 +328,7 @@ function renderLlmChart() {
         type: 'bar',
         stack: 'tokens',
         data: byDay.map((d) => d.promptTokens),
-        itemStyle: { color: '#2563EB' /* 对齐 --color-primary-600 */ },
+        itemStyle: { color: '#27517C' /* 对齐 --color-primary-600 */ },
         barMaxWidth: 20,
       },
       {

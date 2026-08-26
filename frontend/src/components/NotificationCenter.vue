@@ -435,11 +435,11 @@ function formatTimeAgoStr(dateStr: string | null): string {
 }
 
 // JS 运行时色值：CSS 中无法用 var()，此处硬编码为 design tokens（variables.css）的等价实际值
-// #3B82F6=--color-primary-500  #F59E0B=--color-warning  #9CA3AF=--color-gray-400
+// #3A6EA5=--color-primary-500  #F59E0B=--color-warning  #9CA3AF=--color-gray-400
 // #10B981=--color-success  #EF4444=--color-danger
 const typeConfig = (type: string) => {
   const map: Record<string, { color: string; icon: any }> = {
-    task: { color: '#3B82F6', icon: Tickets },
+    task: { color: '#3A6EA5', icon: Tickets },
     warning: { color: '#F59E0B', icon: Warning },
     info: { color: '#9CA3AF', icon: InfoFilled },
     message: { color: '#10B981', icon: ChatDotRound },
@@ -533,7 +533,7 @@ function urgencyColor(urgency: string): string {
   switch (urgency) {
     case 'URGENT': return '#EF4444'
     case 'IMPORTANT': return '#F59E0B'
-    default: return '#3B82F6'
+    default: return '#3A6EA5'
   }
 }
 

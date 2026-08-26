@@ -182,14 +182,14 @@ const categoryLabel = (cat: string) => {
 }
 
 // JS 运行时色值：CSS 中无法用 var()，此处硬编码为 design tokens（variables.css）的等价实际值
-// #2563EB=--color-primary-600  #10B981=--color-success  #F59E0B=--color-warning  #6B7280=--color-gray-500
+// #27517C=--color-primary-600  #10B981=--color-success  #F59E0B=--color-warning  #6B7280=--color-gray-500
 const categoryColor = (cat: string) => {
   const map: Record<string, string> = {
-    task: '#2563EB',
+    task: '#27517C',
     standard: '#10B981',
     rule: '#F59E0B',
     config: '#6B7280',
-    dashboard: '#2563EB',
+    dashboard: '#27517C',
   }
   return map[cat] || '#6B7280'
 }

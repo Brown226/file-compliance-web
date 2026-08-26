@@ -214,10 +214,10 @@ register({ key: 'escape', label: '关闭', handler: () => {
   align-items: center;
   gap: 8px;
   padding: 6px 14px;
-  background: linear-gradient(135deg, #FFF9E6 0%, #FFFBEB 100%);
-  border: 1px solid #FEF3C7;
+  background: var(--bg-surface-hover);
+  border: 1px solid var(--corp-border-light);
   border-radius: 20px;
-  color: #92400E;
+  color: var(--corp-text-secondary);
   font-size: 12px;
   white-space: normal;
   flex-shrink: 0;
@@ -226,8 +226,7 @@ register({ key: 'escape', label: '关闭', handler: () => {
 }
 
 .security-warning:hover {
-  box-shadow: 0 2px 8px rgba(245, 158, 11, 0.15);
-  border-color: #FCD34D;
+  border-color: var(--corp-border);
 }
 
 .warning-text {
@@ -239,26 +238,26 @@ register({ key: 'escape', label: '关闭', handler: () => {
 }
 
 .warning-text strong {
-  color: #B45309;
+  color: var(--corp-text-primary);
   font-weight: 600;
 }
 
 .security-detail {
-  color: #B45309;
+  color: var(--corp-text-tertiary);
   font-size: 12px;
   margin-left: 4px;
 }
 
 .warning-close {
   cursor: pointer;
-  color: #D1D5DB;
+  color: var(--corp-text-tertiary);
   transition: color 0.2s;
   flex-shrink: 0;
   margin-left: 4px;
 }
 
 .warning-close:hover {
-  color: #92400E;
+  color: var(--corp-text-primary);
 }
 
 .security-warning .el-icon:first-child {
@@ -321,14 +320,14 @@ register({ key: 'escape', label: '关闭', handler: () => {
   cursor: pointer;
   font-size: 13px;
   font-weight: 500;
-  color: #3B82F6;
+  color: var(--color-primary-500);
   transition: all 0.15s;
   white-space: nowrap;
 }
 
 .admin-back-btn:hover {
-  background: #EFF6FF;
-  color: #2563EB;
+  background: var(--color-primary-50);
+  color: var(--color-primary-600);
 }
 
 .header-right {
@@ -409,7 +408,7 @@ register({ key: 'escape', label: '关闭', handler: () => {
 }
 
 .user-avatar {
-  background: #3B82F6;
+  background: var(--color-primary-600);
   color: #FFFFFF;
   font-weight: 700;
   font-size: 12px;

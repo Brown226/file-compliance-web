@@ -317,7 +317,7 @@ const goWorkspace = () => {
 }
 
 .clean-menu :deep(.el-menu-item.el-menu-item.is-active) {
-  background-color: rgba(59, 130, 246, 0.12);
+  background-color: rgba(58, 110, 165, 0.14);
   color: #FFFFFF;
   font-weight: 600;
 }

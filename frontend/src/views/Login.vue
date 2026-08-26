@@ -204,7 +204,7 @@ onMounted(() => {
   right: 0;
   bottom: 0;
   left: 0;
-  background: linear-gradient(160deg, rgba(15, 23, 42, 0.50) 0%, rgba(30, 58, 95, 0.40) 40%, rgba(37, 99, 235, 0.35) 100%);
+  background: linear-gradient(160deg, rgba(15, 23, 42, 0.50) 0%, rgba(30, 58, 95, 0.40) 40%, rgba(39, 81, 124, 0.35) 100%);
 }
 
 .brand-content {
@@ -306,7 +306,7 @@ onMounted(() => {
   width: 56px;
   height: 56px;
   border-radius: 12px;
-  filter: drop-shadow(0 4px 8px rgba(37, 99, 235, 0.3));
+  filter: drop-shadow(0 4px 8px rgba(39, 81, 124, 0.3));
   object-fit: cover;
 }
 
@@ -357,7 +357,7 @@ onMounted(() => {
 .login-form :deep(.el-input__wrapper.is-focus) {
   background-color: #ffffff;
   border-color: var(--color-primary-600);
-  box-shadow: 0 0 0 4px rgba(37, 99, 235, 0.15), 0 4px 8px rgba(0, 0, 0, 0.1);
+  box-shadow: 0 0 0 4px rgba(39, 81, 124, 0.15), 0 4px 8px rgba(0, 0, 0, 0.1);
 }
 
 .login-form :deep(.el-input__inner) {
@@ -401,13 +401,13 @@ onMounted(() => {
   background: var(--color-primary-600);
   border: none;
   transition: all 0.2s ease;
-  box-shadow: 0 4px 12px rgba(37, 99, 235, 0.3);
+  box-shadow: 0 4px 12px rgba(39, 81, 124, 0.3);
   color: #ffffff;
 }
 
 .login-btn.el-button--primary:hover {
   background: var(--color-primary-700);
-  box-shadow: 0 6px 16px rgba(37, 99, 235, 0.4);
+  box-shadow: 0 6px 16px rgba(39, 81, 124, 0.4);
   transform: translateY(-1px);
 }
 

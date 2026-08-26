@@ -211,7 +211,7 @@ function renderTrendChart() {
       // P1-4: null 日（无反馈）断线而非假 0/100
       connectNulls: false,
       data: trend.map((t) => t.precision),
-      itemStyle: { color: '#2563EB' /* 对齐 --color-primary-600 */ },
+      itemStyle: { color: '#27517C' /* 对齐 --color-primary-600 */ },
       lineStyle: { width: 2.5 },
       areaStyle: {
         color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
