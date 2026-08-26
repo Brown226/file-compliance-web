@@ -22,7 +22,12 @@ export interface ToolContext {
   sessionId: string;
 }
 
-/** 单次上传大小上限（base64 解码后字节数）：50MB（与 /api/agent/upload 端点一致） */
+/**
+ * 单次上传大小上限（base64 解码后字节数）：50MB。
+ * 注意与 /api/agent/upload 端点的 100MB **有意不同**：端点通道文件直落磁盘、
+ * 不经模型上下文，可放宽；本工具的 base64 要经 LLM 消息体传输（≈4/3 膨胀 +
+ * token 成本），50MB 已是实际上限。两处口径不可混用。
+ */
 export const MAX_UPLOAD_BYTES = 50 * 1024 * 1024;
 
 /**

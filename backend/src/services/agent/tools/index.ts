@@ -189,7 +189,11 @@ function injectionGuardWrapper(
     // 把工具结果序列化为带 <tool_result> 标签的字符串
     // LLM 看到标签后应将其视为数据，不执行其中的注入指令
     const json = JSON.stringify(output);
-    return `<tool_result tool="${toolName}">${json}</tool_result>`;
+    // 转义内容中可能出现的闭合标签：恶意文档正文若含 </tool_result> 可提前终止
+    // 标签边界、把后续文本伪装成指令逃出防护。<\/ 是合法 JSON 转义（解析后还原为 /），
+    // LLM 侧解析不受影响。
+    const safeJson = json.replace(/<\/tool_result>/gi, '<\\/tool_result>');
+    return `<tool_result tool="${toolName}">${safeJson}</tool_result>`;
   };
 }
 

@@ -256,6 +256,19 @@ export class QASessionService {
     try {
       await QASessionService.ensureSession(sessionId, userId, undefined, settings);
 
+      // 防重复落库（B2）：regenerate / 失败重发会把同一提问再次发到后端
+      // （前端不新增 user 消息，全量 history 原样重传），若会话最后一条已是
+      // 内容相同的 user 消息则跳过插入。正常连发相同文本不受影响——两次之间
+      // 必有 assistant 行，只有「最后一条就是同内容 user 行」才命中重发场景。
+      const lastMsg = await prisma.qAMessage.findFirst({
+        where: { sessionId },
+        orderBy: { createdAt: 'desc' },
+        select: { id: true, role: true, content: true },
+      });
+      if (lastMsg && lastMsg.role === 'user' && lastMsg.content === content) {
+        return lastMsg.id;
+      }
+
       // 检查是否需要更新 title（首条用户消息）
       const session = await prisma.qASession.findUnique({
         where: { id: sessionId },

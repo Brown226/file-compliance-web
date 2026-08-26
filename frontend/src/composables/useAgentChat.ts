@@ -3,6 +3,7 @@ import { DefaultChatTransport } from 'ai'
 import { computed, ref } from 'vue'
 import { useUserStore } from '@/stores/user'
 import { listMessagesApi, type MessageItem } from '@/api/agent'
+import { trimHistoryForTransport } from '@/utils/messageTrim'
 
 /**
  * Agent 对话 Composable
@@ -25,6 +26,11 @@ export function useAgentChat() {
 
   // transport 的 headers/body 支持 getter 函数，每次请求都会重新求值，
   // 因此 token 与 sessionId 的变化会被自动带入。
+  //
+  // prepareSendMessagesRequest：发送前对历史做瘦身（旧轮 tool output 截断，
+  // 口径与后端 trimStaleToolOutputs 一致）。注意：一旦提供该钩子，返回的 body
+  // 会整体替换 SDK 默认构造——id/messages/trigger/messageId 必须在这里自己拼回
+  //（与 ai 包非钩子路径的字段保持完全一致），否则后端拿不到消息。
   const transport = new DefaultChatTransport({
     api: '/api/agent/chat/stream',
     headers: () => ({ Authorization: `Bearer ${userStore.token}` }),
@@ -36,6 +42,15 @@ export function useAgentChat() {
       pendingAskAnswer: pendingAskAnswer.value,
     }),
     credentials: 'include',
+    prepareSendMessagesRequest: ({ body, id, trigger, messageId, messages }) => ({
+      body: {
+        ...(body ?? {}),
+        id,
+        trigger,
+        messageId,
+        messages: trimHistoryForTransport(messages),
+      },
+    }),
   })
 
   const { messages, status, error, sendMessage, stop, regenerate } = useChat({ transport })

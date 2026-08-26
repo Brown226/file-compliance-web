@@ -720,7 +720,7 @@ export class AgentService {
     userId: string,
     sessionId?: string,
   ): Promise<{ systemPrompt: string; pendingSteering: any[] }> {
-    const filesSection = AgentService.buildUploadedFilesSection(userId);
+    const filesSection = await AgentService.buildUploadedFilesSection(userId);
     let pendingSteering: any[] = [];
     if (sessionId) {
       pendingSteering = await SteeringService.getPending(sessionId).catch(() => []);
@@ -1084,35 +1084,45 @@ export class AgentService {
    *
    * @returns 文件列表段落；无文件时返回空串
    */
-  private static buildUploadedFilesSection(userId: string): string {
+  private static async buildUploadedFilesSection(userId: string): Promise<string> {
     if (!userId) return '';
-    // P0-2：短时缓存命中直接返回（避免每次请求同步扫描目录树）
+    // P0-2：短时缓存命中直接返回（避免每次请求扫描目录树）
     const cached = uploadedFilesCache.get(userId);
     if (cached && Date.now() - cached.ts < UPLOADED_FILES_CACHE_TTL_MS) {
       return cached.section;
     }
     const userDir = path.join(getUploadDir(), 'agent_temp', userId);
-    if (!fs.existsSync(userDir)) return '';
+    // 2026-08-26 性能修复：原实现 readdirSync/statSync 同步递归扫盘，会阻塞整个
+    // 事件循环（殃及其他并发请求）。改用 fs.promises 异步遍历；缓存 TTL 不变，
+    // 新上传的文件由 /api/agent/upload 端点主动失效缓存保证即时可见。
     let files: string[] = [];
     try {
       // 聚合最近 7 天日期目录下的所有文件（含子目录如 reports/ 内的文件一并列出）
       const now = Date.now();
       const cutoff = now - 7 * 24 * 60 * 60 * 1000;
-      const dateDirs = fs.readdirSync(userDir, { withFileTypes: true })
-        .filter(d => d.isDirectory() && /^\d{4}-\d{2}-\d{2}$/.test(d.name))
-        .filter(d => {
-          const mtime = fs.statSync(path.join(userDir, d.name)).mtimeMs;
-          return mtime >= cutoff;
-        })
-        .map(d => path.join(userDir, d.name));
-      for (const dir of dateDirs) {
-        const walk = (p: string): string[] =>
-          fs.readdirSync(p, { withFileTypes: true }).flatMap(e => {
-            const full = path.join(p, e.name);
-            return e.isDirectory() ? walk(full) : (e.isFile() ? [full] : []);
-          });
-        files = files.concat(walk(dir));
+      const dirents = await fs.promises
+        .readdir(userDir, { withFileTypes: true })
+        .catch(() => [] as fs.Dirent[]);
+      const dateDirs: string[] = [];
+      for (const d of dirents) {
+        if (!d.isDirectory() || !/^\d{4}-\d{2}-\d{2}$/.test(d.name)) continue;
+        try {
+          const st = await fs.promises.stat(path.join(userDir, d.name));
+          if (st.mtimeMs >= cutoff) dateDirs.push(path.join(userDir, d.name));
+        } catch { /* 目录刚被清理等竞态，忽略 */ }
       }
+      const walk = async (p: string): Promise<string[]> => {
+        const entries = await fs.promises.readdir(p, { withFileTypes: true });
+        const out: string[] = [];
+        for (const e of entries) {
+          const full = path.join(p, e.name);
+          if (e.isDirectory()) out.push(...await walk(full));
+          else if (e.isFile()) out.push(full);
+        }
+        return out;
+      };
+      const lists = await Promise.all(dateDirs.map(walk));
+      files = lists.flat();
     } catch (e) {
       // 目录读取失败不阻塞主流程（与 recordLlmCall 防御性写法一致）
       console.warn('[Agent] 读取已上传文件目录失败:', (e as Error).message);
@@ -1136,4 +1146,10 @@ export class AgentService {
     uploadedFilesCache.set(userId, { ts: Date.now(), section });
     return section;
   }
+}
+
+/** 上传后主动失效该用户的文件列表缓存，让下一条消息立即看到新文件 */
+export function invalidateUploadedFilesCache(userId?: string): void {
+  if (userId) uploadedFilesCache.delete(userId);
+  else uploadedFilesCache.clear();
 }

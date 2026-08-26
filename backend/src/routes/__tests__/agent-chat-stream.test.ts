@@ -34,6 +34,7 @@ const { qaSessionMock } = vi.hoisted(() => ({
     ensureSession: vi.fn(),
     getSession: vi.fn(),
     duplicateSession: vi.fn(),
+    persistAssistantMessage: vi.fn(),
   },
 }));
 vi.mock('../../services/agent/qa-session.service', () => ({ QASessionService: qaSessionMock }));
@@ -87,6 +88,17 @@ function makeStreamResult(chunks: string[], status = 200) {
   };
 }
 
+/** 构造 chatWithGenerateText 返回值：裸 UIMessageStream（ReadableStream，无 .text） */
+function makeUiStream(chunks: string[]) {
+  const encoder = new TextEncoder();
+  return new ReadableStream({
+    start(controller) {
+      for (const c of chunks) controller.enqueue(encoder.encode(c));
+      controller.close();
+    },
+  });
+}
+
 beforeEach(() => {
   for (const fn of Object.values(agentServiceMock)) fn.mockReset();
   for (const fn of Object.values(qaSessionMock)) fn.mockReset();
@@ -100,9 +112,13 @@ beforeEach(() => {
   qaSessionMock.completeActiveSessions.mockResolvedValue(0);
   qaSessionMock.ensureSession.mockResolvedValue({ id: 'new-session' });
   qaSessionMock.getSession.mockResolvedValue({ id: 's1', userId: 'u1' });
+  qaSessionMock.persistAssistantMessage.mockResolvedValue('msg-1');
 
   agentServiceMock.chatStream.mockResolvedValue(makeStreamResult(['data: {"type":"text-delta","delta":"你好"}\n\n']));
-  agentServiceMock.chatWithGenerateText.mockResolvedValue({ text: '降级回复：generateText' });
+  // 一级兜底返回裸 UIMessageStream（与 chatWithGenerateText 真实契约一致：无 .text 属性）
+  agentServiceMock.chatWithGenerateText.mockResolvedValue(
+    makeUiStream(['data: {"type":"text-delta","delta":"降级回复：generateText"}\n\n']),
+  );
   llmMock.chat.mockResolvedValue('降级回复：LlmService');
 
   app = express();
@@ -154,7 +170,7 @@ describe('输入校验（不触达 LLM）', () => {
 });
 
 describe('会话归属与并发竞态', () => {
-  it('无 sessionId：completeActiveSessions 收到 requestStartedAt（Date）并创建新会话', async () => {
+  it('无 sessionId：completeActiveSessions 收到带 10s 宽限窗的时间并创建新会话', async () => {
     const before = new Date();
     const res = await request(app).post('/api/agent/chat/stream').send({ messages: validMessages });
     expect(res.status).toBe(200);
@@ -163,20 +179,25 @@ describe('会话归属与并发竞态', () => {
     const [uid, notCreatedAfter] = qaSessionMock.completeActiveSessions.mock.calls[0];
     expect(uid).toBe('u1');
     expect(notCreatedAfter).toBeInstanceOf(Date);
-    expect(notCreatedAfter.getTime()).toBeGreaterThanOrEqual(before.getTime() - 1000);
+    // 宽限窗 = requestStartedAt - 10s：只关闭 10s 前创建的旧活跃会话，
+    // 保护并发新建请求（B1）不互杀对方刚建的会话
+    expect(notCreatedAfter.getTime()).toBeGreaterThanOrEqual(before.getTime() - 11_000);
+    expect(notCreatedAfter.getTime()).toBeLessThanOrEqual(Date.now());
     // ensureSession 用服务端生成的 UUID
     const ensureArg = qaSessionMock.ensureSession.mock.calls[0][0];
     expect(ensureArg).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/);
     expect(qaSessionMock.ensureSession).toHaveBeenCalledWith(ensureArg, 'u1', undefined, expect.any(Object));
   });
 
-  it('携带 sessionId 且会话不存在（前端新会话场景）→ 自动创建并放行', async () => {
-    // 前端 startNewSession() 生成 UUID 传入，后端应 ensureSession 自动创建而非 403
+  it('携带 sessionId 且会话不存在（前端新会话场景）→ 单活跃约束 + 自动创建并放行', async () => {
+    // 前端 startNewSession() 生成 UUID 传入，后端应 ensureSession 自动创建而非 403；
+    // B3 修复：该分支同样执行单活跃约束（此前只在未传 sessionId 时触发，约束被架空）
     prismaMock.qASession.findUnique.mockResolvedValue(null);
     const res = await request(app)
       .post('/api/agent/chat/stream')
       .send({ messages: validMessages, sessionId: 'new-uuid-0001' });
     expect(res.status).toBe(200);
+    expect(qaSessionMock.completeActiveSessions).toHaveBeenCalledTimes(1);
     expect(qaSessionMock.ensureSession).toHaveBeenCalledWith(
       'new-uuid-0001', 'u1', undefined, expect.any(Object),
     );
@@ -235,16 +256,37 @@ describe('降级链（流式失败两级兜底）', () => {
     prismaMock.qASession.findUnique.mockResolvedValue({ id: 's1', userId: 'u1' });
   });
 
-  it('chatStream 抛错 → 降级 chatWithGenerateText 并回显其文本', async () => {
+  it('chatStream 抛错 → 一级兜底流直接透传（含工具调用事件），不再跑二级', async () => {
     agentServiceMock.chatStream.mockRejectedValue(new Error('LLM 网关 500'));
+    agentServiceMock.chatWithGenerateText.mockResolvedValue(
+      makeUiStream([
+        'data: {"type":"tool-input-available","toolCallId":"t1","toolName":"extract_text"}\n\n',
+        'data: {"type":"text-delta","delta":"降级回复：generateText"}\n\n',
+      ]),
+    );
     const res = await request(app).post('/api/agent/chat/stream').send({ messages: validMessages, sessionId: 's1' });
     expect(res.status).toBe(200);
+    expect(res.headers['content-type']).toContain('text/event-stream');
     expect(res.text).toContain('降级回复：generateText');
+    // 工具调用事件原样到达前端（修复前一级结果被 .text 契约错配整体丢弃）
+    expect(res.text).toContain('tool-input-available');
     expect(agentServiceMock.chatWithGenerateText).toHaveBeenCalled();
     expect(llmMock.chat).not.toHaveBeenCalled();
+    // 一级内部已持久化 assistant，路由层不重复落库
+    expect(qaSessionMock.persistAssistantMessage).not.toHaveBeenCalled();
   });
 
-  it('chatStream 与 generateText 都失败 → 降级 LlmService.chat（取最后一条 user 消息）', async () => {
+  it('一级返回非流对象（契约异常）→ 落到二级 LlmService.chat', async () => {
+    agentServiceMock.chatStream.mockRejectedValue(new Error('boom'));
+    agentServiceMock.chatWithGenerateText.mockResolvedValue({ text: '这不是流' });
+    const res = await request(app)
+      .post('/api/agent/chat/stream')
+      .send({ messages: validMessages, sessionId: 's1' });
+    expect(res.status).toBe(200);
+    expect(res.text).toContain('降级回复：LlmService');
+  });
+
+  it('chatStream 与 generateText 都失败 → 降级 LlmService.chat（取最后一条 user 消息）并落库一次', async () => {
     agentServiceMock.chatStream.mockRejectedValue(new Error('boom'));
     agentServiceMock.chatWithGenerateText.mockRejectedValue(new Error('gen boom'));
     const res = await request(app)
@@ -253,5 +295,9 @@ describe('降级链（流式失败两级兜底）', () => {
     expect(res.status).toBe(200);
     expect(res.text).toContain('降级回复：LlmService');
     expect(llmMock.chat).toHaveBeenCalledWith('请审查这份合同', expect.objectContaining({ mode: 'agent' }));
+    // 二级纯文本路径由路由层补落库（此前 mock 缺 persistAssistantMessage 导致 TypeError 被静默吞掉）
+    expect(qaSessionMock.persistAssistantMessage).toHaveBeenCalledWith(
+      's1', 'u1', '降级回复：LlmService', 'completed',
+    );
   });
 });

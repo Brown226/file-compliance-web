@@ -112,7 +112,9 @@ describe('md 报告', () => {
 });
 
 describe('xlsx 导出', () => {
-  it('生成真实 xlsx，读回验证表头与数据行', async () => {
+  // exceljs 冷加载 + zip 写盘在全量并发跑时可能超过默认 10s（单独跑约 2s），
+  // 给足上限消除满载抖动误报
+  it('生成真实 xlsx，读回验证表头与数据行', { timeout: 60_000 }, async () => {
     const result = await tool.execute({ issues: sampleIssues, reportName: '表格', format: 'xlsx' }, {} as any);
     expect(result.fileName).toBe('表格.xlsx');
     // 用 exceljs 读回验证（与生产同一依赖）

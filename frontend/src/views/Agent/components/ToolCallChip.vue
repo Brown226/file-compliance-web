@@ -75,6 +75,18 @@ const rawToolName = computed(() => {
 })
 const toolName = computed(() => TOOL_NAME_MAP[rawToolName.value] || rawToolName.value || '未知')
 
+// 后端 injectionGuardWrapper（Task 22.2 注入防护）把工具结果包成
+// `<tool_result tool="x">{json}</tool_result>` 字符串。这里解包还原为对象，
+// 结构化视图（diff/表格/多文档对比）与 durationMs 才能正常渲染；
+// 解不开时（截断尾巴、非包裹字符串）原样展示。
+function unwrapToolOutput(out: any): any {
+  if (typeof out !== 'string') return out
+  const m = out.match(/^<tool_result tool="[^"]*">([\s\S]*)<\/tool_result>$/)
+  if (!m) return out
+  try { return JSON.parse(m[1]) } catch { return out }
+}
+const parsedOutput = computed<any>(() => unwrapToolOutput(props.part.output))
+
 type ToolStatus = 'running' | 'success' | 'error'
 const status = computed<ToolStatus>(() => {
   if (props.part.state === 'output-error') return 'error'
@@ -89,7 +101,7 @@ const formattedInput = computed(() => formatJson(props.part.input))
 
 // 结果文本（对齐参考 PairedResult：从 toolResult 提取 text，空则 italic no output）
 const resultText = computed<string | null>(() => {
-  const out = props.part.output
+  const out = parsedOutput.value
   if (out === undefined || out === null) return null
   if (typeof out === 'string') return out
   if (typeof out === 'object') {
@@ -109,7 +121,7 @@ const errorText = computed(() => props.part.errorText || '')
 
 // compare_documents 专用：识别结构化 diff 结果（含 changes/stats 的对象）
 const resultObj = computed<any>(() => {
-  const out = props.part.output
+  const out = parsedOutput.value
   return out && typeof out === 'object' ? out : null
 })
 const isDiffResult = computed(() => {
@@ -155,7 +167,7 @@ function formatJson(v: any): string {
 
 const durationText = computed(() => {
   if (isRunning.value) return ''
-  const ms = props.part.output?.durationMs
+  const ms = parsedOutput.value?.durationMs
   return typeof ms === 'number' && ms > 0 ? (ms < 1000 ? `${ms}ms` : `${(ms / 1000).toFixed(1)}s`) : ''
 })
 </script>

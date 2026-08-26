@@ -59,6 +59,11 @@ export class SteeringService {
   /**
    * 标记 session 下所有 steering 指令为已消费。
    * 使用 Lua 脚本原子性地将列表中每条指令的 consumed 字段置为 true。
+   *
+   * 修复（2026-08-26）：原替换串写成了 '"(consumed)":true'——Lua gsub 的替换串里
+   * 括号是字面量（捕获引用是 %1），实际把 JSON 键名改成了带括号的 "(consumed)"。
+   * 后果：getPending 解析后 consumed 恒为 undefined → 过滤器认为未消费，
+   * 同一条干预指令在 TTL 内每轮对话都被重复注入且永远无法清除。
    */
   static async markConsumed(sessionId: string): Promise<void> {
     const key = `${KEY_PREFIX}${sessionId}`;
@@ -67,7 +72,7 @@ export class SteeringService {
       local key = KEYS[1]
       local items = redis.call('LRANGE', key, 0, -1)
       for i, item in ipairs(items) do
-        local updated = string.gsub(item, '"(consumed)":false', '"(consumed)":true', 1)
+        local updated = string.gsub(item, '"(consumed)":false', '"%1":true', 1)
         if updated ~= item then
           redis.call('LSET', key, i - 1, updated)
         end

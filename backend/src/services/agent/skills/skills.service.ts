@@ -92,9 +92,25 @@ function serializeSkill(name: string, description: string, content: string, disa
   ].join('\n');
 }
 
+/**
+ * 列表缓存：listSkills 每次调用都同步读盘（readdirSync + 逐文件 readFileSync），
+ * 而 buildSkillsSection 在每次对话请求都会执行。60s TTL + 写操作（create/update/
+ * setEnabled/delete）即时失效；绕过服务直接手改文件最多延迟 60s 可见（可接受）。
+ */
+let _listCache: { skills: AgentSkill[]; ts: number } | null = null;
+const LIST_CACHE_TTL_MS = 60_000;
+
+/** 清空列表缓存（写操作后调用；测试也可用） */
+export function invalidateSkillsCache(): void {
+  _listCache = null;
+}
+
 export class SkillsService {
-  /** 列出全部 skills（按 name 排序） */
+  /** 列出全部 skills（按 name 排序，60s 缓存） */
   static listSkills(): AgentSkill[] {
+    if (_listCache && Date.now() - _listCache.ts < LIST_CACHE_TTL_MS) {
+      return [..._listCache.skills];
+    }
     ensureSkillsDir();
     const files = fs.readdirSync(getSkillsDir()).filter((f) => f.endsWith('.md'));
     const skills: AgentSkill[] = [];
@@ -106,7 +122,9 @@ export class SkillsService {
         // 跳过损坏文件，不阻塞整体列表
       }
     }
-    return skills.sort((a, b) => a.name.localeCompare(b.name));
+    const sorted = skills.sort((a, b) => a.name.localeCompare(b.name));
+    _listCache = { skills: sorted, ts: Date.now() };
+    return [...sorted];
   }
 
   /** 列出已启用的 skills（system prompt 注入用） */
@@ -133,6 +151,7 @@ export class SkillsService {
       throw new Error('skill 内容不能为空');
     }
     fs.writeFileSync(filePath, serializeSkill(data.name, data.description || '', body, false), 'utf-8');
+    invalidateSkillsCache();
     const skill = SkillsService.getSkill(data.name);
     if (!skill) throw new Error('skill 创建后读取失败');
     return skill;
@@ -152,6 +171,7 @@ export class SkillsService {
       serializeSkill(name, description, content, existing.disabled),
       'utf-8'
     );
+    invalidateSkillsCache();
     const skill = SkillsService.getSkill(name);
     if (!skill) throw new Error('skill 更新后读取失败');
     return skill;
@@ -166,6 +186,7 @@ export class SkillsService {
       serializeSkill(name, existing.description, existing.content, !enabled),
       'utf-8'
     );
+    invalidateSkillsCache();
     const skill = SkillsService.getSkill(name);
     if (!skill) throw new Error('skill 开关更新失败');
     return skill;
@@ -178,5 +199,6 @@ export class SkillsService {
       throw new Error(`skill ${name} 不存在`);
     }
     fs.unlinkSync(filePath);
+    invalidateSkillsCache();
   }
 }

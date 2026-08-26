@@ -317,10 +317,12 @@
 
                 <!-- 普通文本（最终答案 / 用户消息） -->
                 <template v-else-if="hasAnswerText(message)">
-                  <div
+                  <!-- 流式回答用节流组件渲染：每个 delta 全量重解析 markdown 是 O(n²)，长回答尾部会卡 -->
+                  <StreamedMarkdown
                     v-if="message.role === 'assistant'"
+                    :text="getMessageText(message)"
+                    :streaming="isStreamingTail(message, idx)"
                     class="markdown-body markdown-content"
-                    v-html="renderMarkdown(getMessageText(message))"
                   />
                   <!-- 用户消息：文件标签块 + 剩余文本（对齐参考：上传文件在消息里显示为可视化标签） -->
                   <div v-else class="user-message-content">
@@ -612,6 +614,7 @@ import {
   type AgentModelOption,
 } from '@/api/agent'
 import ToolCallChip from './components/ToolCallChip.vue'
+import StreamedMarkdown from './components/StreamedMarkdown.vue'
 import AgentIssueList from './components/AgentIssueList.vue'
 import AgentSessionList from './components/AgentSessionList.vue'
 import AgentSidePanel from './components/AgentSidePanel.vue'
@@ -1449,8 +1452,9 @@ function onDrop(e: DragEvent) {
   }
 }
 
-// 消息变化时自动滚动到底部 + 更新 minimap 状态
+// 消息变化时自动滚动到底部 + 更新 minimap 状态 + 记录流事件时间戳（卡死守卫用）
 watch(messages, () => {
+  lastStreamEventAt = Date.now()
   nextTick(() => {
     messageEls.value.length = messages.value.length
     const el = messagesContainer.value
@@ -1481,6 +1485,11 @@ watch(status, (s, prev) => {
 // 流式过程中 tool part 的 state/input/output 原地修改不触发重渲染，
 // 导致工具调用块始终停留在"执行中"。流结束时重建 part 对象，让 Vue 渲染出最终状态）
 watch(isLoading, (now, prev) => {
+  if (now && !prev) {
+    // 新一轮流开始：重置卡死守卫（上一轮可能已被 final 化）
+    stuckFinalized = false
+    lastStreamEventAt = Date.now()
+  }
   if (prev && !now) {
     refreshStats()
     sessionListRef.value?.refresh?.()
@@ -1500,26 +1509,33 @@ watch(isLoading, (now, prev) => {
 })
 
 // ============================================================
-// 兜底修复：工具对话流终止守卫
-// 背景：@ai-sdk/vue（v4.0.41）在工具调用对话中，ai 包内部流处理会挂在
-// finish-step 之后的 job 上（transform 永不返回），导致：
-//   - status 卡在 streaming → watch(isLoading) 的结束分支永不触发
-//   - messages 是 shallowRef，tool part 的原地修改不触发渲染
-// 结果：工具块永远显示「执行中…」，用户也无法再发消息。
-// 处理：轮询数据层，检测「工具 part 已全部到达最终态 + 消息引用连续静止
-// （流不再推进）」后，主动执行与流结束相同的最终化（展开过程详情 + 重建
-// part + 刷新统计），并调 stop() 让 status 回落、解锁输入。
-// 幂等设计：stuckFinalized 置位后不再重复执行；会话切换时自动重置。
+// 兜底修复：工具对话流终止守卫（2026-08-26 判据重构）
+// 背景：@ai-sdk/vue 在工具调用对话中，ai 包内部流处理可能挂在 finish-step
+// 之后的 job 上（transform 永不返回），导致 status 卡在 streaming、
+// watch(isLoading) 的结束分支永不触发、工具块永远显示「执行中…」。
+//
+// 判据说明（为什么不用引用比较）：useChat 的 messages 是 shallowRef，
+// pushMessage 是原地 push、replaceMessage 是同数组内原地替换——数组引用
+// 在整个流式过程中从不变化，「引用连续 N 次未变」恒为真，根本无法区分
+// 活跃流与卡死流（旧实现即基于这一错误假设，且在步骤间生成间隙 >2.4s 时
+// 会误杀健康流）。现改为时间戳判据：
+//   - 快路径：工具 parts 已全部 final 且 >8s 无任何新消息事件 → 即文档记录
+//     的 finish-step 挂起形态，立即最终化；
+//   - 慢路径：>180s 无任何新消息事件 → 绝对兜底（覆盖 part 卡在中间态的
+//     形态）。阈值必须远大于最慢合法工具的执行时长——长工具执行期间没有
+//     消息事件，不能误杀。
+// 幂等：stuckFinalized 置位后不再执行；新一轮发送（isLoading 上升沿）与
+// 会话切换时重置。守卫定时器常驻不清除（旧实现在首次触发后 clearInterval
+// 导致后续会话永远失去守卫保护）。
 // ============================================================
 let stuckFinalized = false
-let lastStuckMsgsRef: unknown = null
-let stuckStillTicks = 0
-const STUCK_STILL_THRESHOLD = 3 // 连续 3 次轮询（约 2.4s）引用未变视为流静止
+let lastStreamEventAt = Date.now()
+const STUCK_FINAL_IDLE_MS = 8_000      // 快路径：parts 全 final 后的静默阈值
+const STUCK_ABSOLUTE_IDLE_MS = 180_000 // 慢路径：绝对兜底静默阈值
 
 const finalizeStuckStream = () => {
   if (stuckFinalized) return
   stuckFinalized = true
-  window.clearInterval(stuckGuardTimer)
   const lastMsg = messages.value[messages.value.length - 1]
   if (lastMsg && lastMsg.role === 'assistant' && hasProcessParts(lastMsg)) {
     processOpen[lastMsg.id] = true
@@ -1532,38 +1548,24 @@ const finalizeStuckStream = () => {
 }
 
 const stuckGuardTimer = window.setInterval(() => {
+  if (stuckFinalized || !isLoading.value) return
+  const idleMs = Date.now() - lastStreamEventAt
+  if (idleMs <= STUCK_FINAL_IDLE_MS) return
   const msgs = messages.value
   const last = msgs?.[msgs.length - 1]
-  if (!last || last.role !== 'assistant' || !hasProcessParts(last)) {
-    lastStuckMsgsRef = msgs
-    stuckStillTicks = 0
-    return
-  }
-  const toolParts = getToolCallParts(last)
-  const allFinal = toolParts.every(
-    (p: any) => p.state === 'output-available' || p.state === 'output-error',
-  )
-  if (!allFinal) {
-    lastStuckMsgsRef = msgs
-    stuckStillTicks = 0
-    return
-  }
-  if (lastStuckMsgsRef === msgs) {
-    stuckStillTicks += 1
-    if (stuckStillTicks >= STUCK_STILL_THRESHOLD) {
-      finalizeStuckStream()
-    }
-  } else {
-    lastStuckMsgsRef = msgs
-    stuckStillTicks = 1
-  }
-}, 800)
+  const toolParts = last && last.role === 'assistant' ? getToolCallParts(last) : []
+  const allFinal =
+    toolParts.length > 0 &&
+    toolParts.every((p: any) => p.state === 'output-available' || p.state === 'output-error')
+  // 快路径：全 final + 静默（finish-step 挂起）；慢路径：超长静默绝对兜底
+  if (!allFinal && idleMs <= STUCK_ABSOLUTE_IDLE_MS) return
+  finalizeStuckStream()
+}, 1000)
 
 // 会话切换时重置守卫状态，保证新会话仍能触发兜底
 watch(sessionId, () => {
   stuckFinalized = false
-  lastStuckMsgsRef = null
-  stuckStillTicks = 0
+  lastStreamEventAt = Date.now()
 })
 
 // 组件卸载时清理轮询，避免定时器泄漏

@@ -14,7 +14,7 @@ import multer from 'multer';
 import path from 'path';
 import fs from 'fs';
 import { AuthRequest } from '../../middlewares/auth.middleware';
-import { AgentService } from '../../services/agent/agent.service';
+import { AgentService, invalidateUploadedFilesCache } from '../../services/agent/agent.service';
 import { LlmService } from '../../services/llm/llm.service';
 import { QASessionService } from '../../services/agent/qa-session.service';
 import { sessionStore } from '../../services/agent/session-store';
@@ -22,6 +22,31 @@ import { getUploadDir } from '../../config/upload';
 import { fixMojibake } from '../../services/agent/tools/file/filename';
 
 const router = Router();
+
+/**
+ * 把 UIMessageStream（ReadableStream）以 SSE 形式写到 Express res。
+ * 供降级链第一级使用（chatWithGenerateText 返回流对象本身）；
+ * 主链路走「流嗅探 + 手动管道」，不经过这里。
+ */
+async function pipeUiMessageStreamToExpress(res: Response, stream: unknown): Promise<void> {
+  if (!stream || typeof (stream as ReadableStream).getReader !== 'function') {
+    throw new Error('降级流不是可读流（chatWithGenerateText 返回契约异常）');
+  }
+  res.status(200);
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache, no-transform');
+  res.setHeader('Connection', 'keep-alive');
+  const reader = (stream as ReadableStream).getReader();
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      res.write(value);
+    }
+  } finally {
+    try { res.end(); } catch { /* 连接已断 */ }
+  }
+}
 
 /**
  * 两级降级链（Task 21.2）：chatWithGenerateText（保留工具调用）→ LlmService.chat（纯文本）。
@@ -32,7 +57,9 @@ const router = Router();
  *   2. 流式嗅探判定「零内容流」（streamText 正常结束但未产出任何文本/工具事件，
  *      即 agent.service onStepFinish 标记的 needFallback 场景——此前该标志从未被消费）
  *
- * 前置条件：res 头尚未发送；调用方已清理 streamTimeout。
+ * 一级直接把 chatWithGenerateText 返回的 UIMessageStream 透传给前端（内含重放的
+ * tool-input/tool-output 事件），其内部 persistAssistantFromSteps 已持久化 assistant，
+ * 路由层只在二级纯文本路径补落库。前置条件：res 头尚未发送；调用方已清理 streamTimeout。
  */
 async function respondWithFallbackChain(
   req: AuthRequest,
@@ -46,19 +73,29 @@ async function respondWithFallbackChain(
     let fallbackMode = '';
 
     // 第一级兜底：chatWithGenerateText（非流式但保留工具调用循环）
+    // 修复（2026-08-26）：原实现读 generateResult.text——但该函数返回的是
+    // createUIMessageStream 的流对象，没有 .text 属性，fallbackText 恒为空串，
+    // 导致一级结果被整体丢弃、必然再跑二级纯文本，且与一级内部落库重复。
+    // 现改为直接透传流对象（内含重放的工具调用事件）。
     try {
       const uid = (req as any).user?.id || '';
-      const generateResult = await AgentService.chatWithGenerateText({
+      const fallbackStream = await AgentService.chatWithGenerateText({
         messages,
         userId: uid,
         sessionId,
         signal: controller.signal,
       });
-      fallbackText = typeof generateResult?.text === 'string' ? generateResult.text : '';
-      fallbackMode = 'generateText';
       console.warn(`[Agent:Fallback] 降级到 chatWithGenerateText()，sessionId=${sessionId || 'none'}`);
+      await pipeUiMessageStreamToExpress(res, fallbackStream);
+      console.log('[Agent:Fallback] 降级成功（generateText，含工具调用事件）');
+      return;
     } catch (genErr: any) {
       console.error('[Agent:Fallback] generateText 兜底失败，继续降级到 LlmService.chat():', (genErr as Error)?.message || genErr);
+      // 一级可能已写出部分响应（headersSent）——此时无法再走二级，只能结束连接
+      if (res.headersSent) {
+        try { res.end(); } catch { /* 连接已断 */ }
+        return;
+      }
     }
 
     // 第二级兜底：纯文本 LlmService.chat()
@@ -178,40 +215,40 @@ router.post('/chat/stream', async (req: AuthRequest, res: Response) => {
     // 2026-08-07 竞态修复：completeActiveSessions 只关闭 createdAt 早于本请求开始时间的
     //   会话，避免两个并发新会话请求互相误杀对方刚创建的会话。
     let sessionId: string = req.body?.sessionId || '';
-    const isNewSession = !sessionId;
-    if (isNewSession) {
-      const closedCount = await QASessionService.completeActiveSessions(userId, requestStartedAt);
+    // 会话归属三分支（2026-08-26 重构统一）：
+    //   存在且属于他人 → 403；存在且属于自己 → 放行；
+    //   不存在（含未传 sessionId）→ 视为「新会话」：先执行单活跃约束再自动创建。
+    // 修复：原实现只在「未传 sessionId」时关闭旧活跃会话，而前端 startNewSession()
+    // 总是先生成 UUID 传入——单活跃约束被完全架空。现把约束移到统一的自动创建分支，
+    // 只要 sessionId 在后端不存在就视为新对话开始。
+    const rawSession = sessionId ? await sessionStore.getByIdWithOwner(sessionId) : null;
+    if (!rawSession) {
+      // B1 并发竞态宽限窗：只关闭创建时间早于「本请求开始前 10s」的活跃会话。
+      // 若严格用 requestStartedAt，两个并发新建请求 A(先)/B(后) 中 B 仍会误杀
+      // A 刚创建的会话（其 createdAt 落在 A 开始之后、B 开始之前）；10s 内的
+      // 并发新建视为有意共存，更早的旧活跃会话照常关闭。
+      const NEW_SESSION_GRACE_MS = 10_000;
+      const closedCount = await QASessionService.completeActiveSessions(
+        userId,
+        new Date(requestStartedAt.getTime() - NEW_SESSION_GRACE_MS),
+      );
       if (closedCount > 0) {
         console.log(`[Agent] 自动结束旧会话: ${closedCount} 个`);
       }
-      // 生成新会话 id 并创建（status=active），让本次对话进入真实会话
-      const crypto = require('crypto');
-      sessionId = crypto.randomUUID();
+      if (!sessionId) {
+        const crypto = require('crypto');
+        sessionId = crypto.randomUUID();
+      }
       await QASessionService.ensureSession(sessionId, userId, undefined, {
         modelKey: req.body?.modelKey || undefined,
         toolPreset: req.body?.toolPreset || undefined,
         thinkingLevel: req.body?.thinkingLevel || undefined,
       });
       console.log(`[Agent] 创建新会话: ${sessionId.slice(0, 8)}`);
-    } else {
+    } else if (rawSession.userId !== userId) {
       // 安全修复：携带 sessionId 时必须校验该会话属于当前用户，
       // 防止跨用户向他人会话写入消息 / 消费 steering / 回答他人挂起的提问
-      // 2026-08-11 修复：区分「会话不存在」与「存在但越权」——
-      // 前端 startNewSession() 用 crypto.randomUUID() 生成新会话 id 并随首条消息传入，
-      // 此时会话在后端尚不存在，应自动创建而非 403（此前新会话首条消息必失败）。
-      const rawSession = await sessionStore.getByIdWithOwner(sessionId);
-      if (!rawSession) {
-        // 会话 id 不存在 → 前端新会话场景，自动创建并绑定当前用户
-        await QASessionService.ensureSession(sessionId, userId, undefined, {
-          modelKey: req.body?.modelKey || undefined,
-          toolPreset: req.body?.toolPreset || undefined,
-          thinkingLevel: req.body?.thinkingLevel || undefined,
-        });
-        console.log(`[Agent] 自动创建前端新会话: ${sessionId.slice(0, 8)}`);
-      } else if (rawSession.userId !== userId) {
-        // 会话存在但属于其他用户 → 拒绝，防越权写入
-        return res.status(403).json({ success: false, message: '无权访问该会话' });
-      }
+      return res.status(403).json({ success: false, message: '无权访问该会话' });
     }
 
     // 安全修复：LLM 调用中止控制
@@ -480,6 +517,8 @@ router.post('/upload', agentUpload.single('file'), (req: AuthRequest, res: Respo
     const sessionId: string = typeof req.body?.sessionId === 'string' ? req.body.sessionId : '';
 
     // file.path 是 multer diskStorage 写入的绝对路径，与 upload_file 工具返回格式一致
+    // 主动失效文件列表缓存：下一条消息的 system prompt 立即包含新文件（否则最长 30s 不可见）
+    invalidateUploadedFilesCache(req.user?.id);
     return res.json({
       success: true,
       data: {
