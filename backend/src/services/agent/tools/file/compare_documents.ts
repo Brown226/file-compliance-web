@@ -63,6 +63,8 @@ interface CompareResult {
   stats: DiffStats;
   summary?: string;
   totalChanges: number;
+  /** 降级说明：段落规模超 LCS 上限时用简化窗口对齐，结果非 LCS 精确（2026 P0-2 新增） */
+  degraded?: string;
 }
 
 /**
@@ -99,6 +101,19 @@ function extractParagraphs(parsed: { text: string; structure: any }): Array<{ te
 }
 
 /**
+ * 段落级 diff 的 LCS 单元格上限。
+ * (m+1)×(n+1) 表随段落数平方膨胀：超过上限（约 500×500 段）时改用
+ * O((m+n)×W) 的简化窗口对齐，避免万级段落 OOM / 长时间卡死（2026 P0-2）。
+ */
+const LCS_MAX_CELLS = 250_000;
+
+/** 同位置替换判定为 "modified" 的相似度阈值（字符集 Jaccard） */
+const MODIFIED_SIMILARITY_THRESHOLD = 0.6;
+
+/** 简化窗口对齐的向前搜索窗口大小 */
+const DEGRADED_WINDOW = 8;
+
+/**
  * LCS 最长公共子序列 — 计算两个段落列表的对齐
  * @returns dp 表，用于回溯 diff
  */
@@ -122,13 +137,30 @@ function isSameText(a: string, b: string): boolean {
 }
 
 /**
+ * 文本相似度 — 字符集合 Jaccard（O(n)，段落级快速判定）。
+ * 归一化空白后比较字符集合：仅增删少量字符的两段得分高，
+ * 完全不相关的中文段落得分低。
+ */
+function textSimilarity(a: string, b: string): number {
+  const na = a.replace(/\s+/g, '');
+  const nb = b.replace(/\s+/g, '');
+  if (!na || !nb) return 0;
+  const setA = new Set(na);
+  const setB = new Set(nb);
+  let inter = 0;
+  for (const ch of setA) if (setB.has(ch)) inter++;
+  const union = setA.size + setB.size - inter;
+  return union === 0 ? 0 : inter / union;
+}
+
+/**
  * 用 LCS dp 表回溯生成段落级 diff
  *
  * 策略：
  * - 相同段落（完全一致或仅空白差异）→ unchanged，跳过
+ * - 对角线方向最优（同位置替换）且相似度达阈值 → modified（2026 P0-2 补全）
  * - 旧段落被删除 → removed
  * - 新段落被新增 → added
- * - 位置相邻且内容相近（isSameText 失败但相似度高）→ modified
  */
 function diffParagraphs(oldParas: Array<{ text: string; sectionTitle?: string }>, newParas: Array<{ text: string; sectionTitle?: string }>): ParagraphDiff[] {
   const a = oldParas.map(p => p.text);
@@ -141,6 +173,25 @@ function diffParagraphs(oldParas: Array<{ text: string; sectionTitle?: string }>
   while (i > 0 && j > 0) {
     if (a[i - 1] === b[j - 1]) {
       i--; j--;
+    } else if (dp[i - 1][j - 1] >= dp[i - 1][j] && dp[i - 1][j - 1] >= dp[i][j - 1]) {
+      // 对角线方向最优 → 视为同位置替换：相似度高 → modified；仅空白差异 → 跳过；
+      // 相似度不足不强行配对 → 按删除+新增处理
+      const oldP = oldParas[i - 1];
+      const newP = newParas[j - 1];
+      if (isSameText(oldP.text, newP.text)) {
+        i--; j--;
+      } else if (textSimilarity(oldP.text, newP.text) >= MODIFIED_SIMILARITY_THRESHOLD) {
+        changes.unshift({
+          type: 'modified', oldIndex: i - 1, newIndex: j - 1,
+          oldText: oldP.text, newText: newP.text,
+          sectionTitle: newP.sectionTitle || oldP.sectionTitle,
+        });
+        i--; j--;
+      } else {
+        changes.unshift({ type: 'removed', oldIndex: i - 1, newIndex: -1, oldText: oldP.text, sectionTitle: oldP.sectionTitle });
+        changes.unshift({ type: 'added', oldIndex: -1, newIndex: j - 1, newText: newP.text, sectionTitle: newP.sectionTitle });
+        i--; j--;
+      }
     } else if (dp[i - 1][j] >= dp[i][j - 1]) {
       // 旧段落被删除；若与新段落内容仅空白差异 → 视为未变更（不误报为修改，验收标准 3）
       const oldP = oldParas[i - 1];
@@ -174,6 +225,73 @@ function diffParagraphs(oldParas: Array<{ text: string; sectionTitle?: string }>
     j--;
   }
 
+  return changes;
+}
+
+/**
+ * 简化窗口对齐（LCS 超限降级）— O((m+n)×WINDOW)，无限段数场景线性可用。
+ * 双指针向前小窗口查找相同段：窗口内命中 → 区间标 removed/added；
+ * 同位置未命中且相似度高 → 合并为 modified。局部大量重排时结果比 LCS 粗糙，
+ * 由调用方在返回中标注 degraded 让 LLM 知晓。
+ */
+function windowAlignedDiff(
+  oldParas: Array<{ text: string; sectionTitle?: string }>,
+  newParas: Array<{ text: string; sectionTitle?: string }>,
+): ParagraphDiff[] {
+  const changes: ParagraphDiff[] = [];
+  const W = DEGRADED_WINDOW;
+  let iOld = 0;
+  let iNew = 0;
+  while (iOld < oldParas.length && iNew < newParas.length) {
+    if (oldParas[iOld].text === newParas[iNew].text) {
+      iOld++; iNew++; continue;
+    }
+    // 在新列表窗口内找旧段
+    let foundNew = -1;
+    for (let k = iNew + 1; k <= Math.min(iNew + W, newParas.length - 1); k++) {
+      if (oldParas[iOld].text === newParas[k].text) { foundNew = k; break; }
+    }
+    if (foundNew !== -1) {
+      for (let k = iNew; k < foundNew; k++) {
+        changes.push({ type: 'added', oldIndex: -1, newIndex: k, newText: newParas[k].text, sectionTitle: newParas[k].sectionTitle });
+      }
+      iNew = foundNew + 1; iOld++;
+      continue;
+    }
+    // 在旧列表窗口内找新段
+    let foundOld = -1;
+    for (let k = iOld + 1; k <= Math.min(iOld + W, oldParas.length - 1); k++) {
+      if (newParas[iNew].text === oldParas[k].text) { foundOld = k; break; }
+    }
+    if (foundOld !== -1) {
+      for (let k = iOld; k < foundOld; k++) {
+        changes.push({ type: 'removed', oldIndex: k, newIndex: -1, oldText: oldParas[k].text, sectionTitle: oldParas[k].sectionTitle });
+      }
+      iOld = foundOld + 1; iNew++;
+      continue;
+    }
+    // 窗口内均未命中：同位置相似度高 → modified，否则 removed+added
+    const oldP = oldParas[iOld];
+    const newP = newParas[iNew];
+    if (isSameText(oldP.text, newP.text)) {
+      iOld++; iNew++; // 空白差异视为未变更
+    } else if (textSimilarity(oldP.text, newP.text) >= MODIFIED_SIMILARITY_THRESHOLD) {
+      changes.push({ type: 'modified', oldIndex: iOld, newIndex: iNew, oldText: oldP.text, newText: newP.text, sectionTitle: newP.sectionTitle || oldP.sectionTitle });
+      iOld++; iNew++;
+    } else {
+      changes.push({ type: 'removed', oldIndex: iOld, newIndex: -1, oldText: oldP.text, sectionTitle: oldP.sectionTitle });
+      changes.push({ type: 'added', oldIndex: -1, newIndex: iNew, newText: newP.text, sectionTitle: newP.sectionTitle });
+      iOld++; iNew++;
+    }
+  }
+  while (iOld < oldParas.length) {
+    changes.push({ type: 'removed', oldIndex: iOld, newIndex: -1, oldText: oldParas[iOld].text, sectionTitle: oldParas[iOld].sectionTitle });
+    iOld++;
+  }
+  while (iNew < newParas.length) {
+    changes.push({ type: 'added', oldIndex: -1, newIndex: iNew, newText: newParas[iNew].text, sectionTitle: newParas[iNew].sectionTitle });
+    iNew++;
+  }
   return changes;
 }
 
@@ -259,7 +377,17 @@ export function createCompareDocumentsTool(context: ToolContext) {
       const oldParas = extractParagraphs(oldParsed);
       const newParas = extractParagraphs(newParsed);
 
-      const diffs = diffParagraphs(oldParas, newParas);
+      // P0-2：LCS 单元格上限保护 — (m+1)×(n+1) 表超限时降级为简化窗口对齐，
+      // 避免万级段落 OOM / 长时间卡死；降级结果标注 degraded 供 LLM 知晓近似性
+      let diffs: ParagraphDiff[];
+      let degraded: string | undefined;
+      if (oldParas.length * newParas.length > LCS_MAX_CELLS) {
+        diffs = windowAlignedDiff(oldParas, newParas);
+        degraded = `段落规模超 LCS 上限（旧 ${oldParas.length} × 新 ${newParas.length} = ${oldParas.length * newParas.length} 单元格），已降级为简化窗口对齐，结果可能遗漏局部重排的精确还原`;
+        console.warn(`[compare_documents] ${degraded}`);
+      } else {
+        diffs = diffParagraphs(oldParas, newParas);
+      }
 
       const stats: DiffStats = {
         added: diffs.filter(d => d.type === 'added').length,
@@ -283,12 +411,14 @@ export function createCompareDocumentsTool(context: ToolContext) {
         summary = await generateChangeSummary(diffs);
       }
 
-      return {
+      const result: CompareResult = {
         changes,
         stats,
         summary,
         totalChanges: diffs.length,
+        ...(degraded ? { degraded } : {}),
       };
+      return result;
     },
   });
 }

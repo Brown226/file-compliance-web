@@ -106,13 +106,13 @@ describe('差异识别', () => {
     expect(result.changes.some((c: any) => c.type === 'added' && (c.newText || '').includes('第三条'))).toBe(true);
   });
 
-  it('实质内容修改 → 呈现为 removed+added 配对（非误报为 modified）', async () => {
+  it('实质内容修改（高相似同位置替换）→ 识别为 modified（P0-2 补全语义）', async () => {
     const oldText = '保修期限：2 年\n\n其他条款不变';
     const newText = '保修期限：3 年\n\n其他条款不变';
     const result = await runCompare(oldText, newText);
-    expect(result.stats.modified).toBe(0);
-    expect(result.stats.added + result.stats.removed).toBeGreaterThanOrEqual(1);
-    expect(result.totalChanges).toBeGreaterThan(0);
+    expect(result.stats.modified).toBe(1);
+    expect(result.stats.added + result.stats.removed).toBe(0);
+    expect(result.changes.some((c: any) => c.type === 'modified' && (c.oldText || '').includes('2 年') && (c.newText || '').includes('3 年'))).toBe(true);
   });
 
   it('stats 统计与实际 changes 一致', async () => {
@@ -122,6 +122,19 @@ describe('差异识别', () => {
     expect(result.stats.added).toBe(result.changes.filter((c: any) => c.type === 'added').length);
     expect(result.stats.removed).toBe(result.changes.filter((c: any) => c.type === 'removed').length);
     expect(result.totalChanges).toBe(result.changes.length);
+  });
+
+  it('段落规模超 LCS 上限 → 降级为简化对齐并标注 degraded（不 OOM）', async () => {
+    const mk = (n: number) => Array.from({ length: n }, (_, i) => `段落${i}`).join('\n\n');
+    const result = await runCompare(
+      mk(600),
+      mk(600).replace('段落10', '段落10修改').replace('段落300', '段落300修改'),
+    );
+    expect(result.degraded).toBeDefined();
+    expect(result.degraded).toContain('超 LCS 上限');
+    // 降级路径仍产出有效变更（两个被修改的段落）
+    expect(result.totalChanges).toBeGreaterThan(0);
+    expect(result.stats.modified).toBeGreaterThan(0);
   });
 });
 
