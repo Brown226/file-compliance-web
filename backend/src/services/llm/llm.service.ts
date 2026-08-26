@@ -1784,14 +1784,21 @@ export class LlmService {
         }
       }
       this._llmConfigCache = { config: result, timestamp: Date.now() };
-      // 自动探测模型能力（上下文窗口/最大输出），探测失败不影响主流程
+      // 自动探测模型能力（上下文窗口/最大输出），探测失败不影响主流程。
+      // 2026-08-26 性能修复：原实现在此处 await 探针——每次缓存过期后的首次调用
+      // 都会同步多等一个外部网关 RTT，表现为周期性的首包尖刺。现改为后台
+      // fire-and-forget：先返回配置（该次调用缺 caps 时走 maxTokens 兜底），
+      // 探测完成后回填进缓存对象，后续调用即可拿到完整 caps。
       if (result) {
-        const caps = await this.probeModelCapabilities(result.apiBaseUrl, result.apiKey, result.modelName);
-        if (caps) {
-          (result as any).modelContextWindow = caps.contextWindow;
-          (result as any).modelMaxOutput = caps.maxOutput;
-          (result as any).modelReasoning = caps.reasoning;
-        }
+        void this.probeModelCapabilities(result.apiBaseUrl, result.apiKey, result.modelName)
+          .then((caps) => {
+            if (caps && this._llmConfigCache?.config === result) {
+              (result as any).modelContextWindow = caps.contextWindow;
+              (result as any).modelMaxOutput = caps.maxOutput;
+              (result as any).modelReasoning = caps.reasoning;
+            }
+          })
+          .catch(() => { /* 探测失败静默：能力字段缺失走兜底值 */ });
       }
       return result;
     } catch (e) {

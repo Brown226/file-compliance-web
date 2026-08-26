@@ -32,7 +32,6 @@ import { SkillsService } from './skills/skills.service';
 import { CompactionService } from './context-compaction/compaction.service';
 import { scrubSensitive } from './security/scrub-sensitive';
 import { acquireLlmToken } from '../../utils/llm-rate-limiter';
-import { decideRetry } from './retry/retry-strategy';
 import { PromptLoader } from '../prompts';
 import { AskUserService } from './ask-user/ask-user.service';
 
@@ -48,28 +47,12 @@ const {
 } = require('ai') as typeof import('ai');
 const { createOpenAI } = require('@ai-sdk/openai') as typeof import('@ai-sdk/openai');
 
-/**
- * 流式调用重试包装：仅重试「调用创建阶段」的失败（await streamText 抛错）。
- * 流已开始后的错误由 onError 回调记录，不重试（数据已流出，无法安全回滚）。
- * 重试决策复用 retry-strategy 的 decideRetry（401 特殊处理 + 指数退避，最多 3 次尝试）。
- */
-export async function callStreamWithRetry<T>(fn: () => T): Promise<Awaited<T>> {
-  let attemptNumber = 1;
-  for (;;) {
-    try {
-      return await fn();
-    } catch (e) {
-      const decision = decideRetry(e, attemptNumber, false);
-      if (!decision.shouldRetry) throw e;
-      console.warn(
-        `[Agent] streamText 调用失败，第 ${attemptNumber} 次重试（${decision.delayMs}ms 后）: ` +
-          `${(e as Error)?.message || e}`,
-      );
-      await new Promise((r) => setTimeout(r, decision.delayMs));
-      attemptNumber += 1;
-    }
-  }
-}
+// 2026-08-26 移除 callStreamWithRetry（原 Task 21.1）：streamText 是惰性启动，
+// 网络/网关错误经 onError/onFinish(finishReason='error') 交付而非同步抛出，
+// 该重试包装从未捕获过真实故障——只对「参数校验类确定性异常」生效，而那类
+// 异常本就不该重试。且工具循环已有真实副作用（文件写入/建任务），流中断后
+// 重跑整轮会重复执行副作用，语义上不可安全重试。错误处理统一走
+// 路由层嗅探 + 两级降级链。
 
 /**
  * Agent 系统提示词 — 定义 Agent 的工作流、行为准则、输出要求和安全约束
@@ -377,7 +360,7 @@ export class AgentService {
     //    - onToolExecutionStart/End: Task 7.5 工具执行追踪
     //    - onError: Task 7.5 错误日志（默认只 console.error，这里显式记录便于排查）
     //    - onFinish: Task 7.7 补写 LlmCallLog（Agent 绕过了 LlmService，需在此补写调用日志）
-    const result = await callStreamWithRetry(() => streamText({
+    const result = await streamText({
       model,
       system: systemPrompt,
       messages: modelMessages,
@@ -474,7 +457,7 @@ export class AgentService {
           SteeringService.markConsumed(sessionId).catch(() => {});
         }
       },
-    }));
+    });
 
     // 10. 返回 result 对象（不在这里调 toUIMessageStreamResponse，留给路由层处理）
     //     P0 修复说明：needFallback 场景（首步 finishReason="other" 零产出）的兜底
