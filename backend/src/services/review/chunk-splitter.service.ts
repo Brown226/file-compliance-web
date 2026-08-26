@@ -12,6 +12,8 @@
  * - 仅用于 DEC_REVIEW 双分支路径，其他 9 种模式仍用 LlmService.splitText（surgical change）
  */
 
+import { LlmService, TextChunk } from '../llm/llm.service';
+
 export interface OutlineNode {
   level: number;      // 1=章, 2=节, 3=条
   title: string;
@@ -197,5 +199,36 @@ export class ChunkSplitterService {
     const outline = this.extractOutline(normalized);
     const chunks = this.splitBySection(normalized, outline, maxChunkSize);
     return { outline, chunks };
+  }
+
+  /**
+   * 章节感知切块 + 纯文本兜底（P0 修复 2026-08-26）
+   *
+   * document 无 markdown 标题/数字编号结构时，splitTextBySection 返回空 chunks，
+   * 下游 fact-check / text-style-check 的 for 循环一次都不进 → DEC 双分支整体空跑，
+   * 用户看到「审查完成、0 问题」假合规报告。
+   *
+   * 本方法在空结果时回退 LlmService.splitText 字符分片：
+   * - sectionPath 标记为「全文」+ 分片序号，提示调用方当前是无章节兜底模式
+   * - 其余字段与章节 chunk 同构，调用方无需区分
+   */
+  static splitTextBySectionWithFallback(text: string, maxChunkSize: number = 4000): {
+    outline: OutlineNode[];
+    chunks: SectionChunk[];
+    /** 是否走了纯文本兜底（原文无章节结构为 true，正常章节切块为 false） */
+    usedFallback: boolean;
+  } {
+    const { outline, chunks } = this.splitTextBySection(text, maxChunkSize);
+    if (chunks.length > 0) return { outline, chunks, usedFallback: false };
+
+    const plainChunks = LlmService.splitText(text, maxChunkSize, true, 300) as TextChunk[];
+    const fallbackChunks: SectionChunk[] = plainChunks.map((c, i) => ({
+      chunkIndex: c.chunkIndex,
+      text: c.text,
+      startIndex: c.startIndex,
+      sectionPath: `全文（第 ${i + 1}/${plainChunks.length} 段）`,
+      sectionLevel: 0,
+    }));
+    return { outline, chunks: fallbackChunks, usedFallback: true };
   }
 }

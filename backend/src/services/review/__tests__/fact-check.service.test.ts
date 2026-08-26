@@ -17,6 +17,22 @@ vi.mock('../../llm/llm.service', () => ({
   LlmService: {
     reviewText: vi.fn(),
     chat: vi.fn(),
+    splitText: (text: string, maxChars: number, includePosition: boolean, _overlap?: number): any => {
+      // 简化实现：与真实 splitText 同构，供 splitTextBySectionWithFallback 兜底路径使用
+      if (text.length <= maxChars) {
+        return includePosition ? [{ text, startIndex: 0, endIndex: text.length, chunkIndex: 0 }] : [text];
+      }
+      const chunks: any[] = [];
+      for (let i = 0; i < text.length; i += maxChars) {
+        const piece = text.slice(i, i + maxChars);
+        if (includePosition) {
+          chunks.push({ text: piece, startIndex: i, endIndex: i + piece.length, chunkIndex: chunks.length });
+        } else {
+          chunks.push(piece);
+        }
+      }
+      return chunks;
+    },
   },
 }));
 
@@ -155,10 +171,12 @@ describe('FactCheckService（DEC 分支B-2）', () => {
     expect(issues).toEqual([]);
   });
 
-  it('无章节标题的纯文本产出 0 个 chunk，返回空且不调用 LLM（当前行为文档化）', async () => {
+  it('无章节标题的纯文本回退普通分片：仍调用 LLM 审查（P0 修复 2026-08-26，此前静默空跑）', async () => {
     const plainText = '无任何章节标题的纯文本内容'.repeat(20);
     const issues = await FactCheckService.check(plainText, makeCtx(), CHECKPOINTS, makeConfig());
-    expect(issues).toEqual([]);
-    expect(reviewTextMock).not.toHaveBeenCalled();
+    // 回退 LlmService.splitText 后得到 1 个 chunk（文本 < chunkSize），正常调 LLM
+    expect(reviewTextMock).toHaveBeenCalledTimes(1);
+    expect(issues).toHaveLength(1);
+    expect(issues[0].originalText).toBe('原文内容');
   });
 });

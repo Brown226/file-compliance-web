@@ -17,6 +17,7 @@ import { retryWithBackoff } from '../../utils/retry';
 import { acquireLlmToken } from '../../utils/llm-rate-limiter';
 import { scrubSensitive } from '../agent/security/scrub-sensitive';
 import { RiskItemSchema } from '../review-pipeline/contract-review.schema';
+import { VALID_ISSUE_TYPES } from '../../utils/issue-types';
 import fs from 'fs';
 import path from 'path';
 
@@ -124,7 +125,7 @@ export class LlmService {
    * 解析 LLM 返回的审查结果（公开方法，供 ReviewService 调用）
    */
   static parseReviewResult(content: string): ReviewIssue[] {
-    const validTypes = ['TYPO', 'VIOLATION', 'FORMAT', 'COMPLETENESS', 'CONSISTENCY', 'LAYOUT', 'NAMING', 'ENCODING', 'ATTRIBUTE', 'HEADER', 'PAGE', 'FLUENCY', 'CROSS_REFERENCE'];
+    const validTypes = VALID_ISSUE_TYPES as readonly string[];
 
     try {
       // 尝试从内容中提取 JSON 数组
@@ -309,6 +310,66 @@ export class LlmService {
       }
       console.warn('[LLM] 解析审查结果失败:', (e as Error).message, '\n原始内容:', content.substring(0, 200));
       return [];
+    }
+  }
+
+  /**
+   * P0 修复（漏报可见性 2026-08-26）：解析审查结果并识别「解析失败」场景。
+   *
+   * 旧逻辑：parseReviewResult 对「LLM 输出自然语言/畸形 JSON」静默返回 []，
+   * reviewText 层表现为「审查完成、0 问题」假合规 —— 同一文档这次能审出、
+   * 下次审不出（取决于 LLM 是否按 JSON 输出），用户侧即「有时候能审出来，有时候不能」。
+   *
+   * 本方法在解析结果为空时区分两种情形：
+   * - 合法「无问题」：内容剥掉代码块标记后是合法空 JSON 数组（[] / [ ] / 代码块内 []）
+   *   → 保持空（真无问题，不应打扰用户）
+   * - 解析失败：内容空白、自然语言、畸形/截断 JSON、非数组对象
+   *   → 返回 RESULT_PARSE_FAILED 提示 issue，让「没审到」可见而非显示 0 问题
+   *
+   * 注意：不改 parseReviewResult 的纯解析语义（该函数被多处复用且有既成断言
+   * 「解析失败返回空」），本标记放在消费层（reviewText）做。
+   */
+  private static parseReviewWithFailureMarker(content: string, text: string): ReviewIssue[] {
+    const issues = this.parseReviewResult(content);
+    if (issues.length > 0) {
+      return this.applyTextFidelity(issues, text);
+    }
+    // 合法 JSON 数组输出（含空数组、含业务过滤后为空）→ LLM 按格式产出了结构化结果，
+    // 即使条目被 parseReviewResult 过滤掉也是「正常解析、无有效问题」，不打扰用户
+    if (LlmService.isLegitJsonArrayOutput(content)) {
+      return [];
+    }
+    console.warn('[LLM] 审查结果无法解析为结构化问题（内容非合法 JSON 数组），附加可见提示:', content.substring(0, 200));
+    return [{
+      issueType: 'COMPLETENESS',
+      ruleCode: 'RESULT_PARSE_FAILED',
+      severity: 'warning',
+      originalText: '[AI 审查结果无法解析]',
+      description: `本次 AI 审查未返回可解析的结构化结果（模型输出格式异常或内容为空），该文本段可能未被有效审查，结果可能遗漏问题。建议重新审查本文件。原始返回（片段）：${content.substring(0, 150)}`,
+      recommendation: '重新发起审查；若持续出现，请检查 LLM 配置或更换模型。',
+    } as ReviewIssue];
+  }
+
+  /**
+   * 判断内容是否为「合法 JSON 数组输出」（剥掉 markdown 代码块标记后是 JSON 数组）。
+   * 用于区分「LLM 按格式产出结构化结果（即使空）」与「自然语言/畸形输出（解析失败）」。
+   */
+  private static isLegitJsonArrayOutput(content: string): boolean {
+    let jsonStr = content.trim();
+    if (jsonStr.startsWith('```')) {
+      jsonStr = jsonStr.replace(/^```(?:json)?\n?/, '').replace(/\n?```$/, '').trim();
+    } else {
+      const fenceMatch = content.match(/```(?:json)?\s*\n?([\s\S]*?)\n?```/);
+      if (fenceMatch && fenceMatch[1].trim().startsWith('[')) {
+        jsonStr = fenceMatch[1].trim();
+      }
+    }
+    if (!jsonStr) return false; // 空/纯说明文字 → 非结构化输出
+    try {
+      const parsed = JSON.parse(jsonStr);
+      return Array.isArray(parsed);
+    } catch {
+      return false;
     }
   }
 
@@ -1279,7 +1340,7 @@ export class LlmService {
         ragChunks: options?.ragChunks,
       });
       // OPT-029: 对 LLM 输出的 originalText 做保真校验，提升前端高亮定位成功率
-      const issues = this.applyTextFidelity(this.parseReviewResult(cachedContent), text);
+      const issues = this.parseReviewWithFailureMarker(cachedContent, text);
       if (options?.positionInfo && issues.length > 0) {
         const { chunkIndex, chunkStartIndex, totalChunks } = options.positionInfo;
         return issues.map(issue => {
@@ -1381,7 +1442,7 @@ export class LlmService {
       }
 
       // OPT-029: 对 LLM 输出的 originalText 做保真校验，提升前端高亮定位成功率
-      const issues = this.applyTextFidelity(this.parseReviewResult(content), text);
+      const issues = this.parseReviewWithFailureMarker(content, text);
 
       // 为每个 issue 添加位置信息
       if (options?.positionInfo && issues.length > 0) {

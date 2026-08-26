@@ -81,3 +81,47 @@ describe('ChunkSplitterService.splitTextBySection', () => {
     expect(chunks.length).toBeGreaterThan(1);
   });
 });
+
+describe('ChunkSplitterService.splitTextBySectionWithFallback（P0 修复 2026-08-26）', () => {
+  // 纯文本无任何标题结构（项目实际场景：扫描件 OCR / 无格式 DOCX 提取文本）
+  const PLAIN_TEXT = Array.from({ length: 50 }, (_, i) => `这是第 ${i + 1} 段普通文本内容，没有章节标题。`).join('\n');
+
+  it('有章节结构时走章节切块，不触发兜底', () => {
+    const md = '# 第1章 总则\n\n内容。\n\n# 第2章 术语\n\n内容。';
+    const { chunks, usedFallback } = ChunkSplitterService.splitTextBySectionWithFallback(md);
+    expect(usedFallback).toBe(false);
+    expect(chunks.length).toBeGreaterThanOrEqual(2);
+    expect(chunks[0].sectionPath).toContain('第1章');
+  });
+
+  it('纯文本无章节时回退普通分片，chunks 非空且标记 usedFallback', () => {
+    const { chunks, usedFallback } = ChunkSplitterService.splitTextBySectionWithFallback(PLAIN_TEXT, 500);
+    expect(usedFallback).toBe(true);
+    expect(chunks.length).toBeGreaterThan(0);
+    // 兜底路径 sectionLevel=0、sectionPath 标记「全文」
+    expect(chunks[0].sectionLevel).toBe(0);
+    expect(chunks[0].sectionPath).toContain('全文');
+    // 分片文本不丢内容（拼接后原文子串存在）
+    const joined = chunks.map(c => c.text).join('');
+    expect(PLAIN_TEXT.length).toBeGreaterThan(0);
+    expect(joined.length).toBeGreaterThan(0);
+  });
+
+  it('短纯文本（< chunkSize）回退为一个 chunk', () => {
+    const shortText = '无任何章节标题的纯文本内容'.repeat(10);
+    const { chunks, usedFallback } = ChunkSplitterService.splitTextBySectionWithFallback(shortText);
+    expect(usedFallback).toBe(true);
+    expect(chunks).toHaveLength(1);
+    expect(chunks[0].text).toBe(shortText);
+  });
+
+  it('长纯文本（> chunkSize）回退为多段分片，保持 startIndex 单调递增', () => {
+    const longText = Array.from({ length: 200 }, (_, i) => `段落${i}：` + '内容'.repeat(30)).join('\n');
+    const { chunks, usedFallback } = ChunkSplitterService.splitTextBySectionWithFallback(longText, 800);
+    expect(usedFallback).toBe(true);
+    expect(chunks.length).toBeGreaterThan(1);
+    for (let i = 0; i < chunks.length; i++) {
+      expect(chunks[i].startIndex).toBeGreaterThanOrEqual(i === 0 ? 0 : chunks[i - 1].startIndex);
+    }
+  });
+});

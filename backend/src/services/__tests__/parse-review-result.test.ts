@@ -340,3 +340,50 @@ describe('parseReviewResult', () => {
   });
 
 });
+
+describe('LlmService.parseReviewWithFailureMarker（P0 修复 2026-08-26：解析失败可见化）', () => {
+  // 私有方法，通过 any 访问；纯函数不依赖 DB/LLM 配置，可以单测
+  const parse = (content: string, text = '原文正文内容') =>
+    (LlmService as any).parseReviewWithFailureMarker(content, text);
+
+  it('合法空 JSON 数组 []：保持无问题，不插入提示', () => {
+    const result = parse('[]');
+    expect(result).toHaveLength(0);
+  });
+
+  it('代码块包裹的空数组：保持无问题', () => {
+    const result = parse('```json\n[]\n```');
+    expect(result).toHaveLength(0);
+  });
+
+  it('合法 JSON 数组（含条目）：正常透传解析结果', () => {
+    const result = parse('[{"issueType":"TYPO","originalText":"帐号","suggestedText":"账号"}]');
+    expect(result).toHaveLength(1);
+    expect(result[0].ruleCode).toBeUndefined();
+  });
+
+  it('自然语言输出（非 JSON）：插入 RESULT_PARSE_FAILED 提示，不静默空', () => {
+    const result = parse('该文件没有发现任何合规问题。');
+    expect(result).toHaveLength(1);
+    expect(result[0].ruleCode).toBe('RESULT_PARSE_FAILED');
+    expect(result[0].severity).toBe('warning');
+    expect(result[0].originalText).toContain('无法解析');
+  });
+
+  it('畸形 JSON：插入 RESULT_PARSE_FAILED 提示', () => {
+    const result = parse('[{"issueType": "TYPO", "originalText":}');
+    expect(result).toHaveLength(1);
+    expect(result[0].ruleCode).toBe('RESULT_PARSE_FAILED');
+  });
+
+  it('空白内容：插入 RESULT_PARSE_FAILED 提示（LLM 无有效输出也是失败）', () => {
+    const result = parse('   \n\n  ');
+    expect(result).toHaveLength(1);
+    expect(result[0].ruleCode).toBe('RESULT_PARSE_FAILED');
+  });
+
+  it('原始内容写入提示 description 帮助定位', () => {
+    const result = parse('模型输出了奇怪格式的内容XYZ');
+    expect(result[0].description).toContain('奇怪格式的内容XYZ');
+  });
+});

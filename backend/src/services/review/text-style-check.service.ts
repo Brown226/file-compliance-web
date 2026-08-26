@@ -17,7 +17,7 @@ export class TextStyleCheckService {
     textCheckpoints: any[],
     config: PipelineReviewConfig,
   ): Promise<ReviewIssue[]> {
-    const { chunks } = ChunkSplitterService.splitTextBySection(text, config.chunkSize || 4000);
+    const { chunks } = ChunkSplitterService.splitTextBySectionWithFallback(text, config.chunkSize || 4000);
     const systemPrompt = await PromptTemplateService.getPromptByScene(
       'dec_review', 'system', 'text_style',
       '你是设计文件文本表述校验专家。核查行文、格式、术语是否符合规范统一规定。',

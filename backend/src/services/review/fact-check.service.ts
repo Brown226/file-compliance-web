@@ -17,7 +17,7 @@ export class FactCheckService {
     factCheckpoints: any[],
     config: PipelineReviewConfig,
   ): Promise<ReviewIssue[]> {
-    const { chunks } = ChunkSplitterService.splitTextBySection(text, config.chunkSize || 4000);
+    const { chunks } = ChunkSplitterService.splitTextBySectionWithFallback(text, config.chunkSize || 4000);
     const systemPrompt = await PromptTemplateService.getPromptByScene(
       'dec_review', 'system', 'fact_check',
       '你是设计文件事实维度校验专家。核查设计参数、技术描述等客观事实是否与规范要求冲突。',
