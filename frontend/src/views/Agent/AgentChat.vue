@@ -218,12 +218,13 @@
         <template v-else>
         <!-- 消息列表（外层 wrap：供 ChatMinimap 绝对定位，避免随滚动容器滚动） -->
         <div class="messages-wrap">
-        <div ref="messagesContainer" class="messages-container">
+        <div ref="messagesContainer" class="messages-container" @scroll="onMessagesScroll">
           <div class="chat-column">
           <div
             v-for="(message, idx) in messages"
             :key="message.id"
             :ref="collectMessageEl(idx)"
+            :data-message-id="message.id"
             class="message-row"
             :class="message.role"
           >
@@ -843,18 +844,38 @@ const libraryOpen = ref(false)
 // P1-② 批量文档处理面板
 const batchOpen = ref(false)
 
-// 跳转到搜索结果对应会话
-function handleJumpToSession(targetSessionId: string) {
+// 跳转到搜索结果对应会话（P1：接收 messageId 定位到具体消息——原实现丢弃 messageId，落地只会滚到底部）
+function handleJumpToSession(targetSessionId: string, targetMessageId?: string) {
   if (targetSessionId && targetSessionId !== sessionId.value) {
-    handleSelectSession(targetSessionId)
+    void handleSelectSession(targetSessionId)
   }
-  // 会话切换后由 watch(sessionId) 加载消息；这里聚焦到消息区
-  nextTick(() => {
-    // 修复：原选择器 '.chat-messages-container' 与模板实际类名 '.messages-container' 不符，
-    // 搜索跳转后滚动定位始终无效。改用模板 ref 直接定位。
-    const el = messagesContainer.value
-    if (el) el.scrollTop = el.scrollHeight
-  })
+  // 会话切换是异步加载历史，轮询等待目标消息渲染（最多 15×200ms = 3s），超时兜底滚到底部
+  let tries = 15
+  const locate = () => {
+    const container = messagesContainer.value
+    if (!container) return
+    if (!targetMessageId) {
+      container.scrollTop = container.scrollHeight
+      return
+    }
+    const el = container.querySelector(
+      `[data-message-id="${CSS.escape(targetMessageId)}"]`,
+    ) as HTMLElement | null
+    if (el) {
+      el.scrollIntoView({ behavior: 'smooth', block: 'center' })
+      el.classList.add('message-row-flash')
+      setTimeout(() => el.classList.remove('message-row-flash'), 1600)
+    }
+  }
+  const poll = () => {
+    const container = messagesContainer.value
+    const hit = targetMessageId && container
+      ? container.querySelector(`[data-message-id="${CSS.escape(targetMessageId)}"]`) !== null
+      : false
+    if (hit || !targetMessageId || --tries <= 0) locate()
+    else setTimeout(poll, 200)
+  }
+  poll()
 }
 
 // ===== P2-⑭ 结果沉淀：收藏 =====
@@ -1053,6 +1074,7 @@ async function handleSelectSession(sid: string) {
     uploadedFiles.value = []
     attachedImages.value = []
     openingFilePath.value = null
+    inputValue.value = '' // P1：切换会话时清空残留输入（原实现正在输入的内容会串到新会话）
     refreshStats()
     // 加载会话设置（模型/工具预设/思考强度），失败不阻断主流程
     try {
@@ -1474,13 +1496,22 @@ function onDrop(e: DragEvent) {
   }
 }
 
+// P1：吸底滚动加「贴近底部」判断——用户上翻查看历史时不被流式更新拽回底部
+const isNearBottom = ref(true)
+function onMessagesScroll() {
+  const el = messagesContainer.value
+  if (el) {
+    isNearBottom.value = el.scrollHeight - el.scrollTop - el.clientHeight < 80
+  }
+}
+
 // 消息变化时自动滚动到底部 + 更新 minimap 状态 + 记录流事件时间戳（卡死守卫用）
 watch(messages, () => {
   lastStreamEventAt = Date.now()
   nextTick(() => {
     messageEls.value.length = messages.value.length
     const el = messagesContainer.value
-    if (el) {
+    if (el && isNearBottom.value) {
       el.scrollTop = el.scrollHeight
     }
   })
@@ -2404,4 +2435,13 @@ watch(sessionId, () => { refreshStats() })
   font-size: var(--text-sm);
   color: var(--accent);
 }
+.message-row-flash {
+  animation: agent-message-row-flash 1.6s ease-out;
+}
+
+@keyframes agent-message-row-flash {
+  0% { background: var(--bg-selected); }
+  100% { background: transparent; }
+}
+
 </style>
