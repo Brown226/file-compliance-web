@@ -55,7 +55,7 @@ function wrapFileContent(rawText: string): string {
  */
 export function createExtractTextTool(context: ToolContext) {
   return tool({
-    description: '从文件中提取文本。调用 doc-parser 服务解析 docx/xlsx/pdf/pptx 等格式文件，返回纯文本、结构化信息和 Markdown。需要先通过 upload_file 上传文件获得 filePath。',
+    description: '从文件中提取文本。调用 doc-parser 服务解析 docx/xlsx/pdf/pptx 等格式文件，扫描版 PDF 会自动 OCR，返回纯文本、结构化信息和 Markdown。纯图片（png/jpg 等）请改用 ocr_scan。需要先通过 upload_file 上传文件获得 filePath。',
     inputSchema: z.object({
       filePath: z.string().describe('服务端文件绝对路径（由 upload_file 返回）'),
     }),

@@ -951,9 +951,13 @@ export class AgentService {
   /**
    * 工具预设 → 工具名单（返回 null 表示不过滤 = 全部工具）
    *   none    → []（纯对话，禁用全部工具）
-   *   default → 排除 3 个 pipeline 委托类工具（日常对话/知识问答/审查常用）
+   *   default → 日常档（2026-08-26 补齐对比/表格/编辑/OCR 六件分析编辑工具）：
+   *             读/写/解析/审查/记忆/知识检索与比对全量可用；刻意排除三类——
+   *             ① kb_upsert（写共享知识库，防日常误写，走 full 档）
+   *             ② batch_process（重型批量，走异步队列任务）
+   *             ③ pipeline 委托三件套（建任务交后台流水线）
    *   qa      → ['search_knowledge']（纯知识库问答，收敛原独立知识问答模式）
-   *   full    → null（全部 23 个工具）
+   *   full    → null（全部 34 个工具）
    *   未传/未知 → null（兼容旧行为）
    */
   private static presetToToolNames(preset?: string): string[] | null {
@@ -962,11 +966,13 @@ export class AgentService {
     if (preset === 'qa') return ['search_knowledge'];
     if (preset === 'default') {
       return [
-        // file（8）
+        // file（13）：读/写/解析/分块/报告/对比/表格/编辑/OCR
         'upload_file', 'read_file', 'write_report', 'delete_file', 'extract_text',
         'chunk_document', 'download_report', 'list_uploads',
-        // knowledge（3）
+        'compare_documents', 'extract_tables', 'edit_file', 'edit_document', 'ocr_scan',
+        // knowledge（4）：三库检索 + 多文档比对（kb_upsert 写操作不入日常档）
         'search_knowledge', 'search_rule_library', 'search_standard_checkpoints',
+        'compare_knowledge',
         // memory（3）
         'extract_user_preferences', 'recall_memory', 'save_memory',
         // review（6）

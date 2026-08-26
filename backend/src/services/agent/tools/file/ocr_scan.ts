@@ -52,9 +52,9 @@ export interface OcrScanResult {
 export function createOcrScanTool(context: ToolContext) {
   return tool({
     description:
-      '对图片或扫描件执行 OCR 文字识别。支持类型：pdf、png、jpg、jpeg、gif、webp、bmp、tiff。' +
-      '当文件是扫描版 PDF、截图、照片等纯图像内容（extract_text/read_file 拿不到文字）时使用。' +
-      '返回识别出的文字内容、置信度和文本统计。',
+      '对纯图片执行 OCR 文字识别。支持类型：png、jpg、jpeg、gif、webp、bmp、tiff。' +
+      '扫描版 PDF 请直接用 extract_text（会自动 OCR）；本工具用于纯图片文件，' +
+      '或 extract_text/read_file 结果为空时的兜底。返回识别出的文字内容、置信度和文本统计。',
     inputSchema: z.object({
       filePath: z.string().describe('服务端文件绝对路径（由 upload_file 返回或 list_uploads 列出）'),
       fileType: z

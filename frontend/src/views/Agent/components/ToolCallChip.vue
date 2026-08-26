@@ -56,13 +56,15 @@ const TOOL_NAME_MAP: Record<string, string> = {
   upload_file: '上传文件', extract_text: '提取文本', chunk_document: '分块',
   read_file: '读取文件', list_uploads: '列出文件', delete_file: '删除文件',
   write_report: '生成报告', download_report: '下载报告', compare_documents: '文档对比', extract_tables: '表格提取',
-  compare_knowledge: '文档比对问答',
+  edit_file: '编辑文件', edit_document: '编辑文档', ocr_scan: 'OCR 识别',
+  compare_knowledge: '文档比对问答', kb_upsert: '知识写回',
   list_available_rules: '列出规则', apply_rule: '执行规则',
   llm_review_chunk: 'LLM 审查', llm_cross_check: '交叉核验',
   summarize_issues: '汇总', format_issues: '格式化',
   search_knowledge: '知识检索', search_rule_library: '规则检索', search_standard_checkpoints: '审点检索',
   create_pipeline_task: '委托任务', get_task_status: '查状态', get_task_results: '取结果',
   recall_memory: '召回记忆', save_memory: '保存记忆', extract_user_preferences: '提取偏好',
+  batch_process: '批量处理', summarize_document: '文档总结', draft_document: '起草文档',
 }
 
 // 静态 tool part 没有独立 toolName 字段，工具名嵌在 type（如 'tool-search_knowledge'）；
