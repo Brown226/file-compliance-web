@@ -1,5 +1,5 @@
 <template>
-  <div class="agent-layout" :class="{ dark: isDark }" @dragover.prevent="onDragOver" @dragleave.prevent="onDragLeave" @drop.prevent="onDrop">
+  <div class="agent-layout" :class="{ dark: isDark }" @dragover.prevent="onDragOver" @dragenter.prevent="onDragEnter" @dragleave.prevent="onDragLeave" @drop.prevent="onDrop">
     <!-- 移动端侧栏抽屉遮罩 -->
     <div
       class="sidebar-overlay-backdrop"
@@ -632,12 +632,22 @@ const { renderMarkdown } = useMarkdown()
 
 // ===== 主题切换（对齐参考项目：.agent-layout.dark + localStorage 持久化）=====
 const THEME_STORAGE_KEY = 'agent-theme-dark'
+/** P0-5b：暗色标记同步到 document.body 的 class —— append-to-body 的 el-dialog /
+ *  el-select 下落面板脱离 .agent-layout.dark 变量作用域，只能由 body 级 CSS 变量接管 */
+const BODY_DARK_CLASS = 'agent-dark-body'
 const isDark = ref(false)
 try {
   isDark.value = localStorage.getItem(THEME_STORAGE_KEY) === '1'
 } catch { /* 隐私模式下存储不可用，默认亮色 */ }
+function syncBodyThemeClass(dark: boolean) {
+  if (typeof document !== 'undefined') {
+    document.body.classList.toggle(BODY_DARK_CLASS, dark)
+  }
+}
+syncBodyThemeClass(isDark.value)
 function toggleTheme() {
   isDark.value = !isDark.value
+  syncBodyThemeClass(isDark.value)
   try {
     localStorage.setItem(THEME_STORAGE_KEY, isDark.value ? '1' : '0')
   } catch { /* ignore */ }
@@ -1433,12 +1443,24 @@ function formatTime(value: string | number | Date): string {
 
 // ===== 拖拽上传 =====
 const isDragOver = ref(false)
+// P0-5a 修复：dragenter/dragleave 计数（原 onDragOver 为空函数、dragCounter 无累加，
+// isDragOver 永不置 true → drop-zone-overlay 是死 UI，拖文件零视觉反馈）。
+// 计数模式避免鼠标在容器子元素间移动时遮罩闪烁：进入计数 +1，离开 -1，归零才隐藏。
 let dragCounter = 0
-function onDragOver() { /* dragover 需要 preventDefault 才能触发 drop */ }
+function onDragEnter() {
+  dragCounter++
+  isDragOver.value = true
+}
+function onDragOver() {
+  // dragover 周期性触发；preventDefault 由模板 @dragover.prevent 完成。
+  // 拖入遮罩自身时也保持遮罩可见。
+  isDragOver.value = true
+}
 function onDragLeave(e: DragEvent) {
-  // 只有离开整个容器才隐藏遮罩
-  if (e.relatedTarget === null) {
-    dragCounter = 0
+  dragCounter = Math.max(0, dragCounter - 1)
+  const related = e.relatedTarget as Node | null
+  // 只在整个容器（含遮罩）完全离开时才隐藏；relatedTarget 为 null（离开窗口边界）也隐藏
+  if (dragCounter === 0 && (related === null || !(e.currentTarget as Node).contains(related))) {
     isDragOver.value = false
   }
 }
