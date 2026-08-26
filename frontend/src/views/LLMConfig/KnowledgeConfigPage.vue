@@ -69,12 +69,11 @@ import KnowledgeStrategyPanel from './KnowledgeStrategyPanel.vue'
   overflow: hidden;
   display: flex;
   flex-direction: column;
-  transition: box-shadow var(--corp-transition-base), transform var(--corp-transition-base);
+  transition: border-color var(--corp-transition-base);
 }
 
 .module-card:hover {
-  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.03), 0 10px 28px rgba(15, 23, 42, 0.07);
-  transform: translateY(-1px);
+  border-color: var(--color-gray-300);
 }
 
 @media (max-width: 960px) {

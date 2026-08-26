@@ -91,8 +91,9 @@
           {{ item.name }}
         </button>
       </div>
-      <div class="config-content">
-        <AiEngineConfig v-show="activeSystem === 'aiEngine'" />
+      <!-- AI 引擎：独立竖列布局（左侧导航 + 单层内容卡，不再套白卡） -->
+      <AiEngineConfig v-if="activeSystem === 'aiEngine'" />
+      <div v-else class="config-content">
         <StorageManagement v-show="activeSystem === 'storage'" />
         <BasicSettings v-show="activeSystem === 'basicSettings'" />
         <AuditLogs v-show="activeSystem === 'audit'" />
@@ -307,7 +308,7 @@ onMounted(async () => {
   right: 16px;
   height: 2px;
   border-radius: 0 0 2px 2px;
-  background: linear-gradient(90deg, var(--color-primary-600), var(--color-primary-400));
+  background: var(--color-primary-600);
 }
 
 .tab-content {
@@ -344,8 +345,6 @@ onMounted(async () => {
   background: var(--bg-surface-hover);
   transition: background var(--corp-transition-fast), border-color var(--corp-transition-fast);
 }
-
-.status-item:hover { background: var(--bg-surface-active); }
 
 /* 异常行：整行浅红提示 */
 .status-item.is-error {

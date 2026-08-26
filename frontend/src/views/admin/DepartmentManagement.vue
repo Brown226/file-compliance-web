@@ -74,7 +74,7 @@
           <div class="employee-toolbar">
             <el-input v-model="empSearch" placeholder="搜索姓名或账号..." prefix-icon="Search" clearable style="width: 240px" @input="handleSearchChange" />
             <div class="toolbar-right">
-              <el-button @click="handleBatchFix"><el-icon><Edit /></el-icon> 修正账号</el-button>
+              <el-button @click="handleBatchFix"><el-icon><Edit /></el-icon> 批量修正账号</el-button>
               <el-button @click="showBatchImportDialog = true"><el-icon><Upload /></el-icon> 批量导入</el-button>
               <el-button type="primary" @click="handleNewAccount"><el-icon><Plus /></el-icon> 新建账号</el-button>
             </div>
@@ -127,9 +127,9 @@
                   </div>
                 </div>
                 <div class="card-actions">
-                  <el-button link type="primary" size="small" @click="handleEditEmployee(emp)">编辑</el-button>
-                  <el-button link type="danger" size="small" @click="handleDeleteEmployee(emp)">删除</el-button>
+                  <el-button link size="small" @click="handleEditEmployee(emp)">编辑</el-button>
                   <el-button link size="small" @click="handleResetPassword(emp)">重置密码</el-button>
+                  <el-button link type="danger" size="small" @click="handleDeleteEmployee(emp)">删除</el-button>
                 </div>
               </div>
             </div>

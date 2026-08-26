@@ -163,18 +163,16 @@ const navGroups = [
   padding: 20px;
   text-align: left;
   cursor: pointer;
-  transition: transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease;
+  transition: border-color 0.18s ease;
 }
 
 .nav-card:hover {
-  transform: translateY(-2px);
   border-color: var(--color-gray-400);
-  box-shadow: 0 12px 30px rgba(15, 23, 42, 0.08);
 }
 
 .nav-card.active {
   border-color: var(--color-primary-600);
-  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.08);
+  box-shadow: 0 0 0 3px rgba(39, 81, 124, 0.08);
 }
 
 .nav-card-top {
