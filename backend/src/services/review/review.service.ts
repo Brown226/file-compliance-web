@@ -1516,7 +1516,11 @@ const fileContexts = task.files.map(file => {
     });
 
     // �ڴ��ǣ�׷���Ƿ��з�Ƭ�ɹ�д�� DB�����ⶵ��д��ľ�̬������
-    let anyChunkWritten = false;
+    // P0 修复（漏报）：跟踪各分片实际已落库的条目键（taskId|fileId|issueType|ruleCode|originalText），
+    // 阶段末尾兜底写入改为"增量落库"——handler 层合并产出中未被分片覆盖的部分补写入库。
+    // 旧实现用 anyChunkWritten 布尔门控：只要有一个分片写过，handler 层额外产出
+    // （TYPO 规则字典问题、OCR_DEGRADED、分片失败提示等）全部静默丢失。
+    const writtenDetailKeys = new Set<string>();
 
     // ���Ȼص���ÿ�� AI ��Ƭ�����ɺ�����д�� DB ������ WebSocket��
     ctx.onChunkProgress = async (chunkLength: number, issues: any[], chunkIndex: number, totalChunks: number, engine: string) => {
@@ -1550,15 +1554,19 @@ const fileContexts = task.files.map(file => {
           }
         }
 
+        let quoteNotFoundCount = 0;
         const aiData = issues.map((issue) => {
           // OPT-029: originalText fidelity check
+          // P0 修复（漏报）：引用原文未命中不再一律按幻觉静默丢弃——
+          // 完整性/缺失类发现的 originalText 天然不在正文中，PDF 提取质量差时也会
+          // 大面积失配；一律丢弃会造成系统性漏报。改为保留 + 强制转人工复核。
+          let quoteNotFound = false;
           if (issue.originalText && ctx.extractedText) {
             const fidelity = validateOriginalText(issue.originalText, ctx.extractedText, { enableFuzzy: ctx.extractedText.length < 100000 });
             if (fidelity.confidence === 'not_found') {
-              // 原文在文档中完全不存在（LLM 幻觉），丢弃该 issue——因为按幻觉原文高亮定位会误导用户
-              return null;
-            }
-            if (fidelity.confidence === 'fuzzy' && fidelity.correctedText) {
+              quoteNotFound = true;
+              quoteNotFoundCount++;
+            } else if (fidelity.confidence === 'fuzzy' && fidelity.correctedText) {
               issue.originalText = fidelity.correctedText;
             }
           }
@@ -1598,7 +1606,7 @@ const fileContexts = task.files.map(file => {
             judgeConfidence: issue.confidence || null,
             judgeReason: issue.confidenceReason || null,
             reviewStatus: ((confidence) => {
-              return (confidence === 'AI_INFERRED' || issue.riskLevel === 'HIGH' || issue.confidence === 'LOW')
+              return (quoteNotFound || confidence === 'AI_INFERRED' || issue.riskLevel === 'HIGH' || issue.confidence === 'LOW')
                 ? 'PENDING_REVIEW'
                 : 'CONFIRMED';
             })(this.getConfidence(issue).confidence),
@@ -1609,6 +1617,9 @@ const fileContexts = task.files.map(file => {
             reviewSource: (issue as any).reviewSource || 'AI',
           };
         }).filter((x): x is NonNullable<typeof x> => x !== null);
+        if (quoteNotFoundCount > 0) {
+          console.warn(`[Review] 分片 ${chunkIndex}: ${quoteNotFoundCount} 条 AI 发现的引用原文未能在文档中定位（已保留并转人工复核，不再按幻觉丢弃） (${file.fileName})`);
+        }
 
         // ��ǿ�棺���񱣻� + ���Ի��� + ʧ��ʱ�ӳ�����
         let dbWriteSuccess = false;
@@ -1630,7 +1641,9 @@ const fileContexts = task.files.map(file => {
             });
           });
           dbWriteSuccess = true;
-          anyChunkWritten = true;
+          for (const d of dedupedData) {
+            writtenDetailKeys.add([d.taskId, d.fileId ?? '', d.issueType, d.ruleCode ?? '', d.originalText ?? ''].join('|'));
+          }
         } catch (txError) {
           console.error(`[Review] ? ��Ƭ ${chunkIndex}/${totalChunks} ����д��ʧ��: ${file.fileName}`, txError);
 
@@ -1641,7 +1654,9 @@ const fileContexts = task.files.map(file => {
               skipDuplicates: true,
             });
             dbWriteSuccess = true;
-            anyChunkWritten = true;
+            for (const d of dedupedData) {
+              writtenDetailKeys.add([d.taskId, d.fileId ?? '', d.issueType, d.ruleCode ?? '', d.originalText ?? ''].join('|'));
+            }
           } catch (retryError) {
             console.error(`[Review] ? ��Ƭ ${chunkIndex}/${totalChunks} ����Ҳʧ��: ${file.fileName}`, retryError);
 
@@ -1750,7 +1765,11 @@ const fileContexts = task.files.map(file => {
 
     // AI �����ͨ�� ctx.onChunkProgress ����д�루ÿ����Ƭ�����ɺ�������� + ���� WebSocket��
     // �˴��������ף�ʹ���ڴ��Ǽ�飬���޷�Ƭ�ɹ�д����һ����д�루��������� onChunkProgress ȫ��ʧ��ʱ�ı��ף�
-    if (slowResult.aiIssues.length > 0 && !anyChunkWritten) {
+    // P0 修复（漏报）：不再用 !anyChunkWritten 整块门控兜底写入——只要有一个分片
+    // 成功写过，handler 层合并产出中未被分片覆盖的条目（如 TYPO 规则字典问题、
+    // OCR_DEGRADED、分片失败提示）此前会被整体丢弃。改为始终进入，靠
+    // writtenDetailKeys 增量过滤，只补写尚未落库的部分。
+    if (slowResult.aiIssues.length > 0) {
       try {
         // P0-1/P1-2: 过滤误报库中的 issue（兜底路径，二元组匹配）
         if (ctx.fpLibraryMap && ctx.fpLibraryMap.size > 0) {
@@ -1775,15 +1794,17 @@ const fileContexts = task.files.map(file => {
         }
 
         console.warn(`[Review] ����д��: ${slowResult.aiIssues.length} �� (${file.fileName})`);
+        let quoteNotFoundCount = 0;
         const aiData = slowResult.aiIssues.map((issue) => {
           // OPT-029: originalText fidelity check (fallback path)
+          // P0 修复（漏报）：与分片路径同口径——not_found 保留并转人工复核，不再静默丢弃
+          let quoteNotFound = false;
           if (issue.originalText && ctx.extractedText) {
             const fidelity = validateOriginalText(issue.originalText, ctx.extractedText, { enableFuzzy: ctx.extractedText.length < 100000 });
             if (fidelity.confidence === 'not_found') {
-              // 原文在文档中完全不存在（LLM 幻觉），丢弃该 issue
-              return null;
-            }
-            if (fidelity.confidence === 'fuzzy' && fidelity.correctedText) {
+              quoteNotFound = true;
+              quoteNotFoundCount++;
+            } else if (fidelity.confidence === 'fuzzy' && fidelity.correctedText) {
               issue.originalText = fidelity.correctedText;
             }
           }
@@ -1819,7 +1840,7 @@ const fileContexts = task.files.map(file => {
             judgeConfidence: issue.confidence || null,
             judgeReason: issue.confidenceReason || null,
             reviewStatus: ((confidence) => {
-              return (confidence === 'AI_INFERRED' || issue.riskLevel === 'HIGH' || issue.confidence === 'LOW')
+              return (quoteNotFound || confidence === 'AI_INFERRED' || issue.riskLevel === 'HIGH' || issue.confidence === 'LOW')
                 ? 'PENDING_REVIEW'
                 : 'CONFIRMED';
             })(this.getConfidence(issue).confidence),
@@ -1829,9 +1850,18 @@ const fileContexts = task.files.map(file => {
             reviewSource: (issue as any).reviewSource || 'AI',
           };
         }).filter((x): x is NonNullable<typeof x> => x !== null);
-        await prisma.taskDetail.createMany({
-          data: aiData.map((item) => this.stripDbUnsupportedFields(item)) as any,
+        if (quoteNotFoundCount > 0) {
+          console.warn(`[Review] 兜底路径: ${quoteNotFoundCount} 条 AI 发现的引用原文未能在文档中定位（已保留并转人工复核，不再按幻觉丢弃） (${file.fileName})`);
+        }
+        // 增量落库：过滤已随分片写库的条目（键口径与分片路径一致），避免重复
+        const strippedFallbackData = aiData.map((item) => this.stripDbUnsupportedFields(item)) as any[];
+        const pendingFallbackData = strippedFallbackData.filter((d: any) => {
+          const key = [d.taskId, d.fileId ?? '', d.issueType, d.ruleCode ?? '', d.originalText ?? ''].join('|');
+          return !writtenDetailKeys.has(key);
         });
+        if (pendingFallbackData.length > 0) {
+          await prisma.taskDetail.createMany({ data: pendingFallbackData });
+        }
       } catch (e) {
         console.error(`[Review] ����д��ʧ��:`, e);
       }
