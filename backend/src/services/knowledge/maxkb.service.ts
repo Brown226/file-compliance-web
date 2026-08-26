@@ -25,6 +25,14 @@ interface MaxKBConfig {
   password: string;      // 管理员密码
 }
 
+/**
+ * MaxKB fetch 请求超时（毫秒）。
+ * 2026 P0-4：原实现所有 fetch 无 AbortSignal——MaxKB 挂起（连接成功但响应不返回）
+ * 时请求永久悬挂，Agent 工具（search_knowledge/kb_upsert）跟着无限挂起。
+ * 统一 15s 超时，超时抛 TimeoutError 由调用方/retryWrapper 降级。
+ */
+const MAXKB_FETCH_TIMEOUT_MS = 15_000;
+
 // 默认配置：凭证从环境变量读取，不在代码中硬编码明文密码。
 // 运行时可被 system_configs.maxkb_config 覆盖。
 const DEFAULT_CONFIG: MaxKBConfig = {
@@ -112,6 +120,8 @@ export class MaxKBService {
         username: config.username,
         password: config.password,
       }),
+      // P0-4：登录同样加超时，MaxKB 挂起时 15s 内抛错而非永久悬挂
+      signal: AbortSignal.timeout(MAXKB_FETCH_TIMEOUT_MS),
     });
 
     const data = await response.json() as any;
@@ -154,6 +164,8 @@ export class MaxKBService {
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${token}`,
       },
+      // P0-4：管理 API 请求加超时（MaxKB 黑洞挂起时 15s 内抛错，交由调用方降级）
+      signal: AbortSignal.timeout(MAXKB_FETCH_TIMEOUT_MS),
     };
 
     if (body) {
