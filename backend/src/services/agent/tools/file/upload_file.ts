@@ -12,6 +12,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { z } from 'zod';
 import { getTodayDir } from './paths';
+import { FileWriteQueueService } from '../../file-queue/file-write-queue.service';
 
 // require ESM-only 包，类型通过 typeof import 断言保留
 const { tool } = require('@ai-sdk/provider-utils') as typeof import('@ai-sdk/provider-utils');
@@ -101,8 +102,19 @@ export function createUploadFileTool(context: ToolContext) {
       // 创建目录（recursive: true 不会因目录已存在而报错）
       await fs.promises.mkdir(targetDir, { recursive: true });
 
-      // 写入文件
-      await fs.promises.writeFile(filePath, buffer);
+      // P1：原子写入 — 先写同目录 tmp 再 rename，同名文件并发上传不出现"最后写者赢 +
+      // 读取方读到半截"；写失败清理 tmp。与 edit_file 的 text 分支保持一致。
+      const tmpPath = `${filePath}.upload.tmp`;
+      await FileWriteQueueService.enqueue(filePath, async () => {
+        try {
+          await fs.promises.writeFile(tmpPath, buffer);
+          await fs.promises.rename(tmpPath, filePath);
+        } catch (err) {
+          // 写入/重命名失败时清理残留的 .tmp 文件
+          await fs.promises.unlink(tmpPath).catch(() => {});
+          throw err;
+        }
+      });
 
       return {
         filePath,

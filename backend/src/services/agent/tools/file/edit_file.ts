@@ -84,15 +84,23 @@ function assertEditableFormat(filePath: string): 'text' | 'docx' {
   );
 }
 
+/** 行级 diff 摘要的 LCS 单元格上限（与 compare_documents 同款保护：超限跳过精确摘要，防止几万行文件的 O(m×n) 表长时间卡死） */
+const LCS_MAX_CELLS = 250_000;
+
 /**
  * 生成行级 diff 摘要（LCS，比较编辑前后行列表）
  * 复用 compare_documents 的 LCS 思路，但输出轻量变更记录
+ * @returns { changes } 变更记录（截断 50 条）；{ skipped } 行数超限时 true（跳过 LCS）
  */
-function lineDiffSummary(oldLines: string[], newLines: string[]): ChangeRecord[] {
+function lineDiffSummary(oldLines: string[], newLines: string[]): { changes: ChangeRecord[]; skipped: boolean } {
   const a = oldLines;
   const b = newLines;
   const m = a.length;
   const n = b.length;
+  // P1：单元格超限 → 不建 dp 表（超大文件会卡死），降级为「跳过差异摘要」
+  if (m * n > LCS_MAX_CELLS) {
+    return { changes: [], skipped: true };
+  }
   // 简单 LCS 回溯（行级字符串完全相等）
   const dp: number[][] = Array.from({ length: m + 1 }, () => new Array(n + 1).fill(0));
   for (let i = 1; i <= m; i++) {
@@ -132,7 +140,7 @@ function lineDiffSummary(oldLines: string[], newLines: string[]): ChangeRecord[]
       merged.push(c);
     }
   }
-  return merged.slice(0, 50); // 截断超长 diff 摘要，避免撑爆上下文
+  return { changes: merged.slice(0, 50), skipped: false }; // 截断超长 diff 摘要，避免撑爆上下文
 }
 
 /**
@@ -358,8 +366,8 @@ export function createEditFileTool(context: ToolContext, descriptionOverride?: s
       });
 
       const afterLines = after.split('\n');
-      const changes = lineDiffSummary(beforeLines, afterLines);
-      const message = `已编辑 ${path.basename(normalizedPath)}：${beforeLines.length} 行 → ${afterLines.length} 行，${changes.length} 处变更`;
+      const { changes, skipped } = lineDiffSummary(beforeLines, afterLines);
+      const message = `已编辑 ${path.basename(normalizedPath)}：${beforeLines.length} 行 → ${afterLines.length} 行${skipped ? '（行数过多，跳过差异摘要）' : `，${changes.length} 处变更`}`;
 
       return {
         filePath: normalizedPath,

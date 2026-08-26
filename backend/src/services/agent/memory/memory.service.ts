@@ -146,12 +146,40 @@ export class MemoryService {
    * @param params.scope 限定作用域（不传时跨所有 scope，按优先级排序）
    * @returns RecalledMemory[]（按 scope 优先级 + 相似度排序）
    */
+  /**
+   * 语义检索记忆（兼容旧签名，返回 memories 数组；降级信息用 recallMemoryDetailed）
+   */
   static async recallMemory(params: {
     userId: string;
     query: string;
     topK?: number;
     scope?: MemoryScope;
   }): Promise<RecalledMemory[]> {
+    const { memories } = await this.recallMemoryInternal(params);
+    return memories;
+  }
+
+  /**
+   * 语义检索记忆（带降级标志）— 工具链路专用
+   * @returns { memories, degraded } degraded=true 表示 embedding 服务不可用、已降级为关键词匹配（2026
+   *           从「similarity===0.5 弱信号猜测」改为服务内真实标志）
+   */
+  static async recallMemoryDetailed(params: {
+    userId: string;
+    query: string;
+    topK?: number;
+    scope?: MemoryScope;
+  }): Promise<{ memories: RecalledMemory[]; degraded: boolean }> {
+    return this.recallMemoryInternal(params);
+  }
+
+  /** 内部实现：共享逻辑，返回 { memories, degraded } */
+  private static async recallMemoryInternal(params: {
+    userId: string;
+    query: string;
+    topK?: number;
+    scope?: MemoryScope;
+  }): Promise<{ memories: RecalledMemory[]; degraded: boolean }> {
     const { userId, query, topK = 5, scope } = params;
 
     // 生成查询向量
@@ -161,6 +189,8 @@ export class MemoryService {
     } catch (e) {
       console.warn('[Agent:Memory] 生成查询向量失败，降级到关键词匹配:', (e as Error).message);
     }
+    // degraded = embedding 生成失败（降级到关键词匹配的真实标志）
+    const degraded = queryEmbedding === null;
 
     // 无 embedding 时降级到 ILIKE 关键词匹配
     if (!queryEmbedding) {
@@ -176,7 +206,7 @@ export class MemoryService {
         orderBy: { updatedAt: 'desc' },
         take: topK,
       });
-      return keywordResults.map(m => ({ ...this.toMemoryItem(m), similarity: 0.5 }));
+      return { memories: keywordResults.map(m => ({ ...this.toMemoryItem(m), similarity: 0.5 })), degraded };
     }
 
     // pgvector L2 距离查询（<=> 运算符，距离越小相似度越高）
@@ -229,9 +259,9 @@ export class MemoryService {
     // 截断到 topK
     recalled = recalled.slice(0, topK);
 
-    console.log(`[Agent:Memory] 检索记忆: userId=${userId} query="${query.slice(0, 50)}" 命中 ${recalled.length} 条`);
+    console.log(`[Agent:Memory] 检索记忆: userId=${userId} query="${query.slice(0, 50)}" 命中 ${recalled.length} 条 degraded=${degraded}`);
 
-    return recalled;
+    return { memories: recalled, degraded };
   }
 
   /**

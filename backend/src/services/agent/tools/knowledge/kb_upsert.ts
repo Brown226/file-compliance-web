@@ -33,17 +33,25 @@ interface KbUpsertResult {
   message: string;
 }
 
-/** 按名在知识库中查找已有文档 */
+/** 按名在知识库中查找已有文档（P1：原只取前 50 条，文档多时同名找不到 → 翻页至多 10 页 × 200 条） */
 async function findDocumentByName(
   workspaceId: string,
   knowledgeId: string,
   docName: string,
 ): Promise<{ id: string } | null> {
   try {
-    const docs = await MaxKBService.listDocuments(workspaceId, knowledgeId, 1, 50);
-    const records = Array.isArray(docs) ? docs : (docs?.records || []);
-    const found = records.find((d: any) => d.name === docName);
-    return found ? { id: found.id } : null;
+    const PAGE_SIZE = 200;
+    const MAX_PAGES = 10;
+    for (let page = 1; page <= MAX_PAGES; page++) {
+      const docs = await MaxKBService.listDocuments(workspaceId, knowledgeId, page, PAGE_SIZE);
+      const records = Array.isArray(docs) ? docs : (docs?.records || []);
+      const found = records.find((d: any) => d.name === docName);
+      if (found) return { id: found.id };
+      // 已到最后一页（total 口径或本次不足一页）→ 停止翻页
+      const total = Array.isArray(docs) ? docs.length : (typeof (docs as any)?.total === 'number' ? (docs as any).total : page * PAGE_SIZE);
+      if (page * PAGE_SIZE >= total) break;
+    }
+    return null;
   } catch {
     return null;
   }
@@ -85,14 +93,12 @@ export function createKbUpsertTool(_context: ToolContext) {
         .slice(0, 100);
 
       // 2. update 模式：先删同名文档（upsert 去重）
+      //    P1：删旧失败必须中断 —— 原实现只 console.warn 后继续新建，会产生同名重复文档，
+      //    破坏 update 的 upsert 语义（验收标准 2）。
       if (mode === 'update') {
         const existing = await findDocumentByName(workspaceId, target.id, docName);
         if (existing) {
-          try {
-            await MaxKBService.deleteDocument(workspaceId, target.id, existing.id);
-          } catch (e: any) {
-            console.warn(`[kb_upsert] 删除旧文档失败（继续新建）: ${e.message}`);
-          }
+          await MaxKBService.deleteDocument(workspaceId, target.id, existing.id);
         }
       }
 
@@ -112,7 +118,7 @@ export function createKbUpsertTool(_context: ToolContext) {
         documentId: Array.isArray(doc) ? doc[0]?.id : doc?.id,
         chunkCount,
         mode: mode || 'append',
-        message: `已入库到知识库「${target.name}」：${docName}（${chunkCount} 段）`,
+        message: `已入库到知识库「${target.name}」：${docName}（约 ${chunkCount} 段，按换行估算，非 MaxKB 实际切分数）`,
       };
     },
   });

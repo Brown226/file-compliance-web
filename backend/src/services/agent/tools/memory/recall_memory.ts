@@ -41,7 +41,10 @@ interface RecalledMemoryItem {
 interface RecallMemoryResult {
   memories: RecalledMemoryItem[];
   total: number;
+  /** embedding 服务不可用、已降级为关键词匹配时为 true（服务内真实标志，2026 修复） */
   degraded: boolean;
+  /** 检索失败时非空（与 degraded 区分：失败 ≠ 降级） */
+  error?: string;
 }
 
 /**
@@ -57,19 +60,16 @@ export function createRecallMemoryTool(context: ToolContext) {
     }),
     execute: async ({ query, topK, scope }): Promise<RecallMemoryResult> => {
       try {
-        const recalled = await MemoryService.recallMemory({
+        // 2026 修复：用 recallMemoryDetailed 拿真实 degraded 标志
+        // （原实现从 similarity===0.5 弱信号猜测，可能误报/漏报；失败也被标成降级）
+        const { memories, degraded } = await MemoryService.recallMemoryDetailed({
           userId: context.userId,
           query,
           topK,
           ...(scope ? { scope: scope as MemoryScope } : {}),
         });
 
-        // 检测是否降级：recallMemory 内部降级到关键词匹配时 similarity 固定为 0.5
-        // 这里只能 best-effort 检测，无法精确知道是否降级（MemoryService 未暴露此标志）
-        // 改进：通过 similarity === 0.5 且无 embedding 服务的特征推断（弱信号，仅作参考）
-        const degraded = recalled.length > 0 && recalled.every(m => m.similarity === 0.5);
-
-        const memories: RecalledMemoryItem[] = recalled.map(m => ({
+        const memoryItems: RecalledMemoryItem[] = memories.map(m => ({
           id: m.id,
           key: m.key,
           value: m.value,
@@ -79,20 +79,21 @@ export function createRecallMemoryTool(context: ToolContext) {
           similarity: Number(m.similarity.toFixed(4)),
         }));
 
-        console.log(`[Agent:recall_memory] userId=${context.userId} query="${query.slice(0, 50)}" 命中 ${memories.length} 条 degraded=${degraded}`);
+        console.log(`[Agent:recall_memory] userId=${context.userId} query="${query.slice(0, 50)}" 命中 ${memoryItems.length} 条 degraded=${degraded}`);
 
         return {
-          memories,
-          total: memories.length,
+          memories: memoryItems,
+          total: memoryItems.length,
           degraded,
         };
       } catch (e) {
-        // 工具失败不中断 Agent 流程，返回空结果 + error 字段
+        // 工具失败不中断 Agent 流程，返回空结果 + error 字段（失败 ≠ 降级，分开标注）
         console.error(`[Agent:recall_memory] 检索失败:`, (e as Error).message);
         return {
           memories: [],
           total: 0,
-          degraded: true,
+          degraded: false,
+          error: `记忆检索失败: ${(e as Error).message}`,
         };
       }
     },
