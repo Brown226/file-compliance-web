@@ -8,6 +8,7 @@
  */
 
 import { LlmService } from '../../llm/llm.service';
+import { redisClient } from '../../../utils/redis';
 
 // ==================== 常量 ====================
 
@@ -25,6 +26,23 @@ export const SUMMARY_TIMEOUT_SECONDS = 90;
 
 /** 机械折叠降级时保留的最新消息数 */
 const FALLBACK_KEEP_COUNT = 20;
+
+// ==================== P1-1：摘要缓存（把 LLM 摘要移出请求关键路径） ====================
+
+/** Redis 缓存 key 前缀（agent:compaction:{sessionId}） */
+const REDIS_PREFIX = 'agent:compaction:';
+
+/** Redis 摘要缓存 TTL（7 天，覆盖会话生命周期绰绰有余） */
+const SUMMARY_CACHE_TTL_SECONDS = 7 * 24 * 3600;
+
+/** 缓存的摘要结构：sourceCount = 生成摘要时的早期消息数（用于命中判断） */
+interface CachedSummary {
+  summary: string;
+  sourceCount: number;
+}
+
+/** 进程内后台预计算去重锁（多实例下至多多算一次，幂等无害） */
+const backgroundJobs = new Set<string>();
 
 // ==================== 类型定义 ====================
 
@@ -102,6 +120,103 @@ export class CompactionService {
     const msgTokens = this.estimateTokens(messages);
     const systemTokens = Math.round(systemPromptLength / 2.5);
     return msgTokens + systemTokens > COMPACTION_THRESHOLD;
+  }
+
+  /**
+   * P1-1：带缓存的压缩入口（chatStream 主链路专用）
+   *
+   * 目标：把「LLM 生成摘要」移出请求关键路径——此前 compact() 同步等 LLM
+   * （超时上限 90s），用户视角是发消息后卡住近一分钟。
+   *
+   * 策略：
+   * 1. Redis 缓存命中（同一会话、早期消息数量一致）→ 秒回摘要结果
+   * 2. 未命中 → 本次立即机械折叠（保住响应速度），并 fire-and-forget 后台
+   *    预计算 LLM 摘要写入 Redis，下一轮对话生效
+   * 3. Redis 不可用 → 纯机械折叠（与项目其他组件的 Redis 降级策略一致）
+   *
+   * 权衡：首次超阈值的请求会丢失早期上下文（仅保留最近 FALLBACK_KEEP_COUNT 条），
+   * 换取零阻塞；下一轮起由缓存摘要恢复完整上下文语义。
+   *
+   * @param sessionId 会话 ID（缓存键；空则退化为纯机械折叠）
+   * @param messages  当前对话消息数组
+   */
+  static async compactWithCache(
+    sessionId: string | null | undefined,
+    messages: Message[],
+  ): Promise<CompactionResult> {
+    const recentCount = KEEP_RECENT_ROUNDS * 2;
+    if (messages.length <= recentCount) {
+      return CompactionService.compact(messages);
+    }
+    if (!sessionId) {
+      return CompactionService.mechanicalFold(messages);
+    }
+
+    const earlyMessages = messages.slice(0, -recentCount);
+    const recentMessages = messages.slice(-recentCount);
+
+    // 1. 读缓存：sourceCount 与当前早期消息数一致才算命中（会话消息只增不减，前缀稳定）
+    try {
+      const cached = await redisClient.get<CachedSummary>(`${REDIS_PREFIX}${sessionId}`);
+      if (cached && cached.summary && cached.sourceCount === earlyMessages.length) {
+        const compacted: Message[] = [
+          { role: 'system', content: `[上下文摘要]\n${cached.summary}` },
+          ...recentMessages,
+        ];
+        return {
+          compacted,
+          summary: cached.summary,
+          truncatedMessages: earlyMessages.length,
+          estimatedTokens: this.estimateTokens(compacted),
+        };
+      }
+    } catch {
+      // Redis 不可用：走下方机械折叠（静默降级，与其他组件策略一致）
+    }
+
+    // 2. 未命中：立即机械折叠 + 后台预计算下一轮用的 LLM 摘要
+    CompactionService.scheduleSummaryCompute(sessionId, messages);
+    return CompactionService.mechanicalFold(messages);
+  }
+
+  /**
+   * 机械折叠：只保留最近 FALLBACK_KEEP_COUNT 条消息（即时返回，无 LLM 调用）。
+   * 原 compact() 的超时降级路径与此同语义，此处抽为独立方法供缓存未命中的即时路径复用。
+   */
+  private static mechanicalFold(messages: Message[]): CompactionResult {
+    const keep = Math.min(FALLBACK_KEEP_COUNT, messages.length);
+    const kept = messages.slice(-keep);
+    return {
+      compacted: kept,
+      truncatedMessages: messages.length - keep,
+      estimatedTokens: this.estimateTokens(kept),
+    };
+  }
+
+  /**
+   * 后台预计算 LLM 摘要并写 Redis（进程内去重；失败静默，不影响主流程）。
+   * 计算的是「当前这一刻」的早期消息摘要；若下一轮消息继续增长导致 sourceCount
+   * 不再匹配，会再次触发后台预计算（渐进收敛，每轮最多一次）。
+   */
+  private static scheduleSummaryCompute(sessionId: string, messages: Message[]): void {
+    if (backgroundJobs.has(sessionId)) return;
+    backgroundJobs.add(sessionId);
+    void (async () => {
+      try {
+        const recentCount = KEEP_RECENT_ROUNDS * 2;
+        const earlyMessages = messages.slice(0, -recentCount);
+        const summary = await this.summarizeWithLLM(earlyMessages);
+        await redisClient.set(
+          `${REDIS_PREFIX}${sessionId}`,
+          { summary, sourceCount: earlyMessages.length } satisfies CachedSummary,
+          SUMMARY_CACHE_TTL_SECONDS,
+        );
+      } catch (e) {
+        console.warn('[Agent:Compaction] 后台摘要计算失败（下次超阈值时重试）:', (e as Error)?.message);
+      } finally {
+        backgroundJobs.delete(sessionId);
+      }
+    })();
   }
 
   /**
