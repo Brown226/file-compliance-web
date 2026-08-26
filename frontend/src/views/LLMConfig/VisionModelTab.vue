@@ -61,33 +61,7 @@
               />
               <div class="form-tip">指令型默认 4096，推理型默认 16384</div>
             </el-form-item>
-
-            <el-form-item label="温度">
-              <div class="inline-number">
-                <el-input-number
-                  v-model="config.temperature"
-                  :min="0"
-                  :max="2"
-                  :step="0.1"
-                  :precision="1"
-                  controls-position="right"
-                  @change="() => (manuallyEdited.temperature = true)"
-                />
-              </div>
-              <div class="form-tip">视觉识别建议使用低温度</div>
-            </el-form-item>
           </div>
-
-          <el-form-item label="随机种子">
-            <el-input-number
-              v-model="config.seed"
-              :min="0"
-              :value-on-clear="null"
-              controls-position="right"
-              placeholder="留空表示不设置"
-            />
-            <div class="form-tip">固定种子可复现结果，留空表示随机</div>
-          </el-form-item>
         </div>
       </el-form>
     </section>
