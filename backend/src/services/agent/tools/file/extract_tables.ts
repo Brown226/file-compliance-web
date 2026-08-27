@@ -105,7 +105,7 @@ function tableToCsv(table: ExtractedTable): string {
  *
  * 参数：
  * - filePath: 服务端文件绝对路径（由 upload_file 返回）
- * - sheet: 可选，xlsx 多 sheet 时指定（0-based），默认全部
+ * - tableIndex: 可选，按文档内表格出现顺序取第 N 张（0-based），默认全部
  * - toCsv: 可选，默认 false；true 时把表格转 CSV 文本（供下载/导出）
  *
  * 返回：
@@ -116,13 +116,15 @@ function tableToCsv(table: ExtractedTable): string {
  */
 export function createExtractTablesTool(context: ToolContext) {
   return tool({
-    description: '从文档中提取表格，返回结构化 JSON（表头/数据行/页码/sheet名）。支持 docx/xlsx/pdf/pptx 等二进制格式（调 doc-parser 解析）。可指定 sheet 提取 xlsx 的特定工作表，toCsv=true 时输出 CSV 文本。适合把表格内容交给 LLM 做数据比对、合规核对、字段抽取。',
+    description: '从文档中提取表格，返回结构化 JSON（表头/数据行/页码/sheet名）。支持 docx/xlsx/pdf/pptx 等二进制格式（调 doc-parser 解析）。参数 tableIndex 按文档内出现顺序取第 N 张表（0-based），不传则提取全部。toCsv=true 时输出 CSV 文本。适合把表格内容交给 LLM 做数据比对、合规核对、字段抽取。',
     inputSchema: z.object({
       filePath: z.string().describe('服务端文件绝对路径（由 upload_file 返回）'),
-      sheet: z.number().int().min(0).optional().describe('xlsx 多 sheet 时指定要提取的工作表索引（0-based），默认提取全部'),
+      // P2 更名 sheet→tableIndex 并如实描述：实现按「文档中表格出现顺序」取位，
+      // 与 xlsx 工作表（sheet）语义无关，原命名会误导 LLM 以为能选工作表
+      tableIndex: z.number().int().min(0).optional().describe('按文档中表格出现顺序指定提取第几张表（0-based），不传则提取全部'),
       toCsv: z.boolean().optional().default(false).describe('是否把表格转换为 CSV 文本返回（默认 false）'),
     }),
-    execute: async ({ filePath, sheet, toCsv }): Promise<ExtractTablesResult> => {
+    execute: async ({ filePath, tableIndex, toCsv }): Promise<ExtractTablesResult> => {
       // 安全修复：用户隔离校验前置（原实现先 existsSync 探测任意绝对路径的存在性）
       assertUserFilePath(filePath, context.userId);
 
@@ -142,10 +144,10 @@ export function createExtractTablesTool(context: ToolContext) {
       const parsed = await parseDocument(filePath);
       let tables = extractTablesFromStructure(parsed.structure);
 
-      // 按 sheet 过滤（sheet 参数为 0-based 表格索引；doc-parser 表格无 sheetName 字段，
-      // 无法按名称匹配，按文档顺序取指定位置的表格）
-      if (sheet !== undefined) {
-        tables = tables.filter((_, idx) => idx === sheet);
+            // 按文档内顺序取第 N 张表（tableIndex 参数为 0-based 表格索引；doc-parser 表格无
+      // 工作表语义，无法按名称匹配，按文档顺序取指定位置的表格）
+      if (tableIndex !== undefined) {
+        tables = tables.filter((_, idx) => idx === tableIndex);
       }
 
       const totalRows = tables.reduce((sum, t) => sum + t.rows.length, 0);

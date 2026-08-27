@@ -110,7 +110,7 @@ describe('正常比对', () => {
     const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
     try {
       const result = await tool.execute({ query: '接地电阻', docAPath: a, docBPath: b }, {} as any);
-      expect(result.conclusion).toContain('LLM 比对失败');
+      expect(result.conclusion).toContain('LLM 比对暂不可用');
       expect(result.items).toEqual([]);
     } finally {
       warnSpy.mockRestore();

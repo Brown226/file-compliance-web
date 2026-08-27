@@ -293,7 +293,7 @@ export function createLlmReviewChunkTool(context: ToolContext) {
         console.warn(`[llm_review_chunk] text 超长（${text.length} 字符），截断至 ${MAX_REVIEW_TEXT_CHARS}`);
       }
       const reviewText = text.length > MAX_REVIEW_TEXT_CHARS
-        ? text.slice(0, MAX_REVIEW_TEXT_CHARS)
+        ? `${text.slice(0, MAX_REVIEW_TEXT_CHARS)}\n（已截断 ${text.length - MAX_REVIEW_TEXT_CHARS} 字符）`
         : text;
       // P0-1（Agent 缓存激活）：传 documentId + textHash 让 reviewText 的 LLM 结果缓存生效。
       // 缓存键 = docId + chunkIdx + textHash + model + temperature，不含 focus/context——

@@ -19,7 +19,7 @@
  * - exactDeduped: 精确去重后数量
  * - normalizedDeduped: 归一化去重后数量
  * - finalCount: 最终数量
- * - removedIndices: 被移除的索引列表
+ * - removedIndices: 被移除的索引列表（⚠ 指去重后 issues 数组的下标，非原始输入下标）
  */
 import { z } from 'zod';
 import { LlmService, type ReviewIssue } from '../../../llm/llm.service';
@@ -36,6 +36,7 @@ interface CrossCheckResult {
   exactDeduped: number;
   normalizedDeduped: number;
   finalCount: number;
+  /** 被移除的索引列表（指去重后 issues 数组的下标，非原始输入下标） */
   removedIndices: number[];
 }
 

@@ -95,7 +95,7 @@ describe('二进制文档表格提取', () => {
     expect(result).toEqual({ tables: [], count: 0, totalRows: 0 });
   });
 
-  it('sheet 参数按 0-based 索引过滤表格', async () => {
+  it('tableIndex 参数按 0-based 索引过滤表格', async () => {
     parseDocumentMock.mockResolvedValueOnce({
       text: '',
       structure: {
@@ -106,17 +106,17 @@ describe('二进制文档表格提取', () => {
       },
       pageCount: 1,
     });
-    // sheet=1 → 取第 2 张表（0-based 索引）
-    const result = await tool.execute({ filePath: xlsxPath(), sheet: 1 }, {} as any);
+    // tableIndex=1 → 取第 2 张表（0-based 索引）
+    const result = await tool.execute({ filePath: xlsxPath(), tableIndex: 1 }, {} as any);
     expect(result.count).toBe(1);
     expect(result.tables[0].headers).toEqual(['B']);
-    // sheet 超界 → 空
+    // tableIndex 超界 → 空
     parseDocumentMock.mockResolvedValueOnce({
       text: '',
       structure: { tables: [{ headers: ['A'], rows: [['1']] }] },
       pageCount: 1,
     });
-    const outOfRange = await tool.execute({ filePath: xlsxPath(), sheet: 5 }, {} as any);
+    const outOfRange = await tool.execute({ filePath: xlsxPath(), tableIndex: 5 }, {} as any);
     expect(outOfRange.count).toBe(0);
   });
 });

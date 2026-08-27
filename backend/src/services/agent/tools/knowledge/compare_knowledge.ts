@@ -213,8 +213,9 @@ async function llmCompare(
     };
   } catch (e: any) {
     console.warn('[compare_knowledge] LLM 比对失败，降级返回片段统计:', (e as Error).message);
+    // P2：不再把原始 Error.message 拼给 LLM（可能含内部细节），语义性结论即可，详情留日志
     return {
-      conclusion: `LLM 比对失败（${(e as Error).message}），仅返回片段统计`,
+      conclusion: 'LLM 比对暂不可用，以下仅返回两文档的片段统计（请基于片段自行比对）',
       items: [],
       docAHits: selA.length,
       docBHits: selB.length,

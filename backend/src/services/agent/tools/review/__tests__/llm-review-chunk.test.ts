@@ -320,8 +320,10 @@ describe('createLlmReviewChunkTool 预算保护（2026-08-07）', () => {
 
     expect(reviewTextMock).toHaveBeenCalledTimes(1);
     const [sentText, options] = reviewTextMock.mock.calls[0];
-    expect(sentText.length).toBe(MAX_REVIEW_TEXT_CHARS);
-    expect(sentText).toBe(longText.slice(0, MAX_REVIEW_TEXT_CHARS));
+    // 2026 P2：截断文本末尾追加「（已截断 N 字符）」标注，让 LLM 明确感知数据不完整
+    expect(sentText).toContain(longText.slice(0, MAX_REVIEW_TEXT_CHARS));
+    expect(sentText).toContain(`（已截断 500 字符）`);
+    expect(sentText.length).toBeGreaterThan(MAX_REVIEW_TEXT_CHARS);
     // 显式超时与 maxTokens（原实现不传，超长输入直接挂起）
     expect(options).toMatchObject({ maxTokens: 2048, timeout: 90 });
   });
