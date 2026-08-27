@@ -25,6 +25,11 @@
       <!-- 收藏列表 -->
       <div v-if="tab === 'saves'" class="lib-body">
         <div v-if="savesLoading" class="lib-empty dim-text">加载中…</div>
+        <!-- P1 错误态与空态分离：加载失败不再伪装成「暂无收藏」 -->
+        <div v-else-if="savesFailed" class="lib-empty dim-text">
+          收藏加载失败
+          <button class="retry-btn" @click="loadSaves">重试</button>
+        </div>
         <div v-else-if="saves.length === 0" class="lib-empty dim-text">
           暂无收藏。对话消息上的「收藏」按钮可将内容存入此处。
         </div>
@@ -102,6 +107,8 @@ const emit = defineEmits<{
 const tab = ref<'saves' | 'search'>('saves')
 const saves = ref<SavedItem[]>([])
 const savesLoading = ref(false)
+/** P1：收藏加载失败标记——失败显示「加载失败+重试」而非空态「暂无收藏」 */
+const savesFailed = ref(false)
 const searchQuery = ref('')
 const searchHits = ref<SearchHit[]>([])
 const searching = ref(false)
@@ -118,8 +125,10 @@ async function loadSaves() {
   try {
     const res = await listAgentSavesApi()
     saves.value = res?.data ?? res ?? []
+    savesFailed.value = false
   } catch (e: any) {
     ElMessage.error(`加载收藏失败：${e?.message || '未知错误'}`)
+    savesFailed.value = true
   } finally {
     savesLoading.value = false
   }
@@ -252,4 +261,16 @@ watch(
   outline: none;
 }
 .lib-search-input:focus { border-color: var(--accent, var(--color-action)); }
+.retry-btn {
+  margin-left: 8px;
+  padding: 4px 14px;
+  font-size: 12px;
+  border: 1px solid var(--corp-border-light);
+  border-radius: 4px;
+  background: none;
+  cursor: pointer;
+  color: var(--corp-text-secondary);
+}
+.retry-btn:hover { border-color: var(--color-action); color: var(--color-action); }
+
 </style>

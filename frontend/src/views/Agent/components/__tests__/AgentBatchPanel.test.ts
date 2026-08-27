@@ -16,7 +16,10 @@ import { mount, flushPromises } from '@vue/test-utils'
 import AgentBatchPanel from '../AgentBatchPanel.vue'
 
 const { apiMock, elMessageMock } = vi.hoisted(() => ({
-  apiMock: { submitBatchApi: vi.fn(), getBatchApi: vi.fn(), cancelBatchApi: vi.fn() },
+  apiMock: {
+    submitBatchApi: vi.fn(), getBatchApi: vi.fn(), cancelBatchApi: vi.fn(),
+    listBatchApi: vi.fn().mockResolvedValue({ data: { records: [], total: 0 } }),
+  },
   elMessageMock: { error: vi.fn(), warning: vi.fn(), success: vi.fn() },
 }))
 

@@ -22,6 +22,11 @@
       <div v-if="loading" class="explorer-empty">
         <span class="dim-text">加载中…</span>
       </div>
+      <!-- P1 错误态与空态分离：浏览失败不再伪装成「（空目录）」 -->
+      <div v-else-if="loadFailed" class="explorer-empty">
+        <span class="dim-text">目录加载失败</span>
+        <button class="retry-btn" @click="browse(currentPath || currentRoot)">重试</button>
+      </div>
       <div v-else-if="entries.length === 0" class="explorer-empty">
         <span class="dim-text">（空目录）</span>
       </div>
@@ -61,6 +66,8 @@ const currentRoot = ref('')
 const currentPath = ref('')
 const entries = ref<DirectoryEntry[]>([])
 const loading = ref(false)
+/** P1：浏览失败标记——失败显示「加载失败+重试」而非空态「（空目录）」 */
+const loadFailed = ref(false)
 
 const canGoUp = computed(() => {
   if (!currentPath.value || roots.value.length === 0) return false
@@ -76,8 +83,10 @@ async function loadRoots() {
       currentRoot.value = roots.value[0].path
       await browse(roots.value[0].path)
     }
+    loadFailed.value = false
   } catch (e: any) {
     ElMessage.error(`加载目录失败: ${e?.message || e}`)
+    loadFailed.value = true
   }
 }
 
@@ -87,8 +96,10 @@ async function browse(dirPath: string) {
     const res = await browseDirectoriesApi(dirPath)
     currentPath.value = res.data?.root ?? ''
     entries.value = res.data?.entries ?? []
+    loadFailed.value = false
   } catch (e: any) {
     ElMessage.error(`浏览失败: ${e?.message || e}`)
+    loadFailed.value = true
   } finally {
     loading.value = false
   }
@@ -237,4 +248,16 @@ onMounted(loadRoots)
   color: var(--text-dim);
   flex-shrink: 0;
 }
+.retry-btn {
+  margin-left: 8px;
+  padding: 4px 14px;
+  font-size: 12px;
+  border: 1px solid var(--corp-border-light);
+  border-radius: 4px;
+  background: none;
+  cursor: pointer;
+  color: var(--corp-text-secondary);
+}
+.retry-btn:hover { border-color: var(--color-action); color: var(--color-action); }
+
 </style>

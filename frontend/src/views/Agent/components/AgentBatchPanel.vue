@@ -59,6 +59,29 @@
         </button>
       </div>
 
+      <!-- 历史任务（P1：关窗/刷新后恢复进度查询） -->
+      <div class="batch-history">
+        <div class="batch-label">
+          历史任务
+          <button class="batch-history-refresh" @click="loadHistory">刷新</button>
+        </div>
+        <div v-if="historyJobs.length === 0" class="batch-empty dim-text">暂无历史批量任务</div>
+        <div v-else class="batch-history-list">
+          <button
+            v-for="j in historyJobs"
+            :key="j.id"
+            class="batch-history-item"
+            :class="{ active: currentJob?.id === j.id }"
+            @click="resumeJob(j)"
+          >
+            <span class="batch-status" :class="'s-' + j.status.toLowerCase()">{{ statusLabel(j.status) }}</span>
+            <span class="batch-history-id">{{ j.id.slice(0, 8) }}</span>
+            <span class="batch-history-progress">{{ j.progress }}%</span>
+            <span class="batch-history-meta">{{ fmtTime(j.createdAt) }} · {{ j.fileCount }} 文件</span>
+          </button>
+        </div>
+      </div>
+
       <!-- 进度 / 结果 -->
       <div v-if="currentJob" class="batch-result">
         <div class="batch-result-head">
@@ -93,6 +116,7 @@ import {
   submitBatchApi,
   getBatchApi,
   cancelBatchApi,
+  listBatchApi,
   type BatchFileInput,
   type BatchJobRecord,
   type BatchTaskName,
@@ -104,6 +128,8 @@ const props = defineProps<{
   uploadedFiles?: Array<{ name: string; size: number; path?: string }>
 }>()
 const emit = defineEmits<{ 'update:modelValue': [v: boolean] }>()
+
+const historyJobs = ref<BatchJobRecord[]>([])
 
 const taskOptions: Array<{ value: BatchTaskName; label: string; desc: string }> = [
   { value: 'extract', label: '提取文本', desc: '解析文档为纯文本' },
@@ -172,10 +198,9 @@ function startPoll(id: string) {
         if (currentJob.value.status === 'FAILED') ElMessage.error('批量任务失败')
       }
     } catch (e) {
-      // 修复：轮询异常原实现静默 stopPoll，进度永久卡死无任何提示
+      // 轮询失败停止轮询但保留已展示数据(历史列表可恢复)——原实现置 null 清空结果
       stopPoll()
-      currentJob.value = null
-      ElMessage.error(`批量任务查询失败：${(e as Error)?.message || '网络错误'}（请到「批量」面板重新查询）`)
+      ElMessage.error(`批量任务查询失败：${(e as Error)?.message || '网络错误'}（可点「历史任务」重新查询）`)
     }
   }, 2000)
 }
@@ -196,6 +221,31 @@ async function cancel() {
   }
 }
 
+// ===== P1：历史任务可恢复 =====
+async function loadHistory() {
+  try {
+    const res = await listBatchApi(1, 10)
+    const data = (res?.data as any) ?? res
+    historyJobs.value = Array.isArray(data) ? data : (data?.records ?? [])
+  } catch (e) {
+    // 历史加载失败不阻断面板（静默 + 控制台）
+    console.warn('[AgentBatch] 加载历史任务失败:', (e as Error)?.message)
+  }
+}
+
+/** 点击历史任务:恢复查看结果;未完成任务继续轮询 */
+function resumeJob(j: BatchJobRecord) {
+  currentJob.value = j
+  if (['PENDING', 'PROCESSING'].includes(j.status)) startPoll(j.id)
+  else stopPoll()
+}
+
+function fmtTime(iso: string): string {
+  const d = new Date(iso)
+  if (Number.isNaN(d.getTime())) return ''
+  return `${d.getMonth() + 1}-${d.getDate()} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
+}
+
 const canCancel = computed(() =>
   currentJob.value && ['PENDING', 'PROCESSING'].includes(currentJob.value.status),
 )
@@ -212,14 +262,21 @@ function resultMeta(r: any): string {
   return parts.join(' · ') || '完成'
 }
 
-// 打开时清空状态
+// 打开时:清空选择项,但保留 currentJob(进行中任务恢复轮询)并加载历史列表
 watch(
   () => props.modelValue,
   (v) => {
     if (v) {
       selected.value = new Set()
       selectedTasks.value = new Set()
-      currentJob.value = null
+      // P1:原实现 currentJob.value = null 导致关窗再开进度永久丢失;
+      // 现在若任务还在进行中,打开面板即恢复轮询
+      if (currentJob.value && ['PENDING', 'PROCESSING'].includes(currentJob.value.status)) {
+        startPoll(currentJob.value.id)
+      }
+      loadHistory()
+    } else {
+      stopPoll()
     }
   },
 )
@@ -274,4 +331,17 @@ onUnmounted(stopPoll)
 .batch-result-ok.fail { color: var(--color-danger-600); }
 .batch-result-error { color: var(--color-danger-600); font-size: 12px; }
 .batch-result-meta { color: var(--text-dim, var(--corp-text-tertiary)); font-size: 12px; }
+.batch-history { border-top: 1px solid var(--border, var(--corp-border-light)); padding-top: 10px; display: flex; flex-direction: column; gap: 6px; }
+.batch-history-refresh { font-size: 12px; padding: 0 8px; border: 1px solid var(--border, var(--corp-border-light)); border-radius: 4px; background: none; cursor: pointer; margin-left: 8px; }
+.batch-history-list { display: flex; flex-direction: column; gap: 4px; max-height: 160px; overflow: auto; }
+.batch-history-item {
+  display: flex; align-items: center; gap: 10px; width: 100%;
+  padding: 5px 10px; border: 1px solid var(--border, var(--corp-border-light)); border-radius: 4px;
+  background: none; font-size: 12px; cursor: pointer; text-align: left;
+}
+.batch-history-item:hover { background: var(--bg-hover, var(--corp-bg-surface-hover)); }
+.batch-history-item.active { border-color: var(--accent, var(--color-action)); }
+.batch-history-id { font-family: var(--font-mono, monospace); color: var(--text-dim, var(--corp-text-tertiary)); }
+.batch-history-progress { color: var(--text-muted, var(--corp-text-secondary)); }
+.batch-history-meta { margin-left: auto; color: var(--text-dim, var(--corp-text-tertiary)); }
 </style>

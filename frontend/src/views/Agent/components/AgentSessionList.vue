@@ -20,6 +20,13 @@
         <span>加载中…</span>
       </div>
 
+      <!-- P1 错误态与空态分离：加载失败不再伪装成「暂无历史会话」 -->
+      <div v-else-if="loadFailed" class="empty-state error-state">
+        <el-icon :size="26" color="var(--corp-text-tertiary)"><WarningFilled /></el-icon>
+        <p>会话列表加载失败</p>
+        <button class="retry-btn" @click="loadSessions">重试</button>
+      </div>
+
       <div v-else-if="sessions.length === 0" class="empty-state">
         <!-- 对齐 --corp-text-tertiary -->
         <el-icon :size="26" color="var(--corp-text-tertiary)"><ChatDotRound /></el-icon>
@@ -98,6 +105,11 @@
           </div>
           </template>
         </div>
+
+        <!-- P1：突破 50 条上限——加载更多历史会话 -->
+        <div v-if="hasMoreSessions" class="load-more-row">
+          <button class="load-more-btn" @click="loadMoreSessions">加载更多会话</button>
+        </div>
       </div>
     </div>
 
@@ -123,7 +135,7 @@
 <script setup lang="ts">
 import { ref, computed, nextTick, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
-import { Plus, Refresh, Check, Loading, ChatDotRound, Delete, EditPen, CopyDocument } from '@element-plus/icons-vue'
+import { Plus, Refresh, Check, Loading, ChatDotRound, Delete, EditPen, CopyDocument, WarningFilled } from '@element-plus/icons-vue'
 import { listSessionsApi, deleteSessionApi, renameSessionApi, duplicateSessionApi, type SessionListItem } from '@/api/agent'
 import { useUserStore } from '@/stores/user'
 
@@ -143,6 +155,8 @@ const emit = defineEmits<{
 
 const sessions = ref<SessionListItem[]>([])
 const loading = ref(false)
+/** P1：加载失败标记——失败显示「加载失败+重试」而非空态「暂无历史会话」 */
+const loadFailed = ref(false)
 const refreshDone = ref(false)
 const hoveredId = ref<string | null>(null)
 const confirmDeleteId = ref<string | null>(null)
@@ -189,16 +203,29 @@ const groups = computed(() => {
   ].filter(g => g.sessions.length > 0)
 })
 
+/** P1：会话列表分页——原固定拉 50 条,多会话静默缺失;现在可「加载更多」 */
+const SESSION_PAGE_SIZE = 50
+const sessionLimit = ref(SESSION_PAGE_SIZE)
+const hasMoreSessions = ref(false)
+
 async function loadSessions() {
   loading.value = true
   try {
-    const res = await listSessionsApi(50)
+    const res = await listSessionsApi(sessionLimit.value)
     sessions.value = res.data
+    hasMoreSessions.value = Array.isArray(res.data) && res.data.length >= sessionLimit.value
+    loadFailed.value = false
   } catch (e: any) {
     ElMessage.error(`加载会话列表失败: ${e?.message || e}`)
+    loadFailed.value = true
   } finally {
     loading.value = false
   }
+}
+
+function loadMoreSessions() {
+  sessionLimit.value += SESSION_PAGE_SIZE
+  void loadSessions()
 }
 
 async function handleRefresh() {
@@ -579,4 +606,28 @@ defineExpose({ refresh: loadSessions })
   height: 30px;
   min-width: 0;
 }
+.load-more-row { display: flex; justify-content: center; padding: 8px 0 4px; }
+.load-more-btn {
+  padding: 5px 16px;
+  font-size: 12px;
+  border: 1px solid var(--corp-border-light);
+  border-radius: 4px;
+  background: none;
+  cursor: pointer;
+  color: var(--corp-text-secondary);
+}
+.load-more-btn:hover { border-color: var(--color-action); color: var(--color-action); }
+
+.retry-btn {
+  margin-top: 8px;
+  padding: 5px 18px;
+  font-size: 12px;
+  border: 1px solid var(--corp-border-light);
+  border-radius: 4px;
+  background: none;
+  cursor: pointer;
+  color: var(--corp-text-secondary);
+}
+.retry-btn:hover { border-color: var(--color-action); color: var(--color-action); }
+
 </style>

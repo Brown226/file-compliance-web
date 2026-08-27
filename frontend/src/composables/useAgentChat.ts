@@ -86,6 +86,11 @@ export function useAgentChat() {
           })
         }
       }
+      // P1：还原思考过程（与流式渲染对称；后端 2026 起随 debug.reasoning 持久化）
+      const reasoning = Array.isArray(m.debug?.reasoning) ? m.debug.reasoning : []
+      if (reasoning.length > 0) {
+        parts.push({ type: 'reasoning', text: reasoning.join('\n\n') })
+      }
       return {
         id: m.id,
         role: m.role === 'user' ? 'user' : 'assistant',

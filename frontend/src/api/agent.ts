@@ -419,6 +419,13 @@ export function cancelBatchApi(id: string) {
   return request.post(`/agent/batch/${id}/cancel`)
 }
 
+/** 批量任务列表（P1：关面板/重开后恢复进度用；后端 GET /agent/batch 返回 { records, total, page, pageSize }） */
+export function listBatchApi(page = 1, pageSize = 20) {
+  return request.get<{ records: BatchJobRecord[]; total: number; page: number; pageSize: number }>(
+    `/agent/batch?page=${page}&pageSize=${pageSize}`,
+  )
+}
+
 // ===== 文件树/目录浏览（任务 8）=====
 
 export interface DirectoryEntry {

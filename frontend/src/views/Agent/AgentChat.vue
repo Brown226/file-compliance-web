@@ -381,6 +381,7 @@
 
               <!-- 气泡底部行：操作按钮 + 时间戳（对齐参考：flex 靠右、gap 8、marginTop 4、时间戳 marginLeft auto） -->
               <div class="bubble-footer">
+                <span v-if="isMessageInterrupted(message)" class="msg-interrupted-badge">⚠ 回答不完整</span>
                 <div class="msg-actions">
                   <button
                     v-if="getMessageText(message) && !isStreamingTail(message, idx)"
@@ -611,6 +612,7 @@ import {
   listAgentModelsApi,
   compactSessionApi,
   saveAgentItemApi,
+  listAgentSavesApi,
   type SessionStats,
   type AgentModelOption,
 } from '@/api/agent'
@@ -899,6 +901,18 @@ async function saveMessage(message: UIMessage) {
   }
 }
 
+// P1：打开会话时按后端收藏列表回填「已收藏」标记（原 msgSaved 为内存态，刷新/重进即丢失）
+async function syncSavedFlags() {
+  try {
+    const res = await listAgentSavesApi()
+    const saves = ((res as any)?.data ?? res ?? []) as Array<{ sourceMessageId?: string | null }>
+    for (const k of Object.keys(msgSaved)) delete msgSaved[k]
+    for (const s of saves) {
+      if (s?.sourceMessageId) msgSaved[s.sourceMessageId] = true
+    }
+  } catch { /* 收藏回填失败静默（仅影响星标显示） */ }
+}
+
 // ===== 助手消息模型标签（对齐参考：modelNames[provider:model]）=====
 function getMessageModelLabel(message: UIMessage): string {
   const m = message as any
@@ -1075,6 +1089,7 @@ async function handleSelectSession(sid: string) {
     attachedImages.value = []
     openingFilePath.value = null
     inputValue.value = '' // P1：切换会话时清空残留输入（原实现正在输入的内容会串到新会话）
+    void syncSavedFlags() // P1：回填「已收藏」星标
     refreshStats()
     // 加载会话设置（模型/工具预设/思考强度），失败不阻断主流程
     try {
@@ -1531,8 +1546,24 @@ watch(error, (err) => {
 watch(status, (s, prev) => {
   if (s === 'error' && prev !== 'error' && !stuckFinalized) {
     ElMessage.error('对话流已中断，请重试发送或刷新页面')
+    // P1：给最后一条 assistant 消息打「回答不完整」断流标记（半截回答不再无标识）
+    markLastAssistantInterrupted()
   }
 })
+
+/** P1：半截回答断流标记——把最后一条 assistant 消息标记为 interrupted（重建对象触发 shallowRef 渲染） */
+function markLastAssistantInterrupted() {
+  const msgs = messages.value as any[]
+  for (let i = msgs.length - 1; i >= 0; i--) {
+    if (msgs[i]?.role === 'assistant') {
+      msgs[i] = { ...msgs[i], interrupted: true }
+      break
+    }
+  }
+}
+function isMessageInterrupted(message: any): boolean {
+  return message?.interrupted === true
+}
 
 // 流式结束时刷新 token 统计 + 强制重建 tool part（ai-sdk useChat 的 messages 是 shallowRef，
 // 流式过程中 tool part 的 state/input/output 原地修改不触发重渲染，
@@ -2442,6 +2473,16 @@ watch(sessionId, () => { refreshStats() })
 @keyframes agent-message-row-flash {
   0% { background: var(--bg-selected); }
   100% { background: transparent; }
+}
+
+.msg-interrupted-badge {
+  flex-shrink: 0;
+  align-self: center;
+  font-size: 11px;
+  color: var(--danger, var(--color-danger-600));
+  border: 1px solid color-mix(in srgb, var(--color-danger-600) 40%, transparent);
+  border-radius: 4px;
+  padding: 1px 8px;
 }
 
 </style>

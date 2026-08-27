@@ -37,6 +37,13 @@
         <span>加载中…</span>
       </div>
 
+      <!-- P1 错误态与空态分离：加载失败不再伪装成「暂无记忆」 -->
+      <div v-else-if="loadFailed" class="empty-state">
+        <el-icon :size="32" color="var(--corp-text-tertiary)"><WarningFilled /></el-icon>
+        <p>记忆加载失败</p>
+        <button class="retry-btn" @click="loadMemories">重试</button>
+      </div>
+
       <div v-else-if="memories.length === 0" class="empty-state">
         <!-- 对齐 --corp-text-tertiary -->
         <el-icon :size="32" color="var(--corp-text-tertiary)"><Collection /></el-icon>
@@ -104,7 +111,7 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Loading, Collection, Edit, Delete } from '@element-plus/icons-vue'
+import { Loading, Collection, Edit, Delete, WarningFilled } from '@element-plus/icons-vue'
 import {
   listMemoriesApi,
   updateMemoryApi,
@@ -123,6 +130,8 @@ import {
 
 const memories = ref<MemoryItem[]>([])
 const loading = ref(false)
+/** P1：加载失败标记——失败显示「加载失败+重试」而非空态「暂无记忆」 */
+const loadFailed = ref(false)
 const filterType = ref('')
 const filterScope = ref('')
 
@@ -138,8 +147,10 @@ async function loadMemories() {
     if (filterScope.value) params.scope = filterScope.value
     const res = await listMemoriesApi(params)
     memories.value = res.data
+    loadFailed.value = false
   } catch (e: any) {
     ElMessage.error(`加载记忆失败: ${e?.message || e}`)
+    loadFailed.value = true
   } finally {
     loading.value = false
   }
@@ -400,4 +411,16 @@ defineExpose({ refresh: loadMemories })
   font-size: 13px;
   color: var(--text-muted);
 }
+.retry-btn {
+  margin-top: 8px;
+  padding: 5px 18px;
+  font-size: 12px;
+  border: 1px solid var(--corp-border-light);
+  border-radius: 4px;
+  background: none;
+  cursor: pointer;
+  color: var(--corp-text-secondary);
+}
+.retry-btn:hover { border-color: var(--color-action); color: var(--color-action); }
+
 </style>
