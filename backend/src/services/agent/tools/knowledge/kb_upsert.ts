@@ -19,6 +19,7 @@
 import { z } from 'zod';
 import type { ToolContext } from '../file/upload_file';
 import { MaxKBService } from '../../../knowledge/maxkb.service';
+import { AskUserService } from '../../ask-user/ask-user.service';
 
 const { tool } = require('@ai-sdk/provider-utils') as typeof import('@ai-sdk/provider-utils');
 
@@ -60,7 +61,7 @@ async function findDocumentByName(
 /**
  * 创建 kb_upsert 工具
  */
-export function createKbUpsertTool(_context: ToolContext) {
+export function createKbUpsertTool(context: ToolContext) {
   return tool({
     description:
       '会话式知识库维护：把文本内容入库到指定的 MaxKB 知识库。' +
@@ -75,6 +76,11 @@ export function createKbUpsertTool(_context: ToolContext) {
       mode: z.enum(['append', 'update']).optional().default('append').describe('append=追加新文档，update=按 source 名 upsert'),
     }),
     execute: async ({ content, knowledgeId, source, mode }): Promise<KbUpsertResult> => {
+      // P1 写操作硬门禁:写入共享知识库必须先经 ask_user(confirm) 确认
+      if (!(await AskUserService.isConfirmedRecently(context.sessionId))) {
+        throw new Error('写操作确认门禁:入库到知识库需先经 ask_user(method=confirm) 获得用户确认(会话内最近 5 分钟),请先调用 ask_user 说明将入库的内容并等待确认');
+      }
+
       // 1. 解析可用知识库 + 权限校验
       const kbs = await MaxKBService.getAvailableKnowledgeBases().catch((e: any) => {
         throw new Error(`无法获取知识库列表（MaxKB 未配置或不可达）: ${e.message}`);

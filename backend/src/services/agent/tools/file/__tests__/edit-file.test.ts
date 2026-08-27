@@ -26,6 +26,14 @@ vi.mock('../../../../file/docx-replace.service', () => ({
   DocxReplaceService: { replaceText: replaceTextMock },
 }));
 
+// —— Mock AskUserService（P1 写操作确认门禁：测试默认会话已确认）——
+const { confirmMock } = vi.hoisted(() => ({
+  confirmMock: { isConfirmedRecently: vi.fn().mockResolvedValue(true) },
+}));
+vi.mock('../../../ask-user/ask-user.service', () => ({
+  AskUserService: confirmMock,
+}));
+
 import { createEditFileTool } from '../edit_file';
 
 const TEST_ROOT = path.resolve(__dirname, '../../../../../../uploads/agent_temp');

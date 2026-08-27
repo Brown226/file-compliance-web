@@ -33,6 +33,17 @@ export interface PendingAsk {
 // Redis key 前缀（agent:ask-pending:{sessionId}）
 const REDIS_PREFIX = 'agent:ask-pending:';
 
+// ==================== 写操作确认标记（P1 硬门禁） ====================
+// 写工具（delete_file/edit_file/kb_upsert)执行前检查会话最近确认窗口；
+// confirm 类提问被用户回答时由 chatStream 标记（见 agent.service.ts 恢复注入）。
+
+/** Redis 确认标记 key 前缀（agent:confirm:{sessionId}） */
+const CONFIRM_PREFIX = 'agent:confirm:';
+/** 确认有效窗口（秒，默认 5 分钟） */
+export const CONFIRM_TTL_SEC = 300;
+/** 内存兜底 Map（Redis 不可用时） */
+const confirmMap = new Map<string, number>();
+
 // 内存兜底 Map（Redis 不可用时使用，语义与原实现一致）
 const pendingMap = new Map<string, PendingAsk>();
 
@@ -103,6 +114,41 @@ export const AskUserService = {
     if (ask.requestId !== requestId) return null;
     pendingMap.delete(sessionId);
     return ask;
+  },
+
+  // ==================== 写操作确认标记（P1 硬门禁） ====================
+
+  /**
+   * 记录会话级「用户已确认过写操作」标记。
+   * confirm 类提问被用户回答（前端带 pendingAskAnswer 重发）时由 chatStream 调用；
+   * 写工具（delete_file/edit_file/kb_upsert）在同一会话的 TTL 窗口内放行。
+   */
+  async markConfirmed(sessionId: string, ttlSec: number = CONFIRM_TTL_SEC): Promise<void> {
+    if (!sessionId) return;
+    try {
+      await redisClient.set(`${CONFIRM_PREFIX}${sessionId}`, { ts: Date.now() }, ttlSec);
+      confirmMap.delete(sessionId); // 写 Redis 成功 → 清内存兜底副本
+      return;
+    } catch (e: any) {
+      console.warn('[AskUser] Redis 不可用，降级内存记录确认:', (e as Error)?.message || e);
+    }
+    confirmMap.set(sessionId, Date.now());
+  },
+
+  /**
+   * 检查会话最近 withinMs 内是否有确认标记（写工具门禁入口）。
+   * 无记录 / 出错一律视为未确认（保守拦截：宁可让 LLM 再问一次，不可静默执行破坏性操作）。
+   */
+  async isConfirmedRecently(sessionId: string, withinMs: number = CONFIRM_TTL_SEC * 1000): Promise<boolean> {
+    if (!sessionId) return false;
+    try {
+      const rec = await redisClient.get<{ ts: number }>(`${CONFIRM_PREFIX}${sessionId}`);
+      if (rec && rec.ts && Date.now() - rec.ts <= withinMs) return true;
+    } catch (e: any) {
+      console.warn('[AskUser] Redis 不可用，降级内存检查确认:', (e as Error)?.message || e);
+    }
+    const ts = confirmMap.get(sessionId);
+    return !!ts && Date.now() - ts <= withinMs;
   },
 };
 

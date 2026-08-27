@@ -24,6 +24,7 @@ import * as path from 'path';
 import { z } from 'zod';
 import { getAgentTempRoot } from './paths';
 import type { ToolContext } from './upload_file';
+import { AskUserService } from '../../ask-user/ask-user.service';
 
 const { tool } = require('@ai-sdk/provider-utils') as typeof import('@ai-sdk/provider-utils');
 
@@ -60,6 +61,12 @@ export function createDeleteFileTool(context: ToolContext) {
       const expectedUserDir = path.join(normalizedRoot, context.userId);
       if (!normalizedPath.startsWith(expectedUserDir + path.sep) && normalizedPath !== expectedUserDir) {
         throw new Error('路径越权：只能删除当前用户上传的文件');
+      }
+
+      // P1 写操作硬门禁:路径校验通过后,删除不可逆,必须先经 ask_user(confirm) 确认
+      // （description 层的「先 ask_user」是软约束,此处强制）
+      if (!(await AskUserService.isConfirmedRecently(context.sessionId))) {
+        throw new Error('写操作确认门禁:删除文件需先经 ask_user(method=confirm) 获得用户确认(会话内最近 5 分钟),请先调用 ask_user 说明将删除的文件并等待确认');
       }
 
       // 不允许删除目录（避免误删整个会话目录）

@@ -255,6 +255,10 @@ export class AgentService {
     if (pendingAskAnswer && sessionId) {
       const ask = await AskUserService.resolvePendingById(sessionId, pendingAskAnswer.requestId);
       if (ask) {
+        // P1 写操作硬门禁:confirm 类提问已获用户回答 → 标记会话级确认(写工具 5 分钟窗口内放行)
+        if (ask.method === 'confirm') {
+          AskUserService.markConfirmed(sessionId).catch(() => {});
+        }
         const rid = ask.requestId;
         // assistant 步：声明调了 ask_user（含原始问题）
         modelMessages.push({
@@ -824,6 +828,28 @@ export class AgentService {
   }
 
   /**
+   * P1：从 steps 提取思考过程（reasoning part），随 debug 持久化供历史回放。
+   * AI SDK v7 的 step.reasoning 为 { type:'text', text } 数组；
+   * 兜底兼容 reasoningText 字符串与 reasonDetails 风格。
+   */
+  private static extractReasoningFromSteps(steps?: any[]): string[] {
+    if (!Array.isArray(steps)) return [];
+    const texts: string[] = [];
+    for (const step of steps) {
+      const r = step?.reasoning;
+      if (Array.isArray(r)) {
+        for (const item of r) {
+          const t = typeof item === 'string' ? item : (item?.text ?? item?.reasoning ?? '');
+          if (t) texts.push(String(t));
+        }
+      } else if (typeof step?.reasoningText === 'string' && step.reasoningText) {
+        texts.push(step.reasoningText);
+      }
+    }
+    return texts;
+  }
+
+  /**
    * 从 steps 提取工具调用并持久化 assistant 消息到 QAMessage（fire-and-forget）。
    * debug 存 toolCalls 供前端历史回看渲染 ToolCallChip；sources 承载知识引用溯源。
    */
@@ -836,13 +862,15 @@ export class AgentService {
   ): void {
     if (!sessionId || !text) return;
     const toolCalls = AgentService.extractToolCallsFromSteps(steps);
+    // P1：思考过程一并持久化（历史回放还原 thinking；原实现只存 toolCalls）
+    const reasoning = AgentService.extractReasoningFromSteps(steps);
     QASessionService.persistAssistantMessage(
       sessionId,
       userId,
       text,
       status as any,
       AgentService.extractSourcesFromSteps(steps),
-      toolCalls.length > 0 ? { toolCalls } : undefined,
+      toolCalls.length > 0 || reasoning.length > 0 ? { toolCalls, reasoning } : undefined,
     ).catch((e: Error) => {
       console.warn(`[Agent:QASession] 持久化 assistant 消息失败: sessionId=${sessionId}`, (e as Error).message);
     });

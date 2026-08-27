@@ -4,11 +4,19 @@
  * edit_document 是 edit_file 的一行包装（descriptionOverride），
  * 覆盖：描述覆盖生效 + 委托给 edit_file 的编辑能力仍可用。
  */
-import { describe, it, expect, afterEach } from 'vitest';
+import { describe, it, expect, vi, afterEach } from 'vitest';
 import * as path from 'path';
 import * as fs from 'fs';
 
 import { createEditDocumentTool } from '../edit_document';
+
+// —— Mock AskUserService（P1 写操作确认门禁：测试默认会话已确认）——
+const { confirmMock } = vi.hoisted(() => ({
+  confirmMock: { isConfirmedRecently: vi.fn().mockResolvedValue(true) },
+}));
+vi.mock('../../../ask-user/ask-user.service', () => ({
+  AskUserService: confirmMock,
+}));
 
 const TEST_ROOT = path.resolve(__dirname, '../../../../../../uploads/agent_temp');
 const TEST_USER = 'test-user-editdoc';

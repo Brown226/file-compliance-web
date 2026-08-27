@@ -28,6 +28,14 @@ vi.mock('../../../../knowledge/maxkb.service', () => ({
   MaxKBService: maxkbMock,
 }));
 
+// —— Mock AskUserService（P1 写操作确认门禁：测试默认会话已确认）——
+const { confirmMock } = vi.hoisted(() => ({
+  confirmMock: { isConfirmedRecently: vi.fn().mockResolvedValue(true) },
+}));
+vi.mock('../../../ask-user/ask-user.service', () => ({
+  AskUserService: confirmMock,
+}));
+
 import { createKbUpsertTool } from '../kb_upsert';
 
 const tool = createKbUpsertTool({ userId: 'u1', sessionId: 's1' });

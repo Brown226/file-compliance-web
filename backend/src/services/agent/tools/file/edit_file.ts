@@ -32,6 +32,7 @@ import { getAgentTempRoot } from './paths';
 import type { ToolContext } from './upload_file';
 import { DocxReplaceService } from '../../../file/docx-replace.service';
 import { FileWriteQueueService } from '../../file-queue/file-write-queue.service';
+import { AskUserService } from '../../ask-user/ask-user.service';
 
 const { tool } = require('@ai-sdk/provider-utils') as typeof import('@ai-sdk/provider-utils');
 
@@ -242,6 +243,11 @@ export function createEditFileTool(context: ToolContext, descriptionOverride?: s
     }),
     execute: async ({ filePath, mode, oldText, newText, occurrence, replaceAll, patch }) => {
       const normalizedPath = assertEditablePath(context, filePath);
+
+      // P1 写操作硬门禁:路径校验通过后,编辑会改写原文件,必须先经 ask_user(confirm) 确认
+      if (!(await AskUserService.isConfirmedRecently(context.sessionId))) {
+        throw new Error('写操作确认门禁:编辑文件需先经 ask_user(method=confirm) 获得用户确认(会话内最近 5 分钟),请先调用 ask_user 说明改动并等待确认');
+      }
       // 格式校验：text / docx；其他（PDF/二进制）抛错拒绝
       const format = assertEditableFormat(normalizedPath);
 
