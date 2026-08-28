@@ -1336,12 +1336,26 @@ function extractReportLinks(message: UIMessage): ReportLink[] {
 
 /**
  * /uploads/agent_temp/** 已加 JWT 鉴权（后端 2026-08-07 修复）：
- * 为下载/打印链接追加 token query，保证登录用户仍可访问（非 agent_temp 路径原样返回）
+ * 为下载/打印链接追加 token query，保证登录用户仍可访问。
+ *
+ * 判据（2026-08-27 修复下载不了）：两类 URL 都要加 token——
+ *   1) 直链 /uploads/agent_temp/...（原始字面量）
+ *   2) 打印页外层路由 /agent/report-print?src=%2Fuploads%2Fagent_temp%2F...
+ *      ——src 被 encodeURIComponent 后不含 "/uploads" 字面量，
+ *      原实现 includes 匹配失败导致 token 永远拼不上，打印页必 401。
  */
+function needsAuthToken(url: string): boolean {
+  if (!url) return false
+  if (url.includes('/uploads/agent_temp')) return true
+  // encodeURIComponent('/') = %2F；兼容大小写与已部分解码的变体
+  if (/uploads(%2F|\/)agent_temp/i.test(url)) return true
+  // 打印页路由整体都是「需要鉴权的报告访问」包装器
+  if (url.includes('/agent/report-print')) return true
+  return false
+}
+
 function withToken(url: string): string {
-  // 判断依据：URL 中含 /uploads/agent_temp（下载链接以它开头；
-  // 打印页是 /agent/report-print?src=/uploads/... 前端路由，token 需加在外层 query）
-  if (!url || !url.includes('/uploads/agent_temp')) return url
+  if (!needsAuthToken(url)) return url
   const sep = url.includes('?') ? '&' : '?'
   return `${url}${sep}token=${encodeURIComponent(userStore.token)}`
 }
@@ -1521,15 +1535,29 @@ function onMessagesScroll() {
 }
 
 // 消息变化时自动滚动到底部 + 更新 minimap 状态 + 记录流事件时间戳（卡死守卫用）
+// 滚动节流：高频 delta 下每次都读写 scrollTop/scrollHeight 会强制重排造成卡顿，
+// 150ms 节流 + 尾随补滚保证最终位置正确
+let lastAutoScrollAt = 0
+let autoScrollTimer: number | null = null
+function doAutoScroll() {
+  lastAutoScrollAt = Date.now()
+  messageEls.value.length = messages.value.length
+  const el = messagesContainer.value
+  if (el) el.scrollTop = el.scrollHeight
+}
 watch(messages, () => {
   lastStreamEventAt = Date.now()
-  nextTick(() => {
-    messageEls.value.length = messages.value.length
-    const el = messagesContainer.value
-    if (el && isNearBottom.value) {
-      el.scrollTop = el.scrollHeight
-    }
-  })
+  const now = Date.now()
+  if (now - lastAutoScrollAt >= 150) {
+    nextTick(doAutoScroll)
+    return
+  }
+  if (autoScrollTimer === null) {
+    autoScrollTimer = window.setTimeout(() => {
+      autoScrollTimer = null
+      nextTick(doAutoScroll)
+    }, 150)
+  }
 }, { flush: 'post', deep: false })
 
 // 流式错误提示（修复：原实现 error 解构后无人消费，流中断/500/断网完全静默——
@@ -1614,8 +1642,14 @@ watch(isLoading, (now, prev) => {
 // ============================================================
 let stuckFinalized = false
 let lastStreamEventAt = Date.now()
-const STUCK_FINAL_IDLE_MS = 8_000      // 快路径：parts 全 final 后的静默阈值
-const STUCK_ABSOLUTE_IDLE_MS = 180_000 // 慢路径：绝对兜底静默阈值
+const STUCK_FINAL_IDLE_MS = 90_000     // 快路径：parts 全 final 后的静默阈值
+const STUCK_ABSOLUTE_IDLE_MS = 300_000 // 慢路径：绝对兜底静默阈值
+
+// 阈值依据（2026-08-27 用户实测"老是中断"后从 8s/180s 上调）：
+// 「工具全 final + 无新事件」与「LLM 正在生成下一步（推理模型可达分钟级）」
+// 从消息流上无法区分，快路径必须容忍最长的合法步骤间生成时间，否则必然误杀
+// 健康流。90s 内零事件 + 全 final 大概率就是 finish-step 挂起形态；
+// 300s 是覆盖长工具（含重试一次）的绝对兜底，服务端本身有 600s 硬上限。
 
 const finalizeStuckStream = () => {
   if (stuckFinalized) return
