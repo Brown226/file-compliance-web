@@ -12,7 +12,7 @@
       <div class="batch-section">
         <div class="batch-label">已上传文件（可多选，最多 10 个）</div>
         <div v-if="availableFiles.length === 0" class="batch-empty dim-text">
-          当前会话还没有可处理的文件。请先上传文档，或通过文件树选择。
+          当前会话还没有文件。请先在对话区上传文档（也可粘贴图片/拖拽），再回到这里勾选。
         </div>
         <div v-else class="batch-files">
           <label
@@ -30,11 +30,13 @@
             <span class="batch-file-name">{{ f.name }}</span>
           </label>
         </div>
+        <p class="batch-files-hint dim-text">仅列当前会话上传过的文件；其他会话的文件需先在本会话使用或重新上传。</p>
       </div>
 
       <!-- 子任务选择 -->
       <div class="batch-section">
         <div class="batch-label">执行子任务（可多选）</div>
+        <p class="batch-tasks-hint dim-text">适合粗筛一批文件：勾选「提取文本 + AI 审查 + 生成摘要」，一次拿到每个文件的文本、问题清单与要点；完整精细审查（规则库/标准条文回填）请直接在对话中让 Agent 处理。</p>
         <div class="batch-tasks">
           <label v-for="t in taskOptions" :key="t.value" class="batch-task-item">
             <input
@@ -75,6 +77,7 @@
             @click="resumeJob(j)"
           >
             <span class="batch-status" :class="'s-' + j.status.toLowerCase()">{{ statusLabel(j.status) }}</span>
+            <span v-if="isFreshCompleted(j)" class="batch-new-badge">新</span>
             <span class="batch-history-id">{{ j.id.slice(0, 8) }}</span>
             <span class="batch-history-progress">{{ j.progress }}%</span>
             <span class="batch-history-meta">{{ fmtTime(j.createdAt) }} · {{ j.fileCount }} 文件</span>
@@ -94,14 +97,33 @@
         </div>
         <div v-if="currentJob.result" class="batch-summary">
           共 {{ currentJob.result.total }} 个文件，成功 {{ currentJob.result.succeeded }}，失败 {{ currentJob.result.failed }}
+          <button v-if="currentJob.result.results?.length" class="batch-copy-btn" @click="copyResult">复制结果</button>
         </div>
         <div v-if="currentJob.error" class="batch-error">{{ currentJob.error }}</div>
         <div v-if="currentJob.result?.results?.length" class="batch-results-list">
-          <div v-for="(r, i) in currentJob.result.results" :key="i" class="batch-result-item">
-            <span class="batch-result-name">{{ r.fileName || r.filePath }}</span>
-            <span class="batch-result-ok" :class="r.ok ? 'ok' : 'fail'">{{ r.ok ? '✓' : '✗' }}</span>
-            <span v-if="!r.ok" class="batch-result-error">{{ r.error }}</span>
-            <span v-else class="batch-result-meta">{{ resultMeta(r) }}</span>
+          <div v-for="(r, i) in currentJob.result.results" :key="i" class="batch-result-row">
+            <div class="batch-result-item">
+              <span class="batch-result-name">{{ r.fileName || r.filePath }}</span>
+              <span class="batch-result-ok" :class="r.ok ? 'ok' : 'fail'">{{ r.ok ? '✓' : '✗' }}</span>
+              <span v-if="!r.ok" class="batch-result-error">{{ r.error }}</span>
+              <span v-else class="batch-result-meta">{{ resultMeta(r) }}</span>
+              <!-- P1 修复1：AI 审查结果可见——展开查看每个文件的具体问题 -->
+              <button
+                v-if="r.review?.issues?.length"
+                class="batch-expand-btn"
+                :class="{ expanded: expandedRows.has(i) }"
+                @click="toggleExpand(i)"
+              >
+                {{ expandedRows.has(i) ? '收起问题' : `查看问题 (${r.review.issues.length})` }}
+              </button>
+            </div>
+            <div v-if="r.review?.issues?.length && expandedRows.has(i)" class="batch-issues">
+              <div v-for="(iss, ii) in r.review.issues" :key="ii" class="batch-issue">
+                <span class="batch-issue-sev" :class="'sev-' + (iss.severity || 'info')">{{ iss.severity || 'info' }}</span>
+                <span class="batch-issue-type">{{ iss.issueType || 'VIOLATION' }}</span>
+                <span class="batch-issue-desc">{{ iss.description }}</span>
+              </div>
+            </div>
           </div>
         </div>
       </div>
@@ -262,6 +284,44 @@ function resultMeta(r: any): string {
   return parts.join(' · ') || '完成'
 }
 
+// ===== P1 修复1：AI 审查问题明细展开 =====
+const expandedRows = ref<Set<number>>(new Set())
+function toggleExpand(i: number) {
+  const s = new Set(expandedRows.value)
+  if (s.has(i)) s.delete(i)
+  else s.add(i)
+  expandedRows.value = s
+}
+
+// ===== P1 修复2：复制批次结果 =====
+async function copyResult() {
+  if (!currentJob.value?.result) return
+  try {
+    const rows = (currentJob.value.result.results || []).map((r: any) => ({
+      file: r.fileName || r.filePath,
+      ok: r.ok,
+      error: r.error ?? undefined,
+      extract: r.extract ? { textLength: r.extract.textLength, pages: r.extract.pages } : undefined,
+      chunk: r.chunk ? { count: r.chunk.count } : undefined,
+      summarize: r.summarize ? { summary: r.summarize.summary, keyPoints: r.summarize.keyPoints } : undefined,
+      review: r.review ? { issueCount: r.review.issueCount, issues: r.review.issues } : undefined,
+      knowledge: r.knowledge ? { keywords: r.knowledge.snippets } : undefined,
+    }))
+    await navigator.clipboard.writeText(JSON.stringify(rows, null, 2))
+    ElMessage.success('已复制批次结果（JSON）')
+  } catch {
+    ElMessage.error('复制失败（剪贴板不可用），请手动选择')
+  }
+}
+
+// ===== P1 修复5：近期完成的批次标「新」 =====
+const FRESH_COMPLETED_WINDOW_MS = 5 * 60 * 1000
+function isFreshCompleted(j: BatchJobRecord): boolean {
+  if (j.status !== 'COMPLETED') return false
+  const t = new Date(j.updatedAt).getTime()
+  return !Number.isNaN(t) && Date.now() - t < FRESH_COMPLETED_WINDOW_MS
+}
+
 // 打开时:清空选择项,但保留 currentJob(进行中任务恢复轮询)并加载历史列表
 watch(
   () => props.modelValue,
@@ -304,6 +364,7 @@ onUnmounted(stopPoll)
   font-size: 12px; cursor: pointer;
 }
 .batch-task-desc { color: var(--text-dim, var(--corp-text-tertiary)); font-size: 12px; }
+.batch-files-hint, .batch-tasks-hint { margin: 0; font-size: 12px; }
 .batch-actions { display: flex; justify-content: flex-end; }
 .batch-submit {
   padding: 7px 20px; background: var(--accent, var(--color-action)); color: var(--corp-text-inverse);
@@ -331,6 +392,35 @@ onUnmounted(stopPoll)
 .batch-result-ok.fail { color: var(--color-danger-600); }
 .batch-result-error { color: var(--color-danger-600); font-size: 12px; }
 .batch-result-meta { color: var(--text-dim, var(--corp-text-tertiary)); font-size: 12px; }
+.batch-result-row { display: flex; flex-direction: column; gap: 4px; }
+.batch-copy-btn {
+  margin-left: 10px; font-size: 12px; padding: 1px 10px;
+  border: 1px solid var(--border, var(--corp-border-light)); border-radius: 4px;
+  background: none; cursor: pointer; color: var(--text-muted, var(--corp-text-secondary));
+}
+.batch-copy-btn:hover { border-color: var(--color-action); color: var(--color-action); }
+.batch-expand-btn {
+  flex-shrink: 0; font-size: 12px; padding: 1px 8px;
+  border: 1px solid var(--border, var(--corp-border-light)); border-radius: 4px;
+  background: none; cursor: pointer; color: var(--color-action);
+}
+.batch-expand-btn:hover, .batch-expand-btn.expanded { border-color: var(--color-action); background: color-mix(in srgb, var(--color-action) 8%, transparent); }
+.batch-issues {
+  display: flex; flex-direction: column; gap: 4px;
+  padding: 6px 8px; background: var(--bg-subtle, var(--color-gray-50));
+  border-radius: 4px; max-height: 180px; overflow: auto;
+}
+.batch-issue { display: flex; align-items: flex-start; gap: 8px; font-size: 12px; }
+.batch-issue-sev { flex-shrink: 0; font-size: 11px; padding: 0 6px; border-radius: 3px; }
+.batch-issue-sev.sev-error { background: color-mix(in srgb, var(--color-danger) 15%, transparent); color: var(--color-danger-600); }
+.batch-issue-sev.sev-warning { background: color-mix(in srgb, var(--color-warning) 15%, transparent); color: var(--color-warning-600); }
+.batch-issue-sev.sev-info { background: color-mix(in srgb, var(--corp-text-secondary) 13%, transparent); color: var(--color-gray-600); }
+.batch-issue-type { flex-shrink: 0; color: var(--text-dim, var(--corp-text-tertiary)); font-family: var(--font-mono, monospace); }
+.batch-issue-desc { flex: 1; min-width: 0; }
+.batch-new-badge {
+  flex-shrink: 0; font-size: 10px; color: var(--color-danger-600);
+  border: 1px solid var(--color-danger); border-radius: 3px; padding: 0 4px;
+}
 .batch-history { border-top: 1px solid var(--border, var(--corp-border-light)); padding-top: 10px; display: flex; flex-direction: column; gap: 6px; }
 .batch-history-refresh { font-size: 12px; padding: 0 8px; border: 1px solid var(--border, var(--corp-border-light)); border-radius: 4px; background: none; cursor: pointer; margin-left: 8px; }
 .batch-history-list { display: flex; flex-direction: column; gap: 4px; max-height: 160px; overflow: auto; }
