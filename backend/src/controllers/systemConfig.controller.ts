@@ -79,6 +79,11 @@ export const saveSystemConfig = async (req: AuthRequest, res: Response): Promise
     if (key === 'basic_settings') {
       invalidateConfigCache();
     }
+    // P0 修复（2026-08-28）：LLM 相关配置保存后清 LLM 配置/能力缓存，
+    // 否则 _llmConfigCache(5min)/_modelCapsCache(1h) 不失效，「改了没反应」
+    if (key === 'llm_chat_model' || key === 'llm_profiles') {
+      LlmService.invalidateLlmCaches();
+    }
 
     success(res, config, '配置保存成功');
   } catch (err: any) {
@@ -417,6 +422,7 @@ export const saveLlmProfiles = async (req: AuthRequest, res: Response): Promise<
     });
 
     invalidateConfigCache();
+    LlmService.invalidateLlmCaches();
     success(res, null, 'LLM 配置保存成功');
   } catch (err: any) {
     console.error('Save LLM Profiles Error:', err);

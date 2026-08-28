@@ -18,6 +18,7 @@ import { acquireLlmToken } from '../../utils/llm-rate-limiter';
 import { scrubSensitive } from '../agent/security/scrub-sensitive';
 import { RiskItemSchema } from '../review-pipeline/contract-review.schema';
 import { VALID_ISSUE_TYPES } from '../../utils/issue-types';
+import { lookupCapabilities } from './model-capabilities.registry';
 import fs from 'fs';
 import path from 'path';
 
@@ -1688,6 +1689,19 @@ export class LlmService {
   }
 
   /**
+   * 清空 LLM 配置缓存与模型能力缓存（P0 修复 2026-08-28）
+   *
+   * 此前保存 provider/模型配置后 _llmConfigCache（5min TTL）与 _modelCapsCache（1h TTL）
+   * 没有任何失效入口——界面上改完「最大输出/上下文窗口/密钥/模型」后，
+   * 后端最长 1 小时内仍用旧配置干活，表现为「修改了没反应」。
+   * 由各保存接口（PUT system-configs / llm-profiles / agent providers）调用。
+   */
+  static invalidateLlmCaches(): void {
+    this._llmConfigCache = null;
+    this._modelCapsCache.clear();
+  }
+
+  /**
    * 计算实际 max_tokens：自动探测的模型上限优先于写死的默认值
    * - 推理模型（reasoning=true）：抬升下限到 16384，避免思考耗尽预算导致 content 为空
    * - 始终不超过模型真实 maxOutput
@@ -1757,6 +1771,15 @@ export class LlmService {
             const profiles = Array.isArray(profilesRaw) ? profilesRaw : [];
             const profile = profiles.find((p: any) => p.id === v.providerId);
             if (profile && profile.apiKey && profile.model) {
+              // P0 修复（2026-08-28）：Provider 配置的能力元数据此前从未被运行时读取——
+              // 用户在「AI 引擎配置」填的上下文窗口/最大输出永远不生效，max_tokens 全靠探测或兜底。
+              // 生效优先级：后台探测回填（最真实）> Provider 表单配置 > 预置能力库 > undefined（走默认）
+              const profileCaps = (profile.capabilities || {}) as {
+                contextWindowTokens?: number;
+                maxOutputTokens?: number;
+                reasoning?: boolean;
+              };
+              const presetCaps = lookupCapabilities(profile.model);
               result = {
                 apiBaseUrl: profile.apiBase || 'https://api.siliconflow.cn/v1',
                 apiKey: profile.apiKey,
@@ -1765,6 +1788,9 @@ export class LlmService {
                 temperature: typeof v.temperature === 'number' ? v.temperature : 0.1,
                 timeout: typeof v.timeout === 'number' ? v.timeout : (profile.timeout || 120),
                 provider: profile.provider || 'openai-compat',
+                modelContextWindow: profileCaps.contextWindowTokens || presetCaps?.contextWindowTokens || undefined,
+                modelMaxOutput: profileCaps.maxOutputTokens || presetCaps?.maxOutputTokens || undefined,
+                modelReasoning: profileCaps.reasoning || undefined,
               };
             }
           }

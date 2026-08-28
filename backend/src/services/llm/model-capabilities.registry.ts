@@ -53,6 +53,21 @@ const REGISTRY: Record<string, ModelCapabilities> = {
     contextWindowTokens: 64000,
     maxOutputTokens: 8192,
   },
+  // 2026-08-28 修复：服务器部署后模型配置界面「最大输出 0 / 不支持工具」——
+  // deepseek-v4 系列未收录，lookupCapabilities 落到 DEFAULT_CAPABILITIES（全 0 + toolCalling=false）。
+  // 按实际网关返回（context_length=262144）与 DeepSeek 系列惯例补录；探测/用户配置仍可覆盖。
+  'deepseek-v4-flash': {
+    inputModalities: ['text'],
+    supportsToolCalling: true,
+    contextWindowTokens: 262144,
+    maxOutputTokens: 8192,
+  },
+  'deepseek-v4': {
+    inputModalities: ['text'],
+    supportsToolCalling: true,
+    contextWindowTokens: 262144,
+    maxOutputTokens: 8192,
+  },
 
   // ===== Qwen 通义千问 =====
   'qwen2.5-72b-instruct': {

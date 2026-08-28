@@ -123,6 +123,11 @@ router.put('/providers', requireRole('ADMIN'), async (req: AuthRequest, res: Res
       update: { value: JSON.stringify(profiles) },
       create: { key: 'llm_profiles', value: JSON.stringify(profiles) },
     });
+
+    // P0 修复（2026-08-28）：保存后清 LLM 配置/能力缓存——否则审查与 Agent
+    // 最长 1 小时内仍用旧 provider 配置（含密钥/模型/能力字段），「改了没反应」
+    LlmService.invalidateLlmCaches();
+
     return res.json({ success: true, data: profiles });
   } catch (e: any) {
     console.error('[Agent] 保存 providers 失败:', e?.message || e);
