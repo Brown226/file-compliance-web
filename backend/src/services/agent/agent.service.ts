@@ -351,8 +351,9 @@ export class AgentService {
     }
 
     // 9. 启动流式调用
-    //    P0 #1（接通纸面能力）：调 LLM 前接入全局 QPS 限流（按 model 分桶，Redis 不可用自动降级）
-    await acquireLlmToken(effConfig.modelName).catch((e: any) => {
+    //    P0 #1（接通纸面能力）：调 LLM 前接入全局 QPS 限流（按「网关+模型」分桶，Redis 不可用自动降级）。
+    //    对话是 interactive 通道（人在等）：可用全部配额，审查高峰时预留配额保首包延迟
+    await acquireLlmToken(effConfig.apiBaseUrl, effConfig.modelName, 'interactive').catch((e: any) => {
       console.warn('[Agent] QPS 限流调用异常（继续）:', (e as Error)?.message || e);
     });
 
@@ -371,8 +372,12 @@ export class AgentService {
       tools,
       // 安全修复：LLM 调用超时/客户端断开中止（路由层通过 signal 传入 AbortController）
       // 以及输出 token 上限（取模型探测上限，缺省回退 maxTokens），防止网关挂起时请求永久悬挂
+      // BUG 修复（2026-09-02）：maxOutputTokens 统一走 LlmService.resolveMaxTokens 钳制。
+      // 原 `modelMaxOutput ?? maxTokens ?? 4096`：探测回填前 modelMaxOutput 为 undefined
+      // 时直接把 config.maxTokens（用户可能填了 284000）原样发出，vLLM 400
+      // （max_tokens 不能超过 max_model_len）；回填为 0 时 `0 ?? ` 也不降级。
       abortSignal: signal,
-      maxOutputTokens: effConfig.modelMaxOutput ?? effConfig.maxTokens ?? 4096,
+      maxOutputTokens: LlmService.resolveMaxTokens(undefined, effConfig),
       providerOptions: thinkingLevel ? { openai: { reasoningEffort: thinkingLevel } } : undefined,
       stopWhen: (o: any) =>
         isStepCount(10)(o) ||
@@ -556,8 +561,8 @@ export class AgentService {
 
     console.log('[Agent] generateText 兜底启动，model=' + effConfig.modelName);
 
-    // P0 #1：调 LLM 前接入全局 QPS 限流（与主链路一致）
-    await acquireLlmToken(effConfig.modelName).catch((e: any) => {
+    // P0 #1：调 LLM 前接入全局 QPS 限流（与主链路一致，interactive 通道）
+    await acquireLlmToken(effConfig.apiBaseUrl, effConfig.modelName, 'interactive').catch((e: any) => {
       console.warn('[Agent] QPS 限流调用异常（继续）:', (e as Error)?.message || e);
     });
 
@@ -568,7 +573,8 @@ export class AgentService {
       messages: modelMessages,
       tools,
       abortSignal: signal,
-      maxOutputTokens: effConfig.modelMaxOutput ?? effConfig.maxTokens ?? 4096,
+      // 与 chatStream 同口径：maxOutputTokens 统一走 resolveMaxTokens 钳制（BUG 2026-09-02）
+      maxOutputTokens: LlmService.resolveMaxTokens(undefined, effConfig),
       stopWhen: isStepCount(10),
       onToolExecutionEnd: ({ toolCall, toolOutput, toolExecutionMs }: any) => {
         // 工具执行过程由 QAMessage.parts 承载，AgentTrace 链路已移除（2026-08-03）

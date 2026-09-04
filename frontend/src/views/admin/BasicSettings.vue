@@ -71,6 +71,11 @@
               <el-input-number v-model="basicSettings.chunkConcurrency" :min="1" :max="5" controls-position="right" />
               <div class="form-tip">单个文件内 LLM 调用分片数</div>
             </el-form-item>
+
+            <el-form-item label="LLM 限流 QPS">
+              <el-input-number v-model="basicSettings.llmRateLimit" :min="0" :max="200" controls-position="right" />
+              <div class="form-tip">每秒 LLM 调用上限，按网关+模型分桶；0 = 不限流。审查与对话共享，对话预留 20% 配额</div>
+            </el-form-item>
           </div>
         </el-form>
       </div>
@@ -119,6 +124,7 @@ const basicSettings = reactive({
   queueConcurrency: 3,
   maxConcurrentReviews: 3,
   chunkConcurrency: 2,
+  llmRateLimit: 20,
 })
 
 const formatDateTime = (date: Date) => {
@@ -152,6 +158,8 @@ const loadBasicSettings = async () => {
       if (v.queueConcurrency) basicSettings.queueConcurrency = v.queueConcurrency
       if (v.maxConcurrentReviews) basicSettings.maxConcurrentReviews = v.maxConcurrentReviews
       if (v.chunkConcurrency) basicSettings.chunkConcurrency = v.chunkConcurrency
+      // llmRateLimit 用 != null 判断：0（不限流）也是合法值
+      if (v.llmRateLimit != null) basicSettings.llmRateLimit = v.llmRateLimit
     }
     if (data?.updatedAt) {
       lastSavedAt.value = formatDateTime(new Date(data.updatedAt))

@@ -29,76 +29,59 @@
               </div>
             </el-option>
           </el-select>
-          <div class="form-tip">凭证从 Provider 配置继承。切换 Provider 时会自动探测模型能力。</div>
+          <div class="form-tip">凭证与模型能力均从 Provider 配置继承，此处无需重复填写。</div>
         </el-form-item>
 
-        <!-- 探测状态 -->
-        <div v-if="probedCaps?.probed" class="cap-status success">
-          <el-icon><CircleCheckFilled /></el-icon>
-          <span>
-            已探测：最大输出 {{ formatTokens(probedCaps.maxOutput) }} · 上下文窗口 {{ formatTokens(probedCaps.contextWindow) }}
-            <el-tag v-if="probedCaps.reasoning" size="small" type="warning" effect="plain" class="reasoning-tag">推理模型</el-tag>
-          </span>
-        </div>
-        <div v-else-if="probeDone && config.providerId" class="cap-status warning">
-          <el-icon><CircleCloseFilled /></el-icon>
-          <span>未探测到能力元数据，已启用下方手动参数</span>
+        <!-- 模型能力（唯一权威：Provider 配置） -->
+        <div class="cap-card">
+          <div class="cap-card__title">
+            模型能力
+            <el-tag size="small" type="info" effect="plain">以 Provider 配置为准</el-tag>
+          </div>
+          <div v-if="selectedProvider" class="cap-card__body">
+            <div class="cap-item">
+              <span class="cap-label">模型</span>
+              <span>{{ selectedProvider.model || '未设置' }}</span>
+            </div>
+            <div class="cap-item">
+              <span class="cap-label">上下文窗口</span>
+              <span>{{ fmtCaps.contextWindow }}</span>
+            </div>
+            <div class="cap-item">
+              <span class="cap-label">最大输出</span>
+              <span>{{ fmtCaps.maxOutput }}</span>
+            </div>
+            <div class="cap-item">
+              <span class="cap-label">模型类型</span>
+              <span>{{ selectedProvider.capabilities?.reasoning ? '推理模型' : '普通模型' }}</span>
+            </div>
+          </div>
+          <div v-else class="cap-card__empty">请先选择 Provider</div>
+          <div class="form-tip">
+            全局唯一来源：如需修改请前往「Provider 配置」编辑该模型的能力参数。
+            运行时输出上限 = min(场景请求值, 最大输出, 上下文窗口 − 4096)，超限请求会被自动钳制。
+          </div>
         </div>
 
         <!-- 生成参数分组 -->
         <div class="param-group">
           <div class="param-group__title">生成参数</div>
           <div class="param-row">
-          <el-form-item label="最大输出 Tokens">
-            <div class="inline-number">
-              <el-input-number
-                v-model="config.maxTokens"
-                :min="1"
-                :max="1000000"
-                controls-position="right"
-                :disabled="probedCaps?.probed"
-                @input="userTouchedMaxTokens = true"
-              />
-              <span class="unit-label">tokens</span>
-            </div>
-            <div v-if="capDefaults.maxOutputTokens > 0" class="form-tip">
-              模型库默认 {{ capDefaults.maxOutputTokens }} tokens
-            </div>
-          </el-form-item>
+            <el-form-item label="超时时间">
+              <div class="inline-number">
+                <el-input-number v-model="config.timeout" :min="10" :max="300" controls-position="right" />
+                <span class="unit-label">秒</span>
+              </div>
+            </el-form-item>
 
-          <el-form-item label="上下文窗口">
-            <div class="inline-number">
-              <el-input-number
-                v-model="config.contextLength"
-                :min="4096"
-                :max="2097152"
-                :step="4096"
-                controls-position="right"
-                :disabled="probedCaps?.probed"
-                @input="userTouchedContextLength = true"
-              />
-              <span class="unit-label">字符</span>
-            </div>
-            <div v-if="capDefaults.contextWindowTokens > 0" class="form-tip">
-              模型库 {{ (capDefaults.contextWindowTokens / 1000).toFixed(0) }}K tokens
-            </div>
-          </el-form-item>
-
-          <el-form-item label="超时时间">
-            <div class="inline-number">
-              <el-input-number v-model="config.timeout" :min="10" :max="300" controls-position="right" />
-              <span class="unit-label">秒</span>
-            </div>
-          </el-form-item>
-
-          <el-form-item label="温度">
-            <div class="temp-compact">
-              <el-slider v-model="config.temperature" :min="0" :max="1" :step="0.05" />
-              <span class="temp-value">{{ config.temperature.toFixed(2) }}</span>
-            </div>
-            <div class="form-tip">0=精确，1=发散</div>
-          </el-form-item>
-        </div>
+            <el-form-item label="温度">
+              <div class="temp-compact">
+                <el-slider v-model="config.temperature" :min="0" :max="1" :step="0.05" />
+                <span class="temp-value">{{ config.temperature.toFixed(2) }}</span>
+              </div>
+              <div class="form-tip">0=精确，1=发散</div>
+            </el-form-item>
+          </div>
         </div><!-- /param-group -->
       </el-form>
     </section>
@@ -106,25 +89,20 @@
 </template>
 
 <script setup lang="ts">
-import { computed, reactive, ref, onMounted, watch } from 'vue'
+import { computed, reactive, ref, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { CircleCheckFilled, CircleCloseFilled } from '@element-plus/icons-vue'
 import {
   getSystemConfigApi,
   saveSystemConfigApi,
   testLlmConnectionApi,
   getLlmProfilesApi,
-  probeModelCapsApi,
   type LlmProfile,
   type ModelCapabilities,
-  type ProbedModelCaps,
 } from '@/api/system'
 
 interface ChatModelConfig {
   providerId: string
   temperature: number
-  maxTokens: number
-  contextLength: number
   timeout: number
   enabled: boolean
 }
@@ -134,17 +112,10 @@ const testLoading = ref(false)
 const connectionTestResult = ref<{ success: boolean; message?: string; latency?: number } | null>(null)
 const providers = ref<LlmProfile[]>([])
 const hasLegacyFields = ref(false)
-const userTouchedMaxTokens = ref(false)
-const userTouchedContextLength = ref(false)
-const configLoaded = ref(false)
-const probedCaps = ref<ProbedModelCaps | null>(null)
-const probeDone = ref(false)
 
 const config = reactive<ChatModelConfig>({
   providerId: '',
   temperature: 0.3,
-  maxTokens: 8192,
-  contextLength: 131072,
   timeout: 120,
   enabled: true,
 })
@@ -158,32 +129,19 @@ const filteredProviders = computed(() =>
   providers.value.filter((p) => p.isEnabled && ['chat', 'all'].includes(p.usage || 'chat'))
 )
 
-const capDefaults = computed(() => {
+/** 模型能力展示（只读，唯一来源 = Provider 配置的 capabilities） */
+const fmtCaps = computed(() => {
   const caps = selectedProvider.value?.capabilities
   return {
-    contextWindowTokens: caps?.contextWindowTokens ?? 0,
-    maxOutputTokens: caps?.maxOutputTokens ?? 0,
+    contextWindow: caps?.contextWindowTokens ? formatTokens(caps.contextWindowTokens) : '未配置',
+    maxOutput: caps?.maxOutputTokens ? formatTokens(caps.maxOutputTokens) : '未配置',
   }
 })
-
-watch(
-  () => config.providerId,
-  () => {
-    if (!configLoaded.value) return
-    const caps = capDefaults.value
-    if (!userTouchedMaxTokens.value && caps.maxOutputTokens > 0) {
-      config.maxTokens = caps.maxOutputTokens
-    }
-    if (!userTouchedContextLength.value && caps.contextWindowTokens > 0) {
-      config.contextLength = Math.round(caps.contextWindowTokens * 1.5)
-    }
-  }
-)
 
 const summary = computed(() => [
   { label: 'Provider', value: selectedProvider.value?.name || '未设置' },
   { label: '模型', value: selectedProvider.value?.model || '未设置' },
-  { label: '最大 Tokens', value: String(config.maxTokens) },
+  { label: '最大输出', value: fmtCaps.value.maxOutput },
   { label: '超时时间', value: `${config.timeout} 秒` },
 ])
 
@@ -196,34 +154,10 @@ function formatCapSummary(caps: ModelCapabilities): string {
 }
 
 function formatTokens(n: number): string {
+  if (n >= 1000000) return `${+(n / 1000000).toFixed(1)}M tokens`
   if (n >= 1000) return `${Math.round(n / 1000)}K tokens`
   return `${n} tokens`
 }
-
-async function probeCaps() {
-  probedCaps.value = null
-  probeDone.value = false
-  if (!config.providerId) return
-  try {
-    const { data } = await probeModelCapsApi(config.providerId)
-    probedCaps.value = data
-    if (data?.probed) {
-      if (data.maxOutput > 0) config.maxTokens = data.maxOutput
-      if (data.contextWindow > 0) config.contextLength = Math.round(data.contextWindow * 1.5)
-    }
-  } catch {
-    probedCaps.value = null
-  } finally {
-    probeDone.value = true
-  }
-}
-
-watch(
-  () => config.providerId,
-  () => {
-    if (configLoaded.value) probeCaps()
-  }
-)
 
 const handleTest = async () => {
   if (!config.providerId) {
@@ -323,25 +257,8 @@ onMounted(async () => {
       }
       if (configData.providerId !== undefined) config.providerId = configData.providerId
       if (configData.temperature !== undefined) config.temperature = configData.temperature
-      if (configData.maxTokens !== undefined) config.maxTokens = configData.maxTokens
-      if (configData.contextLength !== undefined) config.contextLength = configData.contextLength
       if (configData.timeout !== undefined) config.timeout = configData.timeout
       if (configData.enabled !== undefined) config.enabled = configData.enabled
-
-      if (configData.maxTokens !== undefined) userTouchedMaxTokens.value = true
-      if (configData.contextLength !== undefined) userTouchedContextLength.value = true
-    }
-    originalConfig.value = JSON.stringify(config)
-    configLoaded.value = true
-    await probeCaps()
-    if (!probedCaps.value?.probed && config.providerId && capDefaults.value) {
-      const caps = capDefaults.value
-      if (!userTouchedMaxTokens.value && caps.maxOutputTokens > 0) {
-        config.maxTokens = caps.maxOutputTokens
-      }
-      if (!userTouchedContextLength.value && caps.contextWindowTokens > 0) {
-        config.contextLength = Math.round(caps.contextWindowTokens * 1.5)
-      }
     }
     originalConfig.value = JSON.stringify(config)
   } catch (e) {
@@ -402,35 +319,53 @@ defineExpose({
   flex-shrink: 0;
 }
 
-.cap-status {
+/* 模型能力卡：只读展示 Provider 配置（全局唯一权威） */
+.cap-card {
+  border: 1px solid var(--corp-border-light);
+  border-radius: 12px;
+  padding: 14px 20px;
+  max-width: 720px;
+}
+
+.cap-card__title {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 6px 12px;
-  margin-bottom: 2px;
   font-size: 13px;
-  border-radius: 6px;
+  font-weight: 600;
+  color: var(--color-gray-700);
+  margin-bottom: 10px;
+}
+
+.cap-card__body {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px 24px;
+}
+
+.cap-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+}
+
+.cap-label {
+  color: var(--corp-text-secondary);
+  flex-shrink: 0;
+  min-width: 72px;
+}
+
+.cap-card__empty {
+  font-size: 13px;
+  color: var(--corp-text-secondary);
+}
+
+.cap-card .form-tip {
+  margin-top: 10px;
   line-height: 1.5;
-  width: fit-content;
 }
 
-.cap-status.success {
-  color: var(--color-success-text);
-  background: var(--color-success-bg);
-  border: 1px solid var(--color-success-bg);
-}
-
-.cap-status.warning {
-  color: var(--color-warning-text);
-  background: var(--color-warning-bg);
-  border: 1px solid var(--color-warning-bg);
-}
-
-.reasoning-tag {
-  margin-left: 6px;
-}
-
-/* 生成参数分组：浅色底容器 + 分组标题 */
 .param-group {
   background: var(--bg-surface-hover);
   border: 1px solid var(--corp-border-light);
@@ -502,6 +437,10 @@ defineExpose({
 
 @media (max-width: 640px) {
   .param-row {
+    grid-template-columns: 1fr;
+  }
+
+  .cap-card__body {
     grid-template-columns: 1fr;
   }
 

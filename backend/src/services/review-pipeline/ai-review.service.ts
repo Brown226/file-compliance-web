@@ -648,15 +648,22 @@ export class AiReviewService {
     const chunkOverlap = config.chunkOverlap ?? 300;
 
     try {
-      // 动态读取上下文数据库配置（优先从 LLM 模型配置读取以推导窗口）
+      // 唯一权威（2026-09-02）：优先取 Provider 配置的上下文窗口（tokens）×1.5 → 字符；
+      // 未配置时兼容旧字段 llm_chat_model.contextLength；都没有则用默认值
       let contextWindow = 131072; // 默认值（字符数）
       try {
-        const { default: prisma } = await import('../../config/db');
-        const llmCfg = await prisma.systemConfig.findUnique({ where: { key: 'llm_chat_model' } });
-        if (llmCfg?.value && typeof llmCfg.value === 'object') {
-          const v = llmCfg.value as any;
-          if (typeof v.contextLength === 'number' && v.contextLength > 0) {
-            contextWindow = v.contextLength;
+        const eff = await LlmService.getLlmConfig();
+        const ctxTokens = eff?.modelContextWindow || 0;
+        if (ctxTokens > 0) {
+          contextWindow = Math.round(ctxTokens * 1.5);
+        } else {
+          const { default: prisma } = await import('../../config/db');
+          const llmCfg = await prisma.systemConfig.findUnique({ where: { key: 'llm_chat_model' } });
+          if (llmCfg?.value && typeof llmCfg.value === 'object') {
+            const v = llmCfg.value as any;
+            if (typeof v.contextLength === 'number' && v.contextLength > 0) {
+              contextWindow = v.contextLength;
+            }
           }
         }
       } catch (e) {
@@ -1142,14 +1149,21 @@ export class AiReviewService {
     let refChunks: string[] | null = null;
     if (hasRefFiles) {
       // 动态计算上下文窗口
+      // 唯一权威（2026-09-02）：Provider 配置的上下文窗口（tokens）×1.5 → 字符，兼容旧字段
       let contextWindow = 131072;
       try {
-        const { default: prisma } = await import('../../config/db');
-        const llmCfg = await prisma.systemConfig.findUnique({ where: { key: 'llm_chat_model' } });
-        if (llmCfg?.value && typeof llmCfg.value === 'object') {
-          const v = llmCfg.value as any;
-          if (typeof v.contextLength === 'number' && v.contextLength > 0) {
-            contextWindow = v.contextLength;
+        const eff = await LlmService.getLlmConfig();
+        const ctxTokens = eff?.modelContextWindow || 0;
+        if (ctxTokens > 0) {
+          contextWindow = Math.round(ctxTokens * 1.5);
+        } else {
+          const { default: prisma } = await import('../../config/db');
+          const llmCfg = await prisma.systemConfig.findUnique({ where: { key: 'llm_chat_model' } });
+          if (llmCfg?.value && typeof llmCfg.value === 'object') {
+            const v = llmCfg.value as any;
+            if (typeof v.contextLength === 'number' && v.contextLength > 0) {
+              contextWindow = v.contextLength;
+            }
           }
         }
       } catch (e) { /* 用默认值 */ }

@@ -68,20 +68,6 @@ export function fetchProviderModelsApi(data: { apiBase: string; apiKey?: string 
   return request.post<string[]>('/system-config/llm-profiles/fetch-models', data)
 }
 
-/** 模型能力探测结果（后端从 /models 接口自动读取） */
-export interface ProbedModelCaps {
-  probed: boolean
-  model: string
-  contextWindow: number
-  maxOutput: number
-  reasoning: boolean
-}
-
-// 探测模型能力（上下文窗口/最大输出/是否推理模型）
-export function probeModelCapsApi(providerId: string) {
-  return request.post<ProbedModelCaps>('/system-config/probe-model-caps', { providerId })
-}
-
 // ==================== 可观测性 P2：AI 调用看板 ====================
 
 export interface AiCallModelStat {

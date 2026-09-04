@@ -18,7 +18,6 @@ import { acquireLlmToken } from '../../utils/llm-rate-limiter';
 import { scrubSensitive } from '../agent/security/scrub-sensitive';
 import { RiskItemSchema } from '../review-pipeline/contract-review.schema';
 import { VALID_ISSUE_TYPES } from '../../utils/issue-types';
-import { lookupCapabilities } from './model-capabilities.registry';
 import fs from 'fs';
 import path from 'path';
 
@@ -1365,8 +1364,8 @@ export class LlmService {
       return issues;
     }
 
-    // 限流：按 model 分桶获取令牌，避免高并发打爆 LLM API
-    await acquireLlmToken(config.modelName);
+    // 限流：按「网关+模型」分桶获取令牌，避免高并发打爆 LLM API（batch 通道，为对话预留 20% 配额）
+    await acquireLlmToken(config.apiBaseUrl, config.modelName);
 
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
@@ -1641,25 +1640,20 @@ export class LlmService {
   }
 
   /**
-   * 自动探测模型能力（上下文窗口/最大输出/是否推理模型）
+   * 按需读取网关 /models 模型元数据（仅用于 Provider 配置的「连通性测试」按钮，
+   * 即 agent /models/test 端点；不再作为运行时配置来源——内网网关上报不了能力，
+   * 运行时模型能力一律以 Provider 配置为准，见 getLlmConfig）。无缓存，每次实时调。
    *
    * 从 /models 接口读取模型元数据，兼容多种网关字段：
    * - capabilities.contextWindow / maxOutput / reasoning（cbcn 内网网关）
    * - context_length（OpenRouter）、max_model_len（vLLM）
-   * 探测失败返回 null，不影响主流程（降级为配置值）
+   * 探测失败返回 null。
    */
-  private static _modelCapsCache = new Map<string, { caps: { contextWindow: number; maxOutput: number; reasoning: boolean } | null; timestamp: number }>();
-  private static readonly CAPS_CACHE_TTL = 60 * 60 * 1000; // 1小时
-
   static async probeModelCapabilities(
     apiBaseUrl: string,
     apiKey: string,
     modelName: string,
   ): Promise<{ contextWindow: number; maxOutput: number; reasoning: boolean } | null> {
-    const cacheKey = `${apiBaseUrl}::${modelName}`;
-    const hit = this._modelCapsCache.get(cacheKey);
-    if (hit && Date.now() - hit.timestamp < this.CAPS_CACHE_TTL) return hit.caps;
-
     let caps: { contextWindow: number; maxOutput: number; reasoning: boolean } | null = null;
     try {
       const res = await fetch(`${apiBaseUrl.replace(/\/+$/, '')}/models`, {
@@ -1682,35 +1676,41 @@ export class LlmService {
         }
       }
     } catch (e) {
-      console.warn(`[LLM] 模型能力探测失败（降级为配置值）: ${(e as Error).message}`);
+      console.warn(`[LLM] 模型能力探测失败: ${(e as Error).message}`);
     }
-    this._modelCapsCache.set(cacheKey, { caps, timestamp: Date.now() });
     return caps;
   }
 
   /**
-   * 清空 LLM 配置缓存与模型能力缓存（P0 修复 2026-08-28）
+   * 清空 LLM 配置缓存（P0 修复 2026-08-28）
    *
-   * 此前保存 provider/模型配置后 _llmConfigCache（5min TTL）与 _modelCapsCache（1h TTL）
-   * 没有任何失效入口——界面上改完「最大输出/上下文窗口/密钥/模型」后，
-   * 后端最长 1 小时内仍用旧配置干活，表现为「修改了没反应」。
-   * 由各保存接口（PUT system-configs / llm-profiles / agent providers）调用。
+   * 此前保存 provider/模型配置后 _llmConfigCache（5min TTL）没有任何失效入口——
+   * 界面上改完「最大输出/上下文窗口/密钥/模型」后，后端最长 5 分钟内仍用旧配置干活，
+   * 表现为「修改了没反应」。由各保存接口（PUT system-configs / llm-profiles / agent providers）调用。
    */
   static invalidateLlmCaches(): void {
     this._llmConfigCache = null;
-    this._modelCapsCache.clear();
   }
 
   /**
    * 计算实际 max_tokens：自动探测的模型上限优先于写死的默认值
    * - 推理模型（reasoning=true）：抬升下限到 16384，避免思考耗尽预算导致 content 为空
    * - 始终不超过模型真实 maxOutput
+   * - 防御钳制：不超过上下文窗口（vLLM 等网关强制 prompt+max_tokens ≤ max_model_len）
+   *
+   * public：AgentService（AI SDK maxOutputTokens）等外部调用方复用同一钳制口径。
    */
-  private static resolveMaxTokens(requested: number | undefined, config: { maxTokens: number; modelMaxOutput?: number; modelReasoning?: boolean }): number {
-    let maxTokens = requested ?? config.maxTokens;
+  static resolveMaxTokens(requested: number | undefined, config: { maxTokens: number; modelMaxOutput?: number; modelReasoning?: boolean; modelContextWindow?: number }): number {
+    let maxTokens = Math.floor(typeof requested === 'number' && requested > 0 ? requested : (config.maxTokens ?? 0));
+    if (!Number.isFinite(maxTokens) || maxTokens <= 0) maxTokens = 4096;
     if (config.modelReasoning) maxTokens = Math.max(maxTokens, 16384);
     if (config.modelMaxOutput && config.modelMaxOutput > 0) {
       maxTokens = Math.min(maxTokens, config.modelMaxOutput);
+    }
+    // 上下文窗口钳制：输出预算预留 4096 给 prompt，下限 1024。
+    // 即使 maxOutput 未知，也保证 max_tokens < max_model_len，避免 284000 > 262144 这类 400。
+    if (config.modelContextWindow && config.modelContextWindow > 0) {
+      maxTokens = Math.min(maxTokens, Math.max(1024, config.modelContextWindow - 4096));
     }
     return maxTokens;
   }
@@ -1738,11 +1738,11 @@ export class LlmService {
     temperature: number;
     timeout: number;
     provider?: string;
-    /** 自动探测：模型上下文窗口（最大输入） */
+    /** 模型上下文窗口（tokens）——唯一来源：Provider 配置里的模型能力 */
     modelContextWindow?: number;
-    /** 自动探测：模型最大输出 token 数 */
+    /** 模型最大输出（tokens）——唯一来源：Provider 配置里的模型能力 */
     modelMaxOutput?: number;
-    /** 自动探测：是否推理模型（思考占用输出预算） */
+    /** 是否推理模型——唯一来源：Provider 配置里的模型能力 */
     modelReasoning?: boolean;
   } | null> {
     // 检查缓存
@@ -1771,15 +1771,15 @@ export class LlmService {
             const profiles = Array.isArray(profilesRaw) ? profilesRaw : [];
             const profile = profiles.find((p: any) => p.id === v.providerId);
             if (profile && profile.apiKey && profile.model) {
-              // P0 修复（2026-08-28）：Provider 配置的能力元数据此前从未被运行时读取——
-              // 用户在「AI 引擎配置」填的上下文窗口/最大输出永远不生效，max_tokens 全靠探测或兜底。
-              // 生效优先级：后台探测回填（最真实）> Provider 表单配置 > 预置能力库 > undefined（走默认）
+              // 唯一权威原则（2026-09-02 定稿）：模型能力（上下文窗口/最大输出/推理）
+              // 全局只认 Provider 配置里填的那一份，不再从网关 /models 探测回填、
+              // 也不再从预置能力库兜底——内网网关上报不了能力，探测无意义，
+              // 多来源合并正是“界面数值不同步”问题的根源。
               const profileCaps = (profile.capabilities || {}) as {
                 contextWindowTokens?: number;
                 maxOutputTokens?: number;
                 reasoning?: boolean;
               };
-              const presetCaps = lookupCapabilities(profile.model);
               result = {
                 apiBaseUrl: profile.apiBase || 'https://api.siliconflow.cn/v1',
                 apiKey: profile.apiKey,
@@ -1788,8 +1788,8 @@ export class LlmService {
                 temperature: typeof v.temperature === 'number' ? v.temperature : 0.1,
                 timeout: typeof v.timeout === 'number' ? v.timeout : (profile.timeout || 120),
                 provider: profile.provider || 'openai-compat',
-                modelContextWindow: profileCaps.contextWindowTokens || presetCaps?.contextWindowTokens || undefined,
-                modelMaxOutput: profileCaps.maxOutputTokens || presetCaps?.maxOutputTokens || undefined,
+                modelContextWindow: profileCaps.contextWindowTokens || undefined,
+                modelMaxOutput: profileCaps.maxOutputTokens || undefined,
                 modelReasoning: profileCaps.reasoning || undefined,
               };
             }
@@ -1810,22 +1810,6 @@ export class LlmService {
         }
       }
       this._llmConfigCache = { config: result, timestamp: Date.now() };
-      // 自动探测模型能力（上下文窗口/最大输出），探测失败不影响主流程。
-      // 2026-08-26 性能修复：原实现在此处 await 探针——每次缓存过期后的首次调用
-      // 都会同步多等一个外部网关 RTT，表现为周期性的首包尖刺。现改为后台
-      // fire-and-forget：先返回配置（该次调用缺 caps 时走 maxTokens 兜底），
-      // 探测完成后回填进缓存对象，后续调用即可拿到完整 caps。
-      if (result) {
-        void this.probeModelCapabilities(result.apiBaseUrl, result.apiKey, result.modelName)
-          .then((caps) => {
-            if (caps && this._llmConfigCache?.config === result) {
-              (result as any).modelContextWindow = caps.contextWindow;
-              (result as any).modelMaxOutput = caps.maxOutput;
-              (result as any).modelReasoning = caps.reasoning;
-            }
-          })
-          .catch(() => { /* 探测失败静默：能力字段缺失走兜底值 */ });
-      }
       return result;
     } catch (e) {
       console.warn('[LLM] 获取 LLM 配置失败:', e);
@@ -1841,7 +1825,9 @@ export class LlmService {
     const config = await this.getLlmConfig();
     if (!config) return query; // 未配置 LLM 时直接返回原始查询
 
-    const maxTokens = options?.maxTokens ?? config.maxTokens;
+    // BUG 修复（2026-09-02）：rewriteQuery 此前未走 resolveMaxTokens，config.maxTokens
+    // 超过模型窗口时同样会 400（静默失败，表现为查询优化永远不生效）
+    const maxTokens = this.resolveMaxTokens(options?.maxTokens, config);
     const timeoutMs = (options?.timeout ?? config.timeout) * 1000;
 
     const body = {
@@ -1955,8 +1941,8 @@ export class LlmService {
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
       try {
-        // 限流：按 model 分桶获取令牌，避免高并发打爆 LLM API
-        await acquireLlmToken(config.modelName);
+        // 限流：按「网关+模型」分桶（batch 通道）
+        await acquireLlmToken(config.apiBaseUrl, config.modelName);
         const response = await fetch(`${config.apiBaseUrl}/chat/completions`, {
           method: 'POST',
           headers: {

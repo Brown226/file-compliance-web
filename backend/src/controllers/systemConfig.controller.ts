@@ -79,8 +79,8 @@ export const saveSystemConfig = async (req: AuthRequest, res: Response): Promise
     if (key === 'basic_settings') {
       invalidateConfigCache();
     }
-    // P0 修复（2026-08-28）：LLM 相关配置保存后清 LLM 配置/能力缓存，
-    // 否则 _llmConfigCache(5min)/_modelCapsCache(1h) 不失效，「改了没反应」
+    // P0 修复（2026-08-28）：LLM 相关配置保存后清 LLM 配置缓存，
+    // 否则 _llmConfigCache(5min) 不失效，「改了没反应」
     if (key === 'llm_chat_model' || key === 'llm_profiles') {
       LlmService.invalidateLlmCaches();
     }
@@ -96,54 +96,6 @@ export const saveSystemConfig = async (req: AuthRequest, res: Response): Promise
     } else {
       error(res, `服务器内部错误: ${err.message || '未知错误'}`, 500);
     }
-  }
-};
-
-/**
- * 探测模型能力（上下文窗口/最大输出/是否推理模型）
- *
- * 从 Provider 的 /models 接口自动读取模型元数据，供前端回填与展示。
- * 探测不到时返回 probed=false，前端降级为手动填写。
- */
-export const probeModelCapabilities = async (req: AuthRequest, res: Response): Promise<void> => {
-  try {
-    const { providerId } = req.body;
-    if (!providerId) {
-      error(res, '请提供 providerId', 400);
-      return;
-    }
-    const profilesCfg = await prisma.systemConfig.findUnique({ where: { key: 'llm_profiles' } });
-    const raw = profilesCfg?.value
-      ? (typeof profilesCfg.value === 'string' ? JSON.parse(profilesCfg.value) : profilesCfg.value)
-      : [];
-    const profiles = Array.isArray(raw) ? raw : [];
-    const profile = profiles.find((p: any) => p.id === providerId);
-    if (!profile || !profile.apiBase || !profile.model) {
-      error(res, `未找到 Provider 或 Provider 缺少 apiBase/model: ${providerId}`, 400);
-      return;
-    }
-
-    // 优先实时探测；探测失败时降级读取 Provider 配置里已填的能力元数据
-    // （部分网关 /models 只返回 id 列表不带 capabilities，此时配置值即为有效能力）
-    const caps = await LlmService.probeModelCapabilities(profile.apiBase, profile.apiKey || '', profile.model);
-    const configuredCaps = (profile.capabilities as {
-      contextWindowTokens?: number;
-      maxOutputTokens?: number;
-      reasoning?: boolean;
-    }) || {};
-    const contextWindow = caps?.contextWindow ?? configuredCaps.contextWindowTokens ?? 0;
-    const maxOutput = caps?.maxOutput ?? configuredCaps.maxOutputTokens ?? 0;
-    const reasoning = caps?.reasoning ?? configuredCaps.reasoning ?? false;
-    success(res, {
-      probed: !!caps || contextWindow > 0 || maxOutput > 0,
-      model: profile.model,
-      contextWindow,
-      maxOutput,
-      reasoning,
-    });
-  } catch (err: any) {
-    console.error('Probe Model Capabilities Error:', err);
-    error(res, err.message || '探测失败', 500);
   }
 };
 
