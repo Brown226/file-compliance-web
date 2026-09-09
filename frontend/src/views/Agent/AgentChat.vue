@@ -630,6 +630,10 @@ import AskUserDialog from './components/AskUserDialog.vue'
 import { getPendingAskApi, type PendingAskResult } from '@/api/agent'
 import './agent-theme.css'
 
+// 显式命名：AppLayout 的 <keep-alive include="AgentChat"> 依赖该名字匹配缓存，
+// 使对话页切出时被缓存而非卸载（SSE 流与对话状态持续存活，避免切页中断对话）
+defineOptions({ name: 'AgentChat' })
+
 const userStore = useUserStore()
 const { renderMarkdown } = useMarkdown()
 

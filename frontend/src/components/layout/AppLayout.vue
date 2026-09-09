@@ -9,7 +9,10 @@
       <el-main class="main-content" :class="{ 'header-hidden': hideHeader }">
         <router-view v-slot="{ Component }">
           <transition name="fade-slide" mode="out-in" appear>
-            <component :is="Component" />
+            <!-- Agent 对话页切出时缓存而非卸载：SSE 流与对话状态在切页期间持续存活，避免「一离开页面对话就中断」 -->
+            <keep-alive include="AgentChat">
+              <component :is="Component" />
+            </keep-alive>
           </transition>
         </router-view>
       </el-main>
