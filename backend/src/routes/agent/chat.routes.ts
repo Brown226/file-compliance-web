@@ -15,6 +15,8 @@ import path from 'path';
 import fs from 'fs';
 import { AuthRequest } from '../../middlewares/auth.middleware';
 import { AgentService, invalidateUploadedFilesCache } from '../../services/agent/agent.service';
+import { generationRegistry } from '../../services/agent/generation-registry';
+import { randomUUID } from 'crypto';
 import { LlmService } from '../../services/llm/llm.service';
 import { QASessionService } from '../../services/agent/qa-session.service';
 import { sessionStore } from '../../services/agent/session-store';
@@ -170,21 +172,28 @@ async function respondWithFallbackChain(
 router.post('/chat/stream', async (req: AuthRequest, res: Response) => {
   // 请求开始时间：用于并发新会话竞态防护（见下方 completeActiveSessions 调用）
   const requestStartedAt = new Date();
-  // 安全修复：LLM 调用中止控制（提升到 try 外，catch 降级分支也可见）
+  // 安全修复：LLM 调用中止控制（提升到 try 外，catch 降级分支也可见）。
+  // 断流恢复（2026-09-09）：abort 只由 ①600s 全流程超时 ②用户主动取消（
+  // POST /generation/cancel）触发——客户端断开（刷新/关标签页）不再中止生成，
+  // 服务端后台续跑 + 增量落库，刷新后经 GET /generation/status 恢复。
   const controller = new AbortController();
   const streamTimeout = setTimeout(() => controller.abort(), 600_000);
-  const onClientClose = () => {
-    if (!res.writableEnded) controller.abort();
-  };
+  // 本代生成的唯一令牌：喂给 chatStream → onFinish 落库去重时凭 token 匹配
+  const generationToken = randomUUID();
+  // 生成跟踪器：会话确定后创建（见下方 tracker 赋值处）
+  let tracker: ReturnType<typeof generationRegistry.create> = null;
   // 注意：req 'close' 在请求体完整接收后也会触发（Connection: close 客户端 /
   // 部分代理在响应前关闭请求流），此时 req.complete === true 表示请求已完整
-  // 送达，不是客户端中途断开——若直接 abort 会误杀正在进行的 LLM 调用。
-  // 只有 req.complete === false（body 未收完连接即断）才算真正断开。
+  // 送达，不是客户端中途断开。只有 req.complete === false（body 未收完连接即断）
+  // 才算异常请求，照旧中止（此时尚未开始生成，tracker 为 null，直接 abort 即可）。
   req.on('close', () => {
     if (req.complete) return;
-    onClientClose();
+    if (!res.writableEnded) controller.abort();
   });
-  res.on('close', onClientClose);
+  // 响应连接断开（刷新/关标签页/停止按钮断开 fetch）：仅摘除连接，生成继续
+  res.on('close', () => {
+    try { tracker?.detach(); } catch { /* 未注册时忽略 */ }
+  });
   try {
     const userId = req.user.id;
 
@@ -252,10 +261,18 @@ router.post('/chat/stream', async (req: AuthRequest, res: Response) => {
     }
 
     // 安全修复：LLM 调用中止控制
-    // 1. 客户端断开（关页面/切网络）→ req/res close 时 abort，LLM 调用立即取消，
-    //    不再把配额与资源浪费在已断开的连接上
+    // 1. 断流恢复（2026-09-09）：客户端断开不再 abort——服务端后台续跑 + 增量落库，
+    //    刷新后经 GET /generation/status 恢复；abort 仅由下方 600s 超时与
+    //    POST /generation/cancel 触发
     // 2. 全流程超时（10 步工具循环 + LLM 网关异常挂起兜底）：600s 后强制中止，
-    //    防止网关挂起时请求永久悬挂
+    //    防止网关挂起时请求永久悬挂（后台续跑同样受此上限约束）
+    // 断流恢复：注册本代生成的跟踪器（同会话已有在途生成时返回 null，不重复跟踪）。
+    // tracker 解析 text-delta/reasoning-delta 增量累积文本：首个文本出现时创建
+    // status='processing' 的 QAMessage 行并 2s 节流回写，刷新后可从注册表恢复。
+    tracker = sessionId
+      ? generationRegistry.create(sessionId, userId, generationToken, controller)
+      : null;
+
     const result = await AgentService.chatStream({
       messages,
       userId,
@@ -266,6 +283,7 @@ router.post('/chat/stream', async (req: AuthRequest, res: Response) => {
       thinkingLevel: req.body?.thinkingLevel || undefined,
       pendingAskAnswer: req.body?.pendingAskAnswer || null,
       signal: controller.signal,
+      generationToken,
     });
 
     // Express 5 不直接接受 Web Response，手动转换（Task 1 验证过的写法）：
@@ -315,6 +333,8 @@ router.post('/chat/stream', async (req: AuthRequest, res: Response) => {
           break;
         }
         if (value) {
+          // 断流恢复：喂给生成跟踪器（解析 text-delta 增量累积 + 节流落库）
+          try { tracker?.onChunk(value); } catch { /* 跟踪器异常不影响主链路 */ }
           buffered.push(value);
           bufferedBytes += value.byteLength;
           sniffText += decoder.decode(value, { stream: true });
@@ -344,6 +364,8 @@ router.post('/chat/stream', async (req: AuthRequest, res: Response) => {
       // 先取消上游读取（若流未自然结束），释放连接资源。
       try { await reader.cancel(); } catch { /* 已结束则忽略 */ }
       console.warn(`[Agent:Fallback] 嗅探到零内容/error 流（streamDone=${streamDone}），触发降级链`);
+      // 主链路零产出：结束跟踪（无文本时不会落库）；降级链产物由其自身逻辑持久化
+      try { tracker?.finish('failed'); } catch { /* 幂等 */ }
       await respondWithFallbackChain(req, res, controller);
       return;
     }
@@ -367,14 +389,19 @@ router.post('/chat/stream', async (req: AuthRequest, res: Response) => {
     }
     if (streamDone) {
       res.end();
+      // 流在嗅探阶段已自然结束：本代生成完成
+      try { tracker?.finish('completed'); } catch { /* 幂等 */ }
       return;
     }
     while (true) {
       const { done, value } = await reader.read();
       if (done) break;
+      // 断流恢复：转发前喂跟踪器（保持与发往客户端的字节序一致）
+      try { tracker?.onChunk(value); } catch { /* 跟踪器异常不影响主链路 */ }
       res.write(value);
     }
     res.end();
+    try { tracker?.finish('completed'); } catch { /* 幂等 */ }
     return;
   } catch (e: any) {
     console.error('[Agent] 流式调用失败:', e?.message || e);
@@ -383,6 +410,9 @@ router.post('/chat/stream', async (req: AuthRequest, res: Response) => {
     // 客户端已断开时写入无意义，超时时 LLM 大概率不可用，降级只会再等一轮超时。
     // 断开场景 res 已不可写，静默结束即可；超时场景给前端明确提示。
     if (controller.signal.aborted) {
+      // 断流恢复：abort 仅由 600s 超时/主动取消触发——结束跟踪并按 failed
+      // 落库已累积的部分内容（tracker 侧幂等，无文本时不落库）
+      try { tracker?.finish('failed'); } catch { /* 幂等 */ }
       if (res.writableEnded) return;
       try {
         clearTimeout(streamTimeout);
@@ -404,6 +434,8 @@ router.post('/chat/stream', async (req: AuthRequest, res: Response) => {
     if (!res.headersSent) {
       try {
         clearTimeout(streamTimeout);
+        // 主链路异常且未出内容：结束跟踪（降级链产物由其自身逻辑持久化）
+        try { tracker?.finish('failed'); } catch { /* 幂等 */ }
         await respondWithFallbackChain(req, res, controller);
         return;
       } catch (fallbackErr) {
@@ -414,10 +446,82 @@ router.post('/chat/stream', async (req: AuthRequest, res: Response) => {
         });
       }
     } else {
-      // 头已发送，只能结束连接（前端会看到流中断）
+      // 头已发送，只能结束连接（前端会看到流中断）；已累积部分按 failed 落库
+      try { tracker?.finish('failed'); } catch { /* 幂等 */ }
       res.end();
     }
     return;
+  }
+});
+
+/**
+ * GET /api/agent/generation/status?sessionId= — 查询会话在途生成状态（断流恢复轮询）
+ *
+ * 前端刷新/重进会话时轮询本端点：
+ *   - data.tracked=false：注册表无在途生成（已结束或服务重启），前端直接渲染历史
+ *   - data.tracked=true 且 active=true：生成在服务端续跑中，data.text 为已累积文本
+ *     （轮询直至 active=false，结束后 reload 历史拿到终态行）
+ *   - data.tracked=true 且 active=false：恰在完成瞬间查询，快照保留终态文本
+ *
+ * 归属校验：会话存在时必须属于当前用户（与 /chat/stream 同口径），否则 403。
+ */
+router.get('/generation/status', async (req: AuthRequest, res: Response) => {
+  try {
+    const userId = req.user.id;
+    const sessionId = String(req.query.sessionId || '');
+    if (!sessionId) {
+      return res.status(400).json({ success: false, message: '缺少 sessionId 参数' });
+    }
+    const session = await sessionStore.getByIdWithOwner(sessionId);
+    if (session && session.userId !== userId) {
+      return res.status(403).json({ success: false, message: '无权访问该会话' });
+    }
+    const snap = generationRegistry.get(sessionId, userId);
+    if (!snap) {
+      return res.json({ success: true, data: { tracked: false } });
+    }
+    return res.json({ success: true, data: { tracked: true, ...snap } });
+  } catch (e: any) {
+    console.error('[Agent] 查询生成状态失败:', e?.message || e);
+    return res.status(500).json({ success: false, message: `查询生成状态失败: ${e?.message || e}` });
+  }
+});
+
+/**
+ * POST /api/agent/generation/cancel — 用户主动取消在途生成（前端「停止」按钮）
+ *
+ * 背景：断流恢复改造后，客户端断开连接（停止按钮断开 fetch / 刷新页面）不再
+ * 中止服务端生成——用户真想取消时必须调用本端点显式取消。
+ *
+ * 行为：
+ *   - 注册表有在途生成（属于该用户）→ abort 本代生成的 AbortController，
+ *     路由层 catch 后按 failed 落库已累积的部分内容；
+ *   - 无在途生成（如服务重启遗留）→ 把该会话最新的 status='processing' 行
+ *     标记为 failed，避免历史里永远挂着「生成中」。
+ * 幂等：重复调用安全。
+ */
+router.post('/generation/cancel', async (req: AuthRequest, res: Response) => {
+  try {
+    const userId = req.user.id;
+    const sessionId = String(req.body?.sessionId || '');
+    if (!sessionId) {
+      return res.status(400).json({ success: false, message: '缺少 sessionId' });
+    }
+    const session = await sessionStore.getByIdWithOwner(sessionId);
+    if (session && session.userId !== userId) {
+      return res.status(403).json({ success: false, message: '无权访问该会话' });
+    }
+    const cancelled = generationRegistry.cancel(sessionId, userId);
+    if (!cancelled) {
+      const cleaned = await QASessionService.failStaleProcessingMessage(sessionId, userId);
+      if (cleaned) {
+        console.log(`[Agent] 清理遗留 processing 行: sessionId=${sessionId.slice(0, 8)}`);
+      }
+    }
+    return res.json({ success: true, data: { cancelled } });
+  } catch (e: any) {
+    console.error('[Agent] 取消生成失败:', e?.message || e);
+    return res.status(500).json({ success: false, message: `取消生成失败: ${e?.message || e}` });
   }
 });
 

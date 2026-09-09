@@ -26,6 +26,7 @@ import { LlmService } from '../llm/llm.service';
 import { createAllTools } from './tools';
 import { fixMojibake } from './tools/file/filename';
 import { QASessionService } from './qa-session.service';
+import { generationRegistry } from './generation-registry';
 import { getUploadDir } from '../../config/upload';
 import { SteeringService } from './steering/steering.service';
 import { SkillsService } from './skills/skills.service';
@@ -226,8 +227,10 @@ export class AgentService {
     pendingAskAnswer?: { requestId: string; answer: string } | null;
     /** 中止信号：客户端断开/超时时由路由层 abort，streamText 随即取消 LLM 调用 */
     signal?: AbortSignal;
+    /** 断流恢复：本代生成的唯一令牌（generation-registry 落库去重凭据，路由层生成传入） */
+    generationToken?: string;
   }): Promise<any> {
-    const { messages, userId, sessionId, modelKey, toolPreset, toolNames, thinkingLevel, pendingAskAnswer, signal } = params;
+    const { messages, userId, sessionId, modelKey, toolPreset, toolNames, thinkingLevel, pendingAskAnswer, signal, generationToken } = params;
 
     // 1~3. 解析生效 LLM 配置（系统默认 + 会话 modelKey override）并创建模型实例
     //      （P0-2 公共层抽取：resolveEffConfig / createChatModel，与兑底链路共用；
@@ -446,6 +449,7 @@ export class AgentService {
           text,
           finishReason === 'error' ? 'failed' : 'completed',
           steps,
+          generationToken,
         );
 
         // P1-1：错误且无任何输出时补一条占位失败消息——保证会话历史可见失败痕迹，
@@ -859,24 +863,48 @@ export class AgentService {
    * 从 steps 提取工具调用并持久化 assistant 消息到 QAMessage（fire-and-forget）。
    * debug 存 toolCalls 供前端历史回看渲染 ToolCallChip；sources 承载知识引用溯源。
    */
-  private static persistAssistantFromSteps(
+  private static async persistAssistantFromSteps(
     sessionId: string | null | undefined,
     userId: string,
     text: string | undefined,
     status: string,
     steps?: any[],
-  ): void {
+    generationToken?: string,
+  ): Promise<void> {
     if (!sessionId || !text) return;
     const toolCalls = AgentService.extractToolCallsFromSteps(steps);
     // P1：思考过程一并持久化（历史回放还原 thinking；原实现只存 toolCalls）
     const reasoning = AgentService.extractReasoningFromSteps(steps);
+    const sources = AgentService.extractSourcesFromSteps(steps);
+    const debug = toolCalls.length > 0 || reasoning.length > 0 ? { toolCalls, reasoning } : undefined;
+
+    // 断流恢复协调（generation-registry）：该会话「本代生成」仍在途（tracker 首个
+    // text-delta 建了 status='processing' 的行）时，onFinish 改走「更新该行」，
+    // 避免重复 assistant 行。等待首行 create 落定（异步，最多 5s 兕底）后决策。
+    // fire-and-forget：onFinish 内不 await（落库失败仅告警，不影响主链路）
+    const inFlightMessageId = await generationRegistry
+      .getInFlightMessageId(sessionId, generationToken)
+      .catch(() => null);
+    if (inFlightMessageId) {
+      QASessionService.updateAssistantMessage(
+        inFlightMessageId,
+        text,
+        status === 'failed' ? 'failed' : 'completed',
+        sources,
+        debug,
+      ).catch((e: Error) => {
+        console.warn(`[Agent:QASession] 更新在途 assistant 消息失败: sessionId=${sessionId}`, (e as Error).message);
+      });
+      return;
+    }
+
     QASessionService.persistAssistantMessage(
       sessionId,
       userId,
       text,
       status as any,
-      AgentService.extractSourcesFromSteps(steps),
-      toolCalls.length > 0 || reasoning.length > 0 ? { toolCalls, reasoning } : undefined,
+      sources,
+      debug,
     ).catch((e: Error) => {
       console.warn(`[Agent:QASession] 持久化 assistant 消息失败: sessionId=${sessionId}`, (e as Error).message);
     });

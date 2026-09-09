@@ -340,14 +340,15 @@ export class QASessionService {
    *
    * @param messageId 消息 ID
    * @param content 完整内容
-   * @param status 最终状态
+   * @param status 最终状态（'processing' 供 generation-registry 断连续跑的增量回写；
+   *               前端已按该状态渲染为「生成中」样式的部分内容）
    * @param sources 引用来源（可选）
    * @param debug 调试/过程信息（可选）
    */
   static async updateAssistantMessage(
     messageId: string,
     content: string,
-    status: 'completed' | 'failed',
+    status: 'processing' | 'completed' | 'failed',
     sources?: any,
     debug?: any,
   ): Promise<boolean> {
@@ -364,6 +365,32 @@ export class QASessionService {
       return true;
     } catch (e) {
       console.warn(`[Agent:QASession] 更新 assistant 消息失败: messageId=${messageId}`, (e as Error).message);
+      return false;
+    }
+  }
+
+  /**
+   * 把会话中最新的 status='processing' assistant 行标记为 failed（断流恢复配套）。
+   *
+   * 场景：服务重启导致在途生成丢失时，DB 中残留 processing 行；用户取消生成
+   * （POST /generation/cancel）且注册表无在途条目时调用，避免历史里永远挂着
+   * 「生成中」。已累积的部分内容保留（仅改状态，不删正文）。
+   *
+   * @returns 是否实际清理了一行
+   */
+  static async failStaleProcessingMessage(sessionId: string, userId: string): Promise<boolean> {
+    try {
+      const session = await prisma.qASession.findFirst({ where: { id: sessionId, userId } });
+      if (!session) return false;
+      const stale = await prisma.qAMessage.findFirst({
+        where: { sessionId, role: 'assistant', status: 'processing' },
+        orderBy: { createdAt: 'desc' },
+      });
+      if (!stale) return false;
+      await prisma.qAMessage.update({ where: { id: stale.id }, data: { status: 'failed' } });
+      return true;
+    } catch (e) {
+      console.warn(`[Agent:QASession] 清理遗留 processing 行失败: sessionId=${sessionId}`, (e as Error).message);
       return false;
     }
   }

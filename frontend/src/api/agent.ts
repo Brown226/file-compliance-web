@@ -52,6 +52,25 @@ export interface MessageItem {
   updatedAt: string
 }
 
+/**
+ * 在途生成快照（断流恢复，GET /agent/generation/status 返回）
+ * 后端生成在浏览器刷新/关标签页后继续，前端凭此轮询恢复已生成的文本。
+ */
+export interface GenerationSnapshot {
+  /** 注册表是否存在本会话的生成记录（false = 已结束/服务重启丢失） */
+  tracked: boolean
+  /** 生成是否仍在途 */
+  active?: boolean
+  status?: 'streaming' | 'completed' | 'failed'
+  /** 已累积的 assistant 文本（轮询恢复用，最多落后实际生成 2s） */
+  text?: string
+  /** 已累积的思考文本 */
+  reasoning?: string
+  /** 对应 QAMessage 行 ID（前端过滤历史中同 id 的 processing 行用） */
+  messageId?: string | null
+  startedAt?: string
+}
+
 /** 列出用户会话 */
 export function listSessionsApi(limit = 50) {
   return request.get<SessionListItem[]>('/agent/sessions', { params: { limit } })
@@ -65,6 +84,16 @@ export function getSessionApi(sessionId: string) {
 /** 查询会话消息列表 */
 export function listMessagesApi(sessionId: string) {
   return request.get<MessageItem[]>(`/agent/sessions/${sessionId}/messages`)
+}
+
+/** 查询会话在途生成状态（断流恢复轮询） */
+export function getGenerationStatusApi(sessionId: string) {
+  return request.get<GenerationSnapshot>('/agent/generation/status', { params: { sessionId } })
+}
+
+/** 取消会话在途生成（「停止」按钮；断开后服务端仍在续跑，需显式取消） */
+export function cancelGenerationApi(sessionId: string) {
+  return request.post<{ cancelled: boolean }>('/agent/generation/cancel', { sessionId })
 }
 
 /** 重命名会话 */
