@@ -684,6 +684,13 @@ export class AgentService {
     if (!(providerId && modelName)) return config;
     const profile = await AgentService.findLlmProfile(providerId).catch(() => null);
     if (!(profile && profile.apiKey && profile.model)) return config;
+    // 防御：会话残留的 override 指向向量/重排序等工具模型时不可用于对话，
+    // 忽略 override 回退默认对话模型（来源：供应商配置面板 usage 字段，未设置视为 chat）
+    const profileUsage = (profile as any).usage;
+    if (profileUsage === 'embedding' || profileUsage === 'rerank') {
+      console.warn(`[Agent] 忽略会话模型 override（工具模型不可用于对话）: ${modelKey}`);
+      return config;
+    }
     console.log(`[Agent] 会话模型 override: ${modelKey}`);
     return {
       ...config,

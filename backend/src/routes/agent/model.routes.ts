@@ -47,6 +47,10 @@ router.get('/models', async (req: AuthRequest, res: Response) => {
       const profiles = Array.isArray(raw) ? raw : [];
       for (const p of profiles) {
         if (p?.id && p?.model) {
+          // 模型用途过滤：embedding/rerank 是工具模型，不可用于对话，不得进入对话选择器。
+          // usage 来源 = 供应商配置面板（usage: 'chat'|'embedding'|'vision'|'rerank'|'all'，
+          // 未设置视为 chat，兼容旧数据）。其余消费方（LLMConfig 各 Tab）已有同口径过滤。
+          if (p.usage === 'embedding' || p.usage === 'rerank') continue;
           // provider 分组用 p.name（真实供应商名，如 CNPE），而不是 p.id（随机串）。
           // llm_profiles 是「一 provider 一 model」扁平结构，同一供应商的多模型 name 相同，
           // 按 name 分组才能在对话下拉里归成一组（对齐 pi-web providers->models 两级视图）。
