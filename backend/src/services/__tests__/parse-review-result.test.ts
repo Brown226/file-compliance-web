@@ -382,8 +382,23 @@ describe('LlmService.parseReviewWithFailureMarker（P0 修复 2026-08-26：解�
     expect(result[0].ruleCode).toBe('RESULT_PARSE_FAILED');
   });
 
-  it('原始内容写入提示 description 帮助定位', () => {
+  it('原始内容写入 rawOutput 供结果页 Markdown 预览（2026-09-10 起全文留档，不再截断进 description）', () => {
     const result = parse('模型输出了奇怪格式的内容XYZ');
-    expect(result[0].description).toContain('奇怪格式的内容XYZ');
+    expect(result[0].rawOutput).toContain('奇怪格式的内容XYZ');
+  });
+
+  it('非 JSON 输出但兜底解析出条目时，也保留 rawOutput 供预览', () => {
+    const markdown = `## 一、全局性问题
+1. **“的/地”误用**
+   - “软件地安装路径” → “软件的安装路径”
+   - “软件地正常运行” → “软件的正常运行”`;
+    const result = parse(markdown);
+    expect(result.length).toBeGreaterThan(0);
+    expect(result[0].rawOutput).toContain('全局性问题');
+  });
+
+  it('合法 JSON 数组输出时不留 rawOutput（无需预览）', () => {
+    const result = parse('[{"issueType":"TYPO","originalText":"帐号","suggestedText":"账号"}]');
+    expect(result[0].rawOutput).toBeUndefined();
   });
 });

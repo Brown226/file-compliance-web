@@ -264,6 +264,19 @@
         </el-collapse>
       </div>
 
+      <!-- 2026-09-10: AI 原始输出（Markdown）预览
+           当 LLM 未按 JSON 结构化格式返回时（解析失败或仅部分解析），
+           把模型实际产出的内容完整呈现，确保结果不隐藏、避免用户误以为"无问题" -->
+      <div v-if="detail.rawOutput" class="raw-output-section">
+        <div class="raw-output-header" @click="rawOutputExpanded = !rawOutputExpanded">
+          <el-icon><DocumentIcon /></el-icon>
+          <span class="raw-output-title">AI 原始输出（未按结构化格式返回）</span>
+          <span class="raw-output-hint">以下为模型实际返回的文本，未经结构化解析，请人工核对</span>
+          <el-icon class="raw-output-arrow" :class="{ rotated: rawOutputExpanded }"><ArrowDown /></el-icon>
+        </div>
+        <div v-show="rawOutputExpanded" class="raw-output-body markdown-body" v-html="rawOutputHtml"></div>
+      </div>
+
       <!-- 标准引用匹配详情 -->
       <template v-if="detail.ruleCode?.startsWith('STD_')">
         <div class="std-ref-detail-section">
@@ -425,6 +438,7 @@ import {
 } from '@element-plus/icons-vue'
 import DiffHighlight from './DiffHighlight.vue'
 import { useIssueHelpers } from './composables'
+import { useMarkdown } from '@/composables/useMarkdown'
 import { submitReviewFeedbackApi, type FeedbackType } from '@/api/dashboard'
 
 const props = defineProps<{
@@ -457,6 +471,9 @@ const emit = defineEmits<{
 
 // 卡片展开状态：error 默认展开，其他默认折叠
 const cardExpanded = ref(props.detail.severity === 'error')
+
+// AI 原始输出预览展开态：默认展开——它出现即意味着结构化结果不可靠，内容需被看见
+const rawOutputExpanded = ref(true)
 
 // 来源内容展开状态
 const expandedSources = reactive<Record<number, boolean>>({})
@@ -497,6 +514,11 @@ const {
   getEntityTypeLabel,
   topSourceRefs,
 } = useIssueHelpers()
+
+// 2026-09-10：LLM 原始输出（Markdown）预览
+// 解析失败/部分解析时把模型实际返回的内容完整展示，避免用户误以为"本次审查无问题"
+const { renderMarkdown } = useMarkdown()
+const rawOutputHtml = computed(() => renderMarkdown(props.detail.rawOutput || ''))
 
 /** 条款类型中文映射 */
 const clauseTypeLabel = (type: string): string => {
@@ -1079,5 +1101,98 @@ async function submitFeedback(type: FeedbackType) {
   font-size: 12px;
   color: var(--color-success-600);
   font-weight: 500;
+}
+
+/* ===== 2026-09-10: AI 原始输出（Markdown）预览 ===== */
+.raw-output-section {
+  margin-top: 10px;
+  border: 1px solid var(--color-warning-border, #FDE68A);
+  border-radius: 6px;
+  background: var(--color-warning-bg, #FFFBEB);
+  overflow: hidden;
+}
+.raw-output-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 10px;
+  cursor: pointer;
+  user-select: none;
+  flex-wrap: wrap;
+}
+.raw-output-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--color-warning-text, #B45309);
+}
+.raw-output-hint {
+  font-size: 12px;
+  color: var(--color-gray-600, #6B7280);
+  flex: 1;
+  min-width: 0;
+}
+.raw-output-arrow {
+  transition: transform 0.2s;
+  color: var(--color-warning-text, #B45309);
+}
+.raw-output-arrow.rotated { transform: rotate(180deg); }
+.raw-output-body {
+  padding: 10px 12px;
+  border-top: 1px solid var(--color-warning-border, #FDE68A);
+  background: var(--bg, #fff);
+  font-size: 13px;
+  line-height: 1.7;
+  color: var(--text, #1F2937);
+  max-height: 520px;
+  overflow-y: auto;
+  word-break: break-word;
+}
+/* Markdown 元素基础排版（该组件未全局引入 markdown-body 样式） */
+.raw-output-body :deep(h1),
+.raw-output-body :deep(h2),
+.raw-output-body :deep(h3),
+.raw-output-body :deep(h4) {
+  margin: 12px 0 6px;
+  font-weight: 600;
+  line-height: 1.4;
+}
+.raw-output-body :deep(h1) { font-size: 16px; }
+.raw-output-body :deep(h2) { font-size: 15px; }
+.raw-output-body :deep(h3) { font-size: 14px; }
+.raw-output-body :deep(p) { margin: 6px 0; }
+.raw-output-body :deep(ul),
+.raw-output-body :deep(ol) { margin: 6px 0; padding-left: 22px; }
+.raw-output-body :deep(li) { margin: 3px 0; }
+.raw-output-body :deep(code) {
+  background: var(--color-gray-100, #F3F4F6);
+  padding: 1px 5px;
+  border-radius: 3px;
+  font-size: 12px;
+  font-family: var(--font-mono, Consolas, monospace);
+}
+.raw-output-body :deep(pre) {
+  background: var(--color-gray-100, #F3F4F6);
+  padding: 10px;
+  border-radius: 5px;
+  overflow-x: auto;
+}
+.raw-output-body :deep(pre code) { background: none; padding: 0; }
+.raw-output-body :deep(table) {
+  border-collapse: collapse;
+  margin: 8px 0;
+  width: 100%;
+}
+.raw-output-body :deep(th),
+.raw-output-body :deep(td) {
+  border: 1px solid var(--border, #E5E7EB);
+  padding: 5px 8px;
+  text-align: left;
+}
+.raw-output-body :deep(th) { background: var(--color-gray-50, #F9FAFB); font-weight: 600; }
+.raw-output-body :deep(blockquote) {
+  margin: 8px 0;
+  padding-left: 10px;
+  border-left: 3px solid var(--border, #E5E7EB);
+  color: var(--text-muted, #6B7280);
 }
 </style>

@@ -73,6 +73,10 @@ export interface ReviewIssue {
   confidence?: 'HIGH' | 'MEDIUM' | 'LOW';
   /** 判标理由（智能判标 LLM 输出） */
   confidenceReason?: string;
+  /** LLM 未按 JSON 输出时的原始文本留档（Markdown 全文）。
+   *  仅 RESULT_PARSE_FAILED 标记行携带；结果页以 Markdown 预览展示，
+   *  确保解析失败时用户仍能看到模型实际产出，而不是只看到一行告警。 */
+  rawOutput?: string;
 }
 
 export interface LocateMeta {
@@ -331,12 +335,23 @@ export class LlmService {
    */
   private static parseReviewWithFailureMarker(content: string, text: string): ReviewIssue[] {
     const issues = this.parseReviewResult(content);
+    // 是否为「LLM 按约定 JSON 格式产出」——是则无需留档原始文本；否则一律留档，
+    // 见下方 partial 分支说明。
+    const isLegitJson = LlmService.isLegitJsonArrayOutput(content);
     if (issues.length > 0) {
-      return this.applyTextFidelity(issues, text);
+      const withFidelity = this.applyTextFidelity(issues, text);
+      // 2026-09-10 部分解析成功也要留档：模型用 Markdown 罗列了 30 条问题、兜底解析
+      // 只救回 2 条时，若仅挂个"部分解析"标记而不给原文，剩余 28 条仍然被隐藏。
+      // 故只要输出不是合法 JSON 数组，就把原始全文挂到首条上，供结果页 Markdown 预览。
+      if (!isLegitJson) {
+        console.warn(`[LLM] 审查结果为非 JSON 格式（Markdown/自然语言），已兜底解析 ${issues.length} 条并保留原始输出供结果页预览`);
+        return withFidelity.map((it, i) => (i === 0 ? { ...it, rawOutput: content } : it));
+      }
+      return withFidelity;
     }
     // 合法 JSON 数组输出（含空数组、含业务过滤后为空）→ LLM 按格式产出了结构化结果，
     // 即使条目被 parseReviewResult 过滤掉也是「正常解析、无有效问题」，不打扰用户
-    if (LlmService.isLegitJsonArrayOutput(content)) {
+    if (isLegitJson) {
       return [];
     }
     console.warn('[LLM] 审查结果无法解析为结构化问题（内容非合法 JSON 数组），附加可见提示:', content.substring(0, 200));
@@ -345,8 +360,9 @@ export class LlmService {
       ruleCode: 'RESULT_PARSE_FAILED',
       severity: 'warning',
       originalText: '[AI 审查结果无法解析]',
-      description: `本次 AI 审查未返回可解析的结构化结果（模型输出格式异常或内容为空），该文本段可能未被有效审查，结果可能遗漏问题。建议重新审查本文件。原始返回（片段）：${content.substring(0, 150)}`,
-      recommendation: '重新发起审查；若持续出现，请检查 LLM 配置或更换模型。',
+      description: `本次 AI 审查未返回可解析的结构化结果（模型输出格式异常或内容为空），该文本段可能未被有效审查，结果可能遗漏问题。建议重新审查本文件。`,
+      recommendation: '可展开下方「原始输出」查看模型实际返回内容；或重新发起审查、检查 LLM 配置/更换模型。',
+      ...(content.trim() ? { rawOutput: content } : {}),
     } as ReviewIssue];
   }
 
@@ -430,9 +446,22 @@ export class LlmService {
     const lines = content.split('\n');
     let inTable = false;
     let tableHeaderDetected = false;
+    // 最近一个标题/分类行（如 "1. **“的/地”误用**"、"## 一、全局性问题"），
+    // 用于给下方的「原文 → 建议」条目推断问题类型——这类条目的正文本身
+    // 往往不含类型关键词（如“软件地安装路径”），必须借上下文才能分类。
+    let currentHeading = '';
 
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i].trim();
+
+      // === 记录标题/分类行（供下方箭头条目推断类型）===
+      // 命中即更新 currentHeading，但**不 continue**——标题行本身不是问题条目
+      const headingMatch = line.match(/^#{1,6}\s+(.+)$/)
+        || line.match(/^[-*]?\s*\*{1,2}([^*]+)\*{1,2}\s*$/)
+        || line.match(/^\d+[.、)]\s*\*{1,2}([^*]+)\*{1,2}\s*$/);
+      if (headingMatch) {
+        currentHeading = headingMatch[1].replace(/\*+/g, '').trim();
+      }
 
       // === Markdown 表格解析 ===
       if (line.startsWith('|') && line.endsWith('|')) {
@@ -546,6 +575,47 @@ export class LlmService {
         }
       }
 
+      // === 「原文 → 建议」箭头条目解析（2026-09-10 新增）===
+      // 背景：TYPO_GRAMMAR 等模式下模型有时不按 JSON 输出，而是自然语言罗列问题：
+      //   - **“的/地”误用**
+      //     - “软件地安装路径” → “软件的安装路径”
+      //   1. “帐号” → “账号”
+      // 既有兜底（表格 / 加粗标签 / 带冒号列表）均覆盖不到这种「引号原文 → 引号建议」结构，
+      // 导致「AI 已审出问题但结构化结果为空」（实测同一任务三分片兜底解析 0 命中）。
+      //
+      // 注意：此处**不能**复用 isLikelyCategoryLabel——其 `/^[^，,。；:：]{1,10}$/`
+      // 规则会把「软件地安装路径」这类 10 字内、无标点的原文一律判为分类标签而丢弃。
+      // 箭头两侧是从文档逐字引用的原文/建议，本就是强问题信号，改用精准黑名单。
+      const arrowMatch = line.match(/^(?:[-*]|\d+[.、)])\s*(.+?)\s*(?:→|->|⇒|=>)\s*(.+)$/);
+      if (arrowMatch) {
+        const unquote = (s: string): string => s
+          .replace(/\*+/g, '')
+          .replace(/^["“”‘’「『《]+/, '')
+          .replace(/["“”‘’」』》]+$/, '')
+          .replace(/[。；;]+$/, '')
+          .trim();
+        const originalText = unquote(arrowMatch[1]);
+        const suggestedText = unquote(arrowMatch[2]);
+        const isCategoryWord = /^(技术文档|申报文件|法律文件|管理文件|程序文件|作业文件|记录文件|报告文件|图纸文件|标准规范|合同文件|设计文件|施工文件|验收文件|错别字|语法|标点|术语|单位符号|格式|通顺性|完整性|一致性)$/.test(originalText);
+        if (
+          originalText.length >= 2
+          && suggestedText.length > 0
+          && originalText !== suggestedText
+          && !isCategoryWord
+          && !/^[一二三四五六七八九十]+$/.test(originalText)
+        ) {
+          issues.push({
+            issueType: this.inferIssueType(`${currentHeading} ${originalText} ${suggestedText}`),
+            originalText,
+            suggestedText,
+            description: currentHeading
+              ? `【${currentHeading}】“${originalText}” → “${suggestedText}”`
+              : `“${originalText}” → “${suggestedText}”`,
+          });
+        }
+        continue;
+      }
+
       // === 引用块解析（> 引用的建议修改内容）===
       const quoteMatch = line.match(/^>\s*\*{0,2}(.+?)\*{0,2}\s*[：:]\s*(.+)/);
       if (quoteMatch && issues.length > 0) {
@@ -566,7 +636,13 @@ export class LlmService {
   private static inferIssueType(text: string): string {
     const t = text.toLowerCase();
     // 文本错误：错别字、拼写、语句不通顺
-    if (/错别字|错字|拼写|typo|笔误|语句不通|语病|fluency/.test(t)) return 'TYPO';
+    // 2026-09-10 扩充：兜底解析器新增「原文 → 建议」箭头条目后，其类型靠标题/上下文推断，
+    // 常见标题如"的/地误用""漏字""标点"不含"错别字"，会落到 VIOLATION 而被
+    // TYPO_GRAMMAR handler 的 allowedTypes(TYPO/FLUENCY/CONSISTENCY) 过滤掉——
+    // 即"解析出来了但结果仍为空"。故补齐校对类关键词。
+    if (/错别字|错字|别字|拼写|typo|笔误|误用|误写|错用|漏字|多字|语句不通|语病|通顺|fluency/.test(t)) return 'TYPO';
+    // 标点/空格/排版类文字问题同属校对范畴（TYPO_GRAMMAR 模式下按 TYPO 计）
+    if (/标点|空格|排版|大小写/.test(t)) return 'TYPO';
     // 一致性：不一致、不匹配、命名编码问题、交叉引用
     if (/一致|不匹配|不一致|不统一|命名|编码|名称|标识|交叉引用|cross.?reference/.test(t)) return 'CONSISTENCY';
     // 完整性：缺少、缺失、遗漏

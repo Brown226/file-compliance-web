@@ -240,6 +240,11 @@ model TaskDetail {
 
   locateMeta       Json?    @map("locate_meta") // 新版定位元数据：absolute range + quote + context
 
+  // 2026-09-10：LLM 未按 JSON 输出时的「原始输出」留档（Markdown 全文）。
+  // 仅挂在 RESULT_PARSE_FAILED 标记行上；结果页以 Markdown 预览展示，
+  // 确保「解析不出来」时用户仍能看到模型实际产出的内容，避免误认为"无问题"。
+  rawOutput        String?  @map("raw_output") @db.Text
+
   // 人工复核状态
   reviewStatus     String?  @default("CONFIRMED") // PENDING_REVIEW / CONFIRMED / DISMISSED
 

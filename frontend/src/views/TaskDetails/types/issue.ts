@@ -80,4 +80,7 @@ export interface IssueDetail {
   judgeConfidence?: 'HIGH' | 'MEDIUM' | 'LOW' | null
   /** 判标理由（LOW 时卡内展示，解释为何判为疑似误报） */
   judgeReason?: string | null
+  /** LLM 未按 JSON 输出时的原始文本留档（Markdown）。仅解析失败/部分解析条携带，
+   *  卡内以 Markdown 预览展示，确保用户能看到模型实际产出而非只看到一行告警。 */
+  rawOutput?: string | null
 }

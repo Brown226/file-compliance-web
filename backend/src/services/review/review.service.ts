@@ -1645,6 +1645,8 @@ const fileContexts = task.files.map(file => {
             // DEC-1 修复：透传 handler 层的 reviewSource 标记（DEC 的 COMPLETENESS/COMPLIANCE/RULE_FALLBACK），
             // 无标记时保持 'AI'。此前写死 'AI' 导致前端 DEC 双清单按 reviewSource 过滤永远为空。
             reviewSource: (issue as any).reviewSource || 'AI',
+            // 2026-09-10：LLM 非 JSON 输出时的原始文本留档（仅解析失败/部分解析条携带）
+            rawOutput: (issue as any).rawOutput || null,
           };
         }).filter((x): x is NonNullable<typeof x> => x !== null);
         if (quoteNotFoundCount > 0) {
@@ -1883,6 +1885,8 @@ const fileContexts = task.files.map(file => {
             recommendation: issue.recommendation || null,
             // DEC-1 修复：透传 handler 层 reviewSource 标记（DEC 的 COMPLETENESS/COMPLIANCE/RULE_FALLBACK），无标记保持 'AI'
             reviewSource: (issue as any).reviewSource || 'AI',
+            // 2026-09-10：LLM 非 JSON 输出时的原始文本留档（仅解析失败/部分解析条携带）
+            rawOutput: (issue as any).rawOutput || null,
           };
         }).filter((x): x is NonNullable<typeof x> => x !== null);
         if (quoteNotFoundCount > 0) {

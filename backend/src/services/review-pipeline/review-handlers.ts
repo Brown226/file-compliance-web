@@ -45,6 +45,18 @@ function buildNoTextIssue(ctx: PipelineContext): ReviewIssue {
   } as ReviewIssue;
 }
 
+/**
+ * 「系统级可见性」标记的 ruleCode 白名单。
+ *
+ * 这些条目的语义不是"发现了业务问题"，而是"本次审查可能没审到，必须让用户看见"，
+ * 因此不受各模式 issueType 白名单（如 TYPO_GRAMMAR 只允许 TYPO/FLUENCY/CONSISTENCY）约束。
+ * 它们通常以 COMPLETENESS 类型承载。
+ *
+ * - RESULT_PARSE_FAILED：LLM 未按 JSON 输出且兜底解析不出条目
+ * - OCR_FAILED：文本不可提取（扫描件 + OCR 不可用）
+ */
+const VISIBILITY_RULE_CODES = new Set(['RESULT_PARSE_FAILED', 'OCR_FAILED']);
+
 /** 各模式的显示名称与描述 */
 const MODE_META: Record<ReviewModeType, { displayName: string; description: string; needsRefFiles: boolean }> = {
   LIBRARY_REVIEW: { displayName: '以库审文', description: '使用标准库+规则引擎+AI进行合规审查', needsRefFiles: false },
@@ -121,7 +133,20 @@ const handleTypoGrammar: ReviewHandler = async (ctx) => {
 
   // 基础校对模式允许 TYPO、FLUENCY 和轻量 CONSISTENCY（上下文数据矛盾），拒绝格式/合规/完整性等超出范围的问题
   const allowedTypes = new Set(['TYPO', 'FLUENCY', 'CONSISTENCY']);
-  result.issues = result.issues.filter(issue => allowedTypes.has(issue.issueType));
+  // 先把「AI 原始输出」抽出来再过滤：rawOutput 挂在首条上，而首条可能是越界类型
+  // （实测某分片解析 4 条、全被类型过滤，rawOutput 一并丢失 → 用户依然什么都看不到）。
+  // 抽出后无论中间经过哪些过滤/去重，最后都重新挂回，确保原文不被任何一环吃掉。
+  const pendingRawOutputs = result.issues
+    .map((it: any) => it.rawOutput)
+    .filter((r: any): r is string => typeof r === 'string' && r.trim().length > 0);
+  result.issues = result.issues.filter(issue =>
+    allowedTypes.has(issue.issueType)
+    // 例外：解析失败/无法提取文本等「系统级可见性」标记必须保留。
+    // 它们以 COMPLETENESS 承载（见 llm.service parseReviewWithFailureMarker、buildNoTextIssue），
+    // 若被本过滤器丢弃，用户会看到「审查完成、0 问题」的假合规
+    // —— 2026-09-10 排查「AI 返回 Markdown 致结果为空」时暴露的第二个坑。
+    || VISIBILITY_RULE_CODES.has(String(issue.ruleCode || '')),
+  );
 
   // FLUENCY（语病/修辞微调，如"空水→空管"）是低价值噪声，占校对产出过半。
   // 借鉴 TextGuard：修辞类归 info 级，避免淹没 TYPO/CONSISTENCY 等高价值问题。
@@ -143,6 +168,21 @@ const handleTypoGrammar: ReviewHandler = async (ctx) => {
     fuzzyMinLength: 4,
     enableFuzzy: true,
   });
+
+  // 重新挂回「AI 原始输出」：若合并后已无任何条目可承载（该分片全被过滤/去重），
+  // 则补一条 info 级占位条目承载原文——宁可多一行提示，也不能让原文消失。
+  if (pendingRawOutputs.length > 0 && !mergedIssues.some((it: any) => it.rawOutput)) {
+    const raw = pendingRawOutputs.join('\n\n---\n\n');
+    mergedIssues.push({
+      issueType: 'TYPO',
+      ruleCode: 'RESULT_PARSE_FAILED',
+      severity: 'info',
+      originalText: '[AI 原始输出]',
+      description: '本次 AI 未按结构化格式返回结果，以下为模型实际输出的原文，请人工核对。',
+      rawOutput: raw,
+    } as any);
+  }
+
   const usedEngine = ruleReviewIssues.length > 0
     ? `${result.engine}+rule-dict+unct`
     : result.engine;
