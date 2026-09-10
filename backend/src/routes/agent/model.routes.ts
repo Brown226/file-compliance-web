@@ -121,18 +121,33 @@ router.put('/providers', requireRole('ADMIN'), async (req: AuthRequest, res: Res
     if (!Array.isArray(profiles)) {
       return res.status(400).json({ success: false, message: 'profiles 必须为数组' });
     }
-    
+
+    // 2026-09-10 规范化：入库前 trim 关键字符串字段。
+    // 修复真实案例：粘贴密钥时带入尾随空格（长度 50 vs 49），虽部分网关容忍，
+    // 但换网关即 401，且排查极难。trim 一次杜绝此类静默故障。
+    const normalized = profiles.map((p: any) => ({
+      ...p,
+      ...(typeof p?.apiKey === 'string' ? { apiKey: p.apiKey.trim() } : {}),
+      ...(typeof p?.apiBase === 'string' ? { apiBase: p.apiBase.trim() } : {}),
+      ...(typeof p?.model === 'string' ? { model: p.model.trim() } : {}),
+      ...(typeof p?.name === 'string' ? { name: p.name.trim() } : {}),
+      ...(typeof p?.id === 'string' ? { id: p.id.trim() } : {}),
+    }));
+
     await prisma.systemConfig.upsert({
       where: { key: 'llm_profiles' },
-      update: { value: JSON.stringify(profiles) },
-      create: { key: 'llm_profiles', value: JSON.stringify(profiles) },
+      update: { value: JSON.stringify(normalized) },
+      create: { key: 'llm_profiles', value: JSON.stringify(normalized) },
     });
 
     // P0 修复（2026-08-28）：保存后清 LLM 配置/能力缓存——否则审查与 Agent
     // 最长 1 小时内仍用旧 provider 配置（含密钥/模型/能力字段），「改了没反应」
     LlmService.invalidateLlmCaches();
+    // 同步清向量/重排序配置缓存（它们也可能引用 llm_profiles 里的凭证）
+    const { EmbeddingService } = await import('../../services/knowledge/embedding.service');
+    EmbeddingService.invalidateConfigCaches?.();
 
-    return res.json({ success: true, data: profiles });
+    return res.json({ success: true, data: normalized });
   } catch (e: any) {
     console.error('[Agent] 保存 providers 失败:', e?.message || e);
     return res.status(500).json({ success: false, message: `保存 providers 失败: ${e?.message || e}` });

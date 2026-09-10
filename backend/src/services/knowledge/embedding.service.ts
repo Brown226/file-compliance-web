@@ -44,6 +44,16 @@ export class EmbeddingService {
   private static _rerankConfigCache: { config: RerankConfig | null; timestamp: number } | null = null;
   private static readonly CONFIG_CACHE_TTL = 5 * 60 * 1000; // 5分钟缓存
 
+  /**
+   * 清空向量/重排序配置缓存。
+   * 供 Provider 保存接口调用——这两个配置都可能引用 llm_profiles 里的凭证，
+   * Provider 改了密钥后若不清缓存，最长 5 分钟内仍用旧凭证（静默失效）。
+   */
+  static invalidateConfigCaches(): void {
+    this._embeddingConfigCache = null;
+    this._rerankConfigCache = null;
+  }
+
   private static async getEmbeddingConfig(): Promise<EmbeddingConfig | null> {
     // 检查缓存
     if (this._embeddingConfigCache && Date.now() - this._embeddingConfigCache.timestamp < this.CONFIG_CACHE_TTL) {
@@ -108,7 +118,34 @@ export class EmbeddingService {
       let result: RerankConfig | null = null;
       if (config?.value && typeof config.value === 'object') {
         const v = config.value as any;
-        if (v.apiKey) {
+
+        // 新结构：providerId 引用 LlmProfile（与 getEmbeddingConfig 同口径）
+        // 2026-09-10 修复：原先只认旧结构（v.apiKey），导致 Provider 配置里改了密钥后
+        // reranker_model 里展开复制的那份旧密钥不会跟着变，出现「Provider 改了 key、
+        // 重排序仍在用旧 key」的静默失效。现改为优先按 providerId 实时引用。
+        if (v.providerId) {
+          const profilesCfg = await prisma.systemConfig.findUnique({
+            where: { key: 'llm_profiles' },
+          });
+          if (profilesCfg?.value) {
+            const profilesRaw =
+              typeof profilesCfg.value === 'string'
+                ? JSON.parse(profilesCfg.value)
+                : profilesCfg.value;
+            const profiles = Array.isArray(profilesRaw) ? profilesRaw : [];
+            const profile = profiles.find((p: any) => p.id === v.providerId);
+            if (profile && profile.apiKey) {
+              result = {
+                baseUrl: profile.apiBase || 'https://api.siliconflow.cn/v1',
+                apiKey: profile.apiKey,
+                model: profile.model || 'BAAI/bge-reranker-v2-m3',
+              };
+            }
+          }
+        }
+
+        // 兜底：旧结构（直接写死凭证）
+        if (!result && v.apiKey) {
           result = {
             baseUrl: v.apiBaseUrl || 'https://api.siliconflow.cn/v1',
             apiKey: v.apiKey,
