@@ -16,6 +16,7 @@ import { parallelLimit } from '../../utils/parallel';
 import { getModeCapabilitiesConfig, ParamToleranceConfig } from '../review-pipeline/mode-config.service';
 import { getToleranceForUnit } from '../review-pipeline/param-tolerance';
 import { convertToBaseUnit, withinTolerance } from './unit-convert'; // P1-5: 共享单位换算（替代私有 2 维实现）
+import { realIssueWhere } from './issue-query.util';
 import { LlmService, TextChunk } from '../llm/llm.service';
 import { PromptLoader } from '../prompts';
 import { CONSISTENCY_DIMENSIONS } from '../prompts';
@@ -1322,10 +1323,8 @@ ${fileBlocks}
    */
   private static async updateFileErrorCount(fileId: string): Promise<void> {
     const count = await prisma.taskDetail.count({
-      where: {
-        fileId,
-        ruleCode: { not: 'NO_RESULT' },
-      },
+      // 2026-09-10：realIssueWhere——原 `not: 'NO_RESULT'` 漏掉 ruleCode=NULL 的 AI 条目
+      where: realIssueWhere({ fileId }),
     });
     await prisma.taskFile.update({
       where: { id: fileId },

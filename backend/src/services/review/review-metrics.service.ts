@@ -17,6 +17,7 @@
  */
 
 import prisma from '../../config/db';
+import { realIssueWhere } from './issue-query.util';
 
 export interface MetricsResult {
   precision: number | null;   // 精确率 = useful / (useful + false_positive)；无反馈时 null（避免假 100%）
@@ -38,8 +39,10 @@ export interface TrendPoint {
 function issueWhere(extra: any = {}): any {
   return {
     issueType: { not: 'REVIEW_SUMMARY' },
-    ruleCode: { not: 'NO_RESULT' },
-    ...extra,
+    // 2026-09-10：realIssueWhere 显式包含 ruleCode=NULL 的 AI 条目。
+    // 原 `ruleCode: { not: 'NO_RESULT' }` 因 SQL 三值逻辑会连 NULL 一起排除，
+    // 导致精确率/采纳率等指标的分母系统性偏小。
+    ...realIssueWhere(extra),
   };
 }
 

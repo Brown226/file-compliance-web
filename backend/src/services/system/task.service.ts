@@ -10,6 +10,7 @@ import { ReviewPlan, ReviewEvidenceSource, normalizeEvidenceSources, isReviewObj
 import { ReviewModeType } from '../review-pipeline/types';
 import { resolveFilePath } from '../../config/upload';
 import { StageRunner } from '../review/stage-runner.service';
+import { realIssueWhere } from '../review/issue-query.util';
 
 export class TaskService {
   /** 将前端 entryModule 映射为 ReviewMode 枚举值 */
@@ -381,7 +382,18 @@ export class TaskService {
             select: { id: true, username: true, name: true }
           },
           _count: {
-            select: { files: true, details: { where: { ruleCode: { not: 'NO_RESULT' } } } }
+            // 统计「真实问题数」：排除 NO_RESULT 系统占位行。
+            //
+            // ⚠️ 2026-09-10 修复（列表数与详情数不一致，如列表 1 / 详情 64）：
+            // 原先写 `{ ruleCode: { not: 'NO_RESULT' } }`，Prisma 生成 SQL 为
+            // `ruleCode <> 'NO_RESULT'`；SQL 三值逻辑下 `NULL <> 'NO_RESULT'` 为 NULL（非 TRUE），
+            // **ruleCode 为 NULL 的行被整体排除**。而 AI 兜底解析出的条目往往没有规则编号，
+            // 于是列表把它们全漏掉，详情页无此过滤 → 两边数量对不上。
+            // 统一改用 realIssueWhere（显式包含 NULL，口径与详情页一致）。
+            select: {
+              files: true,
+              details: { where: realIssueWhere() },
+            },
           },
           files: {
             select: { status: true, textLength: true, processedLength: true, errorCount: true }
@@ -780,10 +792,9 @@ export class TaskService {
     // 更新文件错误计数
     if (data.fileId) {
       const count = await prisma.taskDetail.count({
-        where: {
-          fileId: data.fileId,
-          ruleCode: { not: 'NO_RESULT' },
-        }
+        // 2026-09-10：改用 realIssueWhere——原 `ruleCode: { not: 'NO_RESULT' }`
+        // 会连同 ruleCode=NULL 的 AI 条目一起漏掉（SQL 三值逻辑），导致文件级计数偏少。
+        where: realIssueWhere({ fileId: data.fileId }),
       });
       await prisma.taskFile.update({
         where: { id: data.fileId },

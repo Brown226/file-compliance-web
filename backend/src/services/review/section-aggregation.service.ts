@@ -19,6 +19,7 @@ import { LlmService } from '../llm/llm.service';
 import { TextExtractionService } from '../review-pipeline/text-extraction.service';
 import { resolveFilePath } from '../../config/upload';
 import { normalizeText } from './falsePositiveLibrary.service'; // P1-3: 归一化口径与主链路一致
+import { realIssueWhere } from './issue-query.util';
 
 /** LLM 提取出的系统描述实体 */
 interface SystemEntity {
@@ -470,10 +471,8 @@ ${valuesList}
    */
   private static async updateFileErrorCount(fileId: string): Promise<void> {
     const count = await prisma.taskDetail.count({
-      where: {
-        fileId,
-        ruleCode: { not: 'NO_RESULT' },
-      },
+      // 2026-09-10：realIssueWhere——原 `not: 'NO_RESULT'` 漏掉 ruleCode=NULL 的 AI 条目
+      where: realIssueWhere({ fileId }),
     });
     await prisma.taskFile.update({
       where: { id: fileId },

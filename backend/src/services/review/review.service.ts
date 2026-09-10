@@ -26,6 +26,7 @@ import { getMaxConcurrentReviews } from '../../utils/system-config';
 import { normalizeText } from './falsePositiveLibrary.service';
 import { StageRunner, StageRunnerHandle } from './stage-runner.service';
 import { ReportService } from './report.service';
+import { realIssueWhere } from './issue-query.util';
 import { levenshteinDistance } from '../../utils/issue-dedup';
 
 /**
@@ -1919,11 +1920,9 @@ const fileContexts = task.files.map(file => {
     const skippedNoText = !ctx.extractedText || ctx.extractedText.trim().length === 0;
     if (!skippedNoText && slowResult.aiIssues.length === 0) {
       const existingIssueCount = await prisma.taskDetail.count({
-        where: {
-          taskId,
-          fileId: file.id,
-          ruleCode: { not: 'NO_RESULT' },
-        },
+        // 2026-09-10：realIssueWhere 显式包含 ruleCode=NULL 的 AI 条目
+        // （原 `not: 'NO_RESULT'` 会因 SQL 三值逻辑把 NULL 一并排除，导致误判"无问题"）
+        where: realIssueWhere({ taskId, fileId: file.id }),
       }).catch(() => 0);
 
       if (existingIssueCount === 0) {
@@ -1999,10 +1998,8 @@ const fileContexts = task.files.map(file => {
    */
   private static async updateFileErrorCount(fileId: string): Promise<void> {
     const count = await prisma.taskDetail.count({
-      where: {
-        fileId,
-        ruleCode: { not: 'NO_RESULT' },
-      },
+      // 2026-09-10：realIssueWhere——原 `not: 'NO_RESULT'` 漏掉 ruleCode=NULL 的 AI 条目
+      where: realIssueWhere({ fileId }),
     });
     await prisma.taskFile.update({
       where: { id: fileId },
