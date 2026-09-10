@@ -907,7 +907,7 @@ interface TabConfig {
 
 const tabs = computed<TabConfig[]>(() => {
   const result: TabConfig[] = [
-    { key: 'overview', label: '审查摘要', icon: 'DataAnalysis' },
+    { key: 'overview', label: '审查报告', icon: 'Document' },
   ]
   if (isDecReviewMode.value) {
     result.push(

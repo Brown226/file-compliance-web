@@ -208,9 +208,9 @@ export function useReviewStats(
 
     switch (key) {
       case 'overview':
-        return badges.overview.hasIssues
-          ? { value: badges.overview.total, type: 'danger' as const }
-          : { value: '✓', type: 'success' as const }
+        // 2026-09-10：该 Tab 已由「审查摘要」改为「审查报告」，展示 AI 撰写的报告正文，
+        // 不再是问题聚合视图 → 不再显示问题数字徽标（用户明确要求去掉）。
+        return null
       case 'suggestions':
         if (badges.suggestions.total === 0) return null
         return {
