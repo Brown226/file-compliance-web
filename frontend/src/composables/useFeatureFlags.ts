@@ -46,3 +46,17 @@ export function resetFeatureFlags() {
   loaded.value = false
   loadingPromise.value = null
 }
+
+/**
+ * 强制重新拉取开关（管理员在「功能管理」切换开关后调用）
+ *
+ * 背景：本模块是「加载一次即缓存」的单例（loadFeatureFlags 有 `if (loaded) return`）。
+ * 而 FeatureFlags.vue 切换开关只更新 DB 与自身行内状态，原先没有任何刷新入口，
+ * 导致同一会话内切换开关后界面纹丝不动，必须 F5 硬刷新才生效——
+ * 表现为「功能开关不能真实控制模块展示」。
+ */
+export async function refreshFeatureFlags(): Promise<void> {
+  loaded.value = false
+  loadingPromise.value = null
+  await loadFeatureFlags()
+}

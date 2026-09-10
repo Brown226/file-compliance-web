@@ -60,6 +60,7 @@
 import { ref, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import { getFeatureFlagsApi, updateFeatureFlagApi, type FeatureFlag } from '@/api/system'
+import { refreshFeatureFlags } from '@/composables/useFeatureFlags'
 
 const flags = ref<FeatureFlag[]>([])
 const loading = ref(false)
@@ -88,6 +89,10 @@ const handleToggle = async (row: FeatureFlag, enabled: boolean) => {
   try {
     await updateFeatureFlagApi(row.key, enabled)
     row.enabled = enabled
+    // 关键：同步刷新前端全局开关缓存
+    // 该缓存是「加载一次」的单例，不刷新则本次会话内入口卡片/菜单不会变化
+    // （表现为「开关不能真实控制模块展示」，必须 F5 才生效）
+    await refreshFeatureFlags()
     ElMessage.success(`${row.label} 已${enabled ? '启用' : '禁用'}`)
   } catch (e: any) {
     ElMessage.error('更新失败: ' + (e.message || e))
