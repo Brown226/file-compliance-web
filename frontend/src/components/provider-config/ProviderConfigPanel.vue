@@ -113,12 +113,24 @@
               <span class="pcfg-field-hint">支持环境变量名或直接填写密钥</span>
             </div>
 
+            <div class="pcfg-field">
+              <span class="pcfg-field-label">接口格式</span>
+              <select v-model="currentProvider.apiFormat" class="pcfg-text-input">
+                <option value="openai">OpenAI 兼容（/chat/completions）</option>
+                <option value="hezhi">核智大模型（/hz_model 自定义协议）</option>
+              </select>
+              <span v-if="currentProvider.apiFormat === 'hezhi'" class="pcfg-field-hint">
+                API 密钥填 appkey；不支持工具调用/流式，对话为非流式整段返回；模型发现不可用
+              </span>
+            </div>
+
             <!-- 模型发现 -->
             <div class="pcfg-field">
               <span class="pcfg-field-label">模型发现</span>
               <button
                 class="pcfg-btn-discover"
-                :disabled="!currentProvider.baseUrl?.trim() || discovery.phase === 'loading'"
+                :disabled="!currentProvider.baseUrl?.trim() || currentProvider.apiFormat === 'hezhi' || discovery.phase === 'loading'"
+                :title="currentProvider.apiFormat === 'hezhi' ? '核智自定义协议不支持模型发现，请手动添加模型' : ''"
                 @click="handleDiscover"
               >
                 {{ discovery.phase === 'loading' ? '拉取中…' : discovery.phase === 'success' ? '重新拉取' : '从服务端拉取模型列表' }}
@@ -364,6 +376,8 @@ interface TreeModel {
 interface TreeProvider {
   baseUrl?: string
   apiKey?: string
+  /** 接口格式：openai（默认）| hezhi（核智自定义协议） */
+  apiFormat?: 'openai' | 'hezhi'
   _originalProvider?: string
   models: TreeModel[]
 }
@@ -459,6 +473,7 @@ async function loadConfig() {
         providers[name] = {
           baseUrl: p.apiBase,
           apiKey: p.apiKey,
+          apiFormat: p.apiFormat === 'hezhi' ? 'hezhi' : 'openai',
           _originalProvider: p.provider || 'openai-compatible',
           models: [],
         }
@@ -559,7 +574,7 @@ function addCustomProvider() {
   let name = 'new-provider'
   let n = 1
   while (config.value.providers[name]) name = `new-provider-${n++}`
-  config.value.providers[name] = { api: 'openai-completions', models: [] }
+  config.value.providers[name] = { api: 'openai-completions', apiFormat: 'openai', models: [] }
   selection.value = { type: 'provider', name }
 }
 
@@ -708,6 +723,7 @@ async function handleTest() {
       apiBase: pv.baseUrl || '',
       apiKey: pv.apiKey || '',
       model: model.id.trim(),
+      apiFormat: pv.apiFormat === 'hezhi' ? 'hezhi' : 'openai',
     })
     if (res.data?.ok) {
       modelTest.value = { phase: 'success' }
@@ -805,6 +821,7 @@ async function handleSave() {
           provider: pv._originalProvider || orig.provider || 'openai-compatible',
           apiBase: pv.baseUrl,
           apiKey: pv.apiKey,
+          apiFormat: pv.apiFormat === 'hezhi' ? 'hezhi' : 'openai',
           model: m.id.trim(),
           isActive: orig.isActive ?? false,
           isEnabled: orig.isEnabled ?? true,

@@ -50,6 +50,8 @@ export interface LlmProfile {
   timeout: number
   maxRetries: number
   usage?: ProviderUsage
+  /** 接口格式：'openai'（默认，OpenAI 兼容）| 'hezhi'（核智大模型自定义 /hz_model 协议） */
+  apiFormat?: 'openai' | 'hezhi'
   capabilities?: ModelCapabilities
 }
 

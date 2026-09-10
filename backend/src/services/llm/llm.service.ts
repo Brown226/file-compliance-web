@@ -1738,6 +1738,8 @@ export class LlmService {
     temperature: number;
     timeout: number;
     provider?: string;
+    /** 接口格式：'openai'（默认，OpenAI 兼容 /chat/completions）| 'hezhi'（核智大模型自定义 /hz_model 协议） */
+    apiFormat?: 'openai' | 'hezhi';
     /** 模型上下文窗口（tokens）——唯一来源：Provider 配置里的模型能力 */
     modelContextWindow?: number;
     /** 模型最大输出（tokens）——唯一来源：Provider 配置里的模型能力 */
@@ -1788,6 +1790,7 @@ export class LlmService {
                 temperature: typeof v.temperature === 'number' ? v.temperature : 0.1,
                 timeout: typeof v.timeout === 'number' ? v.timeout : (profile.timeout || 120),
                 provider: profile.provider || 'openai-compat',
+                apiFormat: ((profile as any).apiFormat === 'hezhi' ? 'hezhi' : 'openai') as 'openai' | 'hezhi',
                 modelContextWindow: profileCaps.contextWindowTokens || undefined,
                 modelMaxOutput: profileCaps.maxOutputTokens || undefined,
                 modelReasoning: profileCaps.reasoning || undefined,
@@ -1824,6 +1827,11 @@ export class LlmService {
   static async rewriteQuery(query: string, options?: { maxTokens?: number; timeout?: number }): Promise<string> {
     const config = await this.getLlmConfig();
     if (!config) return query; // 未配置 LLM 时直接返回原始查询
+    // 核智自定义协议不支持查询重写的 OpenAI 调用：静默跳过（返回原查询）
+    if ((config as any).apiFormat === 'hezhi') {
+      console.warn('[LLM] rewriteQuery 跳过：默认模型为核智自定义协议，不支持 /chat/completions');
+      return query;
+    }
 
     // BUG 修复（2026-09-02）：rewriteQuery 此前未走 resolveMaxTokens，config.maxTokens
     // 超过模型窗口时同样会 400（静默失败，表现为查询优化永远不生效）
@@ -1885,12 +1893,181 @@ export class LlmService {
   }
 
   /**
-   * 通用聊天接口 - 用于 AI 正则表达式生成等场景
+   * 核智大模型（hezhi 自定义协议）chat —— 非 OpenAI 格式。
+   * 协议（来源：公司内网 10.139.133.3:8001 测试脚本 test_api.js / index.html）：
+   *   POST {base}/hz_model
+   *   body: { appkey, user_id, session_id, stream, user_content, enable_thinking, query, history:[{Q,A}] }
+   *   非流式响应：{ res: "全文", is_cancel: boolean }；流式 SSE：data: {"content":"增量"}，结束 [DONE] / [IS_CANCEL]
+   * 鉴权：appkey 在请求体（非 Header），复用 LlmProfile.apiKey 字段存储。
+   * 无 system role：systemPrompt 前置拼入 query；多轮上下文靠 history [{Q,A}]。
    */
+  static async hezhiChat(
+    config: { apiBaseUrl: string; apiKey: string; modelName: string; provider?: string; timeout?: number },
+    query: string,
+    options?: {
+      systemPrompt?: string;
+      history?: Array<{ Q: string; A: string }>;
+      timeout?: number;
+      taskId?: string;
+      mode?: string;
+      traceId?: string;
+    }
+  ): Promise<string> {
+    const systemPrompt = options?.systemPrompt || '';
+    // 无 system role：systemPrompt 前置拼入 query（协议字段 user_content 语义不明，不用）
+    const fullQuery = systemPrompt ? `${systemPrompt}\n\n---\n\n${query}` : query;
+    const timeoutMs = (options?.timeout ?? config.timeout ?? 180) * 1000;
+    const history = (options?.history || []).slice(-20).map((h) => ({ Q: h.Q, A: h.A }));
+
+    const promptFull = this.truncateForLog(`[system]
+${systemPrompt}\n\n[user]
+${query}`);
+
+    // 缓存（与 chat 同命名空间，温度不参与 hezhi 协议，用 'hezhi' 占位）
+    const chatCacheKey = CacheService.generateKey('llm:chat', config.modelName, 'hezhi', systemPrompt, query);
+    const cachedChat = await CacheService.get<string>(chatCacheKey);
+    if (cachedChat !== null) {
+      console.log(`[LLM] hezhi chat 缓存命中 (${cachedChat.length}字)`);
+      LlmService.recordLlmCall({
+        taskId: options?.taskId,
+        mode: options?.mode,
+        traceId: options?.traceId,
+        model: config.modelName,
+        provider: config.provider || 'hezhi',
+        latencyMs: 0,
+        status: 'cache',
+        promptFull,
+        completionFull: this.truncateForLog(cachedChat),
+      });
+      return cachedChat;
+    }
+
+    const _callStart = Date.now();
+
+    // 单次 HTTP 请求执行器（每次重试新建 AbortController；仅负责传输层，解析/取消判断在重试外）
+    const executeRequest = async (): Promise<string> => {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+      try {
+        await acquireLlmToken(config.apiBaseUrl, config.modelName);
+        const response = await fetch(`${config.apiBaseUrl.replace(/\/+$/, '')}/hz_model`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            appkey: config.apiKey,
+            user_id: 'file-compliance-web',
+            session_id: `hz-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`,
+            stream: false,
+            user_content: '',
+            enable_thinking: false,
+            query: fullQuery,
+            history,
+          }),
+          signal: controller.signal,
+        });
+        if (!response.ok) {
+          const errorText = await response.text();
+          const err = new Error(`核智大模型 API 错误 (${response.status}): ${errorText}`);
+          (err as any).status = response.status;
+          (err as any).statusCode = response.status;
+          throw err;
+        }
+        return await response.text();
+      } finally {
+        clearTimeout(timeoutId);
+      }
+    };
+
+    try {
+      const rawText = await retryWithBackoff(executeRequest, {
+        retries: 3,
+        baseDelay: 2000,
+        onRetry: (error, attempt) => {
+          LlmService.recordLlmCall({
+            taskId: options?.taskId,
+            mode: options?.mode,
+            traceId: options?.traceId,
+            model: config.modelName,
+            provider: config.provider || 'hezhi',
+            latencyMs: 0,
+            status: 'retry',
+            errorMsg: `[retry#${attempt}] ${(error as Error)?.message?.slice(0, 450) ?? null}`,
+            promptFull,
+          });
+        },
+      });
+
+      let obj: any = null;
+      try { obj = JSON.parse(rawText); } catch { /* 保留 null，下方报错带原文 */ }
+      if (!obj || typeof obj.res === 'undefined') {
+        throw new Error(`核智大模型返回非预期格式（缺少 res 字段）: ${rawText.slice(0, 200)}`);
+      }
+      // is_cancel=true：敏感内容自动收回，返回空内容（不视为传输错误，不重试）
+      if (obj.is_cancel) {
+        console.warn('[LLM] 核智大模型返回 IS_CANCEL（敏感内容收回）');
+        LlmService.recordLlmCall({
+          taskId: options?.taskId,
+          mode: options?.mode,
+          traceId: options?.traceId,
+          model: config.modelName,
+          provider: config.provider || 'hezhi',
+          latencyMs: Date.now() - _callStart,
+          status: 'success',
+          errorMsg: 'IS_CANCEL（敏感内容收回，返回空内容）',
+          promptFull,
+          completionFull: '',
+        });
+        return '';
+      }
+      const result = String(obj.res ?? '');
+
+      LlmService.recordLlmCall({
+        taskId: options?.taskId,
+        mode: options?.mode,
+        traceId: options?.traceId,
+        model: config.modelName,
+        provider: config.provider || 'hezhi',
+        latencyMs: Date.now() - _callStart,
+        status: 'success',
+        promptFull,
+        completionFull: this.truncateForLog(result),
+      });
+
+      if (result) {
+        await CacheService.set(chatCacheKey, result, 24 * 3600);
+      }
+      return result;
+    } catch (e: any) {
+      LlmService.recordLlmCall({
+        taskId: options?.taskId,
+        mode: options?.mode,
+        traceId: options?.traceId,
+        model: config.modelName,
+        provider: config.provider || 'hezhi',
+        latencyMs: Date.now() - _callStart,
+        status: 'failed',
+        errorMsg: (e as Error)?.message?.slice(0, 500) ?? null,
+        promptFull,
+      });
+      throw e;
+    }
+  }
+
   static async chat(prompt: string, options?: { systemPrompt?: string; maxTokens?: number; timeout?: number; temperature?: number; taskId?: string; mode?: string; traceId?: string }): Promise<string> {
     const config = await this.getLlmConfig();
     if (!config) {
       throw new Error('LLM 未配置，请在系统配置中设置 LLM API');
+    }
+
+    // 核智大模型（自定义协议）：走 hezhiChat 分支，不构建 OpenAI messages
+    if ((config as any).apiFormat === 'hezhi') {
+      return this.hezhiChat(config, prompt, {
+        systemPrompt: options?.systemPrompt,
+        timeout: options?.timeout,
+        taskId: options?.taskId,
+        mode: options?.mode,
+        traceId: options?.traceId,
+      });
     }
 
     const systemPrompt = options?.systemPrompt || '你是一个正则表达式专家，擅长根据用户需求生成准确的正则表达式。请只输出正则表达式，不要输出其他解释文字。';

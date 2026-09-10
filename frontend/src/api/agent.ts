@@ -147,6 +147,8 @@ export interface AgentProviderProfile {
   isEnabled?: boolean
   timeout?: number
   usage?: string
+  /** 接口格式：'openai'（默认，OpenAI 兼容）| 'hezhi'（核智大模型自定义 /hz_model 协议） */
+  apiFormat?: 'openai' | 'hezhi'
   capabilities?: AgentProviderCapabilities
 }
 
@@ -168,9 +170,9 @@ export function saveAgentProvidersApi(profiles: AgentProviderProfile[]) {
   return request.put<AgentProviderProfile[]>('/agent/providers', { profiles })
 }
 
-/** 模型连通性测试 */
-export function testAgentModelApi(data: { apiBase: string; apiKey: string; model: string }) {
-  return request.post<AgentProviderTestResult>('/agent/models/test', data)
+/** 模型连通性测试（apiFormat='hezhi' 时走核智自定义协议 ping） */
+export function testAgentModelApi(data: { apiBase: string; apiKey: string; model: string; apiFormat?: string }) {
+return request.post<AgentProviderTestResult>('/agent/models/test', data)
 }
 
 /** 从 Provider 的 /models 接口批量拉取模型列表（参考项目 pi 的 discover 能力） */

@@ -236,6 +236,11 @@ export class AgentService {
     //      （P0-2 公共层抽取：resolveEffConfig / createChatModel，与兑底链路共用；
     //       thinkingLevel 通过 streamText 的 providerOptions.openai.reasoningEffort 透传）
     const effConfig = await AgentService.resolveEffConfig(modelKey);
+    // 核智大模型（自定义协议，apiFormat='hezhi'）：不支持 OpenAI 兼容流式与工具调用，
+    // 跳过 AI SDK（createChatModel/streamText），直接走 LlmService.hezhiChat 非流式 + UIMessageStream 包装
+    if ((effConfig as any).apiFormat === 'hezhi') {
+      return AgentService.chatWithHezhi(params);
+    }
     const model = AgentService.createChatModel(effConfig);
 
     // 4. 创建工具集 + 按 toolNames/toolPreset 过滤（Task 25：预设开关）
@@ -665,6 +670,96 @@ export class AgentService {
     });
   }
 
+  /**
+   * 核智大模型（hezhi 自定义协议）链路 —— Agent 纯文本对话。
+   *
+   * 协议不支持 OpenAI 兼容流式/工具调用，故不走 AI SDK：
+   * 把消息历史转成 hezhi 协议的 history [{Q,A}]，调 LlmService.hezhiChat 非流式拿全文，
+   * 再用 createUIMessageStream 包装（与 chatWithGenerateText 同模式）返回给前端 useChat。
+   *
+   * 限制：无工具调用能力（skill/检索等工具不可用，仅纯对话）；systemPrompt 前置拼入 query。
+   */
+  static async chatWithHezhi(params: {
+    messages: any[];
+    userId: string;
+    sessionId?: string;
+    modelKey?: string;
+  }): Promise<any> {
+    const { messages, userId, sessionId, modelKey } = params;
+    const startTime = Date.now();
+
+    const effConfig: any = await AgentService.resolveEffConfig(modelKey);
+    const tools = createAllTools({ userId, sessionId: sessionId || '' });
+    const { systemPrompt } = await AgentService.buildSystemPrompt(userId, sessionId);
+    const modelMessages = await AgentService.toModelMessages(messages, tools);
+
+    console.log('[Agent] hezhi 自定义协议链路启动，model=' + effConfig.modelName);
+
+    // QPS 限流（与 chatWithGenerateText 同口径，interactive 通道）
+    await acquireLlmToken(effConfig.apiBaseUrl, effConfig.modelName, 'interactive').catch((e: any) => {
+      console.warn('[Agent] QPS 限流调用异常（继续）:', (e as Error)?.message || e);
+    });
+
+    // 消息历史 → hezhi 协议 history [{Q,A}]：连续 user/assistant 文本对，最后一条 user 作为 query
+    const textOf = (content: any): string => {
+      if (typeof content === 'string') return content;
+      if (Array.isArray(content)) {
+        return content.filter((p: any) => p?.type === 'text').map((p: any) => p.text ?? '').join('\n');
+      }
+      return '';
+    };
+    const chatMsgs = modelMessages.filter(
+      (m: any) => (m.role === 'user' || m.role === 'assistant') && textOf(m.content).trim(),
+    );
+    const history: Array<{ Q: string; A: string }> = [];
+    for (let i = 0; i + 1 < chatMsgs.length; i++) {
+      if (chatMsgs[i].role === 'user' && chatMsgs[i + 1].role === 'assistant') {
+        history.push({ Q: textOf(chatMsgs[i].content), A: textOf(chatMsgs[i + 1].content) });
+      }
+    }
+    const lastUser = [...chatMsgs].reverse().find((m: any) => m.role === 'user');
+    const query = textOf(lastUser?.content);
+
+    const text = await LlmService.hezhiChat(effConfig, query, {
+      systemPrompt,
+      history,
+      timeout: effConfig.timeout,
+      mode: 'agent-hezhi',
+    });
+
+    console.log(`[Agent] hezhi 链路完成: textLen=${text.length}`);
+
+    // 与 chatWithGenerateText 同口径：补写 LlmCallLog + 持久化 assistant 消息
+    AgentService.writeAgentCallLog({
+      effConfig,
+      startTime,
+      usage: {},
+      finishReason: 'stop',
+      text,
+      systemPrompt,
+      modelMessages,
+      steps: [],
+      sessionId,
+      note: 'hezhi-plain-chat',
+    });
+    AgentService.persistAssistantFromSteps(sessionId, userId, text, 'completed', []);
+
+    // 全文包装成 UIMessageStream（与 streamText 的 toUIMessageStreamResponse 兼容；无工具事件）
+    return createUIMessageStream({
+      execute: async ({ writer }: any) => {
+        writer.write({ type: 'start' });
+        writer.write({ type: 'start-step' });
+        writer.write({ type: 'finish-step' });
+        writer.write({ type: 'text-start', id: '0' });
+        if (text) {
+          writer.write({ type: 'text-delta', id: '0', delta: text });
+        }
+        writer.write({ type: 'text-end', id: '0' });
+        writer.write({ type: 'finish', finishReason: 'stop' });
+      },
+    });
+  }
+
   // ==================== P0-2 公共层：主链路/兑底链路共用 ====================
 
   /**
@@ -697,6 +792,7 @@ export class AgentService {
       apiBaseUrl: profile.apiBase || config.apiBaseUrl,
       apiKey: profile.apiKey,
       modelName,
+      apiFormat: (profile as any).apiFormat === 'hezhi' ? 'hezhi' : ((config as any).apiFormat ?? 'openai'),
     };
   }
 

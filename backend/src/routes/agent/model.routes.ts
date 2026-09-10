@@ -140,16 +140,32 @@ router.put('/providers', requireRole('ADMIN'), async (req: AuthRequest, res: Res
 });
 
 /**
- * POST /api/agent/models/test — 模型连通性测试
- * Body: { apiBase, apiKey, model }
- * 仅管理员可调
- */
+* POST /api/agent/models/test — 模型连通性测试
+* Body: { apiBase, apiKey, model, apiFormat? }
+* apiFormat='hezhi'（核智自定义协议）时直接 POST /hz_model 非流式 ping；默认走 OpenAI 兼容探测
+* 仅管理员可调
+*/
 router.post('/models/test', requireRole('ADMIN'), async (req: AuthRequest, res: Response) => {
   try {
-    const { apiBase, apiKey, model } = req.body || {};
+    const { apiBase, apiKey, model, apiFormat } = req.body || {};
     if (!apiBase || !apiKey || !model) {
       return res.status(400).json({ success: false, message: 'apiBase/apiKey/model 必填' });
     }
+
+    // 核智自定义协议：/models 探测无意义，直接非流式 ping /hz_model（参照 T1 连通性测试）
+    if (apiFormat === 'hezhi') {
+      try {
+        const text = await LlmService.hezhiChat(
+          { apiBaseUrl: apiBase, apiKey, modelName: model, provider: 'hezhi' },
+          '连通性测试，请只回答：OK',
+          { timeout: 60, mode: 'model-test' },
+        );
+        return res.json({ success: true, data: { ok: true, message: `已连通（应答 ${text.length} 字）` } });
+      } catch (e: any) {
+        return res.json({ success: true, data: { ok: false, message: (e as Error)?.message?.slice(0, 200) || '核智大模型不可达' } });
+      }
+    }
+
     const caps = await LlmService.probeModelCapabilities(apiBase, apiKey, model);
     return res.json({
       success: true,
