@@ -107,8 +107,14 @@ export class MemoryService {
       : 'NULL';
 
     // upsert：相同 userId + key + scope 时更新 value/embedding/confidence
+    // ⚠️ 标识符必须用 Prisma 映射后的驼峰列名（"userId"/"createdAt"/"updatedAt"）并加双引号。
+    // 2026-09-10 修复：原 SQL 写作 user_id/created_at/updated_at 下划线风格，而表实际列名是
+    // 驼峰（schema 未用 @map 指定列名），导致每次写入都报
+    // `column "user_id" of relation "agent_memories" does not exist`(42703)——
+    // 被 catch 吞成一行"[Memory] 学习闭环写入失败（不影响主流程）"，Agent 长期记忆写入长期静默失效。
+    // 同理 ON CONFLICT 目标须为唯一约束列 (userId, key, scope)。
     const id = await prisma.$queryRaw<{ id: string }[]>`
-      INSERT INTO agent_memories (id, user_id, type, key, value, embedding, confidence, source, scope, created_at, updated_at)
+      INSERT INTO agent_memories (id, "userId", type, key, value, embedding, confidence, source, scope, "createdAt", "updatedAt")
       VALUES (
         gen_random_uuid(),
         ${userId},
@@ -122,13 +128,13 @@ export class MemoryService {
         NOW(),
         NOW()
       )
-      ON CONFLICT (user_id, key, scope)  -- 需要唯一约束，见下方说明
+      ON CONFLICT ("userId", key, scope)
       DO UPDATE SET
         value = EXCLUDED.value,
         embedding = EXCLUDED.embedding,
         confidence = EXCLUDED.confidence,
         source = EXCLUDED.source,
-        updated_at = NOW()
+        "updatedAt" = NOW()
       RETURNING id
     `;
 
@@ -211,25 +217,29 @@ export class MemoryService {
 
     // pgvector L2 距离查询（<=> 运算符，距离越小相似度越高）
     const queryLiteral = `'[${queryEmbedding.map(v => Number(v).toFixed(8)).join(',')}]'`;
-    const scopeFilter = scope ? `AND scope = ${scope}` : '';
+    // 安全修复（2026-09-10）：原实现把 scope 直接模板插值进 SQL 文本
+    // （`AND scope = ${scope}`），调用方传入即注入点。scope 是枚举语义
+    // （global/project/session），改为白名单校验后再插值，杜绝注入面。
+    const VALID_SCOPES = new Set(['global', 'project', 'session']);
+    const scopeFilter = scope && VALID_SCOPES.has(scope) ? `AND scope = '${scope}'` : '';
 
     const rows = await prisma.$queryRaw<Array<{
       id: string;
-      user_id: string;
+      userId: string;
       type: string;
       key: string;
       value: string;
       confidence: number;
       source: string | null;
       scope: string;
-      created_at: Date;
-      updated_at: Date;
+      createdAt: Date;
+      updatedAt: Date;
       distance: number;  // L2 距离（0 表示完全匹配）
     }>>`
-      SELECT id, user_id, type, key, value, confidence, source, scope, created_at, updated_at,
+      SELECT id, "userId", type, key, value, confidence, source, scope, "createdAt", "updatedAt",
              embedding <=> ${queryLiteral}::vector AS distance
       FROM agent_memories
-      WHERE user_id = ${userId} AND embedding IS NOT NULL ${scopeFilter}
+      WHERE "userId" = ${userId} AND embedding IS NOT NULL ${scopeFilter}
       ORDER BY distance ASC
       LIMIT ${topK * 2}  -- 多取一些用于 scope 优先级重排
     `;
@@ -237,15 +247,15 @@ export class MemoryService {
     // 转换为 RecalledMemory[]，计算 similarity = 1 / (1 + distance)
     let recalled: RecalledMemory[] = rows.map(r => ({
       id: r.id,
-      userId: r.user_id,
+      userId: r.userId,
       type: r.type as MemoryType,
       key: r.key,
       value: r.value,
       confidence: r.confidence,
       source: r.source,
       scope: r.scope as MemoryScope,
-      createdAt: r.created_at.toISOString(),
-      updatedAt: r.updated_at.toISOString(),
+      createdAt: r.createdAt.toISOString(),
+      updatedAt: r.updatedAt.toISOString(),
       similarity: 1 / (1 + (r.distance || 0)),
     }));
 
@@ -313,8 +323,8 @@ export class MemoryService {
             SET value = ${value},
                 confidence = ${confidence},
                 embedding = ${embeddingLiteral}::vector,
-                updated_at = NOW()
-            WHERE id = ${id} AND user_id = ${userId}
+                "updatedAt" = NOW()
+            WHERE id = ${id} AND "userId" = ${userId}
           `;
         } else {
           // 仅更新 value/embedding（保持 confidence 不变）
@@ -322,8 +332,8 @@ export class MemoryService {
             UPDATE agent_memories
             SET value = ${value},
                 embedding = ${embeddingLiteral}::vector,
-                updated_at = NOW()
-            WHERE id = ${id} AND user_id = ${userId}
+                "updatedAt" = NOW()
+            WHERE id = ${id} AND "userId" = ${userId}
           `;
         }
         return;
