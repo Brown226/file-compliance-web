@@ -2,7 +2,16 @@
   <div class="right-panel">
     <div class="panel-header">
       <span class="panel-title">审查结果明细</span>
-      <span class="result-count">共 {{ filteredAndSearched.length }} 项</span>
+      <!-- 计数口径必须与列表实际渲染一致（两者都用 effectiveIssues）。
+           2026-09-10 修复：此处原用 filteredAndSearched.length，未应用「仅实质」过滤，
+           而下方 v-for 渲染的是 effectiveIssues —— 开启「仅实质」时标题显示 66 项、
+           实际只渲染 27 条，用户误以为结果数量不对应/丢失。 -->
+      <span class="result-count">
+        共 {{ effectiveIssues.length }} 项
+        <span v-if="hiddenLowValueCount > 0" class="result-count-muted">
+          （已折叠 {{ hiddenLowValueCount }} 项低价值提示）
+        </span>
+      </span>
       <el-button
         v-if="selectedFileId"
         type="primary"
@@ -141,7 +150,7 @@
     <!-- 批量操作工具栏（选中即显示，无需进入/退出模式） -->
     <BatchToolbar
       :selected-count="selectedIssueIds.length"
-      :filtered-count="filteredAndSearched.length"
+      :filtered-count="effectiveIssues.length"
       :is-all-selected="isAllSelected"
       :is-indeterminate="isIndeterminate"
       :is-docx-selected="!!isDocxSelected"
@@ -363,6 +372,33 @@ const {
   resetFilters,
 } = useIssueFilter(detailsRef, selectedFileIdRef)
 
+// ===== 信噪比治理：仅看实质问题（弱化 FLUENCE/提示级噪声，对应 docs/12 诊断） =====
+const hideLowValue = ref(true)
+
+const SEV_RANK: Record<string, number> = { error: 0, warning: 1, info: 2, prompt: 3 }
+
+// 对过滤后的问题做：严重度排序 + 可选的噪声弱化
+// 注意：这是「列表实际渲染的那一份数据」，计数/全选都必须以它为准（见下）。
+const effectiveIssues = computed(() => {
+  const list = filteredAndSearched.value
+  let out = list
+  if (hideLowValue.value) {
+    out = out.filter((it: IssueDetail) => {
+      // 弱化：FLUENCE 修辞类 + 提示(info/prompt)级，只留 error/warning 的实质问题
+      if (it.issueType === 'FLUENCE') return false
+      if (it.severity === 'info' || it.severity === 'prompt') return false
+      return true
+    })
+  }
+  // 严重度排序：error 置顶
+  return [...out].sort((a, b) => (SEV_RANK[a.severity] ?? 9) - (SEV_RANK[b.severity] ?? 9))
+})
+
+// 被「仅实质」折叠掉的条目数（用于如实告知用户，而非让数字莫名其妙变小）
+const hiddenLowValueCount = computed(() =>
+  Math.max(0, filteredAndSearched.value.length - effectiveIssues.value.length),
+)
+
 const {
   batchMode,
   selectedIssueIds,
@@ -379,34 +415,16 @@ const {
   toggleSelectAll,
   clearSelection,
   getSelectedIssues,
-} = useBatchSelection(filteredAndSearched)
+  // 2026-09-10 修复：原传入 filteredAndSearched（未应用「仅实质」过滤），
+  // 导致「全选」把界面上根本看不见的隐藏条目也选中，批量采纳会连带操作未展示项。
+  // 改传 effectiveIssues，与列表实际渲染范围严格一致。
+} = useBatchSelection(effectiveIssues)
 
 // 常量配置
 const allCategories = ALL_CATEGORIES
 const dwgRuleTypeOptions = DWG_RULE_TYPE_OPTIONS
 
 const hasActiveAdvancedFilters = computed(() => !!(filterCategory.value || filterDwgLayers.value?.length || filterDwgEntityTypes.value?.length || filterDwgRuleTypes.value?.length))
-
-// ===== 信噪比治理：仅看实质问题（弱化 FLUENCE/提示级噪声，对应 docs/12 诊断） =====
-const hideLowValue = ref(true)
-
-const SEV_RANK: Record<string, number> = { error: 0, warning: 1, info: 2, prompt: 3 }
-
-// 对过滤后的问题做：严重度排序 + 可选的噪声弱化
-const effectiveIssues = computed(() => {
-  const list = filteredAndSearched.value
-  let out = list
-  if (hideLowValue.value) {
-    out = out.filter((it: IssueDetail) => {
-      // 弱化：FLUENCE 修辞类 + 提示(info/prompt)级，只留 error/warning 的实质问题
-      if (it.issueType === 'FLUENCE') return false
-      if (it.severity === 'info' || it.severity === 'prompt') return false
-      return true
-    })
-  }
-  // 严重度排序：error 置顶
-  return [...out].sort((a, b) => (SEV_RANK[a.severity] ?? 9) - (SEV_RANK[b.severity] ?? 9))
-})
 
 // ===== 分组功能 =====
 const groupMode = ref(false)
@@ -758,6 +776,7 @@ defineExpose({
 }
 .panel-title { font-weight: 800; font-size: 14px; color: var(--corp-text-primary); }
 .result-count { font-size: var(--text-sm); color: var(--corp-text-secondary); }
+.result-count-muted { font-size: var(--text-xs, 12px); color: var(--corp-text-tertiary); margin-left: 2px; }
 
 .filter-toolbar {
   display: flex;
