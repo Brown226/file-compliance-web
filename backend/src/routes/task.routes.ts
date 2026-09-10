@@ -32,6 +32,7 @@ import {
   saveModeCapabilities,
   getReviewSummary,
   reviewIssue,
+  regenerateTaskReport,
 } from '../controllers/task.controller';
 
 const router = Router();
@@ -151,6 +152,10 @@ router.delete('/:id', checkTaskAccess, deleteTask);
 
 // 重新审核
 router.post('/:id/review', checkTaskAccess, reReviewTask);
+
+// 生成/重新生成任务级 Markdown 审查报告（「审查摘要」页展示 + 导出 PDF 用）
+// 历史任务（本功能上线前完成）没有报告，或对 AI 版报告不满意时可由用户手动触发
+router.post('/:id/report', checkTaskAccess, regenerateTaskReport);
 
 // 上传参照文件（以文审文模式）
 router.post('/:id/ref-files', checkTaskAccess, upload.array('files', 20), uploadRefFiles);

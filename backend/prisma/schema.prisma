@@ -121,6 +121,9 @@ model Task {
   ruleLibrary         RuleLibrary?   @relation(fields: [ruleLibraryId], references: [id], onDelete: SetNull)
   aiEngineUsed        String?        @map("ai_engine_used")   // 实际使用的 AI 引擎（如 llm-direct, llm-with-knowledge, rag-llm 等）
   degradedReason      String?        @map("degraded_reason")  // P0-4：本次审查降级原因汇总（RAG 不可用/零命中/OCR 降级等），结果页可追溯"没审到"
+  // 2026-09-10：任务级 Markdown 审查报告（「审查摘要」页展示 + 一键导出 PDF）。
+  // 优先由 AI 基于最终问题清单撰写，失败时回落确定性拼装（review/report.service.ts）。
+  reportMarkdown      String?        @map("report_markdown") @db.Text
   files              TaskFile[]
   details            TaskDetail[]
   taskStandards      TaskStandard[]

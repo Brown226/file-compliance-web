@@ -74,6 +74,14 @@ export function reReviewTaskApi(id: string) {
   return request.post<Task>(`/tasks/${id}/review`)
 }
 
+/**
+ * 生成/重新生成任务级 Markdown 审查报告
+ * 用于历史任务（无报告）或对 AI 版报告不满意时手动触发
+ */
+export function regenerateTaskReportApi(id: string) {
+  return request.post<{ reportMarkdown: string }>(`/tasks/${id}/report`)
+}
+
 // 更新任务状态
 export function updateTaskStatusApi(id: string, status: string) {
   return request.patch<Task>(`/tasks/${id}/status`, { status })

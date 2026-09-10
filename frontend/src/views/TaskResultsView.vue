@@ -344,10 +344,35 @@
             <span>{{ currentTabDescription }}</span>
           </div>
 
-          <!-- Tab 1: 审查摘要 -->
+          <!-- Tab 1: 审查摘要 —— 2026-09-10 改造 -->
+          <!-- 用户反馈原「统计卡片 + 问题预览」聚合视图没什么用，改为直接呈现
+               AI 撰写的 Markdown 审查报告（含导出 PDF / 重新生成）。
+               有报告时只显示报告；无报告（历史任务）时保留原摘要视图并给出生成入口。 -->
           <div v-if="activeTab === 'overview'" class="tab-pane">
-            <!-- ===== 统计看板（始终可见）===== -->
-            <StatsDashboard
+            <!-- 有 Markdown 报告：报告作为摘要页主体 -->
+            <template v-if="taskReportMarkdown">
+              <ReviewReportPanel
+                :task-id="taskId"
+                :report-markdown="taskReportMarkdown"
+                @update:report-markdown="onReportUpdated"
+              />
+            </template>
+
+            <!-- 无报告：保留原摘要视图（统计看板 + 问题预览）+ 生成入口 -->
+            <template v-else>
+              <!-- 已完成任务可一键生成（历史任务无报告） -->
+              <div v-if="isTaskFinished" class="report-generate-bar">
+                <div class="rgb-left">
+                  <el-icon :size="15"><InfoFilled /></el-icon>
+                  <span>该任务尚未生成 Markdown 审查报告（历史任务），可点击生成。</span>
+                </div>
+                <el-button type="primary" size="small" :loading="generatingReport" @click="generateReport">
+                  <el-icon><DocumentIcon /></el-icon> 生成审查报告
+                </el-button>
+              </div>
+
+              <!-- ===== 统计看板（无报告时的回落视图）===== -->
+              <StatsDashboard
               :total-files="reviewSummary?.totalFiles || files.length || 0"
               :task-mode="reviewPlanSummary.taskMode"
               :issue-count="issueDetails.length"
@@ -395,6 +420,7 @@
               @navigate="navigateToIssue"
               @view-all="activeTab = defaultIssueTabKey"
             />
+            </template>
           </div>
 
           <!-- Tab 2: 问题清单（DEC_REVIEW 时拆为完整性+遵从性双清单，共用此内容区）-->
@@ -509,6 +535,7 @@ import {
   getTaskProgressApi,
   toggleFalsePositiveApi,
   toggleAdoptApi,
+  regenerateTaskReportApi,
   type ReviewStageItem,
 } from '@/api/task'
 import { useWebSocket, type WsMessage } from '@/composables/useWebSocket'
@@ -523,6 +550,7 @@ import ReviewStageProgress from '@/views/TaskDetails/ReviewStageProgress.vue'
 import SelfCheckReportPanel from '@/views/TaskDetails/SelfCheckReportPanel.vue'
 import StatsDashboard from '@/views/TaskDetails/StatsDashboard.vue'
 import OverviewIssueList from '@/views/TaskDetails/OverviewIssueList.vue'
+import ReviewReportPanel from '@/views/TaskDetails/ReviewReportPanel.vue'
 import KnowledgeTab from '@/views/TaskDetails/KnowledgeTab.vue'
 import IssueCardList from './TaskDetails/IssueCardList.vue'
 import LlmReplayDrawer from '@/views/TaskDetails/LlmReplayDrawer.vue'
@@ -540,6 +568,43 @@ const allDetails = ref<TaskDetail[]>([])
 const files = ref<TaskFile[]>([])
 const loading = ref(false)
 const loadingMessage = ref('正在加载审查结果...')
+
+// ===== 2026-09-10：审查报告（「审查摘要」页主体）=====
+// 报告由后端在任务完成时生成（AI 撰写优先 / 拼装兜底），落库 tasks.report_markdown。
+// 这里用本地 ref 承载，便于「生成/重新生成」后立即刷新而不必重新拉取整个任务。
+const reportMarkdownLocal = ref('')
+const generatingReport = ref(false)
+const taskReportMarkdown = computed(
+  () => reportMarkdownLocal.value || ((task.value as any)?.reportMarkdown as string) || '',
+)
+const isTaskFinished = computed(() => {
+  const s = task.value?.status
+  return s === 'COMPLETED' || s === 'FAILED'
+})
+/** 子组件（报告面板）重新生成后同步到本地，模板立即切到报告视图 */
+const onReportUpdated = (md: string) => {
+  reportMarkdownLocal.value = md
+  if (task.value) (task.value as any).reportMarkdown = md
+}
+/** 历史任务无报告时的手动生成入口 */
+const generateReport = async () => {
+  if (generatingReport.value) return
+  generatingReport.value = true
+  try {
+    const res: any = await regenerateTaskReportApi(taskId.value)
+    const md = res?.data?.reportMarkdown || ''
+    if (md) {
+      onReportUpdated(md)
+      ElMessage.success('审查报告已生成')
+    } else {
+      ElMessage.warning('报告生成为空，请稍后重试')
+    }
+  } catch (e: any) {
+    ElMessage.error('生成报告失败：' + (e?.message || e))
+  } finally {
+    generatingReport.value = false
+  }
+}
 
 // ===== 方案A：审查阶段状态（stage_update 实时 + 轮询兜底） =====
 const reviewStages = ref<ReviewStageItem[]>([])
@@ -1942,6 +2007,28 @@ onUnmounted(() => {
 
 /* ===== Overview Tab: 统计看板（样式已下沉到 StatsDashboard 子组件）===== */
 /* ===== Overview Tab: 问题预览列表（样式已下沉到 OverviewIssueList 子组件）===== */
+
+/* ===== 2026-09-10：审查报告缺失时的生成引导条 ===== */
+.report-generate-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 10px 14px;
+  margin-bottom: 14px;
+  border: 1px solid var(--color-primary-200, #bfdbfe);
+  border-radius: 8px;
+  background: var(--color-primary-50, #eff6ff);
+}
+.report-generate-bar .rgb-left {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 13px;
+  color: var(--color-primary-700, #1d4ed8);
+  min-width: 0;
+}
 /* ===== Knowledge Tab: 知识库卡片（样式已下沉到 KnowledgeTab 子组件）===== */
 
 /* 审查通过（无问题）横幅 — 摘要 Tab 使用 */

@@ -25,6 +25,15 @@ const routes: Array<RouteRecordRaw> = [
     meta: { title: '报告打印', requiresAuth: true }
   },
   {
+    // 2026-09-10：审查报告打印页（「审查摘要」→ 导出 PDF）。
+    // 同为独立路由，不嵌套 AppLayout —— 打印时无侧边栏/页头干扰，
+    // A4 排版与 @media print 分页控制见组件内样式。
+    path: '/review-report/print',
+    name: 'ReviewReportPrint',
+    component: () => import('@/views/TaskDetails/ReviewReportPrint.vue'),
+    meta: { title: '审查报告打印', requiresAuth: true }
+  },
+  {
     path: '/',
     component: AppLayout,
     redirect: '/review-center',

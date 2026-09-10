@@ -1,9 +1,10 @@
-﻿import { Request, Response } from 'express';
+import { Request, Response } from 'express';
 import path from 'path';
 import fs from 'fs';
 import { TaskService } from '../services/system/task.service';
 import { AuthRequest } from '../middlewares/auth.middleware';
 import { getTaskFilterByRole } from '../middlewares/rbac.middleware';
+import { ReportService } from '../services/review/report.service';
 import { resolveFilePath } from '../config/upload';
 import { TaskStatus } from '@prisma/client';
 import { success, error, paginated } from '../utils/response';
@@ -360,6 +361,39 @@ export const getTaskDetails = async (req: AuthRequest, res: Response): Promise<v
   } catch (err) {
     console.error('Get Task Details Error:', err);
     error(res, '服务器内部错误', 500);
+  }
+};
+
+/**
+ * POST /api/tasks/:id/report — 生成/重新生成任务级 Markdown 审查报告
+ *
+ * 用途：
+ * - 历史任务（报告功能上线前完成的）没有报告，可在结果页手动生成
+ * - 对 AI 版报告不满意时，可重新触发（重新走一次 AI 叙述；AI 失败则回落拼装版）
+ *
+ * 权限：checkTaskAccess 已在路由层做归属校验
+ */
+export const regenerateTaskReport = async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const id = req.params.id as string;
+    const task = await TaskService.getTaskById(id);
+    if (!task) {
+      error(res, '未找到该任务', 404);
+      return;
+    }
+    if (task.status !== 'COMPLETED' && task.status !== 'FAILED') {
+      error(res, '任务尚未完成，暂不能生成报告', 400);
+      return;
+    }
+    const markdown = await ReportService.generateAndStore(id);
+    if (!markdown) {
+      error(res, '报告生成失败，请稍后重试', 500);
+      return;
+    }
+    success(res, { reportMarkdown: markdown }, '报告已生成');
+  } catch (err: any) {
+    console.error('Regenerate Task Report Error:', err);
+    error(res, `报告生成失败: ${err?.message || err}`, 500);
   }
 };
 

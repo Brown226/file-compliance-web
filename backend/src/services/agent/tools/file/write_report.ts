@@ -38,6 +38,7 @@ import { z } from 'zod';
 import type { ToolContext } from './upload_file';
 import { getTodayDir } from './paths';
 import { FileWriteQueueService } from '../../file-queue/file-write-queue.service';
+import { buildReviewReportMarkdown } from '../../../review/review-report.builder';
 
 const { tool } = require('@ai-sdk/provider-utils') as typeof import('@ai-sdk/provider-utils');
 
@@ -81,16 +82,11 @@ interface WriteReportResult {
 }
 
 /**
- * 转义 Markdown 特殊字符（防止原文中的 `#`、`*` 等破坏格式）
- */
-function escapeMarkdown(text: string): string {
-  if (!text) return '';
-  // 在以下字符前加反斜杠（仅行首时）
-  return text.replace(/^([#>*\-+`~])/gm, '\\$1');
-}
-
-/**
  * 生成 Markdown 报告内容
+ *
+ * 2026-09-10：拼装逻辑已抽出为 review/review-report.builder.ts，本函数改为薄封装，
+ * 使 Agent 报告通道与「审查任务报告」共用同一套排版/统计口径（避免两处样式分叉）。
+ * 保留原函数签名与工具返回结构，既有单测与调用方不受影响。
  */
 function buildMarkdownReport(params: {
   issues: any[];
@@ -98,154 +94,13 @@ function buildMarkdownReport(params: {
   reviewMode?: string;
   toolCallCount?: number;
 }): string {
-  const { issues, sourceFile, reviewMode, toolCallCount } = params;
-  const now = new Date();
-  const generatedAt = now.toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' });
-
-  // 摘要统计
-  const total = issues.length;
-  const byType: Record<string, number> = {};
-  let highSeverity = 0;
-
-  for (const issue of issues) {
-    const t = issue?.issueType || 'UNKNOWN';
-    byType[t] = (byType[t] || 0) + 1;
-    if (issue?.severity === 'error' || issue?.riskLevel === 'HIGH') {
-      highSeverity++;
-    }
-  }
-
-  // 按 severity 倒序排序（error > warning > info，无 severity 排最后）
-  const sortedIssues = [...issues].sort((a, b) => {
-    const aSev = SEVERITY_ORDER[a?.severity] || 0;
-    const bSev = SEVERITY_ORDER[b?.severity] || 0;
-    if (aSev !== bSev) return bSev - aSev;
-    // severity 相同时按 riskLevel 排序
-    const aRisk = RISK_ORDER[a?.riskLevel] || 0;
-    const bRisk = RISK_ORDER[b?.riskLevel] || 0;
-    return bRisk - aRisk;
+  const { issues, sourceFile, reviewMode } = params;
+  return buildReviewReportMarkdown({
+    issues,
+    sourceFile,
+    reviewMode,
+    footer: '*本报告由 Agent 审查通道自动生成，仅供参考，请以人工复核结论为准。*',
   });
-
-  // 拼装 Markdown
-  const lines: string[] = [];
-
-  // 1. 标题
-  lines.push(`# 文件合规审查报告`);
-  lines.push('');
-
-  // 2. 元信息
-  lines.push('## 元信息');
-  lines.push('');
-  lines.push(`- **生成时间**：${generatedAt}`);
-  if (sourceFile) lines.push(`- **被审查文件**：${escapeMarkdown(sourceFile)}`);
-  if (reviewMode) lines.push(`- **审查模式**：${escapeMarkdown(reviewMode)}`);
-  if (toolCallCount !== undefined) lines.push(`- **工具调用数**：${toolCallCount}`);
-  lines.push(`- **问题总数**：${total}`);
-  lines.push(`- **高严重度**：${highSeverity}`);
-  lines.push('');
-
-  // 3. 摘要
-  lines.push('## 问题摘要');
-  lines.push('');
-  if (total === 0) {
-    lines.push('> 未发现问题。');
-  } else {
-    lines.push('| 问题类型 | 数量 |');
-    lines.push('|----------|------|');
-    for (const [type, count] of Object.entries(byType).sort((a, b) => b[1] - a[1])) {
-      const label = ISSUE_TYPE_LABELS[type] || type;
-      lines.push(`| ${label} | ${count} |`);
-    }
-    lines.push('');
-    if (highSeverity > 0) {
-      lines.push(`> 共发现 **${highSeverity}** 个高严重度问题，请优先处理。`);
-      lines.push('');
-    }
-  }
-
-  // 4. 问题明细
-  lines.push('## 问题明细');
-  lines.push('');
-  if (total === 0) {
-    lines.push('> 无问题明细。');
-  } else {
-    sortedIssues.forEach((issue, idx) => {
-      const type = issue?.issueType || 'UNKNOWN';
-      const typeLabel = ISSUE_TYPE_LABELS[type] || type;
-      const severity = issue?.severity || '';
-      const riskLevel = issue?.riskLevel || '';
-      const originalText = issue?.originalText || '';
-      const suggestedText = issue?.suggestedText || '';
-      const description = issue?.description || '';
-      const plainLanguage = issue?.plainLanguage || '';
-      const recommendation = issue?.recommendation || '';
-      const standardRef = issue?.standardRef || '';
-      const ruleCode = issue?.ruleCode || '';
-
-      // 问题标题
-      const badge = severity ? ` [${severity.toUpperCase()}]` : (riskLevel ? ` [${riskLevel}]` : '');
-      lines.push(`### ${idx + 1}. ${typeLabel}${badge}`);
-      lines.push('');
-
-      // 原文
-      if (originalText) {
-        lines.push('**原文**：');
-        lines.push('```');
-        lines.push(originalText);
-        lines.push('```');
-        lines.push('');
-      }
-
-      // 建议修改
-      if (suggestedText) {
-        lines.push('**建议修改为**：');
-        lines.push('```');
-        lines.push(suggestedText);
-        lines.push('```');
-        lines.push('');
-      }
-
-      // 描述
-      if (description) {
-        lines.push(`**描述**：${escapeMarkdown(description)}`);
-        lines.push('');
-      }
-
-      // 大白话解释
-      if (plainLanguage) {
-        lines.push(`**大白话**：${escapeMarkdown(plainLanguage)}`);
-        lines.push('');
-      }
-
-      // 合同审查修改建议
-      if (recommendation) {
-        lines.push(`**修改建议**：${escapeMarkdown(recommendation)}`);
-        lines.push('');
-      }
-
-      // 标准引用
-      if (standardRef) {
-        lines.push(`**标准引用**：${escapeMarkdown(standardRef)}`);
-        lines.push('');
-      }
-
-      // 规则编号
-      if (ruleCode) {
-        lines.push(`**规则编号**：\`${ruleCode}\``);
-        lines.push('');
-      }
-
-      lines.push('---');
-      lines.push('');
-    });
-  }
-
-  // 5. 报告尾部
-  lines.push('---');
-  lines.push('');
-  lines.push('*本报告由 Agent 审查通道自动生成，仅供参考。*');
-
-  return lines.join('\n');
 }
 
 /**

@@ -25,6 +25,7 @@ import { SmartJudgeService } from './cross-review/smart-judge.service';
 import { getMaxConcurrentReviews } from '../../utils/system-config';
 import { normalizeText } from './falsePositiveLibrary.service';
 import { StageRunner, StageRunnerHandle } from './stage-runner.service';
+import { ReportService } from './report.service';
 import { levenshteinDistance } from '../../utils/issue-dedup';
 
 /**
@@ -1114,6 +1115,15 @@ const fileContexts = task.files.map(file => {
           });
         } catch (e) {
           console.warn('[Memory] 学习闭环写入失败（不影响主流程）:', (e as Error).message);
+        }
+
+        // ===== 任务级 Markdown 审查报告（「审查摘要」页展示 + 导出 PDF）=====
+        // 放在最后：报告是附加值，不阻塞任务状态与汇总；内部已全量 try/catch，
+        // 失败时回落到确定性拼装，绝不会让任务因此变 FAILED。
+        try {
+          await ReportService.generateAndStore(taskId);
+        } catch (e) {
+          console.warn('[Report] 报告生成异常（不影响主流程）:', (e as Error).message);
         }
       }
 
